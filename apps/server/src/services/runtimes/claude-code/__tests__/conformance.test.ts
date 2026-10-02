@@ -1,3 +1,10 @@
+import {
+  DOC_VISIBLE_TRIGGER,
+  docBoundaryEntry,
+  assertDocBoundary,
+  capturedTextContent,
+  capturedSystemPrompt,
+} from '../../__tests__/doc-events-boundary-fixture.js';
 import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -171,6 +178,7 @@ vi.mock('../tooling/check-dependency.js', () => ({
 }));
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { renderContextEntry } from '../messaging/context-builder.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { HistoryMessage, InterruptReceipt } from '@dorkos/shared/types';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
@@ -913,4 +921,443 @@ describe('ClaudeCodeRuntime — the account two sessions share', () => {
       account.root = canonical;
     }
   });
+});
+
+it('doc SDK boundary: Claude query receives the fenced original document context on each turn', async () => {
+  const actual = await vi.importActual<typeof import('../messaging/context-builder.js')>(
+    '../messaging/context-builder.js'
+  );
+  const render = vi.mocked(renderContextEntry);
+  const original = render.getMockImplementation()!;
+  render.mockImplementation(actual.renderContextEntry);
+  onTestFinished(() => {
+    render.mockImplementation(original);
+  });
+  const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+  const sessionId = 'doc-sdk-boundary';
+  runtime.ensureSession(sessionId, { cwd: '/projects/conformance', permissionMode: 'default' });
+  const nonces: string[] = [];
+  for (let turn = 0; turn < 2; turn++) {
+    const before = mockedQuery.mock.calls.length;
+    for await (const _event of runtime.sendMessage(sessionId, DOC_VISIBLE_TRIGGER, {
+      cwd: '/projects/conformance',
+      additionalContext: [docBoundaryEntry],
+    })) {
+      /* Drain the real runtime against the existing hermetic SDK. */
+    }
+    expect(mockedQuery.mock.calls.slice(before)).toHaveLength(1);
+    const request = mockedQuery.mock.calls[before]![0];
+    expect(typeof request.prompt).not.toBe('string');
+    if (typeof request.prompt === 'string') throw new Error('Expected held SDK user input');
+    const first = await request.prompt[Symbol.asyncIterator]().next();
+    expect(first.done).toBe(false);
+    const content = first.value.message.content;
+    const userText = capturedTextContent(content);
+    expect(userText.primary.join('\n').endsWith(DOC_VISIBLE_TRIGGER)).toBe(true);
+    const systemText = capturedSystemPrompt(request);
+    nonces.push(
+      assertDocBoundary(userText.primary.join('\n'), [
+        ...systemText,
+        ...userText.otherPromptChannels,
+      ])
+    );
+  }
+  expect(nonces[0]).not.toBe(nonces[1]);
+});
+
+it.each([
+  [
+    'plain document',
+    { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'private' } },
+  ],
+  [
+    'content document',
+    { type: 'document', source: { type: 'content', content: [{ type: 'text', text: 'private' }] } },
+  ],
+  ['tool string', { type: 'tool_result', tool_use_id: 'tool-1', content: 'private' }],
+  [
+    'tool nested document',
+    {
+      type: 'tool_result',
+      tool_use_id: 'tool-1',
+      content: [
+        { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'private' } },
+      ],
+    },
+  ],
+  [
+    'search text',
+    {
+      type: 'search_result',
+      source: 'note',
+      title: 'Note',
+      content: [{ type: 'text', text: 'private' }],
+    },
+  ],
+  [
+    'search metadata',
+    {
+      type: 'search_result',
+      source: 'private',
+      title: 'Note',
+      content: [{ type: 'text', text: 'safe' }],
+    },
+  ],
+  [
+    'document metadata',
+    {
+      type: 'document',
+      title: 'private',
+      context: 'safe',
+      source: { type: 'text', media_type: 'text/plain', data: 'safe' },
+    },
+  ],
+  [
+    'tool metadata',
+    { type: 'tool_result', tool_use_id: 'tool-1', toolset_name: 'private', content: 'safe' },
+  ],
+  [
+    'tool reference',
+    {
+      type: 'tool_result',
+      tool_use_id: 'tool-1',
+      content: [{ type: 'tool_reference', tool_name: 'private' }],
+    },
+  ],
+  [
+    'text citation',
+    {
+      type: 'text',
+      text: 'safe',
+      citations: [
+        {
+          type: 'char_location',
+          cited_text: 'private',
+          document_index: 0,
+          document_title: 'Note',
+          start_char_index: 0,
+          end_char_index: 1,
+        },
+      ],
+    },
+  ],
+])('SDK content extraction inspects %s outside the primary fence', async (_label, extra) => {
+  const actual = await vi.importActual<typeof import('../messaging/context-builder.js')>(
+    '../messaging/context-builder.js'
+  );
+  const primary = actual.renderContextEntry(docBoundaryEntry);
+  const privateData = docBoundaryEntry.data.documentId;
+  const block: unknown = JSON.parse(JSON.stringify(extra).replaceAll('private', privateData));
+  const captured = capturedTextContent([{ type: 'text', text: primary }, block]);
+  expect(captured.primary[0]).toBe(primary);
+  expect(captured.primary).not.toContain(privateData);
+  expect(captured.otherPromptChannels).toContain(privateData);
+  expect(() =>
+    assertDocBoundary(captured.primary.join('\n'), captured.otherPromptChannels)
+  ).toThrow();
+});
+
+it('SDK content extraction accepts mixed inspectable document/tool/search content without moving its fence', async () => {
+  const actual = await vi.importActual<typeof import('../messaging/context-builder.js')>(
+    '../messaging/context-builder.js'
+  );
+  const primary = actual.renderContextEntry(docBoundaryEntry);
+  const captured = capturedTextContent([
+    {
+      type: 'tool_result',
+      tool_use_id: 'tool-1',
+      content: [
+        {
+          type: 'document',
+          title: 'Note',
+          context: 'Background',
+          source: { type: 'content', content: [{ type: 'text', text: 'safe document' }] },
+        },
+        {
+          type: 'search_result',
+          source: 'note',
+          title: 'Note',
+          content: [{ type: 'text', text: 'safe search' }],
+        },
+        { type: 'tool_reference', tool_name: 'read_note' },
+      ],
+    },
+    { type: 'text', text: primary },
+  ]);
+  expect(captured.primary).toEqual([primary]);
+  expect(captured.otherPromptChannels).toEqual(
+    expect.arrayContaining(['safe document', 'safe search', 'read_note'])
+  );
+  expect(assertDocBoundary(captured.primary.join('\n'), captured.otherPromptChannels)).toMatch(
+    /^[a-f0-9]{8}$/u
+  );
+});
+
+it.each([
+  [
+    'PDF encoding',
+    {
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: 'c2FmZQ==' },
+    },
+  ],
+  [
+    'external document URL',
+    { type: 'document', source: { type: 'url', url: 'https://example.invalid/file.pdf' } },
+  ],
+  ['external file', { type: 'document', source: { type: 'file', file_id: 'file-1' } }],
+  [
+    'image encoding',
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'c2FmZQ==' } },
+  ],
+  ['unknown block', { type: 'future', text: 'safe' }],
+  [
+    'non-plain encoding',
+    {
+      type: 'document',
+      source: { type: 'text', media_type: 'text/plain', encoding: 'base64', data: 'c2FmZQ==' },
+    },
+  ],
+])('SDK content extraction refuses uninspectable %s', (_label, block) => {
+  expect(() => capturedTextContent([{ type: 'text', text: 'safe' }, block])).toThrow(
+    'Uninspectable SDK prompt content'
+  );
+});
+
+it('SDK content extraction refuses accessors, cycles and oversized graphs without invoking getters', () => {
+  const getter = vi.fn(() => 'safe');
+  const accessor = Object.defineProperty({ type: 'text' }, 'text', {
+    enumerable: true,
+    get: getter,
+  });
+  expect(() => capturedTextContent([accessor])).toThrow('Uninspectable SDK prompt content');
+  expect(getter).not.toHaveBeenCalled();
+  const cycle: Record<string, unknown> = { type: 'text', text: 'safe' };
+  cycle.metadata = cycle;
+  expect(() => capturedTextContent([cycle])).toThrow('Uninspectable SDK prompt content');
+  expect(() => capturedTextContent([{ type: 'text', text: 'x'.repeat(1024 * 1024 + 1) }])).toThrow(
+    'Uninspectable SDK prompt content'
+  );
+  expect(() =>
+    capturedTextContent(Array.from({ length: 257 }, () => ({ type: 'text', text: 'safe' })))
+  ).toThrow('Uninspectable SDK prompt content');
+});
+
+it.each(['top-level', 'block', 'source', 'nested array', 'metadata', 'revoked', 'revoked source'])(
+  'SDK content extraction refuses %s proxies before reflection or property access',
+  (placement) => {
+    const trap = vi.fn((): never => {
+      throw new Error('Proxy trap must not run');
+    });
+    const handler: ProxyHandler<object> = {
+      get: trap,
+      ownKeys: trap,
+      getOwnPropertyDescriptor: trap,
+      getPrototypeOf: trap,
+      has: trap,
+      isExtensible: trap,
+    };
+    const plain = { type: 'text', text: 'safe' };
+    let content: unknown;
+    switch (placement) {
+      case 'top-level':
+        content = new Proxy([plain], handler);
+        break;
+      case 'block':
+        content = [new Proxy(plain, handler)];
+        break;
+      case 'source':
+        content = [
+          {
+            type: 'document',
+            source: new Proxy({ type: 'text', media_type: 'text/plain', data: 'safe' }, handler),
+          },
+        ];
+        break;
+      case 'nested array':
+        content = [
+          { type: 'tool_result', tool_use_id: 'tool-1', content: new Proxy([plain], handler) },
+        ];
+        break;
+      case 'metadata':
+        content = [
+          {
+            ...plain,
+            citations: [
+              new Proxy(
+                {
+                  type: 'char_location',
+                  cited_text: 'safe',
+                  document_index: 0,
+                  document_title: 'Note',
+                  start_char_index: 0,
+                  end_char_index: 1,
+                },
+                handler
+              ),
+            ],
+          },
+        ];
+        break;
+      case 'revoked':
+      case 'revoked source': {
+        const proxy = Proxy.revocable([plain], handler);
+        proxy.revoke();
+        content =
+          placement === 'revoked' ? proxy.proxy : [{ type: 'document', source: proxy.proxy }];
+        break;
+      }
+      default:
+        throw new Error('Unknown proxy fixture');
+    }
+    expect(() => capturedTextContent(content)).toThrow('Uninspectable SDK prompt content');
+    expect(trap).not.toHaveBeenCalled();
+  }
+);
+
+it.each([
+  ['absent', undefined],
+  ['string', 'safe'],
+  ['array', ['safe', 'second']],
+  ['custom string', { type: 'custom', prompt: 'safe', snapshot: true }],
+  ['custom array', { type: 'custom', prompt: ['safe', 'second'], snapshot: false }],
+  ['preset', { type: 'preset', preset: 'claude_code', excludeDynamicSections: true }],
+  ['preset append', { type: 'preset', preset: 'claude_code', append: 'safe', snapshot: true }],
+])(
+  'SDK system extraction accepts supported %s without inspecting unrelated options',
+  (_label, system) => {
+    const unrelated = vi.fn((): never => {
+      throw new Error('Unrelated option inspected');
+    });
+    const options = Object.defineProperty({ systemPrompt: system }, 'unrelated', {
+      get: unrelated,
+    });
+    const captured = capturedSystemPrompt({ options });
+    expect(captured).not.toContain(docBoundaryEntry.data.documentId);
+    if (system !== undefined)
+      expect(captured).toContain(
+        typeof system === 'string' ? system : Array.isArray(system) ? system[0] : system.type
+      );
+    expect(unrelated).not.toHaveBeenCalled();
+  }
+);
+
+it.each([
+  'request',
+  'options',
+  'system',
+  'custom prompt',
+  'preset',
+  'revoked',
+  'accessor',
+  'options accessor',
+  'request accessor',
+  'custom accessor',
+  'revoked system',
+  'iterator',
+])('SDK system extraction refuses %s before getter or reflection traps', (placement) => {
+  const trap = vi.fn((): never => {
+    throw new Error('System trap must not run');
+  });
+  const handler: ProxyHandler<object> = {
+    get: trap,
+    ownKeys: trap,
+    getPrototypeOf: trap,
+    getOwnPropertyDescriptor: trap,
+    has: trap,
+  };
+  const plain = { options: { systemPrompt: 'safe' } };
+  let request: unknown;
+  switch (placement) {
+    case 'request':
+      request = new Proxy(plain, handler);
+      break;
+    case 'options':
+      request = { options: new Proxy(plain.options, handler) };
+      break;
+    case 'system':
+      request = { options: { systemPrompt: new Proxy(['safe'], handler) } };
+      break;
+    case 'custom prompt':
+      request = {
+        options: { systemPrompt: { type: 'custom', prompt: new Proxy(['safe'], handler) } },
+      };
+      break;
+    case 'preset':
+      request = {
+        options: {
+          systemPrompt: new Proxy(
+            { type: 'preset', preset: 'claude_code', append: 'safe' },
+            handler
+          ),
+        },
+      };
+      break;
+    case 'revoked': {
+      const proxy = Proxy.revocable(['safe'], handler);
+      proxy.revoke();
+      request = { options: { systemPrompt: { type: 'custom', prompt: proxy.proxy } } };
+      break;
+    }
+    case 'accessor':
+      request = {
+        options: {
+          systemPrompt: Object.defineProperty({ type: 'preset', preset: 'claude_code' }, 'append', {
+            enumerable: true,
+            get: trap,
+          }),
+        },
+      };
+      break;
+    case 'options accessor':
+      request = {
+        options: Object.defineProperty({}, 'systemPrompt', { enumerable: true, get: trap }),
+      };
+      break;
+    case 'request accessor':
+      request = Object.defineProperty({}, 'options', { get: trap });
+      break;
+    case 'custom accessor':
+      request = {
+        options: {
+          systemPrompt: Object.defineProperty({ type: 'custom' }, 'prompt', {
+            enumerable: true,
+            get: trap,
+          }),
+        },
+      };
+      break;
+    case 'revoked system': {
+      const proxy = Proxy.revocable(['safe'], handler);
+      proxy.revoke();
+      request = { options: { systemPrompt: proxy.proxy } };
+      break;
+    }
+    case 'iterator':
+      request = {
+        options: { systemPrompt: Object.defineProperty(['safe'], Symbol.iterator, { get: trap }) },
+      };
+      break;
+    default:
+      throw new Error('Unknown system fixture');
+  }
+  expect(() => capturedSystemPrompt(request)).toThrow('Uninspectable SDK prompt content');
+  expect(trap).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['unknown form', { type: 'future', prompt: 'safe' }],
+  ['custom nested array', { type: 'custom', prompt: [['safe']] }],
+  ['preset array', { type: 'preset', preset: 'claude_code', append: ['safe'] }],
+  ['unknown metadata', { type: 'custom', prompt: 'safe', metadata: 'safe' }],
+  ['invalid snapshot', { type: 'custom', prompt: 'safe', snapshot: 'safe' }],
+  ['nonplain', new Date(0)],
+  ['null', null],
+  ['oversize', 'x'.repeat(1024 * 1024 + 1)],
+  ['overwide', Array.from({ length: 257 }, () => 'safe')],
+  ['overdeep', Array.from({ length: 17 }).reduce<unknown>((value) => ({ nested: value }), {})],
+])('SDK system extraction refuses %s', (_label, system) => {
+  expect(() => capturedSystemPrompt({ options: { systemPrompt: system } })).toThrow(
+    'Uninspectable SDK prompt content'
+  );
 });

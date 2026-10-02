@@ -1,3 +1,4 @@
+import { DocChannelMetrics } from './services/observability/doc-channel-metrics.js';
 import { DocBatchAdmission } from './services/canvas/doc-channel/delivery/batch-admission.js';
 import { privateDocTurnBudget } from './services/canvas/doc-channel/delivery/final-budget.js';
 import { DocBatchDeliveryPump } from './services/canvas/doc-channel/delivery/pump.js';
@@ -3163,6 +3164,7 @@ async function start() {
       );
     },
   });
+  const docChannelMetrics = new DocChannelMetrics(db);
   const docChannelHttp = createDocChannelHttpComposition({
     db,
     documents: canvasDocuments,
@@ -3176,7 +3178,7 @@ async function start() {
     revalidateRuntime: (proof) =>
       docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
   });
-  app.locals.docChannelHttp = docChannelHttp;
+  app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
   // An answer given after the in-session hold gave up has to reach the agent that
   // asked, or a person ends up relaying it by hand — which is the bug DOR-1931
   // reports. The subscription lives for the life of the process; its listener does
@@ -4574,6 +4576,7 @@ async function start() {
   // overlap today; conflating them would mean a new debug read could only be
   // added by widening the health checks' dependency surface.
   app.locals.debugDeps = {
+    docChannelMetrics,
     roomSessions: roomStore,
     // The SAME probe object the boot sweep and the deep health check hold, so
     // the raw debug read and the doctor cannot say different things about one
