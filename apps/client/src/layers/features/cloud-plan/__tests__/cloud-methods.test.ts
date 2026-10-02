@@ -39,6 +39,28 @@ describe('the cloud transport methods', () => {
     await expect(methods.requestCloudAccountDeletion()).resolves.toEqual({ ok: false, message });
   });
 
+  // Every DorkOS account write refuses anyone but the install's owner with a
+  // 403 sentence (DOR-2652); each must reach the surface as that sentence, not
+  // as "couldn't reach your account".
+  it.each([
+    ['opening billing', () => methods.createCloudBillingSession('portal')],
+    ['an export', () => methods.requestCloudAccountExport()],
+    ['a seat change', () => methods.releaseCloudSeat('seat_0001')],
+    [
+      'starting a space',
+      () => methods.startHostedCommunity({ idempotencyKey: 'k1', name: 'Team' }),
+    ],
+    ['a claim link', () => methods.getHostedCommunityClaimLink('c_1')],
+    ['keeping a space', () => methods.keepHostedCommunity('c_1', [])],
+    ['reopening a space', () => methods.restoreHostedCommunity('c_1')],
+    ['cancelling a move', () => methods.cancelHostedCommunityMove('move_1')],
+    ['resending a move', () => methods.retryHostedCommunityMoveUpload('move_1')],
+  ])('hands over the owner-only refusal of %s as its own sentence', async (_name, call) => {
+    const message = 'Only the person who owns this install can do that.';
+    stubFetch(403, { ok: false, code: 'owner_only', message });
+    await expect(call()).resolves.toEqual({ ok: false, message });
+  });
+
   it('still throws a deletion failure that carries no sentence', async () => {
     stubFetch(500, { error: 'boom' });
     await expect(methods.requestCloudAccountDeletion()).rejects.toThrow('boom');

@@ -160,6 +160,31 @@ describe('CloudLinkPanel', () => {
     expect(await screen.findByRole('button', { name: /link this computer/i })).toBeInTheDocument();
   });
 
+  it('linked: a refused unlink says why and keeps the linked view', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getCloudStatus).mockResolvedValue({
+      linked: true,
+      accountLabel: 'kai@dork.dev',
+      lastHeartbeatAt: new Date().toISOString(),
+    });
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
+    // What the transport throws for the owner bar's 403 (DOR-2652).
+    const sentence =
+      'Only the person who owns this install can unlink this computer from its DorkOS account.';
+    vi.mocked(transport.unlinkCloud).mockRejectedValue(
+      Object.assign(new Error(sentence), { status: 403, code: 'owner_only' })
+    );
+    renderPanel(transport);
+
+    expect(await screen.findByText('kai@dork.dev')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /unlink this computer/i }));
+    await user.click(await screen.findByRole('button', { name: /^unlink$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(sentence);
+    expect(screen.getByText('kai@dork.dev')).toBeInTheDocument();
+  });
+
   it('linked: the unlink confirm lists every app that stops and carries the count', async () => {
     const user = userEvent.setup();
     const base = {

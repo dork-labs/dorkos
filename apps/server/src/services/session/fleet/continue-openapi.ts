@@ -72,7 +72,9 @@ export function registerSessionContinueOpenApi(registry: OpenAPIRegistry): void 
       400: error(
         'Neither an account nor a model, an unknown account, a runtime the advisor did not offer, or a model the runtime does not offer.'
       ),
-      403: peopleOnly,
+      403: error(
+        'Only a person can move or hold a session; an agent identity is refused. Moving onto DorkOS credits is for the person who owns this install alone (`person_only`, `owner_only`).'
+      ),
       409: error(
         'The session has no limit, is working, or did not start here and can only wait for the reset.'
       ),

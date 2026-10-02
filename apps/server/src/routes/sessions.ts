@@ -26,6 +26,7 @@ import type {
 import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { isAutonomyStop, needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -77,6 +78,7 @@ import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import { rejectUnknownModel } from './session-model-gate.js';
+import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
 import {
   cancelContinueHandler,
   continueOptionsHandler,
@@ -975,6 +977,12 @@ router.post('/:id/reload-plugins', async (req, res) => {
   }
 });
 
+/** What naming DorkOS credits for a new session says to a caller that is not the owner. */
+const RUN_ON_CREDITS = {
+  personOnly: 'Only you can run a chat on your DorkOS credits, from the DorkOS app.',
+  action: 'run a chat on DorkOS credits',
+};
+
 // POST /api/sessions/:id/messages — Accept a message (trigger-only, ADR-0264;
 // accept-only, spec `persistent-session-runtime` §3.3).
 //
@@ -1004,6 +1012,16 @@ router.post('/:id/messages', async (req, res) => {
   const parsed = SendMessageRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  }
+
+  // Naming DorkOS credits for a new session spends the DorkOS account's money,
+  // so only the person who owns this install may name it (DOR-2652). Any other
+  // account, or none, is the runtime's own business and stays open.
+  if (
+    parsed.data.account === CREDITS_ACCOUNT_ID &&
+    refuseErrorUnlessOwner(req, res, RUN_ON_CREDITS)
+  ) {
+    return;
   }
 
   // Read X-Client-Id header, or generate UUID if missing

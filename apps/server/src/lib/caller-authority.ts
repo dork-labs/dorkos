@@ -60,6 +60,7 @@ import type {
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import { isLocalRequest } from './trusted-origins.js';
@@ -304,4 +305,47 @@ export function isLocalCaller(req: Request): boolean {
 export function clearsTheAgentBar(req: Request, res: Response): boolean {
   if (requireOperatorCookieUnderLogin(res, 'this') !== undefined) return false;
   return resolveDecisionAuthority(readCallerAuthority(req, res)).allowed;
+}
+
+/**
+ * Why a caller may not act on the DorkOS account this computer is linked to:
+ * `not-a-person` for anything {@link clearsTheAgentBar} refuses, `not-the-owner`
+ * for a person signed in to some account other than the one that owns this
+ * install.
+ */
+export type AccountOwnerRefusal = 'not-a-person' | 'not-the-owner';
+
+/**
+ * Whether this caller may spend from, or change, the DorkOS account this
+ * computer is linked to: a checkout, a top-up, the billing portal, an export,
+ * a deletion, the link itself, seats, and which work runs on DorkOS credits.
+ *
+ * One credential pays for all of it — the instance key this computer holds —
+ * so whoever may reach these routes acts as the account. That is the person
+ * who owns this install and nobody else, and it takes two bars:
+ *
+ * - **The person bar, in every posture** ({@link clearsTheAgentBar}). An agent
+ *   that names itself, holds an approval token, or (with login on) presents an
+ *   API key instead of a browser session is refused.
+ * - **The owner bar, with login on.** A signed-in account that is not this
+ *   install's owner (`readOwnerAccount`, ADR 260727-184933 D6) is refused. The
+ *   registration policy allows only one account today, so this is the same
+ *   invariant `routes/profile.ts` and `routes/community-connections.ts` check
+ *   rather than assume: an invited person must never be able to buy, export or
+ *   delete with the owner's account. With login off there is no signed-in
+ *   account to compare, so the person bar alone decides, with the DOR-505
+ *   residual {@link requireOperatorCookieUnderLogin} names.
+ *
+ * @param req - The incoming request.
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ * @returns `undefined` when the caller may act, otherwise why not.
+ */
+export function refuseUnlessAccountOwner(
+  req: Request,
+  res: Response
+): AccountOwnerRefusal | undefined {
+  if (!clearsTheAgentBar(req, res)) return 'not-a-person';
+  const user = res.locals.user as RequestUser | undefined;
+  if (user === undefined) return undefined;
+  return user.userId === readOwnerAccount()?.id ? undefined : 'not-the-owner';
 }

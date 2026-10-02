@@ -149,6 +149,8 @@ export interface UseCloudLink {
   unlinking: boolean;
   /** Friendly message when `start` fails (e.g. the cloud was unreachable). */
   startError: string | null;
+  /** Why the last `unlink` changed nothing (e.g. only the install's owner may unlink). */
+  unlinkError: string | null;
 }
 
 /** Extract a friendly message from a transport error. */
@@ -172,6 +174,7 @@ export function useCloudLink(): UseCloudLink {
   const [starting, setStarting] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // True while this hook is mounted — guards state updates from awaited transport
   // calls that resolve after unmount (belt-and-suspenders alongside `stopPolling`).
@@ -289,6 +292,7 @@ export function useCloudLink(): UseCloudLink {
 
   const unlink = useCallback(async () => {
     setUnlinking(true);
+    setUnlinkError(null);
     try {
       await transport.unlinkCloud();
       stopPolling();
@@ -306,10 +310,12 @@ export function useCloudLink(): UseCloudLink {
         queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
         invalidateAccountReads(queryClient),
       ]);
-    } catch {
-      // Unlink failed (e.g. the local server call errored): the instance was not
-      // unlinked, so leave the panel in the linked view and let the user retry.
-      // Caught so a rejected transport call never becomes an unhandled rejection.
+    } catch (err) {
+      // Unlink failed (refused, or the local server call errored): the instance
+      // was not unlinked, so leave the panel in the linked view, say why, and
+      // let the user retry. Caught so a rejected transport call never becomes
+      // an unhandled rejection.
+      setUnlinkError(cloudErrorMessage(err));
     } finally {
       setUnlinking(false);
     }
@@ -352,5 +358,5 @@ export function useCloudLink(): UseCloudLink {
     return { kind: 'idle' };
   }, [flow, linkStatus, summary.data, summary.isLoading]);
 
-  return { view, start, unlink, cancel, starting, unlinking, startError };
+  return { view, start, unlink, cancel, starting, unlinking, startError, unlinkError };
 }
