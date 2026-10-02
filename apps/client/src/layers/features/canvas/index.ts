@@ -20,3 +20,9 @@
  */
 export { CanvasContent, BrowserContent } from './ui/CanvasViews';
 export { useSessionCanvas, resetSessionCanvasImport } from './model/use-session-canvas';
+
+export {
+  useDevtoolsBridge,
+  type DevtoolsBridge,
+  type UseDevtoolsBridgeParams,
+} from './model/use-devtools-bridge';

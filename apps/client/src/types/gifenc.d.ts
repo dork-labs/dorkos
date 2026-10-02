@@ -38,6 +38,8 @@ declare module 'gifenc' {
     finish(): void;
     /** The finished GIF. */
     bytes(): Uint8Array;
+    /** Current stream bytes without copying; checked in the installed gifenc source. */
+    bytesView(): Uint8Array;
   }
 
   /**

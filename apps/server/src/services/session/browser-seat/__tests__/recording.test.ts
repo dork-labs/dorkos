@@ -9,7 +9,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { WORKBENCH } from '../../../../config/constants.js';
 import { DevtoolsCaptureStore } from '../../devtools-capture-store.js';
 import type { RawSessionEvent } from '../../session-state-projector.js';
@@ -62,6 +62,13 @@ function pushed(emitted: RawSessionEvent[], index = -1) {
 /** Both handler sets over one store and one session, as the tool layer builds them. */
 function seat(store: DevtoolsCaptureStore, stopTimeoutMs = 50) {
   const { emit, emitted } = makeSink();
+  const resolveAction = store.resolveAction.bind(store);
+  store.resolveAction = (result) => {
+    const request = emitted.find(
+      (e) => (e as unknown as { requestId?: string }).requestId === result.requestId
+    ) as { documentId?: string; targetClientId?: string } | undefined;
+    resolveAction({ ...result, documentId: request?.documentId }, request?.targetClientId);
+  };
   const deps = { sessionId: 's1', store, emit };
   return {
     emitted,
@@ -450,5 +457,306 @@ describe('stopping a recording', () => {
       ok: false,
       note: 'The recording came out bigger than 8 MB, so it was not saved.',
     });
+  });
+});
+
+describe('recording request publication', () => {
+  it('refuses an unpublished start, rolls back its state and permits a later published start', async () => {
+    const store = storeWithDriver();
+    const emit = vi.fn(() => false);
+    const handlers = createRecordingHandlers({ sessionId: 's1', cwd: '/tmp/cwd', store, emit });
+    expect((await handlers.start({})).payload.ok).toBe(false);
+    expect(store.recordingFor('s1')).toBeUndefined();
+    emit.mockReturnValue(true);
+    expect((await handlers.start({})).payload.ok).toBe(true);
+    expect(store.recordingFor('s1')).toBeDefined();
+  });
+
+  it('settles an unpublished stop as a host failure and promptly clears its waiter, binding and timer', async () => {
+    vi.useFakeTimers();
+    const store = storeWithDriver();
+    const emitted: RawSessionEvent[] = [];
+    const emit = vi.fn((event: RawSessionEvent) => {
+      emitted.push(event);
+      return true;
+    });
+    const handlers = createRecordingHandlers(
+      { sessionId: 's1', cwd: '/tmp/cwd', store, emit },
+      1000
+    );
+    try {
+      await handlers.start({});
+      emit.mockReturnValue(false);
+      let answer: Awaited<ReturnType<typeof handlers.stop>> | undefined;
+      const stop = handlers.stop().then((result) => {
+        answer = result;
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      const request = pushed(emitted);
+      expect
+        .soft(answer?.payload)
+        .toMatchObject({ ok: false, evidence: { source: 'host', verified: true } });
+      expect.soft(store.pendingRecording(request.requestId)).toBeUndefined();
+      expect.soft(vi.getTimerCount()).toBe(0);
+      expect(store.recordingFor('s1')).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1000);
+      await stop;
+    } finally {
+      store.clear();
+      vi.useRealTimers();
+    }
+  });
+
+  it('publishes the exact bound host and installs its stop waiter before a synchronous reply', async () => {
+    const store = new DevtoolsCaptureStore();
+    store.ingest(
+      'bound-session',
+      {
+        documentId: 'doc',
+        seq: 0,
+        console: [],
+        network: [],
+        active: true,
+        instrumented: true,
+        bridgeGeneration: 'generation',
+      },
+      'host'
+    );
+    const emit = vi.fn((event: RawSessionEvent) => {
+      const request = pushed([event]);
+      if (
+        event.type === 'devtools_recording_request' &&
+        (request.action === 'start' || request.action === 'confirm-start')
+      ) {
+        store.ingest(
+          'bound-session',
+          {
+            hostOutcome: 'host',
+            documentId: 'doc',
+            bridgeGeneration: 'generation',
+            seq: 0,
+            console: [],
+            network: [],
+            recordingStart: {
+              requestId: request.requestId,
+              recordingId: request.recordingId!,
+              phase: request.action === 'start' ? 'reserved' : 'started',
+              ok: true,
+            },
+          },
+          'host'
+        );
+      }
+      if (event.type === 'devtools_recording_request' && request.action === 'stop') {
+        expect(store.pendingRecording(request.requestId)?.binding).toEqual({
+          clientId: 'host',
+          documentId: 'doc',
+          bridgeGeneration: 'generation',
+        });
+        store.resolveRecording(request.requestId, {
+          ok: false,
+          error: 'Controlled host failure.',
+          provenance: 'host',
+        });
+      }
+      return true;
+    });
+    const handlers = createRecordingHandlers(
+      { sessionId: 'bound-session', cwd: '/tmp/cwd', store, emit },
+      100
+    );
+    expect((await handlers.start({})).payload.ok).toBe(true);
+    expect(emit.mock.calls[0][0]).toMatchObject({
+      action: 'start',
+      targetClientId: 'host',
+      documentId: 'doc',
+      bridgeGeneration: 'generation',
+    });
+    expect((await handlers.stop()).payload).toMatchObject({
+      ok: false,
+      evidence: { source: 'host', verified: true },
+    });
+    expect(store.recordingFor('bound-session')).toBeUndefined();
+  });
+});
+
+it.each(['original', 'replacement'] as const)(
+  'failed start rolls back only its recording after reentrant buffer rekey (%s)',
+  async (mode) => {
+    const store = storeWithDriver();
+    const emit = () => {
+      if (mode === 'replacement') {
+        store.endRecording('s1');
+        store.startRecording('s1', {
+          id: 'replacement',
+          documentId: 'doc-a',
+          clientId: 'client-a',
+        });
+      }
+      store.rekeySession('s1', 'canonical');
+      return false;
+    };
+    const handlers = createRecordingHandlers({ sessionId: 's1', cwd: '/tmp/cwd', store, emit });
+    expect((await handlers.start({})).payload.ok).toBe(false);
+    expect(store.recordingFor('s1')).toBeUndefined();
+    if (mode === 'replacement') expect(store.recordingFor('canonical')?.id).toBe('replacement');
+    else expect(store.recordingFor('canonical')).toBeUndefined();
+  }
+);
+
+describe('bound recording START phases', () => {
+  function boundStore() {
+    const store = new DevtoolsCaptureStore();
+    store.ingest(
+      's1',
+      {
+        seq: 0,
+        console: [],
+        network: [],
+        documentId: 'doc-a',
+        bridgeGeneration: 'gen',
+        active: true,
+        instrumented: true,
+      },
+      'client-a'
+    );
+    return store;
+  }
+  function reply(
+    store: DevtoolsCaptureStore,
+    request: ReturnType<typeof pushed>,
+    phase: 'reserved' | 'started',
+    options: { ok?: boolean } = {}
+  ) {
+    const ok = options.ok ?? true;
+    store.ingest(
+      's1',
+      {
+        hostOutcome: 'host',
+        documentId: 'doc-a',
+        bridgeGeneration: 'gen',
+        seq: 0,
+        console: [],
+        network: [],
+        recordingStart: {
+          requestId: request.requestId,
+          recordingId: request.recordingId!,
+          phase,
+          ok,
+          ...(ok ? {} : { error: 'Controlled admission refusal.' }),
+        },
+      },
+      'client-a'
+    );
+  }
+  it('does not report successful START until a separately delivered started outcome', async () => {
+    const store = boundStore();
+    const sent: RawSessionEvent[] = [];
+    const handlers = createRecordingHandlers({
+      sessionId: 's1',
+      cwd: '/tmp/cwd',
+      store,
+      emit: (event) => {
+        sent.push(event);
+        if (pushed([event]).action === 'start') reply(store, pushed([event]), 'reserved');
+        return true;
+      },
+    });
+    let settled = false;
+    const answer = handlers.start({}).then((result) => {
+      settled = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pushed(sent).action).toBe('confirm-start');
+    expect(settled).toBe(false);
+    reply(store, pushed(sent), 'started');
+    expect((await answer).payload.ok).toBe(true);
+    store.clear();
+  });
+  it.each(['reserved', 'started'] as const)(
+    'lost %s outcome times out and rolls back only that reservation',
+    async (missing) => {
+      vi.useFakeTimers();
+      const store = boundStore();
+      try {
+        const sent: RawSessionEvent[] = [];
+        const handlers = createRecordingHandlers({
+          sessionId: 's1',
+          cwd: '/tmp/cwd',
+          store,
+          emit: (event) => {
+            sent.push(event);
+            const request = pushed([event]);
+            if (request.action === 'start' && missing !== 'reserved')
+              reply(store, request, 'reserved');
+            return true;
+          },
+        });
+        const answer = handlers.start({});
+        await vi.advanceTimersByTimeAsync(8001);
+        expect((await answer).payload.ok).toBe(false);
+        expect(pushed(sent).action).toBe('cancel-start');
+        expect(store.recordingFor('s1')).toBeUndefined();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        store.clear();
+        vi.useRealTimers();
+      }
+    }
+  );
+  it.each(['start', 'confirm-start'] as const)(
+    'failed %s publication cancels its phase waiter immediately',
+    async (fail) => {
+      vi.useFakeTimers();
+      const store = boundStore();
+      try {
+        const handlers = createRecordingHandlers({
+          sessionId: 's1',
+          cwd: '/tmp/cwd',
+          store,
+          emit: (event) => {
+            const request = pushed([event]);
+            if (request.action === fail) return false;
+            if (request.action === 'start') reply(store, request, 'reserved');
+            return true;
+          },
+        });
+        expect((await handlers.start({})).payload.ok).toBe(false);
+        expect(store.recordingFor('s1')).toBeUndefined();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        store.clear();
+        vi.useRealTimers();
+      }
+    }
+  );
+  it('refused START cannot clear a different recording installed reentrantly and rekeyed', async () => {
+    const store = boundStore();
+    const handlers = createRecordingHandlers({
+      sessionId: 's1',
+      cwd: '/tmp/cwd',
+      store,
+      emit: (event) => {
+        const request = pushed([event]);
+        if (request.action === 'start') {
+          reply(store, request, 'reserved', { ok: false });
+          store.endRecording('s1');
+          store.startRecording('s1', {
+            id: 'replacement',
+            documentId: 'doc-a',
+            clientId: 'client-a',
+            bridgeGeneration: 'gen',
+          });
+          store.rekeySession('s1', 'canonical');
+        }
+        return true;
+      },
+    });
+    expect((await handlers.start({})).payload.ok).toBe(false);
+    expect(store.recordingFor('canonical')?.id).toBe('replacement');
+    store.clear();
   });
 });

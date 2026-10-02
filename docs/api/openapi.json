@@ -4718,6 +4718,11 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "bridgeGeneration": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -4746,6 +4751,11 @@
               "seq": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "bridgeGeneration": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
               },
               "type": {
                 "type": "string",
@@ -4785,6 +4795,11 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "bridgeGeneration": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -4804,8 +4819,15 @@
                 "type": "string",
                 "enum": [
                   "start",
-                  "stop"
+                  "stop",
+                  "confirm-start",
+                  "cancel-start"
                 ]
+              },
+              "reservationTimeoutMs": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 8000
               },
               "recordingId": {
                 "type": "string"
@@ -19822,6 +19844,11 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -19850,6 +19877,11 @@
                         "seq": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
                         },
                         "type": {
                           "type": "string",
@@ -19889,6 +19921,11 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -19908,8 +19945,15 @@
                           "type": "string",
                           "enum": [
                             "start",
-                            "stop"
+                            "stop",
+                            "confirm-start",
+                            "cancel-start"
                           ]
+                        },
+                        "reservationTimeoutMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 8000
                         },
                         "recordingId": {
                           "type": "string"

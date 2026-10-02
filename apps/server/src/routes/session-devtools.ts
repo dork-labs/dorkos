@@ -3,13 +3,11 @@
  * for preview console/network captures (DOR-213), extracted from `sessions.ts` to
  * keep that route file under the size rule (mirrors `session-ui-action-handler.ts`).
  *
- * The injected in-page shim posts captures to `window.parent`, never to `/api/*`
- * (it can't: opaque origin, no credentials). The DorkOS **client** — same-origin
- * and authenticated — is the only party that reaches this route, so it passes the
- * app-wide session gate normally; the trust boundary stays exactly where DOR-216
- * put it. This route just validates the batch and appends it to the session's
- * bounded capture buffer. It is a sink (204), never a read surface — the agent
- * reads the buffer through an MCP tool, which lands in a follow-up phase.
+ * The injected shim reports to window.parent. The normal path is the app's
+ * authenticated Transport forwarding bounded, correlated page reports to HTTP.
+ * Login-off local callers can also reach the route under the existing admission
+ * policy; process identity and generation do not authenticate a page script.
+ * Browser tools read this buffer as unverified page-reported evidence.
  *
  * The same file answers `POST /api/sessions/:id/devtools/action`, the sink for
  * one driving round trip's result (spec `canvas-agent-seat` §2.1). Same posture,
@@ -114,6 +112,6 @@ export async function sessionDevtoolsActionHandler(req: Request, res: Response):
   // Keyed by `requestId` alone, never by session id — a first-turn canonical
   // rekey between the request and the answer must not strand the tool call that
   // is awaiting it. `devtools-capture-store.ts` says why at greater length.
-  devtoolsCaptureStore.resolveAction(parsed.data);
+  devtoolsCaptureStore.resolveAction(parsed.data, req.header('X-Client-Id'));
   res.status(204).end();
 }

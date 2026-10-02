@@ -22,6 +22,7 @@
  * @module routes/session-recording
  */
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import type { Request, Response } from 'express';
 import multer from 'multer';
@@ -70,7 +71,12 @@ export async function sessionDevtoolsRecordingHandler(req: Request, res: Respons
     // Memory, not disk: the server decides the filename, so letting multer name
     // a file on disk would be a second place a destination comes from.
     storage: multer.memoryStorage(),
-    limits: { fileSize: uploads.maxFileSize, files: 2 },
+    limits: {
+      fileSize: Math.min(uploads.maxFileSize, 8 * 1024 * 1024),
+      files: 2,
+      fields: 7,
+      fieldSize: 2048,
+    },
   }).fields([
     { name: RECORDING_FIELD, maxCount: 1 },
     { name: KEYFRAME_FIELD, maxCount: 1 },
@@ -111,18 +117,19 @@ async function finish(req: Request, res: Response, err: unknown): Promise<void> 
     return sendError(res, 404, 'No recording is waiting for that upload', 'RECORDING_NOT_PENDING');
   }
 
-  // The window could not produce a file and says why. Told to the waiting tool
-  // now, in a sentence, rather than left to time out into a vaguer one.
-  if (reported) {
-    devtoolsCaptureStore.resolveRecording(requestId, { ok: false, error: reported });
-    res.status(204).end();
-    return;
-  }
+  const admitted = () =>
+    devtoolsCaptureStore.admitsRecording(requestId, {
+      clientId: req.header('X-Client-Id'),
+      documentId: parsed.data.documentId,
+      bridgeGeneration: parsed.data.bridgeGeneration,
+    });
+  if (!admitted())
+    return sendError(res, 409, 'That recording page is no longer available', 'RECORDING_RETIRED');
 
   const fields = req.files as Record<string, Express.Multer.File[]> | undefined;
   const gif = fields?.[RECORDING_FIELD]?.[0];
   const keyframe = fields?.[KEYFRAME_FIELD]?.[0];
-  if (!gif || frames === undefined || durationMs === undefined) {
+  if (!reported && (!gif || frames === undefined || durationMs === undefined)) {
     return sendError(
       res,
       400,
@@ -130,34 +137,86 @@ async function finish(req: Request, res: Response, err: unknown): Promise<void> 
       'RECORDING_MISSING'
     );
   }
+  if (keyframe && keyframe.size > 675000)
+    return sendError(res, 413, 'The last frame is too large', 'RECORDING_KEYFRAME_TOO_LARGE');
 
-  const relative = path.join(RECORDINGS_DIR, `${pending.recordingId}.gif`);
+  // Includes error-only results: no competing response may consume an owner's waiter.
+  const lease = devtoolsCaptureStore.claimRecordingUpload(requestId, {
+    clientId: req.header('X-Client-Id'),
+    documentId: parsed.data.documentId,
+    bridgeGeneration: parsed.data.bridgeGeneration,
+  });
+  if (!lease)
+    return sendError(res, 409, 'That recording upload is no longer available', 'RECORDING_RETIRED');
+  const current = () => devtoolsCaptureStore.isRecordingUploadCurrent(lease);
+  let staging: string | undefined;
+  let destination: string | undefined;
+  let published = false;
+  let committed = false;
   try {
-    const { resolved } = await resolveWithinCwd(pending.cwd, relative);
+    if (reported) {
+      devtoolsCaptureStore.resolveRecordingUpload(lease, {
+        ok: false,
+        error: reported,
+        ...(parsed.data.hostOutcome ? { provenance: parsed.data.hostOutcome } : {}),
+      });
+      res.status(204).end();
+      return;
+    }
+    const relative = path.join(RECORDINGS_DIR, `${lease.pending.recordingId}.gif`);
+    const { resolved } = await resolveWithinCwd(lease.pending.cwd, relative);
+    destination = resolved;
+    if (!current())
+      return sendError(res, 409, 'That recording page is no longer available', 'RECORDING_RETIRED');
     await fs.mkdir(path.dirname(resolved), { recursive: true });
-    await fs.writeFile(resolved, gif.buffer);
-    devtoolsCaptureStore.resolveRecording(requestId, {
+    if (!current())
+      return sendError(res, 409, 'That recording page is no longer available', 'RECORDING_RETIRED');
+    staging = path.join(path.dirname(resolved), `.recording-${randomUUID()}.upload`);
+    await fs.writeFile(staging, gif!.buffer, { flag: 'wx' });
+    if (!current())
+      return sendError(res, 409, 'That recording page is no longer available', 'RECORDING_RETIRED');
+    // Only the exclusive owner may atomically publish fully written bytes to the server-owned path.
+    await fs.rename(staging, resolved);
+    published = true;
+    staging = undefined;
+    if (!current())
+      return sendError(res, 409, 'That recording page is no longer available', 'RECORDING_RETIRED');
+    committed = devtoolsCaptureStore.resolveRecordingUpload(lease, {
       ok: true,
       path: relative,
-      bytes: gif.buffer.byteLength,
-      frames,
-      durationMs,
-      // Sniffed, never trusted: the part crossed an untrusted page, and a
-      // malformed image block fails the agent's whole turn rather than merely
-      // showing it the wrong picture.
+      bytes: gif!.buffer.byteLength,
+      frames: frames!,
+      durationMs: durationMs!,
       keyframe: pngKeyframe(keyframe),
     });
+    if (!committed)
+      return sendError(res, 409, 'That recording page is no longer available', 'RECORDING_RETIRED');
     res.status(204).end();
   } catch (writeErr) {
-    // The tool is holding a thirty-second wait. Telling it now, in a sentence,
-    // beats letting it time out and blame the window.
-    devtoolsCaptureStore.resolveRecording(requestId, {
+    devtoolsCaptureStore.resolveRecordingUpload(lease, {
       ok: false,
       error: 'The recording could not be saved to this session working directory.',
+      provenance: 'host',
     });
     if (sendPathError(res, writeErr)) return;
     logger.error('[session-recording] could not save a recording', { err: writeErr });
     return sendError(res, 500, 'Could not save the recording', 'RECORDING_WRITE_FAILED');
+  } finally {
+    // Only this owner's random stage and successfully renamed destination are ours to remove.
+    try {
+      if (staging)
+        await fs.unlink(staging).catch((cleanupErr: NodeJS.ErrnoException) => {
+          if (cleanupErr.code !== 'ENOENT')
+            logger.error('[session-recording] stage cleanup failed', { err: cleanupErr });
+        });
+      if (published && !committed && destination)
+        await fs.unlink(destination).catch((cleanupErr: NodeJS.ErrnoException) => {
+          if (cleanupErr.code !== 'ENOENT')
+            logger.error('[session-recording] publication cleanup failed', { err: cleanupErr });
+        });
+    } finally {
+      devtoolsCaptureStore.releaseRecordingUpload(lease);
+    }
   }
 }
 

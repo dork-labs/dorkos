@@ -536,6 +536,9 @@ export type DevtoolsRecordingPayload =
   | {
       /** The round trip id the stop request carried. */
       requestId: string;
+      bridgeGeneration?: string;
+      hostOutcome?: 'host' | 'page-reported';
+      documentId?: string;
       /** How many frames the encoded recording holds. */
       frames: number;
       /** How long the recording covers, in milliseconds. */
@@ -549,6 +552,9 @@ export type DevtoolsRecordingPayload =
   | {
       /** The round trip id the stop request carried. */
       requestId: string;
+      bridgeGeneration?: string;
+      hostOutcome?: 'host' | 'page-reported';
+      documentId?: string;
       /** Why there is no file, in one sentence the agent can act on. */
       error: string;
     };
@@ -1288,7 +1294,11 @@ export interface Transport
    * @param upload - The round trip id, the frame count, the length, and the two
    *   files.
    */
-  uploadDevtoolsRecording(sessionId: string, upload: DevtoolsRecordingPayload): Promise<void>;
+  uploadDevtoolsRecording(
+    sessionId: string,
+    upload: DevtoolsRecordingPayload,
+    options?: { signal?: AbortSignal }
+  ): Promise<void>;
 
   // --- Workbench file service (explorer + viewers; DOR-217) ---
 

@@ -2,7 +2,7 @@
 import { test, expect } from '../../fixtures';
 import express from 'express';
 import type { Server } from 'node:http';
-import { mkdtemp, realpath, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -249,4 +249,74 @@ test('an untrusted embedding origin is refused @smoke', async ({ page }) => {
   } finally {
     await close(untrusted);
   }
+});
+
+test('an already-open legacy host receives telemetry, action and capture from the new shim @smoke', async ({
+  page,
+}) => {
+  const lib = await readFile(
+    path.resolve(process.cwd(), '../client/node_modules/html-to-image/dist/html-to-image.js'),
+    'utf8'
+  );
+  await page.goto(`${origin}/isolation-host`);
+  await page.evaluate((url) => {
+    (window as unknown as { reports: unknown[] }).reports = [];
+    window.addEventListener('message', (event) => {
+      (window as unknown as { reports: unknown[] }).reports.push(event.data);
+      if (event.data?.__dorkosDevtools === 'hello')
+        (event.source as Window).postMessage({ __dorkosDevtools: 'ack' }, '*');
+    });
+    const frame = document.createElement('iframe');
+    frame.sandbox.add('allow-scripts', 'allow-forms');
+    frame.src = url;
+    document.body.append(frame);
+  }, servedUrl);
+  await expect
+    .poll(() =>
+      page.evaluate(() => JSON.stringify((window as unknown as { reports: unknown[] }).reports))
+    )
+    .toContain('isolation-shim-control');
+  await page.evaluate((lib) => {
+    const child = document.querySelector('iframe')!.contentWindow!;
+    child.postMessage(
+      {
+        __dorkosDevtools: 'act-request',
+        requestId: 'legacy-action',
+        command: { action: 'read_page', maxChars: 4000 },
+      },
+      '*'
+    );
+    child.postMessage(
+      { __dorkosDevtools: 'capture-request', requestId: 'legacy-capture', lib },
+      '*'
+    );
+  }, lib);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const reports = (
+            window as unknown as {
+              reports: {
+                requestId?: string;
+                ok?: boolean;
+                outline?: string;
+                dataUrl?: string;
+                bridgeGeneration?: string;
+              }[];
+            }
+          ).reports;
+          const action = reports.find((r) => r.requestId === 'legacy-action');
+          const capture = reports.find((r) => r.requestId === 'legacy-capture');
+          return {
+            action: action?.ok,
+            outline: action?.outline?.includes('Served document'),
+            capture: capture?.dataUrl?.startsWith('data:image/png;base64,'),
+            legacy:
+              action?.bridgeGeneration === undefined && capture?.bridgeGeneration === undefined,
+          };
+        }),
+      { timeout: 15000 }
+    )
+    .toEqual({ action: true, outline: true, capture: true, legacy: true });
 });

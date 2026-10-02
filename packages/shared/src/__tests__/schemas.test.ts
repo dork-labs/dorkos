@@ -501,3 +501,33 @@ describe('UiActionRequestSchema — prompt-bound field caps', () => {
     expect(UiActionRequestSchema.safeParse({ actionId: 'ok' }).success).toBe(true);
   });
 });
+
+describe('host recording admission schema', () => {
+  it('bounds and distinguishes reserved/started outcomes without a page-message tag', async () => {
+    const { DevtoolsIngestSchema } = await import('../schemas.js');
+    const envelope = {
+      hostOutcome: 'host',
+      documentId: 'doc',
+      bridgeGeneration: 'gen',
+      seq: 0,
+      console: [],
+      network: [],
+      recordingStart: { requestId: 'request', recordingId: 'film', phase: 'reserved', ok: true },
+    };
+    expect(DevtoolsIngestSchema.safeParse(envelope).success).toBe(true);
+    for (const patch of [
+      { phase: 'unknown' },
+      { requestId: '' },
+      { recordingId: 'x'.repeat(129) },
+      { error: 'x'.repeat(2049) },
+      { __dorkosDevtools: 'recordingStart' },
+    ]) {
+      expect(
+        DevtoolsIngestSchema.safeParse({
+          ...envelope,
+          recordingStart: { ...envelope.recordingStart, ...patch },
+        }).success
+      ).toBe(false);
+    }
+  });
+});

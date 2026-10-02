@@ -735,3 +735,31 @@ describe('questionOutcomeOf', () => {
     }
   }
 });
+
+it('preserves bounded relative recording reservations and both confirmation controls on the wire', () => {
+  const event = {
+    seq: 1,
+    type: 'devtools_recording_request',
+    requestId: 'request',
+    targetClientId: 'host',
+    documentId: 'doc',
+    bridgeGeneration: 'gen',
+    recordingId: 'film',
+    action: 'start',
+    reservationTimeoutMs: 8000,
+    bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8 * 1024 * 1024 },
+  };
+  for (const action of ['start', 'stop', 'confirm-start', 'cancel-start']) {
+    expect(SessionEventSchema.parse({ ...event, action })).toEqual({ ...event, action });
+  }
+  expect(SessionEventSchema.safeParse({ ...event, reservationTimeoutMs: 8001 }).success).toBe(
+    false
+  );
+  expect(SessionEventSchema.safeParse({ ...event, reservationTimeoutMs: -1 }).success).toBe(false);
+  const {
+    reservationTimeoutMs: _legacyAbsent,
+    bridgeGeneration: _legacyGeneration,
+    ...legacy
+  } = event;
+  expect(SessionEventSchema.parse(legacy)).toEqual(legacy);
+});
