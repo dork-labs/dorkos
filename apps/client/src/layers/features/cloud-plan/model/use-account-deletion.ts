@@ -127,8 +127,14 @@ function useWatchForDeletion(armed: boolean): void {
     const check = async () => {
       if (done || checking) return;
       checking = true;
-      const summary = await checkLink({ expected: true });
-      checking = false;
+      let summary: Awaited<ReturnType<typeof checkLink>> = null;
+      try {
+        summary = await checkLink({ expected: true });
+      } catch {
+        // A refresh after the check failed; the next focus or minute asks again.
+      } finally {
+        checking = false;
+      }
       if (done || summary === null || summary.linked) return;
       done = true;
       stop();

@@ -5,6 +5,7 @@ covers:
   - 'fix(cloud-plan): keep account deletion person-only and honest about the link (DOR-2651)'
   - 'chore(changelog): fold the review fix into the one DOR-2651 fragment'
   - 'fix(cloud-plan): return focus on cancel and show the person-only refusal (DOR-2651)'
+  - 'fix(cloud-plan): keep the deletion watch alive when a refresh after a check fails (DOR-2651)'
 ---
 
 ### Added

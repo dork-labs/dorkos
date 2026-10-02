@@ -341,6 +341,32 @@ describe('deleting the DorkOS account', () => {
       expect(mockToastSuccess).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps watching when refreshing the account reads fails after a check', async () => {
+      const transport = linkedTransport();
+      vi.mocked(transport.requestCloudAccountDeletion).mockResolvedValue(SENT());
+      const cache = renderDelete(transport);
+      await confirmAndSend(await openDialog());
+      await screen.findByRole('status');
+
+      vi.mocked(transport.checkCloudLink).mockResolvedValue(UNLINKED);
+      const invalidate = vi
+        .spyOn(cache, 'invalidateQueries')
+        .mockRejectedValueOnce(new Error('refetch failed'));
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await waitFor(() => expect(invalidate).toHaveBeenCalled());
+      const checks = vi.mocked(transport.checkCloudLink).mock.calls.length;
+      expect(mockToastSuccess).not.toHaveBeenCalled();
+
+      // The watch is still live: the next return to the window asks again.
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await waitFor(() => expect(transport.checkCloudLink).toHaveBeenCalledTimes(checks + 1));
+      await waitFor(() => expect(mockToastSuccess).toHaveBeenCalledTimes(1));
+    });
+
     it('also checks on its own, once a minute, while the link is out', async () => {
       // Real time still passes, so the clicks below run; the minute is skipped.
       vi.useFakeTimers({ shouldAdvanceTime: true });
