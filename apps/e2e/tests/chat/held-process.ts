@@ -155,7 +155,7 @@ export function registerHeldProcessTests(deps: HeldProcessDeps): void {
    * The composer, by either of the two names it wears.
    *
    * `ChatPage.input` matches only the idle one: while a turn is running the
-   * field renames itself "Compose next — will send when ready", and every case
+   * field renames itself "Compose next. It sends when ready", and every case
    * here types into a RUNNING turn, which is the whole point of a steer and of
    * Add context. Using the page object's locator mid-turn times out on a
    * composer that is plainly on screen — worth knowing before writing the next

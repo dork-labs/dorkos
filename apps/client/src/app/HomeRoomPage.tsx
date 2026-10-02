@@ -169,7 +169,7 @@ function HomeRoomBody() {
           </Button>
         }
       >
-        Something went wrong reading your conversations. The room is still there.
+        Its messages are safe.
       </HomeNotice>
     );
   }
@@ -177,8 +177,7 @@ function HomeRoomBody() {
   if (team.status === 'missing') {
     return (
       <HomeNotice title="Your team room isn’t open yet">
-        DorkOS opens #team when the server starts. If this stays here, restart the server and it
-        will be waiting for you.
+        DorkOS opens it at startup. Still missing? Restart DorkOS.
       </HomeNotice>
     );
   }
@@ -200,7 +199,7 @@ function HomeRoomBody() {
           </Button>
         }
       >
-        You put this room away, so Home has nothing to show. Everything said in it is still there.
+        Its messages are safe.
       </HomeNotice>
     );
   }

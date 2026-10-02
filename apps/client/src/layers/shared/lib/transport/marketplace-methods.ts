@@ -127,9 +127,7 @@ export function createMarketplaceMethods(baseUrl: string) {
       // card. The app is the person, so it should never get one; if it does,
       // say so rather than hand back a result with nothing in it.
       if (!('checks' in result)) {
-        throw new Error(
-          'DorkOS is waiting for someone to approve these updates, so nothing was changed.'
-        );
+        throw new Error('These updates wait for approval. Nothing changed.');
       }
       return result;
     },

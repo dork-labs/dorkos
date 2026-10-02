@@ -67,12 +67,12 @@ export function useRemoteAccessAnnouncer(): void {
       // including a permanent one, where nothing was retrying anything.
       toast.warning('Remote access is reconnecting', {
         id: 'tunnel-status',
-        description: 'Your other devices may not reach DorkOS until it is back.',
+        description: 'Your other devices can’t reach DorkOS until then.',
       });
     } else if (reportedStatus === 'off') {
       toast.error('Remote access turned off', {
         id: 'tunnel-status',
-        description: 'Your other devices can no longer reach DorkOS. Turn it back on to restore.',
+        description: 'Your other devices can’t reach DorkOS now.',
       });
     } else if (reportedUrl) {
       toast.success('Remote access is on', { id: 'tunnel-status', description: reportedUrl });

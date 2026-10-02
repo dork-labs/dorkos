@@ -93,9 +93,9 @@ export function ComposerToolbar({
   const pickLabel = isMobile ? 'Add a photo' : 'Add an image';
   const pickTip = isMobile
     ? 'Add a photo from your library.'
-    : 'Add an image from your files. You can also paste or drop one anywhere on this form.';
+    : 'Add an image from your files, or paste or drop one here.';
   const captureTip = 'Take a picture of this app. Never the rest of your screen.';
-  const pointTip = 'Click the part that looks wrong. We’ll crop the picture to it.';
+  const pointTip = 'Click the part that looks wrong. DorkOS crops the picture to it.';
 
   return (
     <div className="flex flex-wrap items-center gap-1 border-t px-1.5 py-1.5">

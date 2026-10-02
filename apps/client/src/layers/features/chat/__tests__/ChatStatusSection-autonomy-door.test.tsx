@@ -452,7 +452,7 @@ describe('a middle stop that never asks (DOR-816)', () => {
     expect(description?.textContent).toMatch(/anytime\.\sThis stop never pauses/);
     // And the correction the strongest sentence has to arrive with (DOR-816):
     // this mode covers tools in the session, not DorkOS's own approvals.
-    expect(dialog).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
+    expect(dialog).toHaveTextContent(/DorkOS still asks before deleting a schedule/);
     // Nothing is written until they answer.
     expect(updateSession).not.toHaveBeenCalled();
   });

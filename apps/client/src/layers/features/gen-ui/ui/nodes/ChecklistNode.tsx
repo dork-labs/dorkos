@@ -66,7 +66,7 @@ export function ChecklistNode({ node }: { node: ChecklistNodeData }) {
         })}
       </ul>
       {submitAction && (
-        <WidgetActionButton action={submitAction} label={node.submitLabel ?? 'Confirm'} fullWidth />
+        <WidgetActionButton action={submitAction} label={node.submitLabel ?? 'Send'} fullWidth />
       )}
     </div>
   );

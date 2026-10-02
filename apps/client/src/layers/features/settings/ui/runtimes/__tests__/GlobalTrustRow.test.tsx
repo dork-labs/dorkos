@@ -40,9 +40,9 @@ describe('GlobalTrustRow — what the stop does not cover (DOR-2102)', () => {
   it('carries the note when the shared setting is Full autonomy', () => {
     renderRow({ stop: 'autonomy', effectiveStop: 'autonomy' });
     expect(scopeNote()).toBeInTheDocument();
-    expect(scopeNote()).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
+    expect(scopeNote()).toHaveTextContent(/DorkOS still asks before deleting a schedule/);
     expect(scopeNote()).toHaveTextContent(
-      /choose Always allow on its card, or change it in Settings under Permissions/
+      /choose Always allow on its card, or in Settings under Permissions/
     );
   });
 

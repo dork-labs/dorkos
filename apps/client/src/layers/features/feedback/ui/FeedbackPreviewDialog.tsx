@@ -160,15 +160,20 @@ function DiagnosticsPreview({
       </div>
 
       {kind === 'bug' && (
-        <p className="text-muted-foreground text-xs">
+        <div className="text-muted-foreground space-y-1 text-xs">
           {/* In the desktop app a second log rides along: the app's own, which
               the server cannot read (DOR-2045). Named here because the preview
               promises what will be sent, and an unmentioned attachment is a
               broken promise. */}
-          {isDesktopShell()
-            ? 'Scrubbed excerpts of the recent server log and of the app’s own log are added when you send. Home paths shown as ~, tokens removed, web addresses cut back to the page.'
-            : 'A scrubbed excerpt of recent server logs is added when you send. Home paths shown as ~, tokens removed, web addresses cut back to the page.'}
-        </p>
+          <p>
+            {isDesktopShell()
+              ? 'Recent server and app log excerpts are added when you send.'
+              : 'An excerpt of recent server logs is added when you send.'}
+          </p>
+          <p>
+            Scrubbed first: home paths shown as ~, tokens removed, web addresses cut to the page.
+          </p>
+        </div>
       )}
     </div>
   );
@@ -201,10 +206,10 @@ function ConversationPreview({
   }
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-muted-foreground text-xs">
-        The last ~10 turns of this conversation, gathered and scrubbed when you send. Home paths
-        shown as ~, tokens removed, long tool output trimmed.
-      </p>
+      <div className="text-muted-foreground space-y-1 text-xs">
+        <p>The last ~10 turns, gathered and scrubbed when you send.</p>
+        <p>Home paths shown as ~, tokens removed, long tool output trimmed.</p>
+      </div>
       <pre className="text-foreground bg-muted/40 rounded-md p-3 font-mono text-xs break-words whitespace-pre-wrap">
         {text}
       </pre>
@@ -217,8 +222,7 @@ function ScreenshotPreview({ dataUrl }: { dataUrl: string }) {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-muted-foreground text-xs">
-        This is the picture that goes with your report, exactly as we will send it. It is shrunk to
-        keep the message small.
+        Sent exactly as shown, shrunk to keep the message small.
       </p>
       <img
         src={dataUrl}
@@ -266,7 +270,7 @@ export function FeedbackPreviewDialog({
             What will be sent
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="text-muted-foreground text-xs">
-            Everything below rides along only if the matching toggle is on.
+            Each part is sent only if its toggle is on.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 

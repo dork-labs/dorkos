@@ -250,7 +250,7 @@ function BellStatesShowcase() {
           tone="waiting"
           glyph="waiting"
           text="can't check approvals"
-          label="DorkOS could not check for approvals. Open for details."
+          label="DorkOS couldn’t check approvals. Open for details."
         />
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -457,7 +457,7 @@ function DecisionRowShowcase() {
                 { id: 'remove', label: 'Remove it' },
               ],
               defaultChoiceId: 'keep',
-              deadlineLine: 'If you don’t answer by 5pm, the agent picks “Keep it”.',
+              deadlineLine: 'If you don’t answer by 5pm, your agent picks “Keep it”.',
               allowReply: true,
               onChoose: () => {},
               onReply: () => {},

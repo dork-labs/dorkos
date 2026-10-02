@@ -140,9 +140,7 @@ export function RemoteAccessPanel({ onClose }: RemoteAccessPanelProps) {
       )}
 
       {url === null && (
-        <p className="text-muted-foreground text-xs">
-          Opening a secure tunnel. Your link appears here as soon as it is ready.
-        </p>
+        <p className="text-muted-foreground text-xs">Your link appears here when it’s ready.</p>
       )}
 
       {blocks}

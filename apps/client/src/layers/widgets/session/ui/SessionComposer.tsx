@@ -140,10 +140,10 @@ function getPlaceholder(
   defaultText: string
 ): string {
   if (editingIndex !== null) {
-    return `Edit queued message ${editingIndex + 1} of ${queueLength} \u2014 press Enter to save`;
+    return `Edit queued message ${editingIndex + 1} of ${queueLength}. Press Enter to save`;
   }
-  if (isStreaming && queueLength > 0) return `Compose another \u2014 ${queueLength} queued`;
-  if (isStreaming) return 'Compose next \u2014 will send when ready';
+  if (isStreaming && queueLength > 0) return `Compose another (${queueLength} queued)`;
+  if (isStreaming) return 'Compose next. It sends when ready';
   return defaultText;
 }
 
@@ -708,8 +708,8 @@ export function SessionComposer({
           ? {
               canSubmit: false,
               canSubmitReason: agentLookupError
-                ? 'Try checking this directory again before starting the session.'
-                : 'Checking this directory before starting the session…',
+                ? 'Check this folder again before you start.'
+                : 'Checking this folder…',
             }
           : {}),
         ...(limitComposer.canSubmit ? {} : { canSubmit: false }),

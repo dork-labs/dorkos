@@ -406,7 +406,7 @@ describe('TeamPage — the empty and degraded states', () => {
     });
 
     expect(
-      await screen.findByText('Couldn’t read your agents. Showing who we could.')
+      await screen.findByText('Couldn’t read all your agents. Showing the rest.')
     ).toBeInTheDocument();
     expect(cardNames()).toEqual(['Dorian', 'Miguel Ferreira-Santos']);
   });
@@ -418,7 +418,7 @@ describe('TeamPage — the empty and degraded states', () => {
     });
 
     expect(
-      await screen.findByText('Couldn’t read the people on this install. Showing who we could.')
+      await screen.findByText('Couldn’t read everyone on this install. Showing the rest.')
     ).toBeInTheDocument();
     expect(screen.queryByText('Bring in existing projects')).toBeNull();
     // "Nothing matched your filter" would be a lie: no filter is on.

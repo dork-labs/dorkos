@@ -160,7 +160,7 @@ export function ActivityTimeline({
       {groups.map((group) => (
         <section key={group.label}>
           <ActivityGroupHeader
-            label={group.label as 'Today' | 'Yesterday' | 'This Week' | 'Earlier'}
+            label={group.label as 'Today' | 'Yesterday' | 'This week' | 'Earlier'}
           />
           <motion.div variants={groupFade} initial="initial" animate="animate">
             <Table>

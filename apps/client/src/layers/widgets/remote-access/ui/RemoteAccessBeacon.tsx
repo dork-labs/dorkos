@@ -36,8 +36,8 @@ function announcementFor(state: string, host: string | null): string {
  * or a code, so it must not claim to.
  */
 function beaconLabel(state: string, host: string | null): string {
-  const offer = state === 'starting' ? 'open remote access' : 'show link and QR';
-  return `${announcementFor(state, host)} — ${offer}`;
+  const offer = state === 'starting' ? 'Open remote access' : 'Show link and QR code';
+  return `${announcementFor(state, host)}. ${offer}`;
 }
 
 /**

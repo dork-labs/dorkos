@@ -32,8 +32,7 @@ export function UnverifiedCatalogNotice({ id }: { id?: string }) {
       className="text-muted-foreground border-border text-2xs rounded-lg border border-dashed p-2 leading-snug"
       data-testid="model-catalog-unverified"
     >
-      This is a short list of models nobody has confirmed you can run. Connect a provider to see the
-      ones you actually have.
+      A partial list DorkOS can’t confirm. Connect a provider to see yours.
     </p>
   );
 }

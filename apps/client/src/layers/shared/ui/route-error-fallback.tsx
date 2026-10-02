@@ -48,7 +48,7 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
   }
 
   function stackCopyLabel(): string {
-    if (copied) return 'Copied!';
+    if (copied) return 'Copied';
     if (failed) return 'Couldn’t copy';
     return 'Copy';
   }

@@ -123,7 +123,7 @@ describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
 
     await expect(
       createMarketplaceMethods('/api').applyMarketplaceUpdates({ targets: [TARGET] })
-    ).rejects.toThrow(/waiting for someone to approve/);
+    ).rejects.toThrow(/These updates wait for approval/);
   });
 
   it('rejects with the server error rather than resolving a half-result', async () => {

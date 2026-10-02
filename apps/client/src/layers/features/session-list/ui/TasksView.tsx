@@ -255,7 +255,7 @@ export function TasksView({ available, agentId }: TasksViewProps) {
           onClick={openTasks}
           className="text-muted-foreground hover:text-foreground text-xs transition-colors"
         >
-          Open Schedules →
+          Open schedules →
         </button>
       </div>
     );
@@ -304,7 +304,7 @@ export function TasksView({ available, agentId }: TasksViewProps) {
         {recentRuns.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
-              Recent Runs
+              Recent runs
             </SidebarGroupLabel>
             <SidebarMenu>
               {recentRuns.map((run) => (
@@ -323,7 +323,7 @@ export function TasksView({ available, agentId }: TasksViewProps) {
             onClick={openTasks}
             className="text-muted-foreground hover:text-foreground text-xs transition-colors"
           >
-            Open Schedules →
+            Open schedules →
           </button>
         </div>
       </div>

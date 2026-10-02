@@ -12,7 +12,7 @@
 /** Map common ngrok errors to actionable messages. */
 export function friendlyErrorMessage(raw: string): string {
   if (/auth|token|ERR_NGROK_105/i.test(raw)) {
-    return 'Check your auth token at dashboard.ngrok.com';
+    return 'Couldn’t sign in to ngrok. Check your token at dashboard.ngrok.com.';
   }
   // Three spellings, because the pattern used to be `/timeout|ETIMEDOUT/i` and
   // the message the dialog sees MOST often says "timed out" — two words. The
@@ -25,19 +25,19 @@ export function friendlyErrorMessage(raw: string): string {
   // often than it was right. "Took too long" is true of that and of ngrok's own
   // ETIMEDOUT, without guessing which happened.
   if (/timeout|timed out|ETIMEDOUT/i.test(raw)) {
-    return 'The tunnel took too long to respond. Try again.';
+    return 'Remote access took too long to start. Try again.';
   }
   if (/limit|ERR_NGROK_108/i.test(raw)) {
-    return 'Tunnel limit reached. Free ngrok accounts allow one active tunnel.';
+    return 'Free ngrok accounts allow one link at a time. Close the other one.';
   }
   if (/DNS|NXDOMAIN|ERR_NGROK_332/i.test(raw)) {
-    return 'DNS resolution failed. Check your domain configuration.';
+    return 'Couldn’t find your domain. Check its settings in ngrok.';
   }
   if (/gateway|502|ERR_NGROK_3200/i.test(raw)) {
-    return 'Gateway error. The tunnel endpoint is unreachable.';
+    return 'ngrok couldn’t reach this computer. Try again.';
   }
   if (/upgrade|ERR_NGROK_120/i.test(raw)) {
-    return 'Feature requires a paid ngrok plan.';
+    return 'This needs a paid ngrok plan.';
   }
   if (/ECONNREFUSED/i.test(raw)) {
     return 'Couldn’t reach your DorkOS server. Make sure it’s running.';

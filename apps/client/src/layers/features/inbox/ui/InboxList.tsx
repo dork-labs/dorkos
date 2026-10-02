@@ -154,7 +154,7 @@ export function InboxList({
   if (isError && notifications.length === 0) {
     return (
       <p className="text-muted-foreground px-2 py-1 text-xs">
-        DorkOS could not read your notifications.
+        Couldn’t load your notifications. Try again soon.
       </p>
     );
   }

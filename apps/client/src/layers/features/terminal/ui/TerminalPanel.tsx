@@ -108,7 +108,7 @@ export function TerminalPanel() {
   if (!cwd) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-sm">
-        Select a working directory to open a terminal.
+        Pick a folder to open a terminal.
       </div>
     );
   }

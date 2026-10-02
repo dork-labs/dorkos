@@ -77,7 +77,7 @@ export function ProvenanceChip({
   // — and this chip's whole claim is that clicking it is the undo, which is not
   // legible while the thing you clicked is still hidden behind the menu.
   const [open, setOpen] = useState(false);
-  const label = isSetHere ? 'set here' : `server default · ${serverDefault ?? 'none'}`;
+  const label = isSetHere ? 'Set here' : `Server default · ${serverDefault ?? 'none'}`;
   const interactive = isSetHere && !!onUseServerDefault;
 
   const chip = (
@@ -136,10 +136,10 @@ export function ProvenanceChip({
         >
           Use server default
           {serverDefault ? (
-            <span className="text-muted-foreground block text-xs">currently {serverDefault}</span>
+            <span className="text-muted-foreground block text-xs">Currently {serverDefault}</span>
           ) : (
             <span className="text-muted-foreground block text-xs">
-              the runtime picks, nothing is set
+              Not set. Uses the built-in default.
             </span>
           )}
         </button>

@@ -156,7 +156,7 @@ async function dismissOnboarding(): Promise<void> {
  * moment (`TelemetryConsentMoment`, on the moments rail) never renders over a
  * capture — it opens as a modal on a launch where `telemetry.userHasDecided` is
  * still unset, which would otherwise sit in the middle of a frame. Declining
- * ("No thanks") is the honest choice for a staged demo instance: a real,
+ * ("Don’t share") is the honest choice for a staged demo instance: a real,
  * privacy-respecting decision, not telemetry actually left on.
  */
 async function declineTelemetry(): Promise<void> {

@@ -40,7 +40,9 @@ export class PanelErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <div className="flex h-full items-center justify-center p-4">
-          <p className="text-muted-foreground text-sm">Something went wrong in this panel.</p>
+          <p className="text-muted-foreground text-sm">
+            This panel stopped working. Switch tabs to try again.
+          </p>
         </div>
       );
     }

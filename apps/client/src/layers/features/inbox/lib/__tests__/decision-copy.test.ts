@@ -12,7 +12,7 @@ const at = (h: number, m = 0, day = 29) => new Date(2026, 8, day, h, m).toISOStr
 describe('deadlineLine', () => {
   it('names the time and the agent’s pick', () => {
     const line = deadlineLine(at(17), 'Keep it', NOW);
-    expect(line).toMatch(/^If you don’t answer by .+, the agent picks “Keep it”\.$/);
+    expect(line).toMatch(/^If you don’t answer by .+, your agent picks “Keep it”\.$/);
     expect(line).not.toMatch(/Tue|Wed/);
   });
 
@@ -22,7 +22,7 @@ describe('deadlineLine', () => {
 
   it('never names a deadline in the past', () => {
     expect(deadlineLine(at(8), 'Keep it', NOW)).toBe(
-      'The agent picks “Keep it” any moment now, unless you answer.'
+      'Your agent picks “Keep it” soon, unless you answer.'
     );
   });
 

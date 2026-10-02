@@ -191,7 +191,7 @@ describe('InboxDecisionRow, phase 2 answers (spec flow-multiproject §7.5)', () 
           { id: 'remove', label: 'Remove it' },
         ],
         defaultChoiceId: 'keep',
-        deadlineLine: 'If you don’t answer by 5pm, the agent picks “Keep it”.',
+        deadlineLine: 'If you don’t answer by 5pm, your agent picks “Keep it”.',
         allowReply: true,
         onChoose,
         onReply,
@@ -199,7 +199,7 @@ describe('InboxDecisionRow, phase 2 answers (spec flow-multiproject §7.5)', () 
     });
     expect(screen.getByRole('button', { name: /Keep it.*agent’s pick/ })).toBeInTheDocument();
     expect(
-      screen.getByText('If you don’t answer by 5pm, the agent picks “Keep it”.')
+      screen.getByText('If you don’t answer by 5pm, your agent picks “Keep it”.')
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Remove it' }));
     expect(onChoose).toHaveBeenCalledWith('remove');
@@ -224,7 +224,7 @@ describe('InboxDecisionRow, phase 2 answers (spec flow-multiproject §7.5)', () 
     );
     expect(screen.getByText('Shipped. Next time, ship on its own?')).toBeInTheDocument();
     expect(screen.getByText(/Sorting 12 ideas…/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    await user.click(screen.getByRole('button', { name: 'Allow next time' }));
     expect(onAccept).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: 'No thanks' }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
@@ -253,7 +253,7 @@ describe('InboxDecisionRow, answers that must go through (client review 3, 6)', 
     await user.click(screen.getByLabelText('Needs changes'));
     await user.type(screen.getByLabelText('What needs to change?'), 'Use the calmer red.');
     await user.click(screen.getByRole('button', { name: 'Send' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/didn’t go through/);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t send. Try again.');
     expect(screen.getByLabelText('What needs to change?')).toHaveValue('Use the calmer red.');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     expect(onSubmit).toHaveBeenCalledTimes(2);

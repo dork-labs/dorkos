@@ -40,10 +40,10 @@ describe('consentActionLabel', () => {
 describe('consentAsksNote', () => {
   it('says the thing the middle stop’s name hides', () => {
     expect(consentAsksNote(descriptor({ stop: 'act', asks: 'never', reach: 'workspace' }))).toBe(
-      'This stop never pauses to ask. Whatever it decides to do, it does.'
+      'This stop never pauses to ask. It acts without checking with you.'
     );
     expect(consentAsksNote(descriptor({ stop: 'act', asks: 'never', reach: 'edit' }))).toBe(
-      'This stop never pauses to ask. Whatever it decides to do, it does.'
+      'This stop never pauses to ask. It acts without checking with you.'
     );
   });
 

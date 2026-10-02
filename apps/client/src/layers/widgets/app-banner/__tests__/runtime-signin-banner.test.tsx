@@ -241,7 +241,7 @@ describe('runtime-signin descriptor', () => {
 
     render(descriptor.render());
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Your Claude Code sign-in stopped working. Agents and scheduled tasks stay stuck until you sign in again.'
+      'Your Claude Code sign-in stopped working. Agents and tasks wait until you sign in again.'
     );
   });
 

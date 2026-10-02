@@ -83,13 +83,13 @@ function str(value: unknown): string {
 }
 
 function basename(filePath: string): string {
-  if (!filePath) return '...';
+  if (!filePath) return '…';
   const parts = filePath.split('/');
-  return parts[parts.length - 1] || '...';
+  return parts[parts.length - 1] || '…';
 }
 
 function hostname(url: string): string {
-  if (!url) return '...';
+  if (!url) return '…';
   try {
     return new URL(url).hostname;
   } catch {
@@ -98,12 +98,12 @@ function hostname(url: string): string {
 }
 
 function truncate(text: string, max: number): string {
-  if (!text) return '...';
+  if (!text) return '…';
   return text.length > max ? text.slice(0, max) + '…' : text;
 }
 
 function quote(text: string): string {
-  if (!text || text === '...') return '"…"';
+  if (!text || text === '…') return '"…"';
   return `"${text}"`;
 }
 
@@ -134,7 +134,7 @@ export function getToolLabel(toolName: string, input: string): string {
     case 'Edit':
       return `Edit ${basename(str(parsed.file_path))}`;
     case 'Glob':
-      return `Find ${str(parsed.pattern) || '...'}`;
+      return `Find ${str(parsed.pattern) || '…'}`;
     case 'Grep':
       return `Search ${quote(truncate(str(parsed.pattern), 30))}`;
     case 'Task':
@@ -149,7 +149,7 @@ export function getToolLabel(toolName: string, input: string): string {
     case 'TaskList':
       return 'List tasks';
     case 'Skill':
-      return `Skill ${str(parsed.skill) || '...'}`;
+      return `Skill ${str(parsed.skill) || '…'}`;
     case 'WebSearch':
       return `Search ${quote(truncate(str(parsed.query), 35))}`;
     case 'WebFetch':

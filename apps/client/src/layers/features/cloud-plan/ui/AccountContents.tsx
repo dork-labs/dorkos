@@ -33,12 +33,11 @@ export function AccountContents() {
         </p>
         {empty ? (
           <p className="text-muted-foreground text-sm">
-            Nothing yet. Runtimes on your credits, apps you connect through this account and spaces
-            that run on it will show up here.
+            Nothing uses this account yet. Agents on credits, connected apps and spaces show here.
           </p>
         ) : (
           <dl className="space-y-3 text-sm">
-            {runtimes.length > 0 && <Contents label="Runtimes on credits" items={runtimes} />}
+            {runtimes.length > 0 && <Contents label="Running on credits" items={runtimes} />}
             {apps.length > 0 && (
               <Contents label="Connected apps" items={apps.map((app) => app.name)} />
             )}

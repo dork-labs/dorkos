@@ -83,8 +83,7 @@ export function useCommunityRevocationCleanup(): void {
       });
       if (end === 'revoked')
         toast(`This DorkOS can no longer reach ${before.label}.`, {
-          description:
-            'If you’re still a member, choose it in the switcher at the top of the sidebar to connect again.',
+          description: 'Still a member? Pick it in the sidebar switcher to reconnect.',
         });
     }
   }, [authority, connections.data, navigate, queryClient]);

@@ -87,7 +87,7 @@ function renderPicker(
 
 /** Switch to browse view and wait for entries to appear. */
 async function switchToBrowse() {
-  fireEvent.click(screen.getByLabelText('Browse directories'));
+  fireEvent.click(screen.getByLabelText('Browse folders'));
   await waitFor(() => {
     expect(screen.getByText('Documents')).toBeDefined();
   });
@@ -121,7 +121,7 @@ describe('DirectoryPicker', () => {
     // Switch to browse by clicking the Browse button
     renderPicker();
 
-    fireEvent.click(screen.getByLabelText('Browse directories'));
+    fireEvent.click(screen.getByLabelText('Browse folders'));
 
     await waitFor(() => {
       expect(screen.getByText('Documents')).toBeDefined();
@@ -133,13 +133,13 @@ describe('DirectoryPicker', () => {
     const onSelect = vi.fn();
     renderPicker({ onSelect });
 
-    fireEvent.click(screen.getByLabelText('Browse directories'));
+    fireEvent.click(screen.getByLabelText('Browse folders'));
 
     await waitFor(() => {
       expect(screen.getByText('Documents')).toBeDefined();
     });
 
-    fireEvent.click(screen.getByText('Select'));
+    fireEvent.click(screen.getByText('Use this folder'));
 
     expect(onSelect).toHaveBeenCalledWith('/home/user');
   });
@@ -227,7 +227,7 @@ describe('DirectoryPicker', () => {
 
       fireEvent.change(input, { target: { value: 'my-new-folder' } });
 
-      const confirmBtn = screen.getByLabelText('Confirm new folder');
+      const confirmBtn = screen.getByLabelText('Create folder');
       expect(confirmBtn).not.toHaveProperty('disabled', true);
     });
 
@@ -240,7 +240,7 @@ describe('DirectoryPicker', () => {
 
       fireEvent.change(input, { target: { value: '-bad' } });
 
-      const confirmBtn = screen.getByLabelText('Confirm new folder');
+      const confirmBtn = screen.getByLabelText('Create folder');
       expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
     });
 

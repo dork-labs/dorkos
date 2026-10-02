@@ -37,12 +37,16 @@ describe('TunnelError', () => {
 
   it('displays a friendly message for auth token errors', () => {
     render(<TunnelError error="ERR_NGROK_105 bad auth" onRetry={vi.fn()} />);
-    expect(screen.getByText('Check your auth token at dashboard.ngrok.com')).toBeInTheDocument();
+    expect(
+      screen.getByText('Couldn’t sign in to ngrok. Check your token at dashboard.ngrok.com.')
+    ).toBeInTheDocument();
   });
 
   it('displays a friendly message for timeout errors', () => {
     render(<TunnelError error="connection ETIMEDOUT" onRetry={vi.fn()} />);
-    expect(screen.getByText('The tunnel took too long to respond. Try again.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Remote access took too long to start. Try again.')
+    ).toBeInTheDocument();
   });
 
   it('announces itself, because it replaces what the person was looking at', () => {
@@ -53,7 +57,7 @@ describe('TunnelError', () => {
   it('displays a friendly message for tunnel limit errors', () => {
     render(<TunnelError error="ERR_NGROK_108 limit reached" onRetry={vi.fn()} />);
     expect(
-      screen.getByText('Tunnel limit reached. Free ngrok accounts allow one active tunnel.')
+      screen.getByText('Free ngrok accounts allow one link at a time. Close the other one.')
     ).toBeInTheDocument();
   });
 

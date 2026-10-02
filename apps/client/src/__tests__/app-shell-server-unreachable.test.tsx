@@ -852,7 +852,7 @@ describe('AppShell, when the server answers with an error', () => {
     renderAppShell();
 
     expect(await screen.findByTestId('server-error')).toBeInTheDocument();
-    expect(screen.getByText(/got an error back \(HTTP 403\)/)).toBeInTheDocument();
+    expect(screen.getByText(/didn’t load \(HTTP 403\)/)).toBeInTheDocument();
     expect(screen.queryByText(/CorpProxy/)).not.toBeInTheDocument();
   });
 

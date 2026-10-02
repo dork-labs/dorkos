@@ -292,7 +292,7 @@ describe('InboxList', () => {
     });
 
     expect(
-      await screen.findByText('DorkOS could not read your notifications.')
+      await screen.findByText('Couldn’t load your notifications. Try again soon.')
     ).toBeInTheDocument();
   });
 

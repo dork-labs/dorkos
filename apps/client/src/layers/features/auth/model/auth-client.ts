@@ -107,7 +107,8 @@ async function toAuthError(res: Response): Promise<AuthError> {
   const retryHeader = res.headers.get('X-Retry-After') ?? res.headers.get('Retry-After');
   const retryAfter = retryHeader ? Number(retryHeader) : undefined;
   return {
-    message: body.message || res.statusText || `Request failed (${res.status})`,
+    message:
+      body.message || res.statusText || `The server didn’t accept that (${res.status}). Try again.`,
     status: res.status,
     code: body.code,
     retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,
@@ -136,7 +137,7 @@ export function createAuthRestClient(baseUrl: string): AuthClient {
     } catch {
       return {
         data: null,
-        error: { message: 'Network error. Couldn’t reach the server.', status: 0 },
+        error: { message: 'Couldn’t reach the DorkOS server. Check that it’s running.', status: 0 },
       };
     }
     if (!res.ok) {

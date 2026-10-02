@@ -236,7 +236,7 @@ describe('without an advisor', () => {
     expect(
       screen.getByText('Carries over: the folder and a summary of this chat')
     ).toBeInTheDocument();
-    expect(screen.getByText("Doesn't: the chat itself")).toBeInTheDocument();
+    expect(screen.getByText('Doesn’t: the chat itself')).toBeInTheDocument();
   });
 
   it('selects the recommended account on open, not the first', async () => {
@@ -300,14 +300,14 @@ describe('with an advisor', () => {
     // Registered: Acct 1 (the session's own), 2 and 3; the advisor listed only Acct 2.
     renderDialog({ answer: advised([row(2, 72)]), registered: 3 });
     await radios();
-    expect(screen.getByText("Acct 3 is kept out, so it isn't listed.")).toBeInTheDocument();
+    expect(screen.getByText('Acct 3 is kept out, so it isn’t listed.')).toBeInTheDocument();
   });
 
   it('names two accounts the advisor kept out in one line', async () => {
     renderDialog({ answer: advised([row(2, 72)]), registered: 4 });
     await radios();
     expect(
-      screen.getByText("Acct 3 and Acct 4 are kept out, so they aren't listed.")
+      screen.getByText('Acct 3 and Acct 4 are kept out, so they aren’t listed.')
     ).toBeInTheDocument();
   });
 
@@ -315,7 +315,7 @@ describe('with an advisor', () => {
     renderDialog({ answer: advised([row(2, 72)]), trackerItems: [createMockTrackerItem()] });
     await radios();
     expect(
-      screen.getByText("Picks up in the same folder and branch from flow's checkpoint.")
+      screen.getByText('Picks up in the same folder and branch, from the last checkpoint.')
     ).toBeInTheDocument();
     expect(screen.getByText('Carries over: files, branch, checkpoint, task')).toBeInTheDocument();
   });
@@ -347,7 +347,7 @@ describe('with an advisor', () => {
   it("falls back to the limit's account to leave the session's own out of the kept-out line", async () => {
     renderDialog({ answer: advised([row(2, 72)]), accountId: null, limitAccountId: 'acct-1' });
     await radios();
-    expect(screen.getByText("Acct 3 is kept out, so it isn't listed.")).toBeInTheDocument();
+    expect(screen.getByText('Acct 3 is kept out, so it isn’t listed.')).toBeInTheDocument();
   });
 
   it("shows no kept-out line when the session's own account is unknown", async () => {
@@ -550,7 +550,7 @@ describe('an error with no message of its own', () => {
     await radios();
     await user().click(screen.getByRole('button', { name: 'Continue on Acct 2' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      "Couldn't continue on that account. Try again."
+      'Couldn’t continue on that account. Try again.'
     );
   });
 });

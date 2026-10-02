@@ -165,10 +165,8 @@ describe('LiveLane', () => {
     // own class rather than by text.
     const wide = document.querySelector('[data-testid="room-stalled"] span.hidden')!;
     expect(wide).toHaveClass('sm:inline');
-    expect(wide.textContent).toContain('New messages aren’t coming through right now');
-    expect(screen.getByRole('status').textContent).toContain(
-      'New messages aren’t coming through right now'
-    );
+    expect(wide.textContent).toContain('New messages aren’t arriving');
+    expect(screen.getByRole('status').textContent).toContain('New messages aren’t arriving');
     expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
   });
 

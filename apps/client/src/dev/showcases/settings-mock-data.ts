@@ -534,7 +534,7 @@ export const MOCK_EXECUTION_EXCEPTIONS: ExecutionException[] = [
       breakages: [
         {
           kind: 'effort-unsupported-runtime',
-          message: 'OpenCode has no effort setting, so this one does nothing.',
+          message: 'OpenCode has no effort setting. It’s ignored.',
         },
       ],
       deviations: [{ field: 'runtime', label: 'OpenCode' }],
@@ -571,8 +571,7 @@ export const MOCK_EXECUTION_EXCEPTIONS: ExecutionException[] = [
       breakages: [
         {
           kind: 'account-unregistered',
-          message:
-            'The account “acme-legacy” isn’t registered on this machine, so this agent runs on the default.',
+          message: '“acme-legacy” isn’t on this computer. This agent runs on your default account.',
         },
       ],
       deviations: [{ field: 'account', label: 'acme-legacy' }],

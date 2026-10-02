@@ -376,7 +376,7 @@ describe('TrustDial', () => {
       const note = screen.getByTestId('trust-dial-stranded');
       // Named by the shared fallback label, the same words every other surface
       // uses for a mode with no descriptor in hand.
-      expect(note).toHaveTextContent(/Don’t Ask/);
+      expect(note).toHaveTextContent(/Don’t ask/);
       expect(note).toHaveAttribute('role', 'status');
       expect(within(dial()).queryAllByRole('radio', { checked: true })).toHaveLength(0);
     });
@@ -404,7 +404,7 @@ describe('TrustDial', () => {
 
       const note = screen.getByTestId('trust-dial-stranded');
       expect(note).toHaveTextContent('Saving keeps it as it is.');
-      expect(note).not.toHaveTextContent(/This session is set to/);
+      expect(note).not.toHaveTextContent(/This session uses/);
     });
 
     it('keeps quiet when the session is at a stop it can see', () => {

@@ -52,7 +52,7 @@ export function TrustSourceOfferLine({ offer }: TrustSourceOfferLineProps) {
             .catch(() => undefined);
         }}
       >
-        Yes
+        Trust source
       </Button>
       <Button
         type="button"

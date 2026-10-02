@@ -320,7 +320,7 @@ describe('what extensions ask, in the bell', () => {
     const row = rowOf('Should the old API keep working?');
     expect(within(row).getByText(/agent’s pick/)).toBeInTheDocument();
     expect(
-      within(row).getByText(/If you don’t answer by .*, the agent picks “Keep it”\./)
+      within(row).getByText(/If you don’t answer by .*, your agent picks “Keep it”\./)
     ).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'Reply…' })).toBeInTheDocument();
     await user.click(within(row).getByRole('button', { name: 'Remove it' }));

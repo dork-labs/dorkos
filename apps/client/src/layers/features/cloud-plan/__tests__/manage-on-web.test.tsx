@@ -225,7 +225,7 @@ describe('manage on the web', () => {
         await screen.findByRole('button', { name: 'Export your account data' })
       );
       expect(await screen.findByRole('status')).toHaveTextContent(
-        'Your export is being prepared. Try again in a few minutes to get the link.'
+        'Your export is being prepared. Check back in a few minutes.'
       );
       expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
@@ -240,7 +240,7 @@ describe('manage on the web', () => {
           emailRequested: false,
         },
       });
-      await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Check again' }));
       expect(await screen.findByText('Your export is ready.')).toBeInTheDocument();
       expect(transport.requestCloudAccountExport).toHaveBeenCalledTimes(2);
     });

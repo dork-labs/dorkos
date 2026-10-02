@@ -59,8 +59,7 @@ export function TelemetryConsentMoment() {
       <DialogHeader>
         <DialogTitle>Share anonymous usage data?</DialogTitle>
         <DialogDescription>
-          DorkOS sends us nothing unless you say so. Want to share a daily “I’m alive” ping and
-          install counts? Never your prompts, code, or files.
+          A daily ping, install counts and feature use. Never your prompts, code or files.
         </DialogDescription>
       </DialogHeader>
 
@@ -89,7 +88,7 @@ export function TelemetryConsentMoment() {
         )}
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={decline} disabled={updateConfig.isPending}>
-            No thanks
+            Don’t share
           </Button>
           <Button size="sm" onClick={share} disabled={updateConfig.isPending}>
             Share anonymously

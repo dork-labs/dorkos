@@ -280,11 +280,7 @@ const BINDING_CONSEQUENCE = (
 
 /** What a scheduled run gives up at a stop that never asks. */
 const TASK_CONSEQUENCE = (
-  <>
-    A scheduled run has nobody to ask, so nothing is asked: no approval card, no message, no record
-    of a decision anybody made. At a stop that asks, an action it cannot take is refused and the run
-    works around it. Here it simply happens.
-  </>
+  <>A scheduled run has nobody to ask. Every action just happens, with no approval card.</>
 );
 
 /** The three runtimes the settings surfaces below talk about, with their modes. */

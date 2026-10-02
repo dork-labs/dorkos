@@ -45,16 +45,16 @@ function countByCategory(
 }
 
 /**
- * Build the digest line: "3 Tasks runs · 1 Relay event · 2 Agent updates"
+ * Build the digest line: "3 scheduled runs · 1 message · 2 agent updates"
  */
 function buildDigestLine(counts: Partial<Record<ActivityCategory, number>>): string {
   const CATEGORY_SUFFIXES: Record<ActivityCategory, string> = {
-    tasks: 'Scheduled run',
-    relay: 'Relay event',
-    agent: 'Agent update',
-    config: 'Config change',
-    system: 'System event',
-    permissions: 'Permission change',
+    tasks: 'scheduled run',
+    relay: 'message',
+    agent: 'agent update',
+    config: 'settings change',
+    system: 'system event',
+    permissions: 'permission change',
   };
 
   return (Object.entries(counts) as [ActivityCategory, number][])

@@ -193,7 +193,7 @@ export const SHORTCUTS = {
   ANSWER_NEXT_ASK: {
     id: 'answer-next-ask',
     key: 'mod+shift+y',
-    label: 'Answer the next thing waiting on you',
+    label: 'Answer what’s waiting next',
     group: 'chat',
   },
 
@@ -202,7 +202,7 @@ export const SHORTCUTS = {
   DEV_PLAYGROUND: {
     id: 'dev-playground',
     key: 'mod+shift+d',
-    label: 'Dev playground',
+    label: 'Dev Playground',
     group: 'global',
     devOnly: true,
   },

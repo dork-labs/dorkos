@@ -127,22 +127,22 @@ describe('DeadLetterSection', () => {
   });
 
   describe('rejection reason badges', () => {
-    it('shows "Hop limit" badge for hop_limit reason', () => {
+    it('shows "Passed on too many times" badge for hop_limit reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [hopLimitGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Hop limit')).toBeInTheDocument();
+      expect(screen.getByText('Passed on too many times')).toBeInTheDocument();
     });
 
-    it('shows "TTL expired" badge for ttl_expired reason', () => {
+    it('shows "Expired before delivery" badge for ttl_expired reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [ttlGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('TTL expired')).toBeInTheDocument();
+      expect(screen.getByText('Expired before delivery')).toBeInTheDocument();
     });
 
-    it('shows "Budget exhausted" badge for budget_exhausted reason', () => {
+    it('shows "Out of calls" badge for budget_exhausted reason', () => {
       mockUseAggregatedDeadLetters.mockReturnValue({ data: [budgetGroup], isLoading: false });
       render(<DeadLetterSection />);
-      expect(screen.getByText('Budget exhausted')).toBeInTheDocument();
+      expect(screen.getByText('Out of calls')).toBeInTheDocument();
     });
 
     it('shows "Unknown reason" badge for unrecognized reason codes', () => {
@@ -201,7 +201,7 @@ describe('DeadLetterSection', () => {
         '';
       expect(descText).toMatch(/15044/);
       expect(descText).toMatch(/slack-adapter/);
-      expect(descText).toMatch(/Hop limit/);
+      expect(descText).toMatch(/Passed on too many times/);
     });
 
     it('uses singular "message" when count is 1', () => {

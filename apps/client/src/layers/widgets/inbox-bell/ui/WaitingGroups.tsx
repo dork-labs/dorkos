@@ -179,7 +179,7 @@ export function WaitingGroups({
       nodes.push(
         <div key={`schedules:${root ?? 'loose'}`} className="mt-3">
           <h3 className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
-            Scheduled Runs
+            Scheduled runs
           </h3>
           {/* `AnimatePresence` keeps a decided card mounted long enough to say
               so; see `InboxBell`'s own note. */}

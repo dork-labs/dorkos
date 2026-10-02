@@ -590,8 +590,8 @@ function stopHeartbeat(documentId: string): void {
  * the server removes, reappearing one layer up.
  */
 function reportWriteFailure(err: unknown): void {
-  const message = err instanceof Error ? err.message : 'The canvas could not be changed.';
-  toast.error('That did not reach your canvas', { description: message });
+  const message = err instanceof Error ? err.message : 'Try again.';
+  toast.error('Couldn’t update the canvas', { description: message });
 }
 
 /** A `pending:` id belongs to a row this window minted and has not heard back about. */

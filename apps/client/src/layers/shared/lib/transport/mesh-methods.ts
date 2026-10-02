@@ -142,7 +142,7 @@ export function createMeshMethods(baseUrl: string) {
       const res = await fetch(`${baseUrl}/agents/current?path=${encodeURIComponent(path)}`, {
         credentials: 'include',
       });
-      if (!res.ok) throw new Error(`Failed to get agent: ${res.statusText}`);
+      if (!res.ok) throw new Error(`Couldn’t load the agent: ${res.statusText}`);
       return res.json();
     },
 

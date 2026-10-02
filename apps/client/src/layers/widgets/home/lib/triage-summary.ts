@@ -79,8 +79,8 @@ export function triageSummary({
   } else if (approvalsUnavailable) {
     // Worth saying on its own: an unreadable list is the case where silence
     // would be mistaken for "nothing is waiting".
-    spoken.push('Approvals could not be read.');
-    compact.push('Approvals unreadable');
+    spoken.push('Couldn’t read approvals.');
+    compact.push('Couldn’t read approvals');
   }
 
   if (attention === 1) {

@@ -106,7 +106,7 @@ describe('useSessionTarget', () => {
     );
 
     await expect(result.current.queue!({ text: 'and then the docs' })).rejects.toThrow(
-      'The queue did not accept that message.'
+      'Couldn’t queue that message. Try again.'
     );
   });
 

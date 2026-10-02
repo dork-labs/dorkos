@@ -67,11 +67,10 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
       <div className="bg-muted/40 flex flex-col gap-3 rounded-lg border p-4">
         <div className="flex items-center gap-2 text-sm font-medium">
           <AppWindow className="text-muted-foreground size-4 shrink-0" />
-          <span>Interactive app provided by {serverName}</span>
+          <span>Interactive app from {serverName}</span>
         </div>
         <p className="text-muted-foreground text-xs">
-          This runs sandboxed code from the MCP server. It cannot access your session, files, or
-          credentials. Render it?
+          It can’t see your session, files or credentials.
         </p>
         <div>
           <button
@@ -79,7 +78,7 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
             onClick={grant}
             className="bg-foreground text-background hover:bg-foreground/90 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
           >
-            Render app
+            Show app
           </button>
         </div>
       </div>

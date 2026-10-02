@@ -54,11 +54,11 @@ export function OwnerSetupScreen({
     setLocalError(null);
 
     if (password.length < MIN_PASSWORD_LENGTH) {
-      setLocalError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      setLocalError(`Use at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (password !== confirm) {
-      setLocalError('Passwords do not match.');
+      setLocalError('Passwords don’t match.');
       return;
     }
 
@@ -80,7 +80,7 @@ export function OwnerSetupScreen({
     localCopy ??
     (registrationClosed
       ? {
-          message: 'An owner account already exists for this instance. Sign in instead.',
+          message: 'This computer already has an owner. Sign in instead.',
           detail: null,
         }
       : describeAuthError(error, window.location.origin));
@@ -107,7 +107,7 @@ export function OwnerSetupScreen({
             autoFocus
           />
           <p className="text-muted-foreground text-xs">
-            A local identifier only. It is never verified and no email is ever sent.
+            Only used to sign in here. No email is sent.
           </p>
         </div>
         <div className="space-y-1.5">

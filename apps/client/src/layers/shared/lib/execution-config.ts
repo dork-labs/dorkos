@@ -362,7 +362,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     if (account !== null && knownAccounts !== undefined && !registeredAccount) {
       breakages.push({
         kind: 'account-unregistered',
-        message: `The account “${account}” isn’t registered on this machine, so this agent runs on the default.`,
+        message: `“${account}” isn’t on this computer. This agent runs on your default account.`,
       });
     }
   }
@@ -371,7 +371,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     if (runtimeSupportsEffort === false) {
       breakages.push({
         kind: 'effort-unsupported-runtime',
-        message: `${runtimeLabel(runtime)} has no effort setting, so this one does nothing.`,
+        message: `${runtimeLabel(runtime)} has no effort setting. It’s ignored.`,
       });
     } else if (modelSupportsEffort === false) {
       breakages.push({

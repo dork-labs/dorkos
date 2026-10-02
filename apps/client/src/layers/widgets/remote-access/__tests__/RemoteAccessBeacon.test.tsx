@@ -117,7 +117,7 @@ describe('what it says', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('button', {
-          name: 'Remote access is on at calm-otter.ngrok.app — show link and QR',
+          name: 'Remote access is on at calm-otter.ngrok.app. Show link and QR code',
         })
       ).toBeInTheDocument()
     );
@@ -132,7 +132,7 @@ describe('what it says', () => {
     // An icon-only control has to say what pressing it does — and while the
     // tunnel is still coming up, it does not yet offer a link or a code.
     expect(
-      screen.getByRole('button', { name: 'Remote access is connecting — open remote access' })
+      screen.getByRole('button', { name: 'Remote access is connecting. Open remote access' })
     ).toBeInTheDocument();
   });
 

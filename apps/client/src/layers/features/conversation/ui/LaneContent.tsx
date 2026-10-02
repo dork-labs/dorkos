@@ -24,16 +24,16 @@ import { useLaneElapsed } from '../model/use-lane-elapsed';
  * What the stalled line says, in the one place both the announcement and the
  * sentence on screen read it from.
  *
- * Moved here verbatim from `RoomStalledNotice`, which this rung replaces. Both
- * sentences are unchanged, including the promise the second one deliberately
- * does not make.
+ * Moved here from `RoomStalledNotice`, which this rung replaces, and later cut
+ * to the app-copy length cap. The second sentence still keeps the promise it
+ * deliberately does not make.
  *
  * @param unavailable - Whether the room itself is gone rather than unreachable.
  */
 export function stalledSentence(unavailable: boolean): string {
   return unavailable
-    ? 'This room is no longer available. It may have been deleted, or you may no longer have access to it.'
-    : 'New messages aren’t coming through right now. You can still send. Anything that doesn’t get through will say so.';
+    ? 'This room is gone, or you no longer have access to it.'
+    : 'New messages aren’t arriving. You can still send; anything unsent will say so.';
 }
 
 /**

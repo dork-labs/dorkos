@@ -120,9 +120,10 @@ export function McpAppFrame({
   if (isError || !srcDoc) {
     return (
       <div className={cn('text-muted-foreground p-4 text-sm', className)}>
-        {isError
-          ? `Couldn’t load app from ${serverName}: ${error instanceof Error ? error.message : 'unknown error'}`
-          : `This app returned no renderable content.`}
+        {isError ? `Couldn’t load the app from ${serverName}.` : 'This app has nothing to show.'}
+        {isError && error instanceof Error && error.message && (
+          <span className="mt-1 block text-xs">{error.message}</span>
+        )}
       </div>
     );
   }
@@ -131,7 +132,7 @@ export function McpAppFrame({
     <div className={cn('relative h-full w-full', className)}>
       <iframe
         ref={iframeRef}
-        title={title ?? `MCP App from ${serverName}`}
+        title={title ?? `App from ${serverName}`}
         sandbox={MCP_APP_SANDBOX}
         // `allow` is omitted entirely unless the App declared permissions.
         {...(allow ? { allow } : {})}

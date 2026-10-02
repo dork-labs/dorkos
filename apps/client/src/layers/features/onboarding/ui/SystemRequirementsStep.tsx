@@ -177,10 +177,10 @@ export function SystemRequirementsStep({
     phase === 'checking'
       ? 'Looking for Claude Code, Codex, and OpenCode on your machine.'
       : errored
-        ? 'We couldn’t check your setup just now.'
+        ? 'Couldn’t check your setup.'
         : hasReady
           ? connectedSentence(readyTypes, defaultRuntime.runtime)
-          : 'DorkOS drives Claude Code, Codex, and OpenCode. Set one up to get started. It takes about a minute.';
+          : 'DorkOS runs Claude Code, Codex or OpenCode. Set one up in about a minute.';
 
   const isActive = phase === 'checking';
 
@@ -330,7 +330,7 @@ function ReadyView({
             <ChevronDown
               className={cn('size-3.5 transition-transform', showMore && 'rotate-180')}
             />
-            {moreCount === 1 ? '1 more runtime available' : `${moreCount} more runtimes available`}
+            {`${moreCount} more to set up`}
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-4 space-y-3 text-left">
             <RuntimeSetupPanel
@@ -342,7 +342,7 @@ function ReadyView({
               isRechecking={isRechecking}
             />
             <p className="text-muted-foreground text-center text-xs">
-              You can add these anytime from the status bar.
+              Add these anytime from the status bar.
             </p>
           </CollapsibleContent>
         </Collapsible>
@@ -358,7 +358,7 @@ function ErrorPanel({ onRetry, isRetrying }: { onRetry: () => void; isRetrying: 
   return (
     <div className="flex flex-col items-center gap-3" role="alert">
       <p className="text-muted-foreground text-sm text-balance">
-        The check couldn’t reach the server. Make sure DorkOS is running, then try again.
+        Couldn’t reach the DorkOS server. Check that it’s running, then try again.
       </p>
       <Button variant="outline" className="gap-2" onClick={onRetry} disabled={isRetrying}>
         <RefreshCw className={cn('size-3.5', isRetrying && 'animate-spin')} />
@@ -523,7 +523,7 @@ function connectedSentence(types: string[], defaultRuntime: string | null): stri
   const names = types.map((t) => getRuntimeDescriptor(t).label);
   const connected =
     names.length === 0
-      ? 'A runtime is connected.'
+      ? 'Ready to go.'
       : names.length === 1
         ? `${names[0]} is connected.`
         : names.length === 2
@@ -543,6 +543,6 @@ function connectedSentence(types: string[], defaultRuntime: string | null): stri
   const meanwhile = chooseDefaultRuntime(types, defaultRuntime);
   const meanwhileLabel = meanwhile ? getRuntimeDescriptor(meanwhile).label : null;
   return meanwhileLabel
-    ? `${connected} New chats will start with ${label} once it’s connected. Until then they’ll use ${meanwhileLabel}.`
+    ? `${connected} New chats use ${meanwhileLabel} until ${label} is connected.`
     : `${connected} New chats will start with ${label} once it’s connected.`;
 }

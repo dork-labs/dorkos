@@ -124,7 +124,7 @@ export function useSessionTarget(input: SessionTargetInput): ConversationTarget 
     const held = await latest.current.enqueue(draft.text);
     // `false` means the server did not take it. The composer keeps the words
     // on a rejection, so this must be one rather than a quiet no-op.
-    if (!held) throw new Error('The queue did not accept that message.');
+    if (!held) throw new Error('Couldn’t queue that message. Try again.');
   }, []);
 
   return useMemo<ConversationTarget>(

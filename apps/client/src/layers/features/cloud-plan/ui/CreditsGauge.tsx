@@ -140,15 +140,14 @@ export function CreditsGauge() {
                 {/* The runtimes' own figure. Deliberately labelled as a
                     different thing from the credits above: on credits, the
                     DorkOS cost is the bill and this is not. */}
-                {local.totalUsd.toFixed(2)} reported across {local.sessionCount}{' '}
-                {local.sessionCount === 1 ? 'open session' : 'open sessions'}, as the runtimes
-                priced it.
+                {local.totalUsd.toFixed(2)} across {local.sessionCount}{' '}
+                {local.sessionCount === 1 ? 'open session' : 'open sessions'}, by their own
+                estimate.
               </p>
             )}
             {local.runtimesWithoutCost.length > 0 && (
               <p className="text-muted-foreground text-xs">
-                {local.runtimesWithoutCost.join(', ')} report no cost, so nothing from them is
-                counted here.
+                {local.runtimesWithoutCost.join(', ')} report no cost, so they’re left out.
               </p>
             )}
           </div>

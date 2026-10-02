@@ -46,7 +46,7 @@ import { cropShotToElement } from '../lib/element-crop';
 const REFUSAL_MESSAGE: Record<ImageCompressReason, string> = {
   // Not "try a smaller file": every image is re-encoded at the same size here,
   // so a smaller FILE of the same picture changes nothing. Fewer pixels does.
-  'too-large': 'That image is too big to send. Try cropping it to just the part that matters.',
+  'too-large': 'That image is too big to send. Crop it to the part that matters.',
   unreadable: 'Couldn’t read that image. Try a PNG or JPEG.',
   unsupported: 'This browser can’t prepare images to send.',
 };
@@ -60,8 +60,7 @@ const REFUSAL_MESSAGE: Record<ImageCompressReason, string> = {
  */
 const CAPTURE_REFUSAL_MESSAGE: Record<AppCaptureReason, string> = {
   failed: 'Couldn’t capture the app view. You can still add a screenshot yourself.',
-  unsupported:
-    'Couldn’t load what it takes to capture the app view. Reload the page, or add a screenshot yourself.',
+  unsupported: 'Couldn’t start the app capture. Reload, or add a screenshot yourself.',
 };
 
 /**

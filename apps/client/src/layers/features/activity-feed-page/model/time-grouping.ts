@@ -11,16 +11,16 @@ import type { ActivityItem } from '@dorkos/shared/activity-schemas';
 
 /** A labelled group of activity items. */
 export interface ActivityGroup {
-  /** Human-readable label: "Today" | "Yesterday" | "This Week" | "Earlier". */
+  /** Human-readable label: "Today" | "Yesterday" | "This week" | "Earlier". */
   label: string;
   /** Items in this group, in their original insertion order. */
   items: ActivityItem[];
 }
 
 /** All possible time group labels in display order (newest → oldest). */
-export type TimeGroupLabel = 'Today' | 'Yesterday' | 'This Week' | 'Earlier';
+export type TimeGroupLabel = 'Today' | 'Yesterday' | 'This week' | 'Earlier';
 
-const GROUP_ORDER: TimeGroupLabel[] = ['Today', 'Yesterday', 'This Week', 'Earlier'];
+const GROUP_ORDER: TimeGroupLabel[] = ['Today', 'Yesterday', 'This week', 'Earlier'];
 
 /**
  * Group activity items by relative time bucket.
@@ -71,6 +71,6 @@ export function getTimeGroupLabel(date: Date, now: Date): TimeGroupLabel {
 
   if (date >= startOfToday) return 'Today';
   if (date >= startOfYesterday) return 'Yesterday';
-  if (date >= startOfWeek) return 'This Week';
+  if (date >= startOfWeek) return 'This week';
   return 'Earlier';
 }

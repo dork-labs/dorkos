@@ -174,7 +174,7 @@ describe('FeedbackDialog', () => {
     expect(sendFeedback.mock.calls[0][0].diagnostics).toBeUndefined();
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toast.success).toHaveBeenCalledWith(
-      'Sent. Thank you!',
+      'Sent. Thank you.',
       expect.objectContaining({ action: expect.objectContaining({ label: 'Your reports' }) })
     );
   });
@@ -300,8 +300,10 @@ describe('FeedbackDialog', () => {
         await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
         expect(sendFeedback.mock.calls[0][0].contact).toBe('ike@example.com');
         expect(toast.success).toHaveBeenCalledWith(
-          'Sent. Thank you!',
-          expect.objectContaining({ description: 'We’ll email ike@example.com when we act on it.' })
+          'Sent. Thank you.',
+          expect.objectContaining({
+            description: 'DorkOS emails ike@example.com when the team acts on it.',
+          })
         );
       });
 
@@ -318,8 +320,8 @@ describe('FeedbackDialog', () => {
         await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
         expect(sendFeedback.mock.calls[0][0].contact).toBeUndefined();
         expect(toast.success).toHaveBeenCalledWith(
-          'Sent. Thank you!',
-          expect.objectContaining({ description: 'We’ll email kai@example.com when it’s fixed.' })
+          'Sent. Thank you.',
+          expect.objectContaining({ description: 'DorkOS emails kai@example.com when it’s fixed.' })
         );
       });
 
@@ -361,7 +363,7 @@ describe('FeedbackDialog', () => {
         fireEvent.change(screen.getByLabelText('Your email'), { target: { value: 'ike@' } });
 
         expect(
-          screen.getByText('That doesn’t look like an email yet, so we couldn’t write back.')
+          screen.getByText('Not an email yet, so no reply can reach you.')
         ).toBeInTheDocument();
         expect(screen.getByLabelText('Your email')).toHaveAttribute('aria-invalid', 'true');
         // Never a blocker: the report still goes, it just cannot be answered.
@@ -427,11 +429,7 @@ describe('FeedbackDialog', () => {
         type('the list is blank');
         fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
-        await waitFor(() =>
-          expect(toast.info).toHaveBeenCalledWith(
-            'You sent this a moment ago, so we didn’t send it again.'
-          )
-        );
+        await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Already sent a moment ago.'));
         expect(sendFeedback).toHaveBeenCalledTimes(1);
         expect(onOpenChange).toHaveBeenLastCalledWith(false);
       });
@@ -796,7 +794,7 @@ describe('FeedbackDialog', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        'Couldn’t send. Your words are still here, so try again or open a GitHub issue instead.'
+        'Couldn’t send. Your words are still here. Try again or open a GitHub issue.'
       )
     );
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
@@ -1221,7 +1219,7 @@ describe('FeedbackDialog', () => {
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith(
-          'That image is too big to send. Try cropping it to just the part that matters.'
+          'That image is too big to send. Crop it to the part that matters.'
         )
       );
       expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
@@ -1396,7 +1394,7 @@ describe('FeedbackDialog', () => {
 
         await waitFor(() =>
           expect(toast.error).toHaveBeenCalledWith(
-            'Couldn’t load what it takes to capture the app view. Reload the page, or add a screenshot yourself.'
+            'Couldn’t start the app capture. Reload, or add a screenshot yourself.'
           )
         );
       });
@@ -1413,7 +1411,7 @@ describe('FeedbackDialog', () => {
 
         await waitFor(() =>
           expect(toast.error).toHaveBeenCalledWith(
-            'That image is too big to send. Try cropping it to just the part that matters.'
+            'That image is too big to send. Crop it to the part that matters.'
           )
         );
       });
@@ -1751,16 +1749,14 @@ describe('FeedbackDialog', () => {
         // The element is an attachment, never words: five of six reports it
         // could once be sent without said nothing at all.
         expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
-        expect(
-          screen.getByText('Add a few words so we know what to look for.')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Add a few words about what to look for.')).toBeInTheDocument();
 
         fireEvent.change(screen.getByPlaceholderText('What’s wrong with the nav toggle?'), {
           target: { value: 'does nothing' },
         });
         expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
         expect(
-          screen.queryByText('Add a few words so we know what to look for.')
+          screen.queryByText('Add a few words about what to look for.')
         ).not.toBeInTheDocument();
       });
 
@@ -2084,9 +2080,7 @@ describe('FeedbackDialog', () => {
 
       it('holds one on a surface that CAN send it', () => {
         openWith('data:image/png;base64,GIVEN');
-        expect(
-          screen.getByText('Add a few words so we know what to look for.')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Add a few words about what to look for.')).toBeInTheDocument();
       });
     });
 

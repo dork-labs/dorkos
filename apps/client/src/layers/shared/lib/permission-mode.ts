@@ -57,10 +57,10 @@ export function isBypassPermissionMode(mode: string | null | undefined): boolean
  */
 const PERMISSION_MODE_LABELS: Record<string, string> = {
   default: 'Default',
-  acceptEdits: 'Accept Edits',
-  plan: 'Plan Mode',
-  dontAsk: 'Don’t Ask',
-  bypassPermissions: 'Bypass All',
+  acceptEdits: 'Accept edits',
+  plan: 'Plan mode',
+  dontAsk: 'Don’t ask',
+  bypassPermissions: 'Bypass all',
   auto: 'Auto',
 };
 

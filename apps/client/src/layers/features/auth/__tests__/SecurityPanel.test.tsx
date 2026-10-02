@@ -104,7 +104,7 @@ describe('SecurityPanel', () => {
     expect(await screen.findByText('API keys')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /revoke laptop/i })).toBeInTheDocument();
     // …and it says why they still matter with login off.
-    expect(screen.getByText(/keep working while login is off/i)).toBeInTheDocument();
+    expect(screen.getByText(/keys still work with login off/i)).toBeInTheDocument();
   });
 
   it('owner setup: signs up, then enables auth.enabled', async () => {

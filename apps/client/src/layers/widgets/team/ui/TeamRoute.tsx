@@ -109,7 +109,7 @@ function TeamRouteBody() {
       <QueryErrorState
         className="h-full"
         title="Couldn’t load agents"
-        description="The mesh API is unreachable. Check that the server is running correctly."
+        description="The DorkOS server didn’t answer. Check that it’s running."
         onRetry={() => void refetch()}
       />
     );

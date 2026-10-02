@@ -519,7 +519,7 @@ export function FeedbackDialog({
                 {showConversation && (
                   <AlsoSendChip
                     label="This conversation"
-                    summary="So we can see what led to the bug."
+                    summary="Shows what led to the bug."
                     pressed={includeConversation}
                     onPressedChange={(next) => {
                       setAttachmentsTouched(true);

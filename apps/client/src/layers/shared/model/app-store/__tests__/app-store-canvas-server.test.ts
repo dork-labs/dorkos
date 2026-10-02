@@ -815,7 +815,7 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
         expect(useAppStore.getState().openDocuments).toHaveLength(0);
       });
       expect(toast.error).toHaveBeenCalledWith(
-        'That did not reach your canvas',
+        'Couldn’t update the canvas',
         expect.objectContaining({ description: 'Session not found' })
       );
     });
@@ -938,7 +938,7 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
         await vi.advanceTimersByTimeAsync(31_000);
         expect(useAppStore.getState().openDocuments).toHaveLength(0);
         expect(toast.error).toHaveBeenCalledWith(
-          'That did not reach your canvas',
+          'Couldn’t update the canvas',
           expect.objectContaining({ description: 'Session not found' })
         );
       } finally {

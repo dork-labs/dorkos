@@ -127,7 +127,7 @@ export function DirectoryPicker({
       return;
     }
     const result = validateAgentName(value);
-    setNewFolderError(result.valid ? null : (result.error ?? 'Invalid name'));
+    setNewFolderError(result.valid ? null : (result.error ?? 'Choose a different name.'));
   }, []);
 
   const confirmCreateFolder = useCallback(async () => {
@@ -143,8 +143,7 @@ export function DirectoryPicker({
       handleNavigate(result.path);
     } catch (err) {
       toast.error('Couldn’t make that folder.', {
-        description:
-          err instanceof Error ? err.message : 'Check the name, or pick a different place.',
+        description: err instanceof Error ? err.message : 'Try another name or place.',
       });
     }
   }, [
@@ -188,7 +187,7 @@ export function DirectoryPicker({
                 type="button"
                 onClick={() => handleViewChange('recent')}
                 className={toggleBtn(view === 'recent', 'left')}
-                aria-label="Recent directories"
+                aria-label="Recent folders"
                 title="Recent"
               >
                 <Clock className="size-(--size-icon-sm)" />
@@ -201,7 +200,7 @@ export function DirectoryPicker({
                 handleNavigate('');
               }}
               className={toggleBtn(view === 'browse', recentCwds.length > 0 ? 'right' : 'left')}
-              aria-label="Browse directories"
+              aria-label="Browse folders"
               title="Browse"
             >
               <Folder className="size-(--size-icon-sm)" />
@@ -281,7 +280,7 @@ export function DirectoryPicker({
                         type="button"
                         onClick={() => void confirmCreateFolder()}
                         disabled={!newFolderName || !!newFolderError}
-                        aria-label="Confirm new folder"
+                        aria-label="Create folder"
                         className="hover:bg-accent flex-shrink-0 rounded p-0.5 transition-colors disabled:opacity-30"
                       >
                         <Check className="size-(--size-icon-sm)" />
@@ -395,7 +394,7 @@ export function DirectoryPicker({
             disabled={!data?.path || view !== 'browse'}
             className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-3 py-1.5 text-xs transition-colors disabled:opacity-50"
           >
-            Select
+            Use this folder
           </button>
         </div>
       </ResponsiveDialogContent>

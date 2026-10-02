@@ -971,7 +971,7 @@ describe('ModelConfigPopover', () => {
         render(<ModelConfigPopover {...defaultProps({ model: 'a/one' })} />);
 
         expect(screen.getByTestId('model-catalog-unverified')).toHaveTextContent(
-          'This is a short list of models nobody has confirmed you can run. Connect a provider to see the ones you actually have.'
+          'A partial list DorkOS can’t confirm. Connect a provider to see yours.'
         );
       });
 

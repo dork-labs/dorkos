@@ -78,12 +78,12 @@ export function ApiKeysSection({ loginRequired = true }: ApiKeysSectionProps = {
           <p className="text-sm font-medium">API keys</p>
         </div>
         <p className="text-muted-foreground text-xs">
-          Personal keys for MCP clients, scripts, and agents. Pass a key as a{' '}
-          <code className="font-mono">Bearer</code> token. The value is shown once at creation.
+          Keys for MCP clients, scripts and agents. Send one as a{' '}
+          <code className="font-mono">Bearer</code> token.
         </p>
         {!loginRequired && (
           <p className="text-muted-foreground text-xs">
-            These keep working while login is off. Revoke any you don’t need.
+            Keys still work with login off. Revoke any you don’t need.
           </p>
         )}
       </div>
@@ -224,14 +224,14 @@ function ApiKeyRow({
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke this API key?</AlertDialogTitle>
+            <AlertDialogTitle>Revoke “{label}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              Anything using “{label}” will immediately lose access. This cannot be undone.
+              Anything using it loses access right away. This can’t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onRevoke}>Revoke</AlertDialogAction>
+            <AlertDialogAction onClick={onRevoke}>Revoke key</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

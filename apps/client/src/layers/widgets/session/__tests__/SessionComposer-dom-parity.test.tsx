@@ -381,7 +381,7 @@ describe('SessionComposer — serialized-DOM parity against the pre-migration ba
     // recording an idle composer under a streaming name.
     expect(screen.getByRole('combobox')).toHaveAttribute(
       'aria-label',
-      'Compose another — 2 queued'
+      'Compose another (2 queued)'
     );
 
     const diff = matchDomBaseline(
@@ -600,7 +600,7 @@ describe('SessionComposer — the flag-on reference tree', () => {
     // rides `aria-placeholder`, which IS delta 2 shown working.
     expect(screen.getByRole('combobox')).toHaveAttribute(
       'aria-placeholder',
-      'Compose another — 2 queued'
+      'Compose another (2 queued)'
     );
 
     const diff = matchDomBaseline(

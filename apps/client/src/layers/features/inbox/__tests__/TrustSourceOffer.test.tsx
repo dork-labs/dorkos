@@ -115,7 +115,7 @@ describe('the one-time trust offer', () => {
     expect(await screen.findByText(/Next time, trust everything from/)).toHaveTextContent(
       `Next time, trust everything from ${SOURCE}?`
     );
-    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    await user.click(screen.getByRole('button', { name: 'Trust source' }));
 
     await waitFor(() => expect(writes).toEqual([{ method: 'POST', body: { source: SOURCE } }]));
     await waitFor(() =>

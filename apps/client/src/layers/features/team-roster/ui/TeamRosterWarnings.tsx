@@ -17,14 +17,14 @@ import { cn } from '@/layers/shared/lib';
  * prose and no page has to guess which one it received.
  */
 const SOURCE_COPY: Record<string, string> = {
-  agents: 'Couldn’t read your agents. Showing who we could.',
-  authors: 'Couldn’t read the people on this install. Showing who we could.',
+  agents: 'Couldn’t read all your agents. Showing the rest.',
+  authors: 'Couldn’t read everyone on this install. Showing the rest.',
   account: 'Couldn’t read your account, so your own name may be missing.',
   // The three activity sources. Each one says what is missing rather than
   // implying the roster is: everybody is still here, we just cannot say what
   // they are up to.
   claims: 'Couldn’t tell which of your agents are working right now.',
-  rooms: 'Couldn’t read your rooms, so we can’t name where an agent is working.',
+  rooms: 'Couldn’t read your rooms, so where agents work may be missing.',
   sessions: 'Couldn’t read recent sessions, so “last active” may be missing.',
 };
 

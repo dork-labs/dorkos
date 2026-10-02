@@ -145,7 +145,7 @@ async function uploadOverHttp<T>(
 
     xhr.addEventListener('error', () => {
       clearTimeout(stallTimer);
-      reject(new Error('Upload failed'));
+      reject(new Error('Couldn’t upload the file'));
     });
     xhr.addEventListener('abort', () => {
       clearTimeout(stallTimer);

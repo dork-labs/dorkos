@@ -119,7 +119,7 @@ describe('extension decisions in Activity', () => {
     renderList([row]);
     const user = userEvent.setup();
     await screen.findByText('Shipped. Next time, ship on its own?');
-    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    await user.click(screen.getByRole('button', { name: 'Allow next time' }));
     await waitFor(() =>
       expect(posts).toEqual([
         { url: `/api/extension-decisions/${row.subject.id}/offer`, body: { accept: true } },

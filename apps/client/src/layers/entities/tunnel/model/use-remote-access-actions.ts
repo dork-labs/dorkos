@@ -65,7 +65,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
         useRemoteAccessStore.getState().abandonStart();
         requestOwnerSetup({
           reason: 'exposure',
-          message: 'Exposing DorkOS requires a login.',
+          message: 'Remote access needs a login.',
           onComplete: () => void startRef.current?.(),
         });
         return;
@@ -108,7 +108,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
         .failStop(
           err instanceof Error
             ? err.message
-            : 'Couldn’t close your link. Not sure if it’s still on.'
+            : 'Couldn’t close your link. DorkOS can’t tell if it’s still on.'
         );
     }
   }, [transport, queryClient]);

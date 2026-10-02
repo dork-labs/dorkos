@@ -138,7 +138,7 @@ describe('the box states its own scope, before anything is typed', () => {
     revealScopeDetail();
 
     expect(
-      screen.getByText('Your DorkOS channels and direct messages, the moment they are posted.')
+      screen.getByText('Your channels and direct messages, as soon as they’re posted.')
     ).toBeInTheDocument();
     // The five-minute lag on transcripts is stated rather than averaged away:
     // DorkOS owns the room write and indexes it on the spot, and a Claude Code,
@@ -147,7 +147,7 @@ describe('the box states its own scope, before anything is typed', () => {
     // that sweep (DOR-683, DOR-688).
     expect(
       screen.getByText(
-        'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.'
+        'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.'
       )
     ).toBeInTheDocument();
   });
@@ -158,7 +158,7 @@ describe('the box states its own scope, before anything is typed', () => {
 
     expect(
       screen.getByText(
-        'Tool output is never searched. No error messages, no stack traces, no file contents, no diffs. Search reads what you and your agents said to each other.'
+        'Tool output is never searched: no errors, stack traces, file contents or diffs.'
       )
     ).toBeInTheDocument();
   });
@@ -172,7 +172,7 @@ describe('the box states its own scope, before anything is typed', () => {
 
     expect(
       screen.getByText(
-        'Search matches whole words. Typing "ogs" will not find "dogs". Type "dog*" to match the start of a word instead.'
+        'Matches whole words: “ogs” won’t find “dogs”. Type “dog*” to match word starts.'
       )
     ).toBeInTheDocument();
   });
@@ -222,12 +222,12 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     expect(scopeLine()).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.'
+        'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.'
       )
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Search matches whole words. Typing "ogs" will not find "dogs". Type "dog*" to match the start of a word instead.'
+        'Matches whole words: “ogs” won’t find “dogs”. Type “dog*” to match word starts.'
       )
     ).toBeInTheDocument();
   });
@@ -255,7 +255,7 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     revealScopeDetail();
     expect(
       screen.getByText(
-        'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.'
+        'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.'
       )
     ).toBeInTheDocument();
   });
@@ -312,7 +312,7 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     expect(screen.queryByText(SEARCH_SCOPE_GAPS[0]!)).toBeNull();
     expect(
       screen.getByText(
-        'Searches what was said in channels and direct messages, and in Claude Code, Codex and OpenCode conversations. Not tool output.'
+        'Searches channels, direct messages, and Claude Code, Codex and OpenCode conversations. Not tool output.'
       )
     ).toBeInTheDocument();
 

@@ -91,5 +91,5 @@ export const TASK_ORIGIN_SESSION: Session = {
 export const GROUPED_SESSIONS = [
   { label: 'Today', sessions: MOCK_SESSIONS.slice(0, 2) },
   { label: 'Yesterday', sessions: MOCK_SESSIONS.slice(2, 4) },
-  { label: 'Previous 7 Days', sessions: MOCK_SESSIONS.slice(4) },
+  { label: 'Previous 7 days', sessions: MOCK_SESSIONS.slice(4) },
 ];
