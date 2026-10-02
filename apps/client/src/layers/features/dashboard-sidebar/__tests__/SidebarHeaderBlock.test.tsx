@@ -1565,7 +1565,7 @@ describe('the context switcher’s lifecycle actions', () => {
       })
     );
     expect(toast.warning).toHaveBeenCalledWith(
-      'Couldn’t reach Alpha. There, remove Scout under Agents and this DorkOS under Connected installations.',
+      'Disconnected here, but Alpha couldn’t be reached. Remove Scout and this DorkOS there.',
       expect.anything()
     );
     expect(toast.success).not.toHaveBeenCalled();
