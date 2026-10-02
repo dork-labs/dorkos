@@ -10,9 +10,9 @@ This directory contains the **Claude Code Harness** — the customization framew
 | ------------- | ----- | ---------------------------------------------------------------------------- |
 | Commands      | 42    | `.claude/commands/`                                                          |
 | Agents        | 7     | `.claude/agents/`                                                            |
-| Skills        | 37    | `.claude/skills/` (14 Claude-only dirs + 23 symlinks into `.agents/skills/`) |
-| Shared Skills | 23    | `.agents/skills/` (canonical, projected to other harnesses)                  |
-| Rules         | 14    | `.claude/rules/`                                                             |
+| Skills        | 38    | `.claude/skills/` (14 Claude-only dirs + 24 symlinks into `.agents/skills/`) |
+| Shared Skills | 24    | `.agents/skills/` (canonical, projected to other harnesses)                  |
+| Rules         | 15    | `.claude/rules/`                                                             |
 | Claude Hooks  | 12    | `.claude/hooks/`, wired in `.claude/settings.json`                           |
 | Git Hooks     | —     | `lefthook.yml` (pre-commit/pre-push) + `.claude/git-hooks/` (post-commit)    |
 | ADRs          | 251   | `decisions/` (+87 archived)                                                  |
@@ -93,6 +93,7 @@ Skills load their description into every session (the retrieval index) and their
 | `verification-before-completion` | Evidence before completion claims                                                                                    |
 | `visual-companion`               | Browser-based visual mockups/diagrams                                                                                |
 | `working-in-worktrees`           | Worktree isolation decision + mechanics                                                                              |
+| `writing-app-copy`               | In-app copy standard: voice, the 15-word cap per block, buttons, errors, approvals (apps/client)                     |
 | `writing-adrs`                   | ADR quality, significance rubric, lifecycle                                                                          |
 | `writing-blog-posts`             | Non-release blog posts (release posts belong to `/system:release` 6.7)                                               |
 | `writing-changelogs`             | Human-friendly changelog entries                                                                                     |
@@ -115,6 +116,7 @@ Rules inject context when Claude edits matching files (`paths:` frontmatter — 
 | Rule                     | Applies To                                        | Key Guidance                                                   |
 | ------------------------ | ------------------------------------------------- | -------------------------------------------------------------- |
 | `agent-storage.md`       | mesh package, manifest, agents/mesh routes        | File-first write-through (ADR-0043)                            |
+| `app-copy.md`            | `apps/client/src/**/*.{ts,tsx}`                   | In-app copy pointer to `writing-app-copy`: voice + length cap  |
 | `api.md`                 | `apps/server/src/routes/**/*.ts`                  | Zod validation, thin routes, error shapes                      |
 | `ci-pipeline.md`         | workflows, lefthook, turbo, hooks, `ci/`, scripts | Pipeline change protocol: hypothesis, ledger, deadlock, fence  |
 | `components.md`          | `apps/client/src/**/*.tsx`                        | Radix/shadcn patterns, a11y, which utilities exist             |

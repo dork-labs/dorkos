@@ -406,6 +406,8 @@ Never nest accordions, and keep nav trees to **one indent level** — depth past
 
 #### Casing: sentence case everywhere
 
+The casing and punctuation rules below are the mechanics. Voice, the word-count cap and the rules for buttons, errors, empty states and approvals are the `writing-app-copy` skill.
+
 The rule above is not a sidebar rule, it is the house rule. **Every string a person reads is sentence case** — headings, section labels, buttons, menu items, tab titles, dialog titles, settings rows, tooltips, `aria-label`s. Capitalise the first word and nothing else.
 
 The only exceptions are proper nouns: product names (DorkOS, Claude Code, Codex, OpenCode, Obsidian, Slack, Telegram, GitHub), named surfaces that are titles in their own right (Control Center, Dev Playground), and acronyms (ID, MCP, URL). "Reset all data", not "Reset All Data". "Open in a new tab", not "Open in New Tab". "Marketplace sources", not "Marketplace Sources".
