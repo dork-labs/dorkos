@@ -280,7 +280,7 @@ function TopologyGraphInner({
       <QueryErrorState
         className="h-full"
         title="Couldn’t draw the map of your agents"
-        description="The mesh API is unreachable. Check that the server is running."
+        description="Couldn’t reach DorkOS. Check that it’s running."
         onRetry={() => void refetch()}
       />
     );
@@ -291,9 +291,9 @@ function TopologyGraphInner({
       <EmptyState
         className="h-full"
         icon={Globe}
-        headline="No agents discovered yet"
+        headline="No agents found yet"
         headingLevel={3}
-        description="Discover agents from your workspace to see them on the topology graph."
+        description="Find agents on this computer to see them here."
         action={
           onGoToDiscovery
             ? { label: 'Go to Discovery', onClick: onGoToDiscovery, variant: 'outline' }
@@ -312,7 +312,7 @@ function TopologyGraphInner({
       className={cn('topology-container absolute inset-0', connectingFrom && 'is-connecting')}
       role="group"
       aria-roledescription="network topology graph"
-      aria-label="Network topology graph"
+      aria-label="Map of your agents"
       aria-describedby="topology-graph-summary"
     >
       {/* Screen-reader summary. Also names the keyboard-accessible path to
@@ -324,9 +324,11 @@ function TopologyGraphInner({
           "connection": the EDGE is the connection here (ADR 260804-021140's
           viewport test), and one word cannot mean both inside one canvas. */}
       <div id="topology-graph-summary" className="sr-only">
-        Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} platform
-        {adapterCount !== 1 ? 's' : ''}, {bindingCount} connection{bindingCount !== 1 ? 's' : ''}.
-        To connect a platform to an agent with the keyboard, use the agent’s Connections section.
+        <p>
+          {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} platform
+          {adapterCount !== 1 ? 's' : ''}, {bindingCount} connection{bindingCount !== 1 ? 's' : ''}.
+        </p>
+        <p>To connect by keyboard, use the agent’s Connections section.</p>
       </div>
       <ReactFlow
         nodes={layoutedNodes}
@@ -431,9 +433,9 @@ function TopologyGraphInner({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove connection</AlertDialogTitle>
+            <AlertDialogTitle>Remove this connection?</AlertDialogTitle>
             <AlertDialogDescription>
-              Remove this connection? The agent will no longer receive messages from it.
+              The agent stops getting messages from it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -91,16 +91,16 @@ export interface ClaimAndConnect {
 }
 
 const NOT_CLAIMED_YET: HostingNotice = {
-  message: 'Your sign-in isn’t finished yet. Finish it in your browser, then try again.',
+  message: 'Finish signing in in your browser, then try again.',
 };
 const POPUP_BLOCKED: HostingNotice = {
-  message: 'Your browser blocked the new window. Allow pop-ups for DorkOS, then try again.',
+  message: 'Your browser blocked the window. Allow pop-ups, then try again.',
 };
 const CONNECT_FAILED: HostingNotice = {
   message: 'Couldn’t connect this DorkOS to the space. Try again.',
 };
 const APPROVAL_ENDED: HostingNotice = {
-  message: 'The approval ended before it finished. Connect again to continue.',
+  message: 'The approval ran out. Connect again.',
 };
 
 /**

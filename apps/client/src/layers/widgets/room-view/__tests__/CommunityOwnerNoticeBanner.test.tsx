@@ -98,12 +98,11 @@ describe('the owner banner on a community’s page', () => {
     const banner = await screen.findByRole('region', {
       name: 'Request to take over this space',
     });
+    expect(banner).toHaveTextContent('Someone asked to become this space’s owner');
     expect(banner).toHaveTextContent(
-      'The host has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen after a waiting period of at least 7 days.'
+      'That can happen in 7 days or more, unless you keep ownership.'
     );
-    expect(banner).toHaveTextContent(
-      'Open the space to keep ownership. You can also hand it to someone yourself, or delete it.'
-    );
+    expect(banner).toHaveTextContent('You can also hand it over, or delete it.');
     // The page body is still there beneath it.
     expect(screen.getByText('No channel selected')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open space' }));

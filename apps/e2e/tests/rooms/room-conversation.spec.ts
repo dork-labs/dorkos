@@ -226,7 +226,7 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
     roomsApi.track(new URL(page.url()).searchParams.get('id')!);
 
-    await expect(page.getByText(/no agents in here, so nothing will answer/i)).toBeVisible({
+    await expect(page.getByText(/Nothing answers until you add an agent/i)).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await roomsPage.emptyStateAddAgents.click();

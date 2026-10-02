@@ -37,7 +37,7 @@ export function TopologyLegend({ namespaces }: TopologyLegendProps) {
               <circle cx="8" cy="2" r="2.5" fill="var(--color-primary)" opacity="0.9" />
             </svg>
           </span>
-          <span>Allow rule (data flow)</span>
+          <span>Allow rule</span>
         </div>
         <div className="flex items-center gap-2">
           <svg width="24" height="4" className="overflow-visible">

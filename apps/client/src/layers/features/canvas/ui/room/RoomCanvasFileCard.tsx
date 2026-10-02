@@ -65,8 +65,7 @@ export function RoomCanvasFileCard({ roomId, document, reading }: RoomCanvasFile
         ) : (
           <>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              This file is in the room’s files. Changes you save here become one commit with your
-              name on it.
+              A room file. Each save is recorded with your name.
             </p>
             <Button type="button" size="sm" onClick={() => setOpenPath(reading.sourcePath)}>
               Open file

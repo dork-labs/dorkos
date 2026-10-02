@@ -52,8 +52,7 @@ export function AgentRosterPicker({ roster, exclude, ...picker }: AgentRosterPic
     return (
       <div role="alert" className="space-y-2 py-1">
         <p className="text-muted-foreground text-xs">
-          Couldn’t read your agents just now, so there is nothing to choose from. They are all still
-          there.
+          Couldn’t load your agents. They’re all still there.
         </p>
         <Button type="button" size="sm" variant="outline" onClick={roster.retry}>
           Try again

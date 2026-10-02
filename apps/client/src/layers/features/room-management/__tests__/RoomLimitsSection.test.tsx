@@ -213,9 +213,7 @@ describe('RoomLimitsSection', () => {
     await user.tab();
 
     expect(
-      await screen.findByText(
-        'Enter a whole number from 0 to 100, or leave it empty for the default.'
-      )
+      await screen.findByText('Enter a whole number, 0 to 100. Empty uses the default.')
     ).toBeInTheDocument();
     expect(transport.updateRoom).not.toHaveBeenCalled();
   });
@@ -309,9 +307,7 @@ describe('RoomLimitsSection', () => {
       await user.click(screen.getByRole('radio', { name: 'Not limited' }));
 
       expect(
-        await screen.findByText(
-          'Only the person who owns this DorkOS can change a room\u2019s limits.'
-        )
+        await screen.findByText('Only the owner of this DorkOS can change room limits.')
       ).toBeInTheDocument();
       await waitFor(() =>
         expect(screen.getByRole('radio', { name: 'Follow Settings' })).toBeChecked()

@@ -6,7 +6,7 @@
  */
 import { useId, useState, type FormEvent } from 'react';
 import type { CloudCommunityMove } from '@dorkos/shared/cloud-schemas';
-import { Button, Input, Label, Progress, Spinner } from '@/layers/shared/ui';
+import { Button, Input, Label, MoreDetails, Progress, Spinner } from '@/layers/shared/ui';
 import { CloudEligibilityNote } from '@/layers/features/cloud-link';
 import { formatBytes, moveFailureCopy, readWebAddress } from '../model/hosting-copy';
 import { useClaimAndConnect } from '../model/use-claim-and-connect';
@@ -32,16 +32,20 @@ export const MOVE_DONE_DETAIL = 'Your history is here. Send invitations so peopl
 export function moveExplainStep(onNext: () => void, onCancel: () => void): HostingStep {
   return {
     title: 'Move a space here',
-    description:
-      'Moving copies your space’s history and files to DorkOS. Everyone joins again and reconnects their DorkOS. Your old space keeps running until you delete it.',
+    description: 'This copies your space’s history and files to DorkOS.',
     body: (
       <div className="space-y-2 text-sm">
-        <p className="font-medium">First, get an export of the old space:</p>
+        <MoreDetails>
+          <p>Everyone joins again and reconnects their DorkOS.</p>
+          <p>Your old space keeps running until you delete it.</p>
+        </MoreDetails>
+        <p className="font-medium">First, export the old space:</p>
         <ol className="text-muted-foreground list-decimal space-y-1 pl-5">
-          <li>Open the old space’s Settings, signed in as its owner.</li>
+          <li>Sign in to the old space as its owner.</li>
+          <li>Open its Settings.</li>
           <li>Choose Export.</li>
-          <li>Confirm with your password.</li>
-          <li>Save the file. It ends in .zip.</li>
+          <li>Enter your password.</li>
+          <li>Save the .zip file.</li>
         </ol>
       </div>
     ),
@@ -114,7 +118,7 @@ export function moveChooseStep(props: MoveChooseStepProps): HostingStep {
     props.webAddressStatus.kind === 'reserved';
   return {
     title: 'Choose the export',
-    description: 'Pick the .zip file you saved, and name the space here.',
+    description: 'Pick the .zip file, then name the space.',
     body: (
       <form id={props.formId} onSubmit={props.onSubmit} className="space-y-4" noValidate>
         <ExportFileField file={props.file} onFileChange={props.onFileChange} />
@@ -176,7 +180,7 @@ export function moveSendingStep(
 ): HostingStep {
   return {
     title: 'Getting the file ready',
-    description: 'Keep this open until the file is ready. It then uploads on its own.',
+    description: 'Keep this open. The upload then starts on its own.',
     body: <ByteProgress label="Getting the file ready" {...sending} />,
     actions: (
       <Button variant="outline" onClick={onCancel}>
@@ -234,8 +238,7 @@ export function moveProgressStep(
       const upload = move.upload!;
       return {
         title: `Uploading ${move.name}`,
-        description:
-          'This computer is sending the export to DorkOS. You can close this window, but keep DorkOS running until this finishes.',
+        description: 'You can close this window. Keep DorkOS running until it finishes.',
         body: (
           <>
             <ByteProgress
@@ -253,8 +256,7 @@ export function moveProgressStep(
       if (step.why === 'interrupted') {
         return {
           title: 'The upload didn’t finish',
-          description:
-            'The upload stopped part way. Your DorkOS still has the file; send it again to carry on.',
+          description: 'DorkOS still has the file. Send it again to continue.',
           body: notice,
           actions: (
             <>
@@ -269,23 +271,38 @@ export function moveProgressStep(
       if (step.why === 'refused')
         return {
           title: 'DorkOS didn’t accept the file',
-          description:
-            'The file arrived changed or incomplete. Cancel the move, export the old space again, then start again.',
-          body: notice,
+          description: 'The file arrived changed or incomplete.',
+          body: (
+            <>
+              <p className="text-muted-foreground text-sm">
+                Cancel the move, export the old space again, then start again.
+              </p>
+              {notice}
+            </>
+          ),
           actions: cancelMove,
         };
       if (step.why === 'restarted')
         return {
           title: 'This move has to start again',
-          description:
-            'This DorkOS isn’t holding the upload any more: either DorkOS restarted since the move began, or the move was started on another computer. For safety, the permission to upload is kept only while DorkOS is running. Cancel the move and start again with the same export, or finish it on the computer that started it.',
-          body: notice,
+          description: 'DorkOS restarted, or the move began on another computer.',
+          body: (
+            <>
+              <p className="text-muted-foreground text-sm">
+                Cancel the move and start again with the same export.
+              </p>
+              <MoreDetails>
+                <p>Or finish it on the computer that started it.</p>
+                <p>For safety, the upload is only allowed while DorkOS stays running.</p>
+              </MoreDetails>
+              {notice}
+            </>
+          ),
           actions: cancelMove,
         };
       return {
         title: 'The time to upload ran out',
-        description:
-          'DorkOS stopped waiting for the file. Cancel the move, then start again with the same export.',
+        description: 'Cancel the move, then start again with the same export.',
         body: notice,
         actions: cancelMove,
       };
@@ -293,8 +310,7 @@ export function moveProgressStep(
       const counts = reportLine(move);
       return {
         title: `Moving ${move.name}`,
-        description:
-          'DorkOS is reading your history and files. You can close this window, or quit the app; the move keeps going and shows here again when you come back.',
+        description: 'You can close this window or quit. The move keeps going.',
         body: (
           <>
             <p role="status" className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -319,7 +335,7 @@ export function moveProgressStep(
         description: copy.next,
         body: (
           <p className="text-muted-foreground text-sm">
-            Nothing was kept, and your old space is unchanged.
+            Nothing was kept. Your old space is unchanged.
           </p>
         ),
         actions: (
@@ -333,7 +349,7 @@ export function moveProgressStep(
     case 'cancelled':
       return {
         title: 'Move cancelled',
-        description: 'Nothing was kept, and your old space is unchanged.',
+        description: 'Nothing was kept. Your old space is unchanged.',
         actions: (
           <>
             {close}
@@ -344,8 +360,7 @@ export function moveProgressStep(
     case 'unrecognised':
       return {
         title: `Moving ${move.name}`,
-        description:
-          'This move is in a state this version of DorkOS doesn’t know. Update DorkOS to see more.',
+        description: 'Update DorkOS to see where this move is.',
         body: notice,
         actions: close,
       };

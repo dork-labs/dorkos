@@ -42,10 +42,10 @@ function messageOf(error: unknown): string | undefined {
 export function roomLimitsErrorMessage(error: unknown): string {
   switch (codeOf(error)) {
     case 'OPERATOR_ONLY':
-      return 'Only the person who owns this DorkOS can change a room’s limits.';
+      return 'Only the owner of this DorkOS can change room limits.';
     case 'ROOM_ARCHIVED':
-      return 'This room is archived, so its limits are on hold. Bring it back first.';
+      return 'This room is archived. Bring it back to change its limits.';
     default:
-      return messageOf(error) ?? 'That limit could not be saved. Try again.';
+      return messageOf(error) ?? 'Couldn’t save that limit. Try again.';
   }
 }

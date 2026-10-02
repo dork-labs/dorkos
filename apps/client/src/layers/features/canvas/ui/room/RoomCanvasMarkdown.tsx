@@ -86,7 +86,7 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
     const landed = await onSave(document.id, { ...content, content: draft });
     setSaving(false);
     if (landed) setDraft(null);
-    else setRefusal('That didn’t save. Your words are still here — try again.');
+    else setRefusal('Couldn’t save. Your words are still here. Try again.');
   };
 
   return (

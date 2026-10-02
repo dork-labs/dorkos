@@ -52,7 +52,7 @@ describe('roomDocumentReading — a document that names a file', () => {
     );
     expect(reading.kind).toBe('elsewhere');
     expect(reading.kind === 'elsewhere' && reading.sentence).toContain('Ana');
-    expect(reading.kind === 'elsewhere' && reading.sentence).toContain('can’t open from here');
+    expect(reading.kind === 'elsewhere' && reading.sentence).toContain('Ask them to share it');
   });
 
   it('refuses a file in somebody’s own project in a room with no files of its own', () => {
@@ -89,6 +89,8 @@ describe('roomDocumentReading — a document that names a file', () => {
       doc({ content: { type: 'image', src: 'docs/logo.png' }, treeKind: 'room-main' })
     );
     expect(reading.kind).toBe('elsewhere');
-    expect(reading.kind === 'elsewhere' && reading.sentence).toContain('Files section');
+    expect(reading.kind === 'elsewhere' && reading.sentence).toContain(
+      'Open it from Files in the Room tab'
+    );
   });
 });

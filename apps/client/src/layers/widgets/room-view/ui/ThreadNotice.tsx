@@ -35,9 +35,7 @@ export function ThreadNotice({ kind }: { kind: ThreadNoticeKind }) {
         className="text-muted-foreground flex flex-col items-center gap-2 px-[var(--msg-padding-x)] py-6 text-center text-sm"
       >
         <p className="text-foreground font-medium">Couldn’t load this thread</p>
-        <p className="max-w-sm text-xs">
-          Nothing was lost. A room keeps everything that was said. Reload to try again.
-        </p>
+        <p className="max-w-sm text-xs">Nothing was lost. Reload to try again.</p>
       </div>
     );
   }
@@ -61,7 +59,7 @@ export function ThreadNotice({ kind }: { kind: ThreadNoticeKind }) {
       data-testid="room-thread-orphan"
       className="text-muted-foreground border-b px-[var(--msg-padding-x)] pb-3 text-xs italic"
     >
-      The start of this thread is gone. What was said after it is still here.
+      This thread’s first message is gone. Its replies remain.
     </p>
   );
 }

@@ -134,7 +134,7 @@ describe('useRoomAttachments — holding files until the message goes', () => {
     await waitFor(() => expect(result.current.hasFailedUpload).toBe(true));
 
     await expect(result.current.uploadAndGetIds()).rejects.toThrow(
-      'a.txt did not upload. Retry it or remove it, then send again.'
+      'a.txt didn’t upload. Try again or remove it.'
     );
   });
 

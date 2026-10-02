@@ -30,7 +30,7 @@ export function CanvasHeldUpdateBanner({ onReload, onKeepMine }: CanvasHeldUpdat
       role="status"
       className="border-border/60 bg-muted/40 mx-2 mt-2 space-y-2 rounded-md border px-3 py-2 text-sm"
     >
-      <p>Your agent changed this while you were editing, so nothing here moved.</p>
+      <p>Your agent changed this while you were editing.</p>
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm" onClick={onReload}>
           Reload
@@ -40,7 +40,7 @@ export function CanvasHeldUpdateBanner({ onReload, onKeepMine }: CanvasHeldUpdat
         </Button>
       </div>
       <p className="text-muted-foreground text-xs">
-        Reload shows their version and ends your edit. Keep mine throws theirs away.
+        Reload shows its version and ends your edit. Keep mine discards it.
       </p>
     </div>
   );

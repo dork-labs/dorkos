@@ -468,7 +468,7 @@ describe('TopologyGraph', () => {
 
       // Wait for layout to settle
       await waitFor(() => {
-        expect(screen.getByText('No agents discovered yet')).toBeInTheDocument();
+        expect(screen.getByText('No agents found yet')).toBeInTheDocument();
       });
     });
 
@@ -1096,11 +1096,7 @@ describe('TopologyGraph', () => {
       removeEdge('binding:bind-1');
 
       // Confirm dialog is shown; nothing is deleted yet.
-      expect(
-        screen.getByText(
-          'Remove this connection? The agent will no longer receive messages from it.'
-        )
-      ).toBeInTheDocument();
+      expect(screen.getByText('The agent stops getting messages from it.')).toBeInTheDocument();
       expect(mockDeleteBindingMutate).not.toHaveBeenCalled();
     });
 

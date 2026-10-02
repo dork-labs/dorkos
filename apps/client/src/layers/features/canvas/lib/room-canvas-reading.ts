@@ -123,8 +123,7 @@ export function roomDocumentReading(document: CanvasDocument): RoomDocumentReadi
     return {
       kind: 'elsewhere',
       sourcePath,
-      sentence:
-        'This file is in the room’s own files. Open it from the Files section of the Room tab.',
+      sentence: 'This file is in the room’s files. Open it from Files in the Room tab.',
     };
   }
 
@@ -152,6 +151,6 @@ export function roomDocumentReading(document: CanvasDocument): RoomDocumentReadi
   return {
     kind: 'elsewhere',
     sourcePath,
-    sentence: `This file is in ${ownerOf(document)}’s project, which you can’t open from here. Ask them to share it, or open your own copy.`,
+    sentence: `This file is in ${ownerOf(document)}’s project. Ask them to share it, or open your copy.`,
   };
 }

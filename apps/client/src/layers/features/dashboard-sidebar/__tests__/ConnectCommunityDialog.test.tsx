@@ -622,7 +622,7 @@ describe('ConnectCommunityDialog', () => {
     await user.click(await screen.findByRole('button', { name: 'Disconnect' }));
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(
-        'Community A is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Community A.'
+        'Disconnected here, but Community A couldn’t be reached. Finish under Connected installations on Community A.'
       )
     );
   });
@@ -652,7 +652,7 @@ describe('ConnectCommunityDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Disconnect' }));
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(
-        'Community A is disconnected, but Scout couldn’t be removed from it. To finish, remove it under Agents on Community A.'
+        'Disconnected, but Scout couldn’t be removed. Remove it under Agents on Community A.'
       )
     );
   });

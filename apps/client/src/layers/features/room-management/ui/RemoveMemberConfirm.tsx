@@ -50,9 +50,9 @@ export function RemoveMemberConfirm({
       className="bg-muted/60 mt-2 ml-11 space-y-2 rounded-md p-2 md:ml-10"
     >
       <p className="text-muted-foreground text-xs">
-        Remove {memberName}? It stops seeing new messages here and what it already said stays.
-        Adding it back starts a fresh session.
+        Remove {memberName}? It stops seeing new messages. Its messages stay.
       </p>
+      <p className="text-muted-foreground text-xs">Adding it back starts a fresh session.</p>
       <div className="flex items-center justify-end gap-2">
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
           Cancel

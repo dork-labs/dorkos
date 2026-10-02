@@ -488,9 +488,7 @@ export function RoomFlow({
     return (
       <div className="text-muted-foreground flex flex-col items-center gap-2 p-10 text-center text-sm">
         <p className="text-foreground font-medium">Couldn’t load this conversation</p>
-        <p className="max-w-sm">
-          Nothing was lost. A room keeps everything that was said. Reload to try again.
-        </p>
+        <p className="max-w-sm">Nothing was lost. Reload to try again.</p>
       </div>
     );
   }
@@ -503,9 +501,7 @@ export function RoomFlow({
       <MessagesSquare className="text-muted-foreground/50 size-8" aria-hidden />
       <p className="text-foreground font-medium">Nothing said here yet</p>
       <p className="max-w-sm">
-        {hasAgents
-          ? 'Say something to get it going. Everything said here stays here.'
-          : 'There are no agents in here, so nothing will answer. Add one and it can read everything said here.'}
+        {hasAgents ? 'Say something to get it going.' : 'Nothing answers until you add an agent.'}
       </p>
       <Button
         type="button"

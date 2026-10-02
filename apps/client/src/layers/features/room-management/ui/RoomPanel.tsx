@@ -87,7 +87,7 @@ export function RoomPanel() {
     return (
       <RoomPanelNotice
         title="No room open"
-        body="Open a channel or a direct message and this panel says who is in it."
+        body="Open a channel or direct message to see who’s in it."
       />
     );
   }

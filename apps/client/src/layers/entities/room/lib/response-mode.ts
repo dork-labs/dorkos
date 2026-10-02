@@ -169,12 +169,12 @@ function count(value: number, unit: string): string {
  * has numbers in it.
  */
 function explainEngaged(window: EngagedWindow | null): RungExplanation {
-  const quietAgain = 'Then it goes quiet again until you say its name.';
+  const quietAgain = 'Then it goes quiet until you say its name.';
   if (window === null) {
     // The numbers are settings, so inventing them would state something false
     // about somebody's own install. The shape of the rule is still true.
     return {
-      sentence: 'Answers when you @mention it, then keeps answering for a while afterwards.',
+      sentence: 'Answers when @mentioned, then keeps answering for a while.',
       note: quietAgain,
     };
   }
@@ -182,15 +182,15 @@ function explainEngaged(window: EngagedWindow | null): RungExplanation {
     // Either ceiling at zero means the window can never be open — see
     // `services/rooms/engagement.ts`, where both terms have to hold.
     return {
-      sentence: 'Answers when you @mention it, and stops as soon as it has.',
-      note: 'The engaged window is switched off on this DorkOS, so this behaves like @only.',
+      sentence: 'Answers when @mentioned, and stops once it has.',
+      note: 'Follow-up answers are off on this DorkOS, so this works like @only.',
     };
   }
   return {
     sentence:
-      `Answers when you @mention it, then keeps answering for ` +
-      `${count(window.engagedWindowMinutes, 'more minute')} or ` +
-      `${count(window.engagedWindowPosts, 'more message')}, whichever runs out first.`,
+      `Answers when @mentioned, then for ` +
+      `${count(window.engagedWindowMinutes, 'minute')} or ` +
+      `${count(window.engagedWindowPosts, 'message')}, whichever ends first.`,
     note: quietAgain,
   };
 }

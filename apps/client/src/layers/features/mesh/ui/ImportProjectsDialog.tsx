@@ -68,8 +68,8 @@ export function ImportProjectsDialog() {
           <ResponsiveDialogTitle>Bring in existing projects</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
             {showSummary
-              ? 'All set. Your projects are ready to manage in DorkOS.'
-              : 'Scan your machine for existing projects and add the ones you want to manage.'}
+              ? 'Your projects are ready in DorkOS.'
+              : 'Find projects on this computer to add.'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -84,7 +84,7 @@ export function ImportProjectsDialog() {
                 {joinedLabel}
               </p>
               <p className="text-muted-foreground text-sm">
-                Assign agents, schedule tasks, and connect Slack or Telegram from the Team page.
+                Manage agents, tasks and chat apps from the Team page.
               </p>
             </div>
           </ResponsiveDialogBody>

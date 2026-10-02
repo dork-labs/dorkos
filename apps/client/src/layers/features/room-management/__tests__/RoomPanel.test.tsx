@@ -473,7 +473,7 @@ describe('RoomPanel', () => {
       agents: settled([]),
       transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
     });
-    await screen.findByText(/You have not added any agents yet/i);
+    await screen.findByText(/You don’t have any agents yet/i);
 
     fireEvent.click(addSection().getByRole('button', { name: 'Create agent' }));
 
@@ -507,7 +507,7 @@ describe('RoomPanel', () => {
     const { transport } = renderPanel({ transport: createMockTransport({ getRoom }) });
     await screen.findByText('That room isn’t here');
     // And it says why it might have happened, rather than only that it did.
-    expect(screen.getByText(/deleted, or the link may be out of date/i)).toBeInTheDocument();
+    expect(screen.getByText(/deleted, or the link is old/i)).toBeInTheDocument();
 
     const before = vi.mocked(transport.getRoom).mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -590,7 +590,7 @@ describe('RoomPanel', () => {
 
       expect(
         addSection().getByText(
-          'Ana is no longer on your team. Adding an agent turns this into a group conversation.'
+          'Ana is no longer on your team. Adding an agent makes this a group conversation.'
         )
       ).toBeInTheDocument();
     });
@@ -670,9 +670,7 @@ describe('RoomPanel', () => {
       await rosterSection();
       openScale();
 
-      expect(
-        await screen.findByText(/keeps answering for 3 more minutes or 7 more messages/)
-      ).toBeInTheDocument();
+      expect(await screen.findByText(/then for 3 minutes or 7 messages/)).toBeInTheDocument();
     });
 
     it('shows a direct message’s stored engaged value as engaged, and says what it does', async () => {
@@ -1288,7 +1286,7 @@ describe('RoomPanel', () => {
         fireEvent.keyDown(openScale('Ana'), { key: 'Home' });
 
         expect(document.querySelector('[data-slot="room-loudness-line"]')).toBeNull();
-        expect(screen.getByText(/their settings are on hold/)).toBeInTheDocument();
+        expect(screen.getByText(/Bring it back to make changes/)).toBeInTheDocument();
       });
     });
   });
@@ -1354,7 +1352,7 @@ describe('RoomPanel', () => {
       renderArchivable(true);
       await rosterSection();
 
-      expect(screen.getByText(/Nobody is triggered in an archived room/)).toBeInTheDocument();
+      expect(screen.getByText(/Archived rooms don’t answer/)).toBeInTheDocument();
       expect(screen.queryByText(/answer you here/)).not.toBeInTheDocument();
     });
 
@@ -1380,7 +1378,7 @@ describe('RoomPanel', () => {
       const rung = within(openScale()).getByRole('radio', { name: 'Everything' });
       expect(rung).toHaveAttribute('aria-disabled', 'true');
       const described = (rung.getAttribute('aria-describedby') ?? '').split(' ');
-      const banner = screen.getByText(/Nobody is triggered in an archived room/);
+      const banner = screen.getByText(/Archived rooms don’t answer/);
       expect(described).toContain(banner.id);
       // The `disabled` attribute is what takes an element out of the tab order,
       // and jsdom has no tab order to check — it will happily focus a disabled

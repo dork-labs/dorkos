@@ -59,7 +59,7 @@ export interface RoomCanvasActions {
 export function roomCanvasRefusal(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : '';
   if (message.length > 0) return message;
-  return 'DorkOS couldn’t reach the server. Check your connection and try again.';
+  return 'Couldn’t reach DorkOS. Check your network and try again.';
 }
 
 /**

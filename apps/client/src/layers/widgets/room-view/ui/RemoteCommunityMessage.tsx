@@ -42,7 +42,7 @@ export function RemoteCommunityMessage({
       link.click();
       link.remove();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The file could not be downloaded.');
+      setError(cause instanceof Error ? cause.message : 'Couldn’t download the file. Try again.');
     } finally {
       if (url) setTimeout(() => URL.revokeObjectURL(url!), 1000);
       setDownloading(null);
