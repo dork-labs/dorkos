@@ -186,3 +186,10 @@ and one failing census. The census is corrected without changing the context
 contract or weakening its exactness assertion; a fresh full verification remains
 required. Combined production composition is committed at 85376f914 before this
 census correction, not yet pushed or claimed clean.
+
+Editor planning found that public page input still accepted the host-only
+selection.ask and md.task.toggled types. Two contract tests reproduced this
+before correction. Both types now join the reserved public set; trusted storage
+still permits them, while public upstream and agent downstream send schemas
+refuse them. This reserves authority without claiming that the trusted editor
+producer or checkbox writer has been implemented.

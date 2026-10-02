@@ -64,13 +64,27 @@ describe('document channel raw envelopes', () => {
   ])('rejects page-controlled %s envelope authority', (key) => {
     expect(PageEventSchema.safeParse({ ...base, [key]: 'injected' }).success).toBe(false);
   });
-  it.each(['doc.opened', 'state.changed', 'event.status', 'app.ack'])(
-    'reserves %s from public input while permitting trusted storage',
-    (type) => {
-      expect(PageEventSchema.safeParse({ ...base, type }).success).toBe(false);
-      expect(StoredPageEventSchema.safeParse({ ...base, type }).success).toBe(true);
-    }
-  );
+  it.each([
+    'doc.opened',
+    'doc.saved',
+    'selection.ask',
+    'md.task.toggled',
+    'state.changed',
+    'event.status',
+    'app.ack',
+  ])('reserves %s from public input while permitting trusted storage', (type) => {
+    expect(PageEventSchema.safeParse({ ...base, type }).success).toBe(false);
+    expect(StoredPageEventSchema.safeParse({ ...base, type }).success).toBe(true);
+    if (type !== 'app.ack')
+      expect(
+        CanvasChannelSendRequestSchema.safeParse({
+          documentId: 'document',
+          eventId: id,
+          type,
+          payload: {},
+        }).success
+      ).toBe(false);
+  });
   it.each([
     undefined,
     NaN,

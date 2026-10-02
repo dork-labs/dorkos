@@ -41,6 +41,8 @@ export const CanvasChannelPublicEventTypeSchema = CanvasChannelEventTypeSchema.r
   (type) =>
     !type.startsWith('doc.') &&
     !type.startsWith('state.') &&
+    type !== 'selection.ask' &&
+    type !== 'md.task.toggled' &&
     type !== 'event.status' &&
     type !== 'app.ack',
   { message: 'This event type is reserved' }
