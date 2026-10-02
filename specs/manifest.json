@@ -3478,6 +3478,15 @@
       "created": "2026-09-30",
       "status": "specified",
       "linearIssue": "DOR-2622"
+    },
+    {
+      "id": "261001-190855",
+      "slug": "shared-browser-control",
+      "title": "One visible browser for people and agents",
+      "created": "2026-10-01",
+      "status": "specified",
+      "project": "Canvas and Browser in Rooms",
+      "linearIssue": "DOR-2667"
     }
   ]
 }
