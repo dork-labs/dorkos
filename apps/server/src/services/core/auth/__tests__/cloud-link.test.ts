@@ -387,6 +387,110 @@ describe('CloudLinkManager', () => {
     expect(paths).toContain('/api/instances/revoke');
   });
 
+  describe('checking the link now, after the account may have gone elsewhere (DOR-2651)', () => {
+    const linked = () =>
+      configManager.set('cloud', {
+        instanceToken: 'dork_inst_live',
+        instanceName: 'kai-mbp',
+        linkedAccountLabel: null,
+      });
+
+    it('unlinks and clears the key when the account no longer accepts it', async () => {
+      linked();
+      const fetchImpl = routerFetch({ heartbeat: () => ({ status: 401, body: {} }) });
+      manager = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+
+      const summary = await manager.checkLink();
+
+      expect(summary).toEqual({ linked: false, accountLabel: null, lastHeartbeatAt: null });
+      expect(configManager.getDot('cloud.instanceToken')).toBeNull();
+      expect(manager.getStatus().state).toBe('unlinked');
+      const paths = fetchImpl.mock.calls.map((c) => new URL(c[0] as string).pathname);
+      expect(paths).toEqual(['/api/instances/heartbeat']);
+    });
+
+    it('keeps the link, and records the heartbeat, when the account still accepts it', async () => {
+      linked();
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({
+          heartbeat: () => ({
+            status: 200,
+            body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-10-01T00:00:00Z' },
+          }),
+        }),
+        sleep: noSleep,
+      });
+
+      const summary = await manager.checkLink();
+
+      expect(summary).toMatchObject({ linked: true, lastHeartbeatAt: '2026-10-01T00:00:00Z' });
+      expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_live');
+    });
+
+    it('keeps the key when the account cannot be reached', async () => {
+      linked();
+      manager = new CloudLinkManager({
+        fetchImpl: routerFetch({ heartbeat: () => ({ status: 503, body: {} }) }),
+        sleep: noSleep,
+      });
+
+      expect((await manager.checkLink()).linked).toBe(true);
+      expect(configManager.getDot('cloud.instanceToken')).toBe('dork_inst_live');
+    });
+
+    it('asks nothing while this computer holds no key', async () => {
+      const fetchImpl = routerFetch({});
+      manager = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+
+      expect((await manager.checkLink()).linked).toBe(false);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('shares one heartbeat between checks that overlap, and reuses its answer briefly', async () => {
+      linked();
+      const fetchImpl = routerFetch({
+        heartbeat: () => ({
+          status: 200,
+          body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-10-01T00:00:00Z' },
+        }),
+      });
+      let clock = 1_000_000;
+      manager = new CloudLinkManager({ fetchImpl, sleep: noSleep, now: () => clock });
+
+      const [first, second] = await Promise.all([manager.checkLink(), manager.checkLink()]);
+
+      expect(first).toEqual(second);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      // Inside the reuse window: the last answer, with no new heartbeat.
+      clock += 14_999;
+      expect(await manager.checkLink()).toEqual(first);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      // Past it: the account is asked again.
+      clock += 1;
+      await manager.checkLink();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it('never reuses an answer given for a different key', async () => {
+      linked();
+      const fetchImpl = routerFetch({
+        heartbeat: () => ({
+          status: 200,
+          body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-10-01T00:00:00Z' },
+        }),
+      });
+      manager = new CloudLinkManager({ fetchImpl, sleep: noSleep, now: () => 1_000_000 });
+      await manager.checkLink();
+      configManager.set('cloud', {
+        instanceToken: 'dork_inst_other',
+        instanceName: 'kai-mbp',
+        linkedAccountLabel: null,
+      });
+      await manager.checkLink();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('keeping the dropped key so a new link can continue the old one (DOR-2521)', () => {
     const LINKED = {
       instanceToken: 'dork_inst_old',

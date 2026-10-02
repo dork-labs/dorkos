@@ -8,6 +8,7 @@ import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-denomin
 import usageWithOtherChargesFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-with-other-charges.json' with { type: 'json' };
 import offersFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers.json' with { type: 'json' };
 import refusalFixture from '@dork-labs/cloud-api/fixtures/v1/problem/entitlement-required-action.json' with { type: 'json' };
+import deletionFixture from '@dork-labs/cloud-api/fixtures/v1/session/account-deletion.json' with { type: 'json' };
 import { TransportProvider } from '@/layers/shared/model';
 import { CreditsGauge, ManageOnWeb, PlanCard } from '@/layers/features/cloud-plan';
 import { createPlaygroundTransport } from '../playground-transport';
@@ -50,6 +51,18 @@ function LinkedCard({ usage, children }: { usage: CloudUsageResponse; children?:
         ok: true,
         export: { requestedAt: '2026-09-15T12:00:00.000Z', readyAt: null, downloadUrl: null },
       },
+      // Asking to delete deletes nothing anywhere: it shows the "check your
+      // email" state, and the link check keeps answering linked.
+      // The deadline is a day from now, so the showcase reads as sent rather
+      // than as an expired link (the fixture's own date is fixed).
+      requestCloudAccountDeletion: {
+        ok: true,
+        deletion: {
+          ...deletionFixture,
+          confirmBy: new Date(Date.now() + 86_400_000).toISOString(),
+        },
+      },
+      checkCloudLink: { linked: true, accountLabel: null, lastHeartbeatAt: null },
     };
     return new Proxy(base, {
       get(target, prop, receiver) {
@@ -93,7 +106,7 @@ export function CloudUsageShowcases() {
       </PlaygroundSection>
       <PlaygroundSection
         title="Manage on the web"
-        description="The buttons that open the billing pages in the browser, what is on sale for an account on no plan (in the service's order, with its names and prices), and asking for a copy of the account's data. Here every billing button answers with a refusal, to show how the service's own words read, and the export answers as being prepared."
+        description="The buttons that open the billing pages in the browser, what is on sale for an account on no plan (in the service's order, with its names and prices), asking for a copy of the account's data, and deleting the account (what goes, what stays, a copy first, a typed word, then “check your email”). Here every billing button answers with a refusal, to show how the service's own words read, the export answers as being prepared, and a deletion request answers as sent while the account keeps accepting this computer."
       >
         <ShowcaseDemo responsive>
           <LinkedCard usage={{ available: true, usage: usageFixture as never }}>

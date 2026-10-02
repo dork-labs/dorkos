@@ -13,6 +13,7 @@
  */
 import type {
   CloudBillingPage,
+  CloudAccountDeletionResponse,
   CloudAccountExportResponse,
   CloudBillingSessionResponse,
   CloudCommunityClaimLinkResponse,
@@ -67,6 +68,10 @@ export function createCloudMethods(baseUrl: string) {
 
     getCloudStatus(): Promise<CloudLinkSummary> {
       return fetchJSON<CloudLinkSummary>(baseUrl, '/cloud/status');
+    },
+
+    checkCloudLink(): Promise<CloudLinkSummary> {
+      return fetchJSON<CloudLinkSummary>(baseUrl, '/cloud/link/check', { method: 'POST' });
     },
 
     getCloudPlan(): Promise<CloudPlanResponse> {
@@ -137,6 +142,23 @@ export function createCloudMethods(baseUrl: string) {
       return fetchJSON<CloudAccountExportResponse>(baseUrl, '/cloud/account/export', {
         method: 'POST',
       });
+    },
+
+    async requestCloudAccountDeletion(): Promise<CloudAccountDeletionResponse> {
+      try {
+        return await fetchJSON<CloudAccountDeletionResponse>(baseUrl, '/cloud/account/deletion', {
+          method: 'POST',
+        });
+      } catch (err) {
+        // The person-only bar answers 403 with a sentence of its own; return
+        // it as the refusal it is, so it is not read as "couldn't reach".
+        const body = (err as { body?: unknown }).body as
+          { ok?: unknown; message?: unknown } | undefined;
+        if (body?.ok === false && typeof body.message === 'string') {
+          return { ok: false, message: body.message };
+        }
+        throw err;
+      }
     },
 
     getCloudCredits(): Promise<CloudCreditsStatus> {

@@ -195,6 +195,26 @@ export type CloudAccountExportResponse =
   | { ok: false; message: string };
 
 /**
+ * A request to delete the DorkOS account that the service accepted.
+ *
+ * Nothing is deleted yet: a confirmation link went to `confirmationSentTo`
+ * (written as the service chose to show it), and the account goes only when
+ * the person follows it. `confirmBy` is when that link stops working, or null
+ * when the service sets no limit.
+ */
+export interface CloudAccountDeletion {
+  requestedAt: string;
+  confirmationSentTo: string;
+  confirmBy: string | null;
+}
+
+/** `POST /api/cloud/account/deletion` — the request just accepted, or a refusal. */
+export type CloudAccountDeletionResponse =
+  | { ok: true; deletion: CloudAccountDeletion }
+  | { ok: false; problem: Problem }
+  | { ok: false; message: string };
+
+/**
  * Why a seat write answers `200` even when it refused.
  *
  * `fetchJSON` throws on every non-2xx, which would turn a refusal into an
