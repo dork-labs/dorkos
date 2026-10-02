@@ -236,12 +236,7 @@ class InputQueue implements TabInput {
         );
       this.held.track(step);
       try {
-        const native = Promise.resolve(this.ports.native.dispatch(step, work.cancel.signal));
-        this.nativePending = native;
-        void native.then(
-          () => this.clearNative(native),
-          () => this.clearNative(native)
-        );
+        const native = this.dispatchNative(step, work.cancel.signal);
         await within(native, work.end, work.cancel.signal);
       } catch (error) {
         // A cancelled/failed started call may already have changed native state.
@@ -271,6 +266,27 @@ class InputQueue implements TabInput {
       }
     }
     return this.result(work.command, 'completed');
+  }
+
+  private dispatchNative(step: NativeInputStep, signal: AbortSignal): Promise<void> {
+    let acknowledge!: () => void;
+    let refuse!: (error: unknown) => void;
+    const native = new Promise<void>((resolve, reject) => {
+      acknowledge = resolve;
+      refuse = reject;
+    });
+    // A started operation must already be attributable when the native port reenters reset.
+    this.nativePending = native;
+    void native.then(
+      () => this.clearNative(native),
+      () => this.clearNative(native)
+    );
+    try {
+      void Promise.resolve(this.ports.native.dispatch(step, signal)).then(acknowledge, refuse);
+    } catch (error) {
+      refuse(error);
+    }
+    return native;
   }
 
   private clearNative(native: Promise<void>): void {
