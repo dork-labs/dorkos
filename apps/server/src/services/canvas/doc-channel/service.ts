@@ -21,6 +21,12 @@ import { DocChannelStore, type DocChannelRow } from './store.js';
 
 /** A current document's private channel data, returned only after scope authorization. */
 export class DocChannelService {
+  private readonly committedInputListeners = new Set<() => void>();
+  /** Observe accepted input after its transaction commits; listeners receive no page data. */
+  onCommittedInput(listener: () => void): () => void {
+    this.committedInputListeners.add(listener);
+    return () => this.committedInputListeners.delete(listener);
+  }
   /** Compose current scope authority, persistence and optional event acceptance engines. */
   constructor(
     private readonly documents: CanvasDocumentStore,
@@ -122,6 +128,15 @@ export class DocChannelService {
         },
       };
     });
+    if (result.receipt.status === 'recorded') {
+      for (const listener of this.committedInputListeners) {
+        try {
+          listener();
+        } catch {
+          // Committed acceptance survives a failed scheduling hint; boot and periodic recovery reread it.
+        }
+      }
+    }
     return { receipt: result.receipt, deliveries: result.deliveries.map(publicDelivery) };
   }
   /** Replay one bounded page after current authorization, with honest payload and receipt floors. */

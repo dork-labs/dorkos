@@ -1,10 +1,10 @@
 # Doc Channel implementation record
 
-**Status:** EXECUTE authorized; task 1.1 merged. Authority/ingest integration and later delivery phases remain in progress.
+**Status:** EXECUTE authorized; 4/22 tasks acceptance-complete after verified foundation and authority merges. Full delivery remains open.
 **Issue:** DOR-2665
 **Worktree:** /Users/doriancollier/.codex/worktrees/171d/dorkos
 **Branch:** codex/doc-channel-authority
-**Current integration base:** e3210be2cb14c823696a213f4df0ab21fa8acdd8
+**Current integration base:** 3f523c20da8b3c3eef0346e7f37ab24af26a34ea (verified authority merge)
 
 ## Run assumptions — 2026-10-01
 
@@ -193,3 +193,31 @@ before correction. Both types now join the reserved public set; trusted storage
 still permits them, while public upstream and agent downstream send schemas
 refuse them. This reserves authority without claiming that the trusted editor
 producer or checkbox writer has been implemented.
+
+## Verified authority merge and bounded task acceptance — 2026-10-02
+
+PR2464 merged at 04:41:54Z as3f523c20da8b3c3eef0346e7f37ab24af26a34ea from independently reviewed73b53f3867ab8b3a67b2b091d217a8a8366a12a0. Of139 owned changed paths,138 Git blobs match exactly; the sole lockfile delta exactly equals the already-merged browser package importer addition. All27 queue checks completed:25 passed and2 explicitly skipped. Fullr10 and both whole exact-head reviews remain green. Private source/check evidence is preserved outside removable worktrees.
+
+Independent contracts acceptance audit ran290 tests in18 files, actualexit0 (/tmp/doc-channel-task-acceptance-audit.log), and verified scoped source parity with actualmerge. Tasks1.2 (authority/lifecycle),2.2 (durable ingest/coalescing/retention) and2.3 (actual HTTP/Transport operations) are now completed. Together with foundation1.1 this is4/22 completed. Tasks2.1,2.4 and2.8 remain in_progress: production write binding/room native authority, full pump/capacity-release busy→rekey→restart delivery, and room responder acknowledgements respectively still need their explicit criteria. The parent remains OPEN; a merged implementation does not close unfinished acceptance.
+
+Primary owns the exclusive next warning-marker schema writer in the budget checkout, delegated to existing storage_schema for DB/schema/migration/store-marker tests only. Supporting2666 and all other migration allocation remain held until a named later handoff. Actual merged authority is composed into budget through normal merge4d1be6ad0d4580dbb1fe68e6313def7fa0eb9992, with255 focused tests across26 files, server typecheck and25 normal hooks passing; this new composition is not yet independently reviewed or pushed. Production activation remains in progress. Streams/native widgets remain frozen atf19 pending actual authority composition; frame rollout remains gated on verifiedDOR2662 merge.
+
+## Delivery runner integration — 2026-10-02
+
+Budget690 is normally composed with verified authority3f at4d1be6ad0d4580dbb1fe68e6313def7fa0eb9992. New source adds the real private target capacity/budget gates, one serialized runner, bounded receipt-selected recovery/adoption, and a durable once-only warning marker. Migration20261002045158_doc_batch_waiting_warning adds only nullable waiting_warning_at. All276 historical migration blobs and journal entries are preserved; future Drizzle generation uses timestamp prefixes to preserve chronological snapshot selection.
+
+Real-file SQLite tests now drive committed service input through runner, registered fake runtime gates, protected adoption, dispatcher and trigger across busy capacity, canonical rekey and restart. They prove exact original receipt/queue/source/generation preservation, one turn, correlated settlement and a separate application acknowledgment. Large accepted populations prove100-row recovery and adoption bounds, fair per-row failure handling and independent integrity paging. Generic Connections/ordinary recovery excludes document work and retains its own delivery behavior. These are production seams with fake runtime effects, not a live paid SDK or full-index bootstrap claim.
+
+A separate migrated-file probe demonstrated an already-adopted preparation dispatching after runner stop. The host now supplies an AbortSignal through protected adoption to the final preclaim boundary, suspends only its pending in-memory timers, and drains its already-owned preparations before database disposal. Durable accepted receipts remain available for another boot. Runner startup moved after all runtime and capability wiring. Regression verification and fresh whole branch review are still in progress; tasks2.4 and2.5 remain in progress until full acceptance and verified merge.
+
+The existing accounting upgrade fixture now truncates the migration journal at the historical accounting boundary, rather than skipping that migration while applying later ones. The original broad-run failure is retained; both accounting and waiting-warning upgrade checks subsequently passed6 tests. Root stream verification separately rejected one new retry message for retired vocabulary; the one-line network wording correction passed36 widget and85 vocabulary tests at pushed54eed9ac044fdac44a37877992876a99bc8771ea. Stream full verification remains active.
+
+Fresh combined delivery verification passed359 tests in37 files with two workers. The prior combined run passed357 and timed out in two large-population tests under concurrent verification; their unchanged isolated retries passed21 ingest and8 recovery tests. Timeouts remain unchanged. Scoped lint reports0 errors and3 existing file-size warnings. Generated migration rerun exited0 with no schema changes. Whole-head verification/review and verified merge remain pending.
+
+## Parallel implementation and current delivery correction — 2026-10-02
+
+Accepted tasks remain 1.1, 1.2, 2.2 and 2.3: 4/22 (18.2%). Nine tasks are in progress and nine pending. MCP, editor and presence implementation are active; source-only reviewed components do not satisfy production acceptance. Blintz 0.6.0 is published; its DorkOS adoption and host acceptance remain pending.
+
+The fd2 delivery branch passed both independent whole-source reviews but Linux CI failed the 105-input warning test at 5,432 ms against its unchanged 5,000 ms limit. A separately reviewed fixture correction prepares three parameterized queries once per connection while reading fresh authority rows at every check. It preserves all original counts, assertions and timing limits and adds six authority-change controls. All 256 targeted tests across 27 files passed, as did server types, scoped lint and formatting. Local timing improvement is not evidence of Linux CI margin. The latest main documentation was merged normally; full verification, a new committed-head pair of independent reviews and actual CI remain required.
+
+Independent SDK, metrics and tree-lease reviews found additional gaps. Corrections and fresh review are active. The warning migration remains the exclusive schema allocation until actual merge and a named handoff. Full v1/v1.1/v2 acceptance and cleanup remain open.

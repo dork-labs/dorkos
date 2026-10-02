@@ -19,6 +19,7 @@ import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import { randomUUID } from 'node:crypto';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { createDocChannelHttpComposition } from '../http-composition.js';
+import { privateDocTurnBudget } from '../delivery/final-budget.js';
 
 let db: Db;
 let rooms: RoomSubsystem;
@@ -138,6 +139,7 @@ it('does not admit a pending owner-scoped input after owner proof changes', asyn
     lifecycle: rooms.canvasDocuments.lifecycle,
     queue: new MessageQueueStore(db),
     bootEpoch: 'test',
+    beforeClaim: privateDocTurnBudget,
   });
   admission.initializeBoot();
   const receiptBefore = db.select().from(sessionMessageAcceptanceReceipts).all();
@@ -176,6 +178,7 @@ it.each([undefined, 'same-user'] as const)(
       lifecycle: rooms.canvasDocuments.lifecycle,
       queue: new MessageQueueStore(db),
       bootEpoch: 'test',
+      beforeClaim: privateDocTurnBudget,
     });
     admission.initializeBoot();
     const accepted = admission.admit(batchId);
@@ -234,5 +237,15 @@ it.each([undefined, 'old-user'] as const)(
     expect(http.channels.listDeliveries(documentId, event.receipt.id)).toEqual(savedDeliveries);
     expect(db.select().from(sessionMessageAcceptanceReceipts).all()).toEqual([]);
     expect(db.select().from(sessionMessageQueue).all()).toEqual([]);
+    const future = await http.service.ingestEvent(
+      documentId,
+      { v: 1, id: randomUUID(), type: 'task.comment', payload: { text: 'new owner input' } },
+      currentActor
+    );
+    expect(future.deliveries).toHaveLength(1);
+    const batch = http.channels.getBatch(future.deliveries[0]!.batchId!)!;
+    expect(batch).toMatchObject({ grantId: freshGrant.grant.grantId, status: 'pending' });
+    expect(batch.inputEventIds).toEqual([future.receipt.id]);
+    expect(http.channels.listDeliveries(documentId, event.receipt.id)).toEqual(savedDeliveries);
   }
 );

@@ -61,7 +61,9 @@ export interface PrivateSessionMessageSourceAdapter<
     receipt: SessionMessageAcceptanceReceipt,
     prepared: PreparedPrivateSessionMessage,
     now: string
-  ): void | PrivateSessionMessageTurnInput;
+  ): void | PrivateSessionMessageTurnInput | PrivateSessionMessageSourceClaimDecision;
+  /** Durable document budget deadline; a timer conveys no authority. */
+  dispatchNotBefore?(receipt: SessionMessageAcceptanceReceipt): string | undefined;
   /** Link source admission to the actual generated receipt in the same transaction. */
   onAccepted?(tx: DbTransaction, receipt: SessionMessageAcceptanceReceipt, now: string): undefined;
   /** Server-stamped non-human identity for the existing private queue pump. */
@@ -115,6 +117,7 @@ export interface PrivateSessionMessageAcceptance {
 
 /** Claim returned exactly once for the first runtime effect. */
 export interface ClaimedPrivateSessionMessage extends PrivateSessionMessageTurnInput {
+  deferred?: false;
   receiptId: string;
   dispatchAttemptId: string;
 }
@@ -130,3 +133,22 @@ export interface PrivateSessionMessageDispatchBinding {
   sessionId: string;
   runtime: string;
 }
+
+/** A source may hold accepted work without claiming or cancelling its original receipt. */
+export type PrivateSessionMessageSourceClaimDecision =
+  | { decision: 'admit'; input: PrivateSessionMessageTurnInput }
+  | { decision: 'defer'; reason: string; nextEligibleAt: string }
+  | { decision: 'refuse'; code: string; message: string };
+/** Deferred claims carry no dispatch attempt or runtime input. */
+export interface DeferredPrivateSessionMessage {
+  deferred: true;
+  receiptId: string;
+  reason: string;
+  nextEligibleAt: string;
+  dispatchAttemptId?: never;
+  content?: never;
+  docEvents?: never;
+}
+/** Ordinary protected sources keep their existing claimed result. */
+export type PrivateSessionMessageClaimResult =
+  ClaimedPrivateSessionMessage | DeferredPrivateSessionMessage;

@@ -2,7 +2,7 @@
 
 Generated: 2026-10-01T20:11:19.260645Z
 
-Canonical task records: `03-tasks.json`. Mode: full. Task 1.1 is completed after verified foundation merge; nine tasks are in progress and twelve remain pending. Full v1/v1.1/v2 delivery is included. Parent owns tracking, promotion, integration and aggregate release readiness; each implementation runs in an isolated checkout.
+Canonical task records: `03-tasks.json`. Mode: full. Tasks 1.1, 1.2, 2.2 and 2.3 are completed after verified merges and acceptance audits; nine tasks are in progress and nine remain pending. Full v1/v1.1/v2 delivery is included. Parent owns tracking, promotion, integration and aggregate release readiness; each implementation runs in an isolated checkout.
 
 The natural xl boundaries are 2.6 (room admission) and 4.3 (checkbox write coordination). They are promoted through the tracker adapter as DOR-2669 and DOR-2670, with parent DOR-2665; they stay unready until their canonical prerequisites pass.
 
@@ -34,7 +34,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 1.2: [doc-channel] [P1] Enforce document authority and recoverable lifecycle
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: 1.1
@@ -78,7 +78,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.2: [doc-channel] [P2] Persist accepted input and deterministic batches
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: 1.2
@@ -99,7 +99,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 2.3: [doc-channel] [P2] Expose host HTTP and Transport operations
 
-- Status: in_progress
+- Status: completed
 - Size: large
 - Priority: high
 - Dependencies: 2.1, 2.2
@@ -312,7 +312,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 4.1: [doc-channel] [P4] Advertise document events to MCP apps
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: medium
 - Dependencies: 3.1, 3.2
@@ -331,7 +331,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 4.2: [doc-channel] [P4] Emit verified editor lifecycle and selection events
 
-- Status: pending
+- Status: in_progress
 - Size: large
 - Priority: medium
 - Dependencies: 2.3, 3.1
@@ -370,7 +370,7 @@ Implement in an isolated checkout. Preserve runtime SDK confinement and client F
 
 ### Task 4.4: [doc-channel] [P4] Track mounted views and quiet host presence
 
-- Status: pending
+- Status: in_progress
 - Size: medium
 - Priority: medium
 - Dependencies: 2.3, 3.1, 3.2

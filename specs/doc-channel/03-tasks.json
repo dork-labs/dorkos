@@ -35,7 +35,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -75,7 +75,7 @@
         "2.1"
       ],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -94,7 +94,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -303,7 +303,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -322,7 +322,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -361,7 +361,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
