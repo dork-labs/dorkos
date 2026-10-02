@@ -201,6 +201,8 @@ interface InFlightTurn {
 
 /** One accepted message waiting for its turn to come round. */
 interface PendingDispatch {
+  /** An optional host lifetime, never document authority. */
+  privateDispatchSignal?: AbortSignal;
   /** The server-minted message id; the same id the queue row is keyed by. */
   messageId: string;
   /** The session key it is queued under (canonical where one is known). */
@@ -231,6 +233,8 @@ interface PendingDispatch {
    * comes, the wait bound) tries again.
    */
   waitingOnLock: boolean;
+  /** A protected document's durable budget wait, independent of lock waiting. */
+  notBefore?: number;
 }
 
 /** Turns open right now, keyed by resolved session id. */
@@ -245,6 +249,8 @@ const inFlight = new Map<string, InFlightTurn>();
 const runtimeTurns = new Map<string, symbol>();
 /** Accepted messages waiting to launch, keyed by message id. */
 const pending = new Map<string, PendingDispatch>();
+/** Signal-owned preparations must drain before their host disposes its database. */
+const privateLaunches = new Map<AbortSignal, Set<Promise<TriggerTurnResult>>>();
 /**
  * Messages whose launch is under way: out of {@link pending}, still on the
  * queue.
@@ -811,6 +817,8 @@ export interface DispatchMessageOpts {
   onTurnStart?(seq: number): void;
   /** Server-owned receipt for a protected automatic follow-up. */
   privateReceiptId?: string;
+  /** Host lifetime for an automatic protected delivery. */
+  privateDispatchSignal?: AbortSignal;
   /**
    * Nobody is watching THIS turn. Passed straight through; see
    * {@link TriggerTurnOpts.unattended}.
@@ -1006,6 +1014,7 @@ interface DispatchPlan {
     | 'onSettled'
     | 'onTurnStart'
     | 'privateReceiptId'
+    | 'privateDispatchSignal'
     | 'unattended'
   >;
 }
@@ -1249,6 +1258,25 @@ function launchDispatch(
   plan: DispatchPlan,
   opts: { budgetExhausted: boolean }
 ): Promise<TriggerTurnResult> {
+  const signal = plan.turn.privateDispatchSignal;
+  const started = launchDispatchInner(plan, opts);
+  if (!signal) return started;
+  const launches = privateLaunches.get(signal) ?? new Set<Promise<TriggerTurnResult>>();
+  privateLaunches.set(signal, launches);
+  const completion = started.finally(() => {
+    launches.delete(completion);
+    if (launches.size === 0) privateLaunches.delete(signal);
+  });
+  launches.add(completion);
+  return completion;
+}
+
+function launchDispatchInner(
+  plan: DispatchPlan,
+  opts: { budgetExhausted: boolean }
+): Promise<TriggerTurnResult> {
+  if (plan.turn.privateDispatchSignal?.aborted)
+    return Promise.resolve({ accepted: false, suspended: true });
   const { sessionKey, clientId, messageId } = plan;
   const remainingMs = opts.budgetExhausted
     ? 0
@@ -1299,6 +1327,7 @@ function launchDispatch(
         : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
+      ...(turn.privateDispatchSignal ? { privateDispatchSignal: turn.privateDispatchSignal } : {}),
       ...(turn.unattended ? { unattended: true } : {}),
       // The turn is running: THIS is the instant the message stops waiting, and
       // every window is told so in the same beat — a queue chip that outlives
@@ -1349,6 +1378,38 @@ function launchDispatch(
   }
   return started.then(
     (result) => {
+      if (result.suspended) {
+        clearIfOurs();
+        return result;
+      }
+      if (result.deferred) {
+        // Install the deadline before releasing the slot schedules another pump.
+        try {
+          parkDispatch(plan, unwatchedSettle(plan), {
+            notBefore: result.deferred.nextEligibleAt,
+          });
+        } catch (error) {
+          const service = getPrivateSessionMessageAcceptanceService();
+          if (turn.privateReceiptId && service?.isPreclaimRefusal(turn.privateReceiptId, error)) {
+            service.cancel(
+              turn.privateReceiptId,
+              error instanceof PrivateSessionMessageRefusalError
+                ? error.code
+                : 'authority_changed_before_dispatch'
+            );
+            emitQueueUpdate(sessionKey);
+          } else if (turn.privateReceiptId) {
+            parkDispatch(plan, unwatchedSettle(plan), {
+              notBefore: result.deferred.nextEligibleAt,
+              schedulingRetry: true,
+            });
+          }
+          throw error;
+        } finally {
+          clearIfOurs();
+        }
+        return result;
+      }
       // A refused turn never settles, so nothing else will hand the slot back.
       if (!result.accepted) {
         clearIfOurs();
@@ -1389,8 +1450,17 @@ function launchDispatch(
 function parkDispatch(
   plan: DispatchPlan,
   settle: { resolve(result: TriggerTurnResult): void; reject(err: unknown): void },
-  opts?: { waitingOnLock?: boolean; budgetMs?: number }
+  opts?: {
+    waitingOnLock?: boolean;
+    budgetMs?: number;
+    notBefore?: string;
+    schedulingRetry?: boolean;
+  }
 ): void {
+  if (plan.turn.privateDispatchSignal?.aborted) {
+    settle.resolve({ accepted: false, suspended: true });
+    return;
+  }
   // Taken HERE, where the message was accepted, and applied wherever the pump
   // eventually calls `launch` — which is inside the PREVIOUS turn's scope on
   // both routes that reach it: the projector's `turn_end`, and the turn handing
@@ -1400,13 +1470,85 @@ function parkDispatch(
   // below never had the problem, because a timer captures its creation context;
   // this makes the two paths agree.
   const scope = captureDispatchScope();
+  const deadline = (): number | undefined => {
+    const receiptId = plan.turn.privateReceiptId;
+    const durable = receiptId
+      ? getPrivateSessionMessageAcceptanceService()?.dispatchNotBefore(receiptId)
+      : undefined;
+    const dates = [durable, opts?.notBefore].filter((date) => date !== undefined);
+    if (dates.some((date) => !Number.isFinite(Date.parse(date))))
+      throw new PrivateSessionMessageRefusalError(
+        'invalid_source_deferral',
+        'This private message cannot be scheduled.'
+      );
+    return dates.length ? Math.max(...dates.map((date) => Date.parse(date))) : undefined;
+  };
+  // A failed schedule read proves no authority loss. Retry its real gate after a bounded
+  // delay, without changing the source's durable budget deadline or claiming a runtime slot.
+  const schedulingRetryMs = 1000;
+  const notBefore = opts?.schedulingRetry ? Date.now() + schedulingRetryMs : deadline();
+  const rearmDeadline = (): void => {
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(
+      () => {
+        // The timer only wakes the ordinary pump; it never bypasses a busy runtime.
+        if (pending.get(plan.messageId) !== entry) return;
+        if (entry.notBefore !== undefined && entry.notBefore > Date.now()) rearmDeadline();
+        else schedulePump(entry.sessionKey);
+      },
+      Math.min(2_147_483_647, Math.max(1, (entry.notBefore ?? Date.now()) - Date.now()))
+    );
+    entry.timer.unref?.();
+  };
   const entry: PendingDispatch = {
+    ...(plan.turn.privateDispatchSignal
+      ? { privateDispatchSignal: plan.turn.privateDispatchSignal }
+      : {}),
     messageId: plan.messageId,
     sessionKey: plan.sessionKey,
     clientId: plan.clientId,
     runtime: plan.runtime,
     waitingOnLock: opts?.waitingOnLock ?? false,
+    ...(notBefore !== undefined ? { notBefore } : {}),
     launch: (launchOpts) => {
+      if (pending.get(plan.messageId) !== entry) return;
+      if (plan.turn.privateDispatchSignal?.aborted) {
+        clearTimeout(entry.timer);
+        pending.delete(plan.messageId);
+        settle.resolve({ accepted: false, suspended: true });
+        return;
+      }
+      // Recheck durable authority even when the ordinary wait-budget timer forces a launch.
+      try {
+        entry.notBefore = deadline();
+      } catch (error) {
+        const receiptId = plan.turn.privateReceiptId;
+        const service = getPrivateSessionMessageAcceptanceService();
+        if (receiptId && !service?.isPreclaimRefusal(receiptId, error)) {
+          entry.notBefore = Date.now() + schedulingRetryMs;
+          rearmDeadline();
+          return;
+        }
+        clearTimeout(entry.timer);
+        pending.delete(plan.messageId);
+        if (receiptId && service) {
+          service.cancel(
+            receiptId,
+            error instanceof PrivateSessionMessageRefusalError
+              ? error.code
+              : 'authority_changed_before_dispatch'
+          );
+          emitQueueUpdate(entry.sessionKey);
+        }
+        settle.reject(error);
+        schedulePump(entry.sessionKey);
+        return;
+      }
+      if (entry.notBefore !== undefined && entry.notBefore > Date.now()) {
+        rearmDeadline();
+        schedulePump(entry.sessionKey);
+        return;
+      }
       if (!pending.delete(plan.messageId)) return;
       clearTimeout(entry.timer);
       scope(() => {
@@ -1435,6 +1577,7 @@ function parkDispatch(
   };
   entry.timer.unref?.();
   pending.set(plan.messageId, entry);
+  if (notBefore !== undefined && notBefore > Date.now()) rearmDeadline();
 }
 
 /**
@@ -1511,6 +1654,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     sessionId,
     projector,
     runtime,
+    excludeDocumentMessages: true,
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
   });
 
@@ -1663,6 +1807,15 @@ export interface AdoptQueuedMessagesOpts {
   runtime: AgentRuntime;
   /** Working directory for the recovered turns, when the caller knows it. */
   cwd?: string;
+  /** Internal protected recovery selection; authority is still rechecked at the runtime claim. */
+  privateReceiptSelection?: {
+    sourceKind: import('./private-messages/acceptance.js').PrivateSessionMessageSourceRef['kind'];
+    receiptIds: readonly string[];
+  };
+  /** The document runner owns document recovery; shared Connections recovery excludes it. */
+  excludeDocumentMessages?: boolean;
+  /** Host lifetime of this protected recovery lane. */
+  privateDispatchSignal?: AbortSignal;
 }
 
 /**
@@ -1796,12 +1949,17 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
  * @returns Number of protected rows newly adopted by this process
  */
 export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): number {
+  if (opts.privateDispatchSignal?.aborted) return 0;
   const service = getPrivateSessionMessageAcceptanceService();
   const store = getMessageQueueStore();
   if (!service || !store) return 0;
   const sessionKey = primaryOf(opts.sessionId);
   let adopted = 0;
-  for (const receipt of service.listAccepted(queueKeyOf(opts.sessionId))) {
+  for (const receipt of service.listAcceptedForDispatch(
+    queueKeyOf(opts.sessionId),
+    opts.privateReceiptSelection,
+    opts.excludeDocumentMessages
+  )) {
     if (pending.has(receipt.queueMessageId) || launching.has(receipt.queueMessageId)) continue;
     const row = store.get(receipt.queueMessageId);
     if (!row) {
@@ -1826,13 +1984,32 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         privateReceiptId: receipt.id,
+        ...(opts.privateDispatchSignal
+          ? { privateDispatchSignal: opts.privateDispatchSignal }
+          : {}),
         onSettled: (outcome) =>
           recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered'),
       },
     };
-    runInDispatch({ dispatchId, origin: 'queue-recovery' }, () =>
-      parkDispatch(plan, unwatchedSettle(plan))
-    );
+    try {
+      runInDispatch({ dispatchId, origin: 'queue-recovery' }, () =>
+        parkDispatch(plan, unwatchedSettle(plan))
+      );
+    } catch (error) {
+      if (service.isPreclaimRefusal(receipt.id, error)) {
+        service.cancel(
+          receipt.id,
+          error instanceof PrivateSessionMessageRefusalError
+            ? error.code
+            : 'authority_changed_before_dispatch'
+        );
+        emitQueueUpdate(sessionKey);
+        continue;
+      }
+      runInDispatch({ dispatchId, origin: 'queue-recovery' }, () =>
+        parkDispatch(plan, unwatchedSettle(plan), { schedulingRetry: true })
+      );
+    }
     adopted += 1;
   }
   if (adopted > 0) schedulePump(sessionKey);
@@ -2244,7 +2421,10 @@ function pumpLocked(sessionKey: string): void {
   // first of those fires while the ending turn still holds the write-lock — so
   // this gate is also what keeps the queue from racing a release it would lose.
   if (inFlight.has(sessionKey)) return;
-  const head = orderedWaiting(sessionKey)[0];
+  // Budget-held documents occupy no runtime slot and cannot block a person's work.
+  const head = orderedWaiting(sessionKey).find(
+    (entry) => entry.notBefore === undefined || entry.notBefore <= Date.now()
+  );
   if (!head || head.waitingOnLock) return;
   // A delivery the runtime already owes is on its way, and it opens a segment of
   // its own (spec `warm-process-lifecycle` D6). Launching now would put the
@@ -2421,6 +2601,17 @@ export function sweepOrphanedMessageQueues(opts?: {
  */
 export function listQueuedMessages(sessionId: string): QueuedMessage[] {
   return (getMessageQueueStore()?.list(queueKeyOf(sessionId)) ?? []).map(toQueuedMessage);
+}
+
+/** Drop only a stopped host lane's timers; its accepted receipts and queue rows remain durable. */
+export async function suspendPrivateDispatches(signal: AbortSignal): Promise<void> {
+  if (!signal.aborted) throw new Error('Private dispatch lifetime is still active.');
+  for (const [id, entry] of pending) {
+    if (entry.privateDispatchSignal !== signal) continue;
+    clearTimeout(entry.timer);
+    pending.delete(id);
+  }
+  await Promise.allSettled([...(privateLaunches.get(signal) ?? [])]);
 }
 
 /**

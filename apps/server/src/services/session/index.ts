@@ -135,6 +135,7 @@ export { triggerCommandIntent } from './trigger-command-intent.js';
 export {
   adoptQueuedMessages,
   adoptAcceptedPrivateMessages,
+  suspendPrivateDispatches,
   dispatchMessage,
   dispatchCommandIntent,
   emitQueueUpdate,

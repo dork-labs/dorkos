@@ -15,7 +15,7 @@ import type {
   PrivateSessionMessageSourceRef,
   PrivateSessionMessageDraft,
   PreparedPrivateSessionMessage,
-  PrivateSessionMessageTurnInput,
+  PrivateSessionMessageSourceClaimDecision,
 } from '../../../session/private-messages/acceptance.js';
 import { DocChannelStore, type DocBatchRow } from '../store.js';
 import type { DocChannelGrants } from '../grants.js';
@@ -27,10 +27,13 @@ import {
 } from './batch-authority.js';
 import { DocRouteGrantError } from '../grant-policy.js';
 import { DocChannelNotFoundError, DocChannelArchivedError } from '../authorization.js';
-import { PrivateSessionMessageRefusalError } from '../../../session/private-messages/refusal.js';
 import { CanvasAppManifestError } from '@dorkos/shared/canvas-app-manifest';
 import { sessionMessageAcceptanceReceipts } from '@dorkos/db';
 import { appendDocStatus } from '../status.js';
+import { requireSynchronous } from '../../../session/private-messages/synchronous-source.js';
+import type { DocBeforeClaim } from './final-budget.js';
+import { DOCUMENT_BUDGET_WAIT } from './final-budget.js';
+import { PrivateSessionMessageRefusalError } from '../../../session/private-messages/refusal.js';
 
 /** Only immutable document batch identity enters the protected source boundary. */
 export type DocBatchSourceRef = Extract<
@@ -78,6 +81,7 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
   constructor(
     private readonly store: DocChannelStore,
     private readonly grants: DocChannelGrants,
+    private readonly beforeClaim: DocBeforeClaim,
     private readonly now: () => Date = () => new Date()
   ) {}
 
@@ -132,6 +136,19 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
         )
       )
       .run();
+    appendDocStatus(
+      this.store,
+      tx,
+      batch.documentId,
+      {
+        batchId: batch.batchId,
+        routeId: batch.routeId,
+        status: 'routed',
+        receiptId: receipt.id,
+        messageId: receipt.queueMessageId,
+      },
+      now
+    );
   }
   /** Prepare structured records in memory after committed manifest refresh. */
   async prepare(receipt: SessionMessageAcceptanceReceipt): Promise<PreparedPrivateSessionMessage> {
@@ -155,13 +172,88 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
     receipt: SessionMessageAcceptanceReceipt,
     _prepared: PreparedPrivateSessionMessage,
     now: string
-  ): PrivateSessionMessageTurnInput {
-    const batch = this.requireBatch(tx, receiptRef(receipt), ['accepted']);
+  ): PrivateSessionMessageSourceClaimDecision {
+    let batch = this.requireBatch(tx, receiptRef(receipt), ['accepted']);
     const authority = this.readReceiptAuthority(tx, batch, receipt);
     verifyDocReceipt(authority, receipt);
+    const gate = requireSynchronous(
+      this.beforeClaim(
+        Object.freeze({
+          documentId: batch.documentId,
+          batchId: batch.batchId,
+          generation: batch.generation,
+          routeId: batch.routeId,
+          grantId: authority.grant.grantId,
+          grantRevision: authority.grant.revision,
+          scope: batch.scope,
+          sessionId: authority.target.sessionId!,
+          agentId: authority.target.agentId!,
+          runtime: authority.target.runtime!,
+          agentPath: authority.target.agentPath!,
+          turnsPerHour: (authority.grant.limits as { turnsPerHour: number }).turnsPerHour,
+        }),
+        tx,
+        now
+      )
+    );
+    // A callback cannot reduce authority or alter the selected input then obtain a claim.
+    batch = this.requireBatch(tx, receiptRef(receipt), ['accepted']);
+    const current = this.readReceiptAuthority(tx, batch, receipt);
+    verifyDocReceipt(current, receipt);
+    if (!gate || !['admit', 'defer', 'refuse'].includes(gate.decision))
+      refuseDocBatch('document_budget_invalid');
+    if (gate.decision === 'refuse') refuseDocBatch(gate.code);
+    if (gate.decision === 'defer') {
+      if (
+        typeof gate.reason !== 'string' ||
+        !gate.reason ||
+        gate.reason.length > 200 ||
+        !Number.isFinite(Date.parse(gate.nextEligibleAt)) ||
+        Date.parse(gate.nextEligibleAt) <= Date.parse(now)
+      )
+        refuseDocBatch('document_budget_invalid');
+      const changed = tx
+        .update(canvasDocBatches)
+        .set({ leaseUntil: gate.nextEligibleAt, errorCode: DOCUMENT_BUDGET_WAIT, updatedAt: now })
+        .where(
+          and(
+            eq(canvasDocBatches.batchId, batch.batchId),
+            eq(canvasDocBatches.generation, batch.generation),
+            eq(canvasDocBatches.admissionReceiptId, receipt.id),
+            eq(canvasDocBatches.status, 'accepted')
+          )
+        )
+        .run().changes;
+      if (changed !== 1) refuseDocBatch();
+      tx.update(canvasDocDeliveries)
+        .set({ status: 'waiting', reason: gate.reason, updatedAt: now })
+        .where(
+          and(
+            eq(canvasDocDeliveries.batchId, batch.batchId),
+            inArray(canvasDocDeliveries.eventId, batch.inputEventIds)
+          )
+        )
+        .run();
+      appendDocStatus(
+        this.store,
+        tx,
+        batch.documentId,
+        {
+          batchId: batch.batchId,
+          routeId: batch.routeId,
+          status: 'waiting',
+          reason: gate.reason,
+          nextEligibleAt: gate.nextEligibleAt,
+          receiptId: receipt.id,
+          messageId: receipt.queueMessageId,
+        },
+        now
+      );
+      return gate;
+    }
     const changed = tx
       .update(canvasDocBatches)
-      .set({ status: 'dispatching', updatedAt: now })
+      .set({ status: 'dispatching', leaseUntil: null, errorCode: null, updatedAt: now })
       .where(
         and(
           eq(canvasDocBatches.batchId, batch.batchId),
@@ -172,7 +264,22 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
       )
       .run().changes;
     if (changed !== 1) refuseDocBatch();
-    return { content: docBatchPlaceholder(batch), docEvents: authority.context };
+    return {
+      decision: 'admit',
+      input: { content: docBatchPlaceholder(batch), docEvents: current.context },
+    };
+  }
+  /** Recover only a final-budget wait, never the scheduler's consumed-wake retry lease. */
+  dispatchNotBefore(receipt: SessionMessageAcceptanceReceipt): string | undefined {
+    const batch = this.store.getBatch(receipt.sourceId);
+    if (
+      !batch ||
+      batch.generation !== receipt.sourceGeneration ||
+      batch.admissionReceiptId !== receipt.id ||
+      batch.status !== 'accepted'
+    )
+      refuseDocBatch();
+    return batch.errorCode === DOCUMENT_BUDGET_WAIT ? (batch.leaseUntil ?? undefined) : undefined;
   }
   /** Revalidate canonical grant authority against the old exact digest inside the ownership move. */
   rebindAccepted(
@@ -242,7 +349,8 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
     seq: number,
     now: string
   ): undefined {
-    this.transition(tx, receipt, 'turn_started', now, `projected:${seq}`);
+    if (!Number.isSafeInteger(seq) || seq < 1) refuseDocBatch('document_turn_correlation_changed');
+    this.transition(tx, receipt, 'turn_started', now, undefined, `projected:${receipt.id}:${seq}`);
   }
   /** Only the coordinator's correlated successful settlement proves completion. */
   onSettled(
@@ -276,7 +384,8 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
     receipt: SessionMessageAcceptanceReceipt,
     status: 'turn_started' | 'turn_done' | 'failed' | 'cancelled' | 'in_doubt',
     now: string,
-    reason?: string
+    reason?: string,
+    turnId?: string
   ): void {
     const batch = this.store.getBatch(receipt.sourceId, tx);
     if (
@@ -285,12 +394,34 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
       batch.admissionReceiptId !== receipt.id
     )
       refuseDocBatch('document_batch_changed');
+    const recorded = tx
+      .select()
+      .from(sessionMessageAcceptanceReceipts)
+      .where(eq(sessionMessageAcceptanceReceipts.id, receipt.id))
+      .get();
+    if (
+      !recorded ||
+      recorded.sourceKind !== this.kind ||
+      recorded.sourceId !== batch.batchId ||
+      recorded.sourceGeneration !== batch.generation ||
+      recorded.queueMessageId !== receipt.queueMessageId ||
+      recorded.sessionId !== receipt.sessionId ||
+      recorded.agentId !== receipt.agentId ||
+      recorded.originRuntime !== receipt.originRuntime ||
+      recorded.originAgentPath !== receipt.originAgentPath ||
+      recorded.state !== receipt.state ||
+      recorded.originAuthorityDigest !== receipt.originAuthorityDigest ||
+      (status === 'turn_started' && recorded.state !== 'dispatching') ||
+      ((status === 'turn_done' || status === 'failed') && recorded.state !== 'turn_started')
+    )
+      refuseDocBatch('document_turn_correlation_changed');
+    const correlatedTurn = turnId ?? batch.turnId;
     tx.update(canvasDocBatches)
-      .set({ status, errorCode: reason ?? null, updatedAt: now })
+      .set({ status, turnId: correlatedTurn, errorCode: reason ?? null, updatedAt: now })
       .where(eq(canvasDocBatches.batchId, batch.batchId))
       .run();
     tx.update(canvasDocDeliveries)
-      .set({ status, reason: reason ?? null, updatedAt: now })
+      .set({ status, turnId: correlatedTurn, reason: reason ?? null, updatedAt: now })
       .where(
         and(
           eq(canvasDocDeliveries.batchId, batch.batchId),
@@ -304,7 +435,14 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
         this.store,
         tx,
         batch.documentId,
-        { batchId: batch.batchId, status, receiptId: receipt.id },
+        {
+          batchId: batch.batchId,
+          routeId: batch.routeId,
+          status,
+          receiptId: receipt.id,
+          messageId: receipt.queueMessageId,
+          ...(correlatedTurn ? { turnId: correlatedTurn } : {}),
+        },
         now
       );
   }

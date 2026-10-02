@@ -1,5 +1,5 @@
 /** Compose document batches with the single existing protected session queue. */
-import type { Db } from '@dorkos/db';
+import type { Db, DbTransaction } from '@dorkos/db';
 import type { CanvasChannelRoute } from '@dorkos/shared/canvas-channel-schemas';
 import { MessageQueueStore } from '../../../session/message-queue-store.js';
 import {
@@ -8,6 +8,7 @@ import {
   type PrivateSessionMessageAcceptance,
 } from '../../../session/private-messages/acceptance.js';
 import { DocumentEventBatchSource } from './batch-source.js';
+import type { DocBeforeClaim } from './final-budget.js';
 import { docBatchLabel, refuseDocBatch } from './batch-authority.js';
 import { admitBatchSlice } from '../coalescer.js';
 import { DOC_EVENTS_PROMPT_BYTES } from '../prompt.js';
@@ -23,6 +24,8 @@ export interface DocBatchAdmissionOptions {
   lifecycle: DocChannelLifecycle;
   queue: MessageQueueStore;
   bootEpoch: string;
+  /** Required fresh synchronous budget decision at the last runtime boundary. */
+  beforeClaim: DocBeforeClaim;
   existingSources?: readonly PrivateSessionMessageSourceAdapter[];
   now?: () => Date;
 }
@@ -34,7 +37,12 @@ export class DocBatchAdmission {
   /** Register the document source beside existing protected sources, on their existing queue. */
   constructor(private readonly options: DocBatchAdmissionOptions) {
     this.now = options.now ?? (() => new Date());
-    this.source = new DocumentEventBatchSource(options.store, options.grants, this.now);
+    this.source = new DocumentEventBatchSource(
+      options.store,
+      options.grants,
+      options.beforeClaim,
+      this.now
+    );
     this.acceptance = new PrivateSessionMessageAcceptanceService(
       options.db,
       options.queue,
@@ -51,7 +59,7 @@ export class DocBatchAdmission {
   }
   /** Refresh outside the transaction, then select and accept exactly one immutable generation. */
   admit(batchId: string): PrivateSessionMessageAcceptance {
-    const { store, grants } = this.options;
+    const { store } = this.options;
     const initial = store.getBatch(batchId);
     if (!initial) refuseDocBatch('document_batch_missing');
     const ref = {
@@ -62,31 +70,38 @@ export class DocBatchAdmission {
     this.source.refresh(ref);
     if (initial.status === 'accepted') return this.acceptance.accept(ref);
     try {
-      const selection = store.transaction((tx) => {
-        const batch = store.getBatch(batchId, tx);
-        if (!batch || batch.generation !== initial.generation)
-          refuseDocBatch('document_batch_changed');
-        const { grant } = grants.revalidateBatchGrant(batch, tx);
-        const route = grant.normalizedRoute as CanvasChannelRoute;
-        if (route.turn.mode === 'none' || !batch.scope.startsWith('session:'))
-          refuseDocBatch('document_session_target_required');
-        return { maxBatch: route.turn.maxBatch, label: docBatchLabel(tx, batch) };
-      });
-      // A canonical session name may grow to the contract's 200 escaped characters.
-      // Reserve that growth now so an accepted slice always remains within the renderer cap.
-      return admitBatchSlice(
-        store,
-        batchId,
-        selection.maxBatch,
-        selection.label,
-        this.now().toISOString(),
-        (_tx, slice) =>
-          this.acceptance.accept({ ...ref, sourceGeneration: slice.batch.generation }),
-        DOC_EVENTS_PROMPT_BYTES - 1200
-      );
+      return this.admitPrepared(batchId, initial.generation);
     } catch (error) {
       this.source.refresh(ref);
       throw error;
     }
+  }
+  /** Only use after refresh, inside the pump's final synchronous gate transaction. */
+  admitPrepared(batchId: string, generation: string): PrivateSessionMessageAcceptance {
+    const { store, grants } = this.options;
+    const selection = store.transaction((tx: DbTransaction) => {
+      const batch = store.getBatch(batchId, tx);
+      if (!batch || batch.generation !== generation) refuseDocBatch('document_batch_changed');
+      const { grant } = grants.revalidateBatchGrant(batch, tx);
+      const route = grant.normalizedRoute as CanvasChannelRoute;
+      if (route.turn.mode === 'none' || !batch.scope.startsWith('session:'))
+        refuseDocBatch('document_session_target_required');
+      return { maxBatch: route.turn.maxBatch, label: docBatchLabel(tx, batch) };
+    });
+    // Reserve canonical scope growth within the shared renderer's 80 KiB ceiling.
+    return admitBatchSlice(
+      store,
+      batchId,
+      selection.maxBatch,
+      selection.label,
+      this.now().toISOString(),
+      (_tx, slice) =>
+        this.acceptance.accept({
+          kind: 'document_event_batch',
+          batchId,
+          sourceGeneration: slice.batch.generation,
+        }),
+      DOC_EVENTS_PROMPT_BYTES - 1200
+    );
   }
 }

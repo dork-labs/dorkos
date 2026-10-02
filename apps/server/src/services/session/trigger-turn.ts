@@ -109,7 +109,7 @@ import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
 import type {
-  ClaimedPrivateSessionMessage,
+  PrivateSessionMessageClaimResult,
   PreparedPrivateSessionMessage,
 } from './private-messages/acceptance.js';
 
@@ -409,10 +409,10 @@ export interface TriggerTurnDeps {
     receiptId: string,
     prepared: PreparedPrivateSessionMessage,
     sessionId?: string
-  ): ClaimedPrivateSessionMessage;
+  ): PrivateSessionMessageClaimResult;
   /** Cancel an accepted receipt when final authority fails before any runtime effect. */
   cancelPrivateMessage?(receiptId: string, reason: string): void;
-  /** Only proven authority denial can retire accepted work before a claim. */
+  /** Classify a proven authority denial without treating storage/unavailability as revocation. */
   isPrivatePreclaimRefusal?(receiptId: string, error: unknown): boolean;
   /** Quarantine a claim if no turn start can be observed. */
   markPrivateOutcomeUnknown?(receiptId: string, reason: string): void;
@@ -558,6 +558,8 @@ export interface TriggerTurnOpts {
   messageId?: string;
   /** Server-owned receipt for a protected automatic follow-up. */
   privateReceiptId?: string;
+  /** Host shutdown suspends protected work before claim, preserving its durable receipt. */
+  privateDispatchSignal?: AbortSignal;
   /**
    * Nobody is watching THIS turn (an automatic carry-over to another
    * account): an approval card does not hold it (spec `agent-permissions` D6)
@@ -620,6 +622,10 @@ export interface TriggerTurnResult {
   accepted: boolean;
   /** The canonical session id to return in the 202 body (when accepted). */
   canonicalId?: string;
+  /** The host stopped before protected claim; leave durable work for another boot. */
+  suspended?: true;
+  /** A durable protected-source budget wait; no runtime effect has been claimed. */
+  deferred?: { reason: string; nextEligibleAt: string };
 }
 
 /**
@@ -820,13 +826,29 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       }
       privatePreflightStarted = true;
       const prepared = await deps.preparePrivateMessage(opts.privateReceiptId);
+      if (opts.privateDispatchSignal?.aborted) {
+        releaseOnce();
+        turnSpan.end();
+        return { accepted: false, suspended: true };
+      }
       const claimed = deps.claimPrivateMessage(opts.privateReceiptId, prepared, sessionId);
+      if (claimed.deferred === true) {
+        releaseOnce();
+        turnSpan.end();
+        return {
+          accepted: false,
+          deferred: { reason: claimed.reason, nextEligibleAt: claimed.nextEligibleAt },
+        };
+      }
       privateDispatchClaimed = true;
       dispatchContent = claimed.content;
       if (claimed.docEvents) appendDocEventsContext(additionalContext, claimed.docEvents);
     }
-    // Fold held notes only after waiting and successful protected-source claim.
-    // A preclaim storage failure must leave them available for the eventual dispatch.
+    // Fold in any context a person STAGED for a runtime that cannot append to
+    // its own transcript (the fold-into-next fallback, task 4.2). Taken — not
+    // peeked — so each note rides exactly this one dispatch; the ordinary case
+    // holds nothing and pays a single map lookup. A native-staging runtime never
+    // fills this hold, so its dispatches are untouched.
     additionalContext.push(...takeStagedContext(sessionId));
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about

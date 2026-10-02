@@ -143,6 +143,7 @@ export const canvasDocBatches = sqliteTable(
     }).notNull(),
     attempt: integer('attempt').notNull().default(0),
     leaseUntil: text('lease_until'),
+    waitingWarningAt: text('waiting_warning_at').default(sql`NULL`),
     relayMessageId: text('relay_message_id'),
     turnId: text('turn_id'),
     admissionReceiptId: text('admission_receipt_id').references(

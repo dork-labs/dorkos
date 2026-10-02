@@ -16,6 +16,7 @@ import {
   eq,
   gt,
   inArray,
+  ne,
   sessionMessageAcceptanceReceipts,
   type Db,
   type DbTransaction,
@@ -41,7 +42,7 @@ import type {
   PreparedPrivateSessionMessage,
   PrivateSessionMessageSourceAdapter,
   PrivateSessionMessageAcceptance,
-  ClaimedPrivateSessionMessage,
+  PrivateSessionMessageClaimResult,
   PrivateSessionMessageDispatchBinding,
 } from './source-types.js';
 export { PrivateSessionMessageRefusalError } from './refusal.js';
@@ -212,7 +213,7 @@ export class PrivateSessionMessageAcceptanceService {
     receiptId: string,
     prepared: PreparedPrivateSessionMessage,
     binding?: PrivateSessionMessageDispatchBinding
-  ): ClaimedPrivateSessionMessage {
+  ): PrivateSessionMessageClaimResult {
     const now = this.now().toISOString();
     try {
       return documentTransaction(this.db, (tx) => {
@@ -243,9 +244,56 @@ export class PrivateSessionMessageAcceptanceService {
             'document_identity_blocked',
             'This document message is not available for dispatch.'
           );
-        const finalized = requireSynchronous(
+        const receiptBefore = JSON.stringify(receipt);
+        let finalized = requireSynchronous(
           this.adapterFor(receipt.sourceKind).revalidate(tx, receipt, prepared, now)
         );
+        const currentReceipt = tx
+          .select()
+          .from(sessionMessageAcceptanceReceipts)
+          .where(eq(sessionMessageAcceptanceReceipts.id, receiptId))
+          .get();
+        if (
+          JSON.stringify(receipt) !== receiptBefore ||
+          JSON.stringify(currentReceipt) !== receiptBefore
+        )
+          throw new PrivateSessionMessageRefusalError(
+            'dispatch_receipt_changed',
+            'This private message changed before dispatch.'
+          );
+        if (finalized && 'decision' in finalized) {
+          if (finalized.decision === 'refuse') {
+            throw new PrivateSessionMessageRefusalError(finalized.code, finalized.message);
+          }
+          if (finalized.decision === 'defer') {
+            const deadline = Date.parse(finalized.nextEligibleAt);
+            if (
+              !Number.isFinite(deadline) ||
+              deadline <= Date.parse(now) ||
+              typeof finalized.reason !== 'string' ||
+              !finalized.reason ||
+              finalized.reason.length > 200
+            ) {
+              throw new PrivateSessionMessageRefusalError(
+                'invalid_source_deferral',
+                'This private message cannot be scheduled.'
+              );
+            }
+            return {
+              deferred: true as const,
+              receiptId,
+              reason: finalized.reason,
+              nextEligibleAt: finalized.nextEligibleAt,
+            };
+          }
+          if (finalized.decision !== 'admit') {
+            throw new PrivateSessionMessageRefusalError(
+              'invalid_source_decision',
+              'This private message cannot be dispatched.'
+            );
+          }
+          finalized = finalized.input;
+        }
         const dispatchAttemptId = randomUUID();
         const changed = tx
           .update(sessionMessageAcceptanceReceipts)
@@ -274,6 +322,22 @@ export class PrivateSessionMessageAcceptanceService {
       this.onRebindFailed(error);
       throw error;
     }
+  }
+
+  /** Recover a durable wait without changing source, queue, or receipt identity. */
+  dispatchNotBefore(receiptId: string): string | undefined {
+    const receipt = this.requireReceipt(receiptId);
+    if (receipt.state !== 'accepted') return undefined;
+    const next = requireSynchronous(
+      this.adapterFor(receipt.sourceKind).dispatchNotBefore?.(receipt)
+    );
+    if (next === undefined) return undefined;
+    if (typeof next !== 'string' || !Number.isFinite(Date.parse(next)))
+      throw new PrivateSessionMessageRefusalError(
+        'invalid_source_deferral',
+        'This private message cannot be scheduled.'
+      );
+    return Date.parse(next) > this.now().getTime() ? next : undefined;
   }
 
   /** Advance a claimed receipt and delete its queue row in one transaction. */
@@ -467,8 +531,50 @@ export class PrivateSessionMessageAcceptanceService {
       .all();
   }
 
+  /** Bound queue adoption to one page, or to the scheduler's exact committed receipt selection. */
+  listAcceptedForDispatch(
+    sessionId: string,
+    selection?: {
+      sourceKind: PrivateSessionMessageSourceRef['kind'];
+      receiptIds: readonly string[];
+    },
+    excludeDocuments = false
+  ): SessionMessageAcceptanceReceipt[] {
+    if (
+      selection &&
+      (selection.receiptIds.length > 100 ||
+        new Set(selection.receiptIds).size !== selection.receiptIds.length)
+    )
+      throw new RangeError('Invalid private message receipt selection.');
+    if (selection?.receiptIds.length === 0) return [];
+    return this.db
+      .select()
+      .from(sessionMessageAcceptanceReceipts)
+      .where(
+        and(
+          eq(sessionMessageAcceptanceReceipts.sessionId, sessionId),
+          eq(sessionMessageAcceptanceReceipts.state, 'accepted'),
+          selection
+            ? eq(sessionMessageAcceptanceReceipts.sourceKind, selection.sourceKind)
+            : undefined,
+          selection
+            ? inArray(sessionMessageAcceptanceReceipts.id, [...selection.receiptIds])
+            : undefined,
+          excludeDocuments
+            ? ne(sessionMessageAcceptanceReceipts.sourceKind, 'document_event_batch')
+            : undefined
+        )
+      )
+      .orderBy(
+        asc(sessionMessageAcceptanceReceipts.acceptedAt),
+        asc(sessionMessageAcceptanceReceipts.id)
+      )
+      .limit(100)
+      .all();
+  }
+
   /** List one stable keyset page of sessions with accepted messages awaiting dispatch. */
-  listAcceptedSessionIds(limit = 100, afterSessionId?: string): string[] {
+  listAcceptedSessionIds(limit = 100, afterSessionId?: string, excludeDocuments = false): string[] {
     const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
     return this.db
       .selectDistinct({ sessionId: sessionMessageAcceptanceReceipts.sessionId })
@@ -476,6 +582,9 @@ export class PrivateSessionMessageAcceptanceService {
       .where(
         and(
           eq(sessionMessageAcceptanceReceipts.state, 'accepted'),
+          excludeDocuments
+            ? ne(sessionMessageAcceptanceReceipts.sourceKind, 'document_event_batch')
+            : undefined,
           afterSessionId
             ? gt(sessionMessageAcceptanceReceipts.sessionId, afterSessionId)
             : undefined

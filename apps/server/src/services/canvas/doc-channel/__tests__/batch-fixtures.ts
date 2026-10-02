@@ -19,6 +19,7 @@ import { DocChannelStore } from '../store.js';
 import { DocChannelGrants } from '../grants.js';
 import { DocRouteGrantError, type DocGrantAuthority } from '../grant-policy.js';
 import { DocBatchAdmission } from '../delivery/batch-admission.js';
+import { privateDocTurnBudget, type DocBeforeClaim } from '../delivery/final-budget.js';
 import type { DocIngestResult } from '../ingest.js';
 import type { DocGrantActor } from '../grant-policy.js';
 import { DocChannelIngest } from '../ingest.js';
@@ -44,7 +45,10 @@ export function batchFixture(
   sourceRoot: string | null = null,
   existing?: { db: Db; documentId: string; grantId: string },
   bootEpoch = 'boot-1',
-  runtime: 'claude-code' | 'codex' | 'opencode' | 'test-mode' = 'claude-code'
+  runtime: 'claude-code' | 'codex' | 'opencode' | 'test-mode' = 'claude-code',
+  now: () => Date = () => new Date(NOW),
+  beforeClaim: DocBeforeClaim = privateDocTurnBudget,
+  limits?: { turnsPerHour: number }
 ): BatchFixture {
   const db = existing?.db ?? createDb(file);
   if (!existing) {
@@ -152,7 +156,7 @@ export function batchFixture(
     store,
     authority,
     approvals: new ApprovalService(db),
-    now: () => new Date(NOW),
+    now,
   });
   if (!existing)
     grants.configure(
@@ -171,7 +175,15 @@ export function batchFixture(
     );
   const result = existing
     ? null
-    : grants.grant({ documentId, routeId: 'route', expiresAt: '2026-10-02T00:00:00.000Z' }, actor);
+    : grants.grant(
+        {
+          documentId,
+          routeId: 'route',
+          expiresAt: '2026-10-02T00:00:00.000Z',
+          ...(limits ? { limits } : {}),
+        },
+        actor
+      );
   if (result && result.kind !== 'granted') throw new Error('Expected self grant');
   const grantId = existing?.grantId ?? (result!.kind === 'granted' ? result!.grant.grantId : '');
   const queue = new MessageQueueStore(db);
@@ -182,10 +194,11 @@ export function batchFixture(
     lifecycle: documents.lifecycle,
     queue,
     bootEpoch,
-    now: () => new Date(NOW),
+    now,
+    beforeClaim,
   });
   admission.initializeBoot();
-  const ingest = new DocChannelIngest(store, () => new Date(NOW));
+  const ingest = new DocChannelIngest(store, now);
   function input(payload: Record<string, string | boolean> = { checked: true }) {
     grants.refreshGrantedAuthority(grantId);
     return ingest.accept({ v: 1, id: randomUUID(), type: 'task.toggle', payload }, (tx) => {

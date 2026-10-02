@@ -43,5 +43,7 @@ export default defineConfig({
     './src/schema/extensions/extension-decisions.ts',
   ],
   out: './drizzle',
+  // Snapshot baselines are sorted by filename; keep future names after the timestamp migration.
+  migrations: { prefix: 'timestamp' },
   dialect: 'sqlite',
 });

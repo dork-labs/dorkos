@@ -213,6 +213,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       const logError = vi.fn((error: unknown) => error);
       const exit = vi.fn();
       const fixtureClose = vi.fn().mockResolvedValue(undefined);
+      const stopDocDelivery = vi.fn().mockResolvedValue(undefined);
       const callback = startupCatch();
       const javascript = ts.transpileModule(`(${callback.getText(source)})`, {
         compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
@@ -224,6 +225,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
         logError,
         process: { exit },
         testComposioFixture: { close: fixtureClose },
+        stopDocDelivery,
         DatabaseOpenError: class extends Error {},
         SnapshotFailedError: class extends Error {},
       }) as (error: Error) => Promise<void>;
@@ -234,6 +236,10 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
           cleanupError
         );
         expect(fixtureClose).toHaveBeenCalledTimes(1);
+        expect(stopDocDelivery).toHaveBeenCalledTimes(1);
+        expect(stopDocDelivery.mock.invocationCallOrder[0]).toBeGreaterThan(
+          fixtureClose.mock.invocationCallOrder[0]
+        );
         expect(logError).toHaveBeenCalledExactlyOnceWith(original);
         expect(logged.error).toHaveBeenLastCalledWith(
           '[DorkOS] Fatal error during startup',

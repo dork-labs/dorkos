@@ -79,6 +79,7 @@ const batchBytes = rowBytes('b', [
   'turn_id',
   'admission_receipt_id',
   'error_code',
+  'waiting_warning_at',
   'created_at',
   'updated_at',
 ]);
@@ -189,9 +190,23 @@ export function retainDocHistory(
           .run();
         advanceFloor(tx, candidate.documentId, candidate.docSeq + 1, true);
         adjustUsage(candidate.documentId, -retainedBytes);
-        adjustUsage(candidate.documentId, -deleteOrphanBatches(tx, candidate.documentId, batchIds));
+        adjustUsage(
+          candidate.documentId,
+          -deleteOrphanBatches(tx, candidate.documentId, batchIds, now)
+        );
       }
     }
+    // Keep source correlation for rolling started-turn limits until its one-hour window ends.
+    tx.delete(canvasDocBatches)
+      .where(
+        sql`status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
+        AND NOT EXISTS (SELECT 1 FROM session_message_acceptance_receipts r
+          WHERE r.id=canvas_doc_batches.admission_receipt_id
+          AND r.turn_started_at>${new Date(Date.parse(now) - 3600_000).toISOString()})
+        AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE
+          d.document_id=canvas_doc_batches.document_id AND d.batch_id=canvas_doc_batches.batch_id)`
+      )
+      .run();
   });
 }
 /** Aggregate completed rows once; subsequent compaction/deletion adjusts these exact totals. */
@@ -211,7 +226,12 @@ function historyUsage(tx: DbTransaction): { documents: Map<string, number>; inst
   return { documents, installation };
 }
 /** Only the deleted input's bounded route correlations can have become newly orphaned. */
-function deleteOrphanBatches(tx: DbTransaction, documentId: string, batchIds: string[]): number {
+function deleteOrphanBatches(
+  tx: DbTransaction,
+  documentId: string,
+  batchIds: string[],
+  now: string
+): number {
   if (!batchIds.length) return 0;
   const rows = tx.all<{ batchId: string; bytes: number }>(sql`SELECT b.batch_id AS batchId,
     ${batchBytes} AS bytes FROM canvas_doc_batches b WHERE b.document_id=${documentId}
@@ -220,6 +240,9 @@ function deleteOrphanBatches(tx: DbTransaction, documentId: string, batchIds: st
       sql`,`
     )})
     AND ${completedBatchSql}
+    AND NOT EXISTS (SELECT 1 FROM session_message_acceptance_receipts r
+      WHERE r.id=b.admission_receipt_id
+      AND r.turn_started_at>${new Date(Date.parse(now) - 3600_000).toISOString()})
     AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE d.document_id=b.document_id
     AND d.batch_id=b.batch_id)`);
   for (const row of rows)
