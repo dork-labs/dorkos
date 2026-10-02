@@ -132,7 +132,7 @@ test.describe('Skills — what each of your tools can see', () => {
     // the fixture staged this skill.
     const adoptableFolder = '.claude/skills';
     await expect(harnessNative).toContainText(
-      `Lives in ${adoptableFolder}. Move it to .agents/skills so every agent can read it.`
+      `Lives in ${adoptableFolder}. Move it to .agents/skills to share it.`
     );
     // And the command that does it, composed the way the row composes it: the
     // skill's own name and the ABSOLUTE project the status resolved, never `.`
@@ -262,7 +262,7 @@ test.describe('Skills — what each of your tools can see', () => {
     const confirm = page.getByRole('alertdialog');
     await expect(confirm).toContainText(`Move ${skill} so every agent can read it?`);
     await expect(confirm).toContainText(
-      `It moves from .claude/skills/${skill} to .agents/skills/${skill}, and DorkOS leaves a link behind so Claude Code still finds it.`
+      `It moves from .claude/skills/${skill} to .agents/skills/${skill}. A link stays behind for Claude Code.`
     );
     await confirm.getByRole('button', { name: 'Move it' }).click();
 

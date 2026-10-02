@@ -86,20 +86,24 @@ export function KeepFilesDialog({
           <>
             <ResponsiveDialogHeader className="shrink-0 text-left">
               <ResponsiveDialogTitle className="text-left">
-                Keep the files {name} kept as yours?
+                Keep these {name} files as yours?
               </ResponsiveDialogTitle>
               <ResponsiveDialogDescription className="text-left">
-                An update couldn’t tell whether these were yours or left over from the version you
-                had,{' '}
-                {unproven.check.source === 'local'
-                  ? 'and there’s no earlier version to sort them with.'
-                  : 'and DorkOS couldn’t download the version you had to sort them with.'}{' '}
-                Keeping them makes them yours: updates keep them. Nothing is moved or deleted.
-                {running.length > 0 && ' They run as your own files from now on.'}
+                An update couldn’t tell if these are yours or leftovers.
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
 
             <ResponsiveDialogBody className="space-y-3 text-xs">
+              <div className="text-muted-foreground space-y-1">
+                <p>
+                  {unproven.check.source === 'local'
+                    ? 'No earlier version to compare with.'
+                    : 'DorkOS couldn’t download the old version to compare.'}
+                </p>
+                <p>Updates then leave them alone.</p>
+                <p>Nothing is moved or deleted.</p>
+                {running.length > 0 && <p>They now run as your own files.</p>}
+              </div>
               <PathGroup title="Still runs" paths={running} />
               <PathGroup title="Kept" paths={inert} />
               {activation && (
@@ -109,8 +113,10 @@ export function KeepFilesDialog({
                   ) : review ? (
                     <>
                       <p className="text-foreground font-medium">
-                        {name} is held back from sessions. Keeping also lets it run, in every
-                        session, as it is now:
+                        {name} is held back from sessions.
+                      </p>
+                      <p className="text-foreground">
+                        Keeping also lets it run everywhere, as it is now:
                       </p>
                       <ul aria-label={`What ${name} runs`} className="space-y-1.5">
                         {rows.map((row, index) => (
@@ -120,7 +126,7 @@ export function KeepFilesDialog({
                     </>
                   ) : (
                     <p className="text-muted-foreground">
-                      {name} is held back from sessions and still waits for your Review after this.
+                      {name} stays held back until you review it.
                     </p>
                   )}
                 </div>

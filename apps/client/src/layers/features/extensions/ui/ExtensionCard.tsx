@@ -54,7 +54,7 @@ export function ExtensionCard({
     : isIncompatible
       ? 'Incompatible'
       : isInvalid
-        ? 'Invalid'
+        ? 'Can’t load'
         : null;
 
   return (
@@ -105,7 +105,7 @@ export function ExtensionCard({
           {hasError && error && (
             <div className="space-y-1">
               <p className="text-status-warning-fg text-sm">
-                {status === 'compile_error' ? 'Compilation error: ' : 'Activation failed: '}
+                {status === 'compile_error' ? 'Couldn’t build: ' : 'Couldn’t start: '}
                 {error.message}
               </p>
               {error.details && (
@@ -135,8 +135,7 @@ export function ExtensionCard({
               about it — including the part that draws in this window — is fine. */}
           {serverError && (
             <p className="text-status-warning-fg text-sm">
-              Server side failed to rebuild: {serverError.message}. The previous version is still
-              running.
+              Couldn’t rebuild its server part: {serverError.message}. The last version still runs.
             </p>
           )}
 
@@ -149,11 +148,10 @@ export function ExtensionCard({
                 data-testid={`extension-run-allowed-${extension.id}`}
               >
                 <ShieldCheck className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>
-                  You allowed this to run inside DorkOS.
-                  {extension.originProblem === 'changed' &&
-                    ' You said yes to its files as they are now; they had changed after DorkOS installed it, so any further change will ask you again.'}
-                </span>
+                <span>You allowed this to run.</span>
+                {extension.originProblem === 'changed' && (
+                  <span>You approved its changed files. Any further change asks again.</span>
+                )}
                 <button
                   type="button"
                   onClick={() => onSetRunApproval(extension.id, false)}
@@ -179,14 +177,17 @@ export function ExtensionCard({
                     data-testid={`extension-origin-problem-${extension.id}`}
                   >
                     {extension.originProblem === 'changed'
-                      ? 'Its files changed after DorkOS installed it, so DorkOS can’t vouch for where this copy came from. It won’t run until you look it over and say yes.'
-                      : 'Its plugin holds a shortcut to files somewhere else, so DorkOS can’t vouch for where this copy came from. It won’t run until you say yes.'}
+                      ? 'Its files changed after install, so DorkOS can’t vouch for its source.'
+                      : 'Its plugin links to files elsewhere, so DorkOS can’t vouch for its source.'}
                   </p>
                 )}
                 {/* One sentence shared with the Activity inbox's ⓘ panel
                     (DOR-2517), so the two places that ask say the same thing. */}
                 <p className="text-muted-foreground text-sm">
                   {extensionConsentCopy(runsInServer)}
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  Turn it on only if you trust its source.
                 </p>
                 <Button
                   size="sm"
@@ -226,7 +227,7 @@ export function ExtensionCard({
           ) : (
             <Badge
               variant="secondary"
-              title="This extension is required and is always on"
+              title="This extension is always on"
               data-testid={`extension-required-${extension.id}`}
             >
               Required

@@ -21,17 +21,17 @@ export function SchedulesDialog({ onClose }: PromoDialogProps) {
       highlights={[
         {
           icon: Clock,
-          title: 'Cron-style schedules',
-          description: 'Run agents on any schedule: daily, hourly, or custom cron',
+          title: 'Any schedule',
+          description: 'Daily, hourly, or your own timing',
         },
         {
           icon: Repeat,
           title: 'Come back to results',
-          description: 'Review completed work instead of starting it',
+          description: 'Agents start the work for you',
         },
       ]}
       primaryAction={{ label: 'Create a schedule', onClick: handleSetUp }}
-      secondaryAction={{ label: 'Later', onClick: onClose }}
+      secondaryAction={{ label: 'Not now', onClick: onClose }}
     />
   );
 }

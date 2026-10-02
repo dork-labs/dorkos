@@ -40,7 +40,7 @@ export function StateShowcases() {
           <EmptyState
             icon={PackageSearch}
             headline="No packages match your filters"
-            description="Try adjusting your search or category filters."
+            description="Try another search or filter."
             action={{ label: 'Reset filters', onClick: () => {}, variant: 'outline' }}
           />
         </ShowcaseDemo>

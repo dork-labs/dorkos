@@ -16,21 +16,21 @@ export function AgentChatDialog({ onClose }: PromoDialogProps) {
     <PromoDialogLayout
       icon={MessagesSquare}
       tint="emerald"
-      title="Let your agents collaborate"
-      subtitle="Agent-to-agent communication via Mesh"
+      title="Let your agents work together"
+      subtitle="Agents can message each other"
       highlights={[
         {
           icon: Users,
-          title: 'Multi-agent workflows',
-          description: 'Agents can delegate tasks and share context',
+          title: 'Shared work',
+          description: 'Agents hand tasks to each other',
         },
         {
           icon: Network,
           title: 'Topology view',
-          description: 'Visualize how your agents connect and communicate',
+          description: 'See which agents talk to each other',
         },
       ]}
-      primaryAction={{ label: 'Explore Mesh', onClick: handleExplore }}
+      primaryAction={{ label: 'Open Team', onClick: handleExplore }}
       secondaryAction={{ label: 'Not now', onClick: onClose }}
     />
   );

@@ -150,7 +150,7 @@ describe('ExtensionsSettingsTab', () => {
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
     expect(await screen.findByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
-      'Its files changed after DorkOS installed it'
+      'Its files changed after install'
     );
   });
 
@@ -162,7 +162,7 @@ describe('ExtensionsSettingsTab', () => {
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
     expect(await screen.findByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
-      'holds a shortcut to files somewhere else'
+      'links to files elsewhere'
     );
   });
 
@@ -174,7 +174,7 @@ describe('ExtensionsSettingsTab', () => {
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
     expect(await screen.findByTestId('extension-run-allowed-test-ext')).toHaveTextContent(
-      'any further change will ask you again'
+      'Any further change asks again'
     );
   });
 
@@ -303,7 +303,7 @@ describe('ExtensionsSettingsTab', () => {
       );
 
       expect((await toggleAndCatchToast()).description).toBe(
-        "Failed to enable extension 'my-ext': 502"
+        'Couldn’t turn on my-ext. The server answered 502.'
       );
     });
   });
@@ -453,7 +453,7 @@ describe('ExtensionsSettingsTab', () => {
       expect(screen.getByTestId('extension-card-broken-ext')).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/compilation error/i)).toBeInTheDocument();
+    expect(screen.getByText(/couldn’t build/i)).toBeInTheDocument();
     expect(screen.getByText(/unexpected token/i)).toBeInTheDocument();
   });
 
@@ -481,10 +481,10 @@ describe('ExtensionsSettingsTab', () => {
       expect(screen.getByTestId('extension-card-stale-srv')).toBeInTheDocument();
     });
 
-    expect(screen.getByText(/server side failed to rebuild/i)).toBeInTheDocument();
-    expect(screen.getByText(/previous version is still running/i)).toBeInTheDocument();
+    expect(screen.getByText(/couldn’t rebuild its server part/i)).toBeInTheDocument();
+    expect(screen.getByText(/last version still runs/i)).toBeInTheDocument();
     // Not dressed up as a compile failure of the whole extension.
-    expect(screen.queryByText(/compilation error/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t build:/i)).not.toBeInTheDocument();
   });
 
   it('shows global badge for global-scoped extensions', async () => {
@@ -677,7 +677,7 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
       expect(screen.getByTestId('extension-needs-approval-client-only')).toBeInTheDocument();
     });
     expect(screen.getByText(/None of it has run yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/signed in as you/i)).toBeInTheDocument();
+    expect(screen.getByText(/act as you in DorkOS/i)).toBeInTheDocument();
     expect(screen.queryByText(/has not run this extension here/i)).not.toBeInTheDocument();
   });
 

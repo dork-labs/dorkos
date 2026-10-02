@@ -91,10 +91,10 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
     content: {
       icon: Moon,
       title: 'Run agents on a schedule',
-      shortDescription: 'Set a schedule and come back to finished work',
+      shortDescription: 'Come back to finished work',
       ctaLabel: 'Set up',
       suggestion: {
-        question: 'Want your agents working without you at the keyboard?',
+        question: 'Want agents working while you’re away?',
         action: 'Set up a schedule',
       },
     },
@@ -114,7 +114,7 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
       // that both start "Want your agents..." read as one template with the
       // nouns swapped.
       suggestion: {
-        question: 'Two agents can split a job. Want to see how?',
+        question: 'Want two agents to split a job?',
         action: 'Show me',
       },
     },

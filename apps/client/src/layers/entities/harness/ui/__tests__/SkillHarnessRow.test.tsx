@@ -89,7 +89,7 @@ describe('SkillHarnessRow — Share with every agent', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        `It moves from ${ADOPTABLE.source} to .agents/skills/${ADOPTABLE.name}, and DorkOS leaves a link behind so Claude Code still finds it.`
+        `It moves from ${ADOPTABLE.source} to .agents/skills/${ADOPTABLE.name}. A link stays behind for Claude Code.`
       )
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Move it' })).toBeInTheDocument();
@@ -110,7 +110,7 @@ describe('SkillHarnessRow — Share with every agent', () => {
         `It moves from ${ADOPTABLE.source} to .agents/skills/${ADOPTABLE.name}, where every agent reads it.`
       )
     ).toBeInTheDocument();
-    expect(screen.queryByText(/leaves a link behind/)).toBeNull();
+    expect(screen.queryByText(/link stays behind/)).toBeNull();
   });
 
   it('SRC-07: cancelling moves nothing — the mutation is never called', async () => {
@@ -153,7 +153,7 @@ describe('SkillHarnessRow — Share with every agent', () => {
     renderRow(ADOPTABLE, ['claude-code', 'codex', 'cursor']);
 
     const advice = screen.getByText(
-      'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.'
+      'Lives in .claude/skills. Move it to .agents/skills to share it.'
     );
     expect(advice).toHaveAttribute('aria-live', 'polite');
     expect(advice).toHaveAttribute('role', 'status');
@@ -180,9 +180,7 @@ describe('SkillHarnessRow — Share with every agent', () => {
 
     await waitFor(() => expect(adoptHarness).toHaveBeenCalled());
     expect(
-      screen.getByText(
-        'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.'
-      )
+      screen.getByText('Lives in .claude/skills. Move it to .agents/skills to share it.')
     ).toBeInTheDocument();
   });
 
@@ -209,9 +207,7 @@ describe('SkillHarnessRow — Share with every agent', () => {
 
     expect(await screen.findByText(reason)).toBeInTheDocument();
     expect(
-      screen.queryByText(
-        `Lives in .claude/skills. Move it to .agents/skills so every agent can read it.`
-      )
+      screen.queryByText(`Lives in .claude/skills. Move it to .agents/skills to share it.`)
     ).toBeNull();
   });
 });

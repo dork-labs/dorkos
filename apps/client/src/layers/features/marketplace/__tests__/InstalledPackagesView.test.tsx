@@ -1013,26 +1013,28 @@ describe('InstalledPackagesView', () => {
 
       const note = screen.getByTestId('installation-integrity');
       expect(note).toHaveTextContent(
-        '4 files changed since install (2 edited, 1 added, 1 removed). Updating replaces the 2 files you edited and keeps your copies beside them, keeps the file you added, and puts back the file you removed.'
+        '4 files changed since install (2 edited, 1 added, 1 removed).Updating replaces the 2 files you edited and keeps your copies beside them.Updating keeps the file you added.Updating puts back the file you removed.'
       );
       expect(note).not.toHaveTextContent('.dork-old');
     });
 
-    // Purpose (review 2, item 4): on a phone the long "Updating…" sentence moves
-    // inside the disclosure, so the closed note stays one short line; from sm up
-    // it sits in the summary.
-    it('moves what an update does inside the disclosure on small screens', () => {
+    // Purpose (review 2, item 4): the "Updating…" sentences wait inside the
+    // disclosure on every screen, one paragraph each, so the closed note stays
+    // one short line and no paragraph runs past the copy cap.
+    it('keeps what an update does inside the disclosure, one paragraph per kind', () => {
       showRows([FLOW], [staleCheck(FLOW, '0.7.3')]);
       setIntegrity({ [FLOW.installPath]: MODIFIED });
       render(<InstalledPackagesView />);
       const note = screen.getByTestId('installation-integrity');
-      const wide = within(note.querySelector('summary')!).getByText(/^Updating replaces/);
-      expect(wide.className).toContain('hidden');
-      expect(wide.className).toContain('sm:inline');
-      const narrow = [...note.querySelectorAll('p')].find((p) =>
-        p.textContent?.startsWith('Updating replaces')
-      )!;
-      expect(narrow.className).toContain('sm:hidden');
+      expect(note.querySelector('summary')).not.toHaveTextContent('Updating');
+      const sentences = [...note.querySelectorAll('p')]
+        .map((p) => p.textContent ?? '')
+        .filter((text) => text.startsWith('Updating'));
+      expect(sentences).toEqual([
+        'Updating replaces the 2 files you edited and keeps your copies beside them.',
+        'Updating keeps the file you added.',
+        'Updating puts back the file you removed.',
+      ]);
     });
 
     // Purpose (review 3): with no update on offer, the note says what changed
@@ -1112,7 +1114,7 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
-        'Installed by an older DorkOS. Check files to compare it with the version you installed, so updates keep your edits.'
+        'Installed by an older DorkOS. Check files so updates keep your edits.'
       );
       await user.click(screen.getByRole('button', { name: 'Check the files of Flow on Alpha' }));
       expect(checkFilesMutate).toHaveBeenCalledWith({
@@ -1129,7 +1131,7 @@ describe('InstalledPackagesView', () => {
       [
         'installed from a folder',
         { source: 'local' },
-        'Installed from a folder by an older DorkOS, so there’s no version to compare it with. Reinstall it so updates keep your edits.',
+        'Installed from a folder by an older DorkOS. Reinstall so updates keep your edits.',
       ],
     ])('offers no Check files for an install %s, and says why', (_label, check, text) => {
       showRows([FLOW], [makeCheck(FLOW)]);
@@ -1210,7 +1212,7 @@ describe('InstalledPackagesView', () => {
       });
       render(<InstalledPackagesView />);
       expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
-        'Installed by an older DorkOS. Check files to compare it with the version you installed, so updates keep your edits.'
+        'Installed by an older DorkOS. Check files so updates keep your edits.'
       );
       expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
     });
@@ -1237,11 +1239,11 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       const note = screen.getByTestId('installation-integrity-unproven');
-      expect(note).toHaveTextContent('Kept 2 files DorkOS couldn’t sort after an update.');
+      expect(note).toHaveTextContent('Kept 2 files an update couldn’t sort.');
       await user.click(note.querySelector('summary')!);
       expect(within(note).getByRole('list', { name: 'Kept' })).toHaveTextContent('notes.txt');
       expect(note).toHaveTextContent(
-        'DorkOS couldn’t tell whether these were yours or left over from the earlier version, so it kept them. Check files sets aside the leftovers and keeps yours.'
+        'Unclear if these are yours or leftovers, so DorkOS kept them.Check files sets aside the leftovers and keeps yours.'
       );
       expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
     });
@@ -1270,7 +1272,7 @@ describe('InstalledPackagesView', () => {
       const note = screen.getByTestId('installation-integrity-unproven');
       expect(note).toHaveAttribute('data-runs', 'true');
       expect(note.querySelector('summary')).toHaveTextContent(
-        'Kept 3 files DorkOS couldn’t sort after an update. 2 of them still run.'
+        'Kept 3 files an update couldn’t sort. 2 of them still run.'
       );
       await user.click(note.querySelector('summary')!);
       expect(within(note).getByRole('list', { name: 'Still runs' })).toHaveTextContent(
@@ -1331,10 +1333,10 @@ describe('InstalledPackagesView', () => {
       expect(keepMutate).not.toHaveBeenCalled();
 
       const dialog = await screen.findByRole('dialog');
-      expect(dialog).toHaveTextContent('Keep the files Flow kept as yours?');
+      expect(dialog).toHaveTextContent('Keep these Flow files as yours?');
       expect(dialog).toHaveTextContent('Nothing is moved or deleted.');
-      expect(dialog).toHaveTextContent('there’s no earlier version to sort them with');
-      expect(dialog).toHaveTextContent('They run as your own files from now on.');
+      expect(dialog).toHaveTextContent('No earlier version to compare with.');
+      expect(dialog).toHaveTextContent('They now run as your own files.');
       expect(within(dialog).getByRole('list', { name: 'Still runs' })).toHaveTextContent(
         'skills/old/SKILL.md'
       );
@@ -1391,10 +1393,8 @@ describe('InstalledPackagesView', () => {
       expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
       await user.click(screen.getByRole('button', { name: /Keep the files Flow kept/ }));
       const dialog = await screen.findByRole('dialog');
-      expect(dialog).toHaveTextContent(
-        'DorkOS couldn’t download the version you had to sort them with'
-      );
-      expect(dialog).not.toHaveTextContent('there’s no earlier version');
+      expect(dialog).toHaveTextContent('DorkOS couldn’t download the old version to compare.');
+      expect(dialog).not.toHaveTextContent('No earlier version');
     });
 
     // Purpose (DOR-2341): for a global package held back from sessions, the
@@ -1444,7 +1444,7 @@ describe('InstalledPackagesView', () => {
       };
       rerender(<InstalledPackagesView />);
       const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveTextContent('Keeping also lets it run, in every session');
+      expect(dialog).toHaveTextContent('Keeping also lets it run everywhere');
       expect(within(dialog).getByRole('list', { name: 'What Flow runs' })).toHaveTextContent(
         'echo hi'
       );
@@ -1479,7 +1479,7 @@ describe('InstalledPackagesView', () => {
       });
       render(<InstalledPackagesView />);
       expect(screen.getByTestId('installation-integrity-unproven')).toHaveTextContent(
-        'Kept 1 file DorkOS couldn’t sort after an update.'
+        'Kept 1 file an update couldn’t sort.'
       );
       expect(screen.queryByRole('button', { name: /Check the files/ })).not.toBeInTheDocument();
     });
@@ -1514,7 +1514,7 @@ describe('InstalledPackagesView', () => {
 
       const flowItem = items.find((i) => i.textContent?.includes('Flow'))!;
       expect(flowItem).toHaveTextContent(
-        'Updating replaces the 2 files you edited and keeps your copies beside them, keeps the file you added, and puts back the file you removed.'
+        'Updating replaces the 2 files you edited and keeps your copies beside them.Updating keeps the file you added.Updating puts back the file you removed.'
       );
       expect(flowItem).not.toHaveTextContent('.dork-old');
       const otherItem = items.find((i) => i.textContent?.includes('Reviewer'))!;
@@ -1532,10 +1532,8 @@ describe('InstalledPackagesView', () => {
       await user.click(screen.getByRole('button', { name: /^uninstall Reviewer$/i }));
 
       expect(uninstallMutate).not.toHaveBeenCalled();
-      // Button now reads "Confirm" and has the destructive variant aria-label.
-      expect(
-        screen.getByRole('button', { name: /confirm uninstall of Reviewer/i })
-      ).toBeInTheDocument();
+      // Button now reads "Uninstall now" and has the destructive variant aria-label.
+      expect(screen.getByRole('button', { name: /^uninstall Reviewer now$/i })).toBeInTheDocument();
     });
 
     it('fires the uninstall mutation with purge: false on the second click within the window', async () => {
@@ -1545,7 +1543,7 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       await user.click(screen.getByRole('button', { name: /^uninstall Reviewer$/i }));
-      await user.click(screen.getByRole('button', { name: /confirm uninstall of Reviewer/i }));
+      await user.click(screen.getByRole('button', { name: /^uninstall Reviewer now$/i }));
 
       expect(uninstallMutate).toHaveBeenCalledTimes(1);
       expect(uninstallMutate).toHaveBeenCalledWith({
@@ -1567,7 +1565,7 @@ describe('InstalledPackagesView', () => {
         fireEvent.click(screen.getByRole('button', { name: /^uninstall Reviewer$/i }));
 
         expect(
-          screen.getByRole('button', { name: /confirm uninstall of Reviewer/i })
+          screen.getByRole('button', { name: /^uninstall Reviewer now$/i })
         ).toBeInTheDocument();
 
         // Advance past the 3-second confirm window.

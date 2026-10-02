@@ -41,7 +41,7 @@ function formatWhen(iso: string): string {
 }
 
 /**
- * What went wrong with a source's listing: it didn't load at all (`failed`),
+ * What went wrong with a source's listing: it didn’t load at all (`failed`),
  * or the source couldn't be fetched and an older copy is still what's listed
  * (`stale`). Drawn from the server's record of the last fetch (DOR-2324), so
  * it survives a reload and every window shows the same thing.
@@ -57,16 +57,16 @@ function isLocal(source: string): boolean {
   return source.startsWith('file://');
 }
 
-/** "Couldn't reach it" for a remote source, "Couldn't read that folder" for a local one. */
+/** "Couldn’t reach it" for a remote source, "Couldn’t read that folder" for a local one. */
 function unreachable(source: string): string {
-  return isLocal(source) ? "Couldn't read that folder" : "Couldn't reach it";
+  return isLocal(source) ? 'Couldn’t read that folder' : 'Couldn’t reach it';
 }
 
 /** The row's listing status, from the server's record of the last fetch. */
 function listingStatusOf(source: ListedMarketplaceSource): ListingStatus | null {
   const last = source.lastFetch;
   if (last?.state === 'failed') {
-    return { kind: 'failed', message: `Its packages didn't load: ${sentence(last.reason)}` };
+    return { kind: 'failed', message: `Its packages didn’t load: ${sentence(last.reason)}` };
   }
   if (last?.state === 'stale') {
     return {
@@ -82,8 +82,8 @@ function listingStatusOf(source: ListedMarketplaceSource): ListingStatus | null 
 /** The status dot's label: an accurate one, not "Enabled" over a problem. */
 function statusLabel(enabled: boolean, listing: ListingStatus | null, fetched: boolean): string {
   if (!enabled) return 'Disabled';
-  if (listing?.kind === 'failed') return "Enabled, but its packages didn't load";
-  if (listing?.kind === 'stale') return 'Enabled, but showing an older copy of its packages';
+  if (listing?.kind === 'failed') return 'Enabled, but its packages didn’t load';
+  if (listing?.kind === 'stale') return 'Enabled, showing an older copy';
   if (!fetched) return 'Enabled, not fetched yet';
   return 'Enabled';
 }
@@ -225,10 +225,7 @@ function AddSourceDialog({ open, onOpenChange, isPending, error, onSubmit }: Add
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add a marketplace source</DialogTitle>
-          <DialogDescription>
-            Paste the link to a git repository that publishes marketplace packages, and give it a
-            name.
-          </DialogDescription>
+          <DialogDescription>Paste a git repository link and give it a name.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
@@ -322,9 +319,9 @@ export function MarketplaceSourcesView() {
             toast.success(`Added ${added.name}. ${ready}`);
           } else {
             setAnnouncement(
-              `${added.name}: Added, but its packages didn't load: ${sentence(added.listing.reason)}`
+              `${added.name}: Added, but its packages didn’t load: ${sentence(added.listing.reason)}`
             );
-            toast.warning(`Added ${added.name}, but its packages didn't load.`);
+            toast.warning(`Added ${added.name}, but its packages didn’t load.`);
           }
         },
       }
@@ -347,7 +344,7 @@ export function MarketplaceSourcesView() {
               `Still showing the last copy, from ${formatWhen(refreshed.fetchedAt)}.`
           );
           toast.warning(
-            `${isLocal(source) ? "Couldn't read" : "Couldn't reach"} ${name}. Still showing the last copy.`
+            `${isLocal(source) ? 'Couldn’t read' : 'Couldn’t reach'} ${name}. Still showing the last copy.`
           );
           return;
         }
@@ -358,8 +355,8 @@ export function MarketplaceSourcesView() {
         toast.success(`Refreshed ${name}. ${ready}`);
       },
       onError: (err) => {
-        setAnnouncement(`${name}: Its packages didn't load: ${sentence(err.message)}`);
-        toast.warning(`Couldn't refresh ${name}.`);
+        setAnnouncement(`${name}: Its packages didn’t load: ${sentence(err.message)}`);
+        toast.warning(`Couldn’t refresh ${name}.`);
       },
     });
   };
@@ -407,9 +404,7 @@ export function MarketplaceSourcesView() {
       {isEmpty && (
         <div className="rounded-xl border border-dashed p-10 text-center">
           <p className="text-sm font-medium">No marketplaces added yet</p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            Add a git registry to browse and install marketplace packages.
-          </p>
+          <p className="text-muted-foreground mt-1 text-xs">Add a source to browse its packages.</p>
           <Button className="mt-4" size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="mr-1.5 size-4" />
             Add marketplace source

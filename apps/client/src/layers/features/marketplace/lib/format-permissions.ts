@@ -334,7 +334,7 @@ function formatEffects(
       // package declared, and one declared library routinely pulls dozens more
       // (`express` alone is 68 packages). A bare "Download 1 npm library" would
       // be a number a person could reasonably rely on, and it would be wrong.
-      label: `Download ${count} npm ${count === 1 ? 'library' : 'libraries'}, and everything they depend on`,
+      label: `Download ${count} npm ${count === 1 ? 'library' : 'libraries'} and their dependencies`,
       // Every declared library is named, not just the first few: this is the
       // row that tells a person what code is about to be fetched onto their
       // machine, and a truncated list would hide the one that matters.
@@ -357,7 +357,7 @@ function formatEffects(
   for (const link of preview.skippedLinks) {
     rows.push({
       icon: 'alert-triangle',
-      label: "Part of this package won't be installed",
+      label: 'Part of this package won’t be installed',
       description: link.message,
       severity: 'warning' satisfies PermissionSeverity,
     });
@@ -406,7 +406,7 @@ function formatCommands(
       description:
         `Runs when the ${kind} "${revealHiddenCharacters(entry.skill)}" is used (${revealHiddenCharacters(entry.source)})` +
         // Filled in before the command runs, so what runs depends on it.
-        (entry.usesArguments ? '. It uses the text typed after the command' : ''),
+        (entry.usesArguments ? '. Uses what you type after it' : ''),
       mono: true,
     });
   }
@@ -414,10 +414,10 @@ function formatCommands(
   for (const unreadable of preview.unreadableHooks) {
     rows.push({
       icon: 'alert-triangle',
-      label: 'This package sets up a command to run, but we could not read it',
+      label: 'Sets up a command DorkOS couldn’t read',
       description: unreadable.event
-        ? `${unreadable.path} declares "${unreadable.event}" in a form DorkOS cannot read`
-        : `${unreadable.path} is not readable`,
+        ? `${unreadable.path} declares "${unreadable.event}" in a form DorkOS can’t read`
+        : `DorkOS can’t read ${unreadable.path}`,
       severity: 'warning' satisfies PermissionSeverity,
     });
   }
@@ -462,7 +462,7 @@ function formatCommands(
     );
   }
   for (const name of preview.executables) {
-    rows.push(programRow(describeProgramLine(name), "Added to the agent's commands (bin/)"));
+    rows.push(programRow(describeProgramLine(name), 'Added to the agent’s commands (bin/)'));
   }
 
   // A skill is picked by the model from its description, so the tools it may
@@ -479,10 +479,10 @@ function formatCommands(
   for (const unreadable of preview.unreadableDeclarations) {
     rows.push({
       icon: 'alert-triangle',
-      label: 'This package sets up a program to run, but we could not read it',
+      label: 'Sets up a program DorkOS couldn’t read',
       description: unreadable.entry
-        ? `${unreadable.path} declares "${unreadable.entry}" in a form DorkOS cannot read`
-        : `${unreadable.path} is not readable`,
+        ? `${unreadable.path} declares "${unreadable.entry}" in a form DorkOS can’t read`
+        : `DorkOS can’t read ${unreadable.path}`,
       severity: 'warning' satisfies PermissionSeverity,
     });
   }
@@ -585,9 +585,7 @@ export function summarizePermissionPreview(preview: PermissionPreview): string {
     preview.monitors.length +
     preview.executables.length;
   const own =
-    programs === 0
-      ? ''
-      : ` Declares ${programs} ${programs === 1 ? 'program' : 'programs'} of its own.`;
+    programs === 0 ? '' : ` Declares ${programs} ${programs === 1 ? 'program' : 'programs'}.`;
 
   return `${files}. ${declares}.${own}`;
 }

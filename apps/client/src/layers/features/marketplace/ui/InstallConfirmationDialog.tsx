@@ -65,7 +65,7 @@ function computeInstallButtonLabel(state: {
     return state.isReinstall ? 'Reinstalling…' : 'Installing…';
   }
   if (state.hasBlockingConflicts) {
-    return 'Cannot install: conflicts detected';
+    return 'Can’t install: conflicts found';
   }
   return state.isReinstall ? 'Reinstall' : 'Install';
 }
@@ -233,8 +233,8 @@ export function InstallConfirmationDialog() {
               </ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
                 {isReinstall
-                  ? 'Reinstalling replaces the existing installation at this scope. Review what this package will do below.'
-                  : 'Review what this package will do before installing. This action cannot be undone without running an uninstall.'}
+                  ? 'This replaces the installed copy. Check what it does below.'
+                  : 'Check what this package does before you install it.'}
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
 
@@ -243,9 +243,7 @@ export function InstallConfirmationDialog() {
                 choice the server would silently ignore is worse than no choice). */}
             <div className="shrink-0 space-y-2 px-4 sm:px-6">
               {isShape ? (
-                <p className="text-muted-foreground text-sm">
-                  Shapes set up your whole app, so they install once for you, not per agent.
-                </p>
+                <p className="text-muted-foreground text-sm">Shapes apply to your whole app.</p>
               ) : (
                 <>
                   <div className="text-muted-foreground text-3xs font-medium tracking-wider uppercase">
@@ -290,7 +288,7 @@ export function InstallConfirmationDialog() {
             <ResponsiveDialogBody className="mt-4">
               {needsAgent && (
                 <p className="text-muted-foreground text-sm">
-                  Select an agent to preview what this install will do.
+                  Pick an agent to preview this install.
                 </p>
               )}
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}

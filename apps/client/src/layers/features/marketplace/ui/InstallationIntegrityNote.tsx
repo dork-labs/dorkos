@@ -20,36 +20,32 @@ import { Button } from '@/layers/shared/ui';
 export type ModifiedIntegrity = Extract<InstallIntegrity, { status: 'modified' }>;
 
 /** What the note beside the "Check files" button says it does. */
-export const CHECK_FILES_EXPLANATION =
-  'Check files to compare it with the version you installed, so updates keep your edits.';
+export const CHECK_FILES_EXPLANATION = 'Check files so updates keep your edits.';
 
 /** "the file you edited" / "the 3 files you edited". */
 function theFiles(count: number, verb: string): string {
   return count === 1 ? `the file you ${verb}` : `the ${count} files you ${verb}`;
 }
 
-/** Join clauses as "a", "a and b", "a, b, and c". */
-function joinClauses(parts: string[]): string {
-  if (parts.length <= 1) return parts.join('');
-  return `${parts.slice(0, -1).join(', ')}${parts.length > 2 ? ',' : ''} and ${parts.at(-1)}`;
-}
-
 /**
- * What an update does to the files a person changed, in one sentence, or
- * `undefined` when nothing changed that an update touches. An update replaces
- * edited files (keeping the person's copies), keeps files they added, and
- * puts back files they removed.
+ * What an update does to the files a person changed, one short sentence per
+ * kind of change, or an empty list when nothing changed that an update
+ * touches. An update replaces edited files (keeping the person's copies),
+ * keeps files they added, and puts back files they removed.
+ *
+ * One sentence per kind, never one joined sentence: each renders as its own
+ * paragraph, so each stays inside the 15-word cap (`writing-app-copy`).
  *
  * @param integrity - A modified installation's integrity.
  */
-export function updateConsequence(integrity: ModifiedIntegrity): string | undefined {
-  const parts = [
+export function updateConsequences(integrity: ModifiedIntegrity): string[] {
+  return [
     integrity.changed.length > 0 &&
-      `replaces ${theFiles(integrity.changed.length, 'edited')} and keeps your copies beside them`,
-    integrity.added.length > 0 && `keeps ${theFiles(integrity.added.length, 'added')}`,
-    integrity.missing.length > 0 && `puts back ${theFiles(integrity.missing.length, 'removed')}`,
+      `Updating replaces ${theFiles(integrity.changed.length, 'edited')} and keeps your copies beside them.`,
+    integrity.added.length > 0 && `Updating keeps ${theFiles(integrity.added.length, 'added')}.`,
+    integrity.missing.length > 0 &&
+      `Updating puts back ${theFiles(integrity.missing.length, 'removed')}.`,
   ].filter((p): p is string => typeof p === 'string');
-  return parts.length > 0 ? `Updating ${joinClauses(parts)}.` : undefined;
 }
 
 /** "3 files changed since install (2 edited, 1 added)". */
@@ -172,7 +168,7 @@ function UnprovenNote({
           aria-hidden
         />
         <span>
-          Kept {count} {count === 1 ? 'file' : 'files'} DorkOS couldn’t sort after an update.
+          Kept {count} {count === 1 ? 'file' : 'files'} an update couldn’t sort.
           {runs &&
             ` ${running.length} of ${count === 1 ? 'it' : 'them'} still ${running.length === 1 ? 'runs' : 'run'}.`}
         </span>
@@ -182,9 +178,8 @@ function UnprovenNote({
         />
       </summary>
       <div className="text-muted-foreground mt-1.5 space-y-1.5 pl-4">
+        <p>Unclear if these are yours or leftovers, so DorkOS kept them.</p>
         <p>
-          DorkOS couldn’t tell whether these were yours or left over from the earlier version, so it
-          kept them.{' '}
           {local
             ? 'Keep them as yours, or delete any you don’t need.'
             : 'Check files sets aside the leftovers and keeps yours.'}
@@ -255,28 +250,27 @@ function IntegrityNote({
   isCheckingFiles?: boolean;
 }) {
   if (integrity?.status === 'modified') {
-    const consequence = updateAvailable ? updateConsequence(integrity) : undefined;
+    const consequences = updateAvailable ? updateConsequences(integrity) : [];
     return (
       <details data-testid="installation-integrity" className="group/files mt-1 text-xs">
         <summary className="text-muted-foreground hover:text-foreground focus-ring flex cursor-pointer list-none items-start gap-1 rounded-sm select-none [&::-webkit-details-marker]:hidden">
           <FileWarning className="text-status-warning-dot mt-0.5 size-3 shrink-0" aria-hidden />
-          <span>
-            {changeSummary(integrity)}.
-            {/* On a phone the long consequence waits inside the disclosure, so
-                the closed note stays one short line. */}
-            {consequence && <span className="hidden sm:inline"> {consequence}</span>}
-          </span>
+          {/* What an update would do waits inside the disclosure, so the closed
+              note stays one short line on every screen. */}
+          <span>{changeSummary(integrity)}.</span>
           <ChevronRight
             className="mt-0.5 size-3 shrink-0 transition-transform duration-200 group-open/files:rotate-90"
             aria-hidden
           />
         </summary>
         <div className="text-muted-foreground mt-1.5 space-y-1.5 pl-4">
-          {consequence && <p className="sm:hidden">{consequence}</p>}
+          {consequences.map((sentence) => (
+            <p key={sentence}>{sentence}</p>
+          ))}
           <PathGroup title="Edited" paths={integrity.changed} />
           <PathGroup title="Added" paths={integrity.added} />
           <PathGroup title="Removed" paths={integrity.missing} />
-          {integrity.truncated && <p>Only the first 50 of each are listed.</p>}
+          {integrity.truncated && <p>Showing the first 50 of each.</p>}
         </div>
       </details>
     );
@@ -285,7 +279,7 @@ function IntegrityNote({
     const local = integrity.check?.source === 'local';
     const last = integrity.check?.last;
     const text = local
-      ? 'Installed from a folder by an older DorkOS, so there’s no version to compare it with. Reinstall it so updates keep your edits.'
+      ? 'Installed from a folder by an older DorkOS. Reinstall so updates keep your edits.'
       : last
         ? last.message
         : `Installed by an older DorkOS. ${CHECK_FILES_EXPLANATION}`;

@@ -169,9 +169,7 @@ describe('SkillsWithHarnessesList — the list', () => {
 
     const row = await screen.findByRole('group', { name: 'chat-self-test' });
     expect(
-      within(row).getByText(
-        'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.'
-      )
+      within(row).getByText('Lives in .claude/skills. Move it to .agents/skills to share it.')
     ).toBeInTheDocument();
     expect(screen.getAllByText(/Move it to \.agents\/skills/)).toHaveLength(1);
   });
@@ -286,9 +284,7 @@ describe('SkillsWithHarnessesList — the list', () => {
     );
 
     expect(
-      screen.getByText(
-        'Lives in .opencode/skills. Move it to .agents/skills so every agent can read it.'
-      )
+      screen.getByText('Lives in .opencode/skills. Move it to .agents/skills to share it.')
     ).toBeInTheDocument();
     // The command is built from the row's own name and the project it is in,
     // whatever folder the skill sits in today.

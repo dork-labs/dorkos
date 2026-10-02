@@ -455,7 +455,7 @@ describe('PackageDetailSheet', () => {
     expect(uninstallMutate).not.toHaveBeenCalled();
 
     // …second click (now labeled Confirm) fires the mutation.
-    await user.click(screen.getByRole('button', { name: /confirm uninstall/i }));
+    await user.click(screen.getByRole('button', { name: /uninstall now/i }));
     expect(uninstallMutate).toHaveBeenCalledTimes(1);
     expect(uninstallMutate).toHaveBeenCalledWith({
       name: '@dorkos/code-reviewer',
@@ -518,7 +518,7 @@ describe('PackageDetailSheet', () => {
       name: 'Uninstall for E2E Test Agent',
     });
     await user.click(agentUninstall);
-    await user.click(screen.getByRole('button', { name: 'Confirm uninstall for E2E Test Agent' }));
+    await user.click(screen.getByRole('button', { name: 'Uninstall now for E2E Test Agent' }));
 
     expect(uninstallMutate).toHaveBeenCalledWith({
       name: '@dorkos/code-reviewer',

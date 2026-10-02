@@ -199,12 +199,12 @@ function InstallationRow({
           disabled={disabled}
           onClick={onUninstallClick}
           aria-label={
-            isConfirmingUninstall ? `Confirm uninstall for ${title}` : `Uninstall for ${title}`
+            isConfirmingUninstall ? `Uninstall now for ${title}` : `Uninstall for ${title}`
           }
           className={isConfirmingUninstall ? '' : 'text-destructive hover:text-destructive'}
         >
           <Trash2 className="mr-1 size-3" aria-hidden />
-          {isRemoving ? 'Removing…' : isConfirmingUninstall ? 'Confirm' : 'Uninstall'}
+          {isRemoving ? 'Removing…' : isConfirmingUninstall ? 'Uninstall now' : 'Uninstall'}
         </Button>
       </div>
     </div>

@@ -26,7 +26,7 @@ export function useExtensionList() {
     queryKey: extensionQueryKeys.list(),
     queryFn: async () => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions`);
-      if (!res.ok) throw new Error(`Failed to fetch extensions: ${res.status}`);
+      if (!res.ok) throw new Error(`Couldn’t load extensions (${res.status})`);
       // An older copy a newer one shadows is listed for extensions to read,
       // never for the app to draw or toggle (spec `flow-multiproject` §9.2).
       return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);

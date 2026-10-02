@@ -16,7 +16,7 @@ interface PackageErrorStateProps {
  *
  * Detects network/offline errors (via message pattern) and surfaces `WifiOff`
  * with a more specific heading. All other errors render `AlertTriangle` with a
- * generic "Something went wrong" heading. In both cases the raw error message
+ * "Couldn’t load packages" heading. In both cases the raw error message
  * is shown and a "Try again" button triggers `onRetry`.
  *
  * @param error - Error instance from the query.
@@ -25,7 +25,7 @@ interface PackageErrorStateProps {
 export function PackageErrorState({ error, onRetry }: PackageErrorStateProps) {
   const isOffline = NETWORK_ERROR_RE.test(error.message);
   const Icon = isOffline ? WifiOff : AlertTriangle;
-  const heading = isOffline ? 'You appear to be offline' : 'Something went wrong';
+  const heading = isOffline ? 'Couldn’t reach the marketplace' : 'Couldn’t load packages';
 
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
