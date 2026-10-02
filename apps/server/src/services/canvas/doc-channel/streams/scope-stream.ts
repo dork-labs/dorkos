@@ -97,7 +97,8 @@ export class DocScopeStream {
   ): AsyncGenerator<CanvasChannelNotification> {
     // Full snapshots also repair status/state changes that have no newer transcript cursor.
     let since = cursors.get(documentId) ?? 0;
-    for (let page = 0; page < 10; page++) {
+    let target: number | undefined;
+    for (;;) {
       this.requireCurrent(scope, actor, documentId);
       const snapshot = await this.service.replay(documentId, actor, since, 200);
       if (signal.aborted) return;
@@ -105,22 +106,26 @@ export class DocScopeStream {
       const currentScope = this.resolveScope(scope);
       const identity = this.documents.lookupIdentity(documentId);
       if (!identity || identity.scope !== currentScope) throw new Error('Document scope changed.');
-      const { events, ...current } = snapshot;
+      // Freeze one replay cutover so continuous commits cannot starve live delivery.
+      const cutoff = target ?? snapshot.highWatermark;
+      target = cutoff;
+      const { events: pageEvents, ...current } = snapshot;
+      const events = pageEvents.filter((event) => event.docSeq <= cutoff);
       yield { type: 'canvas_channel_snapshot', scope: currentScope, documentId, snapshot: current };
       for (const event of events) {
         if (signal.aborted) return;
         this.requireCurrent(scope, actor, documentId);
-        yield event;
+        // A canonical rekey may happen while replay or the preceding frame is awaited.
+        yield { ...event, scope: this.resolveScope(scope) };
       }
       // Receipt summaries can be ordered newest-first on reset; they never advance payload replay.
-      const last = Math.max(since, ...snapshot.events.map((event) => event.docSeq));
-      if (last >= snapshot.highWatermark || snapshot.events.length < 200) {
-        cursors.set(documentId, snapshot.highWatermark);
+      const last = Math.max(since, ...events.map((event) => event.docSeq));
+      if (last >= target || pageEvents.length < 200) {
+        cursors.set(documentId, target);
         return;
       }
       if (last <= since) throw new Error('Document replay made no progress.');
       since = last;
     }
-    throw new Error('Document replay exceeds its page bound.');
   }
 }

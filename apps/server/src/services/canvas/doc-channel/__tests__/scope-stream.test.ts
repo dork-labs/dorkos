@@ -1,3 +1,4 @@
+import type { CanvasChannelNotification } from '@dorkos/shared/canvas-channel-schemas';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
 import type { DurableStreamSink } from '../../../core/streams/durable-stream-sink.js';
@@ -244,3 +245,199 @@ it('explicit return releases an idle scope generator without an external abort',
   expect((await pending).done).toBe(true);
   expect(f.controller.signal.aborted).toBe(false);
 });
+
+it('replays more than 2000 retained inputs on cold connect and reconnect with bounded pages', async () => {
+  const f = fixture();
+  const rows = f.store.transaction(() => Array.from({ length: 2001 }, () => f.append()));
+  const replay = vi.spyOn(f.service, 'replay');
+  const expected = rows.map((row) => ({ id: row.eventId, docSeq: row.docSeq }));
+  for (let connection = 0; connection < 2; connection++) {
+    const reader = f.reader();
+    const events: { id: string; docSeq: number }[] = [];
+    let snapshots = 0;
+    try {
+      while (events.length < rows.length) {
+        const frame = (await reader.next()).value!;
+        if (frame.type === 'canvas_event') {
+          expect(frame.scope).toBe(FROM);
+          events.push({ id: frame.event.id, docSeq: frame.docSeq });
+        } else snapshots++;
+      }
+      expect(events).toEqual(expected);
+      expect(snapshots).toBe(11);
+      expect(replay).toHaveBeenCalledTimes((connection + 1) * 11);
+      expect(
+        replay.mock.calls.slice(connection * 11, (connection + 1) * 11).map((call) => call[2])
+      ).toEqual(Array.from({ length: 11 }, (_, page) => page * 200));
+      if (connection === 1) {
+        const newest = f.append();
+        f.live.notifyCommitted(f.doc.id);
+        f.live.notifyCommitted(f.doc.id);
+        expect((await reader.next()).value).toMatchObject({
+          type: 'canvas_channel_snapshot',
+          snapshot: { highWatermark: 2002 },
+        });
+        expect((await reader.next()).value).toMatchObject({
+          type: 'canvas_event',
+          docSeq: 2002,
+          event: { id: newest.eventId },
+        });
+        const pending = reader.next();
+        await reader.return?.();
+        expect((await pending).done).toBe(true);
+        expect(replay).toHaveBeenCalledTimes(23);
+      }
+    } finally {
+      await reader.return?.();
+    }
+  }
+  for (const [, , , limit] of replay.mock.calls) expect(limit).toBe(200);
+});
+
+it('ends retained replay at its first high watermark and then drains a captured live commit', async () => {
+  const f = fixture();
+  f.store.transaction(() => {
+    for (let index = 0; index < 405; index++) f.append();
+  });
+  const original = f.service.replay.bind(f.service);
+  let concurrent!: ReturnType<typeof f.append>;
+  const replay = vi.spyOn(f.service, 'replay').mockImplementationOnce(async (...args) => {
+    const snapshot = await original(...args);
+    concurrent = f.append();
+    f.live.notifyCommitted(f.doc.id);
+    return snapshot;
+  });
+  const reader = f.reader();
+  const sequences: number[] = [];
+  try {
+    while (sequences.length < 405) {
+      const frame = (await reader.next()).value!;
+      if (frame.type === 'canvas_event') sequences.push(frame.docSeq);
+    }
+    expect(sequences).toEqual(Array.from({ length: 405 }, (_, index) => index + 1));
+    expect(replay).toHaveBeenCalledTimes(3);
+    // The fourth replay is the buffered live hint, not an extension of the cold cutoff.
+    expect((await reader.next()).value).toMatchObject({
+      type: 'canvas_channel_snapshot',
+      snapshot: { highWatermark: 406 },
+    });
+    expect(replay).toHaveBeenCalledTimes(4);
+    expect((await reader.next()).value).toMatchObject({
+      type: 'canvas_event',
+      docSeq: 406,
+      event: { id: concurrent.eventId },
+    });
+  } finally {
+    f.controller.abort();
+    await reader.return?.();
+  }
+});
+
+it('cancels a large replay without fetching another page or leaking buffered payloads', async () => {
+  const f = fixture();
+  f.store.transaction(() => {
+    for (let index = 0; index < 2001; index++) f.append();
+  });
+  const replay = vi.spyOn(f.service, 'replay');
+  const reader = f.reader();
+  expect((await reader.next()).value).toMatchObject({ type: 'canvas_channel_snapshot' });
+  expect((await reader.next()).value).toMatchObject({ type: 'canvas_event', docSeq: 1 });
+  f.controller.abort();
+  expect((await reader.next()).done).toBe(true);
+  f.append();
+  f.live.notifyCommitted(f.doc.id);
+  expect((await reader.next()).done).toBe(true);
+  expect(replay).toHaveBeenCalledTimes(1);
+  await reader.return?.();
+});
+
+it('rebinds held replay and every payload to the current canonical scope without changing identity', async () => {
+  const f = fixture();
+  const rows = [f.append(), f.append()];
+  const original = f.service.replay.bind(f.service);
+  let captured = false;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const replay = vi.spyOn(f.service, 'replay').mockImplementationOnce(async (...args) => {
+    const snapshot = await original(...args);
+    expect(snapshot.events[0]?.scope).toBe(FROM);
+    captured = true;
+    await gate;
+    return snapshot;
+  });
+  const reader = f.reader();
+  const first = reader.next();
+  await vi.waitFor(() => expect(captured).toBe(true));
+  expect(replay).toHaveBeenCalledTimes(1);
+  expect(f.documents.rekeyScope(FROM, TO)).toBe(1);
+  release();
+  try {
+    expect((await first).value).toMatchObject({ type: 'canvas_channel_snapshot', scope: TO });
+    for (const row of rows) {
+      expect((await reader.next()).value).toMatchObject({
+        type: 'canvas_event',
+        scope: TO,
+        documentId: f.doc.id,
+        docSeq: row.docSeq,
+        event: { id: row.eventId },
+      });
+    }
+    const newest = f.append();
+    f.live.notifyCommitted(f.doc.id);
+    expect((await reader.next()).value).toMatchObject({
+      type: 'canvas_channel_snapshot',
+      scope: TO,
+    });
+    expect((await reader.next()).value).toMatchObject({
+      type: 'canvas_event',
+      scope: TO,
+      docSeq: 3,
+      event: { id: newest.eventId },
+    });
+  } finally {
+    f.controller.abort();
+    await reader.return?.();
+  }
+});
+
+it.each(['revocation', 'navigation'] as const)(
+  'fences %s during held replay before any disclosure',
+  async (reason) => {
+    const f = fixture();
+    f.append();
+    const original = f.service.replay.bind(f.service);
+    let captured = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const replay = vi.spyOn(f.service, 'replay').mockImplementationOnce(async (...args) => {
+      const snapshot = await original(...args);
+      expect(snapshot.events[0]?.scope).toBe(FROM);
+      captured = true;
+      await gate;
+      return snapshot;
+    });
+    const reader = f.reader();
+    const frames: CanvasChannelNotification[] = [];
+    const first = reader.next().then((result) => {
+      if (!result.done) frames.push(result.value);
+      return result;
+    });
+    await vi.waitFor(() => expect(captured).toBe(true));
+    if (reason === 'revocation') f.revoke();
+    else f.controller.abort();
+    release();
+    try {
+      if (reason === 'revocation') await expect(first).rejects.toMatchObject({ status: 404 });
+      else expect((await first).done).toBe(true);
+      expect(frames).toEqual([]);
+      expect(replay).toHaveBeenCalledTimes(1);
+    } finally {
+      f.controller.abort();
+      await reader.return?.();
+    }
+  }
+);

@@ -84,27 +84,32 @@ export function useDocChannel(documentId: string): {
     const recover = (): Promise<void> => {
       if (repairing) return repairing;
       const starting = highest;
+      const startingRevision = revision;
       let succeeded = false;
       repairing = (async () => {
-        for (let page = 0; page < 10 && active; page++) {
+        let target: number | undefined;
+        while (active) {
           const capturedRevision = revision;
+          const requestedSince = highest;
           const response = CanvasChannelReplayResponseSchema.parse(
-            await transport.getCanvasChannel(documentId, { since: highest, limit: 200 })
+            await transport.getCanvasChannel(documentId, { since: requestedSince, limit: 200 })
           );
           if (!active) return;
-          const { events, ...snapshot } = response;
+          // Bound each page and freeze this catch-up target; later live work is handled separately.
+          const cutoff = target ?? response.highWatermark;
+          target = cutoff;
+          const { events: pageEvents, ...snapshot } = response;
+          const events = pageEvents.filter((frame) => frame.docSeq <= cutoff);
           applySnapshot(snapshot, capturedRevision === revision);
-          const before = highest;
           if (response.resetRequired) highest = Math.max(highest, response.retentionFloor - 1);
           for (const frame of events) applyEvent(frame);
-          if (events.length < 200 || highest >= response.highWatermark) {
-            highest = Math.max(highest, response.highWatermark);
+          if (pageEvents.length < 200 || highest >= target) {
+            highest = Math.max(highest, target);
             succeeded = true;
             return;
           }
-          if (highest <= before) throw new Error('Document replay made no progress.');
+          if (highest <= requestedSince) throw new Error('Document replay made no progress.');
         }
-        if (active) throw new Error('Document replay exceeded its bound.');
       })()
         .catch(() => {
           if (active) setView((previous) => ({ ...previous, available: false }));
@@ -121,7 +126,7 @@ export function useDocChannel(documentId: string): {
             pending.delete(seq);
             applyEvent(frame);
           }
-          if (pending.size && highest > starting) void recover();
+          if (pending.size && (highest > starting || revision > startingRevision)) void recover();
         });
       return repairing;
     };
