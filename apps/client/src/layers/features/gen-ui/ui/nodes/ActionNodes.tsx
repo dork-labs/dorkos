@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from 'react';
+import { useId, useRef, useState, type MouseEvent } from 'react';
 import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
 import { toast } from 'sonner';
@@ -20,6 +20,8 @@ import {
 } from '@/layers/shared/ui';
 import { cn, rectToCelebrationOrigin } from '@/layers/shared/lib';
 import { useAgentActionState, useWidgetActions } from '../../model/widget-context';
+import { WidgetChannelStatus } from '../WidgetChannelStatus';
+import { useWidgetNodePath } from '../../model/widget-node-context';
 import { useWidgetForm } from '../../model/form-context';
 import { useWidgetMotion, WIDGET_SPRING } from '../../lib/widget-motion';
 
@@ -33,6 +35,8 @@ interface WidgetActionButtonProps {
   variant?: ButtonVariant;
   /** Render full-width (used by form submit). */
   fullWidth?: boolean;
+  controlId?: string;
+  submit?: boolean;
 }
 
 /**
@@ -45,9 +49,19 @@ interface WidgetActionButtonProps {
  * renders inert with an explanatory tooltip — and so does a `ui` action whose
  * command needs a session (see `widget-context`'s module doc).
  */
-export function WidgetActionButton({ action, label, variant, fullWidth }: WidgetActionButtonProps) {
-  const { onAction } = useWidgetActions();
-  const state = useAgentActionState(action);
+export function WidgetActionButton({
+  action,
+  label,
+  variant,
+  fullWidth,
+  controlId,
+  submit,
+}: WidgetActionButtonProps) {
+  const { onAction, channel } = useWidgetActions();
+  const nodePath = useWidgetNodePath();
+  const identity = controlId ?? nodePath;
+  const isChannel = action.kind === 'emit' || (action.kind === 'agent' && channel !== undefined);
+  const state = useAgentActionState(action, identity);
   const motionOn = useWidgetMotion();
   const pending = state.isDispatched && state.dispatchStatus === 'pending';
   const sent = state.isDispatched && state.dispatchStatus === 'sent';
@@ -55,18 +69,27 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   const interactive = motionOn && state.interactive;
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
-    if (inert) return;
+    if (inert) {
+      event.preventDefault();
+      return;
+    }
+    if (submit && !event.currentTarget.form?.reportValidity()) {
+      event.preventDefault();
+      return;
+    }
     // Capture the button's viewport center so a `ui` celebrate command erupts
     // from this control rather than screen-center (origin-aware confetti).
     const origin = rectToCelebrationOrigin(event.currentTarget.getBoundingClientRect());
-    const dispatched = onAction(action, { origin });
+    const dispatched = onAction(action, { origin, controlId: identity });
     // Only `agent` actions are async (a network POST); `ui`/`url` resolve
     // immediately, so the toast lifecycle is scoped to `agent`. Latch state is
     // owned by the provider.
-    if (action.kind !== 'agent') return;
+    if (action.kind !== 'agent' && action.kind !== 'emit') return;
     dispatched.catch(() => {
-      toast.error('Couldn’t send the action', {
-        description: 'The agent may be busy right now. Try again in a moment.',
+      toast.error(isChannel ? 'This action could not be saved.' : 'Couldn’t send the action', {
+        description: isChannel
+          ? 'Check the action size and document permissions, then try again.'
+          : 'The agent may be busy right now. Try again in a moment.',
       });
     });
   };
@@ -76,7 +99,12 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   // dispatched button itself already speaks through its spinner/check.
   let tooltipText: string | null = null;
   if (state.superseded) tooltipText = 'This one’s from an earlier message.';
-  else if (state.unavailable) tooltipText = 'Interactions aren’t available here';
+  else if (state.unavailable)
+    tooltipText = isChannel
+      ? action.kind === 'agent' && channel?.enabled
+        ? 'This action needs an approved document route.'
+        : 'Document actions are not available here.'
+      : 'Interactions aren’t available here';
   else if (state.latched) tooltipText = 'Sent. Waiting for the agent’s reply';
 
   // Use aria-disabled (not the `disabled` attribute) for the inert case so the
@@ -85,7 +113,8 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   // is a real attribute — it must block a second submit.
   const buttonEl = (
     <Button
-      type="button"
+      type={submit ? 'submit' : 'button'}
+      data-testid={isChannel ? 'widget-channel-action' : undefined}
       size="sm"
       variant={variant ?? 'default'}
       aria-disabled={inert || undefined}
@@ -107,6 +136,18 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   // The tooltip'd (inert) cases stay an unwrapped Button so `TooltipTrigger
   // asChild` merges its `aria-describedby`/focus handlers onto the real
   // <button>, not a wrapper div.
+  if (isChannel)
+    return (
+      <div className={cn(fullWidth && 'w-full')}>
+        <div className="text-muted-foreground mb-1 text-xs">
+          {channel?.destinationLabel ? `To ${channel.destinationLabel}` : 'Document action'}
+        </div>
+        {buttonEl}
+        {tooltipText && <p className="text-muted-foreground mt-1 text-xs">{tooltipText}</p>}
+        <WidgetChannelStatus controlId={identity} />
+      </div>
+    );
+
   if (tooltipText) {
     return (
       <TooltipProvider>
@@ -118,7 +159,7 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
     );
   }
 
-  if (!interactive) return buttonEl;
+  if (!interactive && !isChannel) return buttonEl;
 
   return (
     // No `whileTap` here: the Button inside answers its own press now, and a
@@ -144,21 +185,40 @@ export function ButtonNode({ node }: { node: NodeOf<'button'> }) {
  */
 export function InputField({ node }: { node: NodeOf<'input'> }) {
   const form = useWidgetForm();
+  const fieldId = useId();
+  const [error, setError] = useState(false);
   const [local, setLocal] = useState('');
   const value = form ? (form.values[node.name] ?? '') : local;
   const setValue = (v: string) => (form ? form.setValue(node.name, v) : setLocal(v));
 
   return (
     <div className="flex flex-col gap-1.5">
-      {node.label && <Label htmlFor={`widget-${node.name}`}>{node.label}</Label>}
+      {node.label && <Label htmlFor={fieldId}>{node.label}</Label>}
       <Input
-        id={`widget-${node.name}`}
+        id={fieldId}
         name={node.name}
         type={node.kind === 'number' ? 'number' : 'text'}
+        required={node.required}
+        aria-label={node.label ?? node.name}
         placeholder={node.placeholder}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        aria-invalid={error || undefined}
+        aria-describedby={error ? `${fieldId}-error` : undefined}
+        onInvalid={(e) => {
+          e.preventDefault();
+          setError(true);
+          e.currentTarget.focus();
+        }}
+        onChange={(e) => {
+          setError(false);
+          setValue(e.target.value);
+        }}
       />
+      {error && (
+        <p id={`${fieldId}-error`} className="text-destructive text-xs" role="alert">
+          Enter {node.label ?? node.name}.
+        </p>
+      )}
     </div>
   );
 }
@@ -167,16 +227,40 @@ export function InputField({ node }: { node: NodeOf<'input'> }) {
  * `select` node. Controlled, mirroring {@link InputField}'s form/local behavior.
  */
 export function SelectField({ node }: { node: NodeOf<'select'> }) {
+  const trigger = useRef<HTMLButtonElement>(null);
   const form = useWidgetForm();
+  const fieldId = useId();
+  const [error, setError] = useState(false);
   const [local, setLocal] = useState('');
   const value = form ? (form.values[node.name] ?? '') : local;
   const setValue = (v: string) => (form ? form.setValue(node.name, v) : setLocal(v));
 
   return (
-    <div className="flex flex-col gap-1.5">
-      {node.label && <Label htmlFor={`widget-${node.name}`}>{node.label}</Label>}
-      <Select value={value || undefined} onValueChange={setValue}>
-        <SelectTrigger id={`widget-${node.name}`}>
+    <div
+      className="flex flex-col gap-1.5"
+      onInvalidCapture={(e) => {
+        e.preventDefault();
+        setError(true);
+        trigger.current?.focus();
+      }}
+    >
+      {node.label && <Label htmlFor={fieldId}>{node.label}</Label>}
+      <Select
+        name={node.name}
+        required={node.required}
+        value={value || undefined}
+        onValueChange={(v) => {
+          setError(false);
+          setValue(v);
+        }}
+      >
+        <SelectTrigger
+          ref={trigger}
+          aria-invalid={error || undefined}
+          aria-describedby={error ? `${fieldId}-error` : undefined}
+          id={fieldId}
+          aria-label={node.label ?? node.name}
+        >
           <SelectValue placeholder="Select…" />
         </SelectTrigger>
         <SelectContent>
@@ -187,6 +271,11 @@ export function SelectField({ node }: { node: NodeOf<'select'> }) {
           ))}
         </SelectContent>
       </Select>
+      {error && (
+        <p id={`${fieldId}-error`} className="text-destructive text-xs" role="alert">
+          Choose {node.label ?? node.name}.
+        </p>
+      )}
     </div>
   );
 }
