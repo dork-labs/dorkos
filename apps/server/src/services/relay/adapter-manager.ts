@@ -12,7 +12,13 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { FSWatcher } from 'chokidar';
-import type { AdapterRegistry, RelayAdapter, AdapterConfig, AdapterContext } from '@dorkos/relay';
+import type {
+  AdapterRegistry,
+  RelayAdapter,
+  AdapterConfig,
+  AdapterContext,
+  AdapterOwnershipReservation,
+} from '@dorkos/relay';
 import {
   TELEGRAM_MANIFEST,
   WEBHOOK_MANIFEST,
@@ -22,6 +28,7 @@ import {
   toIdList,
   describeError,
   TRACE_PRUNE_BATCH,
+  adapterPrefixesConflict,
 } from '@dorkos/relay';
 import type {
   AgentRuntimeLike,
@@ -955,6 +962,32 @@ export class AdapterManager {
     return testAdapterConnection(adapter);
   }
 
+  /** Reserve prospective webhook ownership before any config or lifecycle mutation. */
+  private reserveWebhookOwnership(config: AdapterConfig): AdapterOwnershipReservation | undefined {
+    if (config.type !== 'webhook') return undefined;
+    const subject = (config.config as { inbound: { subject: string } }).inbound.subject;
+    for (const other of this.configs) {
+      if (other.id === config.id || other.type !== 'webhook') continue;
+      const claimed = (other.config as { inbound: { subject: string } }).inbound.subject;
+      if (adapterPrefixesConflict(subject, claimed)) {
+        throw new AdapterError(
+          `Address ownership conflicts with connection '${other.id}'. Choose a different webhook address.`,
+          'INVALID_CONFIG',
+          config.id
+        );
+      }
+    }
+    try {
+      return this.registry.reserveOwnership(config.id, subject);
+    } catch (error) {
+      throw new AdapterError(
+        error instanceof Error ? error.message : 'Address ownership could not be checked.',
+        'INVALID_CONFIG',
+        config.id
+      );
+    }
+  }
+
   /** Add a new adapter instance, persist config, and start it if enabled. */
   async addAdapter(
     type: string,
@@ -995,39 +1028,44 @@ export class AdapterManager {
       },
       manifest
     );
-    this.configs.push(adapterConfig);
-    await this.persistConfigs();
-    logger.debug('[AdapterManager] config saved', { id });
+    const ownership = this.reserveWebhookOwnership(adapterConfig);
+    try {
+      this.configs.push(adapterConfig);
+      await this.persistConfigs();
+      logger.debug('[AdapterManager] config saved', { id });
 
-    if (enabled) {
-      // Serialized through the queue: a hot-reload or start pass in flight
-      // must settle before this register runs, so the new adapter can never
-      // be registered twice. Re-check state inside the task — a queued
-      // reload/remove may have dropped or disabled the config meanwhile.
-      await this.enqueue(async () => {
-        if (this.stopped) return;
-        const current = this.configs.find((c) => c.id === id);
-        if (!current?.enabled || this.registry.get(id)) return;
+      if (enabled) {
+        // Serialized through the queue: a hot-reload or start pass in flight
+        // must settle before this register runs, so the new adapter can never
+        // be registered twice. Re-check state inside the task — a queued
+        // reload/remove may have dropped or disabled the config meanwhile.
+        await this.enqueue(async () => {
+          if (this.stopped) return;
+          const current = this.configs.find((c) => c.id === id);
+          if (!current?.enabled || this.registry.get(id)) return;
 
-        const adapter = await this.buildAdapter(current);
-        if (!adapter) return;
-        logger.info('[AdapterManager] starting adapter', { id });
-        try {
-          await this.registry.register(adapter);
-          this.deps.eventRecorder?.insertAdapterEvent(
-            id,
-            'adapter.connected',
-            'Connected to relay'
-          );
-          await this.emitAdapterLifecycle(id, 'connected');
-          logger.info('[AdapterManager] adapter registered', { id });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
-          logger.error('[AdapterManager] adapter start failed', { id, error: message });
-          throw err;
-        }
-      });
+          const adapter = await this.buildAdapter(current);
+          if (!adapter) return;
+          logger.info('[AdapterManager] starting adapter', { id });
+          try {
+            await (ownership ? ownership.register(adapter) : this.registry.register(adapter));
+            this.deps.eventRecorder?.insertAdapterEvent(
+              id,
+              'adapter.connected',
+              'Connected to relay'
+            );
+            await this.emitAdapterLifecycle(id, 'connected');
+            logger.info('[AdapterManager] adapter registered', { id });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
+            logger.error('[AdapterManager] adapter start failed', { id, error: message });
+            throw err;
+          }
+        });
+      }
+    } finally {
+      ownership?.release();
     }
   }
 
@@ -1251,44 +1289,55 @@ export class AdapterManager {
     // in: the merge can drop a key the incoming config omitted, and an
     // unvalidated write is what let an entry reach disk with no `dmPolicy`
     // (see `parseForPersist`).
-    existing.config = parseAdapterConfigForPersist(
+    const prospective = parseAdapterConfigForPersist(
       { ...existing, config: mergedConfig },
       manifest
-    ).config;
+    );
 
-    // Promote label from config to top-level if present (client embeds it in config)
-    if (typeof mergedConfig.label === 'string' && mergedConfig.label) {
-      existing.label = mergedConfig.label;
-    }
-    await this.persistConfigs();
+    const ownership = this.reserveWebhookOwnership(prospective);
+    try {
+      existing.config = prospective.config;
 
-    // Restart the adapter if running. Serialized and re-checked inside the
-    // queue — the enabled/registered snapshot taken outside the queue could
-    // be stale against an in-flight start pass or a queued disable.
-    await this.enqueue(async () => {
-      if (this.stopped) return;
-      const current = this.configs.find((c) => c.id === id);
-      if (!current?.enabled || !this.registry.get(id)) return;
-      try {
-        await this.registry.unregister(id);
-      } catch (err) {
-        // Do NOT build a replacement. The old adapter failed to let go of its
-        // connection and is still registered; starting a second one on the same
-        // credentials is how one bot token ended up with two pollers, every
-        // message delivered twice, and two agent turns billed for one question.
-        // The new settings are saved and take effect on the next successful
-        // start (a restart, or a re-enable once the stuck adapter releases).
-        const message = err instanceof Error ? err.message : String(err);
-        this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
-        logger.error(
-          `[AdapterManager] '${id}' would not stop, so its new settings were saved but not ` +
-            `applied — restarting it now would run two copies at once: ${message}`
-        );
-        throw err;
+      // Promote label from config to top-level if present (client embeds it in config)
+      if (typeof mergedConfig.label === 'string' && mergedConfig.label) {
+        existing.label = mergedConfig.label;
       }
-      const adapter = await this.buildAdapter(current);
-      if (adapter) await this.registry.register(adapter);
-    });
+      await this.persistConfigs();
+
+      // Apply the settings to an enabled adapter. Serialized and re-checked inside the
+      // queue — the enabled/registered snapshot taken outside the queue could
+      // be stale against an in-flight start pass or a queued disable.
+      await this.enqueue(async () => {
+        if (this.stopped) return;
+        const current = this.configs.find((c) => c.id === id);
+        if (!current?.enabled) return;
+        // A pending edit owns this ID before persistence. An initial build can
+        // therefore lose its registration to this reservation; the queued edit
+        // must also start that enabled connection when no old instance exists.
+        try {
+          await this.registry.unregister(id);
+        } catch (err) {
+          // Do NOT build a replacement. The old adapter failed to let go of its
+          // connection and is still registered; starting a second one on the same
+          // credentials is how one bot token ended up with two pollers, every
+          // message delivered twice, and two agent turns billed for one question.
+          // The new settings are saved and take effect on the next successful
+          // start (a restart, or a re-enable once the stuck adapter releases).
+          const message = err instanceof Error ? err.message : String(err);
+          this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
+          logger.error(
+            `[AdapterManager] '${id}' would not stop, so its new settings were saved but not ` +
+              `applied — restarting it now would run two copies at once: ${message}`
+          );
+          throw err;
+        }
+        const adapter = await this.buildAdapter(current);
+        if (adapter)
+          await (ownership ? ownership.register(adapter) : this.registry.register(adapter));
+      });
+    } finally {
+      ownership?.release();
+    }
   }
 
   /** Stop all adapters and the config file watcher. */

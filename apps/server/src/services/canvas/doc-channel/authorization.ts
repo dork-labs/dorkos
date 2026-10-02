@@ -21,8 +21,8 @@ export class DocChannelNotFoundError extends Error {
   readonly code = 'CANVAS_DOCUMENT_NOT_FOUND';
   readonly status = 404;
   /** Build a disclosure-safe document refusal. */
-  constructor() {
-    super('The document is not available.');
+  constructor(options?: ErrorOptions) {
+    super('The document is not available.', options);
   }
 }
 /** An authorized room remains readable while its writes are stopped. */
@@ -168,8 +168,9 @@ export class DocChannelAuthorization {
     try {
       if (ready) this.documents.lifecycle.assertReady(documentId);
       scope = ready ? this.documents.lifecycle.resolveScope(identity.scope) : identity.scope;
-    } catch {
-      throw new DocChannelNotFoundError();
+    } catch (cause) {
+      // Keep the reduction-only cause private so transient recovery cannot cancel accepted work.
+      throw new DocChannelNotFoundError({ cause });
     }
     if (channel.scope !== scope) throw new DocChannelNotFoundError();
     const parsed = parseScope(scope);

@@ -37,3 +37,7 @@ Done: intended red baseline, bounded response fix, initial green browser/header 
 Next: parent runs independent adversarial review of the actual diff, then owns delivery.
 Open: independent adversarial review, commit/push/PR/merge remain parent-owned and unperformed.
 Next command: `pnpm --filter @dorkos/e2e exec playwright test --config served-document-isolation.config.ts`.
+
+## Delivery verified
+
+PR2457 merged at2026-10-01T21:55:52Z as d19d3ee73534dc9b69474bedffe9840db74ed931 after exact-head independent review and local/forge gates passed. Flow DONE succeeded; run complete. Project pulse21of27done,6open: skip reason `rollup-incomplete`. Programme worktree/evidence retained for remaining supporting scopes.

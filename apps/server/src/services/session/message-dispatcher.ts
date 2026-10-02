@@ -716,6 +716,8 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
             ),
           cancelPrivateMessage: (receiptId: string, reason: string) =>
             privateMessages.cancel(receiptId, reason),
+          isPrivatePreclaimRefusal: (receiptId: string, error: unknown) =>
+            privateMessages.isPreclaimRefusal(receiptId, error),
           markPrivateOutcomeUnknown: (receiptId: string, reason: string) =>
             privateMessages.markOutcomeUnknown(receiptId, reason),
         }
@@ -1331,7 +1333,11 @@ function launchDispatch(
     });
   } catch (err) {
     clearIfOurs();
-    if (turn.privateReceiptId !== undefined && err instanceof PrivateSessionMessageRefusalError) {
+    if (
+      turn.privateReceiptId !== undefined &&
+      err instanceof PrivateSessionMessageRefusalError &&
+      getPrivateSessionMessageAcceptanceService()?.isPreclaimRefusal(turn.privateReceiptId, err)
+    ) {
       getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
       emitQueueUpdate(sessionKey);
     } else {
@@ -1352,7 +1358,11 @@ function launchDispatch(
     },
     (err: unknown) => {
       clearIfOurs();
-      if (turn.privateReceiptId !== undefined && err instanceof PrivateSessionMessageRefusalError) {
+      if (
+        turn.privateReceiptId !== undefined &&
+        err instanceof PrivateSessionMessageRefusalError &&
+        getPrivateSessionMessageAcceptanceService()?.isPreclaimRefusal(turn.privateReceiptId, err)
+      ) {
         getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
         emitQueueUpdate(sessionKey);
       } else {

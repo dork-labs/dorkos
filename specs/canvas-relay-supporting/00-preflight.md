@@ -1,6 +1,6 @@
 # Canvas and Relay supporting lane preflight
 
-Prepared 2026-10-01. Preparatory source audit, not a frozen specification or canonical DECOMPOSE task list. DOR-2663 is claimed and implemented, pending independent review and delivery.
+Prepared 2026-10-01. Preparatory source audit, not a frozen specification or canonical DECOMPOSE task list. The current checkpoint below records verified delivery and active ownership; the historical source findings remain investigation pointers.
 
 ## Run boundaries and assumptions
 
@@ -89,12 +89,14 @@ This is related work; Doc Channel still owns its bounded durable outbox and expl
 
 ## Current checkpoint
 
-DOR-2663 source work is complete; worker evidence is in `../served-document-isolation/04-implementation.md`. Independent pushed-head review and delivery remain pending. Its next implementation slot is yielded to Doc foundation; coordinate before another source claim. Bridge and receipt drafts are in isolated worktrees undergoing design review. Other source scopes remain unclaimed.
+This is the original preparatory source audit. Findings above describe the audited source at preparation time; they are not assertions that a merged fix is still absent.
 
-All six were routed/triaged through the resolved Linear adapter. Shared ignored metadata and direct-assignment advancement are authorized, resolving initial WIP/store questions. Two principal implementation scopes run at once; research/review can run in parallel.
+DOR-2663 PR2457 and DOR-2660 PR2459 are verified merged and Flow DONE. Namespace routing is released; its clean managed worktree is archived with ignored evidence copied and hash-verified in the retained programme workspace.
 
-Doc owns private-session acceptance changes. Relay receipts remain a distinct outcome store. Frame rollout waits isolation merge and bridge contract; Relay routing waits namespace fix. Other supporting work is not a blanket prerequisite.
+DOR-2661 PR2461 merged at 2026-10-02T02:43:13Z as `4d7fe3a082ec9fe1f92ae0b236f5537b84f9917c`. Flow DONE and completed/agent-completed readback are verified. All five source/test files match reviewed `306a5bec`, and all twelve merge-group workflows pass (25 successful checks, two skips). Its clean managed worktree is archived after 32 ignored evidence files were copied and hash-verified in the retained programme workspace.
 
-Explicit human shipping authority permits normal queue entry after truthful exact-pushed-head independent review and Flow REVIEW. Preserve forge checks, verify merge, then Flow DONE. Never impersonate a person or fabricate reviewer tokens/calibration.
+DOR-2662 is claimed and in EXECUTE with one bounded writer. Its first real-hook unsolicited screenshot RED and known-request positive green are recorded; full frozen implementation and browser proof remain unfinished. DOR-2664 is prepared and source-unclaimed. DOR-2666 is frozen/decomposed and source-unclaimed until the Doc schema window is explicitly handed off after actual merge.
 
-Next: fresh verification, review and isolation delivery; converge bridge/receipt designs. No issue is merged or DONE yet.
+Three fenced source lanes are authorized: Doc, browser and one bounded supporting issue, with one writer per checkout. Parallel research/review and shared ignored Flow metadata writes are authorized. Doc frame rollout waits reviewed bridge runtime/mount proof; its widget/channel/private authority files stay outside this lane.
+
+Next: finish bridge source/proof, then authority documentation and receipts under their existing gates. The current [programme overview](../../plans/canvas-browser-delivery-20261001.md) records delivery and evidence attribution. No programme or project completion is claimed while three supporting issues and related Doc/browser work remain open.

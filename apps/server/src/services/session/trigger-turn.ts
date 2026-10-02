@@ -412,6 +412,8 @@ export interface TriggerTurnDeps {
   ): ClaimedPrivateSessionMessage;
   /** Cancel an accepted receipt when final authority fails before any runtime effect. */
   cancelPrivateMessage?(receiptId: string, reason: string): void;
+  /** Only proven authority denial can retire accepted work before a claim. */
+  isPrivatePreclaimRefusal?(receiptId: string, error: unknown): boolean;
   /** Quarantine a claim if no turn start can be observed. */
   markPrivateOutcomeUnknown?(receiptId: string, reason: string): void;
 }
@@ -799,12 +801,6 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       ...(approvalVerdict ? { approvalVerdict } : {}),
       nativeContext: deps.getCapabilities().nativeContext,
     });
-    // Fold in any context a person STAGED for a runtime that cannot append to
-    // its own transcript (the fold-into-next fallback, task 4.2). Taken — not
-    // peeked — so each note rides exactly this one dispatch; the ordinary case
-    // holds nothing and pays a single map lookup. A native-staging runtime never
-    // fills this hold, so its dispatches are untouched.
-    additionalContext.push(...takeStagedContext(sessionId));
     // Nothing below may open a turn while this session still has one open
     // (DOR-1295) — `feedProjector` mints this turn's `turn_start` before it pulls
     // the generator once, so a turn settled any later than here settles INSIDE
@@ -829,6 +825,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       dispatchContent = claimed.content;
       if (claimed.docEvents) appendDocEventsContext(additionalContext, claimed.docEvents);
     }
+    // Fold held notes only after waiting and successful protected-source claim.
+    // A preclaim storage failure must leave them available for the eventual dispatch.
+    additionalContext.push(...takeStagedContext(sessionId));
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about
     // the ROOM when a room triggered the turn and about the session otherwise,
@@ -967,7 +966,11 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     releaseOnce();
     if (privateDispatchClaimed && opts.privateReceiptId !== undefined) {
       deps.markPrivateOutcomeUnknown?.(opts.privateReceiptId, 'runtime_effect_not_observed');
-    } else if (privatePreflightStarted && opts.privateReceiptId !== undefined) {
+    } else if (
+      privatePreflightStarted &&
+      opts.privateReceiptId !== undefined &&
+      deps.isPrivatePreclaimRefusal?.(opts.privateReceiptId, err) === true
+    ) {
       deps.cancelPrivateMessage?.(opts.privateReceiptId, 'authority_changed_before_dispatch');
     }
     throw err;

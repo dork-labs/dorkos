@@ -37,6 +37,7 @@ dorkos/
 │   ├── desktop/          # @dorkos/desktop - Electron shell
 │   └── e2e/              # @dorkos/e2e - Playwright browser tests
 ├── packages/
+│   ├── browser/          # @dorkos/browser - Private managed-browser engine contracts and validation
 │   ├── cli/              # dorkos - Publishable npm CLI (esbuild bundle)
 │   ├── shared/           # @dorkos/shared - Zod schemas, types, AgentRuntime interface
 │   ├── db/               # @dorkos/db - Drizzle ORM schemas (SQLite)

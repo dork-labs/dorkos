@@ -53,6 +53,8 @@ export interface PrivateSessionMessageSourceAdapter<
   consume(tx: DbTransaction, ref: TRef, now: string): PrivateSessionMessageDraft;
   /** Resolve or decrypt minimized content in memory; it is never written to the queue. */
   prepare(receipt: SessionMessageAcceptanceReceipt): Promise<PreparedPrivateSessionMessage>;
+  /** Recognize source-owned authority denials; unknown failures remain retryable before claim. */
+  isPreclaimRefusal?(error: unknown, receipt: SessionMessageAcceptanceReceipt): boolean;
   /** Revalidate exact origin, destination, source generation, and authority. */
   revalidate(
     tx: DbTransaction,

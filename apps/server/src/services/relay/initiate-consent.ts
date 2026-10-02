@@ -77,7 +77,7 @@
  *
  * @module services/relay/initiate-consent
  */
-import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+import { isDocumentSubject, type AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { InitiateConsentGate, InitiateConsentDecision } from '@dorkos/relay';
 import { requiresInitiateConsent, isConsoleSubject, AGENT_SUBJECT_PREFIX } from '@dorkos/relay';
 import { parseHumanSubject } from './human-subject.js';
@@ -201,7 +201,7 @@ export function isConsentExemptPrincipal(from: string): boolean {
 
 /**
  * Return true when `from` is a principal only trusted server code may emit —
- * the exempt set above, **plus** `relay.bridge.*` (DOR-871, spec §6.4).
+ * the exempt set above, **plus** `relay.bridge.*` and document-origin senders.
  *
  * This answers a DIFFERENT question from {@link isConsentExemptPrincipal}:
  * "may a client assert this `from` on `POST /api/relay/messages`?" rather
@@ -224,7 +224,11 @@ export function isConsentExemptPrincipal(from: string): boolean {
  * @param from - The publish `from` principal.
  */
 export function isServerOnlyPrincipal(from: string): boolean {
-  return isConsentExemptPrincipal(from) || from.startsWith(BRIDGE_PRINCIPAL_PREFIX);
+  return (
+    isConsentExemptPrincipal(from) ||
+    from.startsWith(BRIDGE_PRINCIPAL_PREFIX) ||
+    isDocumentSubject(from)
+  );
 }
 
 /**

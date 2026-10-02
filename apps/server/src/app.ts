@@ -284,6 +284,9 @@ export function createApp(options: {
   // 1 MB limit would 413 the submission first. Path-scoped, so nothing else
   // gains the larger ceiling.
   app.use('/api/feedback', feedbackJsonParser);
+  // Preserve signed webhook bytes before JSON consumes the stream. This only
+  // parses: sessionGate and the Relay receiver still own authorization/dispatch.
+  app.post('/api/relay/webhooks/:adapterId', express.raw({ type: '*/*', limit: '1mb' }));
   // Page envelopes have a smaller wire ceiling than ordinary API requests.
   app.use('/api/canvas/docs', canvasDocJsonParser);
   app.use(express.json({ limit: '1mb' }));

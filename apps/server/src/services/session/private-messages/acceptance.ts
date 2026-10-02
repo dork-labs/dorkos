@@ -184,6 +184,26 @@ export class PrivateSessionMessageAcceptanceService {
     }
   }
 
+  /** Only a typed authority refusal permits destroying accepted work before a claim. */
+  isPreclaimRefusal(receiptId: string, error: unknown): boolean {
+    if (
+      error instanceof PrivateSessionMessageRefusalError &&
+      ['prepared_source_mismatch', 'dispatch_binding_changed'].includes(error.code)
+    )
+      return true;
+    const receipt = this.db
+      .select()
+      .from(sessionMessageAcceptanceReceipts)
+      .where(eq(sessionMessageAcceptanceReceipts.id, receiptId))
+      .get();
+    if (!receipt || receipt.state !== 'accepted') return false;
+    return (
+      requireSynchronous(
+        this.adapters.get(receipt.sourceKind)?.isPreclaimRefusal?.(error, receipt)
+      ) === true
+    );
+  }
+
   /**
    * Revalidate and exclusively claim a dispatch immediately before runtime use.
    * No asynchronous work may occur between this return and the first effect.

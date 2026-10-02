@@ -26,6 +26,7 @@ import {
   type DocGrantAuthority,
   type DocGrantTarget,
 } from './grant-policy.js';
+import { DocChannelNotFoundError } from './authorization.js';
 const PLATFORM_LIMITS = { envelopeBytes: 16384, eventsPerMinute: 60, turnsPerHour: 10 };
 /** Current route selection, including explicit reasons saved input must not dispatch. */
 export interface DocGrantedRoute {
@@ -157,7 +158,23 @@ export class DocChannelGrantRevalidation {
       );
     }
     const { scope } = this.access(documentId, actor, tx);
-    return this.verifyCurrentGrant(documentId, grantId, scope, tx);
+    const grant = this.verifyCurrentGrant(documentId, grantId, scope, tx);
+    try {
+      // A current caller cannot reuse authority approved by a previous owner.
+      // Share the persisted/current gate with dispatch, without reviving opener proofs.
+      const grantedAccess = this.services.authority.requireGrantedCurrent(grant, tx);
+      if (
+        grantedAccess.id !== documentId ||
+        this.services.authority.resolveScope(grantedAccess.scope, tx) !==
+          this.services.authority.resolveScope(scope, tx)
+      )
+        throw new DocRouteGrantError('GRANT_AUTHORITY_LOST');
+    } catch (error) {
+      if (error instanceof DocChannelNotFoundError && !Object.hasOwn(error, 'cause'))
+        throw new DocRouteGrantError('GRANT_AUTHORITY_LOST');
+      throw error;
+    }
+    return grant;
   }
   private canonicalSession(sessionId: string | null, tx: DbTransaction): string | null {
     return sessionId === null

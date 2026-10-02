@@ -26,6 +26,8 @@ import {
   refuseDocBatch,
 } from './batch-authority.js';
 import { DocRouteGrantError } from '../grant-policy.js';
+import { DocChannelNotFoundError, DocChannelArchivedError } from '../authorization.js';
+import { PrivateSessionMessageRefusalError } from '../../../session/private-messages/refusal.js';
 import { CanvasAppManifestError } from '@dorkos/shared/canvas-app-manifest';
 import { sessionMessageAcceptanceReceipts } from '@dorkos/db';
 import { appendDocStatus } from '../status.js';
@@ -43,6 +45,31 @@ export function docBatchPlaceholder(batch: DocBatchRow): string {
 /** Fixed source with no public Relay publication or alternate delivery ledger. */
 export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdapter<DocBatchSourceRef> {
   readonly kind = 'document_event_batch' as const;
+  /** Only source-owned permanent refusals can retire unclaimed accepted work. */
+  isPreclaimRefusal(error: unknown): boolean {
+    // The original hidden cause survives recovery finishing before classification.
+    // A fresh intent census cannot explain why an earlier not-found response occurred.
+    if (error instanceof DocChannelNotFoundError && Object.hasOwn(error, 'cause')) return false;
+    return (
+      (error instanceof DocRouteGrantError &&
+        error.status < 500 &&
+        error.code !== 'AUTHORITY_REFRESH_REQUIRES_COMMIT_BOUNDARY') ||
+      (error instanceof PrivateSessionMessageRefusalError &&
+        [
+          'document_authority_changed',
+          'document_closed',
+          'document_session_target_required',
+          'document_input_changed',
+          'document_input_missing',
+          'document_context_too_large',
+          'document_batch_changed',
+          'document_turn_correlation_changed',
+        ].includes(error.code)) ||
+      error instanceof CanvasAppManifestError ||
+      error instanceof DocChannelNotFoundError ||
+      error instanceof DocChannelArchivedError
+    );
+  }
   private readonly rebindFailures = new WeakMap<
     object,
     { receipt: SessionMessageAcceptanceReceipt; grantId: string; documentId: string; scope: string }

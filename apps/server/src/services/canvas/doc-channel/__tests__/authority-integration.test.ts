@@ -1,6 +1,6 @@
 /** Actual approval evidence and physical canonical movement share one durable identity. */
 import { expect, it } from 'vitest';
-import { agents, eq, sessionMetadata } from '@dorkos/db';
+import { agents, approvals as approvalRows, eq, sessionMetadata } from '@dorkos/db';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import {
   createServerPrincipal,
@@ -30,9 +30,34 @@ it('preserves consumed approval evidence through a same-path canonical move and 
     const authority: DocGrantAuthority = {
       resolveScope: (scope) => h.documents.lifecycle.resolveScope(scope),
       requireCurrent: (...args) => authorization.requireCurrent(...args),
-      // This test exercises caller-driven revalidation; background admission has a separate task2.4 proof.
-      requireGrantedCurrent: () => {
-        throw new Error('Background dispatch is not configured');
+      requireGrantedCurrent: (grant, tx) => {
+        const evidence = grant.approvalEvidence as {
+          binding?: { origin?: { owner?: { kind?: string; installationId?: string } } };
+          approvalId?: string;
+          consumedAt?: string;
+        };
+        // Use the actual recorded approval and verified current fixture owner;
+        // canonical physical readiness still goes through document authorization.
+        const recordedOwner = evidence.binding?.origin?.owner;
+        if (
+          recordedOwner?.kind !== owner.kind ||
+          recordedOwner.installationId !== owner.installationId
+        )
+          throw new Error('Recorded owner authority is unavailable');
+        const approval = tx
+          .select()
+          .from(approvalRows)
+          .where(eq(approvalRows.id, grant.approvalId!))
+          .get();
+        if (
+          !approval ||
+          approval.state !== 'granted' ||
+          !approval.consumedAt ||
+          approval.id !== evidence.approvalId ||
+          approval.consumedAt !== evidence.consumedAt
+        )
+          throw new Error('Consumed approval authority is unavailable');
+        return authorization.requireCurrent(grant.documentId, actor, true, tx);
       },
       sourceRoot: () => null,
       originCurrent: () =>
@@ -92,6 +117,10 @@ it('preserves consumed approval evidence through a same-path canonical move and 
     expect(grants.revalidateGrant(document.id, granted.grant.grantId, actor).targetSessionId).toBe(
       'canonical'
     );
+    expect(grants.getCurrentRoutes(document.id, 'task.comment', actor)[0]).toMatchObject({
+      grantId: granted.grant.grantId,
+      grantRevision: granted.grant.revision,
+    });
     expect(h.canvas.get(TO, document.id)?.content).toEqual({
       type: 'json',
       data: { unchanged: true },
@@ -105,6 +134,9 @@ it('preserves consumed approval evidence through a same-path canonical move and 
     expect(() => grants.revalidateGrant(document.id, granted.grant.grantId, actor)).toThrow(
       'TARGET_IDENTITY_CHANGED'
     );
+    expect(grants.getCurrentRoutes(document.id, 'task.comment', actor)[0]).toMatchObject({
+      reason: 'TARGET_IDENTITY_CHANGED',
+    });
     expect(h.store.getGrant(granted.grant.grantId)?.approvalEvidence).toEqual(originalEvidence);
   } finally {
     h.db.$client.close();

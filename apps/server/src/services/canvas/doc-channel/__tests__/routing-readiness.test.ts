@@ -107,6 +107,17 @@ function fixture(room = false) {
   const authority: DocGrantAuthority = {
     ...f.authority,
     requireCurrent: (id, actor, write, tx) => authorization.requireCurrent(id, actor, write, tx),
+    requireGrantedCurrent: (grant, tx) => {
+      if (!room) return f.authority.requireGrantedCurrent(grant, tx);
+      const origin = (
+        grant.approvalEvidence as {
+          binding: { origin: { owner: { kind: string; installationId: string } } };
+        }
+      ).binding.origin;
+      if (origin.owner.kind !== 'local_install' || origin.owner.installationId !== 'installation')
+        throw new DocRouteGrantError('ACCESS_LOST');
+      return authorization.requireCurrent(grant.documentId, f.actor, false, tx);
+    },
     originCurrent: (id, opener, tx) => originCurrent && f.authority.originCurrent(id, opener, tx),
     resolveTarget: ({ scope, route: selected, openerAgentId }, tx) => {
       if (selected.to === 'log')

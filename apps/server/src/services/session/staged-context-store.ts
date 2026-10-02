@@ -46,7 +46,7 @@
  * **The take is destructive, and that leaves ONE window this fix does not
  * close.** {@link StagedContextStore.take} reads and deletes in one transaction,
  * so a note can never ride a second turn. But the take fires in `trigger-turn`
- * while the context bag is being assembled — BEFORE `settleOpenTurnBefore` and
+ * after the open-turn wait and any protected receipt claim, before
  * `sendMessage` — and the durable queue is not symmetric with it: a queued
  * message's row is deleted at `turn_start` (`onTurnStart`), one step later. So a
  * throw between the take and the turn actually starting re-parks the message

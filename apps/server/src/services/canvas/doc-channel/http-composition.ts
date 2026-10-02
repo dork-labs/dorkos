@@ -71,13 +71,16 @@ export function createDocChannelHttpComposition(deps: {
       ? { kind: 'user', userId: owner.id }
       : { kind: 'local_install', installationId: deps.installationId };
   };
-  const sameOwner = (claims: ServerPrincipalClaims) => {
+  const sameOwnerAuthority = (recorded: unknown) => {
+    if (!recorded || typeof recorded !== 'object' || !('kind' in recorded)) return false;
     const owner = currentOwner();
     return owner.kind === 'user'
-      ? claims.owner.kind === 'user' && claims.owner.userId === owner.userId
-      : claims.owner.kind === 'local_install' &&
-          claims.owner.installationId === owner.installationId;
+      ? recorded.kind === 'user' && 'userId' in recorded && recorded.userId === owner.userId
+      : recorded.kind === 'local_install' &&
+          'installationId' in recorded &&
+          recorded.installationId === owner.installationId;
   };
+  const sameOwner = (claims: ServerPrincipalClaims) => sameOwnerAuthority(claims.owner);
   const principalCurrent = (proof: ServerPrincipalProof): boolean => {
     if (!isServerPrincipal(proof) || !sameOwner(proof.claims)) return false;
     const claims = proof.claims;
@@ -313,6 +316,9 @@ export function createDocChannelHttpComposition(deps: {
       requireGrantedCurrent: (grant, tx) => {
         // Persisted grant evidence is verified by DocChannelGrants. Recheck the owning physical scope here,
         // without minting an operator principal or borrowing an expired opener-turn proof.
+        const origin = (grant.approvalEvidence as { binding?: { origin?: { owner?: unknown } } })
+          .binding?.origin;
+        if (!sameOwnerAuthority(origin?.owner)) throw new DocChannelNotFoundError();
         const identity = deps.documents.lookupIdentity(grant.documentId);
         const channel = channels.getChannel(grant.documentId, tx);
         if (!identity || !channel || channel.closedAt !== null || grant.revokedAt)

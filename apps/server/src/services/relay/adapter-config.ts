@@ -389,7 +389,13 @@ export async function loadAdapterConfig(configPath: string): Promise<LoadedAdapt
     const adapters: AdapterConfig[] = [];
     const unparsed: unknown[] = [];
     for (const entry of shell.data.adapters) {
-      const parsed = AdapterConfigSchema.safeParse(entry);
+      // Only webhook loading changes here; other legacy types retain their read semantics.
+      const parsed =
+        typeof entry === 'object' &&
+        entry !== null &&
+        (entry as { type?: unknown }).type === 'webhook'
+          ? AdapterEnvelopeSchema.extend({ config: WebhookAdapterConfigSchema }).safeParse(entry)
+          : AdapterConfigSchema.safeParse(entry);
       if (parsed.success) {
         adapters.push(parsed.data as AdapterConfig);
       } else {
@@ -397,7 +403,7 @@ export async function loadAdapterConfig(configPath: string): Promise<LoadedAdapt
         const id = unparsedEntryId(entry);
         const named = id ? ` '${id}'` : '';
         logger.error(
-          `[AdapterConfig] Skipping integration${named}: its saved settings could not be read. ` +
+          `[AdapterConfig] Skipping connection${named}: its saved settings could not be read. ` +
             `It will not start, and it has been left in the file untouched so nothing is lost:`,
           z.flattenError(parsed.error)
         );
@@ -408,7 +414,7 @@ export async function loadAdapterConfig(configPath: string): Promise<LoadedAdapt
           `[AdapterConfig] The unreadable entry${named} in ${configPath} is kept exactly as ` +
             `written, so if it holds a bot token or API key that credential stays in the file ` +
             `in plain text. Fix the entry (it will then be encrypted on the next save) or ` +
-            `delete the integration to clear it.`
+            `delete the connection to clear it.`
         );
       }
     }
