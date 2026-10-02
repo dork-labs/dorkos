@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(community): forget a space channel's saved row once you catch up (DOR-2170)"
+  - 'fix(conversation): let the first "caught up" report reach the host (DOR-2170)'
 ---
 
 ### Fixed
