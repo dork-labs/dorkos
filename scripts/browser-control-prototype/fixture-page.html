@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Managed browser fake site</title>
+    <style>
+      body {
+        font: 18px system-ui;
+        margin: 24px;
+        color: #17202a;
+        background: #fafafa;
+      }
+      #marker {
+        font-size: 48px;
+        background: #bce8ff;
+        padding: 16px;
+      }
+      #revision {
+        font-size: 48px;
+        font-variant-numeric: tabular-nums;
+      }
+      button,
+      textarea {
+        font: inherit;
+        padding: 10px;
+        margin: 6px;
+      }
+      textarea {
+        display: block;
+        width: min(90%, 560px);
+        height: 90px;
+      }
+      :focus-visible {
+        outline: 4px solid #065fb0;
+        outline-offset: 3px;
+      }
+      #drag {
+        width: 100px;
+        height: 60px;
+        background: #b8e1b8;
+        touch-action: none;
+      }
+      #scroll {
+        height: 120px;
+        overflow: auto;
+        background: #eeeeee;
+        touch-action: pan-y;
+      }
+      #scroll-content {
+        height: 1200px;
+        background: linear-gradient(#ddd, #bbb);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Fake authenticated site</h1>
+    <div id="marker" role="status"></div>
+    <p>Revision <output id="revision">0</output></p>
+    <button id="increment">Increment</button>
+    <button id="login">Sign in as fictitious user</button>
+    <button id="logout">Sign out</button>
+    <button id="popup">Open distinct popup</button>
+    <button id="diagnostics">Emit fixture diagnostics</button>
+    <button id="block">Start blocked fixture request</button>
+    <output id="block-state">idle</output>
+    <label for="text">Text, composition and clipboard fixture</label>
+    <textarea id="text"></textarea>
+    <button id="copy">Copy fixture text</button>
+    <button id="paste">Paste fixture text</button>
+    <output id="clipboard-result"></output>
+    <div id="drag" role="button" tabindex="0" aria-label="Drag fixture">Drag target</div>
+    <output id="drag-result">0</output>
+    <div id="scroll" tabindex="0" aria-label="Scrollable fixture">
+      <div id="scroll-content">Scroll fixture</div>
+    </div>
+    <output id="scroll-result">0</output>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const requested = params.get('marker') ?? 'tab-A';
+      const marker = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(requested)
+        ? requested
+        : 'invalid-marker';
+      document.querySelector('#marker').textContent = marker;
+      let revision = 0;
+      let dragging = false;
+      let dragMoves = 0;
+      const inputEvents = [];
+      function increment() {
+        document.querySelector('#revision').textContent = String(++revision);
+      }
+      async function database() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open('fixture-state', 1);
+          request.onupgradeneeded = () => request.result.createObjectStore('markers');
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+      async function idbValue(write) {
+        const db = await database();
+        try {
+          return await new Promise((resolve, reject) => {
+            const tx = db.transaction('markers', write === undefined ? 'readonly' : 'readwrite');
+            const store = tx.objectStore('markers');
+            const request =
+              write === undefined ? store.get('identity') : store.put(write, 'identity');
+            let result;
+            request.onsuccess = () => {
+              result = request.result;
+            };
+            tx.oncomplete = () => resolve(result ?? null);
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+          });
+        } finally {
+          db.close();
+        }
+      }
+      async function seed(value) {
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(value))
+          throw new Error('Invalid fixture marker');
+        await fetch('/login', { method: 'POST' });
+        localStorage.setItem('identity', value);
+        await idbValue(value);
+        const cache = await caches.open('fixture-state');
+        await cache.put('/cache-sentinel', new Response(value));
+        await navigator.serviceWorker.register('/service-worker.js');
+        await navigator.serviceWorker.ready;
+        if (!navigator.serviceWorker.controller) {
+          await new Promise((resolve) =>
+            navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true })
+          );
+        }
+        return readState();
+      }
+      async function readState() {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const cache = await caches.match('/cache-sentinel');
+        const identity = await (await fetch('/whoami')).json();
+        return {
+          identity: identity.identity,
+          sessionIdentity: identity.sessionIdentity,
+          localStorage: localStorage.getItem('identity'),
+          indexedDB: await idbValue(),
+          cacheStorage: cache ? await cache.text() : null,
+          serviceWorkers: registrations.length,
+          controlled: Boolean(navigator.serviceWorker.controller),
+          marker,
+          revision,
+        };
+      }
+      async function reset() {
+        await fetch('/logout', { method: 'POST' });
+        localStorage.removeItem('identity');
+        await idbValue(null);
+        await caches.delete('fixture-state');
+        for (const registration of await navigator.serviceWorker.getRegistrations())
+          await registration.unregister();
+        return readState();
+      }
+      document.querySelector('#increment').onclick = increment;
+      document.querySelector('#login').onclick = () => fetch('/login', { method: 'POST' });
+      document.querySelector('#logout').onclick = () => fetch('/logout', { method: 'POST' });
+      document.querySelector('#popup').onclick = () => window.open('/?marker=popup-B', '_blank');
+      document.querySelector('#diagnostics').onclick = () => {
+        console.log('fixture-known-log');
+        console.error('fixture-known-error');
+        fetch('/known-failure').then(() => {
+          throw new Error('fixture-known-page-error');
+        });
+      };
+      async function block(value = 'blocked-A') {
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(value))
+          throw new Error('Invalid fixture marker');
+        document.querySelector('#block-state').textContent = 'blocked';
+        const result = await (await fetch('/blocked?marker=' + encodeURIComponent(value))).text();
+        document.querySelector('#block-state').textContent = 'released';
+        return result;
+      }
+      document.querySelector('#block').onclick = () => block();
+      const text = document.querySelector('#text');
+      for (const event of [
+        'compositionstart',
+        'compositionupdate',
+        'compositionend',
+        'input',
+        'keydown',
+        'keyup',
+        'paste',
+      ]) {
+        text.addEventListener(event, (e) => {
+          inputEvents.push({
+            type: e.type,
+            composing: Boolean(e.isComposing),
+            value: text.value,
+            shift: Boolean(e.shiftKey),
+          });
+          if (inputEvents.length > 100) inputEvents.shift();
+        });
+      }
+      for (const kind of ['copy', 'paste']) {
+        document.querySelector('#' + kind).onclick = async () => {
+          try {
+            if (kind === 'copy') await navigator.clipboard.writeText(text.value);
+            else text.value = await navigator.clipboard.readText();
+            document.querySelector('#clipboard-result').textContent = kind + '-ok';
+          } catch {
+            document.querySelector('#clipboard-result').textContent = kind + '-denied';
+          }
+        };
+      }
+      const drag = document.querySelector('#drag');
+      drag.onpointerdown = (e) => {
+        dragging = true;
+        drag.setPointerCapture(e.pointerId);
+      };
+      drag.onpointermove = () => {
+        if (dragging) document.querySelector('#drag-result').textContent = String(++dragMoves);
+      };
+      drag.onpointerup = drag.onpointercancel = () => {
+        dragging = false;
+      };
+      const scroll = document.querySelector('#scroll');
+      scroll.onscroll = () => {
+        document.querySelector('#scroll-result').textContent = String(scroll.scrollTop);
+      };
+      window.fixture = {
+        seed,
+        readState,
+        reset,
+        block,
+        increment,
+        inputEvents,
+        inputState: () => ({ dragging, dragMoves }),
+        httpCache: (value) =>
+          fetch('/cache-resource?marker=' + encodeURIComponent(value)).then((r) => r.text()),
+      };
+      console.log('fixture-loaded-' + marker);
+    </script>
+  </body>
+</html>
