@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): say space on the space website and in the launcher output (DOR-2653)'
+  - 'fix(community): call it a server account in the operator recovery tools (DOR-2653)'
 ---
 
 ### Changed
