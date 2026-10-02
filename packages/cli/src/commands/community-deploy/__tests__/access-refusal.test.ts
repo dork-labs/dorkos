@@ -200,33 +200,61 @@ esac`);
 
   // flyctl creates the app, then waits for it and reads it back; either can end in the same
   // refusal after the app exists. Catches the refusal being trusted on less than both proofs.
-  it("trusts a Fly refusal only on Fly's exact NOT_FOUND and an org listing without the app", async () => {
-    await expect(createWith(['another-app'], NOT_FOUND)).rejects.toEqual(
-      new ProviderMutationError('ACCESS_DENIED')
-    );
-    // A null `app` without Fly's NOT_FOUND, even with an empty listing.
-    await expect(createWith([], async () => null)).rejects.toEqual(
-      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
-    );
-    // NOT_FOUND, but the listing still has the name, or the listing fails.
-    await expect(createWith(['community-space'], NOT_FOUND)).rejects.toEqual(
-      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
-    );
-    await expect(createWith('fail', NOT_FOUND)).rejects.toEqual(
-      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
-    );
-    await expect(
-      createWith([], async () => {
+  it.each([
+    {
+      label: 'exact NOT_FOUND and an org listing without the app',
+      listing: ['another-app'],
+      readProvenance: NOT_FOUND,
+      expected: 'ACCESS_DENIED' as const,
+    },
+    {
+      label: 'a null app without exact NOT_FOUND',
+      listing: [],
+      readProvenance: async () => null,
+      expected: 'CREATION_OUTCOME_UNCERTAIN' as const,
+    },
+    {
+      label: 'exact NOT_FOUND but an org listing with the app',
+      listing: ['community-space'],
+      readProvenance: NOT_FOUND,
+      expected: 'CREATION_OUTCOME_UNCERTAIN' as const,
+    },
+    {
+      label: 'exact NOT_FOUND but a failed org listing',
+      listing: 'fail' as const,
+      readProvenance: NOT_FOUND,
+      expected: 'CREATION_OUTCOME_UNCERTAIN' as const,
+    },
+    {
+      label: 'a failed provenance read',
+      listing: [],
+      readProvenance: async () => {
         throw new Error('read failed');
-      })
-    ).rejects.toEqual(new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN'));
-    await expect(createWith([], async () => provenance({ network: 'default' }))).rejects.toEqual(
-      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN')
-    );
-    await expect(createWith(['community-space'], async () => provenance())).resolves.toMatchObject({
-      id: 'community-space',
-      organizationSlug: 'dork-labs',
-    });
+      },
+      expected: 'CREATION_OUTCOME_UNCERTAIN' as const,
+    },
+    {
+      label: 'provenance on a different network',
+      listing: [],
+      readProvenance: async () => provenance({ network: 'default' }),
+      expected: 'CREATION_OUTCOME_UNCERTAIN' as const,
+    },
+    {
+      label: 'matching provenance for the created app',
+      listing: ['community-space'],
+      readProvenance: async () => provenance(),
+      expected: 'created' as const,
+    },
+  ])('classifies a Fly refusal with $label', async ({ listing, readProvenance, expected }) => {
+    const result = createWith(listing, readProvenance);
+    if (expected === 'created') {
+      await expect(result).resolves.toMatchObject({
+        id: 'community-space',
+        organizationSlug: 'dork-labs',
+      });
+    } else {
+      await expect(result).rejects.toEqual(new ProviderMutationError(expected));
+    }
   });
 
   // Catches "nothing created" being printed for an app that may exist: Fly refuses, then the
