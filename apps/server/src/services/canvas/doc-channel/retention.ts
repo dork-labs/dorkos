@@ -160,14 +160,17 @@ export function retainDocHistory(
           )
           .run();
         advanceFloor(tx, candidate.documentId, candidate.docSeq + 1, true);
-        deleteOrphanBatches(tx, candidate.documentId);
+        deleteOrphanBatches(tx, candidate.documentId, now);
       }
     }
-    // Completed batches retain source correlation while any delivery/header references them.
+    // Retain completed route identity while deliveries or rolling-hour started receipts require it.
     tx.delete(canvasDocBatches)
       .where(
         sql`status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
-      AND updated_at < ${cutoff} AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE
+      AND NOT EXISTS (SELECT 1 FROM session_message_acceptance_receipts r
+        WHERE r.id=canvas_doc_batches.admission_receipt_id
+        AND r.turn_started_at>${new Date(Date.parse(now) - 3600_000).toISOString()})
+      AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE
       d.document_id=canvas_doc_batches.document_id AND d.batch_id=canvas_doc_batches.batch_id)`
       )
       .run();
@@ -195,11 +198,14 @@ function historyUsage(
       WHERE ${completedBatchSql}`)!.bytes,
   };
 }
-function deleteOrphanBatches(tx: DbTransaction, documentId: string): void {
+function deleteOrphanBatches(tx: DbTransaction, documentId: string, now: string): void {
   tx.delete(canvasDocBatches)
     .where(
       sql`document_id=${documentId}
     AND status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
+    AND NOT EXISTS (SELECT 1 FROM session_message_acceptance_receipts r
+      WHERE r.id=canvas_doc_batches.admission_receipt_id
+      AND r.turn_started_at>${new Date(Date.parse(now) - 3600_000).toISOString()})
     AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE d.document_id=canvas_doc_batches.document_id
     AND d.batch_id=canvas_doc_batches.batch_id)`
     )

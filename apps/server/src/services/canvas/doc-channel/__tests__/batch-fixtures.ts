@@ -44,7 +44,8 @@ export function batchFixture(
   sourceRoot: string | null = null,
   existing?: { db: Db; documentId: string; grantId: string },
   bootEpoch = 'boot-1',
-  runtime: 'claude-code' | 'codex' | 'opencode' | 'test-mode' = 'claude-code'
+  runtime: 'claude-code' | 'codex' | 'opencode' | 'test-mode' = 'claude-code',
+  now: () => Date = () => new Date(NOW)
 ): BatchFixture {
   const db = existing?.db ?? createDb(file);
   if (!existing) {
@@ -152,7 +153,7 @@ export function batchFixture(
     store,
     authority,
     approvals: new ApprovalService(db),
-    now: () => new Date(NOW),
+    now,
   });
   if (!existing)
     grants.configure(
@@ -182,10 +183,10 @@ export function batchFixture(
     lifecycle: documents.lifecycle,
     queue,
     bootEpoch,
-    now: () => new Date(NOW),
+    now,
   });
   admission.initializeBoot();
-  const ingest = new DocChannelIngest(store, () => new Date(NOW));
+  const ingest = new DocChannelIngest(store, now);
   function input(payload: Record<string, string | boolean> = { checked: true }) {
     grants.refreshGrantedAuthority(grantId);
     return ingest.accept({ v: 1, id: randomUUID(), type: 'task.toggle', payload }, (tx) => {

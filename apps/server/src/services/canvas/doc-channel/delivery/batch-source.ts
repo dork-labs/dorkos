@@ -102,6 +102,19 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
         )
       )
       .run();
+    appendDocStatus(
+      this.store,
+      tx,
+      batch.documentId,
+      {
+        batchId: batch.batchId,
+        routeId: batch.routeId,
+        status: 'routed',
+        receiptId: receipt.id,
+        messageId: receipt.queueMessageId,
+      },
+      now
+    );
   }
   /** Prepare structured records in memory after committed manifest refresh. */
   async prepare(receipt: SessionMessageAcceptanceReceipt): Promise<PreparedPrivateSessionMessage> {
@@ -212,7 +225,8 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
     seq: number,
     now: string
   ): undefined {
-    this.transition(tx, receipt, 'turn_started', now, `projected:${seq}`);
+    if (!Number.isSafeInteger(seq) || seq < 1) refuseDocBatch('document_turn_correlation_changed');
+    this.transition(tx, receipt, 'turn_started', now, undefined, `projected:${receipt.id}:${seq}`);
   }
   /** Only the coordinator's correlated successful settlement proves completion. */
   onSettled(
@@ -246,7 +260,8 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
     receipt: SessionMessageAcceptanceReceipt,
     status: 'turn_started' | 'turn_done' | 'failed' | 'cancelled' | 'in_doubt',
     now: string,
-    reason?: string
+    reason?: string,
+    turnId?: string
   ): void {
     const batch = this.store.getBatch(receipt.sourceId, tx);
     if (
@@ -255,12 +270,34 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
       batch.admissionReceiptId !== receipt.id
     )
       refuseDocBatch('document_batch_changed');
+    const recorded = tx
+      .select()
+      .from(sessionMessageAcceptanceReceipts)
+      .where(eq(sessionMessageAcceptanceReceipts.id, receipt.id))
+      .get();
+    if (
+      !recorded ||
+      recorded.sourceKind !== this.kind ||
+      recorded.sourceId !== batch.batchId ||
+      recorded.sourceGeneration !== batch.generation ||
+      recorded.queueMessageId !== receipt.queueMessageId ||
+      recorded.sessionId !== receipt.sessionId ||
+      recorded.agentId !== receipt.agentId ||
+      recorded.originRuntime !== receipt.originRuntime ||
+      recorded.originAgentPath !== receipt.originAgentPath ||
+      recorded.state !== receipt.state ||
+      recorded.originAuthorityDigest !== receipt.originAuthorityDigest ||
+      (status === 'turn_started' && recorded.state !== 'dispatching') ||
+      ((status === 'turn_done' || status === 'failed') && recorded.state !== 'turn_started')
+    )
+      refuseDocBatch('document_turn_correlation_changed');
+    const correlatedTurn = turnId ?? batch.turnId;
     tx.update(canvasDocBatches)
-      .set({ status, errorCode: reason ?? null, updatedAt: now })
+      .set({ status, turnId: correlatedTurn, errorCode: reason ?? null, updatedAt: now })
       .where(eq(canvasDocBatches.batchId, batch.batchId))
       .run();
     tx.update(canvasDocDeliveries)
-      .set({ status, reason: reason ?? null, updatedAt: now })
+      .set({ status, turnId: correlatedTurn, reason: reason ?? null, updatedAt: now })
       .where(
         and(
           eq(canvasDocDeliveries.batchId, batch.batchId),
@@ -274,7 +311,14 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
         this.store,
         tx,
         batch.documentId,
-        { batchId: batch.batchId, status, receiptId: receipt.id },
+        {
+          batchId: batch.batchId,
+          routeId: batch.routeId,
+          status,
+          receiptId: receipt.id,
+          messageId: receipt.queueMessageId,
+          ...(correlatedTurn ? { turnId: correlatedTurn } : {}),
+        },
         now
       );
   }
