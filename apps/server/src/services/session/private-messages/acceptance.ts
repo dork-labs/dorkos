@@ -388,12 +388,16 @@ export class PrivateSessionMessageAcceptanceService {
       for (const row of rows) {
         this.queue.remove(row.queueMessageId, tx);
         requireSynchronous(
-          this.adapterFor(row.sourceKind).onOutcomeUnknown?.(
-            tx,
-            row,
-            'server_restarted_after_dispatch_claim',
-            this.now().toISOString()
-          )
+          // A degraded boot may omit a fixed source. Quarantine its durable
+          // dispatch evidence without fabricating source authority or blocking boot.
+          this.adapters
+            .get(row.sourceKind)
+            ?.onOutcomeUnknown?.(
+              tx,
+              row,
+              'server_restarted_after_dispatch_claim',
+              this.now().toISOString()
+            )
         );
         changed += tx
           .update(sessionMessageAcceptanceReceipts)
