@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { company } from '@dorkos/shared/company';
 import { AnalyticsPreferenceControl } from '@/layers/widgets/cookie-consent';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
@@ -25,9 +26,9 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: September 9, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is made by Blaze Ventures, LLC. When this page says “we,” that is who we mean.
+            DorkOS is made by {company.legalName}. When this page says “we,” that is who we mean.
           </p>
         </header>
 
@@ -342,10 +343,10 @@ export default function PrivacyPolicyPage() {
             <li>
               Email us to ask what we hold or to have it removed:{' '}
               <a
-                href="mailto:hey@dorkos.ai"
+                href={`mailto:${company.contactEmail}`}
                 className="text-charcoal hover:text-brand-orange underline"
               >
-                hey@dorkos.ai
+                {company.contactEmail}
               </a>
               .
             </li>
@@ -373,10 +374,10 @@ export default function PrivacyPolicyPage() {
           <p className="text-warm-gray leading-relaxed">
             Questions about your privacy? Email us at{' '}
             <a
-              href="mailto:hey@dorkos.ai"
+              href={`mailto:${company.contactEmail}`}
               className="text-charcoal hover:text-brand-orange underline"
             >
-              hey@dorkos.ai
+              {company.contactEmail}
             </a>
             .
           </p>
