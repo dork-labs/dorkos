@@ -192,6 +192,18 @@ function fixture(room = false) {
 }
 
 describe('document routing readiness', () => {
+  it('projects an actual widget wildcard grant without expanding its approved pattern', async () => {
+    const f = fixture();
+    f.configure({ ...route, on: 'widget.*' });
+    f.grant(['widget.*']);
+    expect((await f.replay()).routing).toEqual({
+      enabled: true,
+      approvedEventTypes: ['widget.*'],
+      destinationLabel: 'This document’s agent',
+    });
+    expect(f.queue.list('session-1')).toEqual([]);
+  });
+
   it('summarizes only approved owning-session types without leaking grant paths, hashes or evidence', async () => {
     const f = fixture();
     f.configure();

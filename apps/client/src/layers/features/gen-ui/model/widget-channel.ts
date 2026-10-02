@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { WidgetAction } from '@dorkos/shared/ui-widget';
 import {
   PageEventSchema,
+  matchesCanvasChannelEvent,
   type PageEvent,
   type CanvasChannelEventReceipt,
   type CanvasChannelReplayResponse,
@@ -13,7 +14,7 @@ export interface WidgetChannelPort {
   documentId: string;
   enabled: boolean;
   destinationLabel: string;
-  /** Current approved event types, never inferred from the authored declaration. */
+  /** Current approved event patterns, never inferred from the authored declaration. */
   approvedEventTypes: readonly string[];
   snapshot?: Pick<
     CanvasChannelReplayResponse,
@@ -21,6 +22,10 @@ export interface WidgetChannelPort {
   >;
   submit(event: PageEvent): Promise<CanvasChannelEventReceipt>;
   inspect(eventId: string): Promise<CanvasChannelEventReceipt>;
+}
+/** Match the server's approved patterns using the same bounded event semantics as routing. */
+export function isWidgetActionApproved(patterns: readonly string[]): boolean {
+  return patterns.some((pattern) => matchesCanvasChannelEvent(pattern, 'widget.action'));
 }
 /** One click keeps its frozen envelope through every uncertain network retry. */
 export interface WidgetChannelSubmission {
@@ -119,7 +124,7 @@ export function useWidgetChannelActions(
       if (
         !host?.enabled ||
         host.documentId !== row.documentId ||
-        (row.normalized && !host.approvedEventTypes.includes('widget.action'))
+        (row.normalized && !isWidgetActionApproved(host.approvedEventTypes))
       ) {
         update(row.event.id, {
           phase: 'review',
@@ -149,7 +154,7 @@ export function useWidgetChannelActions(
     const host = port.current;
     if (!host?.enabled || pending(controlId)) return;
     const normalization = action.kind === 'agent';
-    if (normalization && !host.approvedEventTypes.includes('widget.action')) return;
+    if (normalization && !isWidgetActionApproved(host.approvedEventTypes)) return;
     if (action.kind !== 'emit' && !normalization) return;
     const metadata = {
       documentId: host.documentId,

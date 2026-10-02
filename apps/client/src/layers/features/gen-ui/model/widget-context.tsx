@@ -58,6 +58,7 @@ import { LinkSafetyModal } from '@/layers/shared/ui';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import {
   useWidgetChannelActions,
+  isWidgetActionApproved,
   type WidgetChannelPort,
   type WidgetChannelSubmission,
 } from './widget-channel';
@@ -359,7 +360,7 @@ export function useAgentActionState(action: WidgetAction, controlId?: string): A
   if (channelAction) {
     const unavailable =
       !context.channel?.enabled ||
-      (action.kind === 'agent' && !context.channel.approvedEventTypes.includes('widget.action'));
+      (action.kind === 'agent' && !isWidgetActionApproved(context.channel.approvedEventTypes));
     const pending = context.channelPending(controlId ?? path);
     return {
       isAgent: false,

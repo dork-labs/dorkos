@@ -101,6 +101,97 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('native document widget actions', () => {
+  it.each(['widget.action', 'widget.*'])(
+    'normalizes an agent action through approved %s',
+    async (pattern) => {
+      const channel = { ...port(), approvedEventTypes: [pattern] };
+      const { result } = renderHook(() => useWidgetChannelActions(channel));
+      await act(() => result.current.dispatch({ kind: 'agent', id: 'save' }, 'control'));
+      expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(transport.ingestCanvasEvent).mock.calls[0][1]).toMatchObject({
+        type: 'widget.action',
+        payload: { actionId: 'save', widget: { nodeId: 'control' } },
+      });
+      expect(transport.sendUiAction).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    { pattern: 'task.*', enabled: true },
+    { pattern: 'widget.action.*', enabled: true },
+    { pattern: 'widget*', enabled: true },
+    { pattern: '*', enabled: true },
+    { pattern: 'widget.*', enabled: false },
+  ])(
+    'refuses normalized actions for $pattern with enabled=$enabled',
+    async ({ pattern, enabled }) => {
+      const channel = { ...port(), approvedEventTypes: [pattern], enabled };
+      const doc: WidgetDocument = {
+        version: 1,
+        root: { type: 'button', label: 'Agent', action: { kind: 'agent', id: 'save' } },
+      };
+      draw(doc, channel);
+      expect(screen.getByRole('button', { name: 'Agent' })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      );
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Agent' }));
+      const { result } = renderHook(() => useWidgetChannelActions(channel));
+      await act(() => result.current.dispatch({ kind: 'agent', id: 'save' }, 'control'));
+      expect(transport.ingestCanvasEvent).not.toHaveBeenCalled();
+      expect(transport.sendUiAction).not.toHaveBeenCalled();
+    }
+  );
+
+  it('resends the exact normalized envelope after a lost response under matching wildcard approval', async () => {
+    vi.mocked(transport.ingestCanvasEvent).mockRejectedValueOnce(new Error('Lost response'));
+    const { result } = renderHook(() =>
+      useWidgetChannelActions({ ...port(), approvedEventTypes: ['widget.*'] })
+    );
+    await act(() => result.current.dispatch({ kind: 'agent', id: 'save' }, 'control'));
+    const original = vi.mocked(transport.ingestCanvasEvent).mock.calls[0][1];
+    expect(result.current.pending('control')).toBe(true);
+    await act(() => result.current.retry(original.id));
+    expect(vi.mocked(transport.ingestCanvasEvent).mock.calls.map(([, event]) => event)).toEqual([
+      original,
+      original,
+    ]);
+    expect(vi.mocked(transport.ingestCanvasEvent).mock.calls[1][1]).toBe(original);
+    expect(transport.getCanvasEventReceipt).toHaveBeenCalledWith('doc-one', original.id);
+    expect(result.current.pending('control')).toBe(false);
+  });
+
+  it.each(['approval', 'lookup'] as const)(
+    'preserves uncertain normalized identity after changed %s',
+    async (change) => {
+      vi.mocked(transport.ingestCanvasEvent).mockRejectedValueOnce(new Error('Lost response'));
+      let channel = { ...port(), approvedEventTypes: ['widget.*'] };
+      const { result, rerender } = renderHook(() => useWidgetChannelActions(channel));
+      const action = { kind: 'agent' as const, id: 'save' };
+      await act(() => result.current.dispatch(action, 'control'));
+      const original = vi.mocked(transport.ingestCanvasEvent).mock.calls[0][1];
+      if (change === 'approval') {
+        channel = { ...channel, approvedEventTypes: ['widget.action.*'] };
+        rerender();
+      } else
+        vi.mocked(transport.getCanvasEventReceipt).mockRejectedValueOnce(
+          Object.assign(new Error('Denied'), { status: 403 })
+        );
+      await act(() => result.current.retry(original.id));
+      expect(result.current.pending('control')).toBe(true);
+      expect(result.current.records[0]).toMatchObject({
+        phase: 'review',
+        event: { id: original.id },
+      });
+      channel = { ...channel, approvedEventTypes: ['widget.*'] };
+      rerender();
+      await act(() => result.current.dispatch(action, 'control'));
+      expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+      expect(result.current.records).toHaveLength(1);
+      expect(result.current.records[0].event).toBe(original);
+    }
+  );
+
   it('freezes per-click host IDs and node metadata, enabling independent new clicks after acceptance', async () => {
     draw();
     const user = userEvent.setup();

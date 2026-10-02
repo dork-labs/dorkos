@@ -65,66 +65,79 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('production hosted canvas widget', () => {
-  it('keeps loading and refused routes on the channel, then preserves draft/focus through live state', async () => {
-    const transport = createMockTransport();
-    let resolve!: (value: CanvasChannelReplayResponse) => void;
-    vi.mocked(transport.getCanvasChannel).mockReturnValue(
-      new Promise((value) => {
-        resolve = value;
-      })
-    );
-    const user = userEvent.setup();
-    render(
-      <TransportProvider transport={transport}>
-        <CanvasRenderer documentId="doc-1" content={content} onContentChange={vi.fn()} />
-      </TransportProvider>
-    );
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(transport.ingestCanvasEvent).not.toHaveBeenCalled();
-    expect(transport.sendUiAction).not.toHaveBeenCalled();
-    await act(async () =>
-      resolve({
-        ...response(),
-        routing: { enabled: false, approvedEventTypes: [], destinationLabel: 'Approval needed' },
-      })
-    );
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(transport.ingestCanvasEvent).not.toHaveBeenCalled();
-    expect(transport.sendUiAction).not.toHaveBeenCalled();
-    await act(async () => {
-      const { events: _events, ...snapshot } = response();
-      expect(
+  it.each(['widget.action', 'widget.*'])(
+    'keeps loading and refused routes on the channel, then accepts %s while preserving draft/focus',
+    async (pattern) => {
+      const transport = createMockTransport();
+      let resolve!: (value: CanvasChannelReplayResponse) => void;
+      vi.mocked(transport.getCanvasChannel).mockReturnValue(
+        new Promise((value) => {
+          resolve = value;
+        })
+      );
+      const user = userEvent.setup();
+      render(
+        <TransportProvider transport={transport}>
+          <CanvasRenderer documentId="doc-1" content={content} onContentChange={vi.fn()} />
+        </TransportProvider>
+      );
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      expect(transport.ingestCanvasEvent).not.toHaveBeenCalled();
+      expect(transport.sendUiAction).not.toHaveBeenCalled();
+      await act(async () =>
+        resolve({
+          ...response(),
+          routing: { enabled: false, approvedEventTypes: [], destinationLabel: 'Approval needed' },
+        })
+      );
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      expect(transport.ingestCanvasEvent).not.toHaveBeenCalled();
+      expect(transport.sendUiAction).not.toHaveBeenCalled();
+      await act(async () => {
+        const { events: _events, ...snapshot } = {
+          ...response(),
+          routing: { ...response().routing!, approvedEventTypes: [pattern] },
+        };
+        expect(
+          publishDocChannelNotification({
+            type: 'canvas_channel_snapshot',
+            scope: 'session:canonical',
+            documentId: 'doc-1',
+            snapshot,
+          })
+        ).toBe(true);
+      });
+      expect(screen.getByRole('button', { name: 'Save' })).not.toHaveAttribute(
+        'aria-disabled',
+        'true'
+      );
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(transport.ingestCanvasEvent).mock.calls[0]).toMatchObject([
+        'doc-1',
+        { type: 'widget.action', payload: { actionId: 'save' } },
+      ]);
+      expect(transport.sendUiAction).not.toHaveBeenCalled();
+      const input = screen.getByRole('textbox', { name: 'Title' });
+      await user.click(input);
+      await user.type(input, 'my draft');
+      await act(async () => {
+        const { events: _events, ...snapshot } = {
+          ...response(),
+          routing: { ...response().routing!, approvedEventTypes: [pattern] },
+        };
         publishDocChannelNotification({
           type: 'canvas_channel_snapshot',
           scope: 'session:canonical',
           documentId: 'doc-1',
-          snapshot,
-        })
-      ).toBe(true);
-    });
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(transport.ingestCanvasEvent).mock.calls[0]).toMatchObject([
-      'doc-1',
-      { type: 'widget.action', payload: { actionId: 'save' } },
-    ]);
-    expect(transport.sendUiAction).not.toHaveBeenCalled();
-    const input = screen.getByRole('textbox', { name: 'Title' });
-    await user.click(input);
-    await user.type(input, 'my draft');
-    await act(async () => {
-      const { events: _events, ...snapshot } = response();
-      publishDocChannelNotification({
-        type: 'canvas_channel_snapshot',
-        scope: 'session:canonical',
-        documentId: 'doc-1',
-        snapshot: { ...snapshot, state: { done: true }, stateRev: 1 },
+          snapshot: { ...snapshot, state: { done: true }, stateRev: 1 },
+        });
       });
-    });
-    expect(screen.getByRole('textbox', { name: 'Title' })).toBe(input);
-    expect(input).toHaveValue('my draft');
-    expect(input).toHaveFocus();
-  });
+      expect(screen.getByRole('textbox', { name: 'Title' })).toBe(input);
+      expect(input).toHaveValue('my draft');
+      expect(input).toHaveFocus();
+    }
+  );
 
   it('uses an explicit fixture port without fetching the production document channel', async () => {
     const transport = createMockTransport();
