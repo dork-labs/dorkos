@@ -283,6 +283,38 @@ import {
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
+import {
+  CanvasChannelEventSchema,
+  CanvasChannelFrameSchema,
+  CanvasChannelSnapshotFrameSchema,
+} from '@dorkos/shared/canvas-channel-schemas';
+
+/** OpenAPI cannot expand recursive JSON; runtime parsing retains its bounded strict schema. */
+const LocalDocEventFrameSchema = CanvasChannelFrameSchema.extend({
+  event: CanvasChannelEventSchema.extend({
+    payload: z
+      .unknown()
+      .describe(
+        'Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit.'
+      ),
+  }),
+});
+const LocalDocSnapshotFrameSchema = CanvasChannelSnapshotFrameSchema.extend({
+  snapshot: CanvasChannelSnapshotFrameSchema.shape.snapshot.extend({
+    state: z
+      .record(z.string(), z.unknown())
+      .describe(
+        'Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content.'
+      ),
+  }),
+});
+const LocalRoomEventSchema = z.union([
+  ...RoomEventSchema.options.filter(
+    (option) => !['canvas_event', 'canvas_channel_snapshot'].includes(option.shape.type.value)
+  ),
+  LocalDocEventFrameSchema,
+  LocalDocSnapshotFrameSchema,
+]);
 
 /**
  * Simplified documentation mirror of `@dorkos/marketplace`'s
@@ -807,7 +839,11 @@ registry.registerPath({
     '`__heartbeat` frame rather than an SSE comment, and a refusal arrives as WebSocket ' +
     'close code `4000 + status` because a browser cannot read the status of a failed ' +
     'handshake. SSE remains the documented integration contract — see ' +
-    '`docs/integrations/sse-protocol.mdx`.',
+    '`docs/integrations/sse-protocol.mdx`. Authorized document channels also emit ' +
+    '`canvas_channel_snapshot` and `canvas_event` frames on this connection, including ' +
+    'while the agent is idle. These carry no frame id or session seq; `docSeq` belongs ' +
+    'only to that physical document. Each connection replays current document state and ' +
+    'bounded document history independently of the session resume cursor.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     query: z.object({
@@ -837,9 +873,16 @@ registry.registerPath({
         'sequence as JSON frames.',
       content: {
         'text/event-stream': {
-          schema: z.union([SessionSnapshotSchema, SessionEventSchema]).openapi({
-            description: 'A SessionSnapshot (cold connect) followed by SessionEvent frames.',
-          }),
+          schema: z
+            .union([
+              SessionSnapshotSchema,
+              SessionEventSchema,
+              LocalDocEventFrameSchema,
+              LocalDocSnapshotFrameSchema,
+            ])
+            .openapi({
+              description: 'A SessionSnapshot (cold connect) followed by SessionEvent frames.',
+            }),
         },
       },
     },
@@ -7027,7 +7070,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Durable room event stream (SSE, or WebSocket at the same path)',
   description:
-    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again.",
+    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again. Authorized document channels also emit `canvas_channel_snapshot` and `canvas_event` frames while the room is idle. These carry no frame id or entry seq; `docSeq` belongs only to that physical document, and document replay is independent of the room resume cursor.",
   request: {
     params: RoomIdParams,
     query: z.object({
@@ -7051,7 +7094,7 @@ registry.registerPath({
         'SSE stream: a RoomSnapshot frame on a cold connect, then RoomEvent frames. A ' +
         'WebSocket upgrade of the same path answers `101` with the identical sequence.',
       content: {
-        'text/event-stream': { schema: z.union([RoomSnapshotSchema, RoomEventSchema]) },
+        'text/event-stream': { schema: z.union([RoomSnapshotSchema, LocalRoomEventSchema]) },
       },
     },
     404: roomNotFound,

@@ -7,7 +7,10 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomEvent, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
-import { RoomStreamHttpError } from '@/layers/shared/lib/transport';
+import {
+  RoomStreamHttpError,
+  subscribeDocChannelNotifications,
+} from '@/layers/shared/lib/transport';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { useRoomFollowStore } from '../model/live/use-room-follow';
@@ -110,6 +113,66 @@ afterEach(() => {
 });
 
 describe('useRoomStream', () => {
+  it('publishes document notifications without advancing entry history or its reconnect cursor', async () => {
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData<RoomEntry[]>(roomKeys.entries('room-1'), [entry(4)]);
+    const docs = vi.fn();
+    const stop = subscribeDocChannelNotifications('room:room-1', docs);
+    const documentEvent = {
+      type: 'canvas_event',
+      scope: 'room:room-1',
+      documentId: 'doc-1',
+      docSeq: 900,
+      event: {
+        id: '00000000-0000-4000-8000-000000000001',
+        type: 'app.updated',
+        payload: {},
+        direction: 'downstream',
+        receivedAt: '2026-10-01T00:00:00.000Z',
+      },
+    } satisfies RoomEvent;
+    const snapshot = {
+      type: 'canvas_channel_snapshot',
+      scope: 'room:room-1',
+      documentId: 'doc-1',
+      snapshot: {
+        state: {},
+        stateRev: 0,
+        highWatermark: 900,
+        retentionFloor: 1,
+        receiptRetentionFloor: 1,
+        resetRequired: false,
+        health: { status: 'ready', reasons: [] },
+        receipts: [],
+      },
+    } satisfies RoomEvent;
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementationOnce(() =>
+        (async function* () {
+          yield documentEvent;
+          yield snapshot;
+          throw new Error('socket closed');
+        })()
+      )
+      .mockImplementationOnce((_id: string, _cursor: number, signal: AbortSignal) =>
+        staysOpen(signal)
+      );
+    const { unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+    try {
+      await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(2));
+      expect(docs.mock.calls.map(([frame]) => frame)).toEqual([documentEvent, snapshot]);
+      expect(cursors(transport)).toEqual([4, 4]);
+      expect(queryClient.getQueryData(roomKeys.entries('room-1'))).toEqual([entry(4)]);
+    } finally {
+      stop();
+      unmount();
+    }
+  });
+
   it('waits for the history read before subscribing at all', async () => {
     const transport = createMockTransport();
     const queryClient = makeQueryClient();

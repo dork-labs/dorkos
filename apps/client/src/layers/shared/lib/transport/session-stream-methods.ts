@@ -12,6 +12,10 @@ import {
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import { buildQueryString } from './http-client';
+import {
+  isDocChannelNotificationType,
+  publishDocChannelNotification,
+} from './doc-channel-notifications';
 import { streamSocketFrames } from './stream-socket-iterator';
 import {
   createUnreadablePromptReporter,
@@ -100,6 +104,10 @@ export function createSessionStreamMethods(baseUrl: string) {
           if (sinceCursor !== undefined) {
             throw new StaleResumeCursorError(sessionId, sinceCursor);
           }
+          continue;
+        }
+        if (isDocChannelNotificationType(frame.event)) {
+          publishDocChannelNotification(frame.data);
           continue;
         }
         const result = parseSessionEvent(frame.data);

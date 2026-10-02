@@ -11,7 +11,7 @@ import { logger } from '../lib/logger.js';
 /** The composition root resolves authenticated callers; page envelopes carry no authority. */
 export interface DocChannelHttp {
   service: DocChannelService;
-  actor(req: Request, res: Response): DocChannelActor;
+  actor(req: Pick<Request, 'headers'>, res: Pick<Response, 'locals'>): DocChannelActor;
 }
 const router = Router();
 const parseEnvelope = json({ limit: '16kb' });

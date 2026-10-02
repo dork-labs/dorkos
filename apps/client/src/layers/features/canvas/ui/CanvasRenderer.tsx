@@ -21,6 +21,7 @@ import { CanvasPdfContent } from './CanvasPdfContent';
 import { CanvasAudioContent } from './CanvasAudioContent';
 import { CanvasVideoContent } from './CanvasVideoContent';
 import { CanvasWidgetContent } from './CanvasWidgetContent';
+import { useDocChannel } from '../model/use-doc-channel';
 import { CanvasMcpAppContent } from './CanvasMcpAppContent';
 
 // Lazy: viewers that pull heavy, on-demand deps (CodeMirror, three.js /
@@ -97,8 +98,10 @@ export function CanvasRenderer({
     case 'video':
       return <CanvasVideoContent content={content} />;
     case 'widget':
-      return (
-        <CanvasWidgetContent documentId={documentId} channel={widgetChannel} content={content} />
+      return widgetChannel ? (
+        <CanvasWidgetContent content={content} documentId={documentId} channel={widgetChannel} />
+      ) : (
+        <HostedWidget documentId={documentId} content={content} />
       );
     case 'mcp_app':
       return <CanvasMcpAppContent content={content} />;
@@ -135,4 +138,16 @@ export function CanvasRenderer({
 /** Fallback shown while a lazy viewer chunk loads. */
 function CanvasLoading() {
   return <div className="text-muted-foreground p-4 text-sm">Loading…</div>;
+}
+
+/** The production widget stays on its physical channel while its current grant is unavailable. */
+function HostedWidget({
+  documentId,
+  content,
+}: {
+  documentId: string;
+  content: Extract<UiCanvasContent, { type: 'widget' }>;
+}) {
+  const { channel } = useDocChannel(documentId);
+  return <CanvasWidgetContent documentId={documentId} content={content} channel={channel} />;
 }

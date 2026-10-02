@@ -9,7 +9,7 @@
  *
  * It knows nothing about HTTP or WebSockets. Both `routes/session-events-handler.ts`
  * (SSE, the public integration contract) and `routes/session-events-socket.ts`
- * (WebSocket, what the cockpit uses) resolve the same plan and hand it here with
+ * (WebSocket, what the app uses) resolve the same plan and hand it here with
  * their own {@link DurableStreamSink}. That is the whole reason this module
  * exists: the cursor arithmetic and the cold-connect race are the parts worth
  * getting right once.
@@ -25,6 +25,8 @@ import {
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { DurableStreamSink } from './durable-stream-sink.js';
+import type { DocScopeNotifications } from '../../canvas/doc-channel/streams/registry.js';
+import { attachDocumentStream, serializedStreamSink } from './document-stream-delivery.js';
 import {
   cursorMatchesGeneration,
   streamFrameId,
@@ -37,6 +39,8 @@ import { peekCanvasService, sessionScope } from '../../canvas/index.js';
 
 /** Everything a caller must resolve before a session stream can be delivered. */
 export interface SessionStreamPlan {
+  /** Document notifications remain independent of the scope history cursor. */
+  documentNotifications?: DocScopeNotifications;
   /** The session being streamed. */
   sessionId: string;
   /** The runtime that owns it. */
@@ -98,6 +102,8 @@ export async function deliverSessionStream(
   plan: SessionStreamPlan
 ): Promise<void> {
   const { sessionId, runtime, ctx, resume, principal } = plan;
+  sink = serializedStreamSink(sink);
+  let documents: ReturnType<typeof attachDocumentStream> | undefined;
   // Resolved ONCE per connection rather than per frame: a principal is fixed
   // for the life of a socket (changing it would need a new handshake), and the
   // room a session answers for cannot change the answer here — only a `bridged`
@@ -108,6 +114,7 @@ export async function deliverSessionStream(
   let generation = UNOWNED_STREAM_GENERATION;
 
   try {
+    documents = attachDocumentStream(sink, plan.documentNotifications);
     if (resume !== undefined) {
       // Read and compare in the same tick as the subscribe: between two ticks
       // the projector behind this session id can change, and both the check and
@@ -171,6 +178,7 @@ export async function deliverSessionStream(
       generation = runtime.streamGeneration(ctx, sessionId);
     }
 
+    documents?.start();
     for (;;) {
       const { value, done } = await iterator.next();
       if (done || sink.closed) break;
@@ -197,5 +205,6 @@ export async function deliverSessionStream(
     // deterministic teardown for a generator parked on an ingest wait.
     void iterator?.return?.();
     sink.end();
+    documents?.stop();
   }
 }

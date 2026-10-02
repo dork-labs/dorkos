@@ -5,7 +5,7 @@
  * Same three-part contract as the session stream, and the same reason for
  * living apart from its handlers: `routes/room-events-handler.ts` (SSE, the
  * public integration contract) and `routes/room-events-socket.ts` (WebSocket,
- * what the cockpit uses) both resolve a plan and hand it here with their own
+ * what the app uses) both resolve a plan and hand it here with their own
  * {@link DurableStreamSink}.
  *
  * One thing is easier here than it is for sessions, and it is worth naming: a
@@ -18,6 +18,8 @@
  */
 import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { DurableStreamSink } from './durable-stream-sink.js';
+import type { DocScopeNotifications } from '../../canvas/doc-channel/streams/registry.js';
+import { attachDocumentStream, serializedStreamSink } from './document-stream-delivery.js';
 import { getRoomService } from '../../rooms/index.js';
 import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
 import { streamFrameId } from '../../../lib/stream-cursor.js';
@@ -26,6 +28,8 @@ import { ROOMS } from '../../../config/constants.js';
 
 /** Everything a caller must resolve before a room stream can be delivered. */
 export interface RoomStreamPlan {
+  /** Document notifications remain independent of the scope history cursor. */
+  documentNotifications?: DocScopeNotifications;
   /** The room being streamed. */
   roomId: string;
   /** The author id the snapshot is scoped to (membership, unread cursor). */
@@ -48,6 +52,8 @@ export async function deliverRoomStream(
   plan: RoomStreamPlan
 ): Promise<void> {
   const { roomId, viewerAuthorId, sinceCursor } = plan;
+  sink = serializedStreamSink(sink);
+  let documents: ReturnType<typeof attachDocumentStream> | undefined;
   const service = getRoomService();
 
   /**
@@ -95,6 +101,7 @@ export async function deliverRoomStream(
   let highestSent: number;
 
   try {
+    documents = attachDocumentStream(sink, plan.documentNotifications);
     if (sinceCursor !== undefined) {
       highestSent = sinceCursor;
       for (const entry of service.entriesAfter(roomId, sinceCursor)) {
@@ -152,6 +159,7 @@ export async function deliverRoomStream(
       highestSent = snapshot.cursor;
     }
 
+    documents?.start();
     for (;;) {
       const { value, done } = await iterator.next();
       if (done || sink.closed) break;
@@ -172,5 +180,6 @@ export async function deliverRoomStream(
     service.canvas.readerLeft(roomId, viewerAuthorId);
     void iterator.return?.();
     sink.end();
+    documents?.stop();
   }
 }

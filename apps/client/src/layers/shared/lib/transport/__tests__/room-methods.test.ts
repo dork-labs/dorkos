@@ -1,3 +1,4 @@
+import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 // @vitest-environment jsdom
 /**
  * The room Transport methods that can only be tested here.
@@ -224,6 +225,21 @@ describe('subscribeRoom over a stream socket', () => {
 
     socket.finish();
     await pending;
+  });
+
+  it('forwards both document notification variants independently of room entries', async () => {
+    const iterator = setup().subscribeRoom('room-1', 12)[Symbol.asyncIterator]();
+    const first = iterator.next();
+    const socket = await nthSocket();
+    socket.push('canvas_event', DOC_EVENT);
+    expect((await first).value).toEqual(DOC_EVENT);
+    const second = iterator.next();
+    socket.push('canvas_channel_snapshot', DOC_SNAPSHOT);
+    expect((await second).value).toEqual(DOC_SNAPSHOT);
+    const third = iterator.next();
+    socket.push('entry', ENTRY_EVENT);
+    expect((await third).value).toEqual(ENTRY_EVENT);
+    socket.finish();
   });
 
   it('delivers a validated entry', async () => {

@@ -1,3 +1,5 @@
+import { subscribeDocChannelNotifications } from '../doc-channel-notifications';
+import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   SessionListEventSchema,
@@ -166,6 +168,31 @@ describe('createSessionStreamMethods', () => {
   });
 
   describe('subscribeSession', () => {
+    it('publishes document frames without yielding them or changing the transcript resume cursor', async () => {
+      const methods = createSessionStreamMethods('/api');
+      const docs = vi.fn();
+      const stop = subscribeDocChannelNotifications(undefined, docs);
+      const events: SessionEvent[] = [];
+      try {
+        await script(
+          [
+            ['canvas_event', DOC_EVENT],
+            ['canvas_channel_snapshot', DOC_SNAPSHOT],
+            ['canvas_event', { ...DOC_EVENT, docSeq: -1 }],
+            ['turn_start', TURN_START],
+          ],
+          async () => {
+            for await (const event of methods.subscribeSession('request-alias', 7))
+              events.push(event);
+          }
+        );
+        expect(events).toEqual([TURN_START]);
+        expect(docs.mock.calls.map(([frame]) => frame)).toEqual([DOC_EVENT, DOC_SNAPSHOT]);
+      } finally {
+        stop();
+      }
+    });
+
     it('yields validated events, skipping the snapshot frame', async () => {
       // Real failure mode: a cold connect leads with a snapshot frame — leaking
       // it into the event iteration would corrupt seq-based consumers.

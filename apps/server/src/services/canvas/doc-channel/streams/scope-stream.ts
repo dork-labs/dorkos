@@ -1,0 +1,126 @@
+/** Authorized document notifications multiplexed onto an existing scope stream. */
+import type { CanvasChannelNotification } from '@dorkos/shared/canvas-channel-schemas';
+import type { CanvasDocumentStore } from '../../canvas-document-store.js';
+import type { DocChannelActor } from '../authorization.js';
+import type { DocChannelService } from '../service.js';
+import { DocChannelLiveBuffer } from './live-buffer.js';
+
+/** Existing scope authorization remains mandatory before even listing document IDs. */
+export interface DocScopeStreamPorts {
+  resolveScope(scope: string): string;
+  requireScopeCurrent(scope: string, actor: DocChannelActor): undefined;
+  requireDocumentCurrent(documentId: string, scope: string, actor: DocChannelActor): undefined;
+}
+/** Capture live hints before durable replay; payloads always come from current authorized storage. */
+export class DocScopeStream {
+  constructor(
+    private readonly documents: CanvasDocumentStore,
+    private readonly service: DocChannelService,
+    private readonly live: DocChannelLiveBuffer,
+    private readonly ports: DocScopeStreamPorts
+  ) {}
+
+  /** Attach eagerly so a commit during asynchronous scope hydration remains buffered. */
+  subscribe(
+    scope: string,
+    actor: DocChannelActor,
+    signal: AbortSignal
+  ): AsyncIterable<CanvasChannelNotification> {
+    const cancellation = new AbortController();
+    const hints = this.live.subscribe(scope, actor, AbortSignal.any([signal, cancellation.signal]));
+    const iterator = hints[Symbol.asyncIterator]();
+    const generator = async function* (this: DocScopeStream) {
+      const cursors = new Map<string, number>();
+      try {
+        this.requireCurrent(scope, actor);
+        const currentScope = this.resolveScope(scope);
+        const documents = this.documents.identities(currentScope, 1001);
+        if (documents.length > 1000) throw new Error('Document scope replay exceeds its bound.');
+        for (const document of documents) {
+          if (signal.aborted) return;
+          yield* this.replay(document.id, scope, actor, cursors, signal);
+        }
+        for (;;) {
+          const hint = await iterator.next();
+          if (hint.done || signal.aborted) return;
+          yield* this.replay(hint.value.documentId, scope, actor, cursors, signal);
+        }
+      } finally {
+        await iterator.return?.();
+      }
+    }.call(this);
+    const wrapped: AsyncIterator<CanvasChannelNotification> = {
+      next: () => generator.next(),
+      return: async () => {
+        cancellation.abort();
+        await iterator.return?.();
+        return generator.return(undefined);
+      },
+    };
+    return { [Symbol.asyncIterator]: () => wrapped };
+  }
+
+  private resolveScope(scope: string): string {
+    const current = this.ports.resolveScope(scope);
+    if (typeof current !== 'string' || current.length === 0 || current.length > 200) {
+      void Promise.resolve(current).catch(() => {});
+      throw new Error('Invalid document scope identity.');
+    }
+    return current;
+  }
+
+  private requireCurrent(scope: string, actor: DocChannelActor, documentId?: string): void {
+    const result = this.ports.requireScopeCurrent(scope, actor);
+    if (result !== undefined) {
+      void Promise.resolve(result).catch(() => {});
+      throw new Error('Invalid document scope authority.');
+    }
+    if (documentId !== undefined) {
+      const current = this.ports.requireDocumentCurrent(
+        documentId,
+        this.resolveScope(scope),
+        actor
+      );
+      if (current !== undefined) {
+        void Promise.resolve(current).catch(() => {});
+        throw new Error('Invalid document read authority.');
+      }
+    }
+  }
+
+  private async *replay(
+    documentId: string,
+    scope: string,
+    actor: DocChannelActor,
+    cursors: Map<string, number>,
+    signal: AbortSignal
+  ): AsyncGenerator<CanvasChannelNotification> {
+    // Full snapshots also repair status/state changes that have no newer transcript cursor.
+    let since = cursors.get(documentId) ?? 0;
+    for (let page = 0; page < 10; page++) {
+      this.requireCurrent(scope, actor, documentId);
+      const snapshot = await this.service.replay(documentId, actor, since, 200);
+      if (signal.aborted) return;
+      this.requireCurrent(scope, actor, documentId);
+      const currentScope = this.resolveScope(scope);
+      const identity = this.documents.lookupIdentity(documentId);
+      if (!identity || identity.scope !== currentScope) throw new Error('Document scope changed.');
+      const { events, ...current } = snapshot;
+      yield { type: 'canvas_channel_snapshot', scope: currentScope, documentId, snapshot: current };
+      for (const event of events) {
+        if (signal.aborted) return;
+        this.requireCurrent(scope, actor, documentId);
+        yield event;
+      }
+      // Receipt summaries can be ordered newest-first on reset; they never advance payload replay.
+      const last = Math.max(since, ...snapshot.events.map((event) => event.docSeq));
+      if (last >= snapshot.highWatermark || snapshot.events.length < 200) {
+        cursors.set(documentId, snapshot.highWatermark);
+        return;
+      }
+      if (last <= since) throw new Error('Document replay made no progress.');
+      since = last;
+    }
+    throw new Error('Document replay exceeds its page bound.');
+  }
+}

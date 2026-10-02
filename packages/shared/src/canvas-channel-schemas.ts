@@ -339,8 +339,18 @@ export const CanvasChannelHealthSchema = z
   })
   .strict();
 /** Replay and reset projection; state is not document content. */
+/** Current server-verified route readiness, never inferred from declarations or page data. */
+export const CanvasChannelRoutingSchema = z
+  .object({
+    enabled: z.boolean(),
+    approvedEventTypes: z.array(CanvasChannelEventPatternSchema).max(2048),
+    destinationLabel: z.string().max(500),
+  })
+  .strict();
+export type CanvasChannelRouting = z.infer<typeof CanvasChannelRoutingSchema>;
 export const CanvasChannelReplayResponseSchema = z
   .object({
+    routing: CanvasChannelRoutingSchema.optional(),
     events: z.array(CanvasChannelFrameSchema).max(200),
     state: CanvasChannelStateSchema,
     stateRev: CanvasChannelSequenceSchema,
@@ -520,3 +530,19 @@ export const CanvasChannelCheckboxReceiptSchema = z.discriminatedUnion('status',
     })
     .strict(),
 ]);
+
+/** Current document state on a scope stream; it carries no transcript or room-entry cursor. */
+export const CanvasChannelSnapshotFrameSchema = z
+  .object({
+    type: z.literal('canvas_channel_snapshot'),
+    scope: IdentifierSchema,
+    documentId: IdentifierSchema,
+    snapshot: CanvasChannelReplayResponseSchema.omit({ events: true }),
+  })
+  .strict();
+/** Document notification union shared by both scope protocols. */
+export const CanvasChannelNotificationSchema = z.union([
+  CanvasChannelFrameSchema,
+  CanvasChannelSnapshotFrameSchema,
+]);
+export type CanvasChannelNotification = z.infer<typeof CanvasChannelNotificationSchema>;

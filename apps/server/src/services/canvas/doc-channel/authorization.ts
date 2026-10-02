@@ -91,6 +91,52 @@ export class DocChannelAuthorization {
     return this.checkCurrent(documentId, actor, false, undefined, false);
   }
 
+  /** Authorize an existing stream scope before enumerating private document identities. */
+  requireScopeCurrent(
+    scope: string,
+    actor: DocChannelActor,
+    write = false,
+    tx?: DbTransaction
+  ): string {
+    if (
+      !isServerPrincipal(actor.principal) ||
+      typeof this.ports.principalCurrent !== 'function' ||
+      !this.ports.principalCurrent(actor.principal) ||
+      !this.ports.ownsInstallation(actor.principal.claims)
+    )
+      throw new DocChannelNotFoundError();
+    let canonical: string;
+    try {
+      canonical = this.documents.lifecycle.resolveScope(scope);
+    } catch {
+      throw new DocChannelNotFoundError();
+    }
+    const parsed = parseScope(canonical);
+    const claims = actor.principal.claims;
+    if (parsed.kind === 'unknown') throw new DocChannelNotFoundError();
+    const runtimeScope =
+      claims.kind === 'runtime' ? this.currentRuntime(actor.principal, tx) : undefined;
+    if (claims.kind === 'runtime' && !runtimeScope) throw new DocChannelNotFoundError();
+    if (claims.kind === 'agent') {
+      const executor = tx ?? this.db;
+      const agent = executor.select().from(agents).where(eq(agents.id, claims.agentId)).get();
+      if (!agent || agent.status !== 'active' || agent.projectPath !== claims.agentPath)
+        throw new DocChannelNotFoundError();
+    }
+    if (parsed.kind === 'session') {
+      if (
+        claims.kind !== 'operator' &&
+        (actor.surface !== 'capability' || runtimeScope !== canonical)
+      )
+        throw new DocChannelNotFoundError();
+    } else {
+      const membership = this.ports.roomMembership(parsed.id, claims);
+      if (!membership) throw new DocChannelNotFoundError();
+      if (write && membership.archived) throw new DocChannelArchivedError();
+    }
+    return canonical;
+  }
+
   private checkCurrent(
     documentId: string,
     actor: DocChannelActor,
