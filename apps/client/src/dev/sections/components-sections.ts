@@ -279,6 +279,20 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Overlays',
     keywords: ['responsive', 'dialog', 'drawer', 'mobile', 'desktop', 'fullscreen'],
   },
+  {
+    id: 'infotip',
+    title: 'InfoTip',
+    page: 'components',
+    category: 'Overlays',
+    keywords: ['info', 'tip', 'popover', 'help', 'explain', 'copy', 'disclosure', 'icon'],
+  },
+  {
+    id: 'moredetails',
+    title: 'MoreDetails',
+    page: 'components',
+    category: 'Overlays',
+    keywords: ['more', 'details', 'disclosure', 'collapsible', 'expand', 'copy', 'explain'],
+  },
   // DrawerShowcases
   {
     id: 'drawer',
