@@ -450,15 +450,14 @@ export function ClaudeAccountsSection() {
           had: a credits session is refused, never moved onto a sign-in. */}
       {credits?.isDefault && credits.chosenBy === 'default' && (
         <p className="text-muted-foreground text-xs" data-testid="claude-credits-chosen-for-you">
-          DorkOS chose this when you linked your account, because Claude Code had no working
-          sign-in. Pick another account here to change it.
+          DorkOS chose this when you linked your account. Claude Code had no working sign-in.
         </p>
       )}
       {credits?.isDefault && !credits.available && (
-        <p className="text-muted-foreground text-xs" data-testid="claude-credits-unavailable">
-          DorkOS credits aren’t available right now, so new sessions here won’t start until you sign
-          in to your DorkOS account again or pick another account.
-        </p>
+        <div className="text-muted-foreground text-xs" data-testid="claude-credits-unavailable">
+          <p>DorkOS credits aren’t available, so new sessions here won’t start.</p>
+          <p>Sign in to your DorkOS account again, or pick another account.</p>
+        </div>
       )}
 
       {/* Said in words only when no row can say it: Main never follows the
