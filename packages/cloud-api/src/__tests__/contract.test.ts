@@ -842,6 +842,44 @@ describe('the inference refusal reasons', () => {
   });
 });
 
+describe('which protocols a routed model is offered on', () => {
+  const model = {
+    id: 'md_opaque_0001',
+    displayName: 'a model',
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+    supports: { tools: true, promptCaching: true, streaming: true, thinking: false },
+  };
+
+  it('still parses a model from a service that says nothing about protocols', () => {
+    // Additive within /v1: the response a previous minor published still parses.
+    expect(contract.InferenceModelSchema.safeParse(model).success).toBe(true);
+  });
+
+  it('carries the protocols and the recommendation as plain strings', () => {
+    const parsed = contract.InferenceModelSchema.parse({
+      ...model,
+      protocols: ['anthropic-messages', 'a-protocol-added-later'],
+      recommendedOn: ['anthropic-messages'],
+    });
+    // A value this release does not know arrives intact, so a caller one
+    // release behind skips it instead of failing the whole list.
+    expect(parsed.protocols).toEqual(['anthropic-messages', 'a-protocol-added-later']);
+    expect(parsed.recommendedOn).toEqual(['anthropic-messages']);
+  });
+
+  it('names one protocol per published endpoint', () => {
+    expect([...contract.InferenceProtocolSchema.options].sort()).toEqual([
+      'anthropic-messages',
+      'openai-chat',
+    ]);
+    expect(Object.keys(contract.InferenceEndpointsSchema.shape).sort()).toEqual([
+      'anthropicMessages',
+      'openaiChat',
+    ]);
+  });
+});
+
 describe('the remote-access additions', () => {
   const status = {
     mode: 'managed',

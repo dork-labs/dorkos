@@ -82,6 +82,27 @@ export const ModelSupportsSchema = z
   .describe('What a routed model supports. Capability booleans only.');
 
 /**
+ * The wire protocols the inference endpoints speak, one per entry in
+ * {@link InferenceEndpointsSchema}: `anthropic-messages` at
+ * `endpoints.anthropicMessages`, `openai-chat` at `endpoints.openaiChat`.
+ *
+ * Mechanism: each value names a request shape a caller sends, never a model,
+ * a vendor's catalog or who serves it.
+ *
+ * Like {@link InferenceRefusalReasonSchema}, this is a published vocabulary
+ * rather than a field type. `InferenceModelSchema.protocols` and
+ * `recommendedOn` carry plain strings, so a protocol added in a later minor
+ * reaches a caller one release behind as a value it does not recognise (and
+ * skips) rather than as a response that fails to parse.
+ */
+export const InferenceProtocolSchema = z
+  .enum(['anthropic-messages', 'openai-chat'])
+  .describe('A wire protocol the inference endpoints speak. A request shape, never a model.');
+
+/** A wire protocol the inference endpoints speak. */
+export type InferenceProtocol = z.infer<typeof InferenceProtocolSchema>;
+
+/**
  * One routed model.
  *
  * `id` is an opaque string. Publishing the set of routed models would freeze
@@ -97,6 +118,18 @@ export const InferenceModelSchema = z
     contextWindow: z.number().int().positive(),
     maxOutputTokens: z.number().int().positive(),
     supports: ModelSupportsSchema,
+    protocols: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'The protocols (see InferenceProtocolSchema) a caller should offer this model on. A caller offers a model only on a protocol listed here, and skips values it does not recognise. Absent means the service has not said, and the model is offered on none.'
+      ),
+    recommendedOn: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'The protocols on which this is the model the service suggests starting with. At most one model per protocol; a caller that finds more uses the first. Absent means none.'
+      ),
   })
   .describe('One routed model. No provider or vendor is named anywhere in this shape.');
 

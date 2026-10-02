@@ -365,6 +365,14 @@ rather than an oversight: they name a **request format** a caller encodes in —
 public standards — not a supplier a request is routed to. Which provider actually serves a
 request is not part of this contract and is published nowhere.
 
+The same two formats are the values of `InferenceProtocolSchema` (`anthropic-messages`,
+`openai-chat`). Each model in `GET /v1/inference/models` may say which of them a caller should
+offer it on (`protocols`) and on which it is the service's suggested first pick
+(`recommendedOn`). Both are optional, and both carry plain strings rather than the enum, so a
+protocol added later is a value an older caller skips rather than a response it cannot parse. A
+caller offers a model only on a protocol the model lists: a model with no `protocols` is offered
+on none.
+
 ### Where amounts appear, and where they do not
 
 Five routes carry prices or charges, and it is worth being precise about which, because "no
