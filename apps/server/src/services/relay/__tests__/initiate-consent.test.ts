@@ -540,3 +540,11 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
     expect(gate(from, HUMAN).allowed).toBe(true);
   });
 });
+
+it('reserves Doc senders without granting consent exemptions', () => {
+  for (const from of ['relay.doc', 'relay.doc.canvas-hash']) {
+    expect(isServerOnlyPrincipal(from)).toBe(true);
+    expect(isConsentExemptPrincipal(from)).toBe(false);
+  }
+  expect(isServerOnlyPrincipal('relay.docx.canvas-hash')).toBe(false);
+});
