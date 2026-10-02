@@ -178,11 +178,20 @@ class InputQueue implements TabInput {
     void this.execute(work).then((result) => {
       work.dispose();
       this.active = null;
-      // Partial chords must cross the same reset barrier before any successor dispatch.
-      if (result.outcome === 'aborted' && !this.barrier && !this.stopped) void this.reset();
+      // A rejected queued release can strand state from an earlier successful operation.
+      if (this.needsReset(work, result) && !this.barrier && !this.stopped) void this.reset();
       work.settle(result);
       this.pump();
     });
+  }
+
+  private needsReset(work: Work, result: InputResult): boolean {
+    if (result.outcome === 'aborted') return true;
+    return (
+      result.outcome === 'rejected' &&
+      this.held.hasHeld() &&
+      work.steps.some((step) => step.kind === 'keyUp' || step.kind === 'mouseUp')
+    );
   }
 
   private async execute(work: Work): Promise<InputResult> {

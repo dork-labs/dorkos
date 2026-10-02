@@ -19,6 +19,10 @@ export class HeldInput {
     if (step.kind === 'mouseUp') this.buttons.delete(step.button);
   }
 
+  hasHeld(): boolean {
+    return this.keys.size > 0 || this.buttons.size > 0;
+  }
+
   clear(): void {
     this.keys.clear();
     this.buttons.clear();
