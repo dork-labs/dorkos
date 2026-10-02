@@ -76,7 +76,7 @@ test('popular apps are listed before anything is set up, and the first connect a
   const step = dialog.getByTestId('first-connect-step');
   await expect(step.getByRole('button', { name: /Use my Composio key/ })).toBeVisible();
   // Nango stays folded, and no sign-in can start before a way is set up.
-  await expect(step.getByText(/My own Nango server/)).toBeHidden();
+  await expect(step.getByText(/Your own Nango server/)).toBeHidden();
   await expect(dialog.getByRole('button', { name: 'Continue' })).toHaveCount(0);
   await dialog.screenshot({ path: testInfo.outputPath('first-connect-desktop.png') });
 

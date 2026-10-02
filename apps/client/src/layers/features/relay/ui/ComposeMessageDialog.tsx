@@ -24,9 +24,9 @@ function parsePayload(raw: string): Record<string, unknown> {
 }
 
 const composeSchema = z.object({
-  subject: z.string().min(1, 'Subject is required'),
-  from: z.string().min(1, 'From is required'),
-  payload: z.string().min(1, 'Payload is required'),
+  subject: z.string().min(1, 'Add a subject'),
+  from: z.string().min(1, 'Add a sender'),
+  payload: z.string().min(1, 'Add a message'),
 });
 
 interface ComposeMessageDialogProps {
@@ -93,7 +93,7 @@ export function ComposeMessageDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Send a test message</DialogTitle>
-          <DialogDescription>Compose a message to send through the Relay bus.</DialogDescription>
+          <DialogDescription>Check that a message gets delivered.</DialogDescription>
         </DialogHeader>
         <form.AppForm>
           <form
@@ -109,11 +109,7 @@ export function ComposeMessageDialog({
             <form.AppField name="from">{(field) => <field.TextField label="From" />}</form.AppField>
             <form.AppField name="payload">
               {(field) => (
-                <field.TextareaField
-                  label="Payload"
-                  placeholder='Plain text or JSON (e.g. {"content": "hello"})'
-                  rows={4}
-                />
+                <field.TextareaField label="Message" placeholder="Plain text or JSON" rows={4} />
               )}
             </form.AppField>
             <div className="flex justify-end">

@@ -45,10 +45,10 @@ const WRITE_VERBS: Record<string, string> = {
 
 /**
  * The warning shown when every agent, including future ones, can write:
- * "Every agent — including ones you add later — could send email as you."
+ * "Every agent, even future ones, could send email as you."
  * When every agent also holds a high-risk action, it says so in the shared
  * words, never "delete": the service marks forwarding and sharing high risk
- * too. "…could send email and take high-risk actions as you."
+ * too. "…could send email as you. Some are high risk."
  *
  * @param toolkit - The app's toolkit id, e.g. `gmail`.
  * @param serviceName - The app's display name, for apps without their own words.
@@ -60,6 +60,6 @@ export function everyAgentWriteWarning(
   highRisk = false
 ): string {
   const verb = WRITE_VERBS[toolkit.toLowerCase()] ?? `make changes in ${serviceName}`;
-  const reach = highRisk ? `${verb} and take high-risk actions` : verb;
-  return `Every agent — including ones you add later — could ${reach} as you.`;
+  const risk = highRisk ? ' Some are high risk.' : '';
+  return `Every agent, even future ones, could ${verb} as you.${risk}`;
 }

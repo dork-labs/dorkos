@@ -210,7 +210,7 @@ describe('ConversationRow', () => {
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create binding/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /add connection/i })).toBeInTheDocument();
       });
     });
 
@@ -221,7 +221,7 @@ describe('ConversationRow', () => {
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create binding/i })).toBeDisabled();
+        expect(screen.getByRole('button', { name: /add connection/i })).toBeDisabled();
       });
     });
 
@@ -273,10 +273,10 @@ describe('ConversationRow', () => {
 
       // Create Binding should now be enabled
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: /add connection/i })).not.toBeDisabled();
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
 
       expect(mockMutate).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -306,10 +306,10 @@ describe('ConversationRow', () => {
       });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: /add connection/i })).not.toBeDisabled();
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
 
       expect(mockMutate).toHaveBeenCalledWith(
         expect.objectContaining({ adapterId: 'my-telegram-bot' })
@@ -333,10 +333,10 @@ describe('ConversationRow', () => {
       });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: /add connection/i })).not.toBeDisabled();
       });
 
-      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
 
       expect(mockMutate).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -454,9 +454,9 @@ describe('ConversationRow', () => {
       });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: /add connection/i })).not.toBeDisabled();
       });
-      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
 
       expect(mockMutate).toHaveBeenCalledWith(expect.objectContaining({ adapterId: 'tg-bot-1' }));
     });
@@ -478,9 +478,9 @@ describe('ConversationRow', () => {
       });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: /add connection/i })).not.toBeDisabled();
       });
-      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
 
       expect(mockMutate).toHaveBeenCalledWith(expect.objectContaining({ adapterId: 'slack' }));
     });
@@ -502,9 +502,9 @@ describe('ConversationRow', () => {
       });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: /add connection/i })).not.toBeDisabled();
       });
-      fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
 
       expect(mockMutate).toHaveBeenCalledWith(expect.objectContaining({ adapterId: '' }));
     });

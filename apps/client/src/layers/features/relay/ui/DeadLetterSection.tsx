@@ -92,9 +92,7 @@ function AggregatedCard({ group }: AggregatedCardProps) {
                 <DialogContent className="max-w-lg">
                   <DialogHeader>
                     <DialogTitle>What was sent</DialogTitle>
-                    <DialogDescription>
-                      One of the messages from {group.source} that never arrived ({reasonLabel})
-                    </DialogDescription>
+                    <DialogDescription>Never arrived: {reasonLabel}.</DialogDescription>
                   </DialogHeader>
                   <pre className="bg-muted max-h-80 overflow-auto rounded-md p-3 font-mono text-xs">
                     {JSON.stringify(group.sample, null, 2)}
@@ -119,9 +117,9 @@ function AggregatedCard({ group }: AggregatedCardProps) {
               <AlertDialogHeader>
                 <AlertDialogTitle>Clear these messages?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This clears {group.count} message{group.count !== 1 ? 's' : ''} from{' '}
-                  <span className="font-medium">{group.source}</span> ({reasonLabel}). Clearing them
-                  does not send them, and you cannot undo it.
+                  Clears {group.count} message{group.count !== 1 ? 's' : ''} from{' '}
+                  <span className="font-medium">{group.source}</span> ({reasonLabel}). They won’t be
+                  sent, and this can’t be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -170,9 +168,9 @@ export function DeadLetterSection({ enabled = true }: DeadLetterSectionProps) {
       {hasBudgetRejections && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900 dark:bg-amber-950">
           <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
-            Budget rejections: {budgetRejections.hopLimit} hop limit,{' '}
-            {budgetRejections.cycleDetected} cycles, {budgetRejections.budgetExhausted} budget,{' '}
-            {budgetRejections.ttlExpired} TTL
+            Not delivered: {budgetRejections.hopLimit} too many hand-offs,{' '}
+            {budgetRejections.cycleDetected} loops, {budgetRejections.budgetExhausted} over limit,{' '}
+            {budgetRejections.ttlExpired} expired
           </p>
         </div>
       )}

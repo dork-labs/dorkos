@@ -198,7 +198,7 @@ describe('AppActions before an app is connected', () => {
     renderActions(transportWith({ ...LISTED, completeness: 'too_large' }));
     expect(await screen.findByRole('button', { name: /See the first 4 actions/ })).toBeVisible();
     expect(screen.getByTestId('app-actions')).toHaveTextContent(
-      'Showing the first 4. Gmail has more actions than DorkOS lists.'
+      'Showing the first 4. Gmail has more.'
     );
     cleanup();
 
@@ -213,9 +213,7 @@ describe('AppActions before an app is connected', () => {
     renderActions(transportWith({ status: 'unlisted', toolkit: 'gmail' }));
 
     expect(
-      await screen.findByText(
-        'DorkOS can’t list Gmail’s actions, so everything agents do in it counts as a change.'
-      )
+      await screen.findByText('DorkOS can’t list Gmail’s actions. All count as changes.')
     ).toBeInTheDocument();
   });
 
@@ -224,7 +222,7 @@ describe('AppActions before an app is connected', () => {
     renderActions(transport, { providerInstanceId: null });
 
     expect(screen.getByTestId('app-actions')).toHaveTextContent(
-      'You’ll see what Gmail offers agents once DorkOS can reach it.'
+      'Shows once DorkOS can reach Gmail.'
     );
     expect(transport.getConnectorAppActions).not.toHaveBeenCalled();
   });
@@ -233,9 +231,7 @@ describe('AppActions before an app is connected', () => {
     const gone = Object.assign(new Error('Not set up.'), { code: 'provider_not_found' });
     renderActions(transportWith(gone));
 
-    expect(
-      await screen.findByText('You’ll see what Gmail offers agents once DorkOS can reach it.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Shows once DorkOS can reach Gmail.')).toBeInTheDocument();
   });
 
   it('offers one retry line when the list fails to load', async () => {
@@ -255,7 +251,7 @@ describe('AppActions when a DorkOS account problem stops the list', () => {
     renderActions(transportWith(refusal));
 
     expect(await screen.findByText(/This computer’s link needs updating\./)).toBeInTheDocument();
-    expect(screen.getByText(/pick up the update/)).toBeInTheDocument();
+    expect(screen.getByText(/again to update it/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Link my DorkOS account again' }));
     expect(openSettings).toHaveBeenCalledWith('account', SETTINGS_RELINK_SECTION);
   });

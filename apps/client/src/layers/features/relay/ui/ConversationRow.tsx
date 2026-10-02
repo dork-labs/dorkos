@@ -89,7 +89,7 @@ function extractChannelType(
 
 const STATUS_LABELS: Record<RelayConversation['status'], string> = {
   delivered: 'Delivered',
-  failed: 'Failed',
+  failed: 'Error',
   pending: 'Pending',
 };
 
@@ -239,8 +239,8 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
               {existingBindings.length > 0 && (
                 <div className="rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs dark:border-blue-900 dark:bg-blue-950">
                   <p className="font-medium text-blue-800 dark:text-blue-200">
-                    {existingBindings.length} binding{existingBindings.length !== 1 ? 's' : ''}{' '}
-                    already exist{existingBindings.length === 1 ? 's' : ''} for this connection
+                    Already goes to {existingBindings.length}{' '}
+                    {existingBindings.length === 1 ? 'agent' : 'agents'}
                   </p>
                 </div>
               )}
@@ -271,7 +271,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                   disabled={!routeAgentId}
                   onClick={handleQuickRoute}
                 >
-                  Create Binding
+                  Add connection
                 </Button>
               </div>
             </PopoverContent>
@@ -311,7 +311,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
               {/* Payload */}
               {conversation.payload != null && (
                 <div>
-                  <span className="text-muted-foreground text-xs font-medium">Payload</span>
+                  <span className="text-muted-foreground text-xs font-medium">Content</span>
                   <pre className="bg-muted mt-1 max-h-40 overflow-auto rounded p-2 font-mono text-xs">
                     {JSON.stringify(conversation.payload, null, 2)}
                   </pre>
@@ -328,7 +328,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                   <span> &middot; Duration: {formatDuration(conversation.durationMs)}</span>
                 )}
                 {conversation.responseCount > 0 && (
-                  <span> &middot; {conversation.responseCount} response chunks</span>
+                  <span> &middot; {conversation.responseCount} reply parts</span>
                 )}
               </div>
 

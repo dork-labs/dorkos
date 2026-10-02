@@ -112,7 +112,7 @@ export function AppList({
       ) : data.yoursError ? (
         <QueryErrorState
           title="Couldn’t load your apps"
-          description="Try again. Nothing about your apps was changed."
+          description="Nothing changed. Try again."
           onRetry={data.retryYours}
         />
       ) : (
@@ -181,7 +181,7 @@ export function AppList({
           ) : catalog.isError ? (
             <QueryErrorState
               title="Couldn’t load the app list"
-              description="Try again. Your connected apps are unchanged."
+              description="Your apps are unchanged. Try again."
               onRetry={() => void catalog.refetch()}
               isRetrying={catalog.isFetching}
             />
@@ -272,12 +272,12 @@ function emptySearchHint(newApps: ConnectorAppConnections['newApps'] | undefined
   if (newApps?.status !== 'setup_needed') return 'Try another name.';
   switch (newApps.reason) {
     case 'nothing_set_up':
-      return 'Only popular apps are listed until you connect your first one. After that, search reaches every app DorkOS can connect.';
+      return 'Only popular apps show until you connect one. Then search finds every app.';
     case 'own_key_unavailable':
-      return 'Only popular apps are listed while your saved key isn’t working.';
+      return 'Only popular apps show while your saved key isn’t working.';
     case 'dorkos_account_unavailable':
-      return 'Only popular apps are listed while your DorkOS account can’t connect apps.';
+      return 'Only popular apps show while your DorkOS account can’t connect apps.';
     case 'dorkos_account_unlinked':
-      return 'Only popular apps are listed while your DorkOS account isn’t linked.';
+      return 'Only popular apps show while your DorkOS account isn’t linked.';
   }
 }

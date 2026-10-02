@@ -10,9 +10,9 @@ import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
 
 /** Short display labels for each session strategy. */
 export const SESSION_STRATEGY_LABELS: Record<SessionStrategy, string> = {
-  'per-chat': 'Per Chat',
-  'per-user': 'Per User',
-  stateless: 'Stateless',
+  'per-chat': 'Per chat',
+  'per-user': 'Per person',
+  stateless: 'No history',
 };
 
 /**

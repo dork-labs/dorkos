@@ -226,7 +226,7 @@ describe('AdapterSetupWizard', () => {
     // Password should be pre-filled with sentinel (edit mode: shows saved indicator)
     const tokenInput = screen.getByLabelText(/api token/i);
     expect(tokenInput).toHaveValue('***');
-    expect(tokenInput).toHaveAttribute('placeholder', 'Saved. Enter a new one to replace');
+    expect(tokenInput).toHaveAttribute('placeholder', 'Saved · type to replace');
     expect(screen.getByLabelText(/channel/i)).toHaveValue('#dev');
   });
 
@@ -712,7 +712,7 @@ describe('AdapterSetupWizard', () => {
     // so the wizard refuses to go on rather than creating a connection that
     // reaches nobody.
     await waitFor(() => {
-      expect(screen.getByText(/you have no agents yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/no agents yet/i)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
     expect(screen.queryByLabelText(/api token/i)).not.toBeInTheDocument();
@@ -744,7 +744,7 @@ describe('AdapterSetupWizard', () => {
 
     // The confirm step repeats the promise before it is kept.
     await waitFor(() => {
-      expect(screen.getByText(/messages that arrive here go to/i)).toBeInTheDocument();
+      expect(screen.getByText(/messages here go to/i)).toBeInTheDocument();
     });
     expect(screen.getByText('My Agent')).toBeInTheDocument();
   });
@@ -866,7 +866,7 @@ describe('AdapterSetupWizard', () => {
         expect(toastError).toHaveBeenCalledWith(
           'Couldn’t finish undoing',
           expect.objectContaining({
-            description: expect.stringMatching(/has no agent to answer it.*by hand/i),
+            description: expect.stringMatching(/no agent to answer it.*Remove it from Messaging/i),
           })
         );
       });

@@ -17,12 +17,12 @@ export interface CloudFailureCopy {
 const COPY: Record<string, CloudFailureCopy> = {
   cloud_link_required: {
     title: 'This computer isn’t linked to DorkOS',
-    description: 'Link your DorkOS account again to keep using this app. Nothing changed.',
+    description: 'Link your DorkOS account again. Nothing changed.',
     action: 'relink',
   },
   cloud_link_needs_update: {
     title: 'This computer’s link needs updating',
-    description: 'Link your DorkOS account again to pick up the update. Nothing changed.',
+    description: 'Link your DorkOS account again to update it. Nothing changed.',
     action: 'relink',
   },
   cloud_unavailable: {
@@ -31,7 +31,7 @@ const COPY: Record<string, CloudFailureCopy> = {
   },
   cloud_refused: {
     title: 'DorkOS’s servers couldn’t finish this',
-    description: 'Nothing changed on this computer. Try again later.',
+    description: 'Nothing changed. Try again later.',
   },
 };
 

@@ -12,7 +12,7 @@ interface WhoCanUseChoiceProps {
 }
 
 /**
- * The page card's first question (DOR-2420): "Only agents I pick" or "Every
+ * The page card's first question (DOR-2420): "Only agents you pick" or "Every
  * agent (including agents you add later)". Never shown in the chat's one-agent
  * card, where the person is answering for one agent. Where "Every agent" can't
  * be offered — an app connected through a DorkOS account while this computer
@@ -31,7 +31,7 @@ export function WhoCanUseChoice({ value, onChange, everyAgentAvailable }: WhoCan
       <div className="flex min-h-11 items-center gap-3 rounded-md px-2">
         <RadioGroupItem value="picked" id={`${baseId}-picked`} />
         <Label htmlFor={`${baseId}-picked`} className="flex-1 cursor-pointer py-2 font-normal">
-          Only agents I pick
+          Only agents you pick
         </Label>
       </div>
       <div className="flex min-h-11 items-start gap-3 rounded-md px-2 py-2">
@@ -50,7 +50,7 @@ export function WhoCanUseChoice({ value, onChange, everyAgentAvailable }: WhoCan
           <span className="text-muted-foreground text-xs">Including agents you add later</span>
           {!everyAgentAvailable && (
             <span id={`${baseId}-every-unavailable`} className="text-muted-foreground text-xs">
-              Not available for this app right now. Pick agents one by one.
+              Not available here. Pick agents one by one.
             </span>
           )}
         </Label>

@@ -97,7 +97,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     );
     renderCard(transport, PAGE);
 
-    expect(await screen.findByRole('radio', { name: 'Only agents I pick' })).toBeChecked();
+    expect(await screen.findByRole('radio', { name: 'Only agents you pick' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Ada' })).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: /Every agent/ }));
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
@@ -131,10 +131,10 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     await user.click(await screen.findByRole('radio', { name: /Every agent/ }));
     await user.click(screen.getByRole('radio', { name: 'Read and write' }));
     expect(screen.getByTestId('every-agent-warning')).toHaveTextContent(
-      'Every agent — including ones you add later — could send email as you.'
+      'Every agent, even future ones, could send email as you.'
     );
     // Only for every agent: picking agents one by one never shows it.
-    await user.click(screen.getByRole('radio', { name: 'Only agents I pick' }));
+    await user.click(screen.getByRole('radio', { name: 'Only agents you pick' }));
     expect(screen.queryByTestId('every-agent-warning')).not.toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: /Every agent/ }));
 
@@ -169,7 +169,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     // Nothing changed yet, so nothing to save.
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
 
-    await user.click(screen.getByRole('radio', { name: 'Only agents I pick' }));
+    await user.click(screen.getByRole('radio', { name: 'Only agents you pick' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
@@ -192,7 +192,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
 
     await user.click(await screen.findByRole('radio', { name: /Every agent/ }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t confirm access was saved/i)).toBeInTheDocument();
   });
 
   it('explains, and never offers, "Every agent" where it is unavailable', async () => {
@@ -205,9 +205,9 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
 
     const every = await screen.findByRole('radio', { name: /Every agent/ });
     expect(every).toBeDisabled();
-    expect(screen.getByText(/Not available for this app right now/)).toBeInTheDocument();
+    expect(screen.getByText(/Not available here/)).toBeInTheDocument();
     await user.click(every);
-    expect(screen.getByRole('radio', { name: 'Only agents I pick' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Only agents you pick' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
@@ -236,7 +236,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
 
     const allow = await screen.findByRole('button', { name: 'Allow' });
     expect(screen.queryByRole('radio', { name: /Every agent/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('radio', { name: 'Only agents I pick' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'Only agents you pick' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('every-agent-warning')).not.toBeInTheDocument();
     await user.click(allow);
     // Ada's own answer starts at Read, not at what every agent holds, and never sends everyAgent.
@@ -266,9 +266,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Stop sharing with every agent' }));
     expect(transport.stopSharingConnectorWithEveryAgent).toHaveBeenCalledWith('connection-1');
-    expect(
-      await screen.findByText('Gmail is no longer shared with every agent.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Stopped sharing Gmail with every agent.')).toBeInTheDocument();
   });
 
   it('shows exact shared actions as they are: no level, the plain line, and the write warning', async () => {
@@ -282,11 +280,11 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     expect(screen.getByRole('radio', { name: 'Read' })).not.toBeChecked();
     expect(screen.getByRole('radio', { name: 'Read and write' })).not.toBeChecked();
     expect(
-      screen.getByText('Every agent has exact actions chosen now. Pick a level to replace them.')
+      screen.getByText('Every agent has exact actions now. Pick a level to replace them.')
     ).toBeInTheDocument();
     // The shared set includes delete, so the warning says so.
     expect(screen.getByTestId('every-agent-warning')).toHaveTextContent(
-      'Every agent — including ones you add later — could send email and take high-risk actions as you.'
+      'Every agent, even future ones, could send email as you. Some are high risk.'
     );
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
@@ -315,7 +313,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     await user.click(await screen.findByRole('radio', { name: /Every agent/ }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await user.click(await screen.findByRole('button', { name: 'Check if it’s done' }));
-    expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t confirm access was saved/i)).toBeInTheDocument();
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
   });
 });

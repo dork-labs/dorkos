@@ -168,8 +168,8 @@ function CloudLinkBody({ view, start, cancel, starting, startError, relinking }:
       return (
         <RecoveryState
           title="Your code expired"
-          description="The link code timed out before it was approved. Generate a new one to try again."
-          actionLabel="Generate a new code"
+          description="It ran out before you approved it."
+          actionLabel="Get a new code"
           onAction={start}
           pending={starting}
         />
@@ -178,8 +178,8 @@ function CloudLinkBody({ view, start, cancel, starting, startError, relinking }:
       return (
         <RecoveryState
           title="Link request denied"
-          description="The request was rejected on dorkos.ai. Start again if that wasn’t intentional."
-          actionLabel="Try again"
+          description="It was turned down on dorkos.ai."
+          actionLabel="Link this computer"
           onAction={start}
           pending={starting}
         />
@@ -188,7 +188,7 @@ function CloudLinkBody({ view, start, cancel, starting, startError, relinking }:
       return (
         <RecoveryState
           title="This computer was unlinked"
-          description="DorkOS revoked this computer’s access. Link again to reconnect it to your account."
+          description="DorkOS removed its access to your account."
           actionLabel="Link again"
           onAction={start}
           pending={starting}
@@ -267,11 +267,12 @@ function IdleState({
           className="mt-0.5"
         />
         <label htmlFor={checkboxId} className="space-y-1 text-sm leading-snug">
-          <span className="font-medium">Also connect this app’s usage data to my account</span>
+          <span className="font-medium">Link usage counts to your account</span>
           <span className="text-muted-foreground block text-xs">
-            Links the anonymous usage counts from this install to your account so you can see them
-            signed in. Off by default. Takes effect at link time, so turning it on after linking
-            only applies the next time you link.
+            See this install’s anonymous usage counts when signed in.
+          </span>
+          <span className="text-muted-foreground block text-xs">
+            Applies when you link. To change it later, link again.
           </span>
         </label>
       </div>
@@ -291,7 +292,7 @@ function IdleState({
 
 /** The sentence shown when the approval page cannot be opened from here. */
 const OPEN_FAILED_MESSAGE =
-  'We could not open the approval page. Copy the code and open it in your browser.';
+  'Couldn’t open the approval page. Copy the code and open it in your browser.';
 
 /** A device flow is in progress — show the code, the approval-page button, and the time left. */
 function PendingState({
@@ -331,7 +332,7 @@ function PendingState({
           code reads like the computer was signed out. */}
       {relinking && (
         <p className="text-muted-foreground text-sm">
-          This computer stays linked until you approve the new code.
+          Stays linked until you approve the new code.
         </p>
       )}
       <div className="space-y-2">
@@ -465,7 +466,7 @@ function UnlinkSection({ unlink, unlinking }: { unlink: () => Promise<void>; unl
       <FieldCardContent>
         <SettingRow
           label="Unlink this computer"
-          description="This computer stops using your DorkOS account. You can link it again at any time."
+          description="Stops using your DorkOS account. You can link again anytime."
         >
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -489,7 +490,7 @@ function UnlinkSection({ unlink, unlinking }: { unlink: () => Promise<void>; unl
 
 const RELINK_NOTE: Record<NonNullable<CloudLinkRelinkOutcome>, string> = {
   denied: 'The new link was turned down on dorkos.ai.',
-  expired: 'The code for the new link timed out.',
+  expired: 'The new link’s code expired.',
   failed: 'The new link couldn’t finish.',
 };
 
@@ -506,9 +507,7 @@ function RelinkNote({
 }) {
   return (
     <div role="status" className="bg-muted/40 flex items-start gap-2 rounded-lg p-3 text-sm">
-      <p className="min-w-0 flex-1">
-        {RELINK_NOTE[outcome]} This computer is still linked. Use Link again to try once more.
-      </p>
+      <p className="min-w-0 flex-1">{RELINK_NOTE[outcome]} This computer is still linked.</p>
       <Button
         variant="ghost"
         size="icon-sm"
@@ -536,15 +535,14 @@ function UnlinkConfirm({ unlink }: { unlink: () => Promise<void> }) {
       <AlertDialogHeader>
         <AlertDialogTitle>Unlink this computer?</AlertDialogTitle>
         <AlertDialogDescription>
-          This computer will stop using your DorkOS account. You can link it again at any time.
+          It stops using your DorkOS account. You can link again anytime.
         </AlertDialogDescription>
       </AlertDialogHeader>
       {connections.isPending ? (
         <p className="text-muted-foreground text-sm">Checking which apps use this account…</p>
       ) : connections.isError ? (
         <p className="text-muted-foreground text-sm">
-          Couldn’t check which apps use this account. Any app connected through it will stop
-          working.
+          Couldn’t check which apps use this account. Any that do will stop working.
         </p>
       ) : (
         <ConnectionImpactList

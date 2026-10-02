@@ -54,9 +54,9 @@ function createErrorCopy(error: unknown): string {
   const status = (error as { status?: number } | null)?.status;
   if (code === 'invalid_filter') return 'Check the filter values, then try again.';
   if (code === 'destination_unavailable')
-    return 'This agent can’t get notifications there any more. Pick another place.';
+    return 'That place can’t take notifications now. Pick another.';
   if (status === 409)
-    return 'Something about this choice changed while you were picking it, or that place can’t take notifications any more. Check your choices, then try again.';
+    return 'Something changed while you were choosing. Check your choices, then try again.';
   return 'Couldn’t finish setting this up. Try again.';
 }
 
@@ -87,7 +87,7 @@ function ConnectionNotificationRow({
     destination = room ? (room.slug ? `#${room.slug}` : room.name) : 'a room this agent left';
     where = `Goes to ${destination}, for ${agent}`;
   } else if (subscription.destination.kind === 'channel') {
-    destination = channelLabel ?? 'a chat app conversation that’s no longer set up';
+    destination = channelLabel ?? 'a chat that’s no longer set up';
     where = `Goes to ${destination}, for ${agent}`;
   }
   const filter = describeEventFilter(
@@ -249,7 +249,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
           Tell an agent
         </h3>
         <p className="text-muted-foreground text-xs">
-          Send new activity from this account to an agent, one of its rooms, or a chat app.
+          Send new activity to an agent, a room or a chat app.
         </p>
       </div>
 
@@ -257,7 +257,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
         <Skeleton className="h-20 rounded-lg" aria-label="Loading delivery setup" />
       ) : source.isError ? (
         <QueryErrorState
-          title="Couldn’t check whether this account can send notifications"
+          title="Couldn’t check notifications for this account"
           description="Try again before adding one."
           onRetry={() => void source.refetch()}
           isRetrying={source.isFetching}
@@ -271,7 +271,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
       ) : subscriptions.isError ? (
         <QueryErrorState
           title="Couldn’t load notifications"
-          description="Try again. Existing notifications were not changed."
+          description="Try again. Nothing was changed."
           onRetry={() => void subscriptions.refetch()}
           isRetrying={subscriptions.isFetching}
         />
@@ -314,7 +314,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
         !subscriptionItems.some((item) => item.id === createSubscription.data.id) && (
           <p className="bg-muted/40 rounded-lg p-3 text-sm" role="status">
             {createSubscription.data.state === 'pending'
-              ? `${createSubscription.data.displayName} is being set up. DorkOS keeps trying on its own.`
+              ? `${createSubscription.data.displayName} is being set up. DorkOS keeps trying.`
               : `${createSubscription.data.displayName} is on.`}
           </p>
         )}
@@ -323,7 +323,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
           role="alert"
           className="border-destructive/30 bg-destructive/10 text-foreground rounded-md border p-3 text-sm"
         >
-          Couldn’t confirm that notification was removed. Check the list.
+          Couldn’t confirm the removal. Check the list.
         </p>
       )}
 
@@ -334,9 +334,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
             <Skeleton className="h-20 rounded-md" aria-label="Loading available notifications" />
           ) : definitions.isError ? (
             <div className="flex flex-wrap items-center gap-x-2 text-sm">
-              <p className="text-muted-foreground">
-                Notifications aren’t available for this account right now.
-              </p>
+              <p className="text-muted-foreground">Notifications aren’t available right now.</p>
               <Button
                 type="button"
                 variant="link"
@@ -349,21 +347,19 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
               </Button>
             </div>
           ) : definitionItems.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              This app doesn’t offer any notifications yet.
-            </p>
+            <p className="text-muted-foreground text-sm">This app offers no notifications yet.</p>
           ) : roster.isPending ? (
             <Skeleton className="h-20 rounded-md" aria-label="Loading agents" />
           ) : roster.isError ? (
             <QueryErrorState
               title="Couldn’t load agents"
-              description="Try again before choosing who should receive this activity."
+              description="Try again before choosing who gets this."
               onRetry={() => void roster.refetch()}
               isRetrying={roster.isFetching}
             />
           ) : agentChoices.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              Add an agent first. Notifications go to an agent.
+              Notifications go to an agent. Add one first.
             </p>
           ) : (
             <>
@@ -386,7 +382,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
                     }}
                   />
                   <label htmlFor="notification-manage-existing" className="text-sm">
-                    If Composio already has a matching one, let DorkOS take it over
+                    Take over a matching one already in Composio
                   </label>
                 </div>
               )}

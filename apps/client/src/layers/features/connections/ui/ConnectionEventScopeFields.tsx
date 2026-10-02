@@ -52,9 +52,9 @@ export function emptyConnectionEventScopeDraft(agentId = ''): ConnectionEventSco
 export function connectionEventCadenceLabel(
   definition: Pick<ConnectionEventDefinition, 'deliveryMode' | 'expectedCadenceSeconds'>
 ): string {
-  if (definition.deliveryMode === 'webhook') return 'Sent by the service when it happens';
-  if (definition.deliveryMode === 'unknown') return 'Delivery timing is unavailable';
-  if (definition.expectedCadenceSeconds === null) return 'Check timing is unavailable';
+  if (definition.deliveryMode === 'webhook') return 'Sent the moment it happens';
+  if (definition.deliveryMode === 'unknown') return 'Delivery timing unknown';
+  if (definition.expectedCadenceSeconds === null) return 'Check timing unknown';
   if (definition.expectedCadenceSeconds < 60) {
     return `Checks about every ${definition.expectedCadenceSeconds} seconds`;
   }
@@ -243,7 +243,7 @@ export function ConnectionEventScopeFields({
             onValueChange={(destinationId) => update({ destinationId })}
           >
             <SelectTrigger id={roomId} aria-label="Room">
-              <SelectValue placeholder="Choose one of this agent’s rooms" />
+              <SelectValue placeholder="Choose a room" />
             </SelectTrigger>
             <SelectContent>
               {(rooms.data?.rooms ?? []).map((room) => (
@@ -263,7 +263,7 @@ export function ConnectionEventScopeFields({
               </Button>
             </div>
           ) : !rooms.isPending && (rooms.data?.rooms.length ?? 0) === 0 ? (
-            <p className="text-muted-foreground text-xs">This agent is not in any rooms.</p>
+            <p className="text-muted-foreground text-xs">This agent isn’t in any rooms.</p>
           ) : null}
         </div>
       )}
@@ -276,7 +276,7 @@ export function ConnectionEventScopeFields({
             onValueChange={(destinationId) => update({ destinationId })}
           >
             <SelectTrigger id={channelId} aria-label="Messaging channel">
-              <SelectValue placeholder="Choose a channel this agent can start" />
+              <SelectValue placeholder="Choose a channel" />
             </SelectTrigger>
             <SelectContent>
               {channelOptions.map((binding) => (
@@ -304,27 +304,23 @@ export function ConnectionEventScopeFields({
               </Button>
             </div>
           ) : !bindings.isPending && !relayAdapters.isPending && channelOptions.length === 0 ? (
-            <p className="text-muted-foreground text-xs">
-              This agent has no messaging channels that can start conversations.
-            </p>
+            <p className="text-muted-foreground text-xs">No channels this agent can start.</p>
           ) : null}
         </div>
       )}
 
       {selectedDefinition && fields === null && (
         <p role="alert" className="text-muted-foreground rounded-md border p-3 text-sm">
-          This notification needs filter controls this app cannot safely show yet.
+          This notification’s filters can’t be shown yet.
         </p>
       )}
       {selectedDefinition?.deliveryMode === 'unknown' && (
         <p className="text-muted-foreground rounded-md border p-3 text-sm">
-          This service has not reported its delivery timing. Setup may remain pending until it does.
+          This service hasn’t shared its timing. Setup may stay pending.
         </p>
       )}
       {sourceStatus?.setupMode === 'byo_webhook' && !sourceStatus.configured && (
-        <p className="text-muted-foreground text-xs">
-          Save service delivery setup above before adding a notification.
-        </p>
+        <p className="text-muted-foreground text-xs">Save delivery setup above first.</p>
       )}
       {fields?.map((field) => {
         const filterId = `${idPrefix}-filter-${field.name}`;

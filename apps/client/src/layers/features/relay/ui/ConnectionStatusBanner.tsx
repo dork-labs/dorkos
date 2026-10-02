@@ -43,7 +43,7 @@ export function ConnectionStatusBanner({
       icon={isDisconnected ? WifiOff : Wifi}
       className={className}
     >
-      {isDisconnected ? 'Server link lost. Check your network.' : `Reconnecting…${attemptText}`}
+      {isDisconnected ? 'Can’t reach DorkOS. Check your network.' : `Reconnecting…${attemptText}`}
     </Banner>
   );
 }

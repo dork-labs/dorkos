@@ -13,6 +13,7 @@ import {
   PermissionModeScopeNote,
   TrustDial,
   UnattendedAutonomyDialog,
+  InfoTip,
 } from '@/layers/shared/ui';
 import { needsConsentRitual, permissionModeLabel } from '@/layers/shared/lib';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
@@ -24,19 +25,18 @@ import type { PermissionMode } from '@dorkos/shared/schemas';
 const SESSION_STRATEGIES: { value: SessionStrategy; label: string; description: string }[] = [
   {
     value: 'per-chat',
-    label: 'Per Chat',
-    description:
-      'One session per chat/conversation. Messages from the same chat resume the same session.',
+    label: 'One conversation per chat',
+    description: 'Everyone in a chat shares the same thread of memory.',
   },
   {
     value: 'per-user',
-    label: 'Per User',
-    description: 'One session per user. All messages from a user share a session across chats.',
+    label: 'One conversation per person',
+    description: 'Each person gets their own thread, even in a shared chat.',
   },
   {
     value: 'stateless',
-    label: 'Stateless',
-    description: 'Every message starts a new session. No conversation history.',
+    label: 'A fresh start every message',
+    description: 'Nothing carries over from the message before.',
   },
 ];
 
@@ -170,15 +170,14 @@ export function BindingAdvancedSection({
         {/* Session strategy selector — replaced by a note once bridged (§7.2) */}
         {bridged ? (
           <div className="space-y-1.5 px-4 py-3">
-            <Label>Session strategy</Label>
+            <Label>How the agent remembers</Label>
             <p className="text-muted-foreground text-xs">
-              A bridged chat keeps its history in the channel, so it does not use a session
-              strategy.
+              Kept in the channel this chat is linked to.
             </p>
           </div>
         ) : (
           <div className="space-y-1.5 px-4 py-3">
-            <Label htmlFor="binding-session-strategy">Session strategy</Label>
+            <Label htmlFor="binding-session-strategy">How the agent remembers</Label>
             <Select value={strategy} onValueChange={(v) => onStrategyChange(v as SessionStrategy)}>
               <SelectTrigger id="binding-session-strategy" className="w-full">
                 <SelectValue />
@@ -210,8 +209,7 @@ export function BindingAdvancedSection({
               data-testid="trust-dial-unavailable"
               className="text-muted-foreground px-1 text-xs leading-relaxed"
             >
-              This connection is set to “{modeLabel}”. The agent behind it hasn’t said what it can
-              do, so there is nothing to choose from yet. Saving keeps it as it is.
+              Set to “{modeLabel}”. No other levels to choose yet. Saving keeps it.
             </p>
           ) : (
             <>
@@ -222,12 +220,7 @@ export function BindingAdvancedSection({
                 // A binding has no Plan switch. One saved at `plan` is kept and
                 // named, not frozen behind a control this screen does not have.
                 strandsWorkingMode
-                strandedNote={
-                  <>
-                    This connection is set to “{modeLabel}”, which is not one of these. Saving keeps
-                    it as it is. Pick a stop to change it.
-                  </>
-                }
+                strandedNote={<>Set to “{modeLabel}”. Saving keeps it, or pick a stop.</>}
               />
               <PermissionModeScopeNote
                 mode={permissionMode}
@@ -247,13 +240,13 @@ export function BindingAdvancedSection({
               className="flex cursor-pointer items-center gap-1.5 text-xs font-normal"
             >
               <Shield className="text-muted-foreground size-3" />
-              Agent can initiate messages
+              Agent can start conversations
             </Label>
             <Switch
               id="perm-initiate"
               checked={canInitiate}
               onCheckedChange={onCanInitiateChange}
-              aria-label="Agent can initiate messages"
+              aria-label="Agent can start conversations"
             />
           </div>
           <div className="flex cursor-pointer items-center justify-between gap-3">
@@ -269,13 +262,13 @@ export function BindingAdvancedSection({
           </div>
           <div className="flex cursor-pointer items-center justify-between gap-3">
             <Label htmlFor="perm-receive" className="cursor-pointer text-xs font-normal">
-              Agent receives inbound messages
+              Agent receives new messages
             </Label>
             <Switch
               id="perm-receive"
               checked={canReceive}
               onCheckedChange={onCanReceiveChange}
-              aria-label="Agent receives inbound messages"
+              aria-label="Agent receives new messages"
             />
           </div>
         </div>
@@ -295,13 +288,12 @@ export function BindingAdvancedSection({
             />
           </div>
           <p className="text-muted-foreground text-xs">
-            Get a message here when a scheduled task on this agent finishes. Failures always come
-            through; turn this off to skip the ones that succeed. Requires “Agent can initiate
-            messages”.
+            When off, you still hear about runs that didn’t finish.
           </p>
+          <p className="text-muted-foreground text-xs">Needs “Agent can start conversations”.</p>
           {notifyBootstrapHint && (
             <p className="text-muted-foreground text-xs">
-              Message your bot once to activate notifications. Bots can’t text you first.
+              Message your bot once to start. Bots can’t write first.
             </p>
           )}
         </div>
@@ -312,12 +304,12 @@ export function BindingAdvancedSection({
         descriptor={pendingAutonomy}
         consequence={
           <>
-            At a stop that asks, an action this agent needs permission for waits for an answer:
-            where your connection can show buttons, it arrives in the chat as Approve and Deny, and
-            only the people on the approver list may answer. Either way an ask nobody answers is
-            refused after 10 minutes and the agent carries on without it. Here nothing is asked at
-            all. Anyone who can send a message through this connection sets off whatever the agent
-            decides to do.
+            Nothing is asked here. Anyone who can message this connection sets the agent off.{' '}
+            <InfoTip label="About asking in the chat" title="At a stop that asks">
+              <p>Where your connection can show buttons, the agent waits for Approve or Deny.</p>
+              <p>Only people on the approver list can answer.</p>
+              <p>An ask nobody answers is refused after 10 minutes, and the agent carries on.</p>
+            </InfoTip>
           </>
         }
         onCancel={() => setPendingAutonomy(null)}

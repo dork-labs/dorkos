@@ -78,18 +78,16 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
     renderPicker();
     expect(screen.getByText('Best models, zero setup')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Claude, GPT, Gemini and 300+ more, running in the cloud. Your hardware doesn’t matter.'
-      )
+      screen.getByText('Claude, GPT, Gemini and 300+ more, in the cloud.')
     ).toBeInTheDocument();
     expect(screen.getByText('Private and free, on your computer')).toBeInTheDocument();
     // Platform-adaptive noun (jsdom navigator.platform is not Mac → "this computer").
     expect(
       screen.getByText(/Models run on this computer. Nothing you type ever leaves it\./)
     ).toBeInTheDocument();
-    expect(screen.getByText('I have my own API key')).toBeInTheDocument();
+    expect(screen.getByText('Use your own API key')).toBeInTheDocument();
     expect(
-      screen.getByText(/Connect straight to Anthropic, OpenAI, or any OpenAI-compatible server/)
+      screen.getByText(/Anthropic, OpenAI, or any OpenAI-compatible server/)
     ).toBeInTheDocument();
   });
 });
@@ -98,11 +96,10 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
 // anything. The list says the headline and the one line under it; the detail
 // waits until you have picked a path, where it is what you actually need.
 describe('OpenCodeProviderPicker — the list is short, the detail is at the step (DOR-917)', () => {
-  const CLOUD_SUB = 'One OpenRouter account covers all of them. Pay only for what you use.';
+  const CLOUD_SUB = 'One OpenRouter account covers them all. Pay for what you use.';
   const CLOUD_TRADE_OFF = 'Your prompts and code are sent to the model’s provider.';
   const LOCAL_SUB = 'Runs Quick helpers and Solid coders. Frontier models stay cloud-only.';
-  const LOCAL_TRADE_OFF =
-    'Smaller models: great for edits and quick help, not frontier-level reasoning.';
+  const LOCAL_TRADE_OFF = 'Smaller models: good for edits and quick help.';
 
   it('keeps the sub-line and the trade-off off the choose list', () => {
     renderPicker();
@@ -376,10 +373,10 @@ describe('OpenCodeProviderPicker — flips OpenCode to Ready (spec §6)', () => 
     await user.click(screen.getByRole('button', { name: 'Save & connect' }));
 
     const panel = await screen.findByTestId('runtime-connected-panel');
-    expect(panel).toHaveTextContent('OpenCode is connected.');
+    expect(panel).toHaveTextContent('OpenCode is connected');
     // Direct is provider-honest — no frontier claim (a Direct key can point at a
     // local LM Studio / vLLM server), just the connection + handoff line.
-    expect(panel).toHaveTextContent('This session will use OpenCode');
+    expect(panel).toHaveTextContent('This session uses OpenCode');
     expect(panel).not.toHaveTextContent('Frontier models are unlocked.');
 
     await user.click(screen.getByTestId('runtime-connected-done'));
@@ -463,7 +460,7 @@ describe('RuntimeSetupDialog — Change a connected OpenCode (spec §9)', () => 
 
     // The success panel replaces the change UI; the cancel affordance is gone.
     const panel = await screen.findByTestId('runtime-connected-panel');
-    expect(panel).toHaveTextContent('OpenCode is connected.');
+    expect(panel).toHaveTextContent('OpenCode is connected');
     expect(screen.queryByTestId('runtime-change-cancel-opencode')).not.toBeInTheDocument();
     expect(screen.getByTestId('runtime-connected-done')).toBeInTheDocument();
   });
@@ -521,7 +518,7 @@ describe('DirectProviderPath — the form remembers what you entered', () => {
     expect(screen.getByLabelText(/base url/i)).toHaveValue('https://lm.example.com:8000/v1');
     expect(screen.getByLabelText('API key')).toHaveAttribute(
       'placeholder',
-      'Saved · ends in ab12 — paste a new key to replace it'
+      'Saved key ends in ab12. Paste to replace.'
     );
   });
 
@@ -1026,7 +1023,7 @@ describe('DirectProviderPath — another path’s saved source is not this form�
 });
 
 // Browser-found on the real app (Settings → Runtimes → OpenCode → Change →
-// I have my own API key): the form left the page while a save was in flight,
+// Use your own API key): the form left the page while a save was in flight,
 // the panel lost its height, and the refusal came back off-screen.
 describe('DirectProviderPath — the form stays put while it works', () => {
   function renderDirect(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {

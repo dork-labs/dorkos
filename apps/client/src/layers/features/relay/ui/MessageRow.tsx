@@ -15,7 +15,7 @@ const STATUS_CONFIG: Record<string, { icon: React.ElementType; className: string
   {
     new: { icon: Clock, className: 'text-muted-foreground', label: 'New' },
     cur: { icon: Check, className: 'text-muted-foreground', label: 'Delivered' },
-    failed: { icon: AlertTriangle, className: 'text-destructive', label: 'Failed' },
+    failed: { icon: AlertTriangle, className: 'text-destructive', label: 'Error' },
     dead_letter: { icon: MailX, className: 'text-status-warning-fg', label: 'Never arrived' },
   };
 
@@ -27,10 +27,10 @@ function extractPreview(payload: unknown): string {
   const p = payload as Record<string, unknown>;
   const text = p.content ?? p.text ?? p.message ?? p.body;
   if (typeof text === 'string') {
-    return text.length > PREVIEW_MAX_LENGTH ? text.slice(0, PREVIEW_MAX_LENGTH) + '...' : text;
+    return text.length > PREVIEW_MAX_LENGTH ? text.slice(0, PREVIEW_MAX_LENGTH) + '…' : text;
   }
   const json = JSON.stringify(payload);
-  return json.length > PREVIEW_MAX_LENGTH ? json.slice(0, PREVIEW_MAX_LENGTH) + '...' : json;
+  return json.length > PREVIEW_MAX_LENGTH ? json.slice(0, PREVIEW_MAX_LENGTH) + '…' : json;
 }
 
 /** Compact/expanded message card with status indicators, payload view, and trace toggle. */
@@ -84,14 +84,14 @@ export function MessageRow({ message }: MessageRowProps) {
           >
             <div className="space-y-2 border-t px-3 pt-3 pb-3">
               <div>
-                <span className="text-muted-foreground text-xs font-medium">Payload</span>
+                <span className="text-muted-foreground text-xs font-medium">Content</span>
                 <pre className="bg-muted mt-1 max-h-40 overflow-auto rounded p-2 font-mono text-xs">
                   {String(JSON.stringify(message.payload, null, 2))}
                 </pre>
               </div>
               {message.budget != null && (
                 <div>
-                  <span className="text-muted-foreground text-xs font-medium">Budget</span>
+                  <span className="text-muted-foreground text-xs font-medium">Limits</span>
                   <pre className="bg-muted mt-1 rounded p-2 font-mono text-xs">
                     {String(JSON.stringify(message.budget, null, 2))}
                   </pre>

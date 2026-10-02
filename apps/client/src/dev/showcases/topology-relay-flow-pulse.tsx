@@ -53,14 +53,14 @@ const EDGES: Edge[] = [
     source: 'adapter-demo',
     target: 'agent-demo-a',
     type: 'binding',
-    data: { label: 'Per Chat' },
+    data: { label: 'Per chat' },
   },
   {
     id: 'binding:demo-edge-b',
     source: 'adapter-demo',
     target: 'agent-demo-b',
     type: 'binding',
-    data: { label: 'Per User' },
+    data: { label: 'Per person' },
   },
 ];
 

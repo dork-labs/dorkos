@@ -108,7 +108,7 @@ describe('ClaimFeed — "Answer in a channel" (DOR-882)', () => {
       expect(navigateSpy).toHaveBeenCalledWith({ to: '/channels', search: { id: 'room-42' } })
     );
     expect(toast.success).toHaveBeenCalledWith(
-      expect.stringContaining('DorkBot will answer this chat in a new channel')
+      expect.stringContaining('DorkBot will answer in a new channel')
     );
   });
 

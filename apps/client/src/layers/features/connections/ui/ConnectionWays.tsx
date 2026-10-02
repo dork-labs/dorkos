@@ -127,10 +127,9 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
       <div className="space-y-4">
         <div className="bg-muted/40 space-y-3 rounded-lg p-4">
           <div className="space-y-1">
-            <p className="text-sm font-medium">Set up when you connect your first app</p>
+            <p className="text-sm font-medium">Set up with your first app</p>
             <p className="text-muted-foreground text-sm">
-              Connect an app on the Connections page and DorkOS asks how to reach it before you sign
-              in. You only answer once.
+              Connect an app and DorkOS asks how to reach it. You answer once.
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={onOpenConnectionsPage}>
@@ -234,16 +233,14 @@ function AccountWayRow({
     >
       {linked && !reachesApps && (
         <p className="text-muted-foreground text-xs">
-          Your DorkOS account is linked, but it can’t reach apps right now. Agents can’t use the
-          apps connected through it until it can.
+          Linked, but can’t reach apps now. Its apps won’t work until then.
         </p>
       )}
       {!linked && !checkFailed && apps.length > 0 && (
-        <p className="text-muted-foreground text-xs">
-          These apps stopped working when the account was no longer linked. Linking this computer
-          again with the same DorkOS account can bring them back, unless its earlier link was
-          removed from that account. Otherwise, connect them again through a way that works.
-        </p>
+        <div className="text-muted-foreground space-y-0.5 text-xs">
+          <p>These apps stopped when the account was unlinked.</p>
+          <p>Linking the same DorkOS account again can restore them. Otherwise, reconnect them.</p>
+        </div>
       )}
     </WayRow>
   );
@@ -276,7 +273,7 @@ function AddWays({
   onManageAccount: () => void;
 }) {
   if (keys.length === 0 && !offerAccount) {
-    return <p className="text-muted-foreground text-sm">Every way this server offers is set up.</p>;
+    return <p className="text-muted-foreground text-sm">Every way is set up.</p>;
   }
   return (
     <ul className="divide-border divide-y rounded-lg border">
@@ -284,9 +281,7 @@ function AddWays({
         <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <div className="min-w-0 flex-1 basis-48">
             <p className="text-sm font-medium">Your DorkOS account</p>
-            <p className="text-muted-foreground text-xs">
-              Link this computer to it, then connect apps.
-            </p>
+            <p className="text-muted-foreground text-xs">Link this computer, then connect apps.</p>
           </div>
           <Button size="sm" variant="outline" onClick={onManageAccount}>
             Link account

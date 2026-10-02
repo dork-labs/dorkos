@@ -102,7 +102,7 @@ export function ManagementReviewDialog({
             {presentation?.title ?? 'Review connection request'}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="text-foreground">
-            Check the account, agent, and exact actions before deciding.
+            Check the account, agent and actions first.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-4 pb-4">
@@ -111,7 +111,7 @@ export function ManagementReviewDialog({
           ) : reviewQuery.isError ? (
             <QueryErrorState
               title="Couldn’t load this request"
-              description="It may have expired or belong to another signed-in owner."
+              description="It may have expired or belong to another owner."
               onRetry={() => void reviewQuery.refetch()}
               isRetrying={reviewQuery.isFetching}
             />
@@ -127,8 +127,7 @@ export function ManagementReviewDialog({
                   <div>
                     <p className="text-sm font-medium">This request can’t be approved</p>
                     <p className="text-muted-foreground mt-1 text-sm">
-                      The account, the agent or how DorkOS reaches the app changed after this
-                      request was made. You can still deny it.
+                      The account, agent or app setup changed since. You can still deny it.
                     </p>
                   </div>
                 </div>
@@ -139,9 +138,9 @@ export function ManagementReviewDialog({
                   role="alert"
                   className="border-destructive/30 bg-destructive/5 rounded-lg border p-3"
                 >
-                  <p className="text-sm font-medium">We couldn’t confirm your decision</p>
+                  <p className="text-sm font-medium">Couldn’t confirm your decision</p>
                   <p className="text-muted-foreground mt-1 text-sm">
-                    Reload the request to check what the server recorded before deciding again.
+                    Reload the request to see what was recorded.
                   </p>
                 </div>
               )}
@@ -166,18 +165,18 @@ export function ManagementReviewDialog({
                     {authenticationState === 'connected'
                       ? 'Sign-in finished and the account is ready.'
                       : authenticationState === 'expired'
-                        ? 'The sign-in took too long and ended. You can connect it yourself on the Connections page.'
+                        ? 'The sign-in timed out. Connect it yourself on the Connections page.'
                         : authenticationState === 'start_unknown'
-                          ? 'DorkOS couldn’t tell whether the sign-in started. You can connect it yourself on the Connections page.'
+                          ? 'Not sure the sign-in started. Connect it yourself on the Connections page.'
                           : authenticationState === 'failed'
-                            ? 'Sign-in didn’t finish. You can connect it yourself on the Connections page.'
+                            ? 'Sign-in didn’t finish. Connect it yourself on the Connections page.'
                             : authenticationState === 'pending' ||
                                 authenticationState === 'starting' ||
                                 authenticationState === 'checking'
-                              ? 'Finish signing in to the service. This page will update when the account is ready.'
+                              ? 'Finish signing in. This page updates when the account is ready.'
                               : authenticationState === 'check_failed'
-                                ? 'The account may still be connected. Check again before starting another request.'
-                                : 'Approval did not connect an account. Continue to the service and finish signing in.'}
+                                ? 'The account may be connected. Check again before another request.'
+                                : 'No account connected yet. Continue to the service to sign in.'}
                   </p>
                   {authenticationState === 'check_failed' ? (
                     <Button onClick={() => void poll.refetch()} disabled={poll.isFetching}>
@@ -253,7 +252,7 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
   if (context.kind === 'unavailable') {
     return (
       <p className="text-muted-foreground rounded-lg border p-4 text-sm">
-        This older request does not have enough verified detail to approve safely.
+        This older request lacks the detail to approve safely.
       </p>
     );
   }
@@ -305,24 +304,29 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
       {context.kind === 'disconnect' && (
         <p data-testid="connector-review-impact" className="text-sm font-medium">
           {context.everyAgent
-            ? 'This will remove this account from every agent. It is shared with every agent now.'
-            : `This will remove this account from ${context.affectedAgentCount} ${
+            ? 'Every agent loses this account. It’s shared with every agent now.'
+            : `Removes this account from ${context.affectedAgentCount} ${
                 context.affectedAgentCount === 1 ? 'agent' : 'agents'
               }.`}
         </p>
       )}
       {context.kind === 'remove_agent_access' && context.keptThroughEveryAgent.length > 0 && (
-        <p
+        <div
           role="note"
           data-testid="connector-review-every-agent-kept"
-          className="bg-muted/40 rounded-lg p-3 text-sm"
+          className="bg-muted/40 space-y-1 rounded-lg p-3 text-sm"
         >
-          {context.agent.displayName} keeps {context.keptThroughEveryAgent.length}{' '}
-          {context.keptThroughEveryAgent.length === 1 ? 'action' : 'actions'} on{' '}
-          {context.connection.label}, because this account is shared with every agent. Approving
-          removes only what was given to {context.agent.displayName} by name. To take it all away,
-          stop sharing {context.connection.label} with every agent in Connections.
-        </p>
+          <p>
+            {context.agent.displayName} keeps {context.keptThroughEveryAgent.length}{' '}
+            {context.keptThroughEveryAgent.length === 1 ? 'action' : 'actions'} on{' '}
+            {context.connection.label} through “Every agent”.
+          </p>
+          <p>Approving removes only what {context.agent.displayName} has by name.</p>
+          <p>
+            To remove it all, stop sharing {context.connection.label} with every agent in
+            Connections.
+          </p>
+        </div>
       )}
       {operations.length > 0 && (
         <div>
@@ -382,7 +386,7 @@ function ReviewOutcome({ review }: { review: ConnectorManagementReviewItem }) {
       >
         <p className="text-sm font-medium">Applying change</p>
         <p className="text-muted-foreground mt-1 text-sm">
-          This request is still being applied. Check again before making another change.
+          Still applying. Check again before another change.
         </p>
       </div>
     );
@@ -405,8 +409,8 @@ function ReviewOutcome({ review }: { review: ConnectorManagementReviewItem }) {
         : review.resolution.kind === 'applied'
           ? 'The requested change was applied.'
           : review.resolution.kind === 'outcome_unknown'
-            ? 'The request may have been applied. Check the connection before making another change.'
-            : 'Finish signing in before an account is connected.';
+            ? 'It may have been applied. Check the connection before another change.'
+            : 'Finish signing in to connect the account.';
   return (
     <div
       data-testid="connector-review-outcome"

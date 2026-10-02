@@ -55,12 +55,12 @@ export function pendingReviewLine(
     case 'unavailable':
       return {
         title: `${who} asks to change a connection`,
-        detail: 'Open it to see what it asks for.',
+        detail: 'Open it to see the request.',
       };
     case 'connect':
       return {
         title: `${who} asks to connect ${appAndAccount(context.toolkit, context.label, services)}`,
-        detail: 'You sign in before it is added. No agent can use it until you choose.',
+        detail: 'You sign in first. No agent gets it until you choose.',
       };
     case 'edit':
       return {
@@ -70,12 +70,12 @@ export function pendingReviewLine(
     case 'pause':
       return {
         title: `${who} asks to pause ${appAndAccount(context.connection.toolkit, context.connection.label, services)}`,
-        detail: 'Agents can’t use it until you resume it.',
+        detail: 'Agents can’t use it until it’s resumed.',
       };
     case 'resume':
       return {
         title: `${who} asks to resume ${appAndAccount(context.connection.toolkit, context.connection.label, services)}`,
-        detail: 'Agents it is shared with can use it again.',
+        detail: 'Agents it’s shared with get it back.',
       };
     case 'disconnect':
       return {
@@ -96,8 +96,8 @@ export function pendingReviewLine(
         title: `${who} asks to stop ${context.agent.displayName} using ${appAndAccount(context.connection.toolkit, context.connection.label, services)}`,
         detail:
           context.keptThroughEveryAgent.length > 0
-            ? `It keeps ${actions(context.keptThroughEveryAgent.length)}, because the app is still shared with every agent.`
-            : 'It loses its access to this app.',
+            ? `Still shared with every agent, so it keeps ${actions(context.keptThroughEveryAgent.length)}.`
+            : 'It loses access to this app.',
       };
   }
 }
@@ -127,13 +127,13 @@ export function unsettledReviewLine(
   if (review.resolution.kind === 'connect_authentication_required') {
     return {
       title: `Approved: finish signing in to ${app}`,
-      detail: 'Open it to finish signing in, or to see that it finished.',
+      detail: 'Open it to finish signing in.',
     };
   }
   if (review.resolution.kind === 'outcome_unknown') {
     return {
       title: `Check ${app} before another change`,
-      detail: 'DorkOS couldn’t confirm whether the approved change applied.',
+      detail: 'Couldn’t confirm the approved change took effect.',
     };
   }
   return null;

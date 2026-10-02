@@ -79,7 +79,7 @@ describe('NeedsYou', () => {
     await user.click(
       screen.getByRole('button', { name: /A program asks to pause Gmail \(work\)/ })
     );
-    expect(screen.getByText('Agents can’t use it until you resume it.')).toBeInTheDocument();
+    expect(screen.getByText('Agents can’t use it until it’s resumed.')).toBeInTheDocument();
     expect(onOpenReview).toHaveBeenCalledWith('review-1');
   });
 
@@ -102,9 +102,7 @@ describe('NeedsYou', () => {
     });
     renderStrip(transport);
 
-    expect(
-      await screen.findByText('Couldn’t check for requests waiting on you.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t check for waiting requests.')).toBeInTheDocument();
     vi.mocked(transport.getConnectorAgentRequests).mockResolvedValue([REQUEST]);
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(

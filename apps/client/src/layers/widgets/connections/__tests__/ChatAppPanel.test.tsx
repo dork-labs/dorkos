@@ -104,7 +104,7 @@ describe('ChatAppPanel', () => {
     const { transport } = renderPanel(instance({ enabled: false }));
 
     const fix = screen.getByTestId('app-panel-fix');
-    expect(fix).toHaveTextContent('Paused. No messages go in or out of Telegram.');
+    expect(fix).toHaveTextContent('Paused. No messages go in or out.');
     await user.click(within(fix).getByRole('button', { name: 'Resume' }));
     await waitFor(() =>
       expect(transport.toggleRelayAdapter).toHaveBeenCalledWith('telegram-1', true)
@@ -120,7 +120,7 @@ describe('ChatAppPanel', () => {
     );
 
     const fix = screen.getByTestId('app-panel-fix');
-    expect(fix).toHaveTextContent('Stopped working. Messages aren’t getting through Telegram.');
+    expect(fix).toHaveTextContent('Stopped working. Messages aren’t getting through.');
     expect(fix).not.toHaveTextContent('Bot token was revoked');
     // The raw error waits under a collapsed Details for a bug report.
     await user.click(within(fix).getByRole('button', { name: 'Details' }));
@@ -142,11 +142,11 @@ describe('ChatAppPanel', () => {
     // recorded, blocked and ignored ones included (DOR-2608), with the names
     // in them, so the dialog says so.
     expect(confirm).toHaveAccessibleDescription(
-      /So are its recent deliveries and its list of people who messaged it with no agent to answer, ignored and blocked ones included, with their names\..*anyone you blocked there will need blocking again\./
+      /So are its recent deliveries and everyone waiting, ignored or blocked\..*block those people again\./
     );
     expect(transport.removeRelayAdapter).not.toHaveBeenCalled();
     const feedReadsBefore = vi.mocked(transport.listUnclaimedChats).mock.calls.length;
-    await user.click(within(confirm).getByRole('button', { name: 'Remove' }));
+    await user.click(within(confirm).getByRole('button', { name: 'Remove Telegram' }));
     await waitFor(() => expect(transport.removeRelayAdapter).toHaveBeenCalledWith('telegram-1'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     // The server deleted its waiting chats too (DOR-2608), so the feed is read again.

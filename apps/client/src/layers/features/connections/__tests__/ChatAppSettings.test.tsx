@@ -195,7 +195,7 @@ describe('ChatAppSettings', () => {
       })
     );
     expect(await screen.findByTestId('chat-apps-off')).toHaveTextContent(
-      'Chat apps are off because DORKOS_RELAY_ENABLED is set on this computer'
+      'Chat apps are off: DORKOS_RELAY_ENABLED overrides the setting'
     );
     expect(screen.queryByRole('button', { name: 'Turn on chat apps' })).toBeNull();
   });
@@ -223,8 +223,6 @@ describe('ChatAppSettings', () => {
 
   it('says so plainly when there is nothing to set', async () => {
     renderSettings(createMockTransport({ getConfig: await configWith({ enabled: true }) }));
-    expect(
-      await screen.findByText(/no way to start agents from chat messages/)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Chat messages can’t start agents here/)).toBeInTheDocument();
   });
 });
