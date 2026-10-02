@@ -28,7 +28,12 @@ export class HeldInput {
     this.buttons.clear();
   }
 
-  async release(native: NativeInputTransport, end: number, signal: AbortSignal): Promise<boolean> {
+  async release(
+    native: NativeInputTransport,
+    end: number,
+    signal: AbortSignal,
+    permits: () => boolean
+  ): Promise<boolean> {
     const calls: (() => Promise<void>)[] = [
       ...[...this.buttons].map(
         (button) => () => native.dispatch({ kind: 'mouseUp', button }, signal)
@@ -43,9 +48,10 @@ export class HeldInput {
       () => native.cancelComposition(signal),
       () => native.cancelDrag(signal),
     ];
-    // All calls start before awaiting any one rejection/hang; each shares one deadline.
+    // Validate each unstarted call; valid-target calls start without waiting on earlier failures/hangs.
     const attempts = calls.map((call) => {
       try {
+        if (!permits()) return Promise.reject(new Error('INPUT_RELEASE_TARGET_REFUSED'));
         return within(Promise.resolve(call()), end);
       } catch {
         return Promise.reject(new Error('INPUT_RELEASE_FAILED'));

@@ -260,6 +260,18 @@ class InputQueue implements TabInput {
     if (this.nativePending === native) this.nativePending = null;
   }
 
+  private cleanupCurrent(binding: BrowserBinding): boolean {
+    try {
+      const current = this.readBinding();
+      if (!this.stopped && this.ports.stopGate.accepts(binding) && sameBinding(current, binding))
+        return true;
+    } catch {
+      // An uncertain current target cannot authorize a release onto another lifetime.
+    }
+    this.ports.stopGate.stop();
+    return false;
+  }
+
   private async resetHeld(binding: BrowserBinding, end: number): Promise<ResetResult> {
     let drained = true;
     const native = this.nativePending;
@@ -272,23 +284,13 @@ class InputQueue implements TabInput {
       }
     }
     // Draining can outlive this target; never release held state onto a replacement lifetime.
-    if (
-      this.stopped ||
-      !this.ports.stopGate.accepts(binding) ||
-      !sameBinding(this.readBinding(), binding)
-    ) {
-      this.ports.stopGate.stop();
-      return Object.freeze({ binding, status: 'stopped' });
-    }
+    if (!this.cleanupCurrent(binding)) return Object.freeze({ binding, status: 'stopped' });
     const cancel = new AbortController();
-    const released = await this.held.release(this.ports.native, end, cancel.signal);
+    const released = await this.held.release(this.ports.native, end, cancel.signal, () =>
+      this.cleanupCurrent(binding)
+    );
     cancel.abort();
-    const ready =
-      drained &&
-      released &&
-      !this.stopped &&
-      this.ports.stopGate.accepts(binding) &&
-      sameBinding(this.readBinding(), binding);
+    const ready = drained && released && this.cleanupCurrent(binding);
     if (!ready) this.ports.stopGate.stop();
     else {
       this.held.clear();
