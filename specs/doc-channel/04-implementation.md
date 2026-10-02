@@ -178,3 +178,11 @@ already includes the actual two indexes from final ingest integration; its typed
 census now includes document_event_batch while preserving unchanged existing
 receipt rows and SQL schema assertions. This is a review finding, not a clean
 leaf verdict. Fresh combined-head review must verify the correction.
+
+The first full composition verification passed all affected typecheck/lint tasks
+but stopped at the shared additional-context exhaustive test: its runtime census
+had not included the new doc_events member. It reported 2,806 passing shared tests
+and one failing census. The census is corrected without changing the context
+contract or weakening its exactness assertion; a fresh full verification remains
+required. Combined production composition is committed at 85376f914 before this
+census correction, not yet pushed or claimed clean.
