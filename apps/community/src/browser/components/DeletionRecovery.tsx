@@ -30,7 +30,7 @@ export function DeletionRecovery({ communityId }: { communityId: string }) {
   }, [communityId]);
   return (
     <main className="settings" aria-labelledby="deletion-recovery-title">
-      <p className="eyebrow">Community settings</p>
+      <p className="eyebrow">Space settings</p>
       <h1 id="deletion-recovery-title">Deletion status</h1>
       {loading ? (
         <p role="status">Checking your access…</p>
@@ -43,10 +43,10 @@ export function DeletionRecovery({ communityId }: { communityId: string }) {
       ) : (
         <section className="panel">
           <p role="alert">
-            {error || 'Deletion settings are only available to this community’s owner.'}
+            {error || 'Deletion settings are only available to this space’s owner.'}
           </p>
           <Button asChild variant="outline">
-            <a href="/">Back to your communities</a>
+            <a href="/">Back to your spaces</a>
           </Button>
         </section>
       )}

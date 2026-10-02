@@ -152,7 +152,7 @@ function failNext(page: Page, pattern: string, status: number) {
     route.fulfill({
       status,
       contentType: 'application/json',
-      body: JSON.stringify({ code: 'UNAVAILABLE', message: 'The community is unavailable.' }),
+      body: JSON.stringify({ code: 'UNAVAILABLE', message: 'The space is unavailable.' }),
     })
   );
 }
@@ -265,10 +265,10 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     await page.goto(`${baseUrl}/c/${randomUUID()}`);
     await expect(page).toHaveURL(`${baseUrl}/`);
     await expect(page.getByRole('status')).toHaveText(
-      'That community is not available to this account.'
+      'That space is not available to this account.'
     );
     await expect(
-      page.getByRole('list', { name: 'Choose a community' }).getByRole('button')
+      page.getByRole('list', { name: 'Choose a space' }).getByRole('button')
     ).toHaveCount(1);
     await page.getByRole('button', { name: /First Place/ }).click();
     await expect(page).toHaveURL(`${baseUrl}/c/${firstId}`);
@@ -279,9 +279,9 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     const stale = randomUUID();
     await page.evaluate((id) => localStorage.setItem('communityLastAuthorizedId', id), stale);
     await page.goto(baseUrl);
-    const heading = page.getByRole('heading', { name: 'Choose a community' });
+    const heading = page.getByRole('heading', { name: 'Choose a space' });
     await expect(heading).toBeFocused();
-    const choices = page.getByRole('list', { name: 'Choose a community' }).getByRole('button');
+    const choices = page.getByRole('list', { name: 'Choose a space' }).getByRole('button');
     await expect(choices).toHaveCount(2);
     await expect(choices.nth(0)).toContainText('First Place');
     await expect(choices.nth(1)).toContainText('Second Place');
@@ -309,12 +309,12 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     await expect(page).toHaveURL(`${baseUrl}/`);
     await expect(heading).toBeFocused();
     await expect(page.getByRole('status')).toHaveText(
-      'That community is not available to this account.'
+      'That space is not available to this account.'
     );
     const suspended = choices.filter({ hasText: 'Second Place' });
     await expect(suspended).toBeDisabled();
     await expect(suspended).toHaveAccessibleDescription(
-      'The person running this host has paused it. Your membership is unchanged.'
+      'The person running this server has paused it. Your membership is unchanged.'
     );
     await expect(suspended).toContainText('Suspended');
     await shot(page, 'chooser-suspended');
@@ -326,7 +326,7 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     // The notice is shown once, not on every later visit.
     await page.reload();
     await expect(heading).toBeVisible();
-    await expect(page.getByText('That community is not available to this account.')).toHaveCount(0);
+    await expect(page.getByText('That space is not available to this account.')).toHaveCount(0);
 
     // A removed member can still sign in, but that community is gone from the chooser and its
     // route returns here with the same notice as a community that never existed.
@@ -334,7 +334,7 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     await page.goto(`${baseUrl}/c/${firstId}`);
     await expect(page).toHaveURL(`${baseUrl}/`);
     await expect(page.getByRole('status')).toHaveText(
-      'That community is not available to this account.'
+      'That space is not available to this account.'
     );
     await expect(choices).toHaveCount(1);
     await expect(choices.first()).toContainText('Second Place');
@@ -342,7 +342,7 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     await page.goto(`${baseUrl}/c/${randomUUID()}`);
     await expect(page).toHaveURL(`${baseUrl}/`);
     await expect(page.getByRole('status')).toHaveText(
-      'That community is not available to this account.'
+      'That space is not available to this account.'
     );
     // A deleted community's link (its routes answer 410 COMMUNITY_DELETED) comes back the same.
     const deletedId = randomUUID();
@@ -355,7 +355,7 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     await page.goto(`${baseUrl}/c/${deletedId}`);
     await expect(page).toHaveURL(`${baseUrl}/`);
     await expect(page.getByRole('status')).toHaveText(
-      'That community is not available to this account.'
+      'That space is not available to this account.'
     );
     await pool.query(
       "UPDATE communities SET lifecycle='active',suspended_from_state=NULL,suspended_at=NULL WHERE id=$1",
@@ -372,22 +372,22 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     await page.goto(baseUrl);
     await expect(heading).toBeFocused();
     await expect(
-      page.getByText('This account does not have a community membership yet.')
+      page.getByText('This account does not have a space membership yet.')
     ).toBeVisible();
     await expect(
       page.getByText(
         'To join one, open an invitation link from one of its members in this browser.'
       )
     ).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Host administration' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Server administration' })).toHaveCount(0);
     await shot(page, 'chooser-zero');
     // A failed membership read says so and offers a retry instead of an empty chooser.
     await failNext(page, '**/api/v1/memberships', 503);
     await page.reload();
-    await expect(page.getByRole('alert')).toContainText('The community is unavailable.');
+    await expect(page.getByRole('alert')).toContainText('The space is unavailable.');
     await page.getByRole('button', { name: 'Try again' }).click();
     await expect(
-      page.getByText('This account does not have a community membership yet.')
+      page.getByText('This account does not have a space membership yet.')
     ).toBeVisible();
   } finally {
     await context.close();
@@ -404,9 +404,9 @@ test('the chooser routes one, several, suspended, removed, stale and zero member
     const operatorPage = await operator.newPage();
     await operatorPage.goto(baseUrl);
     await expect(
-      operatorPage.getByText('This account does not have a community membership yet.')
+      operatorPage.getByText('This account does not have a space membership yet.')
     ).toBeVisible();
-    await expect(operatorPage.getByRole('link', { name: 'Host administration' })).toHaveAttribute(
+    await expect(operatorPage.getByRole('link', { name: 'Server administration' })).toHaveAttribute(
       'href',
       '/host'
     );
@@ -438,9 +438,9 @@ test('an invitation survives reload, says when membership was not added, and sho
     await expect(page.getByText(/^Finish joining by /u)).toBeVisible();
     const account = page.getByRole('group', { name: 'Account' });
     await expect(
-      account.getByRole('button', { name: 'Create an account on this host' })
+      account.getByRole('button', { name: 'Create an account on this server' })
     ).toHaveAttribute('aria-pressed', 'true');
-    await expect(account.getByRole('button', { name: 'Sign in to this host' })).toHaveAttribute(
+    await expect(account.getByRole('button', { name: 'Sign in to this server' })).toHaveAttribute(
       'aria-pressed',
       'false'
     );
@@ -469,7 +469,7 @@ test('an invitation survives reload, says when membership was not added, and sho
       name: 'Your account was created, but membership was not added.',
     });
     await expect(partial).toBeFocused();
-    await expect(page.getByRole('alert')).toHaveText('The community did not respond.');
+    await expect(page.getByRole('alert')).toHaveText('The space did not respond.');
     await shot(page, 'invite-failed-after-account');
     const noor = await pool.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM members m JOIN "user" u ON u.id=m.user_id
@@ -480,7 +480,7 @@ test('an invitation survives reload, says when membership was not added, and sho
     const joined = page.getByRole('heading', { name: 'You’re in First Place.' });
     await expect(joined).toBeFocused();
     await shot(page, 'invite-joined');
-    await page.getByRole('button', { name: 'Open community' }).click();
+    await page.getByRole('button', { name: 'Open space' }).click();
     await expect(page).toHaveURL(`${baseUrl}/c/${firstId}`);
     await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
   } finally {
@@ -560,7 +560,7 @@ test('an invitation survives reload, says when membership was not added, and sho
     ).toBe(false);
     await page3.reload();
     await expect(rejoin).toBeVisible();
-    await page3.getByRole('button', { name: 'Rejoin community' }).click();
+    await page3.getByRole('button', { name: 'Rejoin space' }).click();
     await expect(page3.getByRole('heading', { name: 'You’re in First Place.' })).toBeVisible();
     expect(
       (await pool.query('SELECT active FROM members WHERE id=$1', [kaiId])).rows[0].active
@@ -620,12 +620,12 @@ test('a community its host took down reads as removed to members, and says why t
     await page.goto(`${baseUrl}/c/${secondId}`);
     await expect(page).toHaveURL(`${baseUrl}/`);
     const choice = page
-      .getByRole('list', { name: 'Choose a community' })
+      .getByRole('list', { name: 'Choose a space' })
       .getByRole('button')
       .filter({ hasText: 'Second Place' });
     await expect(choice).toBeDisabled();
-    await expect(choice).toContainText('Removed by its host');
-    await expect(choice).toHaveAccessibleDescription('This community was removed by its host.');
+    await expect(choice).toContainText('Removed by its server admin');
+    await expect(choice).toHaveAccessibleDescription('This space was removed by its server admin.');
     await shot(page, 'chooser-taken-down');
   } finally {
     await member.close();
@@ -636,11 +636,15 @@ test('a community its host took down reads as removed to members, and says why t
     await signIn(owner, operatorEmail);
     const page = await owner.newPage();
     await page.goto(`${baseUrl}/c/${secondId}/deletion`);
-    await expect(page.getByRole('heading', { name: 'Removed by the host' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Removed by the server admin' })).toBeVisible();
     await expect(
-      page.getByText(/^The host removed this community on .+\. The host received a legal order/)
+      page.getByText(
+        /^The server admin removed this space on .+\. The server admin received a legal order/
+      )
     ).toContainText('Reference: ORDER-42.');
-    await expect(page.getByText('Only the host can reverse this.', { exact: false })).toBeVisible();
+    await expect(
+      page.getByText('Only the server admin can reverse this.', { exact: false })
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
     await shot(page, 'owner-taken-down');
   } finally {

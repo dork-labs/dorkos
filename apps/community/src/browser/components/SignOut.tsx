@@ -53,7 +53,7 @@ export function SignedOutPanel() {
   return (
     <main className="grid min-h-dvh place-items-center p-5">
       <section className="panel w-full max-w-md p-6" aria-labelledby="signed-out-title">
-        <p className="eyebrow">DorkOS Community</p>
+        <p className="eyebrow">DorkOS Space</p>
         <h1 id="signed-out-title" ref={heading} tabIndex={-1}>
           You signed out of this browser.
         </h1>

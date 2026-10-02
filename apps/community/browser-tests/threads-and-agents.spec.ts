@@ -164,9 +164,9 @@ test('thread roots show their reply counts live, and agent messages say they are
     await writer.getByLabel('Your name').fill('Owner');
     await writer.getByLabel('Email').fill('owner@threads.test');
     await writer.getByLabel('Password').fill('password1234');
-    await writer.getByLabel('Community name').fill('Thread Place');
+    await writer.getByLabel('Space name').fill('Thread Place');
     await writer.getByLabel('First channel').fill('general');
-    await writer.getByRole('button', { name: 'Create community' }).click();
+    await writer.getByRole('button', { name: 'Create space' }).click();
     await expect(writer.getByRole('heading', { name: '# general' })).toBeVisible({
       timeout: 15000,
     });
@@ -265,7 +265,7 @@ test('thread roots show their reply counts live, and agent messages say they are
     await writer.emulateMedia({ colorScheme: 'dark' });
     await shot(writer, 'threads-and-agents-desktop-dark');
 
-    // DOR-2567: the thread row's two buttons, and the Manage, Attach, Send and Switch community
+    // DOR-2567: the thread row's two buttons, and the Manage, Attach, Send and Switch space
     // buttons around them, measured as painted. Text needs 4.5:1 against the button's fill at
     // rest and under the pointer, an icon 3:1, and the keyboard focus ring 3:1 against the page.
     const root = writer.getByRole('article').filter({ hasText: 'release notes' });
@@ -277,8 +277,8 @@ test('thread roots show their reply counts live, and agent messages say they are
       { name: 'Attach', control: attach, focus: attach.locator('input') },
       { name: 'Send', control: writer.getByRole('button', { name: 'Send' }) },
       {
-        name: 'Switch community',
-        control: writer.getByRole('button', { name: 'Switch community' }),
+        name: 'Switch space',
+        control: writer.getByRole('button', { name: 'Switch space' }),
       },
     ];
     // Send is only enabled with something to send.

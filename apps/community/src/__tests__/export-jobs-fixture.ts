@@ -22,7 +22,7 @@ export interface ExportCommunity {
   channelId: string;
 }
 
-/** Create a community for one test, so no test sees another's exports or content. */
+/** Create a space for one test, so no test sees another's exports or content. */
 export async function exportCommunity(
   h: TenancyHarness,
   operatorCookie: string,

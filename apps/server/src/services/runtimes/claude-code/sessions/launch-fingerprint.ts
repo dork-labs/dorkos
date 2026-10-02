@@ -165,6 +165,14 @@ export const PIN_DISPOSITIONS = {
   /** `settings.fastMode`. */
   fastMode: 'relaunch',
   /**
+   * `settings.env`, hashed: the flag-level environment a DorkOS credits launch
+   * pins (ADR 261001-000811) — the credits endpoint, which outranks a project's
+   * own `.claude/settings.json`, and the blanks over every routing or
+   * credential variable. The CLI reads it once at launch, so a warm process
+   * that missed a change would keep sending turns where it no longer should.
+   */
+  settingsEnv: 'relaunch',
+  /**
    * The turn's folder grants (`settings.permissions`, spec `agent-home-desk`
    * §4.2), as the sorted `path:access` list, so a reordered set rides and a
    * changed one relaunches. The CLI reads settings at launch and has no live
@@ -553,6 +561,14 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
           : false
       ),
       additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
+      settingsEnv: digest(
+        serializeEnv(
+          (typeof options.settings === 'object' && options.settings !== null
+            ? ((options.settings as { env?: Record<string, string | undefined> }).env ?? {})
+            : {}) as Readonly<Record<string, string | undefined>>,
+          new Set()
+        )
+      ),
     },
     live: {
       model: options.model,

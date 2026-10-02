@@ -73,7 +73,7 @@ const CASES: SummaryCase[] = [
       { kind: 'model', label: 'Opus 4.6', inherited: false },
       { kind: 'effort', label: 'High effort' },
       { kind: 'trust', label: 'Asks first', inherited: true },
-      { kind: 'section', label: 'billing Personal' },
+      { kind: 'section', label: 'runs on Personal' },
     ],
   },
   {
@@ -401,7 +401,7 @@ describe('buildRuntimeCardSummary', () => {
     ).toEqual([
       { kind: 'model', label: 'Automatic', inherited: true },
       { kind: 'section', label: 'Anthropic' },
-      { kind: 'section', label: 'billing Work' },
+      { kind: 'section', label: 'runs on Work' },
     ]);
   });
 });

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { company } from '@dorkos/shared/company';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
@@ -35,9 +36,9 @@ export default function TelemetryPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Telemetry</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 27, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is made by Blaze Ventures, LLC. It sends us nothing unless you turn it on. If you
+            DorkOS is made by {company.legalName}. It sends us nothing unless you turn it on. If you
             choose to help, you can share a little anonymous data so we can see roughly how many
             people run it. It is anonymous, not personal: no prompts, no code, no file paths, no
             session content, ever. This page shows the exact data, word for word, and how to switch

@@ -177,7 +177,7 @@ test('switching from A to B ends the A event stream before any B request', async
     await page.getByLabel('Email').fill('switcher@ui.test');
     await page.getByLabel('Password').fill('password1234');
     await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
-    await expect(page.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose a space' })).toBeVisible();
     const alphaStream = page.waitForRequest(
       (request) =>
         new URL(request.url()).pathname ===
@@ -191,8 +191,8 @@ test('switching from A to B ends the A event stream before any B request', async
     // From here on, read the order in which the host saw requests start and streams end.
     const mark = serverLog.length;
 
-    await page.getByRole('button', { name: 'Switch community' }).click();
-    await expect(page.getByRole('heading', { name: 'Choose a community' })).toBeVisible();
+    await page.getByRole('button', { name: 'Switch space' }).click();
+    await expect(page.getByRole('heading', { name: 'Choose a space' })).toBeVisible();
     await page.getByRole('button', { name: /Beta Place/ }).click();
     await expect(page).toHaveURL(`${baseUrl}/c/${beta.id}`);
     await expect(page.getByText('Only said in Beta')).toBeVisible();

@@ -36,9 +36,9 @@ type DeletionStatus = {
 
 /** What a cancelled deletion returns to, said plainly. */
 const RETURNS_TO: Record<'archived' | 'suspended' | 'held', string> = {
-  archived: 'The community will return as an archive. People can read history after reconnecting.',
-  suspended: 'The community will return to its suspension. The host decides when it resumes.',
-  held: 'The community will return to the host’s hold. People can read it, and you can export it.',
+  archived: 'The space will return as an archive. People can read history after reconnecting.',
+  suspended: 'The space will return to its suspension. The server admin decides when it resumes.',
+  held: 'The space will return to the server admin’s hold. People can read it, and you can export it.',
 };
 type Conflict = { code?: string; message?: string; current?: Settings };
 type DialogKind = 'archive' | 'restore' | 'delete' | 'cancel-delete';
@@ -391,10 +391,10 @@ export function CommunityAdministration({
         await refresh();
       },
       deletion?.returnsTo === 'held'
-        ? 'Deletion cancelled. The community is on hold again.'
+        ? 'Deletion cancelled. The space is on hold again.'
         : deletion?.returnsTo === 'suspended'
-          ? 'Deletion cancelled. The community is suspended again.'
-          : 'Deletion cancelled. The community remains archived.',
+          ? 'Deletion cancelled. The space is suspended again.'
+          : 'Deletion cancelled. The space remains archived.',
       false,
       false
     );
@@ -403,7 +403,7 @@ export function CommunityAdministration({
   if (!settings && !deletion && !error)
     return (
       <div role="status" className="panel p-6">
-        Loading community settings…
+        Loading space settings…
       </div>
     );
   if (!settings && !deletion)
@@ -419,7 +419,7 @@ export function CommunityAdministration({
     );
   if (deletion)
     return (
-      <div className="settings-grid" aria-label="Community administration">
+      <div className="settings-grid" aria-label="Space administration">
         {error && !dialog && (
           <Notice role="alert" tone="error" className="admin-full-width">
             {error}
@@ -431,20 +431,20 @@ export function CommunityAdministration({
           </Notice>
         )}
         <section className="panel admin-full-width">
-          <h3>{deletion.removedByHost ? 'Removed by the host' : 'Deletion scheduled'}</h3>
+          <h3>{deletion.removedByHost ? 'Removed by the server admin' : 'Deletion scheduled'}</h3>
           {deletion.removedByHost && (
             <p>
               {deletion.takedown
-                ? `The host removed this community on ${new Date(
+                ? `The server admin removed this space on ${new Date(
                     deletion.takedown.createdAt
                   ).toLocaleDateString(undefined, { dateStyle: 'long' })}. ${
                     COMMUNITY_TAKEDOWN_CATEGORY_SENTENCES[deletion.takedown.category]
                   }${deletion.takedown.reference ? ` Reference: ${deletion.takedown.reference}.` : ''}`
-                : 'This community was removed by its host.'}
+                : 'This space was removed by its server admin.'}
             </p>
           )}
           <p>
-            This community is unavailable and will be permanently deleted after{' '}
+            This space is unavailable and will be permanently deleted after{' '}
             <strong>{formatDeadline(deletion.deleteAfter)}</strong>.
           </p>
           <p role="timer" className="eyebrow">
@@ -452,19 +452,19 @@ export function CommunityAdministration({
           </p>
           {deletion.removedByHost ? (
             <p className="small muted">
-              Only the host can reverse this. The community can no longer be exported.
+              Only the server admin can reverse this. The space can no longer be exported.
             </p>
           ) : deletion.requestedBy === 'host' ? (
             <p className="small muted">
-              The host started this deletion after the notice date it published. Only the host can
-              cancel it. The community can no longer be exported.
+              The server admin started this deletion after the notice date they published. Only the
+              server admin can cancel it. The space can no longer be exported.
             </p>
           ) : (
             <>
               <p className="small muted">
                 Cleanup is {deletion.state ?? 'waiting'}
-                {deletion.attempts ? ` after ${deletion.attempts} attempts` : ''}. The community
-                cannot be exported while its deletion is pending.{' '}
+                {deletion.attempts ? ` after ${deletion.attempts} attempts` : ''}. The space cannot
+                be exported while its deletion is pending.{' '}
                 {deletion.returnsTo ? RETURNS_TO[deletion.returnsTo] : ''} Cancelling does not
                 restore old credentials.
               </p>
@@ -481,7 +481,7 @@ export function CommunityAdministration({
           )}
         </section>
         {dialog === 'cancel-delete' && (
-          <FocusDialog title="Cancel community deletion?" onClose={resetDialog} error={error}>
+          <FocusDialog title="Cancel space deletion?" onClose={resetDialog} error={error}>
             <p>{RETURNS_TO[deletion.returnsTo ?? 'archived']}</p>
             <Label className="field" htmlFor="cancel-delete-password">
               Password
@@ -513,7 +513,7 @@ export function CommunityAdministration({
   const current = settings!;
   const editable = editor && current.lifecycle === 'active';
   return (
-    <div className="settings-grid" aria-label="Community administration">
+    <div className="settings-grid" aria-label="Space administration">
       {error && !dialog && (
         <Notice role="alert" tone="error" className="admin-full-width">
           {error}
@@ -528,10 +528,11 @@ export function CommunityAdministration({
         <section className="panel admin-full-width">
           <h3>On hold</h3>
           <p className="muted">
-            The host has put this community on hold. Members can read it, but no one can post, join,
-            or change settings. {owner && 'You can still export it or schedule its deletion. '}
-            Archive, restore, and ownership transfer are unavailable until the host releases the
-            hold.
+            The server admin has put this space on hold. Members can read it, but no one can post,
+            join, or change settings.{' '}
+            {owner && 'You can still export it or schedule its deletion. '}
+            Archive, restore, and ownership transfer are unavailable until the server admin releases
+            the hold.
           </p>
         </section>
       )}
@@ -576,7 +577,7 @@ export function CommunityAdministration({
                 <img
                   className="community-icon-preview"
                   src={tenantApiPath('/api/v1/icon')}
-                  alt="Current community icon"
+                  alt="Current space icon"
                 />
               )}
               <div className="row flex-wrap gap-2">
@@ -645,7 +646,7 @@ export function CommunityAdministration({
               Save access
             </Button>
           </form>
-          <p className="small muted mb-0">Community ID: {current.communityId}</p>
+          <p className="small muted mb-0">Space ID: {current.communityId}</p>
         </section>
       )}
       {editor && (
@@ -670,7 +671,7 @@ export function CommunityAdministration({
         <section className="panel admin-full-width">
           <h3>Danger zone</h3>
           <p className="small muted">
-            Archive preserves history. Deletion permanently removes this community after seven days.
+            Archive preserves history. Deletion permanently removes this space after seven days.
           </p>
           <div className="row flex-wrap gap-2">
             {current.lifecycle !== 'held' && (
@@ -678,7 +679,7 @@ export function CommunityAdministration({
                 variant="destructive"
                 onClick={() => setDialog(current.lifecycle === 'archived' ? 'restore' : 'archive')}
               >
-                {current.lifecycle === 'archived' ? 'Restore community' : 'Archive community'}
+                {current.lifecycle === 'archived' ? 'Restore space' : 'Archive space'}
               </Button>
             )}
             <Button variant="destructive" onClick={() => setDialog('delete')}>
@@ -727,7 +728,7 @@ export function CommunityAdministration({
               disabled={busy || !password || (dialog === 'archive' && confirmName !== current.name)}
               onClick={() => void submitLifecycle()}
             >
-              {dialog === 'archive' ? 'Archive community' : 'Restore community'}
+              {dialog === 'archive' ? 'Archive space' : 'Restore space'}
             </Button>
           </div>
         </FocusDialog>
@@ -739,7 +740,7 @@ export function CommunityAdministration({
           error={error}
         >
           <p>
-            Access ends immediately. After seven days, the community and its files are permanently
+            Access ends immediately. After seven days, the space and its files are permanently
             removed.
           </p>
           <p className="small">

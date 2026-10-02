@@ -41,13 +41,13 @@ export function registerHostLimitRoutes(
         [communityId]
       );
       await assertHostActor(client, actor, now());
-      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       if (community.rows[0].lifecycle === 'deletion_pending') {
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community is being deleted.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'This space is being deleted.');
       }
       const current = await readLimits(client, communityId, 'FOR UPDATE');
       if (current.limitsVersion !== body.limitsVersion) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community limits changed. Read them again.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Space limits changed. Read them again.');
       }
       // Lowering a limit below current use removes nothing; it refuses only the next growth.
       // The version is checked again in the write itself: with no row yet there is nothing to
@@ -63,7 +63,7 @@ export function registerHostLimitRoutes(
         [communityId, body.maxActiveMembers, body.maxStorageBytes, body.limitsVersion]
       );
       if (!updated.rows[0]) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community limits changed. Read them again.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Space limits changed. Read them again.');
       }
       await recordHostAudit(client, actor, {
         action: 'community.limits',
@@ -93,7 +93,7 @@ export function registerHostLimitRoutes(
         communityId,
       ]);
       await assertHostActor(client, actor, now());
-      if (!community.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!community.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       // The member row's lock orders this against agent enrollment, which locks it too.
       const member = await client.query(
         'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 FOR SHARE',
@@ -138,7 +138,7 @@ export function registerHostLimitRoutes(
     await authority.require(c, 'communities:read');
     const communityId = parseHostCommunityId(c.req.param('id'));
     const [usage] = await readUsage(pool, { communityId });
-    if (!usage) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    if (!usage) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
     return json(c, CommunityAdminUsageSchema, usage);
   });
 

@@ -14,6 +14,7 @@ const mockManager = vi.hoisted(() => ({
   unlink: vi.fn(),
   cancelLink: vi.fn(),
   getSummary: vi.fn(),
+  checkLink: vi.fn(),
 }));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({
   getCloudLinkManager: () => mockManager,
@@ -43,11 +44,32 @@ const mockV1 = vi.hoisted(() => ({
 vi.mock('../../services/core/cloud/v1-client.js', () => mockV1);
 
 const mockCredits = vi.hoisted(() => ({
-  creditsFlagEnabled: vi.fn(() => false),
-  creditsWiringReport: vi.fn(() => ({ enabled: false, ready: false, runtimes: {} })),
-  primeCreditsInference: vi.fn(async () => false),
+  creditsKilled: vi.fn(() => false),
 }));
-vi.mock('../../services/core/cloud/credits-inference.js', () => mockCredits);
+vi.mock('../../services/core/cloud/credits-availability.js', () => mockCredits);
+
+const STATUS = { enabled: true, killed: false, linked: true, ready: false, runtimes: {} };
+const mockCreditsRuntimes = vi.hoisted(() => ({
+  creditsStatus: vi.fn(async () => STATUS as unknown),
+  creditsRuntimeViews: vi.fn(() => [] as unknown[]),
+}));
+vi.mock('../../services/core/cloud/credits-runtimes.js', () => mockCreditsRuntimes);
+
+const mockCreditsDefaults = vi.hoisted(() => ({
+  setCreditsDefault: vi.fn(),
+  undoFilledDefaults: vi.fn(() => []),
+  dismissCreditsNotice: vi.fn(),
+}));
+vi.mock('../../services/core/cloud/credits-defaults.js', () => mockCreditsDefaults);
+
+// Whether login is on, for the person-only bar on the link check.
+const posture = vi.hoisted(() => ({ authEnabled: false }));
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'auth' ? { enabled: posture.authEnabled } : undefined),
+    onChange: () => () => {},
+  },
+}));
 
 import cloudRouter from '../cloud.js';
 
@@ -65,8 +87,13 @@ const server = listeningServer(app);
 describe('cloud routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCredits.creditsFlagEnabled.mockReturnValue(false);
-    mockCredits.creditsWiringReport.mockReturnValue({ enabled: false, ready: false, runtimes: {} });
+    mockCredits.creditsKilled.mockReturnValue(false);
+    mockV1.isCloudLinked.mockReturnValue(true);
+    mockCreditsRuntimes.creditsStatus.mockResolvedValue(STATUS);
+    mockCreditsRuntimes.creditsRuntimeViews.mockReturnValue([
+      { type: 'claude-code', capabilities: { credits: { protocol: 'anthropic-messages' } } },
+      { type: 'codex', capabilities: {} },
+    ]);
   });
 
   describe('POST /api/cloud/link/start', () => {
@@ -155,6 +182,40 @@ describe('cloud routes', () => {
       });
       const res = await request(server).get('/api/cloud/status').expect(200);
       expect(res.body.linked).toBe(false);
+    });
+  });
+
+  describe('POST /api/cloud/link/check', () => {
+    it('asks the account now and answers the summary that results', async () => {
+      manager.checkLink.mockResolvedValue({
+        linked: false,
+        accountLabel: null,
+        lastHeartbeatAt: null,
+      });
+      const res = await request(server).post('/api/cloud/link/check').expect(200);
+      expect(res.body).toEqual({ linked: false, accountLabel: null, lastHeartbeatAt: null });
+      expect(manager.checkLink).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an agent, which never needs it, and checks nothing', async () => {
+      manager.checkLink.mockClear();
+      await request(server)
+        .post('/api/cloud/link/check')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .expect(403);
+      await request(server)
+        .post('/api/cloud/link/check')
+        .set('x-dorkos-approval', 'approval-token-abc')
+        .expect(403);
+      posture.authEnabled = true;
+      try {
+        // Login on and no browser session: an API key, or nothing at all.
+        const res = await request(server).post('/api/cloud/link/check').expect(403);
+        expect(res.body.code).toBe('person_only');
+      } finally {
+        posture.authEnabled = false;
+      }
+      expect(manager.checkLink).not.toHaveBeenCalled();
     });
   });
 
@@ -272,21 +333,70 @@ describe('cloud routes', () => {
       expect(res.body).toEqual({ available: false });
     });
 
-    it('reports the credits path as off, and selecting it mints nothing', async () => {
+    it('reports the credits status, which carries no credential', async () => {
       const res = await request(server).get('/api/cloud/credits').expect(200);
-      expect(res.body.enabled).toBe(false);
-      const selected = await request(server).post('/api/cloud/credits/select').expect(200);
-      expect(selected.body.enabled).toBe(false);
-      expect(selected.body.ready).toBe(false);
-      expect(mockCredits.primeCreditsInference).not.toHaveBeenCalled();
+      expect(res.body).toEqual(STATUS);
     });
 
-    it('delegates credits selection without supplying a local instance reference', async () => {
-      mockCredits.creditsFlagEnabled.mockReturnValue(true);
-      mockCredits.creditsWiringReport.mockReturnValue({ enabled: true, ready: true, runtimes: {} });
-      const selected = await request(server).post('/api/cloud/credits/select').expect(200);
-      expect(mockCredits.primeCreditsInference).toHaveBeenCalledExactlyOnceWith();
-      expect(selected.body.ready).toBe(true);
+    it('records a person’s pick of credits as the runtime’s default', async () => {
+      await request(server)
+        .put('/api/cloud/credits/default')
+        .send({ runtime: 'claude-code', useCredits: true })
+        .expect(200);
+      expect(mockCreditsDefaults.setCreditsDefault).toHaveBeenCalledExactlyOnceWith(
+        'claude-code',
+        true
+      );
+    });
+
+    it('refuses to set credits on a runtime that does not declare them', async () => {
+      await request(server)
+        .put('/api/cloud/credits/default')
+        .send({ runtime: 'codex', useCredits: true })
+        .expect(400);
+      expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
+    });
+
+    it('refuses to turn credits on while they cannot be had, so no turn is set up to fail', async () => {
+      mockV1.isCloudLinked.mockReturnValue(false);
+      await request(server)
+        .put('/api/cloud/credits/default')
+        .send({ runtime: 'claude-code', useCredits: true })
+        .expect(409);
+      mockV1.isCloudLinked.mockReturnValue(true);
+      mockCredits.creditsKilled.mockReturnValue(true);
+      await request(server)
+        .put('/api/cloud/credits/default')
+        .send({ runtime: 'claude-code', useCredits: true })
+        .expect(409);
+      expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
+    });
+
+    it('always lets a person go back to their own sign-in', async () => {
+      mockV1.isCloudLinked.mockReturnValue(false);
+      mockCredits.creditsKilled.mockReturnValue(true);
+      await request(server)
+        .put('/api/cloud/credits/default')
+        .send({ runtime: 'claude-code', useCredits: false })
+        .expect(200);
+      expect(mockCreditsDefaults.setCreditsDefault).toHaveBeenCalledWith('claude-code', false);
+    });
+
+    it('undoes the filled-in defaults and settles notices', async () => {
+      await request(server).post('/api/cloud/credits/undo-filled').expect(200);
+      expect(mockCreditsDefaults.undoFilledDefaults).toHaveBeenCalledOnce();
+      await request(server)
+        .post('/api/cloud/credits/notices/dismiss')
+        .send({ kind: 'signed-in', runtime: 'claude-code' })
+        .expect(200);
+      expect(mockCreditsDefaults.dismissCreditsNotice).toHaveBeenCalledWith({
+        kind: 'signed-in',
+        runtime: 'claude-code',
+      });
+      await request(server)
+        .post('/api/cloud/credits/notices/dismiss')
+        .send({ kind: 'nonsense' })
+        .expect(400);
     });
   });
 });

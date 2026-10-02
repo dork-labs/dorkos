@@ -130,7 +130,7 @@ export async function rotateHostApiKey(
     [input.keyId]
   );
   const old = current.rows[0];
-  if (!old) throw new ApiError(404, 'NOT_FOUND', 'Host API key not found.');
+  if (!old) throw new ApiError(404, 'NOT_FOUND', 'Server API key not found.');
   if (old.revoked_at || (old.expires_at && old.expires_at <= input.now)) {
     throw new ApiError(409, 'STATE_CONFLICT', 'Only a live key can be rotated.');
   }
@@ -177,7 +177,7 @@ export async function revokeHostApiKey(
     'SELECT revoked_at FROM host_api_keys WHERE id=$1 FOR UPDATE',
     [input.keyId]
   );
-  if (!current.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Host API key not found.');
+  if (!current.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Server API key not found.');
   if (!current.rows[0].revoked_at) {
     await client.query('UPDATE host_api_keys SET revoked_at=$2,revoked_by_user_id=$3 WHERE id=$1', [
       input.keyId,

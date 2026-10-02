@@ -78,7 +78,7 @@ export class CommunityReleaseResolutionError extends Error {
 
   /** Create a secret-free release-resolution failure. */
   constructor(code: CommunityReleaseResolutionError['code']) {
-    super(`Community release resolution failed (${code})`);
+    super(`Space server release resolution failed (${code})`);
     this.name = 'CommunityReleaseResolutionError';
     this.code = code;
   }

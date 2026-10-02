@@ -181,13 +181,13 @@ describe('HostOwnerReplacement', () => {
       'no mail',
       { capabilities: { mail: false, oidc: false } },
       [],
-      'This host can’t send email, so it can’t give the owner notice. Set up mail first.',
+      'This server can’t send email, so it can’t give the owner notice. Set up mail first.',
     ],
     [
       'a single sign-on operator',
       { hasPassword: false },
       [],
-      'Use a host API key with the ownership scope to do this.',
+      'Use a server API key with the ownership scope to do this.',
     ],
     [
       'a cooling-off',

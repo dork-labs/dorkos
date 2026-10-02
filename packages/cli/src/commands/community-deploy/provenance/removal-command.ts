@@ -90,7 +90,7 @@ export async function runRemoveUncertainCommand(
   input: RemoveUncertainCommandInput
 ): Promise<number> {
   const journal = await readLaunchJournal(input.journalPath);
-  if (!journal) throw new Error('The selected Community launch journal was not found');
+  if (!journal) throw new Error('The selected space server launch journal was not found');
   const context: RemovalOutputContext = {
     runId: input.runId,
     journal,

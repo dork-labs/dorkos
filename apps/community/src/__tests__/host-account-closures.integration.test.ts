@@ -651,7 +651,9 @@ describe('accounts that cannot be closed', () => {
 
   // Purpose: fails if the account that runs the host can be closed.
   it('refuses a host operator', async () => {
-    expect((await errorOf(await close(operatorUserId), 409)).message).toMatch(/operated this host/);
+    expect((await errorOf(await close(operatorUserId), 409)).message).toMatch(
+      /operated this server/
+    );
   });
 
   // Purpose: fails if an unknown, malformed, or already-erased account answers anything but 404.

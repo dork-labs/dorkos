@@ -221,7 +221,7 @@ it('refuses a fourth member with 409 MEMBER_LIMIT_REACHED, writes nothing, and a
   expect(refused.status).toBe(409);
   expect(await refused.json()).toEqual({
     code: 'MEMBER_LIMIT_REACHED',
-    message: 'This community is full. Ask its owner to make room.',
+    message: 'This space is full. Ask its owner to make room.',
   });
   expect({
     members: await count('SELECT 1 FROM members'),
@@ -698,7 +698,7 @@ it('caps active agents per person with 409 AGENT_LIMIT_REACHED, honouring one me
   expect(twentyFirst.status).toBe(409);
   expect(await twentyFirst.json()).toEqual({
     code: 'AGENT_LIMIT_REACHED',
-    message: 'You have reached your agent limit in this community.',
+    message: 'You have reached your agent limit in this space.',
   });
 
   h.config.limits.agentsPerOwner = 100;

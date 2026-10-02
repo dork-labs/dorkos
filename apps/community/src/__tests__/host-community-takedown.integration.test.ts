@@ -495,7 +495,7 @@ describe('a whole-community takedown with an evidence store', () => {
       expect(response.status, label).toBe(423);
       expect(await response.json(), label).toEqual({
         code: 'COMMUNITY_TAKEN_DOWN',
-        message: 'This community was removed by its host.',
+        message: 'This space was removed by its server admin.',
       });
     }
     expect(await stream.next()).toMatchObject({

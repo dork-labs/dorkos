@@ -2,16 +2,16 @@ import type { ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { formatMoney } from '@dork-labs/cloud-api/display';
 import type { CloudBillingPage } from '@dorkos/shared/cloud-schemas';
-import { openExternalLink } from '@/layers/shared/lib';
 import { Button, FieldCard, FieldCardContent } from '@/layers/shared/ui';
 import {
-  useAccountExport,
   useCloudOffers,
   useOpenBillingPage,
-  type BillingNotice,
   type OpenBillingPage,
 } from '../model/use-billing-page';
 import { useCloudPlan } from '../model/use-cloud-plan';
+import { BillingNoticeView } from './BillingNoticeView';
+import { DeleteAccount } from './DeleteAccount';
+import { ExportAccountData } from './ExportAccountData';
 
 /** How each offer interval reads after its price. Mechanism, not catalog. */
 const INTERVAL_WORDING: Record<string, string> = {
@@ -21,7 +21,8 @@ const INTERVAL_WORDING: Record<string, string> = {
 
 /**
  * Where money changes: the billing portal, buying credits and changing plan,
- * each a page in the person's own browser; and a copy of the account's data.
+ * each a page in the person's own browser; a copy of the account's data; and
+ * deleting the account.
  *
  * Self-contained so it can sit wherever account settings live. It owns one
  * {@link useOpenBillingPage} and shares it with every button inside, so only
@@ -56,6 +57,7 @@ export function ManageOnWeb() {
         <PlanOffers billing={billing} currentPlanId={data.entitlements.planId} />
         <BillingNoticeView notice={billing.notice} />
         <ExportAccountData />
+        <DeleteAccount />
       </FieldCardContent>
     </FieldCard>
   );
@@ -175,102 +177,6 @@ export function PlanOffers({ billing, currentPlanId }: PlanOffersProps) {
           );
         })}
       </ul>
-    </div>
-  );
-}
-
-/**
- * Ask for a copy of everything the DorkOS account holds, and say where it
- * stands: being prepared (asking again later gets the link), ready with its
- * download, or why it could not be asked for.
- *
- * Self-contained: it owns its own request and renders nothing with no cloud
- * account.
- */
-export function ExportAccountData() {
-  const { data } = useCloudPlan();
-  const { state, request, download } = useAccountExport();
-  if (!data?.available) return null;
-
-  return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium">Your data</p>
-      {state.kind === 'requested' ? (
-        state.export.downloadUrl !== null ? (
-          <div className="space-y-2">
-            <p className="text-sm">Your export is ready.</p>
-            <Button type="button" size="sm" variant="outline" onClick={download}>
-              Download your data
-              <ExternalLink className="size-3.5" aria-hidden />
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <p role="status" className="text-sm">
-              Your export is being prepared. Try again in a few minutes to get the link.
-            </p>
-            <Button type="button" size="sm" variant="outline" onClick={request}>
-              Try again
-            </Button>
-          </div>
-        )
-      ) : (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={state.kind === 'requesting'}
-          aria-busy={state.kind === 'requesting'}
-          onClick={request}
-        >
-          {state.kind === 'requesting' ? 'Asking…' : 'Export your account data'}
-        </Button>
-      )}
-      {state.kind === 'failed' && <BillingNoticeView notice={state.notice} />}
-    </div>
-  );
-}
-
-/**
- * Why a billing page did not open: the service's own words, with its own
- * link when it gave one, or one plain sentence of ours.
- *
- * The link opens straight from the click, so no browser counts it as a pop-up.
- *
- * @param props.notice - What to say, or `null` for nothing.
- */
-export function BillingNoticeView({ notice }: { notice: BillingNotice | null }) {
-  if (notice === null) return null;
-  if ('message' in notice) {
-    return (
-      <p role="alert" className="text-destructive text-sm">
-        {notice.message}
-      </p>
-    );
-  }
-  const { title, detail, requiredPlanDisplayName, actionUrl, actionLabel } = notice.problem;
-  return (
-    <div
-      role="alert"
-      className="border-destructive/40 bg-destructive/5 space-y-1 rounded-md border px-3 py-2"
-    >
-      {/* Every word below is the service's. */}
-      <p className="text-sm font-medium">{title}</p>
-      {detail !== undefined && <p className="text-sm">{detail}</p>}
-      {requiredPlanDisplayName !== undefined && (
-        <p className="text-muted-foreground text-sm">This needs {requiredPlanDisplayName}.</p>
-      )}
-      {actionUrl !== undefined && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => openExternalLink(actionUrl)}
-        >
-          {actionLabel ?? 'Open your account'}
-          <ExternalLink className="size-3.5" aria-hidden />
-        </Button>
-      )}
     </div>
   );
 }

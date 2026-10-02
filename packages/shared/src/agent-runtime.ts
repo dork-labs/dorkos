@@ -731,6 +731,23 @@ export interface RuntimeCapabilities {
   mediaOutput: RuntimeMediaOutput;
 
   /**
+   * Whether this runtime can run a turn on DorkOS credits, and the protocol it
+   * speaks to the credits endpoint (ADR `261001-000811`).
+   *
+   * **Absent means no**, and absence is the safe reading on purpose: the host
+   * hands a credits token only to a runtime that declares this, so an adapter
+   * that has not been taught how credits reach its backend can never be given
+   * a token it would mishandle or leak into a turn that bills somebody else.
+   * Declaring it is a promise the conformance suite holds the runtime to: a
+   * launch set to credits with no live token is refused, and a launch on the
+   * runtime's own sign-in carries no credits token.
+   *
+   * Static, like the rest of this object: whether credits are AVAILABLE right
+   * now (linked, not switched off) is a live answer on `GET /api/cloud/credits`.
+   */
+  credits?: RuntimeCreditsSupport;
+
+  /**
    * Runtime-specific extension point for metadata that does not fit the
    * common shape. Consumers must validate what they read — see ADR 0256.
    */
@@ -742,6 +759,20 @@ export interface RuntimeCapabilities {
  * {@link RuntimeCapabilities.mediaOutput}.
  */
 export type RuntimeMediaOutput = 'none' | 'attachments';
+
+/**
+ * The wire protocols the DorkOS credits endpoint serves, one per vendor API a
+ * runtime already speaks. Each maps to the variables that point a backend at
+ * the endpoint (`services/core/cloud/credits-inference.ts`). Codex and OpenCode
+ * join with their own protocols when they are wired.
+ */
+export type RuntimeCreditsProtocol = 'anthropic-messages';
+
+/** See {@link RuntimeCapabilities.credits}. */
+export interface RuntimeCreditsSupport {
+  /** The protocol this runtime speaks to the credits endpoint. */
+  protocol: RuntimeCreditsProtocol;
+}
 
 /**
  * How warm a session's backing process is, for a runtime that keeps one alive

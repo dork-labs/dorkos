@@ -1,6 +1,6 @@
 /**
  * The fixed sentences a message shows once its content is gone. The server writes them into
- * `entries.text`; the Community browser recognizes them to style a tombstone. This module is free
+ * `entries.text`; the space's browser pages recognize them to style a tombstone. This module is free
  * of server imports so both sides share one copy of the wording.
  *
  * @module content/tombstones
@@ -12,8 +12,8 @@
  */
 export const REMOVED_ENTRY_TEXT = {
   author: 'This message was deleted.',
-  moderator: 'This message was removed by a community admin.',
-  host: 'This message was removed by the host.',
+  moderator: 'This message was removed by a space admin.',
+  host: 'This message was removed by the server admin.',
 } as const;
 
 /** Who removed a message or file: its author (or their agent), an owner or admin, or the host. */
@@ -22,8 +22,20 @@ export type RemovedBy = keyof typeof REMOVED_ENTRY_TEXT;
 /** The text every erased message shows in place of what it said. */
 export const ERASED_ENTRY_TEXT = 'This message was erased.';
 
+/**
+ * The removal sentences written before DOR-2653, which said "community admin" and "host"
+ * instead of "space admin" and "server admin". Rows removed then still hold them in
+ * `entries.text`, so they stay tombstones: shown as removed, offered no actions, and refused as
+ * the text of a new post.
+ */
+const LEGACY_REMOVED_ENTRY_TEXTS = [
+  'This message was removed by a community admin.',
+  'This message was removed by the host.',
+] as const;
+
 const TOMBSTONE_TEXTS: ReadonlySet<string> = new Set([
   ...Object.values(REMOVED_ENTRY_TEXT),
+  ...LEGACY_REMOVED_ENTRY_TEXTS,
   ERASED_ENTRY_TEXT,
 ]);
 

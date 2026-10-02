@@ -124,7 +124,7 @@ test('owner preflight keeps heading focus and explicit submission', async ({ pag
   await expect(page.getByRole('heading', { name: 'Make it yours.' })).toBeFocused();
   await expect(page.getByLabel('Your name')).toHaveAttribute('data-slot', 'input');
   await expect(page.getByLabel('First channel')).toHaveValue('general');
-  await expect(page.getByRole('button', { name: 'Create community', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Create space', exact: true })).toHaveAttribute(
     'type',
     'submit'
   );
@@ -215,7 +215,7 @@ test('invited member switches modes, uses social sign-in and recovers joining', 
   });
   await page.goto(`${baseURL}/c/ui/join`);
   await expect(page.getByLabel('Your name')).toBeVisible();
-  await page.getByRole('button', { name: 'Sign in to this host', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in to this server', exact: true }).click();
   expect(signedIn).toBe(false);
   await expect(page.getByLabel('Your name')).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue with Google' }).click();
@@ -223,8 +223,8 @@ test('invited member switches modes, uses social sign-in and recovers joining', 
   expect(signedIn).toBe(false);
   await page.getByLabel('Email', { exact: true }).fill('member@example.test');
   await page.getByLabel('Password', { exact: true }).fill('test-password');
-  await page.getByRole('button', { name: 'Join community', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('The community did not respond.');
+  await page.getByRole('button', { name: 'Join space', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('The space did not respond.');
   const retry = page.getByRole('button', { name: 'Try again', exact: true });
   // Shared recovery controls retain a comfortable touch target.
   await expect(retry).toHaveAttribute('data-slot', 'button');

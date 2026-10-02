@@ -140,7 +140,7 @@ async function reconcileWithLock(
   };
   if (communities.rows.length > 1) {
     return block(client, generation, counts, [
-      issue('ambiguous_database', 1, 'Restore a zero- or one-community backup before retrying.'),
+      issue('ambiguous_database', 1, 'Restore a zero- or one-space backup before retrying.'),
     ]);
   }
 
@@ -323,7 +323,7 @@ async function reconcileWithLock(
       issue(
         'ambiguous_database',
         pendingKeys.size,
-        'Resolve cleanup ownership before bootstrapping the first community.'
+        'Resolve cleanup ownership before bootstrapping the first space.'
       )
     );
   }

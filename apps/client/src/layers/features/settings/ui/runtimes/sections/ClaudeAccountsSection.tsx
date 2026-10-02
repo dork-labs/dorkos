@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Trash2 } from 'lucide-react';
 import { claudeAccountId } from '@dorkos/shared/config-schema';
 import {
+  CREDITS_ACCOUNT_ID,
   FLOW_FLEET_SETTINGS_TAB_ID,
   IMPLICIT_ACCOUNT_ID,
   type AccountUsage,
@@ -20,6 +21,7 @@ import {
   accountWindow,
   claudeAccountOptions,
   cn,
+  CREDITS_ACCOUNT_LABEL,
   isAbsoluteAccountPath,
   shortenHomePath,
 } from '@/layers/shared/lib';
@@ -42,6 +44,7 @@ import {
   accountKeys,
   useAccountUsage,
   useClaudeAccounts,
+  useSetCreditsDefault,
   useSettingsDeepLink,
   useSlotContributions,
   useTransport,
@@ -59,6 +62,13 @@ import { LimitToProjectsDialog, OnlyForLine, ProjectLimitsList } from './Account
  * refuses an empty-string item value, so the absence needs a spelling.
  */
 const DEFAULT_ACCOUNT = '__default__';
+
+/**
+ * The DorkOS credits entry of the default picker (ADR 261001-000811). Not a
+ * path: choosing it records credits as Claude Code's default and leaves
+ * `defaultAccount`, the person's own sign-in, exactly as it was.
+ */
+const CREDITS_VALUE = '__credits__';
 
 /** One registered account, as `GET /api/config` reports it. */
 type Account = NonNullable<ServerConfig['claudeCode']>['accounts'][number];
@@ -113,7 +123,12 @@ type WritableAccount = { id: string; path: string; label: string | null; color: 
  * @returns Rows shaped for `PATCH /api/config`.
  */
 function toWritableAccounts(accounts: readonly Account[]): WritableAccount[] {
-  const taken = new Set(accounts.flatMap((account) => (account.id ? [account.id] : [])));
+  // `dorkos-credits` is reserved like `default`: a person's account named
+  // "DorkOS credits" must never take the id that means credits.
+  const taken = new Set([
+    CREDITS_ACCOUNT_ID,
+    ...accounts.flatMap((account) => (account.id ? [account.id] : [])),
+  ]);
   return accounts.map((account) => {
     const id = account.id ?? claudeAccountId({ label: account.label, path: account.path, taken });
     taken.add(id);
@@ -137,7 +152,11 @@ function withNewAccount(
   label: string | null
 ): WritableAccount[] {
   const existing = toWritableAccounts(accounts);
-  const id = claudeAccountId({ label, path, taken: existing.map((account) => account.id) });
+  const id = claudeAccountId({
+    label,
+    path,
+    taken: [CREDITS_ACCOUNT_ID, ...existing.map((account) => account.id)],
+  });
   return [...existing, { id, path, label, color: null }];
 }
 
@@ -172,8 +191,9 @@ export function ClaudeAccountsSection() {
   const { data: config } = useConfig();
   // Names every account the one way (the standalone default reads "Main (this
   // computer's sign-in)", decision §12).
-  const { nameFor } = useClaudeAccounts();
+  const { nameFor, credits } = useClaudeAccounts();
   const updateConfig = useUpdateConfig();
+  const setCreditsDefault = useSetCreditsDefault();
   const queryClient = useQueryClient();
 
   const [newPath, setNewPath] = useState('');
@@ -227,7 +247,15 @@ export function ClaudeAccountsSection() {
   // written differently from its row selects that row instead of appending a
   // second, unregistered-looking option for the same folder.
   const chosenPath = resolvedRow?.path ?? resolvedAccount;
-  const activeValue = inherited || !chosenPath ? DEFAULT_ACCOUNT : chosenPath;
+  // Credits as the default win the picker: that is where new sessions run.
+  // Offered while they can be had, and kept on the list while they are the
+  // default, so the picker never shows a value it has no option for.
+  const creditsOffered = credits !== null && (credits.available || credits.isDefault);
+  const activeValue = credits?.isDefault
+    ? CREDITS_VALUE
+    : inherited || !chosenPath
+      ? DEFAULT_ACCOUNT
+      : chosenPath;
   // The server lists `default` on its own only while no registered row has its
   // folder (an aliased default is listed under that row), so this record is the
   // one signal that Main needs a row of its own. Folders are never re-resolved here.
@@ -276,7 +304,30 @@ export function ClaudeAccountsSection() {
   }
 
   function chooseAccount(value: string) {
-    write({ defaultAccount: value === DEFAULT_ACCOUNT ? null : value });
+    setWriteError(null);
+    const onError = (err: unknown) => setWriteError(describeWriteFailure(err));
+    if (value === CREDITS_VALUE) {
+      setCreditsDefault.mutate({ runtime: 'claude-code', useCredits: true }, { onError });
+      return;
+    }
+    const ownDefault = value === DEFAULT_ACCOUNT ? null : value;
+    // Leaving credits: turn the credits default off first, then point the
+    // person's own default where they chose. Picking the sign-in already stored
+    // needs only the first write.
+    if (credits?.isDefault) {
+      setCreditsDefault.mutate(
+        { runtime: 'claude-code', useCredits: false },
+        {
+          onError,
+          onSuccess: () => {
+            const stored = inherited ? null : (claudeCode?.resolvedAccount ?? null);
+            if (ownDefault !== stored) write({ defaultAccount: ownDefault });
+          },
+        }
+      );
+      return;
+    }
+    write({ defaultAccount: ownDefault });
   }
 
   function addAccount() {
@@ -339,7 +390,7 @@ export function ClaudeAccountsSection() {
         {/* h3: the runtime card's sections sit under the Settings dialog's h2
             with no heading between on a phone, so an h4 skipped a level. */}
         <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-          Billing account
+          Runs on
         </h3>
         {/* Quiet by design: adding an account is a rare, deliberate act, and the
             fields would otherwise crowd the card every time it is opened. */}
@@ -362,9 +413,13 @@ export function ClaudeAccountsSection() {
           only the fallback. */}
       <SettingRow
         label="Default account"
-        description="New sessions bill this account unless the agent or the session picks another."
+        description="New sessions run on this unless the agent or the session picks another."
       >
-        <Select value={activeValue} onValueChange={chooseAccount}>
+        <Select
+          value={activeValue}
+          onValueChange={chooseAccount}
+          disabled={setCreditsDefault.isPending}
+        >
           <SelectTrigger
             className="w-52"
             aria-label="Default account"
@@ -383,9 +438,27 @@ export function ClaudeAccountsSection() {
                 {nameFor(option.path)}
               </SelectItem>
             ))}
+            {creditsOffered && (
+              <SelectItem value={CREDITS_VALUE}>{CREDITS_ACCOUNT_LABEL}</SelectItem>
+            )}
           </SelectContent>
         </Select>
       </SettingRow>
+
+      {/* Who chose credits, said calmly, and what happens when they cannot be
+          had: a credits session is refused, never moved onto a sign-in. */}
+      {credits?.isDefault && credits.chosenBy === 'default' && (
+        <p className="text-muted-foreground text-xs" data-testid="claude-credits-chosen-for-you">
+          DorkOS chose this when you linked your account, because Claude Code had no working
+          sign-in. Pick another account here to change it.
+        </p>
+      )}
+      {credits?.isDefault && !credits.available && (
+        <p className="text-muted-foreground text-xs" data-testid="claude-credits-unavailable">
+          DorkOS credits aren’t available right now, so new sessions here won’t start until you sign
+          in to your DorkOS account again or pick another account.
+        </p>
+      )}
 
       {/* Said in words only when no row can say it: Main never follows the
           server's own `$CLAUDE_CONFIG_DIR` (shared account contract rev 6d).

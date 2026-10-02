@@ -42,7 +42,9 @@ export interface AccountSwitch {
   /**
    * The accounts to offer, in the order the operator registered them.
    *
-   * REGISTERED rows only. A row with `id: null` describes a root nobody
+   * REGISTERED rows only, plus the DorkOS credits entry while credits can be
+   * chosen (it is no registry row, but a hint names it by id all the same).
+   * A row with `id: null` describes a root nobody
    * registered (the inherited `$CLAUDE_CONFIG_DIR`, `~/.claude`); a hint can only
    * name an account by id, so offering one would produce a pick the server has to
    * throw away. The unregistered root is reachable as the default option instead.
@@ -108,7 +110,7 @@ export interface AccountSwitch {
  * read settles the label is `undefined` — silence beats a confident wrong name.
  */
 export function useAccountSwitch(sessionId: string): AccountSwitch {
-  const { accounts, resolvedAccount, isMultiAccount, nameFor } = useClaudeAccounts();
+  const { accounts, resolvedAccount, isMultiAccount, nameFor, creditsEntry } = useClaudeAccounts();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const pendingAccount = useAppStore((s) => s.pendingAccount);
   const setPendingAccount = useAppStore((s) => s.setPendingAccount);
@@ -125,9 +127,12 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
     isMultiAccount
   );
 
-  const selectable = accounts.filter((account): account is SelectableAccount =>
-    Boolean(account.id)
-  );
+  // DorkOS credits ride at the end, as one more entry a person may pick for this
+  // session (ADR 261001-000811); the hint carries its id like any account's.
+  const selectable = [
+    ...accounts.filter((account): account is SelectableAccount => Boolean(account.id)),
+    ...(creditsEntry ? [creditsEntry as SelectableAccount] : []),
+  ];
   const isRegistered = (id: string) => selectable.some((account) => account.id === id);
 
   // An account can be unregistered from Settings while this menu is mounted and

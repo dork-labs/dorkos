@@ -146,6 +146,29 @@ describe('POST /:id/messages — the billing-account launch hint', () => {
     expect(opts?.accountHint).toBeUndefined();
   });
 
+  it('takes the hint on a bound session that has not settled on an account yet', async () => {
+    // A credits turn refused for want of a token launched nothing, so the
+    // session has no account on disk: "Use your Claude sign-in" is still a pick
+    // for the launch that has not happened (ADR 261001-000811).
+    vi.mocked(runtimeRegistry.persistSessionRuntime).mockResolvedValue(false);
+    const aware = fakeRuntime as unknown as Record<string, unknown>;
+    aware.checkLaunchAccount = vi.fn(async () => ({ ok: true, root: '/r', accountId: 'default' }));
+    aware.hasSettledAccount = vi.fn(async () => false);
+
+    const opts = await sendAndCapture({ account: 'default' });
+    expect(opts?.accountHint).toBe('default');
+  });
+
+  it('still ignores the hint on a bound session that has settled', async () => {
+    vi.mocked(runtimeRegistry.persistSessionRuntime).mockResolvedValue(false);
+    const aware = fakeRuntime as unknown as Record<string, unknown>;
+    aware.checkLaunchAccount = vi.fn(async () => ({ ok: true, root: '/r', accountId: 'default' }));
+    aware.hasSettledAccount = vi.fn(async () => true);
+
+    const opts = await sendAndCapture({ account: 'default' });
+    expect(opts?.accountHint).toBeUndefined();
+  });
+
   it('ignores the hint for a runtime that has no accounts', async () => {
     runtimeType = 'codex';
     fakeRuntime = new FakeAgentRuntime('codex');

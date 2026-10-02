@@ -8,11 +8,18 @@
  * @module features/continue-on-account/lib/continue-picker
  */
 import {
+  CREDITS_ACCOUNT_ID,
   IMPLICIT_ACCOUNT_ID,
   type ContinueOptionAccount,
   type ContinueOptionsResponse,
 } from '@dorkos/shared/account-usage';
-import { accountWindow, formatResetDay, limitSubject } from '@/layers/shared/lib';
+import {
+  accountWindow,
+  CREDITS_ACCOUNT_COLOR,
+  CREDITS_ACCOUNT_LABEL,
+  formatResetDay,
+  limitSubject,
+} from '@/layers/shared/lib';
 
 /** The server's list of candidate accounts, in its order. */
 export type ContinueOptionsList = ContinueOptionsResponse['ranking'];
@@ -43,6 +50,7 @@ export function isSelectable(row: ContinueOptionAccount): boolean {
  * @param now - The moment reset days are read from.
  */
 export function rowStatusText(row: ContinueOptionAccount, now: Date): string {
+  if (row.id === CREDITS_ACCOUNT_ID) return row.reason;
   if (!row.eligible) return row.reason;
   const week = accountWindow(row.usage, 'seven_day');
   if (!week || week.usedPct === null) return 'usage unknown';
@@ -212,4 +220,38 @@ export function canOpenPicker(
 ): boolean {
   if (identityGate) return true;
   return list?.accounts.some((row) => isOtherRuntime(row, sessionRuntime)) ?? false;
+}
+
+/**
+ * The DorkOS credits entry, shaped like the server's rows, for a session the
+ * server offers credits to (`continue-options.credits`, ADR 261001-000811).
+ * Listed after every account of the session's own runtime and never the
+ * recommendation: a person picks it, nothing picks it for them.
+ *
+ * @param sessionRuntime - The limited session's runtime.
+ */
+export function creditsContinueRow(sessionRuntime: string): ContinueOptionAccount {
+  return {
+    id: CREDITS_ACCOUNT_ID,
+    runtime: sessionRuntime,
+    label: CREDITS_ACCOUNT_LABEL,
+    color: CREDITS_ACCOUNT_COLOR,
+    eligible: true,
+    reason: 'paid from your DorkOS account',
+    usage: {
+      runtime: 'claude-code',
+      accountId: CREDITS_ACCOUNT_ID,
+      path: '',
+      label: CREDITS_ACCOUNT_LABEL,
+      color: CREDITS_ACCOUNT_COLOR,
+      subscriptionType: null,
+      plan: null,
+      credits: null,
+      spend: null,
+      windows: [],
+      state: 'unknown',
+      limit: null,
+      updatedAt: null,
+    },
+  };
 }

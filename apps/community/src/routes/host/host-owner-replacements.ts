@@ -49,7 +49,7 @@ function noticeRefusal(
 ): string | null {
   if (canSendNotice(kind)) return null;
   return config.mail === null
-    ? "This host can't send email, so it can't give the owner notice. Set up mail first."
+    ? "This server can't send email, so it can't give the owner notice. Set up mail first."
     : "This server can't send the owner's notice yet, so it can't replace an owner.";
 }
 const ReplacementPathSchema = z.strictObject({ communityId: z.uuid(), replacementId: z.uuid() });
@@ -111,7 +111,7 @@ export function registerHostOwnerReplacementRoutes(
     const body = await readJson(c, CommunityAdminOwnerReplacementRequestSchema);
     const communityId = parseHostCommunityId(c.req.param('id'));
     if (actor.kind === 'api_key' && body.password !== undefined)
-      throw new ApiError(400, 'STATE_CONFLICT', 'A host API key does not send a password.');
+      throw new ApiError(400, 'STATE_CONFLICT', 'A server API key does not send a password.');
     if (actor.kind === 'person') {
       // An operator who signs in only through single sign-on has no password to confirm. They
       // hear so first, whatever they sent, and use a key with this scope instead.
@@ -132,7 +132,7 @@ export function registerHostOwnerReplacementRoutes(
       throw new ApiError(
         409,
         'STATE_CONFLICT',
-        'This host has no single sign-on to name an account with.'
+        'This server has no single sign-on to name an account with.'
       );
     const token = randomToken();
     const result = await transaction(pool, (client) =>
@@ -168,7 +168,7 @@ export function registerHostOwnerReplacementRoutes(
     await authority.require(c, 'communities:ownership');
     const communityId = parseHostCommunityId(c.req.param('id'));
     const community = await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId]);
-    if (!community.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    if (!community.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
     const rows = await pool.query<OwnerReplacementRow>(
       `${hostReplacementSql} WHERE r.community_id=$1
        ORDER BY r.requested_at DESC,r.id DESC LIMIT ${LIST_LIMIT}`,
@@ -209,8 +209,7 @@ export function registerHostOwnerReplacementRoutes(
       const refusal = noticeRefusal(canSendNotice, config, 'owner_replacement.claim_reissued');
       if (refusal) throw new ApiError(409, 'NOTICE_DELIVERY_UNAVAILABLE', refusal);
       const owner = await currentOwnerAccount(client, ids.communityId);
-      if (!owner)
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community has no owner to notify.');
+      if (!owner) throw new ApiError(409, 'STATE_CONFLICT', 'This space has no owner to notify.');
       // The old token stops working here; no date moves.
       await client.query(
         `UPDATE owner_replacements SET claim_token_hash=$3,claim_reissued_at=$4

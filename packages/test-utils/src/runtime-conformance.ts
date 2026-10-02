@@ -575,6 +575,103 @@ export interface RuntimeConformanceOpts {
    * fixture with no backend, or a live-binary run with no seam to read.
    */
   directoryGrantsUnprovenReason?: string;
+  /**
+   * Drives ONE turn under a DorkOS credits scenario and reports what the
+   * backend was handed — the gate behind ADR `261001-000811`'s three negatives:
+   * a runtime that does not declare credits never receives a credits token; a
+   * declaring runtime set to credits with no live token refuses the turn and
+   * starts nothing; and a turn on the runtime's own sign-in carries no credits
+   * token, whatever the host holds.
+   *
+   * **Return the backend's input, never the suite's.** `handed` is everything
+   * the backend was given for the turn (its process environment, its client
+   * options, its request bodies), and the suite searches it for the token
+   * string. A driver that returned the scenario back would prove nothing.
+   *
+   * The driver installs `scenario.heldToken` as the host's live credits token
+   * (or clears it for `null`), and chooses `scenario.runsOn` the way a person
+   * would: for credits, by naming the `dorkos-credits` entry for the session.
+   * A runtime that does not declare credits is still asked to try, and must
+   * ignore the choice.
+   *
+   * Wire this, or declare {@link creditsUnprovenReason}; a runtime that supplies
+   * neither fails the case.
+   *
+   * @param runtime - The runtime under test.
+   * @param scenario - What the session runs on, and what token the host holds.
+   * @returns Whether the backend started, what it was handed, and the turn's events.
+   */
+  creditsTurn?: (
+    runtime: AgentRuntime,
+    scenario: CreditsTurnScenario
+  ) => Promise<CreditsTurnObservation>;
+  /**
+   * Why this run cannot see what its backend was handed for a credits turn, in
+   * a sentence somebody wrote (whitespace declares nothing). The same honest
+   * uses as {@link directoryGrantsUnprovenReason}.
+   */
+  creditsUnprovenReason?: string;
+}
+
+/** One credits scenario a {@link RuntimeConformanceOpts.creditsTurn} driver runs. */
+export interface CreditsTurnScenario {
+  /** What the session is set to run on. */
+  runsOn: 'credits' | 'own-sign-in';
+  /** The token the host holds for this turn, or `null` for none. */
+  heldToken: string | null;
+}
+
+/** What a {@link RuntimeConformanceOpts.creditsTurn} driver observed. */
+export interface CreditsTurnObservation {
+  /** Whether the backend was started (or sent a request) for this turn. */
+  launched: boolean;
+  /** Everything the backend was handed for this turn, searched for the token. */
+  handed: unknown;
+  /** The turn's events, in order. */
+  events: StreamEvent[];
+}
+
+/** The token string every credits conformance case installs. Never a real credential. */
+export const CONFORMANCE_CREDITS_TOKEN = 'conformance-credits-token-not-a-secret';
+
+/** The protocols a runtime may declare for credits (`RuntimeCapabilities.credits`). */
+const CREDITS_PROTOCOLS = ['anthropic-messages'];
+
+/**
+ * The credits declaration rule: a runtime wires the driver OR gives a reason it
+ * cannot, never both and never neither.
+ *
+ * @param wired - Whether {@link RuntimeConformanceOpts.creditsTurn} was supplied.
+ * @param reason - {@link RuntimeConformanceOpts.creditsUnprovenReason}; whitespace declares nothing.
+ * @returns What is wrong, or null when the declaration is honest.
+ */
+export function evaluateCreditsDeclaration(
+  wired: boolean,
+  reason: string | undefined
+): string | null {
+  const said = (reason ?? '').trim().length > 0;
+  if (wired && said) {
+    return 'this run wired `creditsTurn`, so the credits negatives ARE provable here and a reason they are not would be dead copy';
+  }
+  if (!wired && !said) {
+    return 'this run wired no `creditsTurn` driver and gave no reason it could not, so nothing here proves a credits token stays out of turns that did not choose credits (see RuntimeConformanceOpts.creditsTurn)';
+  }
+  return null;
+}
+
+/**
+ * Whether anything a backend was handed carries the token string.
+ *
+ * @param handed - What the driver observed.
+ * @param token - The token to look for.
+ */
+export function handedCarriesToken(handed: unknown, token: string): boolean {
+  try {
+    return JSON.stringify(handed ?? null).includes(token);
+  } catch {
+    // Something unserializable cannot be searched, which is not a pass.
+    return true;
+  }
 }
 
 /**
@@ -1375,6 +1472,8 @@ export function runtimeConformance(
     systemPromptAppendUnprovenReason,
     directoryGrantTurns,
     directoryGrantsUnprovenReason,
+    creditsTurn,
+    creditsUnprovenReason,
     echoesTriggerReason,
   } = opts;
 
@@ -3812,6 +3911,71 @@ export function runtimeConformance(
           // THE GATE (I5) is the second turn: a runtime that binds grants at
           // session start, or a backend whose rules only accumulate, fails there.
           expect(evaluateHandedGrants(CONFORMANCE_GRANT_TURNS, handed)).toEqual([]);
+        });
+      }
+    });
+
+    describe('DorkOS credits (ADR 261001-000811)', () => {
+      it('declares credits as nothing, or as a protocol the endpoint serves', () => {
+        const credits = makeRuntime().getCapabilities().credits;
+        if (credits === undefined) return;
+        expect(CREDITS_PROTOCOLS).toContain(credits.protocol);
+      });
+
+      it('either proves the credits negatives or says why they cannot be proven here', () => {
+        expect(
+          evaluateCreditsDeclaration(creditsTurn !== undefined, creditsUnprovenReason)
+        ).toBeNull();
+      });
+
+      if (creditsTurn) {
+        it('gives a turn on its own sign-in no credits token, whatever the host holds', async () => {
+          const runtime = makeRuntime();
+          const seen = await creditsTurn(runtime, {
+            runsOn: 'own-sign-in',
+            heldToken: CONFORMANCE_CREDITS_TOKEN,
+          });
+          expect(seen.launched, 'a turn on its own sign-in should run').toBe(true);
+          expect(
+            handedCarriesToken(seen.handed, CONFORMANCE_CREDITS_TOKEN),
+            'the credits token reached a turn that runs on the person’s own sign-in'
+          ).toBe(false);
+        });
+
+        it('never hands a credits token to a runtime that does not declare credits', async () => {
+          const runtime = makeRuntime();
+          if (runtime.getCapabilities().credits !== undefined) return;
+          const seen = await creditsTurn(runtime, {
+            runsOn: 'credits',
+            heldToken: CONFORMANCE_CREDITS_TOKEN,
+          });
+          expect(
+            handedCarriesToken(seen.handed, CONFORMANCE_CREDITS_TOKEN),
+            'a runtime that never declared credits was handed the credits token'
+          ).toBe(false);
+        });
+
+        it('refuses a turn set to credits with no live token, and starts nothing (fail closed)', async () => {
+          const runtime = makeRuntime();
+          if (runtime.getCapabilities().credits === undefined) return;
+          const seen = await creditsTurn(runtime, { runsOn: 'credits', heldToken: null });
+          expect(seen.launched, 'a credits turn with no token must not start the backend').toBe(
+            false
+          );
+          const refusal = seen.events.find((event) => event.type === 'error');
+          expect(refusal, 'a refused credits turn must say so').toBeDefined();
+          expect((refusal?.data as { code?: string }).code).toBe('credits_unavailable');
+        });
+
+        it('runs a turn set to credits on the credits token', async () => {
+          const runtime = makeRuntime();
+          if (runtime.getCapabilities().credits === undefined) return;
+          const seen = await creditsTurn(runtime, {
+            runsOn: 'credits',
+            heldToken: CONFORMANCE_CREDITS_TOKEN,
+          });
+          expect(seen.launched).toBe(true);
+          expect(handedCarriesToken(seen.handed, CONFORMANCE_CREDITS_TOKEN)).toBe(true);
         });
       }
     });

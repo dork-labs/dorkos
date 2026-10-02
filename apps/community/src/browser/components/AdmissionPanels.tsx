@@ -79,7 +79,7 @@ export function ReactivationReview({
         disabled={busy}
         onClick={onConfirm}
       >
-        Rejoin community
+        Rejoin space
         <ArrowRight size={17} aria-hidden="true" />
       </Button>
     </div>

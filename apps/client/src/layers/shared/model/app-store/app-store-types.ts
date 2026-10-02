@@ -161,6 +161,17 @@ export interface CoreSlice {
   setPendingAccount: (pick: PendingLaunchPick<'id'> | null) => void;
 
   /**
+   * A one-shot account for the NEXT send of one session: the "Use your own
+   * sign-in" action on a turn refused because DorkOS credits could not be
+   * reached sets it and retries (ADR 261001-000811). The send consumes it, so
+   * it rides exactly one message. The server applies it only while the session
+   * has not launched yet; a session that already has its account ignores it.
+   */
+  retryAccount: PendingLaunchPick<'id'> | null;
+  /** Set (or clear) the one-shot account for a session's next send. */
+  setRetryAccount: (pick: PendingLaunchPick<'id'> | null) => void;
+
+  /**
    * A living tour (DOR-419) requested by name from anywhere in the app — the
    * on-demand "Show me around" doors set it, and the tour host consumes and
    * clears it. A cross-feature request seam so features that cannot import the

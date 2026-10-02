@@ -49,6 +49,14 @@ import {
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from './services/core/config/tunnel-settings.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
+import {
+  revokeHeldCreditsToken,
+  startCreditsLifecycle,
+  stopCreditsLifecycle,
+} from './services/core/cloud/credits-inference.js';
+import { readCloudAccountKey } from './services/core/cloud/v1-client.js';
+import { fillCreditsGaps } from './services/core/cloud/credits-defaults.js';
+import { creditsRuntimeViews } from './services/core/cloud/credits-runtimes.js';
 import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
 import {
   initConfigManager,
@@ -100,6 +108,7 @@ import {
 import { watchSessionLifecycle } from './services/notifications/emitters/session-lifecycle.js';
 import { watchAskResolution } from './services/notifications/emitters/ask-resolution.js';
 import { watchRuntimeSigninFailures } from './services/notifications/emitters/runtime-signin.js';
+import { watchCreditsRefusals } from './services/notifications/emitters/credits-refused.js';
 import { deadLetterPayload } from './services/notifications/emitters/dead-letter.js';
 import { agentLivenessObserver } from './services/notifications/emitters/agent-liveness.js';
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
@@ -568,6 +577,7 @@ import {
   claudeDefaultAccountFolder,
   dropClaudeAccountRenameMarkers,
 } from './services/runtimes/claude-code/claude-config-dir.js';
+import { ensureCreditsClaudeRoot } from './services/runtimes/claude-code/credits-root.js';
 import { machineDefaultCodexHome } from './services/runtimes/codex/codex-home.js';
 import {
   initObservability,
@@ -1416,6 +1426,9 @@ async function start() {
   // A runtime whose sign-in stopped working, noticed at whichever turn trips
   // over it first — including the 3am ones nobody is watching (DOR-1654).
   watchRuntimeSigninFailures();
+  // A turn DorkOS credits refused, told whoever started it, so a refused
+  // scheduled task or room turn is never silent (ADR 261001-000811).
+  watchCreditsRefusals();
   // Nothing tells the server it was updated, so it compares versions on boot.
   void announceInstalledVersion(dorkHome);
   // Git older than 2.38 cannot refuse a folder set up to look like a git
@@ -6035,6 +6048,31 @@ async function start() {
     .catch((err) => {
       logger.warn('[CloudLink] Startup heartbeat failed', logError(err));
     });
+
+  // DorkOS credits (ADR 261001-000811): keep a live inference token while this
+  // computer is linked, minted now and again before each one expires, so a
+  // restart never quietly drops a session set to credits. The credits folder
+  // exists from boot so a credits session's transcript is always listed. A new
+  // link (and only a new link) fills the gaps: a runtime with no sign-in at all
+  // defaults to credits, and the person is told. A link to a different DorkOS
+  // account starts the choices over; a relink to the same one keeps them. An
+  // unlink revokes the held token and stops every credits session's process.
+  ensureCreditsClaudeRoot();
+  startCreditsLifecycle();
+  getCloudLinkManager().setOnUnlink(async () => {
+    await revokeHeldCreditsToken();
+    await claudeRuntime?.stopCreditsSessions();
+  });
+  getCloudLinkManager().setOnNewLink(async () => {
+    const switched = await fillCreditsGaps(creditsRuntimeViews(), {
+      key: await readCloudAccountKey(),
+    });
+    if (switched.length > 0) {
+      logger.info('[Cloud] New link: these runtimes now run on DorkOS credits by default', {
+        runtimes: switched,
+      });
+    }
+  });
 }
 
 // Ordered teardown of all running services WITHOUT calling process.exit().
@@ -6148,6 +6186,7 @@ async function shutdownServices() {
   await shutdownSessionPumps();
   await tunnelManager.stop();
   getCloudLinkManager().stop();
+  stopCreditsLifecycle();
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.
   await shutdownObservability();

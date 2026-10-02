@@ -24,7 +24,7 @@ function recoveryContextForPlan(plan: LaunchPlan): NonNullable<LaunchJournal['re
 export class CommunityLaunchPlanDriftError extends Error {
   /** Create a secret-free plan drift refusal. */
   constructor() {
-    super('The saved Community launch does not match this plan');
+    super('The saved space server launch does not match this plan');
     this.name = 'CommunityLaunchPlanDriftError';
   }
 }

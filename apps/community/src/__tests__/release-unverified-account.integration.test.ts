@@ -86,9 +86,9 @@ describe('releaseUnverifiedAccount', () => {
     for (const [email, reason] of [
       ['verified@example.com', 'verified email'],
       ['linked@example.com', 'signs in through another service'],
-      ['member@example.com', 'has joined a community'],
-      ['operator@example.com', 'has operated this host'],
-      ['nobody@example.com', 'No host account'],
+      ['member@example.com', 'has joined a space'],
+      ['operator@example.com', 'has operated this server'],
+      ['nobody@example.com', 'No server account'],
     ])
       await expect(releaseUnverifiedAccount(pool, email), email).rejects.toThrow(reason);
     for (const id of ['verified', 'linked', 'member', 'operator'])
@@ -133,7 +133,7 @@ describe('releaseUnverifiedAccount', () => {
       [community, invite]
     );
     await expect(releaseUnverifiedAccount(pool, 'joining@example.com')).rejects.toThrow(
-      'joining a community right now'
+      'joining a space right now'
     );
     expect(await exists('joining')).toBe(true);
     await pool.query(

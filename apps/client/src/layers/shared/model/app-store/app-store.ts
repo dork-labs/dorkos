@@ -164,6 +164,8 @@ export const useAppStore = create<AppState>()(
         // spent only by the session it names.
         pendingAccount: null,
         setPendingAccount: (pick) => set({ pendingAccount: pick }),
+        retryAccount: null,
+        setRetryAccount: (pick) => set({ retryAccount: pick }),
 
         requestedTour: null,
         requestTour: (id) => set({ requestedTour: id }),

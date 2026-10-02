@@ -1,6 +1,7 @@
 /**
- * The three account-rule routes (spec `flow-multiproject` §8.6): the read any
- * caller may make, and the two writes only a person may make.
+ * The account-rule routes (spec `flow-multiproject` §8.6): the read any caller
+ * may make, and the writes only a person may make, including the one a refused
+ * credits turn offers (ADR 261001-000811).
  *
  * Projects are real git repositories in a temp folder that is the directory
  * boundary, so the registry, the boundary check and the canonical-path step all
@@ -9,7 +10,7 @@
  *
  * @module routes/__tests__/runtimes-account-eligibility
  */
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 
 const state = vi.hoisted(() => ({
   runtimes: {} as Record<string, unknown>,
+  cloud: undefined as Record<string, unknown> | undefined,
   sets: 0,
 }));
 
@@ -25,6 +27,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
     get: (key: string) => {
       if (key === 'auth') return { enabled: false };
       if (key === 'runtimes') return state.runtimes;
+      if (key === 'cloud') return state.cloud;
       return undefined;
     },
     set: (key: string, value: unknown) => {
@@ -46,6 +49,8 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import runtimesRouter from '../runtimes.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 
 const emit = vi.fn(async () => undefined);
@@ -87,6 +92,7 @@ afterAll(async () => {
 beforeEach(() => {
   emit.mockClear();
   state.sets = 0;
+  state.cloud = undefined;
   state.runtimes = {
     claudeCode: {
       accounts: [
@@ -379,5 +385,91 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/only-projects', () => {
     expect(state.sets).toBe(0);
     expect(claudeCode().defaultAccountOnlyProjects).toBeNull();
     expect(emit).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/runtimes/claude-code/project-accounts/without-credits', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** A session the runtime places in `folder`. */
+  function sessionIn(folder: string | undefined): void {
+    vi.spyOn(runtimeRegistry, 'resolveForSession').mockResolvedValue({
+      getSessionCwd: () => folder,
+      getInternalSessionId: () => undefined,
+    } as unknown as AgentRuntime);
+    vi.spyOn(runtimeRegistry, 'getSessionAgentPath').mockResolvedValue(null);
+  }
+
+  const onCreditsByDefault = () => {
+    state.cloud = {
+      credits: { defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } } },
+    };
+  };
+
+  // Purpose: the refusal card's way on for a folder with its own sign-in. A
+  // project rule without credits, so the default stops picking credits there.
+  it('gives the project every account it may use today, without credits, and says what runs now', async () => {
+    onCreditsByDefault();
+    sessionIn(path.join(dotted, 'src'));
+    const before = await request(server)
+      .get('/api/runtimes/claude-code/account-eligibility')
+      .query({ project: dotted });
+    expect(before.body.launch).toMatchObject({ ok: true, accountId: 'dorkos-credits' });
+
+    const res = await request(server)
+      .post('/api/runtimes/claude-code/project-accounts/without-credits')
+      .send({ sessionId: 's-1' });
+
+    expect(res.status).toBe(200);
+    expect(claudeCode().projectAccounts).toEqual({
+      [dotted]: { allow: ['work', 'personal', 'default'] },
+    });
+    expect(res.body.launch).toMatchObject({ ok: true });
+    expect(res.body.launch.accountId).not.toBe('dorkos-credits');
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceId: dotted,
+        summary: expect.stringContaining('no longer uses DorkOS credits'),
+      })
+    );
+  });
+
+  it('keeps a project’s own list as it is', async () => {
+    sessionIn(dotted);
+    claudeCode().projectAccounts = { [dotted]: { allow: ['work'] } };
+    const res = await request(server)
+      .post('/api/runtimes/claude-code/project-accounts/without-credits')
+      .send({ sessionId: 's-1' });
+    expect(res.status).toBe(200);
+    expect(claudeCode().projectAccounts).toEqual({ [dotted]: { allow: ['work'] } });
+  });
+
+  it('answers 409 for a folder in no project and writes nothing', async () => {
+    sessionIn(loose);
+    const res = await request(server)
+      .post('/api/runtimes/claude-code/project-accounts/without-credits')
+      .send({ sessionId: 's-1' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('not_a_project');
+    expect(state.sets).toBe(0);
+  });
+
+  it('answers 404 for a session with no folder', async () => {
+    sessionIn(undefined);
+    const res = await request(server)
+      .post('/api/runtimes/claude-code/project-accounts/without-credits')
+      .send({ sessionId: 's-1' });
+    expect(res.status).toBe(404);
+    expect(state.sets).toBe(0);
+  });
+
+  it('refuses an agent with 403 and writes nothing', async () => {
+    sessionIn(dotted);
+    const res = await request(server)
+      .post('/api/runtimes/claude-code/project-accounts/without-credits')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ sessionId: 's-1' });
+    expect(res.status).toBe(403);
+    expect(state.sets).toBe(0);
   });
 });

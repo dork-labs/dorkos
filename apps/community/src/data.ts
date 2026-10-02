@@ -40,13 +40,13 @@ export interface Principal {
 /** The refusal a member request gets in a community lifecycle that does not allow it. */
 export function lifecycleError(lifecycle: string): ApiError {
   if (lifecycle === 'archived')
-    return new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
+    return new ApiError(423, 'COMMUNITY_ARCHIVED', 'This space is archived.');
   if (lifecycle === 'held') return communityHeld();
   if (lifecycle === 'suspended')
-    return new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
+    return new ApiError(503, 'COMMUNITY_SUSPENDED', 'This space is suspended.');
   if (lifecycle === 'deletion_pending')
-    return new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This community is being deleted.');
-  return new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community is unavailable.');
+    return new ApiError(423, 'COMMUNITY_DELETION_PENDING', 'This space is being deleted.');
+  return new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space is unavailable.');
 }
 
 /**
@@ -71,7 +71,7 @@ export function communityHeld(): ApiError {
   return new ApiError(
     423,
     'COMMUNITY_HELD',
-    'This community is on hold by its host. You can read it but not post.'
+    'This space is on hold by its server admin. You can read it but not post.'
   );
 }
 
@@ -83,7 +83,7 @@ export function bearer(c: Context): string | null {
   const header = c.req.header('authorization');
   // A host API key is never a member credential, whatever its hash would match.
   if (isHostApiKeyBearer(header)) {
-    throw new ApiError(401, 'UNAUTHENTICATED', 'Host API keys cannot reach community content.');
+    throw new ApiError(401, 'UNAUTHENTICATED', 'Server API keys cannot reach space content.');
   }
   return bearerCredential(header);
 }
@@ -448,7 +448,7 @@ export async function requireMember(
     tenant = await resolveCommunityContext(c, pool, options);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404 && !c.req.param('communityId')) {
-      throw new ApiError(403, 'FORBIDDEN', 'You have not joined this community.');
+      throw new ApiError(403, 'FORBIDDEN', 'You have not joined this space.');
     }
     throw error;
   }
@@ -456,7 +456,7 @@ export async function requireMember(
     'SELECT id,user_id,display_name,role,community_id FROM members WHERE user_id=$1 AND community_id=$2 AND active',
     [session.user.id, tenant.communityId]
   );
-  if (!result.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'You have not joined this community.');
+  if (!result.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'You have not joined this space.');
   return result.rows[0];
 }
 

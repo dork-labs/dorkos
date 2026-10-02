@@ -9,7 +9,8 @@
  * script is that guard: it re-derives the same sweep DOR-855 did by hand and
  * runs it on every change instead of once.
  *
- * WHAT IT SCANS. `apps/client/src`, `apps/site/src`, and `apps/server/src` —
+ * WHAT IT SCANS. `apps/client/src`, `apps/site/src`, `apps/server/src`, and
+ * `apps/community/src` (the space's own website, DOR-2653) —
  * every workspace whose strings can reach a screen a DorkOS user reads,
  * including server-authored copy the client renders verbatim (a provisioning
  * error, an MCP tool title) — for TypeScript/TSX source, using the real
@@ -222,8 +223,18 @@ export interface Violation {
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
-/** Workspaces that render product copy a DorkOS user reads. */
-const DEFAULT_SCAN_ROOTS = ['apps/client/src', 'apps/site/src', 'apps/server/src'];
+/**
+ * Workspaces that render product copy a DorkOS user reads. `apps/community/src`
+ * joined in DOR-2653: it is the space's own website and the API errors and
+ * emails that site and the DorkOS app show, swept to "space" once DOR-2631
+ * had renamed the app.
+ */
+const DEFAULT_SCAN_ROOTS = [
+  'apps/client/src',
+  'apps/site/src',
+  'apps/server/src',
+  'apps/community/src',
+];
 
 /** Path segments excluded outright — not scoped exceptions, just not copy. */
 const EXCLUDED_SEGMENTS = [
@@ -237,6 +248,13 @@ const EXCLUDED_SEGMENTS = [
 ];
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
+
+/**
+ * A colocated test file (`admission.test.ts` beside `admission.ts`, the
+ * `apps/community` habit). Excluded for the same reason `__tests__/` is: its
+ * fixtures echo arbitrary strings that are not this repo's authored copy.
+ */
+const TEST_FILE = /\.test\.tsx?$/;
 
 /** Docs prose roots scanned for retired vocabulary (DOR-2508). See the module doc. */
 const DEFAULT_MDX_SCAN_ROOTS = ['docs'];
@@ -418,7 +436,9 @@ function walkFiles(
 
 /** Recursively collect source files under `roots`, applying {@link EXCLUDED_SEGMENTS}. */
 export function collectFiles(roots: string[], repoRoot: string): string[] {
-  return walkFiles(roots, repoRoot, EXCLUDED_SEGMENTS, SOURCE_EXTENSIONS);
+  return walkFiles(roots, repoRoot, EXCLUDED_SEGMENTS, SOURCE_EXTENSIONS).filter(
+    (file) => !TEST_FILE.test(file)
+  );
 }
 
 /**

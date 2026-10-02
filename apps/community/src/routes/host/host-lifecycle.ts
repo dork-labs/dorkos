@@ -86,9 +86,9 @@ export function registerHostLifecycleRoutes(
       const row = await lockHostCommunity(client, communityId);
       const at = now();
       await assertHostActor(client, actor, at);
-      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       if (row.lifecycle_version !== body.lifecycleVersion) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Space lifecycle changed.');
       }
       let next: string;
       const changedFields = ['lifecycle'];
@@ -98,7 +98,7 @@ export function registerHostLifecycleRoutes(
           row.lifecycle !== 'archived' &&
           row.lifecycle !== 'held'
         ) {
-          throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be suspended.');
+          throw new ApiError(409, 'STATE_CONFLICT', 'This space cannot be suspended.');
         }
         next = 'suspended';
         // A suspension blocks the owner's export, so it also withdraws any deletion notice: the
@@ -121,7 +121,7 @@ export function registerHostLifecycleRoutes(
         );
       } else if (body.action === 'resume') {
         if (row.lifecycle !== 'suspended' || !row.suspended_from_state) {
-          throw new ApiError(409, 'STATE_CONFLICT', 'This community is not suspended.');
+          throw new ApiError(409, 'STATE_CONFLICT', 'This space is not suspended.');
         }
         next = row.suspended_from_state;
         await client.query(
@@ -137,7 +137,7 @@ export function registerHostLifecycleRoutes(
         // suspension of a hold, the kept held_from_state and held_at stand; the suspension
         // withdrew the old notice, so a new one may be published now.
         if (!row.suspended_from_state) {
-          throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be held.');
+          throw new ApiError(409, 'STATE_CONFLICT', 'This space cannot be held.');
         }
         const notice = assertNotice(body.deletionNoticeAt, at);
         next = 'held';
@@ -158,7 +158,7 @@ export function registerHostLifecycleRoutes(
           throw new ApiError(
             409,
             'STATE_CONFLICT',
-            'Only an active, archived, or suspended community can be held.'
+            'Only an active, archived, or suspended space can be held.'
           );
         }
         const notice = assertNotice(body.deletionNoticeAt, at);
@@ -174,7 +174,7 @@ export function registerHostLifecycleRoutes(
         );
       } else if (body.action === 'release') {
         if (row.lifecycle !== 'held' || !row.held_from_state) {
-          throw new ApiError(409, 'STATE_CONFLICT', 'This community is not held.');
+          throw new ApiError(409, 'STATE_CONFLICT', 'This space is not held.');
         }
         next = row.held_from_state;
         await client.query(
@@ -186,7 +186,7 @@ export function registerHostLifecycleRoutes(
         );
       } else {
         if (row.lifecycle !== 'held') {
-          throw new ApiError(409, 'STATE_CONFLICT', 'Only a held community has a deletion notice.');
+          throw new ApiError(409, 'STATE_CONFLICT', 'Only a held space has a deletion notice.');
         }
         // Every publication must itself give the minimum notice from now: a date can be moved
         // later or cleared, and moved sooner only while it still stays that far away.
@@ -218,16 +218,16 @@ export function registerHostLifecycleRoutes(
     // Every gate is checked here and again under the lock. Checking first keeps a refused
     // request from building the deletion inventory at all.
     const gate = (row: HostCommunityRow | undefined, at: Date): HostCommunityRow => {
-      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       if (row.legal_hold_at) throw legalHoldActive();
       if (row.lifecycle_version !== body.lifecycleVersion) {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Space lifecycle changed.');
       }
       if (row.lifecycle !== 'held') {
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          'Only a held community can be deleted by its host.'
+          'Only a held space can be deleted by its server admin.'
         );
       }
       if (!row.deletion_notice_at || row.deletion_notice_at.getTime() > at.getTime()) {
@@ -249,7 +249,7 @@ export function registerHostLifecycleRoutes(
       throw new ApiError(
         409,
         'STATE_CONFLICT',
-        'Storage ownership must be reconciled before deleting this community.'
+        'Storage ownership must be reconciled before deleting this space.'
       );
     }
     const community = await transaction(pool, async (client) => {
@@ -299,14 +299,14 @@ export function registerHostLifecycleRoutes(
       const row = await lockHostCommunity(client, communityId);
       const at = now();
       await assertHostActor(client, actor, at);
-      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       // A takedown's deletion is undone only by reversing the takedown, which records why and
       // leaves the community suspended; cancelling it here would reopen it in one step.
       if (row.takedown_id)
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          'This community was taken down. Reverse the takedown to stop its deletion.'
+          'This space was taken down. Reverse the takedown to stop its deletion.'
         );
       // The host cancels only its own deletion, and only before the worker starts; an owner's
       // deletion is the owner's to cancel.

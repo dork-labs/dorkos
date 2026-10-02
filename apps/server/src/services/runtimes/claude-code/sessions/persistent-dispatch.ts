@@ -156,7 +156,11 @@ import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
-import { resolveEffectiveCwd, resolveLaunch } from '../messaging/launch-resolver.js';
+import {
+  creditsRefusalEvent,
+  resolveEffectiveCwd,
+  resolveLaunch,
+} from '../messaging/launch-resolver.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import { isPersistentSessionEnabled } from '../persistent-session-optin.js';
 import {
@@ -541,14 +545,24 @@ export class PersistentDispatch {
       return;
     }
 
-    const resolved = await resolveLaunch({
-      sessionId,
-      content,
-      session,
-      opts,
-      ...(messageOpts !== undefined ? { messageOpts } : {}),
-      effectiveCwd,
-    });
+    let resolved: Awaited<ReturnType<typeof resolveLaunch>>;
+    try {
+      resolved = await resolveLaunch({
+        sessionId,
+        content,
+        session,
+        opts,
+        ...(messageOpts !== undefined ? { messageOpts } : {}),
+        effectiveCwd,
+      });
+    } catch (err) {
+      // Refused before any process was touched: a credits session with no live
+      // token keeps its warm process (if any) and bills nothing.
+      const refusal = creditsRefusalEvent(err);
+      if (!refusal) throw err;
+      yield refusal;
+      return;
+    }
     const plan: PumpLaunchPlan = {
       effectiveCwd,
       enrichedContent: resolved.enrichedContent,
@@ -862,14 +876,22 @@ export class PersistentDispatch {
         });
         return { delivered: false };
       }
-      const resolved = await resolveLaunch({
-        sessionId,
-        content,
-        session,
-        opts: senderOpts,
-        ...(messageOpts !== undefined ? { messageOpts } : {}),
-        effectiveCwd,
-      });
+      let resolved: Awaited<ReturnType<typeof resolveLaunch>>;
+      try {
+        resolved = await resolveLaunch({
+          sessionId,
+          content,
+          session,
+          opts: senderOpts,
+          ...(messageOpts !== undefined ? { messageOpts } : {}),
+          effectiveCwd,
+        });
+      } catch (err) {
+        // A credits session with no live token boots nothing, staging included;
+        // the note is not delivered, so the caller folds it into the next turn.
+        if (creditsRefusalEvent(err) === null) throw err;
+        return { delivered: false };
+      }
       const plan: PumpLaunchPlan = {
         effectiveCwd,
         // `enrichedContent` is unused on the stage path: `warm()` boots with the

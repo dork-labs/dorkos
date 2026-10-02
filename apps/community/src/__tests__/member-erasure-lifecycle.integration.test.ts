@@ -337,7 +337,7 @@ describe('guards (AC-7)', () => {
       body: { successorMemberId: s.p.memberId, password: PASSWORD, lifecycleVersion: version },
     });
     expect(transfer.status).toBe(409);
-    expect((await transfer.json()).message).toBe('That member is leaving this community.');
+    expect((await transfer.json()).message).toBe('That member is leaving this space.');
   });
 
   it('refuses re-admission while a membership erasure runs', async () => {

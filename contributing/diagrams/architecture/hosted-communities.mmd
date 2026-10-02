@@ -1,26 +1,26 @@
 flowchart TB
-  accTitle: Community and optional Cloud hosting management
-  accDescr: The local app implements start and move requests to Cloud. Hosting control and ordinary Community participation have separate authority. Move archives go from the local server directly to the returned Community upload target. Imports and optional configured OIDC are implemented. Host takedown and evidence operations are explicit exceptions to ordinary content access. Contract support does not establish hosting deployment availability.
+  accTitle: Spaces and optional Cloud space management
+  accDescr: The local app implements start and move requests to Cloud. Space management and ordinary space participation have separate authority. Move archives go from the local server directly to the returned space upload target. Imports and optional configured OIDC are implemented. Server takedown and evidence operations are explicit exceptions to ordinary content access. Contract support does not establish space-management deployment availability.
   app["Local DorkOS app + server<br/>Start / move UI + Cloud relay implemented<br/>Agents execute here"]
-  cloud["Optional Cloud hosting management<br/>Public /v1/communities contract<br/>Availability checked independently"]
-  subgraph host["Community host · independently runnable"]
-    admin["Host administration API<br/>Scoped machine keys · owner claims<br/>Lifecycle · limits · usage · holds<br/>Takedown / evidence · owner replacement<br/>No ordinary tenant membership"]
+  cloud["Optional Cloud space management<br/>Public /v1/communities contract<br/>Availability checked independently"]
+  subgraph host["Space server · independently runnable"]
+    admin["Server administration API<br/>Scoped machine keys · owner claims<br/>Lifecycle · limits · usage · holds<br/>Takedown / evidence · owner replacement<br/>No ordinary tenant membership"]
     content["Tenant content API<br/>Membership · channels · posts · files"]
-    upload["Community import target<br/>Implemented v1 / v2 + multipart upload"]
-    auth["Host-wide sign-in<br/>Separate community memberships"]
-    data[("PostgreSQL + tenant-owned blobs<br/>Community is content authority")]
-    admin -->|"Scoped host operations"| data
+    upload["Space import target<br/>Implemented v1 / v2 + multipart upload"]
+    auth["Server-wide sign-in<br/>Separate space memberships"]
+    data[("PostgreSQL + tenant-owned blobs<br/>The space server is content authority")]
+    admin -->|"Scoped server operations"| data
     content --> data
     upload -->|"Restore inactive people / agents<br/>Revoke credentials; single-use owner claim"| data
     auth -->|"Authenticate; check membership"| content
   end
-  browser["Community browser"]
+  browser["Space website"]
   browser <-->|"HTTP + SSE"| content
   app <-->|"Approved participation<br/>Qualified HTTP + SSE"| content
   app -->|"Start / poll / claim / move<br/>HTTPS via local authenticated routes"| cloud
   app -->|"Stage archive; upload directly<br/>to returned target when available"| upload
-  cloud -.->|"Public hosting contract<br/>HTTPS + scoped host key"| admin
-  issuer["Configured OIDC issuer · optional<br/>Independent of hosting management"]
+  cloud -.->|"Public space-management contract<br/>HTTPS + scoped server key"| admin
+  issuer["Configured OIDC issuer · optional<br/>Independent of space management"]
   issuer <-->|"OIDC sign-in · implemented"| auth
   journal["IDs-only erasure journal<br/>Operator keeps an off-server copy"]
   admin -->|"Export erasure records"| journal

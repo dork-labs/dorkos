@@ -225,12 +225,12 @@ export async function createItemTakedown(
     return { row: existing.rows[0], replayed: true };
   }
   const community = locked.rows[0];
-  if (!community) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  if (!community) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
   if (community.lifecycle === 'pending_owner')
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'Nobody has claimed this community, so it has no content. Abandon it instead.'
+      'Nobody has claimed this space, so it has no content. Abandon it instead.'
     );
   // A deletion the worker has started is already removing bytes, so nothing could be held.
   const deletion = await client.query<{ state: string }>(
@@ -238,7 +238,7 @@ export async function createItemTakedown(
     [community.id]
   );
   if (deletion.rows[0] && deletion.rows[0].state !== 'waiting')
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community is already being deleted.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space is already being deleted.');
 
   const snapshot = await snapshotTarget(client, community, input.target, {
     key: community.icon_blob_key,
@@ -390,7 +390,7 @@ export async function retryTakedownEvidence(
       row.community_id,
     ]);
     if (!community.rowCount)
-      throw new ApiError(409, 'STATE_CONFLICT', 'This community is already deleted.');
+      throw new ApiError(409, 'STATE_CONFLICT', 'This space is already deleted.');
     await dropEvidenceExport(client, { id: row.id, communityId: row.community_id }, input.now);
     await queueEvidenceExport(client, { id: row.id, communityId: row.community_id });
   }
@@ -438,7 +438,7 @@ export async function releaseHeldEvidence(
     throw new ApiError(
       409,
       'LEGAL_HOLD_ACTIVE',
-      'This community is under a legal hold. Release the hold before releasing held content.'
+      'This space is under a legal hold. Release the hold before releasing held content.'
     );
   const staged = await client.query<{ blob_keys: string[] }>(
     'DELETE FROM takedown_evidence_staging WHERE takedown_id=$1 RETURNING blob_keys',

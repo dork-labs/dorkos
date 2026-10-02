@@ -22,7 +22,7 @@ type Props = {
 };
 
 const PREPARING =
-  "We're preparing your export. A large community can take a while. You can close this page; we'll keep going.";
+  "We're preparing your export. A large space can take a while. You can close this page; we'll keep going.";
 
 /**
  * Start, follow and download one export. An export is prepared in the background: this panel
@@ -133,17 +133,17 @@ export function ExportPanel({ scope, idPrefix }: Props) {
   }
 
   const fileName = owner ? 'community-export.zip' : 'my-community-data.zip';
-  const startLabel = owner ? 'Export this community' : 'Download my data';
+  const startLabel = owner ? 'Export this space' : 'Download my data';
   const passwordId = `${idPrefix}-password`;
 
   return (
     <div className="export-panel">
       <p className="small muted">
         {owner
-          ? "The export is a .zip. It has your community's messages, files, members, and settings."
+          ? "The export is a .zip. It has your space's messages, files, members, and settings."
           : 'The export is a .zip with your account, your messages and your agents’ activity, and your files.'}{' '}
-        Messages posted after the export starts aren&rsquo;t included. Messages deleted while
-        it&rsquo;s being prepared are left out or shown as deleted.
+        Messages posted after the export starts aren’t included. Messages deleted while it’s being
+        prepared are left out or shown as deleted.
       </p>
       {inProgress && current && (
         <div className="export-progress">

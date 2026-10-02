@@ -52,7 +52,7 @@ import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 export const COMMUNITY_DEPLOY_HELP = `
 Usage: dorkos community deploy [options]
 
-Guide a standalone DorkOS Community onto Fly, Neon, and private Tigris storage.
+Guide a standalone DorkOS space server onto Fly, Neon, and private Tigris storage.
 The command keeps a non-secret recovery journal and never removes a resource without proof
 that this run made it and your typed confirmation.
 
@@ -125,7 +125,7 @@ export function resumeCommand(plan: LaunchJournal): string | null {
 
 /** Render validated incomplete journals without exposing provider credentials. */
 export function formatIncompleteLaunches(journals: readonly LaunchJournal[]): string {
-  if (journals.length === 0) return 'No incomplete Community launches were found.\n';
+  if (journals.length === 0) return 'No incomplete space server launches were found.\n';
   return `${journals
     .map(
       (journal) =>
@@ -214,7 +214,7 @@ export function formatCommunityRecovery(journal: LaunchJournal): string {
 /** Distinguish live deployment health from operator-owned recovery preparation. */
 export function formatCommunityCompletion(origin: string): string {
   return [
-    `Community setup is complete at ${origin}`,
+    `Space setup is complete at ${origin}`,
     'Deployment health: the pinned image, one Machine, applied secrets, and /health were verified.',
     'Recovery readiness: not verified. Configure and rehearse a matching Neon database and Tigris file restore before relying on recovery.',
     'Tigris snapshots are a separate operator choice and are not enabled by this launcher.',
@@ -323,7 +323,7 @@ export async function runCommunityDispatcher(
   const journalPath = launchJournalPath(context.dorkHome, runId);
   const resumeJournal = parsed.values.resume ? await readLaunchJournal(journalPath) : null;
   if (parsed.values.resume && !resumeJournal) {
-    throw new Error('The selected Community launch journal was not found');
+    throw new Error('The selected space server launch journal was not found');
   }
   if (resumeJournal?.pendingRemoval) {
     throw new Error(
@@ -347,7 +347,7 @@ export async function runCommunityDispatcher(
     };
   } catch (error) {
     if (latest) {
-      process.stderr.write(`Community setup stopped.\n${formatCommunityRecovery(latest)}\n`);
+      process.stderr.write(`Space setup stopped.\n${formatCommunityRecovery(latest)}\n`);
     }
     throw error;
   }
@@ -457,7 +457,7 @@ export async function runCommunityDispatcher(
             );
             await initializeLaunchJournal(journalPath, latest);
           }
-          if (!latest) throw new Error('Community launch journal was not initialized');
+          if (!latest) throw new Error('Space server launch journal was not initialized');
           const persist = async (next: LaunchJournal, expectedRevision: number) => {
             await writeLaunchJournal(journalPath, next, expectedRevision);
             latest = next;
@@ -485,7 +485,7 @@ export async function runCommunityDispatcher(
             })
           );
           process.stdout.write(
-            'Applying private secrets and deploying the pinned Community image…\n'
+            'Applying private secrets and deploying the pinned space server image…\n'
           );
           const deployed = await executeCommunityDeployPhase(
             result.plan,
@@ -518,7 +518,7 @@ export async function runCommunityDispatcher(
           process.stdout.write(
             latest.state === 'complete'
               ? `${formatCommunityCompletion(`https://${result.plan.fly.appName}.fly.dev`)}\n`
-              : `Community setup is waiting for owner completion.\n${formatCommunityRecovery(latest)}\n`
+              : `Space setup is waiting for owner completion.\n${formatCommunityRecovery(latest)}\n`
           );
         },
       }
@@ -544,7 +544,7 @@ export async function runCommunityDispatcher(
       await stopForRefusedCreate(error, latest, journalPath, childEnv, formatCommunityRecovery);
     }
     if (latest) {
-      process.stderr.write(`Community setup stopped.\n${formatCommunityRecovery(latest)}\n`);
+      process.stderr.write(`Space setup stopped.\n${formatCommunityRecovery(latest)}\n`);
     }
     throw error;
   } finally {

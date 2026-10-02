@@ -53,7 +53,7 @@ export function HostPolicyLinks() {
   const { termsUrl, privacyUrl } = useHostLinks();
   if (!termsUrl && !privacyUrl) return null;
   return (
-    <nav className="row small muted mt-6 gap-4" aria-label="Host policies">
+    <nav className="row small muted mt-6 gap-4" aria-label="Server policies">
       {termsUrl && <HostLink href={termsUrl}>Terms</HostLink>}
       {privacyUrl && <HostLink href={privacyUrl}>Privacy</HostLink>}
     </nav>
@@ -67,8 +67,8 @@ export function HostLinksPanel({ communityId }: { communityId: string }) {
   if (!termsUrl && !privacyUrl && !report) return null;
   return (
     <section className="panel" aria-labelledby="host-links-title">
-      <h3 id="host-links-title">This host</h3>
-      <p className="small muted">The host that runs this community sets these.</p>
+      <h3 id="host-links-title">This server</h3>
+      <p className="small muted">The person who runs this server sets these.</p>
       <div className="row flex-wrap gap-2">
         {termsUrl && (
           <HostLink buttonVariant="outline" href={termsUrl}>
@@ -169,7 +169,7 @@ export function ContactHostAboutRemoval({
     <p className="small mt-1 mb-0">
       If you think this is a mistake,{' '}
       <HostLink href={report} className="inline-flex min-h-6 items-center underline">
-        contact the host
+        contact the server admin
       </HostLink>
       .
     </p>

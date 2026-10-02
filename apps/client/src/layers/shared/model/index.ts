@@ -62,6 +62,13 @@ export {
   type ClaudeAccountEntry,
   type ClaudeAccountsView,
 } from './server-config/use-claude-accounts';
+export {
+  useCloudCredits,
+  useDismissCreditsNotice,
+  useKeepCreditsOutOfProject,
+  useSetCreditsDefault,
+  useUndoFilledCredits,
+} from './server-config/use-cloud-credits';
 // The one `/config` query key, here rather than in `entities/config` because
 // `shared/` reads config too and may not import an entity. `entities/config`
 // re-exports it, so nothing above changes its import.

@@ -11,6 +11,7 @@ import {
   OnlyProjectsRequestSchema,
   OnlyProjectsResponseSchema,
   ProjectAccountsRequestSchema,
+  ProjectWithoutCreditsRequestSchema,
 } from '@dorkos/shared/project-schemas';
 import { ErrorResponseSchema } from '@dorkos/shared/schemas';
 
@@ -27,7 +28,7 @@ const PERSON_BAR =
   'in either posture. Each change is recorded in Activity.';
 
 /**
- * Register the three `/api/runtimes/claude-code/...` account-rule routes.
+ * Register the `/api/runtimes/claude-code/...` account-rule routes.
  *
  * @param registry - The server's OpenAPI registry.
  */
@@ -74,6 +75,32 @@ export function registerAccountEligibilityOpenApi(registry: OpenAPIRegistry): vo
       400: error('The body is not valid, or it names an account that does not exist'),
       403: error('Not a person, or the folder is outside the directory boundary'),
       404: error('The folder is not in a project (a git repository)'),
+      500: error('The change could not be saved'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/runtimes/claude-code/project-accounts/without-credits',
+    tags: ['Runtimes'],
+    summary: 'Keep DorkOS credits out of a session’s project',
+    description:
+      'Gives the project the session’s folder is in an allow list without DorkOS credits: its ' +
+      'current list, or every account it may use today. Answers with the project’s new ' +
+      'eligibility and what a new chat there would run on now. ' +
+      `${PERSON_BAR}`,
+    request: {
+      body: { content: { 'application/json': { schema: ProjectWithoutCreditsRequestSchema } } },
+    },
+    responses: {
+      200: {
+        description: 'The project and every account, after the change',
+        content: { 'application/json': { schema: AccountEligibilityResponseSchema } },
+      },
+      400: error('The body is not valid'),
+      403: error('Not a person, or the folder is outside the directory boundary'),
+      404: error('The session is not known'),
+      409: error('The session’s folder is not in a project (a git repository)'),
       500: error('The change could not be saved'),
     },
   });

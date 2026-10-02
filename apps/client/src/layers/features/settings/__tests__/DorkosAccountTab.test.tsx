@@ -7,15 +7,18 @@
  * last. Never a badge, never a dot.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { DorkosAccountTab } from '../ui/DorkosAccountTab';
 
-const CREDITS_ON = {
-  enabled: true,
+/** What the server reports before linking: never `enabled`, since that needs a link. */
+const NOT_LINKED = {
+  enabled: false,
+  killed: false,
+  linked: false,
   ready: false,
   runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' },
 } as const;
@@ -45,10 +48,24 @@ describe('DorkosAccountTab', () => {
   });
 
   it('signed out with credits wired: names exactly the runtimes the server reports', async () => {
-    renderTab(createMockTransport({ getCloudCredits: vi.fn().mockResolvedValue(CREDITS_ON) }));
+    renderTab(createMockTransport({ getCloudCredits: vi.fn().mockResolvedValue(NOT_LINKED) }));
     const benefit = await screen.findByText(/Use one account for/);
-    expect(benefit).toHaveTextContent('Use one account for Claude: run it on your DorkOS credits.');
+    expect(benefit).toHaveTextContent(
+      'Use one account for Claude Code: run it on your DorkOS credits.'
+    );
     expect(benefit).not.toHaveTextContent(/Codex|OpenCode/);
+  });
+
+  it('signed out with credits switched off on this computer: no credits line', async () => {
+    const getCloudCredits = vi.fn().mockResolvedValue({ ...NOT_LINKED, killed: true });
+    renderTab(createMockTransport({ getCloudCredits }));
+    await waitFor(() => expect(getCloudCredits).toHaveBeenCalled());
+    // Let the answer land, so the plain line is the answer's, not the loading state's.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.getByText(/Everything else works without one\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Use one account for/)).not.toBeInTheDocument();
   });
 
   it('signed in: the account line, its sections, and Unlink this computer last', async () => {

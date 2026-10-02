@@ -336,7 +336,7 @@ describe('offline member recovery', () => {
     );
     await expect(
       recoverPassword(pool, 'unknown@example.test', 'valid-password-123')
-    ).rejects.toThrow('No host account');
+    ).rejects.toThrow('No server account');
     expect((await pool.query('SELECT count(*)::int AS count FROM "user"')).rows[0].count).toBe(2);
   });
 

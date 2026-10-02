@@ -117,7 +117,9 @@ export class CommunityCliVersionError extends Error {
   /** Create a version error without local paths or command output. */
   constructor(cli: CommunityCliVersionError['cli']) {
     const link = cli === 'fly' ? PROVIDER_HELP.fly.install : PROVIDER_HELP.neon.install;
-    super(`${cli} does not meet this Community release's minimum version. Update it from ${link}`);
+    super(
+      `${cli} does not meet this space server release’s minimum version. Update it from ${link}`
+    );
     this.name = 'CommunityCliVersionError';
     this.cli = cli;
   }

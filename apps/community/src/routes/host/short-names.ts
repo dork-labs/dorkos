@@ -28,7 +28,7 @@ import {
 import { ApiError, json, readJson } from '../../http.js';
 
 /** The one answer for every name the public lookup will not resolve, whatever the reason. */
-const noCommunity = () => new ApiError(404, 'NOT_FOUND', 'No community at this address.');
+const noCommunity = () => new ApiError(404, 'NOT_FOUND', 'No space at this address.');
 
 /**
  * Register short names: the host sets, renames, and releases them, and anyone may resolve a
@@ -97,7 +97,7 @@ export function registerShortNameRoutes(
     await authority.require(c, 'communities:read');
     const communityId = parseHostCommunityId(c.req.param('id'));
     const community = await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId]);
-    if (!community.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    if (!community.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
     const names = await pool.query<{ short_name: string; state: string; retired_at: Date | null }>(
       `SELECT short_name,state,retired_at FROM community_short_names
        WHERE community_id=$1 ORDER BY retired_at DESC NULLS FIRST,short_name`,
@@ -123,9 +123,9 @@ export function registerShortNameRoutes(
       );
       const at = now();
       await assertHostActor(client, actor, at);
-      if (!locked.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!locked.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       if (locked.rows[0].lifecycle === 'deletion_pending') {
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community is being deleted.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'This space is being deleted.');
       }
       const changed = await assignShortName(client, {
         communityId,
@@ -159,7 +159,7 @@ export function registerShortNameRoutes(
       ]);
       const at = now();
       await assertHostActor(client, actor, at);
-      if (!locked.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!locked.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       const released = name
         ? await client.query(
             `DELETE FROM community_short_names
@@ -168,7 +168,7 @@ export function registerShortNameRoutes(
           )
         : { rowCount: 0 };
       if (!released.rowCount) {
-        throw new ApiError(404, 'NOT_FOUND', 'This community has no retired name like that.');
+        throw new ApiError(404, 'NOT_FOUND', 'This space has no retired name like that.');
       }
       await holdShortNames(client, [name!], holds, at);
       await recordHostAudit(client, actor, {

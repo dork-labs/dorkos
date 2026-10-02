@@ -269,7 +269,7 @@ it('rejects suspended public discovery on qualified and singleton routes', async
       expect(response.status, route).toBe(503);
       expect(await response.json()).toEqual({
         code: 'COMMUNITY_SUSPENDED',
-        message: 'This community is suspended.',
+        message: 'This space is suspended.',
       });
     }
     expect(

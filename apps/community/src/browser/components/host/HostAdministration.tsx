@@ -67,7 +67,7 @@ function OwnerClaimHandoff({ claim }: { claim: Claim }) {
     <Notice tone="info" className="mt-4">
       <strong>Send this to the new owner</strong>
       <p className="small">
-        Send this link only to the person who will own the community. It works once, expires{' '}
+        Send this link only to the person who will own the space. It works once, expires{' '}
         {new Date(claim.expiresAt).toLocaleString()}, and will not be shown again. You can open it
         yourself to become the owner.
       </p>
@@ -184,8 +184,8 @@ export function HostAdministration() {
       },
       () =>
         replayedWithoutClaim
-          ? 'The community was already created, but its owner claim link cannot be shown again. Use Reissue owner claim on the pending record.'
-          : 'Community created. Send the owner claim link only to its owner.'
+          ? 'The space was already created, but its owner claim link cannot be shown again. Use Reissue owner claim on the pending record.'
+          : 'Space created. Send the owner claim link only to its owner.'
     );
   }
 
@@ -203,7 +203,7 @@ export function HostAdministration() {
               </Button>
             </>
           ) : (
-            <div role="status">Opening host administration…</div>
+            <div role="status">Opening server administration…</div>
           )}
         </div>
       </main>
@@ -211,16 +211,15 @@ export function HostAdministration() {
 
   return (
     <main className="settings" aria-labelledby="host-administration-title">
-      <p className="eyebrow">Host administration</p>
-      <h1 id="host-administration-title">Communities</h1>
+      <p className="eyebrow">Server administration</p>
+      <h1 id="host-administration-title">Spaces</h1>
       <p className="muted">
-        Create and maintain community records. This page does not show community content or member
-        details.
+        Create and maintain space records. This page does not show space content or member details.
       </p>
       <p className="muted">
-        Need a separate host?{' '}
-        <a href="https://dorkos.ai/docs/self-hosting/space-server">Deploy a new host</a>. Deployment
-        does not create a community on this host.
+        Need a separate server?{' '}
+        <a href="https://dorkos.ai/docs/self-hosting/space-server">Set up a new server</a>.
+        Deployment does not create a space on this server.
       </p>
       {error && (
         <Notice role="alert" tone="error" className="mb-4">
@@ -234,7 +233,7 @@ export function HostAdministration() {
       )}
       <div className="settings-grid">
         <section className="panel">
-          <h2>Create a community</h2>
+          <h2>Create a space</h2>
           <form onSubmit={(event) => void create(event)}>
             <div className="field">
               <Label htmlFor="host-community-name">Name</Label>
@@ -269,15 +268,15 @@ export function HostAdministration() {
               </select>
             </div>
             <Button type="submit" variant="default" disabled={busy}>
-              Create community
+              Create space
             </Button>
           </form>
           {claim && <OwnerClaimHandoff key={claim.grantId} claim={claim} />}
         </section>
         <section className="panel">
-          <h2>Community records</h2>
+          <h2>Space records</h2>
           {communities.length === 0 ? (
-            <p className="muted">No communities are available.</p>
+            <p className="muted">No spaces are available.</p>
           ) : (
             <div className="stack">
               {communities.map((community) => {
@@ -293,7 +292,7 @@ export function HostAdministration() {
                   <article
                     className="panel-alt p-4"
                     key={community.id}
-                    aria-label={`${community.name} community`}
+                    aria-label={`${community.name} space`}
                   >
                     <div className="row justify-between">
                       <strong>{community.name}</strong>
@@ -319,7 +318,7 @@ export function HostAdministration() {
                           .{' '}
                           {community.lifecycle === 'deletion_pending'
                             ? 'Its deletion is paused until the hold is released.'
-                            : 'This community can’t be deleted until the hold is released.'}
+                            : 'This space can’t be deleted until the hold is released.'}
                         </p>
                         <p className="muted">
                           The hold doesn’t stop single messages or files being removed, or a person
@@ -449,7 +448,7 @@ export function HostAdministration() {
                           disabled={busy}
                           onClick={() => setConfirmation({ community, action: 'abandon' })}
                         >
-                          Abandon unclaimed community
+                          Abandon unclaimed space
                         </Button>
                       </div>
                     )}
@@ -474,7 +473,7 @@ export function HostAdministration() {
           <p>
             {confirmation.action === 'suspend'
               ? 'Members and agents lose access immediately. Resuming later does not restore revoked credentials.'
-              : 'This permanently removes the empty community. It only succeeds after every owner claim is revoked.'}
+              : 'This permanently removes the empty space. It only succeeds after every owner claim is revoked.'}
           </p>
           <div className="row justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmation(null)}>
@@ -499,7 +498,7 @@ export function HostAdministration() {
                 ).finally(() => setConfirmation(null));
               }}
             >
-              {confirmation.action === 'suspend' ? 'Suspend community' : 'Abandon community'}
+              {confirmation.action === 'suspend' ? 'Suspend space' : 'Abandon space'}
             </Button>
           </div>
         </FocusDialog>

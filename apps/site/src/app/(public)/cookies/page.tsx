@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { company } from '@dorkos/shared/company';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
@@ -24,9 +25,9 @@ export default function CookiePolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Cookie Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 13, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            This site is run by Blaze Ventures, LLC. When this page says “we,” that is who we mean.
+            This site is run by {company.legalName}. When this page says “we,” that is who we mean.
           </p>
         </header>
 
@@ -114,10 +115,10 @@ export default function CookiePolicyPage() {
             </Link>
             . Questions? Email us at{' '}
             <a
-              href="mailto:hey@dorkos.ai"
+              href={`mailto:${company.contactEmail}`}
               className="text-charcoal hover:text-brand-orange underline"
             >
-              hey@dorkos.ai
+              {company.contactEmail}
             </a>
             .
           </p>

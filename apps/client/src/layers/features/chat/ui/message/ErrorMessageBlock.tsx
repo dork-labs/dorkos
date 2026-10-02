@@ -7,6 +7,7 @@ import { Button, LinkifiedText, containsUrl } from '@/layers/shared/ui';
 import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import { AccountLimitMarker } from '@/layers/features/continue-on-account';
 import { AuthErrorActions } from './AuthErrorActions';
+import { CREDITS_UNAVAILABLE_CODE, CreditsErrorActions } from './CreditsErrorActions';
 import { ModelErrorActions } from './ModelErrorActions';
 
 /** Runtime name in the auth heading ("Sign in to X again") when unresolved. */
@@ -133,6 +134,11 @@ interface ErrorMessageBlockProps {
    * live turn, when the open limit's banner speaks for it).
    */
   code?: string;
+  /**
+   * Why, for a code with more than one cause: a DorkOS credits refusal names
+   * which, so only the ways on that fit it are offered.
+   */
+  reason?: string;
   /** The timestamp of the message holding this error, ISO-8601. */
   at?: string;
 }
@@ -186,8 +192,13 @@ function ErrorCard({
   sessionId,
   onSigninComplete,
   onChooseModel,
+  code,
+  reason,
 }: ErrorMessageBlockProps) {
   const [showDetails, setShowDetails] = useState(false);
+  // A turn refused because DorkOS credits could not pay for it: its own
+  // heading, the server's sentence, and its own two actions.
+  const isCreditsRefusal = code === CREDITS_UNAVAILABLE_CODE;
   // Sessions recorded before model failures were classified still contain the
   // raw HTTP JSON. Upgrade that copy at render time so an existing failed
   // session gets the same recovery guidance as a new live failure.
@@ -211,20 +222,23 @@ function ErrorCard({
       ? `${runtimeLabel} update required`
       : copy?.heading;
   const derivedSubtext = isAuthError ? authSubtext(runtimeLabel) : copy?.subtext;
-  const heading = legacyModelError
-    ? (derivedHeading ?? 'Error')
-    : (headingOverride ?? derivedHeading ?? 'Error');
+  const heading = isCreditsRefusal
+    ? 'Couldn’t reach DorkOS credits'
+    : legacyModelError
+      ? (derivedHeading ?? 'Error')
+      : (headingOverride ?? derivedHeading ?? 'Error');
   const runtimeText = effectiveMessage.trim();
   // Category copy that explains the failure keeps the subtext slot; anywhere
   // else the runtime's own words win, with the category sentence as fallback.
   const explainsItself =
     effectiveCategory !== undefined && SELF_EXPLANATORY_CATEGORIES.has(effectiveCategory);
-  const subtext =
-    (legacyModelError && subtextOverride?.trim() === message.trim()
-      ? undefined
-      : subtextOverride) ??
-    (explainsItself ? derivedSubtext : runtimeText || derivedSubtext) ??
-    runtimeText;
+  const subtext = isCreditsRefusal
+    ? runtimeText
+    : ((legacyModelError && subtextOverride?.trim() === message.trim()
+        ? undefined
+        : subtextOverride) ??
+      (explainsItself ? derivedSubtext : runtimeText || derivedSubtext) ??
+      runtimeText);
   // `subtext` is trimmed before comparing because two of the three callers
   // (`TurnFailedNotice`, `ChatPanel`) pass the SAME string as both `message`
   // and `subtext`. Comparing a trimmed message against an untrimmed subtext
@@ -316,6 +330,14 @@ function ErrorCard({
               </motion.div>
             )}
           </AnimatePresence>
+          {isCreditsRefusal && (
+            <CreditsErrorActions
+              onRetry={onRetry}
+              sessionId={sessionId}
+              runtimeLabel={runtimeLabel}
+              reason={reason}
+            />
+          )}
           {isAuthError && (
             <AuthErrorActions
               sessionId={sessionId}
@@ -328,7 +350,7 @@ function ErrorCard({
             <ModelErrorActions category={effectiveCategory} onChooseModel={onChooseModel} />
           )}
         </div>
-        {!isAuthError && retryable && onRetry && (
+        {!isAuthError && !isCreditsRefusal && retryable && onRetry && (
           <Button variant="outline" size="sm" onClick={onRetry} className="shrink-0 gap-1.5">
             <RotateCcw className="size-3" />
             Retry

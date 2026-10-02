@@ -8,6 +8,10 @@
  *   project's allow list.
  * - `PUT /api/runtimes/claude-code/accounts/:id/only-projects` — keep one
  *   account (Main is `default`) to a list of projects, or free it.
+ * - `POST /api/runtimes/claude-code/project-accounts/without-credits` — keep
+ *   DorkOS credits out of the project a session's folder is in: the "Don't use
+ *   credits in this project" answer on a refused credits turn (ADR
+ *   261001-000811). A project rule, so Settings shows it and can undo it.
  *
  * **Only a person writes.** Both `PUT`s sit behind the person bar
  * (`refuseIfNotAPerson`), and no extension `ctx` member writes these rules, so
@@ -31,6 +35,7 @@ import {
   AccountEligibilityQuerySchema,
   OnlyProjectsRequestSchema,
   ProjectAccountsRequestSchema,
+  ProjectWithoutCreditsRequestSchema,
   type AccountEligibilityResponse,
   type AccountEligibilityRow,
   type ProjectRef,
@@ -60,6 +65,7 @@ import {
 } from '../services/runtimes/claude-code/claude-config-dir.js';
 import { checkClaudeLaunchAccount } from '../services/runtimes/claude-code/launch-account-check.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** What the person bar says when anything but a person tries to change a rule. */
@@ -174,7 +180,17 @@ function activityOf(req: Request): ActivityService | undefined {
 }
 
 /**
- * Mount the three routes onto the runtimes router.
+ * The folder a session works in: the live binding's own, else the folder its
+ * agent was recorded in. Null for a session the server does not know.
+ */
+async function folderOfSession(sessionId: string): Promise<string | null> {
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const live = runtime.getSessionCwd?.(runtime.getInternalSessionId(sessionId) ?? sessionId);
+  return live ?? (await runtimeRegistry.getSessionAgentPath(sessionId));
+}
+
+/**
+ * Mount the account-rule routes onto the runtimes router.
  *
  * @param router - The `/api/runtimes` router.
  */
@@ -269,6 +285,76 @@ export function mountAccountEligibilityRoutes(router: Router): void {
       return res.status(500).json({ error: 'Could not save which accounts this project may use.' });
     }
   });
+
+  router.post(
+    '/claude-code/project-accounts/without-credits',
+    async (req: Request, res: Response) => {
+      if (refuseIfNotAPerson(req, res, ACCOUNT_RULES_BAR)) return;
+      const parsed = ProjectWithoutCreditsRequestSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: 'Send the session as `sessionId`.',
+          details: z.treeifyError(parsed.error),
+        });
+      }
+      try {
+        const folder = await folderOfSession(parsed.data.sessionId);
+        if (folder === null) {
+          return res.status(404).json({
+            error: 'DorkOS couldn’t find that session’s folder.',
+            code: 'unknown_session',
+          });
+        }
+        const project = await projectOfNamedFolder(folder);
+        if (project === 'outside') {
+          return res.status(403).json({
+            error: 'That folder is outside the folders DorkOS may open.',
+            code: 'OUTSIDE_BOUNDARY',
+          });
+        }
+        if (project === null) {
+          return res.status(409).json({
+            error:
+              'This folder isn’t in a project (a git repository), so there is no project to ' +
+              'keep credits out of. Use your own sign-in for this chat instead.',
+            code: 'not_a_project',
+          });
+        }
+        // The project's own list, or every account it may use today: credits is
+        // never a listed account, so either list leaves it out, and nothing that
+        // worked here before stops working.
+        const rules = readEligibilityRules(configManager.get('runtimes')?.claudeCode);
+        const allow = [
+          ...(rules.projectAllow.get(project.root) ?? listedAccounts().map((a) => a.id)),
+        ];
+        const before = configManager.get('runtimes');
+        writeProjectAccounts(configManager, project.root, allow);
+        logConfigWrite(
+          'the project-without-credits route',
+          'runtimes',
+          before,
+          configManager.get('runtimes')
+        );
+        await activityOf(req)?.emit({
+          ...readActivityActor(req, res),
+          category: 'config',
+          eventType: 'config.accounts_updated',
+          resourceType: 'project',
+          resourceId: project.root,
+          resourceLabel: project.name,
+          summary: `${project.name} no longer uses DorkOS credits`,
+          linkPath: '/?settings=runtimes',
+          metadata: { project: project.root, allow },
+        });
+        return res.json({ ...eligibilityFor(project), launch: await launchFor(folder, project) });
+      } catch (err) {
+        logger.error('[Runtimes] could not keep credits out of a project', { err: String(err) });
+        return res
+          .status(500)
+          .json({ error: 'Could not save which accounts this project may use.' });
+      }
+    }
+  );
 
   router.put('/claude-code/accounts/:id/only-projects', async (req: Request, res: Response) => {
     if (refuseIfNotAPerson(req, res, ACCOUNT_RULES_BAR)) return;

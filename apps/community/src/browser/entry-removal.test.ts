@@ -182,6 +182,20 @@ describe('isRemovedEntry', () => {
       'remove'
     );
   });
+
+  // Purpose: messages removed before DOR-2653 still hold the old sentences in the database. They
+  // must stay removed, with nothing to act on, after the wording changed.
+  it('still knows the sentences written before the rename', () => {
+    for (const legacy of [
+      'This message was removed by a community admin.',
+      'This message was removed by the host.',
+    ]) {
+      expect(isRemovedEntry(entry(ids.member, legacy, { files: 0 }))).toBe(true);
+      expect(removalAction(entry(ids.member, legacy, { files: 0 }), viewerFor(ids.owner))).toBe(
+        null
+      );
+    }
+  });
 });
 
 describe('expectedTombstone', () => {
@@ -196,7 +210,7 @@ describe('expectedTombstone', () => {
       attachments: [],
     });
     expect(expectedTombstone(original, 'remove').text).toBe(
-      'This message was removed by a community admin.'
+      'This message was removed by a space admin.'
     );
   });
 });
@@ -216,7 +230,7 @@ describe('REMOVAL_COPY', () => {
     expect(REMOVAL_COPY.message.remove).toEqual({
       menuItem: 'Remove',
       title: 'Remove this message?',
-      body: 'Everyone will see "This message was removed by a community admin." in its place. Its files are deleted too. This can\'t be undone.',
+      body: 'Everyone will see "This message was removed by a space admin." in its place. Its files are deleted too. This can\'t be undone.',
       leftovers,
       confirm: 'Remove',
     });

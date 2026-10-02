@@ -178,7 +178,7 @@ test('a host with links shows Terms and Privacy at sign-in, all three in setting
   // Report address carries anything beyond the community and entry IDs.
   const signedOut = await browser.newPage();
   await signedOut.goto(`${linkedUrl}/c/${communityId}`);
-  const policies = signedOut.getByRole('navigation', { name: 'Host policies' });
+  const policies = signedOut.getByRole('navigation', { name: 'Server policies' });
   await expect(policies.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', TERMS);
   await expect(policies.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', PRIVACY);
   await expect(policies.getByRole('link', { name: 'Terms' })).toHaveAttribute('target', '_blank');
@@ -202,7 +202,7 @@ test('a host with links shows Terms and Privacy at sign-in, all three in setting
   expect(href.href).not.toContain('leak');
 
   await page.goto(`${linkedUrl}/c/${communityId}/settings/account`);
-  const hostPanel = page.getByRole('region', { name: 'This host' });
+  const hostPanel = page.getByRole('region', { name: 'This server' });
   await expect(
     hostPanel.getByRole('link', { name: 'Terms (opens in a new tab)', exact: true })
   ).toHaveAttribute('href', TERMS);
@@ -271,7 +271,7 @@ test('a host without links shows no Terms, Privacy or Report anywhere', async ({
   await page.goto(`${plainUrl}/c/${communityId}/settings/account`);
   await settingsAnswered;
   await expect(page.getByRole('heading', { name: 'This browser' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'This host' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'This server' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Terms|Privacy|Report/u })).toHaveCount(0);
   await page.context().close();
 });

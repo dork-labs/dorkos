@@ -203,7 +203,7 @@ async function ownerExists(origin: string): Promise<boolean> {
     await response.body?.cancel().catch(() => undefined);
     if (response.status === 200) return true;
     if (response.status === 404) return false;
-    throw new Error('Community owner status is unavailable');
+    throw new Error('Space owner status is unavailable');
   } finally {
     clearTimeout(timer);
   }

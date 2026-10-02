@@ -222,7 +222,7 @@ test('installations disconnect one at a time or all at once, and membership stay
     await expect(
       page.getByText(/Ends:.*every installation and agent you connected here/u)
     ).toBeVisible();
-    await expect(page.getByText(/Stays:.*your account, your other communities/u)).toBeVisible();
+    await expect(page.getByText(/Stays:.*your account, your other spaces/u)).toBeVisible();
     await shot(page, 'account-installations');
 
     // Changing your mind at the confirmation disconnects nothing.
@@ -283,7 +283,7 @@ test('installations disconnect one at a time or all at once, and membership stay
     // Another member's installation is not this person's to end.
     expect(await revoked(neighbour)).toBe(false);
     // Still a member, still signed in.
-    await expect(page.getByRole('heading', { name: 'Leave community' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Leave space' })).toBeVisible();
     expect(
       (await context.request.get(`${baseUrl}/api/v1/communities/${communityId}/me`)).ok()
     ).toBe(true);
@@ -327,7 +327,7 @@ test('signing out ends this browser only, from settings and from the chooser', a
     // The chooser offers the same control, by keyboard.
     const phonePage = await phone.newPage();
     await phonePage.goto(`${baseUrl}/c/${randomUUID()}`);
-    await expect(phonePage.getByRole('heading', { name: 'Choose a community' })).toBeFocused();
+    await expect(phonePage.getByRole('heading', { name: 'Choose a space' })).toBeFocused();
     await shot(phonePage, 'chooser-sign-out');
     const signOut = phonePage.getByRole('button', { name: 'Sign out of this browser' });
     await signOut.focus();

@@ -26,25 +26,24 @@ type Confirmation = { key: HostApiKey; action: 'rotate' | 'revoke' };
 const SCOPES: { scope: Scope; label: string; detail: string }[] = [
   {
     scope: 'communities:read',
-    label: 'Read community records',
-    detail: 'List communities and read their status and how much they use.',
+    label: 'Read space records',
+    detail: 'List spaces and read their status and how much they use.',
   },
   {
     scope: 'communities:write',
-    label: 'Create communities',
-    detail:
-      'Create unclaimed communities, send owner claims, abandon unclaimed ones, and set limits.',
+    label: 'Create spaces',
+    detail: 'Create unclaimed spaces, send owner claims, abandon unclaimed ones, and set limits.',
   },
   {
     scope: 'communities:lifecycle',
     label: 'Suspend and resume',
-    detail: 'Suspend a community or resume it.',
+    detail: 'Suspend a space or resume it.',
   },
   {
     scope: 'communities:legal_hold',
     label: 'Legal holds',
     detail:
-      'Place or release a legal hold, which stops a community from being deleted, and see its note. It doesn’t stop single messages or files being removed, or a person erasing their own data. Owners are not told. See “Legal holds” in OPERATIONS.md.',
+      'Place or release a legal hold, which stops a space from being deleted, and see its note. It doesn’t stop single messages or files being removed, or a person erasing their own data. Owners are not told. See “Legal holds” in OPERATIONS.md.',
   },
   {
     scope: 'communities:takedown',
@@ -56,7 +55,7 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     scope: 'communities:ownership',
     label: 'Replace owners',
     detail:
-      'Ask to make someone else a community’s owner when its owner has left, see those requests, cancel them, and send the claim link again. This server refuses every request for now, until owners can answer them.',
+      'Ask to make someone else a space’s owner when its owner has left, see those requests, cancel them, and send the claim link again. This server refuses every request for now, until owners can answer them.',
   },
   {
     scope: 'communities:erasure_journal',
@@ -231,8 +230,8 @@ export function HostApiKeys() {
     <section className="panel mt-4" aria-labelledby="host-api-keys-title">
       <h2 id="host-api-keys-title">API keys</h2>
       <p className="muted">
-        Give a program its own key to manage communities on this host, instead of your password. A
-        key can never read messages, files, or members, and it cannot create other keys.
+        Give a program its own key to manage spaces on this server, instead of your password. A key
+        can never read messages, files, or members, and it cannot create other keys.
       </p>
       {error && (
         <Notice role="alert" tone="error" className="mb-4">
@@ -310,7 +309,7 @@ export function HostApiKeys() {
         </Button>
       </form>
       {handoff && <SecretReveal key={handoff.key.id} handoff={handoff} />}
-      <h3 className="mt-8 mb-3">Keys on this host</h3>
+      <h3 className="mt-8 mb-3">Keys on this server</h3>
       {keys === null ? (
         <p className="muted">Loading keys…</p>
       ) : keys.length === 0 ? (

@@ -12,7 +12,11 @@
  * @module services/core/operator/claude-account-patch
  */
 import { z } from 'zod';
-import { ACCOUNT_ID_PATTERN, IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import {
+  ACCOUNT_ID_PATTERN,
+  CREDITS_ACCOUNT_ID,
+  IMPLICIT_ACCOUNT_ID,
+} from '@dorkos/shared/account-usage';
 import {
   CLAUDE_ACCOUNTS_SEEN_KEY,
   ClaudeAccountsSeenSchema,
@@ -55,6 +59,9 @@ function idRefusal(id: unknown): string | null {
   }
   if (id === IMPLICIT_ACCOUNT_ID) {
     return 'the id "default" is reserved for the default account';
+  }
+  if (id === CREDITS_ACCOUNT_ID) {
+    return 'the id "dorkos-credits" is reserved for DorkOS credits';
   }
   return null;
 }

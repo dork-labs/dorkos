@@ -157,8 +157,12 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
 
   // The last row handed to `onTopRow`, so a repeated report of the same resting
   // position is a no-op — the settle path (below) can fire many times for one
-  // place the reader has come to rest.
-  const lastReportedRef = useRef<string | undefined>(undefined);
+  // place the reader has come to rest. `null` means "nothing reported yet",
+  // which no report can equal: `undefined` is itself a report ("caught up at the
+  // bottom"), and starting from it swallowed the first one, so a host never
+  // heard that a reader who arrived at the bottom was caught up, and a stale
+  // remembered row (one the landing could not find, `end-row-gone`) survived.
+  const lastReportedRef = useRef<string | undefined | null>(null);
 
   useLayoutEffect(() => {
     if (!measured || !landingReady) return;
@@ -175,9 +179,10 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     anchoredRef.current = conversationId;
     // A new conversation has its own rows and its own resume memory; forget the
     // last row reported for the previous one so the first genuine report here is
-    // never mistaken for a repeat. Not on a re-landing: the reader's own row is
-    // still this room's, and the move below writes a fresh one anyway.
-    if (arriving) lastReportedRef.current = undefined;
+    // never mistaken for a repeat — including a first report of "caught up".
+    // Not on a re-landing: the reader's own row is still this room's, and the
+    // move below writes a fresh one anyway.
+    if (arriving) lastReportedRef.current = null;
     /* eslint-disable react-hooks/set-state-in-effect -- landing is a one-shot event per arrival (guarded by `anchoredRef`) plus one per consumed request, and what it decided has to be readable from the DOM (`data-landed-on`); it cannot be derived during render because it depends on the virtualizer having geometry */
     // A reader coming back belongs on the row they were reading. Asked for by
     // INDEX rather than by offset, because the virtualizer's total height is an

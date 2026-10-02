@@ -1,6 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import { claudeAccountName, type ClaudeAccountRef } from '../../lib/claude-accounts';
+import { CREDITS_ACCOUNT_ID, IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import type { ServerConfig } from '@dorkos/shared/types';
+import {
+  claudeAccountName,
+  CREDITS_ACCOUNT_COLOR,
+  CREDITS_ACCOUNT_LABEL,
+  type ClaudeAccountRef,
+} from '../../lib/claude-accounts';
 import { useTransport } from '../TransportContext';
 import { useAccountUsageRecord } from './use-account-usage';
 import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
@@ -68,6 +74,24 @@ export interface ClaudeAccountsView {
    * when nothing matches.
    */
   colorFor: (pathOrId: string) => string | null;
+  /**
+   * The person's OWN default sign-in, as the server resolved it: where new
+   * work goes once credits are turned off. Equal to {@link resolvedAccount}
+   * except while credits are the default.
+   */
+  ownResolvedAccount: string | undefined;
+  /**
+   * The DorkOS credits entry as the server describes it, or `null` on a server
+   * too old to offer it (ADR 261001-000811). Never a registry row.
+   */
+  credits: NonNullable<NonNullable<ServerConfig['claudeCode']>['credits']> | null;
+  /**
+   * The credits entry shaped like an account, for a picker that offers it
+   * beside the registered ones: present while credits can be chosen, or while
+   * they are already the default (so the picker never renders blank). `null`
+   * otherwise.
+   */
+  creditsEntry: ClaudeAccountEntry | null;
 }
 
 /**
@@ -103,16 +127,43 @@ export function useClaudeAccounts(): ClaudeAccountsView {
       ? { path: defaultReading.path, label: defaultReading.label }
       : null;
 
+  const credits = claudeCode?.credits ?? null;
+  const creditsEntry: ClaudeAccountEntry | null =
+    credits && (credits.available || credits.isDefault)
+      ? {
+          id: CREDITS_ACCOUNT_ID,
+          path: credits.path,
+          label: CREDITS_ACCOUNT_LABEL,
+          color: CREDITS_ACCOUNT_COLOR,
+          colorIsDefault: false,
+          isAccountRoot: true,
+        }
+      : null;
+
   return {
     accounts,
-    resolvedAccount: claudeCode?.resolvedAccount,
-    inherited: claudeCode?.inherited ?? true,
-    isMultiAccount: accounts.length > 1,
+    // Where a new session really runs: the credits folder while credits are the
+    // machine default, which the server's `resolvedAccount` (the person's own
+    // default sign-in, kept for when credits are turned off) does not say.
+    resolvedAccount: credits?.isDefault ? credits.path : claudeCode?.resolvedAccount,
+    inherited: credits?.isDefault ? false : (claudeCode?.inherited ?? true),
+    // Credits are a second place work can run even beside this computer's one
+    // sign-in, so offering them makes the choice worth showing.
+    isMultiAccount: accounts.length > 1 || creditsEntry !== null,
+    ownResolvedAccount: claudeCode?.resolvedAccount,
+    credits,
+    creditsEntry,
     isLoaded: isSuccess,
     defaultAccountColor: claudeCode?.defaultAccountColor ?? null,
     defaultAccountResolvedColor: claudeCode?.defaultAccountResolvedColor ?? null,
-    nameFor: (path: string) => claudeAccountName(path, accounts, standaloneDefault),
+    nameFor: (path: string) =>
+      credits && path === credits.path
+        ? CREDITS_ACCOUNT_LABEL
+        : claudeAccountName(path, accounts, standaloneDefault),
     colorFor: (pathOrId: string) => {
+      if (pathOrId === CREDITS_ACCOUNT_ID || (credits && pathOrId === credits.path)) {
+        return CREDITS_ACCOUNT_COLOR;
+      }
       const registered =
         accounts.find((account) => account.id === pathOrId) ??
         accounts.find((account) => account.path === pathOrId);

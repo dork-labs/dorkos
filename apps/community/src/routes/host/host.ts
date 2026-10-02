@@ -209,7 +209,7 @@ export function registerHostRoutes(
     const community = await pool.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
       communityId,
     ]);
-    if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+    if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
     return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community.rows[0], actor));
   });
 
@@ -253,10 +253,10 @@ export function registerHostRoutes(
         [communityId]
       );
       await assertHostActor(client, actor, now());
-      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       if (community.rows[0].legal_hold_at) throw legalHoldActive();
       if (community.rows[0].lifecycle !== 'pending_owner') {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community can be abandoned.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed space can be abandoned.');
       }
       const imported = await client.query<{ id: string; state: string }>(
         'SELECT id,state FROM community_imports WHERE community_id=$1 FOR UPDATE',
@@ -290,7 +290,7 @@ export function registerHostRoutes(
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          'This community is being imported. Cancel its import instead.'
+          'This space is being imported. Cancel its import instead.'
         );
       }
       const unsafe = await client.query(

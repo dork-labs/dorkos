@@ -59,9 +59,9 @@ export function registerHostAccountClosureRoutes(
     await authority.require(c, 'accounts:close');
     const body = await readJson(c, CommunityAdminAccountLookupRequestSchema);
     if (!config.oidc)
-      throw new ApiError(409, 'STATE_CONFLICT', 'This host has no single sign-on to look up.');
+      throw new ApiError(409, 'STATE_CONFLICT', 'This server has no single sign-on to look up.');
     if (body.issuer.replace(/\/+$/, '') !== config.oidc.issuer)
-      throw new ApiError(409, 'STATE_CONFLICT', 'That is not this host’s sign-in service.');
+      throw new ApiError(409, 'STATE_CONFLICT', 'That is not this server’s sign-in service.');
     const accountId = await findAccountBySignOn(pool, OIDC_PROVIDER_ID, body.subject);
     if (!accountId)
       throw new ApiError(404, 'NOT_FOUND', 'No account here signs in with that identity.');
@@ -85,7 +85,7 @@ export function registerHostAccountClosureRoutes(
       const body = await readJson(c, CommunityAdminAccountClosureRequestSchema);
       const accountId = accountIdOf(c.req.param('accountId'));
       if (actor.kind === 'api_key' && body.password !== undefined)
-        throw new ApiError(400, 'STATE_CONFLICT', 'A host API key does not send a password.');
+        throw new ApiError(400, 'STATE_CONFLICT', 'A server API key does not send a password.');
       if (actor.kind === 'person') {
         // An operator who signs in only through single sign-on has no password to confirm. They
         // use a key with this scope instead.

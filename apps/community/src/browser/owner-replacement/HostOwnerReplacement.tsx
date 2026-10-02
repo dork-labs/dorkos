@@ -75,8 +75,8 @@ function blockedSentence(
   replacements: HostReplacement[]
 ): string | null {
   if (!capabilities.mail)
-    return 'This host can’t send email, so it can’t give the owner notice. Set up mail first.';
-  if (!hasPassword) return 'Use a host API key with the ownership scope to do this.';
+    return 'This server can’t send email, so it can’t give the owner notice. Set up mail first.';
+  if (!hasPassword) return 'Use a server API key with the ownership scope to do this.';
   const cooldown = activeCooldown(replacements, Date.now());
   return cooldown ? cooldownSentence(cooldown) : null;
 }
@@ -189,7 +189,7 @@ export function HostOwnerReplacement({
       setReference('');
       setSubject('');
       setClaimLink(created.claimUrl ? { link: created.claimUrl, reissued: false } : null);
-    }, 'Request sent. The owner is being told by email and in the community.');
+    }, 'Request sent. The owner is being told by email and in the space.');
   }
 
   const rows = replacements ?? [];
@@ -290,8 +290,8 @@ export function HostOwnerReplacement({
           onClose={closeDialog}
         >
           <p>
-            The owner is told by email and in the community, and can keep ownership. If they don’t,
-            the account named in the request can take ownership after the waiting period.
+            The owner is told by email and in the space, and can keep ownership. If they don’t, the
+            account named in the request can take ownership after the waiting period.
           </p>
           <form onSubmit={submitRequest}>
             <fieldset className="field">

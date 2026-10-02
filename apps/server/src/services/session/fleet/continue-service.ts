@@ -28,7 +28,12 @@ import type {
   LimitPlan,
 } from '@dorkos/shared/schemas';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
+import {
+  CREDITS_ACCOUNT_ID,
+  LEDGER_RUNTIMES,
+  type LedgerRuntime,
+} from '@dorkos/shared/account-usage';
+import { creditsCanBeHad } from '../../core/cloud/credits-availability.js';
 import { logger } from '../../../lib/logger.js';
 import type { ActivityService } from '../../activity/activity-service.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
@@ -152,6 +157,23 @@ function keptCarryOver(plan: LimitPlan): { carryOver?: false } {
 }
 
 /**
+ * Whether DorkOS credits may be offered to continue this session: a Claude
+ * Code session a person may move (flow moves a claimed one), on a runtime that
+ * declares credits, while credits can be had. A person's offer only: the
+ * automatic handoff never reaches credits, because it moves only to registered
+ * accounts (`isRegisteredAccount`), and credits are never a registry row.
+ */
+function creditsOffered(stored: StoredSessionLimit): boolean {
+  if (stored.claimedBy) return false;
+  try {
+    const declared = runtimeRegistry.getAllCapabilities()[LIMIT_RUNTIME]?.credits !== undefined;
+    return declared && creditsCanBeHad();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The accounts a limited session could continue on, and its current plan.
  *
  * @param sessionId - The session.
@@ -187,6 +209,7 @@ export async function continueOptions(sessionId: string): Promise<ContinueOption
       recommendedId: ranking.recommendedId,
     },
     advised: ranking.advised,
+    credits: creditsOffered(stored),
   };
 }
 
@@ -341,8 +364,16 @@ export async function continueSession(
   if (!body.account) return continueOnModel(stored, body.model as string, deps);
 
   const accountId = body.account;
+  const toCredits = !crossRuntime && accountId === CREDITS_ACCOUNT_ID;
+  if (toCredits && !creditsOffered(stored)) {
+    throw new ContinueError(
+      400,
+      'CREDITS_NOT_OFFERED',
+      'DorkOS credits aren’t available for this session right now. Choose another account.'
+    );
+  }
   // Another runtime's account is checked against the advisor's offer, below.
-  if (!crossRuntime && !isRegisteredAccount(accountId)) {
+  if (!crossRuntime && !toCredits && !isRegisteredAccount(accountId)) {
     throw new ContinueError(400, 'UNKNOWN_ACCOUNT', `There is no account named "${accountId}".`);
   }
   if (!crossRuntime && accountId === stored.limit.accountId) {

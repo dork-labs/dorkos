@@ -4,6 +4,7 @@ import { CommunityLiveGateCleanupError } from '../../scripts/community-deploy-li
 import { CommunityLiveGateNotArmedError } from '../../scripts/community-deploy-live-config.js';
 import {
   describeLauncherExit,
+  LAUNCHER_FAILURE_PREFIXES,
   AFTER_CLEANUP_STEP,
   CLEANED_UP_DETAIL,
   describeCommunityLiveGateFailure,
@@ -268,15 +269,37 @@ describe('describeCommunityLiveGateFailure', () => {
 // A launcher that refuses its release stops before writing a launch record, so there is no
 // journal to explain it (DOR-2169, a tarball packed past its release's migrations).
 describe('describeLauncherExit', () => {
+  // What a version from DOR-2653 on prints. Published versions before it said "Community".
   const failed = (message: string) =>
+    `\u001b[1mDorkOS space server 0.95.0\u001b[0m\r\nResolving release…\r\n\u001b[31mSpace setup failed: ${message}\u001b[39m\r\n`;
+  const failedBeforeRename = (message: string) =>
     `\u001b[1mDorkOS Community 0.92.0\u001b[0m\r\nResolving release…\r\n\u001b[31mCommunity setup failed: ${message}\u001b[39m\r\n`;
 
   it('names the launcher code from its last failure line', () => {
     expect(
       describeLauncherExit(
-        failed('Community release resolution failed (COMMUNITY_RELEASE_INVALID)')
+        failed('Space server release resolution failed (COMMUNITY_RELEASE_INVALID)')
       )
     ).toBe('launcher exited with COMMUNITY_RELEASE_INVALID');
+  });
+
+  // The gate runs published versions, and those printed the old wording until DOR-2653 shipped.
+  it('still reads the failure line a version from before the rename prints', () => {
+    expect(
+      describeLauncherExit(
+        failedBeforeRename('Community release resolution failed (COMMUNITY_RELEASE_INVALID)')
+      )
+    ).toBe('launcher exited with COMMUNITY_RELEASE_INVALID');
+  });
+
+  it('reads both wordings, and the last failure line wins whichever it uses', () => {
+    expect(LAUNCHER_FAILURE_PREFIXES).toEqual(['Space setup failed:', 'Community setup failed:']);
+    expect(describeLauncherExit(failed('(TIMEOUT)') + failedBeforeRename('(ACCESS_DENIED)'))).toBe(
+      'launcher exited with ACCESS_DENIED'
+    );
+    expect(describeLauncherExit(failedBeforeRename('(ACCESS_DENIED)') + failed('(TIMEOUT)'))).toBe(
+      'launcher exited with TIMEOUT'
+    );
   });
 
   it('uses the last failure line and the last code in it', () => {

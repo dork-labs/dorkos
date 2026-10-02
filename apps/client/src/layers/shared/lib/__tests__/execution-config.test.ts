@@ -242,7 +242,7 @@ describe('describeAgentExecution — the billing account', () => {
       {
         kind: 'account-unregistered',
         message:
-          'The account “retired-client” isn’t registered on this machine, so this agent bills to the default.',
+          'The account “retired-client” isn’t registered on this machine, so this agent runs on the default.',
       },
     ]);
     // The row a person has to fix must still name the thing to fix.

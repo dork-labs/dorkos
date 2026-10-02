@@ -111,6 +111,13 @@ const KEY_CHECK_TIMEOUT_MS = 10_000;
  * way, and the scheduled heartbeat still runs.
  */
 const KEY_CHECK_COOLDOWN_MS = 5 * 60 * 1000;
+/**
+ * How long a link check's answer is reused for the same key. Several open
+ * windows each check on focus and once a minute; this keeps them to one
+ * heartbeat between them, while a deletion confirmed elsewhere still shows up
+ * within seconds.
+ */
+const LINK_CHECK_REUSE_MS = 15_000;
 let nextLinkGeneration = 0;
 
 interface LinkContext {
@@ -204,6 +211,10 @@ function defaultConfigPort(): CloudConfigPort {
         instanceName: null,
         linkedAccountLabel: null,
         previousLinkProof,
+        // The person's credits choices outlive the link: a session set to
+        // credits is refused while unlinked, never moved, and a relink finds
+        // them as they were (ADR 261001-000811).
+        credits: current.credits,
       });
       logConfigWrite('unlinking this instance', 'cloud', current, configManager.get('cloud'));
     },
@@ -260,6 +271,8 @@ export class CloudLinkManager {
   private observeManagedReceipt:
     ((receipt: ManagedConnectorExecutionReceipt) => void | Promise<void>) | undefined;
   private syncManagedProvider: (() => void | Promise<void>) | undefined;
+  private onNewLink: (() => void | Promise<void>) | undefined;
+  private onUnlink: (() => void | Promise<void>) | undefined;
   private configPort: CloudConfigPort | undefined;
 
   private state: CloudLinkState = 'idle';
@@ -274,6 +287,11 @@ export class CloudLinkManager {
   private pollSettled: Promise<void> | undefined;
   private keyCheck:
     { context: LinkContext; settled: Promise<void>; keptAt: number | undefined } | undefined;
+  /** The link check in flight, shared by every caller that overlaps it. */
+  private linkCheck: Promise<CloudLinkSummary> | undefined;
+  /** The last link check's answer, reused for {@link LINK_CHECK_REUSE_MS} under the same key. */
+  private lastLinkCheck:
+    { summary: CloudLinkSummary; at: number; token: string; generation: number } | undefined;
   private linkGeneration = ++nextLinkGeneration;
 
   constructor(private readonly options: CloudLinkManagerOptions = {}) {
@@ -434,6 +452,10 @@ export class CloudLinkManager {
     const context = this.captureContext(accessToken, baseUrl);
     await this.notifyManagedProviderSync();
     if (!this.ownsContext(context)) return;
+    // Every approved link runs this, a first link and a "Link again" alike;
+    // the step itself tells a relink to the same account from a new one.
+    await this.notifyNewLink();
+    if (!this.ownsContext(context)) return;
     await this.heartbeat(baseUrl, descriptor, accessToken, context.generation);
     if (this.ownsContext(context)) this.startHeartbeatSchedule();
   }
@@ -511,6 +533,11 @@ export class CloudLinkManager {
    * The revoke retains only the retiring credential and cannot affect a new link.
    */
   async unlink(): Promise<void> {
+    // Started while the link still stands, so its synchronous part captures
+    // what it needs (the credits token and the client to revoke it with)
+    // before the link is withdrawn below; awaited only at the end, so the
+    // local withdrawal stays immediate.
+    const unlinkStep = this.notifyUnlink();
     const token = this.config.getToken();
     const baseUrl = resolveCloudBaseUrl();
     // Withdraw locally first, before any await. A token exchange already in
@@ -539,6 +566,7 @@ export class CloudLinkManager {
     }
     await reconciliation;
     await revocation;
+    await unlinkStep;
   }
 
   /** Drop the key and everything running on it, keeping its relink proof. */
@@ -573,6 +601,65 @@ export class CloudLinkManager {
     };
   }
 
+  /**
+   * Ask the service, now, whether it still accepts this computer's key, and
+   * answer the settled summary that results.
+   *
+   * The same heartbeat the schedule sends, so the verdict is applied the same
+   * way: a `401` unlinks (the account was deleted, or this computer was
+   * unlinked on the web), a good answer keeps the link, and a transient
+   * failure keeps the key. For a person waiting on something that ends the
+   * link elsewhere, who should not wait for the next scheduled heartbeat.
+   * Calls that overlap share one heartbeat, and a call within
+   * {@link LINK_CHECK_REUSE_MS} of the last answer for the same key gets that
+   * answer without asking again. The heartbeat is bounded by
+   * {@link KEY_CHECK_TIMEOUT_MS}.
+   */
+  checkLink(): Promise<CloudLinkSummary> {
+    if (this.linkCheck) return this.linkCheck;
+    const token = this.config.getToken();
+    if (!token) return Promise.resolve(this.getSummary());
+    const last = this.lastLinkCheck;
+    if (
+      last &&
+      last.token === token &&
+      last.generation === this.linkGeneration &&
+      this.now() - last.at < LINK_CHECK_REUSE_MS
+    ) {
+      return Promise.resolve(last.summary);
+    }
+    const context = this.captureContext(token);
+    const bound = new AbortController();
+    const timer = setTimeout(() => bound.abort(), KEY_CHECK_TIMEOUT_MS);
+    timer.unref?.();
+    const check = this.heartbeat(
+      context.baseUrl,
+      buildInstanceDescriptor(),
+      token,
+      context.generation,
+      bound.signal
+    )
+      .catch((error: unknown) => {
+        logger.error('[CloudLink] Could not apply the link check result', logError(error));
+      })
+      .then(() => {
+        const summary = this.getSummary();
+        this.lastLinkCheck = {
+          summary,
+          at: this.now(),
+          token,
+          generation: context.generation,
+        };
+        return summary;
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        this.linkCheck = undefined;
+      });
+    this.linkCheck = check;
+    return check;
+  }
+
   /** Whether this instance holds a key (a refused call's key check may since have dropped it). */
   isLinked(): boolean {
     return this.config.getToken() != null;
@@ -589,6 +676,46 @@ export class CloudLinkManager {
   /** Attach the provider-registry reconciliation callback during server composition. */
   setManagedProviderSync(sync: () => void | Promise<void>): void {
     this.syncManagedProvider = sync;
+  }
+
+  /**
+   * Attach the step that runs when a person approves a link (a first link or
+   * a "Link again"), and only then: never at startup, never on a heartbeat.
+   * The credits defaults use it to fill the gaps a new link opens and to tell
+   * a relink to the same account from a link to another (ADR 261001-000811),
+   * which is also why a computer linked before that existed is never switched
+   * over by it.
+   */
+  setOnNewLink(onNewLink: () => void | Promise<void>): void {
+    this.onNewLink = onNewLink;
+  }
+
+  /**
+   * Attach the step that runs when this computer stops being linked: a person
+   * unlinking or the cloud refusing the key. On a person's unlink it is called
+   * before the link is cleared, and its synchronous part runs then, so it can
+   * capture what was minted under the link and revoke it afterwards.
+   */
+  setOnUnlink(onUnlink: () => void | Promise<void>): void {
+    this.onUnlink = onUnlink;
+  }
+
+  private async notifyUnlink(): Promise<void> {
+    if (!this.onUnlink) return;
+    try {
+      await this.onUnlink();
+    } catch (error) {
+      logger.warn('[CloudLink] Unlink step failed', logError(error));
+    }
+  }
+
+  private async notifyNewLink(): Promise<void> {
+    if (!this.onNewLink) return;
+    try {
+      await this.onNewLink();
+    } catch (error) {
+      logger.warn('[CloudLink] New-link step failed', logError(error));
+    }
   }
 
   /** Submit one durable managed connector authority command with the current linked key. */
@@ -1052,6 +1179,9 @@ export class CloudLinkManager {
     }
     this.stopHeartbeatSchedule();
     this.clearKeepingProof();
+    // The cloud already refused the key, so nothing can be revoked under it;
+    // the unlink step still drops the credits token and stops work on it.
+    void this.notifyUnlink();
     this.lastHeartbeatAt = undefined;
     this.relinkOutcome = undefined;
     this.setState(relinkPending ? 'pending' : 'unlinked');

@@ -50,7 +50,7 @@ export class DeliveryReceiptGate {
     }
     if (this.state.state === 'unavailable' && this.state.channelId === input.channelId) {
       this.state.attempts += 1;
-      throw new ApiError(503, 'UNAVAILABLE', 'Community delivery is temporarily unavailable.');
+      throw new ApiError(503, 'UNAVAILABLE', 'Space delivery is temporarily unavailable.');
     }
     if (!this.matches(input.channelId, 'before-persist')) return;
     this.state = { state: 'held-before-persist', channelId: input.channelId };

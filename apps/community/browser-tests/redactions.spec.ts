@@ -117,9 +117,9 @@ test('a message deleted in one tab turns into its tombstone in another open tab'
     await first.getByLabel('Your name').fill('Owner');
     await first.getByLabel('Email').fill('owner@redactions.test');
     await first.getByLabel('Password').fill('password1234');
-    await first.getByLabel('Community name').fill('Quiet Place');
+    await first.getByLabel('Space name').fill('Quiet Place');
     await first.getByLabel('First channel').fill('general');
-    await first.getByRole('button', { name: 'Create community' }).click();
+    await first.getByRole('button', { name: 'Create space' }).click();
     await expect(first.getByRole('heading', { name: '# general' })).toBeVisible({
       timeout: 15000,
     });

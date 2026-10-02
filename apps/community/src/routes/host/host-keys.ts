@@ -38,7 +38,7 @@ export function registerHostKeyRoutes(
   const { pool, authority, now, confirmPassword } = deps;
   const keyId = (value: string | undefined) => {
     const parsed = z.uuid().safeParse(value);
-    if (!parsed.success) throw new ApiError(404, 'NOT_FOUND', 'Host API key not found.');
+    if (!parsed.success) throw new ApiError(404, 'NOT_FOUND', 'Server API key not found.');
     return parsed.data;
   };
 

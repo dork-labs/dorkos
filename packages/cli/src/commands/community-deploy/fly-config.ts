@@ -16,12 +16,12 @@ function tomlString(value: string): string {
 export function renderCommunityFlyConfig(plan: LaunchPlan): string {
   const values = [plan.fly.appName, plan.fly.region, plan.fly.machineSize, plan.tigris.bucketName];
   if (values.some((value) => /[\0\r\n]/u.test(value))) {
-    throw new Error('Community Fly configuration contains an invalid value');
+    throw new Error('Space server Fly configuration contains an invalid value');
   }
   const [cpuKind = 'shared', cpuCount = '1x'] = plan.fly.machineSize.split('-cpu-');
   const cpus = Number.parseInt(cpuCount, 10);
   if (!Number.isSafeInteger(cpus) || cpus < 1 || cpus > 8) {
-    throw new Error('Community Fly Machine size is unsupported');
+    throw new Error('Space server Fly Machine size is unsupported');
   }
   return `app = ${tomlString(plan.fly.appName)}
 primary_region = ${tomlString(plan.fly.region)}

@@ -134,6 +134,7 @@ describe('the pin list', () => {
       env: 'relaunch',
       effort: 'relaunch',
       fastMode: 'relaunch',
+      settingsEnv: 'relaunch',
       additionalDirectories: 'relaunch',
       mcpServers: 'live',
       plugins: 'live',
@@ -307,6 +308,11 @@ describe('the relaunch pins', () => {
     ['effort', { effortInput: 'low', options: options({ effort: 'low' }) }],
     ['effort', { effortInput: undefined, options: options({ effort: undefined }) }],
     ['fastMode', { options: options({ settings: { fastMode: true } }) }],
+    // The credits endpoint pinned above project settings (ADR 261001-000811).
+    [
+      'settingsEnv',
+      { options: options({ settings: { env: { ANTHROPIC_BASE_URL: 'http://credits' } } }) },
+    ],
     [
       'additionalDirectories',
       { options: grantedOptions([{ path: '/rooms/r1/worktrees/ana', access: 'write' }]) },

@@ -1,3 +1,5 @@
+import { company } from '@dorkos/shared/company';
+
 /**
  * Site-wide configuration for the DorkOS marketing site.
  *
@@ -9,7 +11,8 @@ export const siteConfig = {
   description:
     'One place for every AI agent you run: Claude Code, Codex, and OpenCode. Open source, and it runs on your own computer.',
   url: 'https://dorkos.ai',
-  contactEmail: 'hey@dorkos.ai',
+  /** The company's published contact address; owned by `@dorkos/shared/company`. */
+  contactEmail: company.contactEmail,
   github: 'https://github.com/dork-labs/dorkos',
   npm: 'https://www.npmjs.com/package/dorkos',
   /**

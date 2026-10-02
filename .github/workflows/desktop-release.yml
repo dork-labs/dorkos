@@ -91,6 +91,14 @@ jobs:
         # dependencies build first (^build): the renderer imports
         # @dorkos/extension-api and friends, whose exports resolve to dist/
         # — absent on a fresh runner unless the dependency graph builds.
+        #
+        # Heap ceiling: the same one desktop-smoke.yml sets, for the same
+        # reason, and its comment holds the measurements. Both Vite builds in
+        # this graph (the client's and the desktop renderer's) peak above the
+        # ~2 GB default Node picks on this 7 GB runner; desktop-smoke.yml's
+        # identical build died there 27 times in 98 main runs, 09-29..10-01.
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm exec turbo build --filter=@dorkos/desktop
 
       # Flips better-sqlite3/node-pty to Electron's ABI right before
@@ -224,6 +232,14 @@ jobs:
         # dependencies build first (^build): the renderer imports
         # @dorkos/extension-api and friends, whose exports resolve to dist/
         # — absent on a fresh runner unless the dependency graph builds.
+        #
+        # Heap ceiling: set to match the macOS job (see desktop-smoke.yml for
+        # the measurements). This 16 GB runner's default is already about
+        # this size, so it changes nothing today; it is pinned so the
+        # Windows build does not depend on whatever default the next runner
+        # image picks.
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm exec turbo build --filter=@dorkos/desktop
 
       # Flips better-sqlite3/node-pty to Electron's ABI right before

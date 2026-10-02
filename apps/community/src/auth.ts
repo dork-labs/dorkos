@@ -138,7 +138,7 @@ export function createCommunityAuth(
         ) {
           throw new APIError('BAD_REQUEST', {
             code: 'id_token_sign_in_disabled',
-            message: 'Sign in through the provider instead.',
+            message: 'Sign in through your sign-in service instead.',
           });
         }
         if (ctx.path.startsWith('/sign-up/')) {

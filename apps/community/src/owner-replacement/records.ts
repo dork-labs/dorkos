@@ -114,7 +114,8 @@ export function projectOwnerReplacement(
     requestedBy: {
       kind,
       // An operator whose account was erased leaves no name behind.
-      label: row.requested_by_label ?? (kind === 'person' ? 'Former host operator' : 'Host key'),
+      label:
+        row.requested_by_label ?? (kind === 'person' ? 'Former server admin' : 'Server API key'),
     },
     notice: {
       state: row.notice_state,

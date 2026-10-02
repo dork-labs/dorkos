@@ -29,7 +29,7 @@ describe('setupAboutPanel (B3)', () => {
     expect(app.setAboutPanelOptions).toHaveBeenCalledWith({
       applicationName: 'DorkOS',
       applicationVersion: '1.2.3',
-      copyright: '© 2026 DorkOS',
+      copyright: '© 2026 144 Studio, LLC',
       credits: 'All your coding agents. One place.',
     });
   });

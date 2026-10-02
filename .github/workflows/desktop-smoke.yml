@@ -124,6 +124,28 @@ jobs:
         # friends, whose exports resolve to dist/ — absent on a fresh runner
         # unless the dependency graph builds. This step also runs the server
         # bundle's own gates (esbuild warnings + specifier resolution).
+        #
+        # HEAP CEILING. Two processes in this graph bundle the whole client
+        # with Vite: @dorkos/client's `vite build` and the desktop renderer's
+        # `electron-vite build` (the same source, built by a second config).
+        # Measured on 2026-10-02 with an uncapped heap, they peak at ~2.2 GB and
+        # ~2.6 GB of live JS heap. Node's default ceiling is sized from the
+        # machine's RAM, and on this 7 GB runner it is ~2 GB, so both died with
+        # "JavaScript heap out of memory" whenever GC timing went the wrong way:
+        # 0 failures on 2026-09-27, 27 of 98 push runs over 09-29..10-01, as
+        # the client's main chunk grew (4.4 MB on 09-21, 4.9 MB on 10-02).
+        # Locally the renderer build fails every time at a 2000 MB ceiling and
+        # passes at 2500.
+        #
+        # 4096 MB is ~1.6x today's measured peak, so there is room for the
+        # bundle to keep growing, and it is a ceiling, not a reservation. The
+        # job's worst overlap is the client's Vite build beside the server's
+        # tsc (~3.1 GB + ~2.4 GB resident); the desktop build starts only
+        # after both, so this fits the runner's 7 GB without a second heavy
+        # process piled on. If a heap OOM comes back here, look at the
+        # client's chunk sizes before raising the number again.
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm exec turbo build --filter=@dorkos/desktop
 
       # Flips better-sqlite3/node-pty to Electron's ABI right before packaging

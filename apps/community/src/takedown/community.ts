@@ -182,12 +182,12 @@ export async function createCommunityTakedown(
     return { row: existing.rows[0], replayed: true };
   }
   const community = locked.rows[0];
-  if (!community) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  if (!community) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
   if (community.lifecycle === 'pending_owner')
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'Nobody has claimed this community, so it has no content. Abandon it instead.'
+      'Nobody has claimed this space, so it has no content. Abandon it instead.'
     );
   if (
     community.lifecycle_version !== input.target.lifecycleVersion ||
@@ -196,16 +196,16 @@ export async function createCommunityTakedown(
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'The community changed, or the confirmation did not match. Check it and try again.'
+      'The space changed, or the confirmation did not match. Check it and try again.'
     );
   if (community.takedown_id)
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community is already taken down.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space is already taken down.');
   const deletion = await client.query<{ state: string }>(
     'SELECT state FROM community_deletion_jobs WHERE community_id=$1 FOR UPDATE',
     [community.id]
   );
   if (deletion.rows[0] && deletion.rows[0].state !== 'waiting')
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community is already being deleted.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space is already being deleted.');
 
   // The rate limit counts every community takedown this actor made in the last day, reversed
   // ones too: a leaked key cannot take down and reverse its way past it. The count runs under a
@@ -235,7 +235,7 @@ export async function createCommunityTakedown(
     );
     const frees = recent.rows[recent.rows.length - input.communitiesPerDay].created_at;
     throw new RateLimited(
-      'You have taken down as many communities today as this host allows.',
+      'You have taken down as many spaces today as this server allows.',
       Math.max(1, Math.ceil((frees.getTime() + DAY_MS - input.now.getTime()) / 1000))
     );
   }
@@ -425,9 +425,9 @@ export async function reverseCommunityTakedown(
     throw new ApiError(409, 'STATE_CONFLICT', 'This takedown was already reversed.');
   const current = community.rows[0];
   if (!current || current.takedown_id !== row.id)
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community is already deleted.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space is already deleted.');
   if (current.lifecycle_version !== input.lifecycleVersion)
-    throw new ApiError(409, 'STATE_CONFLICT', 'Community lifecycle changed.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'Space lifecycle changed.');
   const job = await client.query<{ state: string; delete_after: Date }>(
     'SELECT state,delete_after FROM community_deletion_jobs WHERE community_id=$1 FOR UPDATE',
     [row.community_id]
@@ -440,7 +440,7 @@ export async function reverseCommunityTakedown(
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'The reversal window has ended. This community is being deleted.'
+      'The reversal window has ended. This space is being deleted.'
     );
   const prior = (
     await client.query<{ prior_state: TakedownPriorState }>(
@@ -452,7 +452,7 @@ export async function reverseCommunityTakedown(
     throw new ApiError(
       409,
       'STATE_CONFLICT',
-      'The owner had already asked to delete this community. A takedown of it cannot be reversed.'
+      'The owner had already asked to delete this space. A takedown of it cannot be reversed.'
     );
   const suspendedFrom = reversalSuspendedFrom(prior);
   // Clearing the lifecycle clears the deletion origin (a trigger); held_from_state stays exactly

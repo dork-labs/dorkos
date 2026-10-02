@@ -182,6 +182,56 @@ export type RuntimeSigninSink = (event: RuntimeSigninEvent) => void;
 /** What to tell, once boot has wired something that can say it. */
 let sink: RuntimeSigninSink | null = null;
 
+/** One turn that chose DorkOS credits and could not have them. */
+export interface CreditsRefusedEvent {
+  /** The runtime type, e.g. `claude-code`. */
+  runtime: string;
+  /** The session whose turn was refused. */
+  sessionId: string;
+  /** The refusal's own sentence. */
+  message: string;
+}
+
+/** Told about every turn refused because DorkOS credits could not pay for it. */
+export type CreditsRefusedSink = (event: CreditsRefusedEvent) => void;
+
+/**
+ * The second thing this seam watches for (ADR 261001-000811): a turn on DorkOS
+ * credits refused before it reached anything, so nothing was sent and nothing
+ * paid. Its own sink, because it is not a sign-in failure and must never open
+ * or close a sign-in episode; it rides this wrap only because this is the one
+ * place a scheduled task's, a room's and a relay delivery's turns all pass.
+ */
+let creditsRefusedSink: CreditsRefusedSink | null = null;
+
+/**
+ * Install (or tear down) what hears about refused credits turns.
+ *
+ * @param next - The sink, or `null` to tear it down.
+ */
+export function setCreditsRefusedSink(next: CreditsRefusedSink | null): void {
+  creditsRefusedSink = next;
+}
+
+/** The code a refused credits turn's error carries (`CreditsUnavailableError`). */
+const CREDITS_UNAVAILABLE_CODE = 'credits_unavailable';
+
+/** The sentence of a refused credits turn's error event, or null for any other event. */
+function creditsRefusalOf(event: StreamEvent): string | null {
+  if (event.type !== 'error') return null;
+  const data = event.data as { code?: string; message?: string } | undefined;
+  return data?.code === CREDITS_UNAVAILABLE_CODE ? (data.message ?? '') : null;
+}
+
+/** Tell the credits sink, never letting it cost the turn. */
+function noteCreditsRefused(runtime: string, sessionId: string, message: string): void {
+  try {
+    creditsRefusedSink?.({ runtime, sessionId, message });
+  } catch (err) {
+    logger.warn('[Runtimes] Could not report a refused credits turn', { err, runtime });
+  }
+}
+
 /**
  * One runtime's standing sign-in condition: when it began, and which of that
  * runtime's accounts are still unproven.
@@ -584,7 +634,10 @@ async function* watchTurn(
   let reachedProvider = false;
   try {
     for await (const event of source) {
-      if (isAuthErrorEvent(event)) {
+      const refusal = creditsRefusalOf(event);
+      if (refusal !== null) {
+        noteCreditsRefused(runtime.type, sessionId, refusal);
+      } else if (isAuthErrorEvent(event)) {
         sawAuthError = true;
         noteSigninFailure(runtime.type, accountOf(runtime, sessionId));
       } else if (PROVIDER_CONTACT_EVENTS.has(event.type)) {
@@ -594,7 +647,9 @@ async function* watchTurn(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (detectAuthError({ message })) {
+    if ((err as { code?: unknown } | null)?.code === CREDITS_UNAVAILABLE_CODE) {
+      noteCreditsRefused(runtime.type, sessionId, message);
+    } else if (detectAuthError({ message })) {
       noteSigninFailure(runtime.type, accountOf(runtime, sessionId));
     }
     throw err;

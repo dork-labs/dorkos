@@ -47,6 +47,16 @@ export interface ClaudeAccountRef {
   isAccountRoot?: boolean;
 }
 
+/** What the DorkOS credits entry of the Runs on list is called, everywhere. */
+export const CREDITS_ACCOUNT_LABEL = 'DorkOS credits';
+
+/**
+ * The color the DorkOS credits entry is drawn in: a slate outside the account
+ * palette, so it never reads as one of the person's own accounts. At least 3:1
+ * against every surface an account dot sits on, in both themes.
+ */
+export const CREDITS_ACCOUNT_COLOR = '#64748b';
+
 /**
  * The shortest honest name for an account.
  *

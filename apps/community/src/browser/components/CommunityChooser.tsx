@@ -34,9 +34,9 @@ export function returnToChooserWithNotice(notice: RouteNotice = 'unavailable'): 
 type RouteNotice = 'unavailable' | 'no-address';
 
 const ROUTE_NOTICES: Record<RouteNotice, string> = {
-  unavailable: 'That community is not available to this account.',
+  unavailable: 'That space is not available to this account.',
   // A short address that leads nowhere says only that, whatever the reason.
-  'no-address': 'No community at this address.',
+  'no-address': 'No space at this address.',
 };
 
 function takeRouteNotice(): RouteNotice | null {
@@ -61,8 +61,8 @@ function describeChoice(membership: CommunityWireMembershipSummary, remembered: 
     return {
       available: deletionRecovery,
       deletionRecovery,
-      status: 'Removed by its host',
-      reason: 'This community was removed by its host.',
+      status: 'Removed by its server admin',
+      reason: 'This space was removed by its server admin.',
     };
   if (deletionRecovery) return { available: true, deletionRecovery, status: 'Review deletion' };
   if (membership.lifecycle === 'archived')
@@ -76,13 +76,13 @@ function describeChoice(membership: CommunityWireMembershipSummary, remembered: 
       available: false,
       deletionRecovery,
       status: 'Suspended',
-      reason: 'The person running this host has paused it. Your membership is unchanged.',
+      reason: 'The person running this server has paused it. Your membership is unchanged.',
     };
   return {
     available: false,
     deletionRecovery,
     status: 'Unavailable',
-    reason: 'This community cannot be opened right now.',
+    reason: 'This space cannot be opened right now.',
   };
 }
 
@@ -158,17 +158,17 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
     return (
       <main className="grid min-h-dvh place-items-center">
         <div role="status" className="panel p-6">
-          <p className="eyebrow">DorkOS Community</p>
-          <p className="mb-0">Opening your communities…</p>
+          <p className="eyebrow">DorkOS Space</p>
+          <p className="mb-0">Opening your spaces…</p>
         </div>
       </main>
     );
   return (
     <main className="grid min-h-dvh place-items-center p-5">
       <section className="panel w-full max-w-xl p-6" aria-labelledby="community-chooser-title">
-        <p className="eyebrow">DorkOS Community</p>
+        <p className="eyebrow">DorkOS Space</p>
         <h1 id="community-chooser-title" ref={heading} tabIndex={-1}>
-          Choose a community
+          Choose a space
         </h1>
         {routeNotice && (
           <Notice role="status" tone="info" className="mb-4">
@@ -191,13 +191,13 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
           </Notice>
         ) : memberships?.length === 0 ? (
           <div>
-            <p className="muted">This account does not have a community membership yet.</p>
+            <p className="muted">This account does not have a space membership yet.</p>
             <p className="muted mb-0">
               To join one, open an invitation link from one of its members in this browser.
             </p>
             {hostOperator && (
               <p className="mt-4 mb-0">
-                <a href="/host">Host administration</a>
+                <a href="/host">Server administration</a>
               </p>
             )}
           </div>

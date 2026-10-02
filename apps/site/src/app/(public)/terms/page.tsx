@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { company } from '@dorkos/shared/company';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
@@ -24,10 +25,10 @@ export default function TermsOfServicePage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Terms of Service</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 9, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is made by Blaze Ventures, LLC. When these terms say “we,” that is who you are
-            agreeing with.
+            DorkOS is made by {company.legalName}, a {company.entityType} formed in{' '}
+            {company.jurisdiction}. When these terms say “we,” that is who you are agreeing with.
           </p>
         </header>
 
@@ -136,10 +137,10 @@ export default function TermsOfServicePage() {
           <p className="text-warm-gray leading-relaxed">
             Questions about these terms? Email us at{' '}
             <a
-              href="mailto:hey@dorkos.ai"
+              href={`mailto:${company.contactEmail}`}
               className="text-charcoal hover:text-brand-orange underline"
             >
-              hey@dorkos.ai
+              {company.contactEmail}
             </a>
             .
           </p>

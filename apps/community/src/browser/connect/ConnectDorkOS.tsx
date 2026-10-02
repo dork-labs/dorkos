@@ -12,15 +12,15 @@ import { CopyableLink } from './CopyableLink.js';
 export function ConnectDorkOS({ link }: { link: string }) {
   return (
     <Notice tone="info" className="mt-4 text-left">
-      <strong>Connect DorkOS to this community</strong>
+      <strong>Connect DorkOS to this space</strong>
       <ol className="small mt-2 mb-3 list-decimal space-y-1 pl-5">
         <li>In the DorkOS app, open the menu at the top left.</li>
         <li>
           Choose <strong>Add a space</strong>, then <strong>Join a space…</strong>
         </li>
-        <li>Paste this community’s link, then approve it here when asked.</li>
+        <li>Paste this space’s link, then approve it here when asked.</li>
       </ol>
-      <CopyableLink label="This community’s link" link={link} />
+      <CopyableLink label="This space’s link" link={link} />
       <p className="small muted mt-2 mb-0">Each DorkOS installation needs its own approval.</p>
     </Notice>
   );

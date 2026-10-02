@@ -49,7 +49,7 @@ function Reasons({ communityId, notice }: { communityId: string; notice: Takedow
 }
 
 /**
- * Settings › "Removed by the host", for the owner and admins: each thing the host took down and
+ * Settings › "Removed by the server admin", for the owner and admins: each thing the server admin took down and
  * chose to say so, with the day, where, and why. Never what it said. Nothing when there is none.
  */
 export function RemovedByHost({
@@ -63,7 +63,7 @@ export function RemovedByHost({
   if (!error && !notices?.length) return null;
   return (
     <section className="panel mt-4" aria-labelledby="removed-by-host-title">
-      <h3 id="removed-by-host-title">Removed by the host</h3>
+      <h3 id="removed-by-host-title">Removed by the server admin</h3>
       {error ? (
         <p className="small muted mb-0">{error}</p>
       ) : (

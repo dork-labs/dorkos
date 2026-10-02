@@ -49,6 +49,9 @@ import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
+import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaults.js';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { writeAgentManifest } from '../services/core/agent-observation/agent-execution-writes.js';
 
 /**
@@ -641,6 +644,16 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     }
     if (!updated) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+    // Only a person can put an agent on DorkOS credits (ADR 261001-000811).
+    // The file now says what was asked; the consent lives in DorkOS config,
+    // recorded only for a caller that clears the agent bar, so an agent (or a
+    // cloned file) naming credits on its own spends nothing.
+    if (Object.hasOwn(req.body as object, 'account') && clearsTheAgentBar(req, res)) {
+      setCreditsAllowedForAgent(
+        req.params.id,
+        (req.body as { account?: unknown }).account === CREDITS_ACCOUNT_ID
+      );
     }
     return res.json(updated);
   });

@@ -325,7 +325,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     if (account !== null && knownAccounts !== undefined && !registeredAccount) {
       breakages.push({
         kind: 'account-unregistered',
-        message: `The account “${account}” isn’t registered on this machine, so this agent bills to the default.`,
+        message: `The account “${account}” isn’t registered on this machine, so this agent runs on the default.`,
       });
     }
   }

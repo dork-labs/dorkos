@@ -422,7 +422,7 @@ describe("isAllowlisted's `contains` field", () => {
 // ---------------------------------------------------------------------------
 
 describe('collectFiles', () => {
-  it('finds source files under the scan roots and skips __tests__, dev/, and node_modules', () => {
+  it('finds source files under the scan roots and skips tests, dev/, and node_modules', () => {
     const root = makeTempDir();
     const paths = [
       'apps/client/src/layers/features/foo/Foo.tsx',
@@ -430,6 +430,9 @@ describe('collectFiles', () => {
       'apps/client/src/dev/showcases/FooShowcase.tsx',
       'apps/client/src/node_modules/pkg/index.ts',
       'apps/site/src/components/Bar.tsx',
+      'apps/community/src/browser/admission.ts',
+      'apps/community/src/browser/admission.test.ts',
+      'apps/community/src/browser/Chooser.test.tsx',
     ];
     for (const p of paths) {
       const full = join(root, p);
@@ -437,12 +440,18 @@ describe('collectFiles', () => {
       writeFileSync(full, 'export const x = 1;');
     }
 
-    const found = collectFiles(['apps/client/src', 'apps/site/src'], root).map((f) =>
-      f.slice(root.length + 1)
-    );
+    const found = collectFiles(
+      ['apps/client/src', 'apps/site/src', 'apps/community/src'],
+      root
+    ).map((f) => f.slice(root.length + 1));
 
+    // A colocated `*.test.ts(x)` beside its source is skipped like `__tests__/` is.
     expect(found.sort()).toEqual(
-      ['apps/client/src/layers/features/foo/Foo.tsx', 'apps/site/src/components/Bar.tsx'].sort()
+      [
+        'apps/client/src/layers/features/foo/Foo.tsx',
+        'apps/site/src/components/Bar.tsx',
+        'apps/community/src/browser/admission.ts',
+      ].sort()
     );
   });
 
@@ -1079,7 +1088,7 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     // Not hermetic by design: this is the one test that intentionally reads
     // the real checkout, so a genuine regression fails CI here rather than
     // only when someone remembers to run the script by hand.
-    // Walking three full workspaces (client, site, server) through the real
+    // Walking four full workspaces (client, site, server, community) through the real
     // TypeScript parser is genuinely slower than vitest's 5s default,
     // especially on a machine busy with other agents — this failed on CI
     // timing out, not on finding a violation. 20s leaves headroom without

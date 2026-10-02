@@ -29,7 +29,7 @@ A work, organization or client account belongs in kept out.
 
 ## Set it up in the DorkOS app
 
-1. **Add your accounts.** Open Settings, then **Runtimes**. On the Claude Code card, under **Billing account**, choose **Add account**. Pick the **Account folder**, give it a **Name**, then choose **Add**. The same card's **Default account** sets which account new chats use. See [Choose an account](/docs/guides/runtimes#choose-an-account).
+1. **Add your accounts.** Open Settings, then **Runtimes**. On the Claude Code card, under **Runs on**, choose **Add account**. Pick the **Account folder**, give it a **Name**, then choose **Add**. The same card's **Default account** sets which account new chats use. See [Choose an account](/docs/guides/runtimes#choose-an-account).
 2. **Pick each account's role.** With the flow plugin installed from the [Marketplace](/docs/marketplace), Settings has a **Flow** tab under Add-ons. Under **Which accounts flow may use**, set each account to **Main**, **Rotation** or **Kept out**. For your main account, **Keep N% for me** sets how much of its weekly limit flow leaves alone. For a kept-out account, **Only for these repos** lets it serve the repositories you list. If the tab says to update DorkOS, update it, or use the terminal steps below.
 
 The app and flow share one list of accounts, so an account you add in Settings shows up in `flow accounts setup` too, and the reverse.
@@ -38,7 +38,7 @@ The app and flow share one list of accounts, so an account you add in Settings s
 
 ## Keep an account to its projects
 
-A work or client account should only ever work on that client's code. To say so, open Settings, then **Runtimes**. On the account's row under **Billing account**, choose **Limit to projects…**, pick **Only these projects**, tick the projects it belongs to, then choose **Save**. The row then says **Only for client-app**.
+A work or client account should only ever work on that client's code. To say so, open Settings, then **Runtimes**. On the account's row under **Runs on**, choose **Limit to projects…**, pick **Only these projects**, tick the projects it belongs to, then choose **Save**. The row then says **Only for client-app**.
 
 DorkOS holds to this wherever an account is picked: by you, by a schedule, by an agent or by flow. In any other project, the account shows in the chat's account menu but can't be chosen, with the line **Only for client-app** beside it. If something asks for it anyway, DorkOS refuses and says why, and it never quietly runs the work on another account instead. When nobody named an account, DorkOS uses the next account that may work there.
 

@@ -4,7 +4,7 @@ import { describeViolation, runAxe } from '../../axe.js';
 import { ALPHA, mockCommunities, type CommunitySpec } from './community-mocks.js';
 
 /**
- * Accessibility proof for the DorkOS app's side of Community membership
+ * Accessibility proof for the DorkOS app's side of Space membership
  * (spec `specs/community-membership-journeys`, task 3.2): the switcher's
  * connect dialog, the join-with-invitation dialog, the switcher's Manage and
  * Add actions, and the disconnect confirmation. Each passes axe at desktop and
@@ -118,7 +118,7 @@ async function shortTargets(scope: Locator, selector: string, floor: number) {
   );
 }
 
-test.describe('Community membership in the DorkOS app is accessible (task 3.2)', () => {
+test.describe('Space membership in the DorkOS app is accessible (task 3.2)', () => {
   test('connecting a community in the switcher: axe, keyboard pairing, announced outcomes, phone targets', async ({
     page,
   }, testInfo) => {

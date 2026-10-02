@@ -230,7 +230,7 @@ async function main() {
  * Remote mode only: end what this run made on the held community, and nothing
  * else. For each app still open, remove every agent enrollment and end every
  * connection (which revokes that installation's grant); then remove, on the
- * Community, every agent this run enrolled. The community, its channels and
+ * Community, every agent this run enrolled. The space, its channels and
  * both accounts stay: the live gate owns them.
  */
 async function releaseRemote(): Promise<string[]> {

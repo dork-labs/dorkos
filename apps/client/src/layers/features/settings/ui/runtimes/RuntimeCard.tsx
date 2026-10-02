@@ -163,7 +163,11 @@ export function RuntimeCard({
   onMakeDefault,
 }: RuntimeCardProps) {
   const { data: config } = useConfig();
-  const { nameFor: accountName } = useClaudeAccounts();
+  const {
+    nameFor: accountName,
+    resolvedAccount,
+    inherited: accountInherited,
+  } = useClaudeAccounts();
   // Fresh account usage while this tab is open, for the card's usage rows
   // (spec `claude-account-ui` §6.5). Only a runtime that keeps a usage ledger
   // has a route to ask; the rest read nothing.
@@ -274,12 +278,14 @@ export function RuntimeCard({
   // container has the config); the wording belongs to the summary builder.
   const claudeCode = config?.claudeCode;
   const sectionValues: Record<string, string | null> = {
+    // Read through the accounts view, which knows a credits default the raw
+    // `resolvedAccount` (the person's own default sign-in) does not.
     'claude-accounts':
-      !claudeCode || claudeCode.inherited || !claudeCode.resolvedAccount
-        ? // The inherited default is not a billing choice anybody made, so the
-          // line stays quiet rather than naming a folder as if it were one.
+      !claudeCode || accountInherited || !resolvedAccount
+        ? // The inherited default is not a choice anybody made, so the line
+          // stays quiet rather than naming a folder as if it were one.
           null
-        : accountName(claudeCode.resolvedAccount),
+        : accountName(resolvedAccount),
     'opencode-power-source': requirementsEntry?.provider
       ? describePowerSource(requirementsEntry.provider)
       : null,

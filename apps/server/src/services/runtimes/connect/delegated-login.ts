@@ -59,6 +59,7 @@ import {
   resolveActiveClaudeRoot,
   resolveClaudeRootSet,
 } from '../claude-code/claude-config-dir.js';
+import { isCreditsClaudeRoot } from '../claude-code/credits-root.js';
 
 /** Injectable spawn seam (defaults to `node:child_process` spawn); tests pass a fake. */
 export type SpawnFn = typeof nodeSpawn;
@@ -178,6 +179,10 @@ export async function resolveLoginCommand(
  * @param root - Candidate account root to check.
  */
 function isKnownClaudeAccountRoot(root: string): boolean {
+  // The DorkOS credits folder is never signed into: it runs on the credits
+  // token alone, and a sign-in stored there would let a credits session bill a
+  // person's own subscription the moment the token went missing.
+  if (isCreditsClaudeRoot(root)) return false;
   const target = path.resolve(root);
   return resolveClaudeRootSet().some((known) => path.resolve(known) === target);
 }

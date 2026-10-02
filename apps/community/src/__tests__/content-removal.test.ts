@@ -15,7 +15,7 @@ describe('tombstonePayloadHash', () => {
       tombstonePayloadHash(REMOVED_ENTRY_TEXT.author, '11111111-1111-4111-8111-111111111111')
     ).toBe('bc8329cf343f0dfddf5c566ea677b9ca6cff4314bf466297757c4d63224cfa21');
     expect(tombstonePayloadHash(REMOVED_ENTRY_TEXT.moderator, null)).toBe(
-      '901bc4f89e1c2011b5f348ca378ccfbeb61ec810da31bb7db8ab9adc5f3c6470'
+      '910b4b0d5880ea47cb010ca9d4ca73583f7a564b78ec76fc3ab19e684b9659e2'
     );
   });
 
@@ -23,8 +23,8 @@ describe('tombstonePayloadHash', () => {
   it('uses the three fixed sentences', () => {
     expect(REMOVED_ENTRY_TEXT).toEqual({
       author: 'This message was deleted.',
-      moderator: 'This message was removed by a community admin.',
-      host: 'This message was removed by the host.',
+      moderator: 'This message was removed by a space admin.',
+      host: 'This message was removed by the server admin.',
     });
   });
 });

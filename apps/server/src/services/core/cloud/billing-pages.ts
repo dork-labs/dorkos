@@ -1,7 +1,8 @@
 /**
  * The web pages where money changes: the billing portal (change or end a plan,
  * payment method, invoices), checkout for one offer, and buying credits; and
- * asking for a copy of everything the account holds.
+ * asking for a copy of everything the account holds, or for the account to be
+ * deleted.
  *
  * The app never takes a payment and never names what anything costs. Each call
  * here asks the service for a short-lived page address and hands back only
@@ -17,10 +18,12 @@
  * @module services/core/cloud/billing-pages
  */
 import {
+  AccountDeletionResponseSchema,
   AccountExportResponseSchema,
   HostedPageResponseSchema,
   OffersResponseSchema,
   V1_ROUTES,
+  type AccountDeletion,
   type AccountExport,
   type OffersResponse,
 } from '@dork-labs/cloud-api';
@@ -102,6 +105,26 @@ export async function requestAccountExport(signal?: AbortSignal): Promise<Accoun
   });
   const downloadUrl = job.downloadUrl === null ? null : safePageUrl(job.downloadUrl);
   return { ...job, downloadUrl, readyAt: downloadUrl === null ? null : job.readyAt };
+}
+
+/**
+ * Ask for the account to be deleted.
+ *
+ * This deletes nothing. The service emails the account's own address a link,
+ * and the account is deleted only when the person follows it in their own
+ * browser. Once it is, the service refuses this computer's key, and the next
+ * heartbeat or link check (`CloudLinkManager.checkLink`) unlinks this computer.
+ *
+ * @param signal - Aborts the request.
+ * @throws When this instance is not linked, or when the service refuses (a
+ *   `CloudApiProblemError` the caller can read with `problemOf`).
+ */
+export async function requestAccountDeletion(signal?: AbortSignal): Promise<AccountDeletion> {
+  const client = requireClient();
+  return client.post(V1_ROUTES.accountDeletion, AccountDeletionResponseSchema, {
+    body: {},
+    signal,
+  });
 }
 
 /** Hosts a local development service may answer from over plain http. */

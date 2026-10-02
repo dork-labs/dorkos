@@ -28,6 +28,7 @@ import { Router, type Response } from 'express';
 import { z } from 'zod';
 import type { Problem } from '@dork-labs/cloud-api';
 import type {
+  CloudAccountDeletionResponse,
   CloudAccountExportResponse,
   CloudBillingPage,
   CloudBillingSessionResponse,
@@ -56,13 +57,17 @@ import { isAbsent, isCloudLinked, problemOf } from '../services/core/cloud/v1-cl
 import {
   openBillingPage,
   readOffers,
+  requestAccountDeletion,
   requestAccountExport,
 } from '../services/core/cloud/billing-pages.js';
 import {
-  creditsFlagEnabled,
-  creditsWiringReport,
-  primeCreditsInference,
-} from '../services/core/cloud/credits-inference.js';
+  dismissCreditsNotice,
+  setCreditsDefault,
+  undoFilledDefaults,
+} from '../services/core/cloud/credits-defaults.js';
+import { creditsKilled } from '../services/core/cloud/credits-availability.js';
+import { creditsRuntimeViews, creditsStatus } from '../services/core/cloud/credits-runtimes.js';
+import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRouter } from './cloud-communities.js';
 
@@ -113,6 +118,19 @@ router.post('/unlink', async (_req, res) => {
 /** GET /api/cloud/status — settled linked/unlinked summary for Settings. */
 router.get('/status', (_req, res) => {
   res.json(getCloudLinkManager().getSummary());
+});
+
+/**
+ * POST /api/cloud/link/check — ask the DorkOS account, now, whether it still
+ * accepts this computer, and answer the settled summary that results. A
+ * computer whose account was deleted comes back unlinked with its key cleared;
+ * a service that cannot be reached keeps the link. Never an error.
+ */
+router.post('/link/check', async (req, res) => {
+  // Person-only, like the deletion it follows: it reaches the service on this
+  // computer's key, and nothing an agent does needs it.
+  if (!clearsTheAgentBar(req, res)) return res.status(403).json(PERSON_ONLY_LINK_CHECK);
+  res.json(await getCloudLinkManager().checkLink());
 });
 
 /**
@@ -237,6 +255,12 @@ interface WriteFailureWording {
    * both cases. Without it, such a refusal is passed through like any other.
    */
   absent?: string;
+  /**
+   * What to tell the person when the service gave no answer it could read (a
+   * timeout, a broken body) for a write that may have done something anyway.
+   * Without it, such a failure reads as the account being out of reach.
+   */
+  unconfirmed?: string;
 }
 
 /**
@@ -278,9 +302,26 @@ function cloudWriteFailed(res: Response, error: unknown, wording: WriteFailureWo
   logger.warn(`[Cloud] Could not ${wording.what}`, logError(error));
   return res.json({
     ok: false,
-    message: 'Couldn’t reach your DorkOS account. Try again shortly.',
+    message: wording.unconfirmed ?? 'Couldn’t reach your DorkOS account. Try again shortly.',
   } satisfies CloudWriteRefusal);
 }
+
+/** Refusal code for a DorkOS account action only the person may take. */
+export const PERSON_ONLY_CODE = 'person_only';
+
+/** Said, with 403, when anything but the person asks to delete the account. */
+const PERSON_ONLY_DELETION = {
+  ok: false,
+  code: PERSON_ONLY_CODE,
+  message: 'Only you can delete your DorkOS account, from the DorkOS app while signed in.',
+} as const;
+
+/** Said, with 403, when anything but the person asks for a link check. */
+const PERSON_ONLY_LINK_CHECK = {
+  ok: false,
+  code: PERSON_ONLY_CODE,
+  message: 'Only you can check this computer’s DorkOS account link, from the DorkOS app.',
+} as const;
 
 /** Said, with HTTP 200, by every cloud write while this instance is not linked. */
 const NOT_LINKED: CloudWriteRefusal = {
@@ -395,22 +436,106 @@ router.post('/account/export', async (_req, res) => {
   }
 });
 
-/** GET /api/cloud/credits — whether the credits path is armed. Carries no credential. */
-router.get('/credits', (_req, res) => {
-  res.json(creditsWiringReport());
+/**
+ * POST /api/cloud/account/deletion — ask for the DorkOS account to be
+ * deleted. Nothing is deleted here: the service emails the account a
+ * confirmation link, and the account goes only when the person follows it.
+ * Once it has, `POST /api/cloud/link/check` finds this computer unlinked.
+ * A refusal answers 200, for the reason {@link cloudWriteFailed} gives.
+ */
+router.post('/account/deletion', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  // Only the person may ask to end their own account, never an agent: not one
+  // that names itself, not one holding an approval token, and, with login on,
+  // not one presenting the person's API key instead of a browser session.
+  if (!clearsTheAgentBar(req, res)) return res.status(403).json(PERSON_ONLY_DELETION);
+  if (!isCloudLinked()) return res.json(NOT_LINKED);
+  try {
+    const deletion = await requestAccountDeletion();
+    const body: CloudAccountDeletionResponse = {
+      ok: true,
+      deletion: {
+        requestedAt: deletion.requestedAt,
+        confirmationSentTo: deletion.confirmationSentTo,
+        confirmBy: deletion.confirmBy,
+      },
+    };
+    return res.json(body);
+  } catch (err) {
+    return cloudWriteFailed(res, err, {
+      what: 'ask to delete the account',
+      absent: 'Deleting your account from the app isn’t available on your account yet.',
+      // The request may have reached the service, and the email gone, before
+      // the answer was lost, so "couldn't reach" could be untrue.
+      unconfirmed:
+        'We couldn’t confirm your request went through. A link may already be on its way, so check your email before asking again.',
+    });
+  }
 });
 
 /**
- * POST /api/cloud/credits/select — obtain an inference token for this process.
- *
- * Behind the `DORKOS_CLOUD_CREDITS` flag, which is off by default, and behind
- * the link credential beside it. With either missing this answers the same
- * report the GET does, unchanged, rather than an error: nothing was armed, and
- * nothing was spent.
+ * GET /api/cloud/credits — whether DorkOS credits can be chosen here, which
+ * runtimes they reach, who chose them as a default, and the notices owed about
+ * choices made for the person. Carries no credential.
  */
-router.post('/credits/select', async (_req, res) => {
-  if (creditsFlagEnabled()) await primeCreditsInference();
-  return res.json(creditsWiringReport());
+router.get('/credits', async (_req, res) => {
+  res.json(await creditsStatus());
+});
+
+const CreditsDefaultBodySchema = z.object({
+  runtime: z.string().min(1),
+  useCredits: z.boolean(),
+});
+
+/**
+ * PUT /api/cloud/credits/default — a person's choice for one runtime's default:
+ * run new work on DorkOS credits, or go back to the runtime's own sign-in.
+ * Recorded as chosen by the person (ADR 261001-000811). Refuses a runtime that
+ * does not declare credits, and turning credits ON while they cannot be had,
+ * so nothing is ever set that would refuse every turn.
+ */
+router.put('/credits/default', async (req, res) => {
+  const parsed = CreditsDefaultBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Name a runtime and whether to use credits.' });
+  }
+  const { runtime, useCredits } = parsed.data;
+  if (useCredits) {
+    const view = creditsRuntimeViews().find((candidate) => candidate.type === runtime);
+    if (!view?.capabilities.credits) {
+      return res.status(400).json({ error: `${runtime} can't run on DorkOS credits yet.` });
+    }
+    if (creditsKilled()) {
+      return res.status(409).json({ error: 'DorkOS credits are turned off on this computer.' });
+    }
+    if (!isCloudLinked()) {
+      return res.status(409).json({ error: 'Sign in to your DorkOS account first.' });
+    }
+  }
+  setCreditsDefault(runtime, useCredits);
+  return res.json(await creditsStatus());
+});
+
+/**
+ * POST /api/cloud/credits/undo-filled — put back every runtime DorkOS set to
+ * credits on a new link, leaving the person's own picks alone ("Undo all").
+ */
+router.post('/credits/undo-filled', async (_req, res) => {
+  undoFilledDefaults();
+  return res.json(await creditsStatus());
+});
+
+const CreditsNoticeDismissBodySchema = z.object({
+  kind: z.enum(['filled', 'offer', 'signed-in']),
+  runtime: z.string().min(1).optional(),
+});
+
+/** POST /api/cloud/credits/notices/dismiss — settle one notice without changing any choice. */
+router.post('/credits/notices/dismiss', async (req, res) => {
+  const parsed = CreditsNoticeDismissBodySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Name the notice to dismiss.' });
+  dismissCreditsNotice(parsed.data);
+  return res.json(await creditsStatus());
 });
 
 export default router;

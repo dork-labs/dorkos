@@ -9,10 +9,10 @@ import { returnToChooserWithNotice } from './CommunityChooser.js';
 type Lookup = z.infer<typeof CommunityWireShortNameLookupSchema>;
 
 /**
- * Open a community by its short address, `/<name>[/...]`. The name is looked up once to find
- * the community's UUID; everything after that uses the UUID. The address bar moves to the
+ * Open a space by its short address, `/<name>[/...]`. The name is looked up once to find
+ * the space's UUID; everything after that uses the UUID. The address bar moves to the
  * current name when a retired one (or another spelling) was used. Only a name the server says
- * leads nowhere opens the chooser with "No community at this address."; being offline, rate
+ * leads nowhere opens the chooser with "No space at this address."; being offline, rate
  * limited, or a server that is briefly down offers a retry instead, because the address may be
  * fine.
  */
@@ -51,13 +51,13 @@ export function ShortNameRoute({ name, rest }: { name: string; rest: string }) {
     <main className="grid min-h-dvh place-items-center p-5">
       {failure ? (
         <Notice role="alert" tone="error" className="stack max-w-md">
-          <p>Couldn’t open this community. {failure}</p>
+          <p>Couldn’t open this space. {failure}</p>
           <Button type="button" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
             Try again
           </Button>
         </Notice>
       ) : (
-        <p role="status">Opening community…</p>
+        <p role="status">Opening space…</p>
       )}
     </main>
   );

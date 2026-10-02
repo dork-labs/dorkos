@@ -7,15 +7,14 @@
  * Decided from PRESENCE alone, never from a secret's value: the names of the
  * variables set in a launch's final environment, the `apiKeySource` the binary
  * reports on session init, and, for a session not launched here, whether a key
- * reference is configured, the credits flag is on, or this process's own
- * environment carries a key. Nothing here resolves, decrypts or spawns anything
+ * reference is configured, the session runs on DorkOS credits, or this
+ * process's own environment carries a key. Nothing here resolves, decrypts or spawns anything
  * (the account compliance guard pins that this module never imports the
  * credential resolver or provider).
  *
  * @module services/runtimes/claude-code/messaging/per-token-billing
  */
 import { configManager } from '../../../core/config-manager.js';
-import { creditsFlagEnabled } from '../../../core/cloud/credits-inference.js';
 
 /** Variables whose presence makes the binary bill a key or a gateway token, not a sign-in. */
 const PER_TOKEN_ENV_VARS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] as const;
@@ -54,7 +53,7 @@ export function keySourceBillsPerToken(apiKeySource: string): boolean {
 export interface PerTokenSignals {
   /** Whether a Claude key reference is configured (its value is never resolved). */
   keyReferenceConfigured: boolean;
-  /** Whether the DorkOS credits flag is on for this process. */
+  /** Whether the session runs on DorkOS credits (its account is the credits folder). */
   creditsOn: boolean;
   /** Whether this process's own environment sets a per-token variable. */
   inheritedKey: boolean;
@@ -63,8 +62,11 @@ export interface PerTokenSignals {
 /**
  * Read the presence markers. Anything that cannot be read counts as present,
  * so a doubt reads as per token.
+ *
+ * @param onCredits - Whether the session runs on DorkOS credits, which the
+ *   caller reads off the session's account.
  */
-export function readPerTokenSignals(): PerTokenSignals {
+export function readPerTokenSignals(onCredits = false): PerTokenSignals {
   let keyReferenceConfigured = true;
   try {
     const ref = (configManager.get('providers') as Record<string, unknown> | undefined)?.[
@@ -74,12 +76,7 @@ export function readPerTokenSignals(): PerTokenSignals {
   } catch {
     // An unreadable config is a doubt.
   }
-  let creditsOn = true;
-  try {
-    creditsOn = creditsFlagEnabled();
-  } catch {
-    // A doubt.
-  }
+  const creditsOn = onCredits;
   // eslint-disable-next-line no-restricted-syntax -- presence of two names in this process's own environment, never their values
   const inheritedKey = envBillsPerToken(process.env);
   return { keyReferenceConfigured, creditsOn, inheritedKey };
@@ -87,8 +84,8 @@ export function readPerTokenSignals(): PerTokenSignals {
 
 /**
  * What a launch made now would bill, for a session not launched in this
- * process: per token when a key reference is configured, the credits flag is
- * on, or this process's environment carries a key; per token too when any of
+ * process: per token when a key reference is configured, the session runs on
+ * DorkOS credits, or this process's environment carries a key; per token too when any of
  * that cannot be read, so a session is never shown a subscription bar it may
  * not have.
  *

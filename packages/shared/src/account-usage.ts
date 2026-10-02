@@ -29,9 +29,11 @@ extendZodWithOpenApiOnce();
 export {
   ACCOUNT_COLOR_PATTERN,
   ACCOUNT_ID_PATTERN,
+  CREDITS_ACCOUNT_ID,
   DEFAULT_ACCOUNT_COLORS,
   IMPLICIT_ACCOUNT_ID,
   isAccountColor,
+  isReservedAccountId,
   nextAccountColor,
   resolveAccountColor,
 } from './account-identity.js';
@@ -894,6 +896,12 @@ export interface ContinueOptionsResponse {
   };
   /** Whether an advisor (such as flow) answered the ranking; absent on an older server. */
   advised?: boolean;
+  /**
+   * Whether DorkOS credits are offered as one more place to continue (ADR
+   * 261001-000811). Offered to a person, never recommended; absent on an older
+   * server.
+   */
+  credits?: boolean;
 }
 
 /**

@@ -200,7 +200,7 @@ export class Infrastructure {
    * Start one Community server on a database of its own.
    *
    * @param name - Short name for its database and log.
-   * @param extraEnv - Extra Community settings, e.g. a lower agent limit.
+   * @param extraEnv - Extra Space settings, e.g. a lower agent limit.
    */
   async startCommunity(
     name: string,

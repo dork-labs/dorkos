@@ -41,7 +41,7 @@ async function assertImportReady(client: PoolClient, communityId: string): Promi
     [communityId]
   );
   if (unfinished.rowCount)
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community is still being imported.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space is still being imported.');
 }
 
 /** The two revoker columns of an owner claim: exactly one names the actor. */
@@ -84,9 +84,9 @@ export function registerOwnerClaimRoutes(
         [communityId]
       );
       await assertHostActor(client, actor, now());
-      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+      if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       if (community.rows[0].lifecycle !== 'pending_owner') {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community accepts claims.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed space accepts claims.');
       }
       await assertImportReady(client, communityId);
       await client.query(
@@ -128,7 +128,7 @@ export function registerOwnerClaimRoutes(
       );
       await assertHostActor(client, actor, now());
       if (community.rows[0]?.lifecycle !== 'pending_owner') {
-        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed community has claims.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed space has claims.');
       }
       const revoked = await client.query(
         `UPDATE bootstrap_grants SET revoked_at=now(),revoked_by=$3,revoked_by_api_key_id=$4
@@ -208,11 +208,7 @@ export function registerOwnerClaimRoutes(
         [candidate.rows[0].community_id]
       );
       if (community.rows[0]?.lifecycle !== 'pending_owner') {
-        throw new ApiError(
-          409,
-          'STATE_CONFLICT',
-          'Only an unclaimed community accepts this claim.'
-        );
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only an unclaimed space accepts this claim.');
       }
       const grant = await client.query<{ id: string }>(
         `SELECT id FROM bootstrap_grants
@@ -227,14 +223,14 @@ export function registerOwnerClaimRoutes(
         [community.rows[0].id]
       );
       if (owner.rowCount)
-        throw new ApiError(409, 'STATE_CONFLICT', 'This community already has an owner.');
+        throw new ApiError(409, 'STATE_CONFLICT', 'This space already has an owner.');
       // The account row lock orders this check against a new account-erasure request.
       await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR SHARE', [user.id]);
       if (await accountErasureOpen(client, user.id))
         throw new ApiError(
           409,
           'STATE_CONFLICT',
-          'This account is being deleted, so it cannot claim a community.'
+          'This account is being deleted, so it cannot claim a space.'
         );
       // An imported community's owner adopts the row of the owner who made the export, so
       // their own history stays theirs; every other past author stays historical.

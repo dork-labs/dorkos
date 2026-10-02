@@ -1560,6 +1560,13 @@ const RuntimeCapabilitiesSchema = z.object({
     description:
       'Whether this runtime can run sessions on more than one registered billing account. The account chip, dots and badge show only when this is true and two or more accounts are registered.',
   }),
+  credits: z
+    .object({ protocol: z.enum(['anthropic-messages']) })
+    .optional()
+    .openapi({
+      description:
+        'Whether this runtime can run a turn on DorkOS credits, and the protocol it speaks to the credits endpoint (ADR 261001-000811). Absent means no: the server hands a credits token only to a runtime that declares this.',
+    }),
   permissionModes: z
     .object({
       supported: z.boolean(),
@@ -1966,6 +1973,8 @@ registry.registerPath({
   path: '/api/relay/messages',
   tags: ['Relay'],
   summary: 'Send a relay message',
+  description:
+    "Publish a message using the caller-supplied `from`. Reserved server senders, destinations, and reply addresses are refused. `from` is a caller's claim, not authenticated attribution. HTTP authentication permits the request but does not bind the sender to the authenticated person. A program run by an agent can also choose a permitted `relay.human.*` address.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nA permitted human sender may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Agent, session, and external MCP sender addresses cannot use those three turn-shaping fields. Account selection follows separate host policy for new conversations and grants no sender authority.",
   request: {
     body: {
       content: { 'application/json': { schema: RelaySendMessageRequestSchema } },
@@ -3621,6 +3630,23 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/link/check',
+  tags: ['Cloud'],
+  summary: 'Ask the DorkOS account now whether it still accepts this instance',
+  description:
+    'Sends one heartbeat and answers the settled summary. A key the account refuses ' +
+    '(the account was deleted, or this instance was unlinked on the web) is cleared and ' +
+    'the answer reads unlinked; an account that cannot be reached keeps the link.',
+  responses: {
+    200: {
+      description: 'Linked state, account label, and last heartbeat, after the check',
+      content: { 'application/json': { schema: CloudSummarySchema } },
+    },
+  },
+});
+
 // --- Cloud billing pages (DOR-2632) ---
 
 /**
@@ -3766,6 +3792,43 @@ registry.registerPath({
     200: {
       description: 'Where the export stands, or a refusal',
       content: { 'application/json': { schema: CloudAccountExportResponseDocSchema } },
+    },
+  },
+});
+
+const CloudAccountDeletionResponseDocSchema = z
+  .union([
+    z.object({
+      ok: z.literal(true),
+      deletion: z.object({
+        requestedAt: z.string(),
+        confirmationSentTo: z.string().openapi({
+          description: 'Where the confirmation link went, as the service chose to show it.',
+        }),
+        confirmBy: z
+          .string()
+          .nullable()
+          .openapi({ description: 'When the emailed link stops working, or null for no limit.' }),
+      }),
+    }),
+    z.object({ ok: z.literal(false), problem: CloudProblemDocSchema }),
+    z.object({ ok: z.literal(false), message: z.string() }),
+  ])
+  .openapi('CloudAccountDeletionResponse');
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/account/deletion',
+  tags: ['Cloud'],
+  summary: 'Ask for the DorkOS account to be deleted',
+  description:
+    'Deletes nothing: the service emails the account a confirmation link, and the account ' +
+    'is deleted only when the person follows it. A refusal answers 200 with the ' +
+    'service`s own problem envelope, or one plain sentence. Sent `no-store`.',
+  responses: {
+    200: {
+      description: 'Where the confirmation link went, or a refusal',
+      content: { 'application/json': { schema: CloudAccountDeletionResponseDocSchema } },
     },
   },
 });

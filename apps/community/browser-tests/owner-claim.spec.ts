@@ -64,7 +64,7 @@ async function signIn(context: BrowserContext, email: string, password: string) 
 async function createPendingCommunity(page: Page, name: string) {
   await page.goto(`${baseUrl}/host`);
   await page.getByLabel('Name', { exact: true }).fill(name);
-  await page.getByRole('button', { name: 'Create community' }).click();
+  await page.getByRole('button', { name: 'Create space' }).click();
   await expect(page.getByRole('status')).toContainText('Send the owner claim link');
   const link = await page.getByLabel('Owner claim link').inputValue();
   expect(link).toMatch(new RegExp(`^${baseUrl}/claim#claim=[\\w-]+$`, 'u'));
@@ -210,7 +210,7 @@ test('a host administrator creates a community and its intended owner signs up a
       await hostPage.evaluate(() => (window as unknown as { copiedLink: string }).copiedLink)
     ).toBe(link);
     await shot(hostPage, 'host-link');
-    await expect(hostPage.getByLabel('Second Place community')).toContainText('pending owner');
+    await expect(hostPage.getByLabel('Second Place space')).toContainText('pending owner');
 
     const requests = recordRequests(ownerPage);
     await ownerPage.goto(link);
@@ -252,7 +252,7 @@ test('a host administrator creates a community and its intended owner signs up a
     // page hands over the community's own link, which a host address is not.
     const connect = ownerPage
       .locator('[data-slot="notice"]')
-      .filter({ hasText: 'Connect DorkOS to this community' });
+      .filter({ hasText: 'Connect DorkOS to this space' });
     await expect(connect).toBeVisible();
     // Named by place, not label: the switcher shows an icon on a phone and whichever name is
     // selected on a computer.
@@ -266,7 +266,7 @@ test('a host administrator creates a community and its intended owner signs up a
     const claimedId = (
       await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='Second Place'")
     ).rows[0].id;
-    await expect(ownerPage.getByLabel('This community’s link')).toHaveValue(
+    await expect(ownerPage.getByLabel('This space’s link')).toHaveValue(
       `${baseUrl}/c/${claimedId}`
     );
     await ownerPage.evaluate(() => {
@@ -294,7 +294,7 @@ test('a host administrator creates a community and its intended owner signs up a
       lifecycle: 'active',
     });
 
-    await ownerPage.getByRole('button', { name: 'Open community' }).click();
+    await ownerPage.getByRole('button', { name: 'Open space' }).click();
     await expect(ownerPage).toHaveURL(/\/c\/[0-9a-f-]{36}$/u);
     await expect(ownerPage.getByRole('heading', { name: 'No channels yet' })).toBeVisible({
       timeout: 15_000,
@@ -309,7 +309,7 @@ test('a host administrator creates a community and its intended owner signs up a
     expect(stored).not.toContain(secret);
 
     await hostPage.reload();
-    await expect(hostPage.getByLabel('Second Place community')).toContainText('Owner assigned');
+    await expect(hostPage.getByLabel('Second Place space')).toContainText('Owner assigned');
 
     // The link works once. Reopening it shows the same answer as any unusable claim.
     const lateContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -359,10 +359,10 @@ test('a signed-in account confirms, can switch accounts, and recovers from faile
         body: JSON.stringify({ code: 'UNAVAILABLE', message: 'The host is busy. Try again.' }),
       })
     );
-    await hostPage.getByRole('button', { name: 'Claim community' }).click();
+    await hostPage.getByRole('button', { name: 'Claim space' }).click();
     await expect(hostPage.getByRole('alert')).toContainText('The host is busy');
     await shot(hostPage, 'server-error');
-    await hostPage.getByRole('button', { name: 'Claim community' }).click();
+    await hostPage.getByRole('button', { name: 'Claim space' }).click();
     await expect(
       hostPage.getByRole('heading', { name: 'You’re the owner of Third Place.' })
     ).toBeVisible();
@@ -376,7 +376,7 @@ test('a signed-in account confirms, can switch accounts, and recovers from faile
       await route.fetch();
       await route.abort('connectionfailed');
     });
-    await hostPage.getByRole('button', { name: 'Claim community' }).click();
+    await hostPage.getByRole('button', { name: 'Claim space' }).click();
     await expect(
       hostPage.getByRole('heading', { name: 'You’re the owner of Fourth Place.' })
     ).toBeVisible();
@@ -410,7 +410,7 @@ test('a signed-in account confirms, can switch accounts, and recovers from faile
     );
     await expect(switchPage.getByText('Signed in as Kai')).toBeVisible();
     await shot(switchPage, 'account-created-claim-failed');
-    await switchPage.getByRole('button', { name: 'Claim community' }).click();
+    await switchPage.getByRole('button', { name: 'Claim space' }).click();
     await expect(
       switchPage.getByRole('heading', { name: 'You’re the owner of Fifth Place.' })
     ).toBeVisible();
@@ -431,13 +431,13 @@ test('a signed-in account confirms, can switch accounts, and recovers from faile
         contentType: 'application/json',
         body: JSON.stringify({
           code: 'STATE_CONFLICT',
-          message: 'This community already has an owner.',
+          message: 'This space already has an owner.',
         }),
       })
     );
-    await hostPage.getByRole('button', { name: 'Claim community' }).click();
+    await hostPage.getByRole('button', { name: 'Claim space' }).click();
     await expect(
-      hostPage.getByRole('heading', { name: 'This community already has an owner.' })
+      hostPage.getByRole('heading', { name: 'This space already has an owner.' })
     ).toBeFocused();
     await shot(hostPage, 'taken');
   } finally {

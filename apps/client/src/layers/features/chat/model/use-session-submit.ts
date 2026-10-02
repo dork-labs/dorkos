@@ -437,6 +437,14 @@ export function useSessionSubmit({
         if (isNewSession && launchAccountRef.current) {
           postOptions.account = launchAccountRef.current;
         }
+        // A one-shot account for this send only: "Use your own sign-in" on a
+        // turn refused because DorkOS credits were unreachable. Consumed here,
+        // so it never rides a second message.
+        const retryAccount = useAppStore.getState().retryAccount;
+        if (retryAccount?.sessionId === targetSessionId) {
+          postOptions.account = retryAccount.id;
+          useAppStore.getState().setRetryAccount(null);
+        }
 
         // Background a surface attached to this turn (Ask DorkBot, BC-48). Asked
         // on every send and answered at most once per conversation — the latch is

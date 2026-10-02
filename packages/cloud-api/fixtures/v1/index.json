@@ -13,6 +13,8 @@
     "session/device-token-pending.json": "DeviceTokenErrorSchema",
     "session/device-token.json": "DeviceTokenResponseSchema",
     "session/account-export.json": "AccountExportResponseSchema",
+    "session/account-deletion.json": "AccountDeletionResponseSchema",
+    "problem/account-deletion-conflict.json": "ProblemSchema",
     "instances/list.json": "InstanceListResponseSchema",
     "instances/heartbeat.json": "InstanceHeartbeatResponseSchema",
     "instances/revoke.json": "InstanceRevokeResponseSchema",

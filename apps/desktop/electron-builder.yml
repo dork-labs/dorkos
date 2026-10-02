@@ -1,6 +1,8 @@
 appId: com.dorkos.desktop
 productName: DorkOS
-copyright: © 2026 DorkOS
+# Must equal COPYRIGHT_NOTICE in packages/shared/src/company.ts; YAML cannot
+# import it, so packages/shared/src/__tests__/company.test.ts holds them together.
+copyright: © 2026 144 Studio, LLC
 directories:
   output: release
   buildResources: build

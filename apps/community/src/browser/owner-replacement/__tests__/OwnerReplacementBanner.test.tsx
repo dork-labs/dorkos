@@ -12,8 +12,8 @@ const COMMUNITY = '11111111-1111-4111-8111-111111111111';
 const REPLACEMENT = '22222222-2222-4222-8222-222222222222';
 const READ = `GET /api/v1/communities/${COMMUNITY}/owner-replacement`;
 const OBJECTION = `POST /api/v1/communities/${COMMUNITY}/owner-replacement/objection`;
-const TRANSFER = 'You can hand the community to someone yourself.';
-const DELETE = 'You can delete the community.';
+const TRANSFER = 'You can hand the space to someone yourself.';
+const DELETE = 'You can delete the space.';
 const ADD_PASSWORD = 'To hand it to someone or delete it, add a password to your account first.';
 const ADD_PASSWORD_TO_DELETE = 'To delete it, add a password to your account first.';
 
@@ -74,13 +74,13 @@ describe('OwnerReplacementBanner, owner', () => {
     renderBanner();
     expect(
       await screen.findByText(
-        'The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen on or after Sunday, 4 October 2026 (UTC).'
+        'The server admin has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen on or after Sunday, 4 October 2026 (UTC).'
       )
     ).toBeTruthy();
-    expect(screen.queryByText('The host couldn’t reach you.')).toBeNull();
+    expect(screen.queryByText('The server admin couldn’t reach you.')).toBeNull();
     await openDetails();
-    expect(screen.getByText('The host couldn’t reach you.')).toBeTruthy();
-    expect(screen.getByText('The host’s reference: “CASE-2541”')).toBeTruthy();
+    expect(screen.getByText('The server admin couldn’t reach you.')).toBeTruthy();
+    expect(screen.getByText('The server admin’s reference: “CASE-2541”')).toBeTruthy();
     expect(screen.getByText(TRANSFER)).toBeTruthy();
     expect(screen.getByText(DELETE)).toBeTruthy();
     expect(screen.queryByText(ADD_PASSWORD)).toBeNull();
@@ -135,8 +135,8 @@ describe('OwnerReplacementBanner, owner', () => {
   });
 
   it.each([
-    ['owner_left_group', 'The host was told you’ve left the group this community belongs to.'],
-    ['other', 'The host didn’t give a specific reason.'],
+    ['owner_left_group', 'The server admin was told you’ve left the group this space belongs to.'],
+    ['other', 'The server admin didn’t give a specific reason.'],
   ])('says the reason %s in words', async (reason, sentence) => {
     // Purpose: fails if a reason code is shown raw or with another reason's sentence.
     mockFetch({
@@ -157,7 +157,7 @@ describe('OwnerReplacementBanner, owner', () => {
     });
     const { container } = renderBanner();
     await openDetails();
-    const line = screen.getByText('The host’s reference: “www.example.com”');
+    const line = screen.getByText('The server admin’s reference: “www.example.com”');
     expect(line.closest('a')).toBeNull();
     expect(line.querySelector('a')).toBeNull();
     expect(container.querySelectorAll('a')).toHaveLength(0);
@@ -197,7 +197,7 @@ describe('OwnerReplacementBanner, owner', () => {
     renderBanner();
     expect(
       await screen.findByText(
-        'The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen once a waiting period of at least 7 days has passed.'
+        'The server admin has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen once a waiting period of at least 7 days has passed.'
       )
     ).toBeTruthy();
   });
@@ -220,11 +220,11 @@ describe('OwnerReplacementBanner, owner', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Keep ownership' }));
     const dialog = await screen.findByRole('dialog', { name: 'Keep ownership of Acme Ops?' });
     expect(dialog.textContent).toContain(
-      'The host’s request will end. The host can ask again after 45 days, and you’ll be told again.'
+      'The server admin’s request will end. The server admin can ask again after 45 days, and you’ll be told again.'
     );
     expect(calls.some((call) => call.method === 'POST')).toBe(false);
     fireEvent.click(screen.getAllByRole('button', { name: 'Keep ownership' }).at(-1)!);
-    const kept = await screen.findByText('You kept ownership. The host has been told.');
+    const kept = await screen.findByText('You kept ownership. The server admin has been told.');
     // Focus moves to what changed, not back to a button that is gone.
     await waitFor(() => expect(document.activeElement).toBe(kept));
     const posts = calls.filter((call) => call.method === 'POST');
@@ -253,7 +253,7 @@ describe('OwnerReplacementBanner, owner', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Keep ownership' }));
     fireEvent.click(screen.getAllByRole('button', { name: 'Keep ownership' }).at(-1)!);
     expect(await screen.findByText('This request has already ended.')).toBeTruthy();
-    expect(screen.queryByText('You kept ownership. The host has been told.')).toBeNull();
+    expect(screen.queryByText('You kept ownership. The server admin has been told.')).toBeNull();
   });
 });
 
@@ -280,7 +280,7 @@ describe('OwnerReplacementBanner, admins and members', () => {
     renderBanner();
     expect(
       await screen.findByText(
-        'The host has been asked to make someone else the owner. The owner has until Sunday, 4 October 2026 (UTC) to respond.'
+        'The server admin has been asked to make someone else the owner. The owner has until Sunday, 4 October 2026 (UTC) to respond.'
       )
     ).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
@@ -307,7 +307,7 @@ describe('OwnerReplacementBanner, admins and members', () => {
     const calls = mockFetch({ [READ]: { status: 200, body: { open: null, completed } } });
     const first = renderBanner();
     const sentence =
-      'The host made Riley Chen the owner of this community on Monday, 28 September 2026 (UTC).';
+      'The server admin made Riley Chen the owner of this space on Monday, 28 September 2026 (UTC).';
     expect(await screen.findByText(sentence)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByText(sentence)).toBeNull();
@@ -326,7 +326,7 @@ describe('OwnerReplacementBanner, admins and members', () => {
       },
     });
     renderBanner();
-    expect(await screen.findByText(/The host made Riley Chen the owner/u)).toBeTruthy();
+    expect(await screen.findByText(/The server admin made Riley Chen the owner/u)).toBeTruthy();
   });
 
   it('still shows and dismisses the completion when the browser refuses storage', async () => {
@@ -353,6 +353,6 @@ describe('OwnerReplacementBanner, admins and members', () => {
     });
     renderBanner();
     fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
-    expect(screen.queryByText(/The host made Riley Chen the owner/u)).toBeNull();
+    expect(screen.queryByText(/The server admin made Riley Chen the owner/u)).toBeNull();
   });
 });

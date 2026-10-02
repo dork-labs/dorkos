@@ -33,6 +33,17 @@ const methods = createCloudMethods('http://localhost:4242/api');
 describe('the cloud transport methods', () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it('hands over the person-only refusal of a deletion as its own sentence', async () => {
+    const message = 'Only you can delete your DorkOS account, from the DorkOS app while signed in.';
+    stubFetch(403, { ok: false, code: 'person_only', message });
+    await expect(methods.requestCloudAccountDeletion()).resolves.toEqual({ ok: false, message });
+  });
+
+  it('still throws a deletion failure that carries no sentence', async () => {
+    stubFetch(500, { error: 'boom' });
+    await expect(methods.requestCloudAccountDeletion()).rejects.toThrow('boom');
+  });
+
   it('delivers a seat refusal to the caller instead of throwing it away', async () => {
     stubFetch(200, { ok: false, problem: seatRequiredFixture });
     const result = await methods.releaseCloudSeat('seat_0001');

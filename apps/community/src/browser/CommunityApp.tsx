@@ -265,8 +265,8 @@ export function CommunityApp() {
     return (
       <main className="grid min-h-dvh place-items-center">
         <div role="status" className="panel p-6">
-          <p className="eyebrow">DorkOS Community</p>
-          <p className="mb-0">Opening your community…</p>
+          <p className="eyebrow">DorkOS Space</p>
+          <p className="mb-0">Opening your space…</p>
         </div>
       </main>
     );
@@ -274,7 +274,7 @@ export function CommunityApp() {
     return (
       <main className="grid min-h-dvh place-items-center p-5">
         <div className="panel max-w-md p-6">
-          <h1 className="text-xl">We could not open this community.</h1>
+          <h1 className="text-xl">We could not open this space.</h1>
           <p role="alert" className="muted">
             {error}
           </p>
@@ -293,7 +293,7 @@ export function CommunityApp() {
             You’re in {community.name}.
           </h1>
           <p className="muted">
-            Open the community now, or connect a DorkOS installation as a separate next step.
+            Open the space now, or connect a DorkOS installation as a separate next step.
           </p>
           <Button
             variant="default"
@@ -302,7 +302,7 @@ export function CommunityApp() {
               setRevision((old) => old + 1);
             }}
           >
-            Open community
+            Open space
           </Button>
           <ConnectDorkOS
             link={
@@ -351,17 +351,17 @@ export function CommunityApp() {
   const readOnly = communityLifecycle === 'archived' || held;
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${mobileOpen ? 'open' : ''}`} aria-label="Community channels">
+      <aside className={`sidebar ${mobileOpen ? 'open' : ''}`} aria-label="Space channels">
         <div className="sidebar-head">
-          <p className="eyebrow">DorkOS Community</p>
-          <h1>{community?.name ?? 'Your community'}</h1>
+          <p className="eyebrow">DorkOS Space</p>
+          <h1>{community?.name ?? 'Your space'}</h1>
           <p className="small muted mb-0">Signed in as {me.member.displayName}</p>
           <Button
             variant="outline"
             className="mt-3 w-full"
             onClick={() => window.location.assign('/')}
           >
-            Switch community
+            Switch space
           </Button>
         </div>
         <div className="sidebar-list">
@@ -445,7 +445,7 @@ export function CommunityApp() {
                 {held
                   ? 'On hold'
                   : readOnly
-                    ? 'Archived community'
+                    ? 'Archived space'
                     : settings
                       ? 'Settings'
                       : selected?.visibility === 'private'

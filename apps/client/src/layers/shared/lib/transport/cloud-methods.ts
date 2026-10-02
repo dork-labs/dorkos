@@ -13,6 +13,7 @@
  */
 import type {
   CloudBillingPage,
+  CloudAccountDeletionResponse,
   CloudAccountExportResponse,
   CloudBillingSessionResponse,
   CloudCommunityClaimLinkResponse,
@@ -25,6 +26,7 @@ import type {
   CloudCommunitySignInResponse,
   CloudCommunityRestoreResponse,
   CloudCommunityStartResponse,
+  CloudCreditsNoticeDismissRequest,
   CloudCreditsStatus,
   CloudHostedCommunitiesResponse,
   CloudLinkStatus,
@@ -67,6 +69,10 @@ export function createCloudMethods(baseUrl: string) {
 
     getCloudStatus(): Promise<CloudLinkSummary> {
       return fetchJSON<CloudLinkSummary>(baseUrl, '/cloud/status');
+    },
+
+    checkCloudLink(): Promise<CloudLinkSummary> {
+      return fetchJSON<CloudLinkSummary>(baseUrl, '/cloud/link/check', { method: 'POST' });
     },
 
     getCloudPlan(): Promise<CloudPlanResponse> {
@@ -139,12 +145,47 @@ export function createCloudMethods(baseUrl: string) {
       });
     },
 
+    async requestCloudAccountDeletion(): Promise<CloudAccountDeletionResponse> {
+      try {
+        return await fetchJSON<CloudAccountDeletionResponse>(baseUrl, '/cloud/account/deletion', {
+          method: 'POST',
+        });
+      } catch (err) {
+        // The person-only bar answers 403 with a sentence of its own; return
+        // it as the refusal it is, so it is not read as "couldn't reach".
+        const body = (err as { body?: unknown }).body as
+          { ok?: unknown; message?: unknown } | undefined;
+        if (body?.ok === false && typeof body.message === 'string') {
+          return { ok: false, message: body.message };
+        }
+        throw err;
+      }
+    },
+
     getCloudCredits(): Promise<CloudCreditsStatus> {
       return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits');
     },
 
-    selectCloudCredits(): Promise<CloudCreditsStatus> {
-      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/select', { method: 'POST' });
+    setCloudCreditsDefault(runtime: string, useCredits: boolean): Promise<CloudCreditsStatus> {
+      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/default', {
+        method: 'PUT',
+        body: JSON.stringify({ runtime, useCredits }),
+      });
+    },
+
+    undoFilledCloudCredits(): Promise<CloudCreditsStatus> {
+      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/undo-filled', {
+        method: 'POST',
+      });
+    },
+
+    dismissCloudCreditsNotice(
+      request: CloudCreditsNoticeDismissRequest
+    ): Promise<CloudCreditsStatus> {
+      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/notices/dismiss', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
     },
 
     listHostedCommunities(): Promise<CloudHostedCommunitiesResponse> {

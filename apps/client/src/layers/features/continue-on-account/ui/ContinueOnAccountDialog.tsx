@@ -23,6 +23,7 @@ import { useClaudeAccounts, useNow } from '@/layers/shared/model';
 import {
   carryOverCopy,
   choiceKey,
+  creditsContinueRow,
   initialChoice,
   isOtherRuntime,
   isSelectable,
@@ -191,7 +192,11 @@ export function ContinueOnAccountDialog({
   const data = ready ? options.data : undefined;
   const list = data?.ranking;
   // A session that cannot carry over is offered nothing, whatever the list says.
-  const rows = data && !isWaitOnly(data.plan) ? data.ranking.accounts : [];
+  // DorkOS credits ride last when the server offers them (ADR 261001-000811).
+  const rows =
+    data && !isWaitOnly(data.plan)
+      ? [...data.ranking.accounts, ...(data.credits ? [creditsContinueRow(sessionRuntime)] : [])]
+      : [];
   const anySelectable = rows.some(isSelectable);
   const selectedKey = choice ?? (list ? initialChoice(list, sessionRuntime) : null);
   const selectedRow = rows.find((row) => choiceKey(row, sessionRuntime) === selectedKey) ?? null;

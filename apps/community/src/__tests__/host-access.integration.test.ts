@@ -1,6 +1,6 @@
 /**
  * The host-access read an installation uses to decide whether to offer
- * "Create a community" (spec `community-switcher-navigation`, lifecycle and
+ * "Create a space" (spec `community-switcher-navigation`, lifecycle and
  * action routing; DOR-2242).
  *
  * It answers for the account behind the exact grant making the request, and

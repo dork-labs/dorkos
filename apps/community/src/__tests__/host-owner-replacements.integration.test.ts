@@ -574,7 +574,8 @@ describe('no mail, no replacement (AC-2)', () => {
     expect(refused.status).toBe(409);
     expect(await refused.json()).toEqual({
       code: 'NOTICE_DELIVERY_UNAVAILABLE',
-      message: "This host can't send email, so it can't give the owner notice. Set up mail first.",
+      message:
+        "This server can't send email, so it can't give the owner notice. Set up mail first.",
     });
     expect(await replacementCount(bare, c.communityId)).toBe(0);
     const queued = await bare.pool.query('SELECT 1 FROM notice_outbox');
@@ -879,7 +880,7 @@ describe('naming the new owner (AC-7, request half)', () => {
     expect(refused.status).toBe(409);
     expect(await refused.json()).toEqual({
       code: 'STATE_CONFLICT',
-      message: 'This host has no single sign-on to name an account with.',
+      message: 'This server has no single sign-on to name an account with.',
     });
     expect(await replacementCount(h, c.communityId)).toBe(0);
   });
@@ -901,7 +902,7 @@ describe('which communities (AC-10, request half)', () => {
     const { communityId } = await createPendingCommunity(h, operator.h, `Unclaimed ${++counter}`);
     await expectRefused(
       communityId,
-      'This community has no owner yet. Reissue its owner claim instead.'
+      'This space has no owner yet. Reissue its owner claim instead.'
     );
   });
 

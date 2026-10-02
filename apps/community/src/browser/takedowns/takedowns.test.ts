@@ -73,19 +73,19 @@ describe('takedown helpers', () => {
     expect(hostTargetLabel({ kind: 'attachment', attachmentId: notice.id, entryId: null })).toBe(
       `File ${notice.id}`
     );
-    expect(hostTargetLabel({ kind: 'icon' })).toBe('Community icon');
+    expect(hostTargetLabel({ kind: 'icon' })).toBe('Space icon');
   });
 
   // Purpose: fails if the banner loses the reason sentence or calls a file a message.
   it('says what was removed and why in the author banner', () => {
     expect(authorBannerText(notice)).toMatch(
-      /^The host removed one of your messages on .+\. The host received a legal order to remove it\.$/u
+      /^The server admin removed one of your messages on .+\. The server admin received a legal order to remove it\.$/u
     );
     expect(authorBannerText({ ...notice, targetKind: 'attachment' })).toContain(
       'one of your files'
     );
     expect(authorBannerText({ ...notice, targetKind: 'icon' })).toContain(
-      'removed the community icon on'
+      'removed the space icon on'
     );
   });
 

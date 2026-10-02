@@ -61,7 +61,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
     productCheck,
   } = w;
   let refB = w.refB;
-  /** Open a Community settings section on its own site, as the switcher's links do. */
+  /** Open a Space settings section on its own site, as the switcher's links do. */
   async function settings(page: Page, section: string) {
     await page.goto(`${communityOrigin}/c/${communityId}/settings/${section}`);
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible({
@@ -367,14 +367,14 @@ export async function lifecycleSteps(w: World): Promise<void> {
       await member.getByRole('button', { name: 'Continue', exact: true }).click();
       // B left in step 26, so the membership is inactive: the join page shows what
       // rejoining restores and waits for B to confirm before anything changes.
-      const rejoin = member.getByRole('button', { name: 'Rejoin community', exact: true });
+      const rejoin = member.getByRole('button', { name: 'Rejoin space', exact: true });
       await expect(rejoin).toBeVisible({ timeout: 30_000 });
       const reactivation = await shot(member, '28-member-reactivation-review');
       await rejoin.click();
       await expect(member.getByRole('heading', { name: `You’re in ${COMMUNITY}.` })).toBeVisible({
         timeout: 30_000,
       });
-      await member.getByRole('button', { name: 'Open community', exact: true }).click();
+      await member.getByRole('button', { name: 'Open space', exact: true }).click();
       // A later invitation restores membership, never the old machine authority: B pairs again.
       assert(!(await connections(b)).some((c) => c.ref === refB && c.status === 'connected'));
       refB = await connectDesktop(b, member, communityOrigin, COMMUNITY, 'Desktop B', null);
@@ -382,9 +382,7 @@ export async function lifecycleSteps(w: World): Promise<void> {
       const rejoined = await shot(b.page, '28a-desktop-b-rejoined');
       // The owner removes B.
       await settings(owner, 'members');
-      await owner
-        .getByRole('button', { name: 'Remove Desktop B from community', exact: true })
-        .click();
+      await owner.getByRole('button', { name: 'Remove Desktop B from space', exact: true }).click();
       await expect(owner.getByRole('status')).toContainText('Member removed.', { timeout: 30_000 });
       const removedShot = await shot(owner, '28b-owner-removed-b');
       const access = await lostAccess(b, refB, 'removal');

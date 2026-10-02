@@ -359,10 +359,11 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     'DORKOS_OPENCODE_LIVE_PAID',
     'DORKOS_HARNESS_SMOKE',
     'OPENAI_API_KEY',
-    // The fifth money path (DOR-2027): selecting DorkOS credits as the
-    // inference source. Its key is the cloud-link instance credential rather
-    // than a model key, but the flag is the decision either way, and a turbo
-    // task that passed it through would arm spending for every `pnpm test`.
+    // The fifth money path (DOR-2027): DorkOS credits as the inference
+    // source. Its decision is now a person's Runs on choice (ADR
+    // 261001-000811) and this variable can only switch credits OFF, but it is
+    // still kept out of every task: a task that passed it through would let a
+    // stray environment decide whether a test run may refuse or spend.
     'DORKOS_CLOUD_CREDITS',
     // The sixth (DOR-2207): a `--runtime codex` eval leg, which bills OpenAI
     // through the key the sandbox forwards into the server it launches.

@@ -894,6 +894,36 @@ export function seedExtensionsTrustedSources(store: {
 }
 
 /**
+ * Migration body: seed `cloud.credits` for configs persisted before DorkOS
+ * credits were a choice in Runs on (ADR 261001-000811).
+ *
+ * **Never arms anything.** No runtime gets a credits default from here, linked
+ * or not: a computer already linked is owed one dismissible offer instead
+ * (`offer: 'pending'`), and an unlinked one owes nothing (`'none'`); its next
+ * link fills the gaps then. Additive and idempotent: writes only when `cloud`
+ * is an object with no `credits` member, and never touches the link fields
+ * beside it. A config with no `cloud` key is skipped (the schema default
+ * supplies `{ defaults: {}, offer: 'none' }` on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedCloudCreditsChoices(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const cloud = store.get('cloud');
+  if (!cloud || typeof cloud !== 'object' || Array.isArray(cloud)) return;
+  if ('credits' in cloud && (cloud as { credits?: unknown }).credits != null) return;
+  const token = (cloud as { instanceToken?: unknown }).instanceToken;
+  const linked = typeof token === 'string' && token.trim() !== '';
+  store.set('cloud', {
+    ...(cloud as Record<string, unknown>),
+    credits: { defaults: {}, offer: linked ? 'pending' : 'none' },
+  });
+}
+
+/**
  * Migration body: backfill the `workspace` section (WorkspaceManager, DOR-84)
  * for configs persisted before it existed. Additive + idempotent — only writes
  * when the key is absent; the schema default also yields this object on read, so
@@ -4705,6 +4735,19 @@ export const CONFIG_MIGRATIONS = {
     // `extensions.trustedSources` — the code sources a person trusts outright
     // (spec `flow-multiproject` §9.3). See `seedExtensionsTrustedSources`.
     seedExtensionsTrustedSources(store);
+  },
+  // v0.95.0 is tagged, so 0.96.0 is the next key. Frozen from merge.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under `cloud`,
+  // beside the link fields, which it preserves.
+  '0.96.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `cloud.credits` — who chose DorkOS credits as a runtime's default, and the
+    // one offer a computer linked before credits were a choice is owed (ADR
+    // 261001-000811). See `seedCloudCreditsChoices`.
+    seedCloudCreditsChoices(store);
   },
 } as const;
 

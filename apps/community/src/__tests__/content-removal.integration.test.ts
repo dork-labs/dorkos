@@ -447,6 +447,9 @@ describe('posing as a removed message', { timeout: 120_000 }, () => {
       ...Object.values(REMOVED_ENTRY_TEXT),
       ERASED_ENTRY_TEXT,
       `  ${REMOVED_ENTRY_TEXT.author}\n`,
+      // Written before DOR-2653; rows removed then still hold them, so they must not be posted.
+      'This message was removed by a community admin.',
+      'This message was removed by the host.',
     ];
     for (const [index, text] of posing.entries()) {
       const refused = await h.call(`${s.base}/channels/${s.channelId}/entries`, {
@@ -596,7 +599,7 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
       if (response.status === 200) {
         const entry = await removed(response, name);
         expect(entry.text, name).toMatch(
-          /^This message was (deleted|removed by a community admin|erased)\.$/
+          /^This message was (deleted|removed by a space admin|erased)\.$/
         );
       } else {
         await response.body?.cancel();

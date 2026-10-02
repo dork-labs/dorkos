@@ -77,6 +77,13 @@ import {
   accountIdForRoot,
   type LaunchAccountResolution,
 } from './claude-config-dir.js';
+import { isCreditsClaudeRoot } from './credits-root.js';
+import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import {
+  asCreditsStopped,
+  creditsStoppedEvent,
+  onCreditsSession,
+} from './messaging/credits-launch.js';
 import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
@@ -99,7 +106,7 @@ import {
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { checkClaudeLaunchAccount } from './launch-account-check.js';
-import { predictLaunchBillsPerToken } from './messaging/per-token-billing.js';
+import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
 import {
   disposeProjector,
   getOrCreateProjector,
@@ -623,8 +630,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           })
         : executeSdkQuery(sessionId, content, session, senderOpts, opts);
 
-      for await (const event of stream) {
+      for await (const raw of stream) {
         observedEvent = true;
+        // A credits session whose token was refused partway through is a
+        // credits problem, not the person's Claude sign-in: it surfaces as the
+        // credits card, and no "sign in to Claude again" notice is raised
+        // (ADR 261001-000811).
+        const event = onCreditsSession(session) ? asCreditsStopped(raw) : raw;
         if (event.type === 'error') sawRuntimeError = true;
         yield event;
       }
@@ -632,6 +644,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } catch (error) {
       connectorRevokeReason = observedEvent ? 'runtime_failed' : 'setup_failed';
+      const message = error instanceof Error ? error.message : String(error);
+      if (onCreditsSession(session) && detectAuthError({ message })) {
+        yield creditsStoppedEvent(message);
+        return;
+      }
       throw error;
     } finally {
       if (connectorTurn) {
@@ -995,6 +1012,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // `flow-multiproject` §8.4).
     const launch = resolveLaunchAccountRoot({
       agentAccountId: manifest?.account,
+      agentId: manifest?.id,
       project: await projectOfFolder(projectDir),
     });
     return launch.ok ? launch.root : null;
@@ -1025,6 +1043,22 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       .catch(() => undefined);
     if (settled) return { ok: true, root: settled, accountId: accountIdForRoot(settled) };
     return checkClaudeLaunchAccount({ cwd: projectDir, hintId });
+  }
+
+  /**
+   * Whether this session has already settled on an account (it launched, and
+   * disk says which account holds it). A session that has not, such as one
+   * whose first turn was refused because DorkOS credits were unreachable, may
+   * still take the person's pick of account on its next send.
+   *
+   * @param sessionId - DorkOS or SDK session id.
+   * @param projectDir - The folder the session runs in.
+   */
+  async hasSettledAccount(sessionId: string, projectDir: string): Promise<boolean> {
+    const settled = await this.sessionStore
+      .settledAccountRoot(sessionId, this.transcriptReader, projectDir)
+      .catch(() => undefined);
+    return settled !== undefined;
   }
 
   /** @inheritdoc */
@@ -1295,6 +1329,24 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.pumps.warmth(sessionId);
   }
 
+  /**
+   * Stop every session running on DorkOS credits: interrupt a turn in flight
+   * and give back a warm process. Called when this computer is unlinked, so no
+   * process keeps a credits token after the link it was minted under is gone
+   * (ADR 261001-000811). The sessions themselves stay; their next turn is
+   * refused until credits can be had again.
+   */
+  async stopCreditsSessions(): Promise<void> {
+    const ids = this.sessionStore.sessionIdsWhere((session) => {
+      const root = session.launchedAccountRoot ?? session.accountRoot;
+      return root !== undefined && isCreditsClaudeRoot(root);
+    });
+    for (const id of ids) {
+      await this.interruptQuery(id).catch(() => undefined);
+      await this.reapSession(id).catch(() => undefined);
+    }
+  }
+
   /** @inheritdoc */
   async reapSession(sessionId: string): Promise<void> {
     // A reaped pump is SPENT — the registry drops it, and `SessionPump` refuses
@@ -1349,7 +1401,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const session = this.sessionStore.findSession(sessionId);
     if (session?.launchedPerToken !== undefined) return session.launchedPerToken;
     if (session?.lastSubscriptionUsage?.kind === 'subscription') return false;
-    return predictLaunchBillsPerToken();
+    const root = session?.accountRoot;
+    return predictLaunchBillsPerToken(
+      readPerTokenSignals(root !== undefined && isCreditsClaudeRoot(root))
+    );
   }
 
   /**

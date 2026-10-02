@@ -103,7 +103,7 @@ export function KeepOwnership() {
     stage === 'ready' && preflight
       ? `Keep ownership of ${preflight.communityName}?`
       : stage === 'kept'
-        ? 'You kept ownership. The host has been told.'
+        ? 'You kept ownership. The server admin has been told.'
         : stage === 'ended'
           ? 'This request has already ended.'
           : stage === 'dead'
@@ -113,7 +113,7 @@ export function KeepOwnership() {
   return (
     <div className="grid min-h-dvh place-items-center p-4">
       <main className="auth-card" aria-busy={busy || stage === 'checking'}>
-        <p className="eyebrow">DorkOS Community</p>
+        <p className="eyebrow">DorkOS Space</p>
         <h1 ref={heading} tabIndex={-1} className="mb-3">
           {title}
         </h1>
@@ -137,7 +137,9 @@ export function KeepOwnership() {
           </>
         )}
         {stage === 'dead' && (
-          <p className="muted">If the host asks again, you’ll get a new email with a new link.</p>
+          <p className="muted">
+            If the server admin asks again, you’ll get a new email with a new link.
+          </p>
         )}
         <HostPolicyLinks />
       </main>

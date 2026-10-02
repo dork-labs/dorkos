@@ -24,7 +24,9 @@ export function parseTakedownCommand(argv: readonly string[]): TakedownCommand {
     throw new Error(usage);
   }
   if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    throw new Error('Give the id of the takedown, as the host page or the host API shows it.');
+    throw new Error(
+      'Give the id of the takedown, as the server admin page or the server admin API shows it.'
+    );
   }
   return { kind: command, takedownId: id.toLowerCase() };
 }

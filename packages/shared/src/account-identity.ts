@@ -32,6 +32,30 @@ export const ACCOUNT_ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
  */
 export const IMPLICIT_ACCOUNT_ID = 'default';
 
+/**
+ * The id of the "DorkOS credits" entry in a runtime's Runs on list (ADR
+ * `261001-000811`): turns paid for by the linked DorkOS account rather than by
+ * one of the runtime's own sign-ins.
+ *
+ * It is never a registry row. The entry is synthesized by the server for a
+ * runtime that declares credits support, so nothing outside DorkOS (flow's CLI
+ * reads the same registry) ever sees a folder it could launch without the
+ * credential that makes it work. Reserved like {@link IMPLICIT_ACCOUNT_ID}: a
+ * config write refuses it as a new row id, and a hand-edited row carrying it
+ * is listed with an `id-reserved` warning and is not routable, so a person's own
+ * account can never be mistaken for credits or credits for it.
+ */
+export const CREDITS_ACCOUNT_ID = 'dorkos-credits';
+
+/**
+ * Whether an id is one a registry row may never take.
+ *
+ * @param id - A registry id.
+ */
+export function isReservedAccountId(id: string): boolean {
+  return id === IMPLICIT_ACCOUNT_ID || id === CREDITS_ACCOUNT_ID;
+}
+
 /** A stored account color: lowercase `#rrggbb` (contract §1.1a). */
 export const ACCOUNT_COLOR_PATTERN = /^#[0-9a-f]{6}$/;
 

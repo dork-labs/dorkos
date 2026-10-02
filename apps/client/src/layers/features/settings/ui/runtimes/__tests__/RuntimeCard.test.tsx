@@ -729,7 +729,7 @@ describe('RuntimeCard — declared sections', () => {
     );
 
     const summary = await screen.findByTestId('runtime-card-summary-claude-code');
-    await waitFor(() => expect(summary).toHaveTextContent('billing Acme Corp'));
+    await waitFor(() => expect(summary).toHaveTextContent('runs on Acme Corp'));
 
     await expand('claude-code');
     expect(

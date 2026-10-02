@@ -172,7 +172,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
     <div className="auth-wrap">
       <div className="auth-art">
         <div>
-          <p className="eyebrow">DorkOS Community</p>
+          <p className="eyebrow">DorkOS Space</p>
           <h2 className="mt-10 text-4xl font-semibold tracking-tight">Your space, your say.</h2>
           <p className="mt-4 max-w-md text-lg text-[#d0e4d3]">
             Approve a local install only when you recognize it and the access it needs.
@@ -230,7 +230,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
                   required
                 />
                 <span className="hint">
-                  Forgot your password? Ask the person running this community for help.
+                  Forgot your password? Ask the person running this space for help.
                 </span>
               </div>
               <Button type="submit" variant="default" className="w-full" disabled={busy}>
@@ -254,7 +254,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
               </span>
               <div>
                 <strong className="block break-all">{status.installName}</strong>
-                <span className="small muted">Wants to connect to this community</span>
+                <span className="small muted">Wants to connect to this space</span>
               </div>
             </div>
             <p className="small mb-2 font-semibold">It would be able to:</p>
@@ -268,8 +268,8 @@ export function Pairing({ search = location.search }: { search?: string }) {
             </ul>
             {held && status.status === 'pending' && (
               <Notice tone="info" className="mb-5">
-                The community is on hold, so this connection can only read. Connect again after the
-                hold ends to post.
+                The space is on hold, so this connection can only read. Connect again after the hold
+                ends to post.
               </Notice>
             )}
             {status.status === 'pending' ? (

@@ -67,7 +67,7 @@ function invalidInvitation(): ApiError {
 /** A closed community admits no one new; existing members are unaffected. */
 class AdmissionClosed extends ApiError {
   constructor() {
-    super(409, 'STATE_CONFLICT', 'This community is closed to new members.');
+    super(409, 'STATE_CONFLICT', 'This space is closed to new members.');
   }
 }
 
@@ -154,7 +154,7 @@ async function validInvite(
     [tenant.communityId]
   );
   const communityId = community.rows[0]?.id;
-  if (!communityId) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
+  if (!communityId) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
   const signed = inspectInvite(token, communityId, config);
   if (!signed) throw new ApiError(403, 'FORBIDDEN', 'This invitation is invalid or expired.');
   // After the signature, so only a genuine link learns the community is on hold. A hold keeps

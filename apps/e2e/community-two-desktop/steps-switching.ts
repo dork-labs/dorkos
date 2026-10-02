@@ -234,11 +234,17 @@ export async function switchingSteps(w: World): Promise<void> {
         )
       );
       await expect(feed(a)).toBeVisible();
-      await expect(feed(a)).toContainText(MSG_B);
       await expect
         .poll(() => timeline(a).getAttribute('data-landed-on'), { timeout: 15_000 })
         .not.toBeNull();
       const landedOn = await timeline(a).getAttribute('data-landed-on');
+      // A last left this channel caught up at its newest message (steps 11-13 end
+      // there), so it reopens there. Asserted by name before the text, so a channel
+      // that reopens on an old saved row fails as that, not as a missing message.
+      // A held community's earlier runs leave long history above, which is what
+      // made a never-forgotten saved row visible here (DOR-2170, v0.95.0 rerun).
+      assert.equal(landedOn, 'end', `A reopened the channel at "${landedOn}", not its newest`);
+      await expect(feed(a)).toContainText(MSG_B);
       return {
         landedOn,
         url: a.page.url(),
@@ -402,8 +408,16 @@ export async function switchingSteps(w: World): Promise<void> {
     await trigger(a).focus();
     await a.page.keyboard.press('Meta+Shift+K');
     await expect(a.page.getByText('Switch context', { exact: true })).toBeVisible();
+    // Home jumps to the menu's first row, which is you (DOR-2628), above the
+    // destinations — the same rule `community-switcher-access.spec.ts` holds.
     await a.page.keyboard.press('Home');
-    await expect(items.first()).toBeFocused();
+    await expect(a.page.getByRole('menu').getByRole('menuitem').first()).toBeFocused();
+    // Arrows walk down from there to this DorkOS, the first destination.
+    await expect(async () => {
+      if (!(await items.first().evaluate((el) => el === document.activeElement)))
+        await a.page.keyboard.press('ArrowDown');
+      await expect(items.first()).toBeFocused({ timeout: 500 });
+    }).toPass({ timeout: 10_000 });
     await a.page.keyboard.press('Enter');
     await expect(a.page).not.toHaveURL(/community=/, { timeout: 30_000 });
     return { kbShot };

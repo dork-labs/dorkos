@@ -24,12 +24,12 @@ import { useProfileStore } from '@/layers/features/profile';
  *
  * Most fields read as themselves — "runtime Codex", "model Sonnet 4.5". Effort
  * and account get the article-free forms a person would say out loud: "effort
- * Low", and "bills to Work", because "account Work" reads as a name rather than
+ * Low", and "runs on Work", because "account Work" reads as a name rather than
  * as where the money goes.
  */
 function deviationText(field: ExecutionDeviation['field'], label: string): string {
   if (field === 'effort') return `effort ${label}`;
-  if (field === 'account') return `bills to ${label}`;
+  if (field === 'account') return `runs on ${label}`;
   return `${field} ${label}`;
 }
 

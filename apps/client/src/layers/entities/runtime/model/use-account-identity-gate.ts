@@ -8,7 +8,7 @@ import { useRuntimeCapabilities } from './use-runtime-capabilities';
  * limited-row text, the header badge, the Settings dots and the Flow note.
  *
  * True only when the runtime declares `supportsAccounts` AND it has two or
- * more registered accounts. With one account every session is on it, so naming
+ * more registered accounts, or DorkOS credits beside its own sign-in. With one account every session is on it, so naming
  * it would repeat a fact that never varies. Claude Code counts its registry;
  * no other runtime has one today, so every other runtime counts zero. False
  * while capabilities load, so nothing flashes in and out.
@@ -23,11 +23,15 @@ import { useRuntimeCapabilities } from './use-runtime-capabilities';
  */
 export function useAccountIdentityGate(runtime: string | null | undefined): boolean {
   const { data } = useRuntimeCapabilities();
-  const { accounts } = useClaudeAccounts();
+  const { accounts, creditsEntry } = useClaudeAccounts();
   if (!data) return false;
   const type = runtime ?? data.defaultRuntime;
   if (!Object.hasOwn(data.capabilities, type)) return false;
   if (!data.capabilities[type]!.supportsAccounts) return false;
-  const registered = type === 'claude-code' ? accounts.length : 0;
-  return registered >= 2;
+  if (type !== 'claude-code') return false;
+  // DorkOS credits are one more place work can run (ADR 261001-000811): beside
+  // this computer's own sign-in (always there, registered or not) they make
+  // two, so a session on credits is told apart from one on the sign-in.
+  const places = creditsEntry ? Math.max(accounts.length, 1) + 1 : accounts.length;
+  return places >= 2;
 }

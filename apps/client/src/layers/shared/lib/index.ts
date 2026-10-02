@@ -112,6 +112,8 @@ export {
   chipState,
   claudeAccountName,
   claudeAccountOptions,
+  CREDITS_ACCOUNT_COLOR,
+  CREDITS_ACCOUNT_LABEL,
   formatAsOf,
   accountIdentity,
   formatBackIn,

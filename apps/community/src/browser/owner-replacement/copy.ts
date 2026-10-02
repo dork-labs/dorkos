@@ -35,7 +35,7 @@ export function replacementDate(value: string): string {
 
 /** The host form's label for each reason. */
 export const REASON_LABELS: Record<ReplacementReason, string> = {
-  owner_left_group: 'The owner has left the group this community belongs to',
+  owner_left_group: 'The owner has left the group this space belongs to',
   owner_unreachable: 'The owner can’t be reached',
   other: 'Another reason',
 };
@@ -44,11 +44,11 @@ export const REASON_LABELS: Record<ReplacementReason, string> = {
 export function reasonSentence(reason: ReplacementReason): string {
   switch (reason) {
     case 'owner_left_group':
-      return 'The host was told you’ve left the group this community belongs to.';
+      return 'The server admin was told you’ve left the group this space belongs to.';
     case 'owner_unreachable':
-      return 'The host couldn’t reach you.';
+      return 'The server admin couldn’t reach you.';
     case 'other':
-      return 'The host didn’t give a specific reason.';
+      return 'The server admin didn’t give a specific reason.';
   }
 }
 
@@ -87,13 +87,13 @@ export function hostRowSentence(row: HostReplacement): string {
     case 'withdrawn':
       return `Withdrawn on ${ended} ${
         row.withdrawnBecause === 'suspended'
-          ? 'because the community was suspended'
+          ? 'because the space was suspended'
           : row.withdrawnBecause === 'deletion'
-            ? 'because the community is being deleted'
+            ? 'because the space is being deleted'
             : 'by you'
       }.`;
     case 'superseded':
-      return `Ended on ${ended} because the owner handed the community to someone or asked to delete it.`;
+      return `Ended on ${ended} because the owner handed the space to someone or asked to delete it.`;
     case 'expired':
       return `The new owner didn’t accept in time. Ended on ${ended}.`;
   }
@@ -121,7 +121,7 @@ export function ownerBannerSentence(notice: Pick<OwnerNotice, 'claimableAfter'>)
   const when = notice.claimableAfter
     ? `on or after ${replacementDate(notice.claimableAfter)}`
     : `once a waiting period of at least ${LEAST_WAIT_DAYS} days has passed`;
-  return `The host has been asked to make someone else the owner of this community. Unless you keep ownership, that can happen ${when}.`;
+  return `The server admin has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen ${when}.`;
 }
 
 /** The admins' banner. */
@@ -129,7 +129,7 @@ export function adminBannerSentence(notice: Pick<AdminNotice, 'claimableAfter'>)
   const until = notice.claimableAfter
     ? `until ${replacementDate(notice.claimableAfter)}`
     : `at least ${LEAST_WAIT_DAYS} days`;
-  return `The host has been asked to make someone else the owner. The owner has ${until} to respond.`;
+  return `The server admin has been asked to make someone else the owner. The owner has ${until} to respond.`;
 }
 
 /**
@@ -139,15 +139,15 @@ export function adminBannerSentence(notice: Pick<AdminNotice, 'claimableAfter'>)
  */
 export function ownerOptionSentences(options: OwnerOptions, lifecycle: string | null): string[] {
   const sentences: string[] = [];
-  if (options.transfer) sentences.push('You can hand the community to someone yourself.');
-  if (options.delete) sentences.push('You can delete the community.');
+  if (options.transfer) sentences.push('You can hand the space to someone yourself.');
+  if (options.delete) sentences.push('You can delete the space.');
   if (options.needsPassword) sentences.push(addPasswordSentence(lifecycle ?? ''));
   return sentences;
 }
 
 /** What keeping ownership does, for the owner's confirm and the emailed link's page. */
 export function keepOwnershipSentence(cooldownDays: number): string {
-  return `The host’s request will end. The host can ask again after ${cooldownDays} days, and you’ll be told again.`;
+  return `The server admin’s request will end. The server admin can ask again after ${cooldownDays} days, and you’ll be told again.`;
 }
 
 /** Every member's notice for a week after a new owner took over. */
@@ -155,5 +155,5 @@ export function completionSentence(completed: {
   newOwnerDisplayName: string;
   completedAt: string;
 }): string {
-  return `The host made ${completed.newOwnerDisplayName} the owner of this community on ${replacementDate(completed.completedAt)}.`;
+  return `The server admin made ${completed.newOwnerDisplayName} the owner of this space on ${replacementDate(completed.completedAt)}.`;
 }

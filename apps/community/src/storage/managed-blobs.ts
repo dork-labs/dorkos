@@ -92,7 +92,7 @@ export async function reserveManagedBlob(
     (community.lifecycle !== 'active' &&
       !(allowArchived && isReadOnlyLifecycle(community.lifecycle)))
   ) {
-    throw new ApiError(409, 'STATE_CONFLICT', 'This community is not accepting new files.');
+    throw new ApiError(409, 'STATE_CONFLICT', 'This space is not accepting new files.');
   }
   const reservation = {
     key: randomBytes(32).toString('hex'),
@@ -220,11 +220,7 @@ export async function prepareManagedBlobCommit(
         !(reservation.allowArchived && isReadOnlyLifecycle(community.lifecycle))) ||
       community.lifecycle_version !== reservation.lifecycleVersion
     ) {
-      throw new ApiError(
-        409,
-        'STATE_CONFLICT',
-        'The community changed while the file was uploading.'
-      );
+      throw new ApiError(409, 'STATE_CONFLICT', 'The space changed while the file was uploading.');
     }
   }
   const updated = await client.query(

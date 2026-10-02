@@ -122,7 +122,7 @@ describe('the owner claim page', () => {
     render(<OwnerClaim />);
     fireEvent.click(await screen.findByRole('button', { name: /Continue/u }));
     const lead = await screen.findByRole('button', { name: 'Continue with DorkOS' });
-    expect(folded(screen.getByText('Sign in with DorkOS to claim the community.'))).toBe(false);
+    expect(folded(screen.getByText('Sign in with DorkOS to claim the space.'))).toBe(false);
     expect(folded(screen.getByLabelText('Your name'))).toBe(true);
     expect((lead as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getAllByRole('checkbox')[0]!);
@@ -146,9 +146,7 @@ describe('the owner claim page', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Continue/u }));
     expect(folded(await screen.findByLabelText('Your name'))).toBe(false);
     expect(
-      folded(
-        screen.getByText('Create an account on this host, or sign in, to claim the community.')
-      )
+      folded(screen.getByText('Create an account on this server, or sign in, to claim the space.'))
     ).toBe(false);
     expect(screen.queryByText('Other ways to sign in')).toBeNull();
   });
@@ -181,7 +179,7 @@ describe('the invitation page', () => {
   };
 
   it('joins with the single sign-on and says no separate account is needed', async () => {
-    // Purpose: fails if joining a DorkOS-run space leads with "Create an account on this host",
+    // Purpose: fails if joining a DorkOS-run space leads with "Create an account on this server",
     // or hides which community the invitation is for behind the fold.
     at(`/join${HINT}`);
     mockFetch({ [OPTIONS]: options() });
@@ -204,7 +202,7 @@ describe('the invitation page', () => {
     expect(folded(await screen.findByLabelText('Email'))).toBe(false);
     expect(
       folded(
-        screen.getByText('Create an account on this host, or sign in if you already have one.')
+        screen.getByText('Create an account on this server, or sign in if you already have one.')
       )
     ).toBe(false);
     expect(screen.queryByText('Other ways to sign in')).toBeNull();

@@ -1,95 +1,164 @@
 /**
- * The credits path, and the thing it has to get right: being OFF.
+ * The credits path, and the thing it has to get right: refusing.
  *
- * The flag is read once at module scope, so these tests deliberately cannot
- * arm it — which is the property under test. What they do cover is the parsing
- * that decides, the inertness of every function while it is off, and the fact
- * that the report handed to the client carries no credential.
+ * A launch that chose credits gets the endpoint and token, or a refusal; never
+ * an empty object it could mistake for "run on whatever else is there". A
+ * runtime that does not declare credits never gets a token, whatever is held.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import tokenFixture from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
 import { InferenceTokenSchema } from '@dork-labs/cloud-api';
+
+const link = vi.hoisted(() => ({ linked: true }));
+vi.mock('../v1-client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../v1-client.js')>()),
+  isCloudLinked: () => link.linked,
+  readCloudInstanceToken: () => (link.linked ? 'ik' : null),
+  captureCloudV1Context: () => null,
+}));
+
 import {
-  CREDITS_FLAG_NAME,
+  CREDITS_KILL_SWITCH_NAME,
+  creditsKilled,
+  isCreditsKillSwitchOn,
+} from '../credits-availability.js';
+import {
+  CreditsUnavailableError,
   creditsEnvFor,
-  creditsFlagEnabled,
-  creditsTurnEnv,
   creditsWiringReport,
-  isCreditsFlagOn,
+  primeCreditsInferenceGated,
+  resolveCreditsLaunchEnv,
   __setCreditsStateForTests,
 } from '../credits-inference.js';
 
 const token = InferenceTokenSchema.parse(tokenFixture);
+/** A clock an hour before the token expires: well outside the refresh margin. */
+const live = () => Date.parse(token.expiresAt) - 60 * 60_000;
+const DECLARES = { credits: { protocol: 'anthropic-messages' as const } };
 
-describe('the credits flag', () => {
+describe('the credits kill switch', () => {
+  it('names itself, so it stays findable', () => {
+    expect(CREDITS_KILL_SWITCH_NAME).toBe('DORKOS_CLOUD_CREDITS');
+  });
+
+  it('only ever turns credits OFF: the old "1" arms nothing and switches nothing off', () => {
+    for (const off of ['0', 'false', 'no', 'off', ' OFF ']) {
+      expect(isCreditsKillSwitchOn(off)).toBe(true);
+    }
+    for (const notOff of [undefined, '', '1', 'true', 'yes', 'on', 'maybe']) {
+      expect(isCreditsKillSwitchOn(notOff)).toBe(false);
+    }
+  });
+
+  it('is not on in a test run, because no task passes it through', () => {
+    expect(creditsKilled()).toBe(false);
+  });
+
+  it('stops a mint before any request when it is on', async () => {
+    const capture = vi.fn(() => null);
+    expect(await primeCreditsInferenceGated(true, capture)).toBe(false);
+    expect(capture).not.toHaveBeenCalled();
+  });
+});
+
+describe('a launch that chose credits', () => {
+  beforeEach(() => {
+    link.linked = true;
+  });
   afterEach(() => {
     __setCreditsStateForTests({ token: null });
   });
 
-  it('names itself, so the flag and its key stay findable together', () => {
-    expect(CREDITS_FLAG_NAME).toBe('DORKOS_CLOUD_CREDITS');
-  });
-
-  it('reads the affirmative spellings and nothing else', () => {
-    for (const on of ['1', 'true', 'yes', 'on', 'TRUE', ' on ']) {
-      expect(isCreditsFlagOn(on)).toBe(true);
-    }
-    for (const off of [undefined, '', '0', 'false', 'no', 'maybe']) {
-      expect(isCreditsFlagOn(off)).toBe(false);
-    }
-  });
-
-  it('is off in every test run, because no task passes it through', () => {
-    expect(creditsFlagEnabled()).toBe(false);
-  });
-
-  it('contributes no turn environment while it is off, even holding a live token', () => {
-    __setCreditsStateForTests({ token, now: () => Date.parse(token.expiresAt) - 1000 });
-    expect(creditsTurnEnv('claude-code')).toEqual({});
-    expect(creditsTurnEnv('opencode')).toEqual({});
-    expect(creditsTurnEnv('codex')).toEqual({});
-  });
-
-  it('reports readiness without ever carrying the token, the endpoint or an amount', () => {
-    __setCreditsStateForTests({ token, now: () => Date.parse(token.expiresAt) - 1000 });
-    const report = creditsWiringReport();
-    expect(report.enabled).toBe(false);
-    expect(report.ready).toBe(true);
-    expect(report.runtimes['claude-code']).toBe('wired');
-    expect(report.runtimes.opencode).toBe('follow-up');
-    expect(report.runtimes.codex).toBe('follow-up');
-    const serialized = JSON.stringify(report);
-    expect(serialized).not.toContain(token.token);
-    expect(serialized).not.toContain(token.endpoints.anthropicMessages);
-  });
-
-  it('points Claude Code at the endpoint it was handed, once somebody turns it on', () => {
-    // The ON path, which the wrapper can never reach because the flag is a
-    // module constant. Without this, misspelling a variable name or deleting the
-    // spread at the launch site would go unnoticed by every test in the repo.
-    expect(creditsEnvFor(token, 'claude-code', true)).toEqual({
+  it('gets the endpoint and token it was handed', async () => {
+    __setCreditsStateForTests({ token, now: live });
+    expect(await resolveCreditsLaunchEnv(DECLARES, 'Claude Code', 0)).toEqual({
       ANTHROPIC_BASE_URL: token.endpoints.anthropicMessages,
       ANTHROPIC_AUTH_TOKEN: token.token,
     });
   });
 
-  it('contributes nothing for a runtime that is not wired, or with no token', () => {
-    expect(creditsEnvFor(token, 'opencode', true)).toEqual({});
-    expect(creditsEnvFor(token, 'codex', true)).toEqual({});
-    expect(creditsEnvFor(null, 'claude-code', true)).toEqual({});
-    expect(creditsEnvFor(token, 'claude-code', false)).toEqual({});
+  it('is refused, not emptied, when no live token can be had (fail closed)', async () => {
+    __setCreditsStateForTests({ token: null });
+    const refusal = resolveCreditsLaunchEnv(DECLARES, 'Claude Code', 0);
+    await expect(refusal).rejects.toBeInstanceOf(CreditsUnavailableError);
+    await expect(refusal).rejects.toMatchObject({
+      reason: 'unreachable',
+      code: 'credits_unavailable',
+      message: expect.stringContaining("Couldn't reach DorkOS credits"),
+    });
   });
 
-  it('reports a runtime as wired only where it really contributes an environment', () => {
-    const report = creditsWiringReport();
-    for (const [runtime, state] of Object.entries(report.runtimes)) {
-      const wired = Object.keys(creditsEnvFor(token, runtime, true)).length > 0;
-      expect(wired, `${runtime} claims ${state}`).toBe(state === 'wired');
-    }
+  it('is never handed a token about to expire (inside the refresh margin)', async () => {
+    __setCreditsStateForTests({ token, now: () => Date.parse(token.expiresAt) - 60_000 });
+    await expect(resolveCreditsLaunchEnv(DECLARES, 'Claude Code', 0)).rejects.toMatchObject({
+      reason: 'unreachable',
+    });
   });
 
-  it('stops reporting ready once the held token is past its expiry', () => {
-    __setCreditsStateForTests({ token, now: () => Date.parse(token.expiresAt) + 1000 });
-    expect(creditsWiringReport().ready).toBe(false);
+  it('is refused once the held token has expired', async () => {
+    __setCreditsStateForTests({ token, now: () => Date.parse(token.expiresAt) + 1 });
+    await expect(resolveCreditsLaunchEnv(DECLARES, 'Claude Code', 0)).rejects.toMatchObject({
+      reason: 'unreachable',
+    });
+  });
+
+  it('is refused when this computer is no longer linked, even holding a token', async () => {
+    __setCreditsStateForTests({ token, now: live });
+    link.linked = false;
+    await expect(resolveCreditsLaunchEnv(DECLARES, 'Claude Code', 0)).rejects.toMatchObject({
+      reason: 'not-linked',
+    });
+  });
+
+  it('never hands a token to a runtime that does not declare credits', async () => {
+    __setCreditsStateForTests({ token, now: live });
+    await expect(resolveCreditsLaunchEnv({}, 'Codex', 0)).rejects.toMatchObject({
+      reason: 'not-supported',
+    });
+  });
+
+  it('names the runtime in the sentence, and offers its own sign-in', () => {
+    const err = new CreditsUnavailableError('unreachable', 'Claude Code');
+    expect(err.message).toBe(
+      "Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your Claude Code sign-in."
+    );
+  });
+});
+
+describe('the wiring report', () => {
+  afterEach(() => {
+    __setCreditsStateForTests({ token: null });
+  });
+
+  it('derives the wired set from what each runtime declares, never a list of its own', () => {
+    const report = creditsWiringReport([
+      { type: 'claude-code', ...DECLARES },
+      { type: 'codex' },
+      { type: 'opencode' },
+    ]);
+    expect(report.runtimes).toEqual({
+      'claude-code': 'wired',
+      codex: 'follow-up',
+      opencode: 'follow-up',
+    });
+    expect(creditsWiringReport([{ type: 'claude-code' }]).runtimes['claude-code']).toBe(
+      'follow-up'
+    );
+  });
+
+  it('reports readiness without ever carrying the token or the endpoint', () => {
+    __setCreditsStateForTests({ token, now: live });
+    const report = creditsWiringReport([{ type: 'claude-code', ...DECLARES }]);
+    expect(report.ready).toBe(true);
+    const serialized = JSON.stringify(report);
+    expect(serialized).not.toContain(token.token);
+    expect(serialized).not.toContain(token.endpoints.anthropicMessages);
+  });
+
+  it('reports a runtime as wired only where its protocol really contributes an environment', () => {
+    expect(Object.keys(creditsEnvFor(token, 'anthropic-messages'))).toEqual([
+      'ANTHROPIC_BASE_URL',
+      'ANTHROPIC_AUTH_TOKEN',
+    ]);
   });
 });
