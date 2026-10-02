@@ -22,7 +22,7 @@ Count the words in each **block**: one label, one title, one body, one toast, on
 | 7-15  | Allowed, flagged. Shorten if you can |
 | 16+   | Never                                |
 
-`pnpm check:copy-length` measures every block in `apps/client/src` and lists the long ones, worst first (`--warnings` lists the 7-15 ones too). It runs in the `typecheck` CI job. It counts `{name}` as one word, and joins `Couldn’t reach {name}. Try again.` into one block.
+`pnpm check:copy-length` measures every block in `apps/client/src` and lists the long ones, worst first (`--warnings` lists the 7-15 ones too). It runs in the `typecheck` CI job, report-only until the app-wide copy sweep lands; after that, a 16+ block fails the build. It counts `{name}` as one word, and joins `Couldn’t reach {name}. Try again.` into one block.
 
 **When there is more to say,** climb this ladder and stop at the first rung that works:
 
@@ -44,7 +44,7 @@ There is no exception marker. A block that "has to" be long has not been split y
 - **No "please", "sorry" or "oops".** With no speaker, there is nobody to apologize.
 - **No blame words:** failed, invalid, illegal, fatal, abort, kill. Say what did not happen: "Couldn’t save".
 - **Plain words.** Gloss a technical term in the same sentence or cut it.
-- **No code names.** Relay, Mesh, Pulse, Harness Sync and "runtime" never appear. Say what it does: "Messages can’t be delivered right now", "Runs on: Codex". A name the person chose, like an agent's name, is fine.
+- **No code names.** Relay, Mesh, Pulse, Harness Sync and "runtime" never appear. Say what it does: "Messages can’t be delivered right now", "Runs on: Codex". A name the person chose, like an agent's name, is fine. One carve-out: "Runtimes" stays as the name of its Settings tab and rows (`plans/language-ia-simplification.md` D3, kept by the operator on 2026-10-02). A sentence still says "Runs on: Codex", never "Runtime: codex".
 - **One word per idea.** Once a thing has a name in the app, use that name everywhere. The banned-term list in `scripts/vocab-gate/banned-terms.json` holds the retired ones.
 
 | Before                                                                    | After                                        |
@@ -135,7 +135,7 @@ Waits get a label: "Starting agent 2 of 5…".
 
 ## Mechanics (already house rules)
 
-These live in `contributing/design-system.md` (Casing, Punctuation) and are not repeated there:
+Summarised here. Casing, ellipsis, quotes and full stops are set in `contributing/design-system.md` (Casing, Punctuation); the em-dash rule is `writing-for-humans`.
 
 - Sentence case for every string.
 - The single-character ellipsis `…`. Curly quotes and apostrophes, written literally.

@@ -5,8 +5,8 @@
  * the operator on 2026-10-02) caps how many words one block of copy may carry:
  * three or fewer is preferred, six or fewer is good, seven to fifteen is
  * allowed but flagged, and sixteen or more is never allowed. The baseline the
- * day the rule was set: 4,897 blocks in `apps/client/src`, 184 of them at
- * sixteen words or more, the longest at 82. A length rule nobody measures
+ * day the rule was set is in ledger entry `ci/ledger/261002-185940-copy-length-gate.md`;
+ * the longest block was 82 words. A length rule nobody measures
  * drifts back the first week, so this script measures it on every change.
  *
  * WHAT A BLOCK IS. One piece of copy a person reads as a unit:
@@ -118,7 +118,13 @@ export interface CopyBlock {
  * @param text - The copy to count, with interpolations already replaced by `{…}`.
  */
 export function countWords(text: string): number {
-  return text.split(/\s+/).filter((token) => /[\p{L}\p{N}]|\{…\}/u.test(token)).length;
+  let words = 0;
+  for (const token of text.split(/\s+/)) {
+    const markers = token.match(/\{…\}/g)?.length ?? 0;
+    const rest = token.replace(/\{…\}/g, '');
+    words += markers + (/[\p{L}\p{N}]/u.test(rest) ? 1 : 0);
+  }
+  return words;
 }
 
 /**
@@ -152,7 +158,8 @@ function isSampleChild(child: ts.JsxChild): boolean {
 function isInlineChild(child: ts.JsxChild): child is ts.JsxElement | ts.JsxSelfClosingElement {
   return (
     (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child)) &&
-    INLINE_ELEMENTS.has(tagName(child))
+    // `<Foo.Link>` is a `Link` too: match the last segment of a dotted name.
+    INLINE_ELEMENTS.has(tagName(child).split('.').pop() ?? '')
   );
 }
 
@@ -161,15 +168,57 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, ' ');
 }
 
-/** The text of a template literal, with each `${…}` shown as `{…}`. */
-function templateText(node: ts.TemplateExpression): string {
-  return [node.head.text, ...node.templateSpans.map((span) => `{…}${span.literal.text}`)].join('');
+/** JSX text with its HTML entities (`&nbsp;`, `&mdash;`) blanked, so they are not counted as words. */
+function jsxText(node: ts.JsxText): string {
+  return node.text.replace(/&(?:[a-z]+|#\d+|#x[\da-f]+);/gi, ' ');
 }
 
-/** The text a copy literal renders, or `undefined` when the node is not a literal. */
-function literalText(node: ts.Node): string | undefined {
+/** True when a node is a `+` expression, the operator copy is concatenated with. */
+function isPlus(node: ts.Node): node is ts.BinaryExpression {
+  return ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken;
+}
+
+/** True when a `+` chain has at least one string or template literal operand. */
+function plusHasLiteral(node: ts.Node): boolean {
+  if (ts.isParenthesizedExpression(node)) return plusHasLiteral(node.expression);
+  if (isPlus(node)) return plusHasLiteral(node.left) || plusHasLiteral(node.right);
+  return ts.isStringLiteralLike(node) || ts.isTemplateExpression(node);
+}
+
+/**
+ * The text an expression renders inside a piece of copy: a literal's own
+ * text, the longest branch of a conditional, the joined operands of a `+`
+ * chain, and `{…}` for any value, which renders as at least one word.
+ */
+function renderedText(node: ts.Expression): string {
   if (ts.isStringLiteralLike(node)) return node.text;
-  if (ts.isTemplateExpression(node)) return templateText(node);
+  if (ts.isParenthesizedExpression(node)) return renderedText(node.expression);
+  if (ts.isTemplateExpression(node)) {
+    return [
+      node.head.text,
+      ...node.templateSpans.map((span) => ` ${renderedText(span.expression)} ${span.literal.text}`),
+    ].join('');
+  }
+  if (ts.isConditionalExpression(node)) {
+    const a = renderedText(node.whenTrue);
+    const b = renderedText(node.whenFalse);
+    return countWords(b) > countWords(a) ? b : a;
+  }
+  if (isPlus(node) && plusHasLiteral(node)) {
+    return `${renderedText(node.left)}${renderedText(node.right)}`;
+  }
+  return ' {…} ';
+}
+
+/**
+ * The text one unit of copy renders, or `undefined` when the node does not
+ * start one. A unit is a string literal, a template literal, or a whole `+`
+ * chain with a literal in it, so `'Couldn’t reach ' + name + '. Try again.'`
+ * is one block rather than two fragments.
+ */
+function unitText(node: ts.Node): string | undefined {
+  if (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node)) return renderedText(node);
+  if (isPlus(node) && !isPlus(node.parent) && plusHasLiteral(node)) return renderedText(node);
   return undefined;
 }
 
@@ -217,7 +266,7 @@ export function measureSource(filePath: string, text: string): CopyBlock[] {
         containsJsx = true;
         return;
       }
-      const rendered = literalText(node);
+      const rendered = unitText(node);
       if (rendered !== undefined && isCopySink(node)) {
         literals.push(rendered);
         consumed.add(node);
@@ -228,7 +277,9 @@ export function measureSource(filePath: string, text: string): CopyBlock[] {
     scan(expr.expression);
     if (literals.length > 0) {
       const longest = literals.reduce((a, b) => (countWords(b) > countWords(a) ? b : a));
-      return { text: ` ${longest} `, authored: true };
+      // `{' '}` is spacing, not copy: only a literal with a word in it makes
+      // the run authored.
+      return { text: ` ${longest} `, authored: countWords(longest.replace(/\{…\}/g, '')) > 0 };
     }
     if (containsJsx) return { text: '', authored: false };
     return { text: ' {…} ', authored: false };
@@ -249,8 +300,9 @@ export function measureSource(filePath: string, text: string): CopyBlock[] {
     let authored = false;
     for (const child of children) {
       if (ts.isJsxText(child)) {
-        if (child.text.trim().length > 0) authored = true;
-        text += child.text;
+        const plain = jsxText(child);
+        if (countWords(plain) > 0) authored = true;
+        text += plain;
       } else if (ts.isJsxExpression(child)) {
         const part = expressionText(child);
         text += part.text;
@@ -295,17 +347,22 @@ export function measureSource(filePath: string, text: string): CopyBlock[] {
 
   function visit(node: ts.Node): void {
     if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
-      if (SAMPLE_ELEMENTS.has(tagName(node))) return;
+      if (SAMPLE_ELEMENTS.has(tagName(node))) {
+        // A sample's text is not prose, but its attributes (`title=`,
+        // `aria-label=`) still are.
+        if (ts.isJsxElement(node)) ts.forEachChild(node.openingElement, visit);
+        return;
+      }
       if (!joined.has(node)) measureChildren(node.children);
       ts.forEachChild(node, visit);
       return;
     }
-    if (!consumed.has(node)) {
-      const rendered = literalText(node);
-      if (rendered !== undefined && isCopySink(node)) {
-        push(node, rendered);
-        return;
-      }
+    // Already joined into a JSX children run, operands included.
+    if (consumed.has(node)) return;
+    const rendered = unitText(node);
+    if (rendered !== undefined && isCopySink(node)) {
+      push(node, rendered);
+      return;
     }
     ts.forEachChild(node, visit);
   }
@@ -348,6 +405,14 @@ if (isMain) {
     args.find((a) => !a.startsWith('--')) ?? join(dirname(fileURLToPath(import.meta.url)), '..');
 
   const blocks = runCopyLength(repoRoot);
+  if (blocks.length === 0) {
+    // A wrong root or a moved scan root measures nothing and would pass
+    // silently in either mode, so an empty scan is an error of its own.
+    console.error(
+      `check-copy-length: no copy found under ${DEFAULT_SCAN_ROOTS.join(', ')} in ${repoRoot}.`
+    );
+    process.exit(1);
+  }
   const byBand = (band: LengthBand) => blocks.filter((b) => bandFor(b.words) === band);
   const errors = byBand('error').sort((a, b) => b.words - a.words);
   const flagged = byBand('flagged').sort((a, b) => b.words - a.words);

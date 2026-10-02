@@ -41,7 +41,7 @@ describe('bandFor', () => {
 describe('measureSource', () => {
   it('joins JSX text split by an interpolation into one block', () => {
     const blocks = measure('const A = () => <p>Couldn’t reach {name}. Try again.</p>;');
-    expect(blocks).toEqual([{ words: 5, text: 'Couldn’t reach {…} . Try again.' }]);
+    expect(blocks.map((b) => b.words)).toEqual([5]);
   });
 
   it('joins inline formatting into the sentence around it', () => {
@@ -82,7 +82,68 @@ describe('measureSource', () => {
 
   it('counts a template interpolation as one word', () => {
     const blocks = measure('toast.error(`Couldn’t turn on ${name}. Try again.`);');
-    expect(blocks).toEqual([{ words: 6, text: 'Couldn’t turn on {…}. Try again.' }]);
+    expect(blocks.map((b) => b.words)).toEqual([6]);
+  });
+
+  it('measures copy passed to an attribute in braces', () => {
+    const sixteen =
+      'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen';
+    expect(measure(`const A = () => <Dialog title={'${sixteen}'} />;`).map((b) => b.words)).toEqual(
+      [16]
+    );
+    expect(
+      measure(
+        'const A = () => <Dialog description={`Scout changed ${n} files in your project today`} />;'
+      ).map((b) => b.words)
+    ).toEqual([8]);
+    expect(
+      measure(`const A = () => <Row label={on ? '${sixteen}' : 'Off'} />;`).map((b) => b.words)
+    ).toEqual([16, 1]);
+  });
+
+  it('joins a + chain into one block', () => {
+    const blocks = measure(
+      "toast.error('Couldn’t reach the server that ' + name + ' runs on, so check it and try again.');"
+    );
+    expect(blocks.map((b) => b.words)).toEqual([14]);
+    const jsx = measure(
+      "const A = () => <p>{'Hello there friend ' + name + ' and welcome back'}</p>;"
+    );
+    expect(jsx.map((b) => b.words)).toEqual([7]);
+  });
+
+  it('counts back-to-back interpolations as separate words', () => {
+    expect(measure('toast.success(`${a}${b} done`);').map((b) => b.words)).toEqual([3]);
+  });
+
+  it('counts a literal nested in a template span by its words', () => {
+    expect(
+      measure("toast.success(`Outer ${c ? 'inner words here' : 'x'} tail`);").map((b) => b.words)
+    ).toEqual([5]);
+  });
+
+  it('does not count HTML entities as words', () => {
+    expect(
+      measure('const A = () => <p>Hello &mdash; world&nbsp;there</p>;').map((b) => b.words)
+    ).toEqual([3]);
+  });
+
+  it('does not treat spacing between two values as copy', () => {
+    expect(measure("const A = () => <p>{a}{' '}<strong>{b}</strong></p>;")).toEqual([]);
+  });
+
+  it('joins a dotted inline element into its sentence', () => {
+    expect(
+      measure('const A = () => <p>Open <Nav.Link to="/x">your settings</Nav.Link> now.</p>;')
+    ).toHaveLength(1);
+  });
+
+  it('still measures the attributes of a code sample', () => {
+    expect(
+      measure('const A = () => <code title="Copy this command">pnpm dev</code>;').map(
+        (b) => b.words
+      )
+    ).toEqual([3]);
   });
 
   it('ignores a run of nothing but data', () => {

@@ -12,8 +12,8 @@ field-changes: []
 
 The app-copy standard set on 2026-10-02 (the `writing-app-copy` skill) caps one block of in-app
 copy at 15 words: three or fewer preferred, six or fewer good, seven to fifteen flagged, sixteen
-or more never. Measured the same day, `apps/client/src` held 207 blocks at sixteen words or more,
-the longest at 82.
+or more never. Measured the same day, `apps/client/src` held 4,741 blocks: 214 at sixteen words or
+more, 643 at seven to fifteen, the longest at 82.
 
 `scripts/check-copy-length.ts` measures every block, reusing `check-vocab-gate.ts`'s copy-position
 classifier and file walk, and joins JSX text split by an interpolation so a sentence with a name

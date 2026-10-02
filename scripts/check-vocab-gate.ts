@@ -453,12 +453,17 @@ export function isCopySink(node: ts.Node): boolean {
       return COPY_ATTR_NAMES.has(parent.name.getText());
     }
     if (ts.isJsxExpression(parent)) {
-      // A JsxExpression is either an attribute's `{...}` initializer (handled
-      // one level up via its own JsxAttribute parent, so this branch would
-      // only be reached for a bare `{expr}` in attribute position, which
-      // falls through to false below) or a children-position `{expr}` — the
-      // only case that reaches here after the attribute check above.
-      return !ts.isJsxAttribute(parent.parent);
+      // A JsxExpression is either an attribute's `{...}` initializer or a
+      // children-position `{expr}`. The initializer climbs one more hop so the
+      // JsxAttribute check above judges it by name: `title={'…'}`,
+      // `description={\`… ${x}\`}` and `label={c ? 'a' : 'b'}` are copy exactly
+      // as `title="…"` is. Until check-copy-length.ts's review this returned
+      // false here, which left every braced copy attribute unscanned.
+      if (ts.isJsxAttribute(parent.parent)) {
+        current = parent;
+        continue;
+      }
+      return true;
     }
     if (ts.isPropertyAssignment(parent) || ts.isShorthandPropertyAssignment(parent)) {
       const name = ts.isPropertyAssignment(parent) ? parent.name.getText() : parent.name.getText();
