@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/browser",
   "version": "0.0.0",
-  "description": "Private managed-browser engine contracts and validation.",
+  "description": "Private managed-browser engine contracts and fixture lifecycle.",
   "private": true,
   "type": "module",
   "exports": {
@@ -14,7 +14,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:fixture": "pnpm build && vitest run --config vitest.fixture.config.ts"
   },
   "dependencies": {
     "playwright-core": "1.63.0",

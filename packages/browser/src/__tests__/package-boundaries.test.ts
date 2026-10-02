@@ -3,6 +3,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import portableConfig from '../../vitest.config.js';
+import nativeConfig from '../../vitest.fixture.config.js';
 import * as publicApi from '../index.js';
 
 const packageRoot = path.resolve(import.meta.dirname, '../..');
@@ -46,6 +48,34 @@ function imports(file: string): string[] {
 }
 
 describe('private browser package boundaries', () => {
+  it('keeps real acquisition outside default tests and includes all three explicit fixture files', () => {
+    const portable = portableConfig as { test: { include: string[]; exclude: string[] } };
+    const native = nativeConfig as {
+      test: { include: string[]; fileParallelism: boolean; retry: number };
+    };
+    expect(portable.test.include).toEqual(['src/**/__tests__/**/*.test.ts']);
+    expect(portable.test.exclude).toContain('src/**/__tests__/**/*.fixture.test.ts');
+    expect(native.test.include).toEqual(['src/**/__tests__/**/*.fixture.test.ts']);
+    expect(native.test.fileParallelism).toBe(false);
+    expect(native.test.retry).toBe(0);
+    const actual = readdirSync(path.join(packageRoot, 'src/__tests__'))
+      .filter((name) => name.endsWith('.fixture.test.ts'))
+      .sort();
+    expect(actual).toEqual([
+      'lifecycle-exclusion.fixture.test.ts',
+      'lifecycle-negative.fixture.test.ts',
+      'lifecycle.fixture.test.ts',
+    ]);
+    const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+    expect(manifest.scripts['test:fixture']).toBe(
+      'pnpm build && vitest run --config vitest.fixture.config.ts'
+    );
+    for (const file of actual)
+      expect(readFileSync(path.join(packageRoot, 'src/__tests__', file), 'utf8')).toContain(
+        "import './native-fixture-preflight.js'"
+      );
+  });
+
   it('resolves the public pinned production library and its real relative assets without acquisition', () => {
     const require = createRequire(path.join(packageRoot, 'package.json'));
     const metadataPath = require.resolve('playwright-core/package.json');
@@ -63,7 +93,7 @@ describe('private browser package boundaries', () => {
     expect(chromium).toHaveLength(1);
     expect(chromium[0].revision).toBe('1243');
   });
-  it('exports only implemented validation operations through the real package entry', () => {
+  it('exports implemented validation and the complete narrow lifecycle slice through the real package entry', () => {
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
     expect(manifest.private).toBe(true);
     expect(manifest.dependencies).toEqual({ 'playwright-core': '1.63.0', zod: '^4.6.2' });
@@ -80,6 +110,8 @@ describe('private browser package boundaries', () => {
     expect(Object.keys(publicApi).sort()).toEqual(
       [
         'BrowserValidationError',
+        'BrowserLifecycleError',
+        'createBrowserEngine',
         'advanceCounter',
         'parseBrowserCommand',
         'parseBrowserId',
@@ -104,7 +136,56 @@ describe('private browser package boundaries', () => {
         expect(path.resolve(path.dirname(file), specifier).startsWith(packageRoot + path.sep)).toBe(
           true
         );
-      else expect(['zod', 'node:path']).toContain(specifier);
+      else {
+        const module = path.relative(path.join(packageRoot, 'src'), file);
+        const allowed: Record<string, readonly string[]> = {
+          zod: [
+            'configuration.ts',
+            'runtime-descriptor.ts',
+            'contracts.ts',
+            'ids.ts',
+            'counters.ts',
+            'validation.ts',
+            'profiles/reservation.ts',
+          ],
+          'node:path': [
+            'runtime-descriptor.ts',
+            'runtime/host-identity.ts',
+            'runtime/public-library.ts',
+            'profiles/paths.ts',
+            'profiles/reservation.ts',
+            'lifecycle/acquisition.ts',
+          ],
+          'node:crypto': [
+            'engine.ts',
+            'runtime/public-library.ts',
+            'profiles/reservation.ts',
+            'tabs/registry.ts',
+          ],
+          'node:child_process': ['runtime/host-identity.ts'],
+          'node:fs': [
+            'runtime/host-identity.ts',
+            'runtime/public-library.ts',
+            'profiles/paths.ts',
+            'profiles/reservation.ts',
+            'profiles/owned-directory.ts',
+          ],
+          'node:fs/promises': [
+            'runtime/public-library.ts',
+            'lifecycle/acquisition.ts',
+            'lifecycle/close.ts',
+          ],
+          'node:os': ['runtime/host-identity.ts'],
+          'node:module': ['runtime/public-library.ts'],
+          'node:http': ['network/fixture-proxy.ts'],
+          'playwright-core': [
+            'runtime/public-library.ts',
+            'lifecycle/records.ts',
+            'tabs/registry.ts',
+          ],
+        };
+        expect(allowed[specifier], `${module}: ${specifier}`).toContain(module);
+      }
     }
   });
 

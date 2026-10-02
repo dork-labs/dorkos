@@ -17,7 +17,7 @@ Native/AT/phone/tunnel/distribution/network/performance are core acceptance, not
 
 ## Active phase4 projection (parent-owned tracker mirror)
 
-- [ ] 4.1 Establish private engine package types and validation — depends on none.
+- [x] 4.1 Establish private engine package types and validation — depends on none.
 - [ ] 4.2 Implement retained and clean browser lifecycle with real capture — depends on 4.1.
 - [ ] 4.3 Prove exact-owned crash recovery and profile exclusion — depends on 4.2.
 - [ ] 4.4 Implement serialized generation-bound engine input and reset — depends on 4.2.
@@ -164,7 +164,7 @@ Completion evidence: [PR2460](https://github.com/dork-labs/dorkos/pull/2460), re
 
 ### Task 4.1: Establish private engine package types and validation
 
-Status: in_progress · Size: medium · Priority: high · Phase: Private engine foundation
+Status: completed · Size: medium · Priority: high · Phase: Private engine foundation
 
 Dependencies: none. Parallel with: none declared.
 
@@ -174,11 +174,15 @@ Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkou
 
 Establish one public pinned Playwright library boundary with runtime-relative assets represented in its descriptor. Package types do not select a private patched dependency or pretend install readiness; CLI/desktop shipping verification must resolve the actual production library, not a development-only monorepo installation.
 
+Completion evidence: [PR2463](https://github.com/dork-labs/dorkos/pull/2463), reviewed head `4bc298b79a08db6856e6dc253e6baa28e9cd4d09`, merge `71e3e40bec60211572e520e5b8b620cd79409259` at2026-10-02T03:52:00Z. All43 reviewed branch-owned blobs match the actual merge. This closes the private contracts task only; the full parent and native/Chrome-compatible readiness remain open.
+
 ### Task 4.2: Implement retained and clean browser lifecycle with real capture
 
-Status: pending · Size: large · Priority: high · Phase: Private engine foundation
+Status: in_progress · Size: large · Priority: high · Phase: Private engine foundation
 
 Dependencies: 4.1. Parallel with: none declared.
+
+Worker: `/root/prototype_manager`; isolated source checkout: `/Users/doriancollier/.codex/worktrees/browser-engine-lifecycle/dorkos`. Original source `27712fd9c600237d15c100d3672204423fc1b73a` received blocking ownership review. Correction `030309cf07db3a8460ee5ff7756fea6032d377b1` is frozen for fresh parent integration and review, with original failures and history preserved; this task is not shipped or production-ready.
 
 Implement first complete private engine constructor/open/close/tab-list/capture slice using reviewed Playwright and explicit executable descriptor; never resolve/download implicitly. Persistent named profiles and unseeded separate clean browser receive fresh browser/tab IDs, fixed canonical viewport and truthful stopped/uncertain outcomes. Inject roots/process observation; register cleanup before launch and bound IPC/acquisition/teardown. Reserve profiles atomically with manager/Chromium PID-birth and launch phase; no losing attempt modifies seeded profile. Capture actual named fixture Page JPEG/receipt through narrow API, keeping raw engine objects private. Real tests cover open/capture/clean close/return, absent/corrupt executable, concurrent same-profile open in independent processes, zero-viewer browser lifetime and idempotent shutdown. This is fixture-only lifecycle capability, not permission for public egress or mode activation.
 

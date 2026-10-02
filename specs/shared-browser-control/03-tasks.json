@@ -8,6 +8,7 @@
     "GPT-6.1 Sol with Medium reasoning explicitly selected; overrides Flow tier bindings.",
     "Frozen06/07 at cb8bc3b9879684e3105d0238e7730e2d7fa79cd0 establish design acceptance; ADR remains Proposed until implemented gate. Existing full-scope authorization persists, no invented human permission.",
     "All11 prototype tasks retain their original scope and history. Task3.3 completed after independently verified PR2460 merge9dc56fd45d81fbb3125fdc48cc7e5ee1af340b0a at2026-10-02T02:28:00Z; all11 prototype tasks now completed. Full production parent remains open in phase4.",
+    "Task4.1 completed after independently verified PR2463 merge71e3e40bec60211572e520e5b8b620cd79409259 at2026-10-02T03:52:00Z. Task4.2 original private fixture lifecycle source27712fd9c600237d15c100d3672204423fc1b73a received blocking ownership review; correction030309cf07db3a8460ee5ff7756fea6032d377b1 is frozen for fresh parent integration and review. Original failures/history remain preserved; it is not shipped or production-ready.",
     "Task API absent; canonical JSON is authoritative. Parent owns projection/integration/tracker/PR/cleanup; no promotion created in this decomposition.",
     "Native and Chrome-compatible readiness keyed separately exact executable/platform/policy/mode. Native can activate after its own complete gates; Chrome preference remains unresolved and full parent cannot close on native-only success.",
     "Research264a worker-hint availability exception is not accepted. Unsupported required observations UNVERIFIED; rejected private copied-package candidate never production dependency/configuration.",
@@ -261,13 +262,20 @@
       "activeForm": "Establishing private engine package types and validation",
       "size": "medium",
       "priority": "high",
-      "status": "in_progress",
+      "status": "completed",
       "dependencies": [],
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
       "worker": "/root/prototype_contracts",
-      "worktree": "/Users/doriancollier/.codex/worktrees/browser-engine-phase4/dorkos"
+      "worktree": "/Users/doriancollier/.codex/worktrees/browser-engine-phase4/dorkos",
+      "completionEvidence": {
+        "pr": "https://github.com/dork-labs/dorkos/pull/2463",
+        "reviewedHead": "4bc298b79a08db6856e6dc253e6baa28e9cd4d09",
+        "mergeCommit": "71e3e40bec60211572e520e5b8b620cd79409259",
+        "mergedAt": "2026-10-02T03:52:00Z",
+        "scope": "Private validated contracts and retained identity research only; all43 reviewed branch-owned blobs match the actual merge. Full production parent and native/Chrome-compatible readiness remain open."
+      }
     },
     {
       "id": "4.2",
@@ -278,13 +286,15 @@
       "activeForm": "Implementing retained and clean browser lifecycle with real capture",
       "size": "large",
       "priority": "high",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         "4.1"
       ],
       "parallelWith": [],
       "issue": null,
-      "parentIssue": null
+      "parentIssue": null,
+      "worker": "/root/prototype_manager",
+      "worktree": "/Users/doriancollier/.codex/worktrees/browser-engine-lifecycle/dorkos"
     },
     {
       "id": "4.3",
