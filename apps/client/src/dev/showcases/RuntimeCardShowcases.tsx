@@ -245,7 +245,7 @@ function SomethingWrongSection() {
           expanded
           setupDetails={
             <p className="text-muted-foreground text-xs">
-              Not registered with this server. Install it, then enable it in your DorkOS config.
+              Not set up here. Install it, then turn it on in your DorkOS config.
             </p>
           }
         />

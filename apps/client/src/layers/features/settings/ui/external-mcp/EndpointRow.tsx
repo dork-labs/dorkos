@@ -10,7 +10,7 @@ export function EndpointRow({ endpoint }: EndpointRowProps) {
     <div className="space-y-2">
       <div className="min-w-0">
         <p className="text-sm font-medium">Endpoint</p>
-        <p className="text-muted-foreground text-xs">MCP server URL for external agents</p>
+        <p className="text-muted-foreground text-xs">The address to give other apps</p>
       </div>
       <div className="flex items-center gap-1.5">
         <code className="bg-muted min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">

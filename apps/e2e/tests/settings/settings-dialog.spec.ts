@@ -88,7 +88,7 @@ test.describe('Settings — Dialog @smoke', () => {
     await expect(panel.getByRole('switch', { name: 'To-do celebrations' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Format text as you type' })).toBeVisible();
     await expect(
-      panel.getByRole('switch', { name: 'Watch for agents you started somewhere else' })
+      panel.getByRole('switch', { name: 'Watch for work started elsewhere' })
     ).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Welcome-back notes' })).toBeVisible();
     await expect(panel.getByRole('switch', { name: 'Next-step offers' })).toBeVisible();

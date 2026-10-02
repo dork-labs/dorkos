@@ -62,8 +62,18 @@ interface BackgroundSystemsCardProps {
  * @param base - The plain description of what the switch does.
  */
 function describe(state: BackgroundSystemState, envVar: string, base: string): string {
+  const status = statusLine(state, envVar);
+  return status ? `${base} ${status}` : base;
+}
+
+/**
+ * The one short sentence about where the switch stands right now, if anything
+ * needs saying. Kept apart from the base sentence so each stays its own short
+ * block of copy.
+ */
+function statusLine(state: BackgroundSystemState, envVar: string): string | null {
   if (state.lockedByEnv) {
-    return `${base} Right now ${envVar} on this machine decides it, so this switch cannot.`;
+    return `${envVar} on this computer controls this switch.`;
   }
   const setting = state.enabledInConfig ?? state.running;
   // A crash is checked BEFORE the pending comparison, because both look
@@ -71,12 +81,12 @@ function describe(state: BackgroundSystemState, envVar: string, base: string): s
   // change would promise a restart fixes it and would also contradict the
   // failure warning already sitting on the tool-group row above.
   if (setting && !state.running && state.initError) {
-    return `${base} It is on, but it failed to start when DorkOS last started, so nothing is running.`;
+    return 'It’s on, but didn’t start last time. Nothing is running.';
   }
   if (setting !== state.running) {
-    return `${base} Saved. It takes effect the next time DorkOS starts.`;
+    return 'Saved. Applies the next time DorkOS starts.';
   }
-  return base;
+  return null;
 }
 
 /**
@@ -93,9 +103,7 @@ export function BackgroundSystemsCard({
   return (
     <div className="space-y-4" data-testid="background-systems">
       <p className="text-muted-foreground text-sm">
-        These two keep running when you are not looking. Turning one off stops DorkOS from starting
-        it, and its tools go quiet with it. DorkOS starts them once, when it starts, so a change
-        here waits for the next start.
+        These run in the background. Turning one off also stops its tools.
       </p>
       <FieldCard>
         <FieldCardContent>
@@ -104,7 +112,7 @@ export function BackgroundSystemsCard({
             description={describe(
               tasks,
               'DORKOS_TASKS_ENABLED',
-              'Starts your scheduled work when it is due. Off means nothing runs on a schedule.'
+              'Runs scheduled tasks when they’re due.'
             )}
             checked={switchPosition(tasks)}
             onCheckedChange={onTasksChange}
@@ -115,7 +123,7 @@ export function BackgroundSystemsCard({
             description={describe(
               relay,
               'DORKOS_RELAY_ENABLED',
-              'Carries messages between your agents, and to and from Telegram, Slack, and webhooks. Off means those stop.'
+              'Carries messages between agents, and to and from chat apps.'
             )}
             checked={switchPosition(relay)}
             onCheckedChange={onRelayChange}

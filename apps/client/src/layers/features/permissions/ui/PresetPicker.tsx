@@ -121,7 +121,10 @@ export function PresetPicker({ surface }: PresetPickerProps) {
         {
           onError: (err) => {
             if (isAutonomyAckRefusal(err)) consent.ask(once);
-            else toast.error(err instanceof Error ? err.message : "That change didn't save.");
+            else
+              toast.error(
+                err instanceof Error ? err.message : 'Couldn’t save that change. Try again.'
+              );
           },
         }
       );
@@ -152,8 +155,7 @@ export function PresetPicker({ surface }: PresetPickerProps) {
 
       {data.preset === null ? (
         <p className="text-muted-foreground text-sm" data-testid="permissions-preset">
-          Not chosen yet. Your agents work as they did before.{' '}
-          <span className="text-xs">{preview}.</span>
+          Not chosen yet. Agents work as before. <span className="text-xs">{preview}.</span>
         </p>
       ) : (
         <div className="flex flex-col gap-1 @lg:flex-row @lg:items-center @lg:justify-between">
@@ -214,7 +216,7 @@ export function PresetPicker({ surface }: PresetPickerProps) {
       <AutonomyConfirmDialog
         descriptor={consent.descriptor}
         canRemember={false}
-        consentNote="Full power starts every new session here, and DorkOS will remember that you have read this."
+        consentNote="Every new session starts on Full power. DorkOS remembers you’ve read this."
         onCancel={consent.cancel}
         onConfirm={consent.confirm}
       />

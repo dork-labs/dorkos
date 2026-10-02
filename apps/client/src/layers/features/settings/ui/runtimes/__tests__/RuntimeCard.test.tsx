@@ -291,7 +291,7 @@ describe('RuntimeCard — write paths', () => {
     await expand('test-mode');
 
     expect(await screen.findByTestId('runtime-card-no-settings-test-mode')).toHaveTextContent(
-      'keeps no settings of its own'
+      'keeps no settings here'
     );
     expect(screen.queryByTestId('runtime-model-select-test-mode')).not.toBeInTheDocument();
     // Whichever control the effort row would have drawn, and whether or not it
@@ -445,7 +445,7 @@ describe('RuntimeCard — the sign-in expiry warning', () => {
     );
 
     expect(await screen.findByTestId('runtime-sign-in-expiring-claude-code')).toHaveTextContent(
-      'Your Claude Code sign-in runs out in 2 days. Sign in again before your agents stall.'
+      'Your Claude Code sign-in runs out in 2 days. Sign in again to keep agents working.'
     );
   });
 
@@ -534,7 +534,7 @@ describe('RuntimeCard — the summary line', () => {
 
     await expand();
     expect(await screen.findByTestId('runtime-effort-clear-codex')).toHaveTextContent(
-      'does nothing'
+      'is saved but unused'
     );
   });
 
@@ -637,7 +637,7 @@ describe('RuntimeCard — connecting and reconnecting', () => {
     renderCard({ isDefault: true }, { checkRequirements: vi.fn().mockResolvedValue(NOT_READY) });
 
     expect(await screen.findByTestId('runtime-default-broken-codex')).toHaveTextContent(
-      'New conversations can’t start here'
+      'new conversations can’t start'
     );
     expect(screen.getByTestId('runtime-default-pill-codex')).toBeInTheDocument();
     expect(await screen.findByTestId('runtime-card-connect-codex')).toBeInTheDocument();

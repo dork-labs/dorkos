@@ -79,8 +79,7 @@ export function PowerSourceSectionView({
         // line would be blank. The same rule already governs the quiet Change
         // affordance beside the Ready badge.
         <p className="text-muted-foreground text-xs" data-testid="power-source-empty">
-          {runtimeDisplayName(type)} was signed in outside DorkOS, so DorkOS cannot tell you where
-          its models come from.
+          {runtimeDisplayName(type)} was signed in outside DorkOS, so its model source is unknown.
         </p>
       )}
 

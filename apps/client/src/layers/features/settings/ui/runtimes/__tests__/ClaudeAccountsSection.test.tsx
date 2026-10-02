@@ -375,7 +375,7 @@ describe('ClaudeAccountsSection', () => {
     await user.type(screen.getByLabelText('Account folder'), '~/.claude2');
 
     expect(screen.getByTestId('claude-account-not-absolute')).toHaveTextContent(
-      'Use the folder’s full path'
+      'Use the full path'
     );
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
     expect(transport.updateConfig).not.toHaveBeenCalled();
@@ -572,7 +572,7 @@ describe('ClaudeAccountsSection', () => {
 
     await waitFor(() =>
       expect(screen.getByTestId('claude-account-not-ready')).toHaveTextContent(
-        'does not look like a Claude Code account yet'
+        'Not a Claude Code account yet'
       )
     );
   });
@@ -1015,7 +1015,7 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       );
       await screen.findByRole('button', { name: `Color for ${MAIN}` });
       expect(screen.getByTestId('claude-account-launch-override')).toHaveTextContent(
-        'New sessions use $CLAUDE_CONFIG_DIR (~/.claude-env) set on the server.'
+        'New sessions use ~/.claude-env, from the server’s $CLAUDE_CONFIG_DIR.'
       );
       expect(screen.queryByText('in use')).not.toBeInTheDocument();
     });
@@ -1184,8 +1184,8 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       const user = userEvent.setup();
       registerFlowTab();
       renderSection({ resolvedAccount: HOME, inherited: true, accounts: [PERSONAL, ACME] });
-      expect(await screen.findByText(/Flow uses these accounts for your work/)).toHaveTextContent(
-        'Flow uses these accounts for your work. Choose how in Settings → Flow.'
+      expect(await screen.findByText(/Flow uses these accounts/)).toHaveTextContent(
+        'Flow uses these accounts. Choose how in Settings → Flow.'
       );
       await user.click(screen.getByRole('button', { name: 'Settings → Flow' }));
       expect(mockSetTab).toHaveBeenCalledWith('flow:fleet');

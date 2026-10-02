@@ -167,7 +167,7 @@ export function TunnelSettings({
                   <FieldError>{domainError}</FieldError>
                 ) : (
                   <FieldDescription className="text-xs">
-                    Leave blank to use a randomly assigned ngrok URL.
+                    Leave blank for a random ngrok address.
                   </FieldDescription>
                 )}
               </Field>

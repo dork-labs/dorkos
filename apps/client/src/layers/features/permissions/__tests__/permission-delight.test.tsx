@@ -84,25 +84,25 @@ describe('the why line', () => {
       stateWhy({ ...base, state: 'allowed', source: 'agent-action', agentName: 'DorkBot' })
     ).toBe('Allowed, set for this one action on DorkBot.');
     expect(stateWhy({ ...base, state: 'blocked', source: 'unchanged' })).toBe(
-      'Blocked. No preset is chosen yet, so it works as it did before.'
+      'Blocked. No preset chosen yet, so it works as before.'
     );
     expect(stateWhy({ ...base, state: 'blocked', source: 'inactive' })).toBe(
-      "Blocked, because this agent's access was turned off."
+      'Blocked, because this agent’s access was turned off.'
     );
   });
 
   it('says a locked area can never be Allowed, and a destructive action always asks', () => {
     expect(stateWhy({ state: 'ask', source: 'floor', preset: 'full' })).toBe(
-      'Ask. This is a locked area, so it can never be Allowed.'
+      'Ask. This area is locked, so it’s never Allowed.'
     );
     expect(stateWhy({ state: 'ask', source: 'preset', destructiveAsk: true, preset: 'full' })).toBe(
-      "Ask, because an action that can't be undone always asks unless you set it on its own."
+      'Ask. Actions that can’t be undone ask unless you set them one by one.'
     );
   });
 
   it('names the last change by the honesty rule, with where it was made', () => {
     expect(lastChangeWhy(CHANGE)).toMatch(
-      /^Changed by someone on this computer on .+ from a request card\. Login is off, so DorkOS can't confirm who\.$/
+      /^Changed on .+ from a request card\. With login off, who is unknown\.$/
     );
     expect(
       lastChangeWhy({
@@ -121,7 +121,7 @@ describe('the why line', () => {
       })
     ).toMatch(/^Changed on .+: DorkBot asked, you said yes\.$/);
     expect(lastChangeWhy({ ...CHANGE, attribution: 'outside', surface: 'file-edit' })).toMatch(
-      /^Changed outside DorkOS on .+, by an edit to the agent's settings file\.$/
+      /^Changed outside DorkOS on .+, in the agent’s settings file\.$/
     );
     expect(lastChangeWhy(undefined)).toBeNull();
   });
@@ -139,7 +139,7 @@ describe('the why line', () => {
       'Allowed, from the default (Full power).'
     );
     expect(screen.getByTestId('permission-why-change')).toHaveTextContent(
-      /from a request card\. Login is off/
+      /from a request card\. With login off/
     );
   });
 });
@@ -402,15 +402,13 @@ describe('Undo in the history', () => {
     ).toBe('This has changed since. Set it back to Full autonomy anyway?');
     expect(partialUndoNote({ changes: [change], skipped: [] })).toBeNull();
     expect(partialUndoNote({ changes: [], skipped: [] })).toBe(
-      'Nothing to undo. It was already back the way it was.'
+      'Nothing to undo. It was already back.'
     );
     expect(
       partialUndoNote({
         changes: [change],
         skipped: [{ change, current: 'ask', reason: 'floor' }],
       })
-    ).toBe(
-      'Undid 1 change. 1 would have set something that always asks to Allowed, so it was left alone.'
-    );
+    ).toBe('Undid 1 change. 1 can’t be set to Allowed and was left alone.');
   });
 });

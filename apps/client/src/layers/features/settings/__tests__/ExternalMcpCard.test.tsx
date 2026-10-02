@@ -85,9 +85,7 @@ describe('ExternalMcpCard', () => {
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
-    expect(
-      screen.getByText(/give one of your agents tools from another mcp server instead/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/give an agent another server’s tools/i)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /open the team page/i }));
     expect(closeSpy).toHaveBeenCalledTimes(1);
     expect(navigateSpy).toHaveBeenCalledWith({ to: '/team' });
@@ -147,9 +145,7 @@ describe('ExternalMcpCard', () => {
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
-    expect(
-      screen.getByText('Do not configure this for agents running inside DorkOS.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Not for agents that run inside DorkOS')).toBeInTheDocument();
   });
 
   it('calls updateConfig when toggle is clicked', async () => {
@@ -235,7 +231,7 @@ describe('ExternalMcpCard', () => {
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
-    expect(screen.getByText(/Couldn’t generate a local token/i)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t make a token for other apps/i)).toBeInTheDocument();
     expect(screen.queryByText('Local MCP token')).not.toBeInTheDocument();
   });
 
@@ -248,7 +244,7 @@ describe('ExternalMcpCard', () => {
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={true} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText(/personal API key/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Couldn’t generate a local token/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t make a token for other apps/i)).not.toBeInTheDocument();
   });
 
   it('opens a confirm dialog that warns clients break before rotating', async () => {
@@ -260,7 +256,7 @@ describe('ExternalMcpCard', () => {
     await expandCard(user);
     await user.click(screen.getByRole('button', { name: 'Rotate' }));
     expect(screen.getByText('Rotate the local MCP token?')).toBeInTheDocument();
-    expect(screen.getByText(/stop working until you paste in the new token/i)).toBeInTheDocument();
+    expect(screen.getByText(/every app using it needs the new one/i)).toBeInTheDocument();
   });
 
   it('rotates the token, reveals the fresh value, and invalidates the config query', async () => {

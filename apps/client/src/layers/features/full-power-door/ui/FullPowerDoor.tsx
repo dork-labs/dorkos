@@ -52,19 +52,19 @@ function describeWriteFailure(err: unknown): string {
 const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
   {
     lead: 'No approval prompts.',
-    rest: 'Agents carry out edits and commands without stopping for your OK each time. They still ask when something genuinely needs your call, and always follow anything you’ve told them to check with you first.',
+    rest: 'Agents still ask when something needs your call, or you said to.',
   },
   {
     lead: 'Agents reach across projects.',
-    rest: 'They can already message each other within a project; this lets them coordinate across your other projects too.',
+    rest: 'They can message agents in your other projects too.',
   },
   {
     lead: 'Approvals can stick.',
-    rest: 'When an agent asks, Always allow remembers your yes for that agent and that action.',
+    rest: 'Always allow remembers your yes for that agent and action.',
   },
   {
     lead: 'Scheduled runs use your power level.',
-    rest: 'Timed runs act with the same freedom as everything else.',
+    rest: 'Timed runs get the same freedom.',
   },
 ];
 
@@ -219,12 +219,12 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
       <>
         <DialogHeader>
           <DialogTitle>Full power is on</DialogTitle>
-          <DialogDescription>Almost everything is set. One thing didn’t finish.</DialogDescription>
+          <DialogDescription>One step didn’t finish.</DialogDescription>
         </DialogHeader>
         <p role="alert" className="text-muted-foreground text-sm">
-          Your agents can’t message each other across projects yet. That step didn’t go through.
-          Nothing was undone: full power stays on, and you can open this any time from Settings.
+          Agents can’t message other projects yet. Full power stays on.
         </p>
+        <p className="text-muted-foreground text-sm">Try again now, or later from Settings.</p>
         <DialogFooter className="items-center gap-2 sm:justify-end">
           <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
             Close
@@ -242,8 +242,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
       <DialogHeader>
         <DialogTitle data-testid="full-power-door">{heading}</DialogTitle>
         <DialogDescription>
-          Unlock full power and DorkOS stops pausing for your approval before each action. Here’s
-          what changes:
+          Agents stop asking before each action. Here’s what changes:
         </DialogDescription>
       </DialogHeader>
 
@@ -278,7 +277,7 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
             onClick={customize}
             disabled={busy}
           >
-            Pick the pieces yourself in Settings
+            Pick the pieces yourself
           </Button>
         </div>
       )}

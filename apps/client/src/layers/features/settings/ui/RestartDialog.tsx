@@ -34,8 +34,7 @@ export function RestartDialog({ open, onOpenChange, onRestartComplete }: Restart
       onRestartComplete();
     } catch (err) {
       toast.error('Couldn’t restart DorkOS.', {
-        description:
-          err instanceof Error ? err.message : 'Not sure if it restarted. Try the button again.',
+        description: err instanceof Error ? err.message : 'It may not have restarted. Try again.',
       });
     } finally {
       setIsSubmitting(false);
@@ -46,9 +45,9 @@ export function RestartDialog({ open, onOpenChange, onRestartComplete }: Restart
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Restart DorkOS</AlertDialogTitle>
+          <AlertDialogTitle>Restart DorkOS?</AlertDialogTitle>
           <AlertDialogDescription>
-            DorkOS starts again in a few seconds. Anything running right now stops.
+            Anything running right now stops. DorkOS is back in seconds.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

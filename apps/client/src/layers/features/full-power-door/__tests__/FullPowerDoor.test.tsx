@@ -102,9 +102,7 @@ describe('FullPowerDoor', () => {
     expect(screen.getByText(/no approval prompts/i)).toBeInTheDocument();
     // The nuance the reword exists to protect: full power turns off the approval
     // gate, it does not stop the agent asking or override your instructions.
-    expect(
-      screen.getByText(/still ask when something genuinely needs your call/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/still ask when something needs your call/i)).toBeInTheDocument();
     expect(screen.getByText(/agents reach across projects/i)).toBeInTheDocument();
     expect(screen.getByText(/approvals can stick/i)).toBeInTheDocument();
     // Standing permissions are retired: the promise names Always allow, which

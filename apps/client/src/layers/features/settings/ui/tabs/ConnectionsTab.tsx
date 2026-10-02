@@ -41,7 +41,7 @@ export function ConnectionsTab() {
     <div className="space-y-8">
       {/* No heading: the Settings dialog draws the panel's own header. */}
       <p className="text-muted-foreground text-xs">
-        How DorkOS reaches your apps, and how chat apps behave. Your apps themselves are on the{' '}
+        How DorkOS reaches your apps. The apps themselves are on the{' '}
         <Button variant="link" className="h-auto p-0 text-xs" onClick={openConnectionsPage}>
           Connections page
         </Button>

@@ -22,6 +22,8 @@ import {
   BoundedNumberInput,
   FieldCard,
   FieldCardContent,
+  InfoTip,
+  MoreDetails,
   SettingRow,
   Skeleton,
   SwitchSettingRow,
@@ -33,8 +35,10 @@ interface LimitField {
   key: Exclude<keyof RoomTurnLimits, 'turnLimitsEnabled'>;
   /** The row's label. */
   label: string;
-  /** What the number does, in one or two short sentences. */
+  /** What the number does, in one short sentence ending with its default. */
   description: string;
+  /** The rest of what a person may want to know, behind an info tip. */
+  details: readonly string[];
   /** Lowest value the schema accepts. */
   min: number;
   /** Highest value the schema accepts. */
@@ -53,28 +57,32 @@ const LIMIT_FIELDS: readonly LimitField[] = [
   {
     key: 'maxAgentDepth',
     label: 'Replies in a row',
-    description: `How many replies in a row agents may trade before the room pauses them. Your next message starts the count over. Set it to 0 to stop automatic replies entirely. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxAgentDepth}.`,
+    description: `Agents pause after this many replies in a row. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxAgentDepth}.`,
+    details: ['Your next message starts the count over.', 'Set it to 0 to stop automatic replies.'],
     min: ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.min,
     max: ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.max,
   },
   {
     key: 'maxTurnsPerAgentPerCascade',
     label: 'Replies from one agent',
-    description: `How many turns one agent may take in a single back-and-forth. Progress notes an agent posts while it works belong to the turn it is already taking, so they don’t count extra. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxTurnsPerAgentPerCascade}.`,
+    description: `Most turns one agent takes in one back-and-forth. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxTurnsPerAgentPerCascade}.`,
+    details: ['Progress notes an agent posts while it works don’t count extra.'],
     min: ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.min,
     max: ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.max,
   },
   {
     key: 'maxAutomaticTurnsPerRoomPerHour',
     label: 'Replies in one room each hour',
-    description: `The most automatic replies any one room may run in an hour. It keeps a single busy room from using up the whole allowance below. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxAutomaticTurnsPerRoomPerHour}.`,
+    description: `Most automatic replies one room runs in an hour. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxAutomaticTurnsPerRoomPerHour}.`,
+    details: ['It keeps one busy room from using up the whole allowance below.'],
     min: ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.min,
     max: ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.max,
   },
   {
     key: 'maxAutomaticTurnsTotalPerHour',
     label: 'Replies everywhere each hour',
-    description: `The most automatic replies all your rooms may run in an hour together. This is the ceiling on what automatic replies can cost you, and no room may set its own. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxAutomaticTurnsTotalPerHour}.`,
+    description: `Most automatic replies across all rooms in an hour. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxAutomaticTurnsTotalPerHour}.`,
+    details: ['This caps what automatic replies can cost you.', 'No room can set its own.'],
     min: MAX_TOTAL_TURNS_PER_HOUR_BOUNDS.min,
     max: MAX_TOTAL_TURNS_PER_HOUR_BOUNDS.max,
   },
@@ -99,12 +107,15 @@ export function RoomsTab() {
   return (
     <div className="space-y-6">
       {/* No heading: the Settings dialog draws the panel's own header. */}
-      <p className="text-muted-foreground text-xs">
-        How your agents work in rooms: how far they may answer each other without being asked, and
-        how many conversations one agent may work in at once. Every message you send starts the
-        reply counts over, and a single room can be given reply limits of its own, in the panel
-        beside it.
-      </p>
+      <div className="space-y-1">
+        <p className="text-muted-foreground text-xs">
+          How far agents reply to each other, and how many conversations each runs.
+        </p>
+        <MoreDetails className="text-xs">
+          <p>Every message you send starts the reply counts over.</p>
+          <p>A room can have limits of its own, in the panel beside it.</p>
+        </MoreDetails>
+      </div>
 
       {limits === null ? (
         <FieldCard>
@@ -115,12 +126,11 @@ export function RoomsTab() {
                 waits forever and never says why. */}
             {loadError !== null ? (
               <p className="text-muted-foreground text-sm">
-                Your settings could not be read just now. Close Settings and open it again to try
-                once more.
+                Couldn’t load these settings. Close Settings and open it again.
               </p>
             ) : unsupported ? (
               <p className="text-muted-foreground text-sm">
-                This server doesn’t report these settings yet. Update DorkOS to change them here.
+                This version of DorkOS doesn’t have these settings. Update to change them.
               </p>
             ) : (
               // Never the shipped defaults while the read is in flight: these
@@ -144,7 +154,7 @@ export function RoomsTab() {
           <FieldCardContent>
             <SwitchSettingRow
               label="Limit automatic replies"
-              description="Keep the limits below on."
+              description="Agents pause when they reach a limit below."
               checked={limits.turnLimitsEnabled}
               onCheckedChange={(on) => setLimits({ turnLimitsEnabled: on })}
             />
@@ -155,7 +165,7 @@ export function RoomsTab() {
                 what they already decided to do. */}
             {!limits.turnLimitsEnabled && (
               <p className="text-muted-foreground text-xs">
-                Agents can reply to each other without limit. The Stop button is the only brake.
+                Agents reply to each other without limit. Only Stop halts them.
               </p>
             )}
 
@@ -174,7 +184,16 @@ export function RoomsTab() {
                 key={field.key}
                 orientation="vertical"
                 label={field.label}
-                description={field.description}
+                description={
+                  <>
+                    {field.description}{' '}
+                    <InfoTip label={`About ${field.label.toLowerCase()}`}>
+                      {field.details.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </InfoTip>
+                  </>
+                }
               >
                 <BoundedNumberInput
                   aria-label={field.label}
@@ -201,7 +220,14 @@ export function RoomsTab() {
             <SettingRow
               orientation="vertical"
               label={CONCURRENCY_LABEL}
-              description={`How many conversations one agent may work in at the same time. Higher is faster, but turns that change the same files can collide. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`}
+              description={
+                <>
+                  {`How many conversations one agent works in at once. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`}{' '}
+                  <InfoTip label="About conversations at once">
+                    <p>Higher is faster, but turns that change the same files can collide.</p>
+                  </InfoTip>
+                </>
+              }
             >
               <BoundedNumberInput
                 aria-label={CONCURRENCY_LABEL}

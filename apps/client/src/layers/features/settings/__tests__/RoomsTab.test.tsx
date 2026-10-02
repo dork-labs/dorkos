@@ -120,7 +120,7 @@ describe('RoomsTab', () => {
     renderTab({ engagedWindowMinutes: 10, engagedWindowPosts: 5 });
 
     expect(
-      await screen.findByText(/This server doesn’t report these settings yet/)
+      await screen.findByText(/This version of DorkOS doesn’t have these settings/)
     ).toBeInTheDocument();
     expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
@@ -130,7 +130,7 @@ describe('RoomsTab', () => {
   it('says the read failed, rather than loading forever', async () => {
     renderTabWithFailedRead();
 
-    expect(await screen.findByText(/Your settings could not be read just now/)).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t load these settings/)).toBeInTheDocument();
     expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
   });
 
@@ -138,7 +138,7 @@ describe('RoomsTab', () => {
     const user = userEvent.setup();
     const { transport } = renderTab();
 
-    expect(screen.queryByText(/The Stop button is the only brake/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Only Stop halts them/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('switch', { name: 'Limit automatic replies' }));
 
@@ -146,9 +146,7 @@ describe('RoomsTab', () => {
       expect(transport.updateConfig).toHaveBeenCalledWith({ rooms: { turnLimitsEnabled: false } })
     );
     expect(
-      await screen.findByText(
-        'Agents can reply to each other without limit. The Stop button is the only brake.'
-      )
+      await screen.findByText('Agents reply to each other without limit. Only Stop halts them.')
     ).toBeInTheDocument();
   });
 
@@ -199,7 +197,7 @@ describe('RoomsTab', () => {
       )
     );
     await waitFor(() => expect(master).toBeChecked());
-    expect(screen.queryByText(/The Stop button is the only brake/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Only Stop halts them/)).not.toBeInTheDocument();
   });
 
   it('refuses a number the schema would refuse, and does not clamp it', async () => {
@@ -223,7 +221,7 @@ describe('RoomsTab', () => {
       expect(screen.getByRole('spinbutton', { name: 'Conversations at once' })).toHaveValue(5);
       expect(
         screen.getByText(
-          `How many conversations one agent may work in at the same time. Higher is faster, but turns that change the same files can collide. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`
+          `How many conversations one agent works in at once. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`
         )
       ).toBeInTheDocument();
     });
@@ -247,9 +245,7 @@ describe('RoomsTab', () => {
     it('is named in the section intro, so the card can be found from the top', () => {
       renderTab();
 
-      expect(
-        screen.getByText(/how many conversations one agent may work in at once/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/how many conversations each runs/)).toBeInTheDocument();
     });
 
     it('stays usable while automatic replies are unlimited, because it applies to every turn', () => {

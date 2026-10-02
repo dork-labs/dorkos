@@ -1,4 +1,5 @@
 import { usePermissions } from '@/layers/entities/permissions';
+import { MoreDetails } from '@/layers/shared/ui';
 
 /**
  * Said out loud when DorkOS cannot read its record of which new agents it has
@@ -10,14 +11,17 @@ export function NewAgentRecordNotice() {
   const { data } = usePermissions();
   if (!data?.newAgentRecordUnreadable) return null;
   return (
-    <p
+    <div
       role="status"
       data-testid="permissions-record-unreadable"
       className="text-muted-foreground rounded-md border px-3 py-2 text-sm"
     >
-      DorkOS couldn’t read its record of which new agents it has checked, so agents are using
-      everyone’s settings wherever their own would let them do more. It will try again the next time
-      an agent is added or removed.
-    </p>
+      <p>Some agents may do less than their own settings allow.</p>
+      <MoreDetails className="mt-1">
+        <p>DorkOS couldn’t read its list of checked agents.</p>
+        <p>Each agent gets the stricter of its own and everyone’s settings.</p>
+        <p>It tries again when you add or remove an agent.</p>
+      </MoreDetails>
+    </div>
   );
 }

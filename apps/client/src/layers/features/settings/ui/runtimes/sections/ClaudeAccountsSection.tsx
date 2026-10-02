@@ -29,6 +29,7 @@ import {
   Button,
   buttonVariants,
   DirectoryPicker,
+  InfoTip,
   Input,
   Label,
   PathInput,
@@ -465,8 +466,8 @@ export function ClaudeAccountsSection() {
           When a row stands for that folder, its "in use" already says it. */}
       {claudeCode?.launchOverride && !resolvedAccountId && (
         <p className="text-muted-foreground text-xs" data-testid="claude-account-launch-override">
-          New sessions use $CLAUDE_CONFIG_DIR ({shortenHomePath(claudeCode.launchOverride.path)})
-          set on the server.
+          New sessions use {shortenHomePath(claudeCode.launchOverride.path)}, from the server’s
+          $CLAUDE_CONFIG_DIR.
         </p>
       )}
 
@@ -548,7 +549,15 @@ export function ClaudeAccountsSection() {
         <SettingRow
           orientation="vertical"
           label="Add an account"
-          description="Pick the folder Claude Code keeps the account in, then name it after the client it bills. DorkOS only reads the folder; it never signs you in or moves anything."
+          description={
+            <>
+              Pick the account’s Claude Code folder, then name it.{' '}
+              <InfoTip label="About adding an account">
+                <p>Name it after the client it bills.</p>
+                <p>DorkOS only reads the folder. It never signs you in or moves anything.</p>
+              </InfoTip>
+            </>
+          }
         >
           <div className="space-y-2">
             <PathInput
@@ -581,7 +590,7 @@ export function ClaudeAccountsSection() {
             </div>
             {isDuplicate && (
               <p className="text-muted-foreground text-xs" data-testid="claude-account-duplicate">
-                That folder is already on the list.
+                That folder is already added.
               </p>
             )}
             {isNotAbsolute && (
@@ -589,9 +598,8 @@ export function ClaudeAccountsSection() {
                 className="text-muted-foreground text-xs"
                 data-testid="claude-account-not-absolute"
               >
-                Use the folder’s full path, like <code>/Users/you/.claude2</code>. A path that
-                starts with <code>~</code> will not work. Browse to pick the folder if you are not
-                sure.
+                Use the full path, like <code>/Users/you/.claude2</code>. A path starting with{' '}
+                <code>~</code> won’t work.
               </p>
             )}
           </div>
@@ -652,7 +660,7 @@ function FlowNote() {
   const { setTab } = useSettingsDeepLink();
   return (
     <p className="bg-muted text-muted-foreground rounded-md px-3 py-2 text-xs">
-      Flow uses these accounts for your work. Choose how in{' '}
+      Flow uses these accounts. Choose how in{' '}
       <button
         type="button"
         onClick={() => setTab(FLOW_FLEET_SETTINGS_TAB_ID)}
@@ -747,10 +755,7 @@ function AccountRow({
             data-testid="claude-account-not-ready"
           >
             <CircleAlert className="text-destructive mt-px size-3 shrink-0" aria-hidden />
-            <span>
-              This folder does not look like a Claude Code account yet, so DorkOS shows no sessions
-              from it.
-            </span>
+            <span>Not a Claude Code account yet. No sessions show from it.</span>
           </p>
         )}
       </div>

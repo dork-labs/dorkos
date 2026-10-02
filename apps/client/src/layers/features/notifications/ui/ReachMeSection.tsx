@@ -63,19 +63,19 @@ export function ReachMeSection() {
       <FieldCardContent>
         <SettingRow
           orientation="vertical"
-          label="Try to reach me somewhere else after"
+          label="Reach you elsewhere after"
           // One line, on a tab whose whole point is that its bold labels are
           // scannable (DOR-1757). What went: that a new time applies from the
           // next thing onward, and that Never stops a countdown already
           // running. Both are true, both are fine print about a knob somebody
           // has already turned, and neither changes the choice being made.
-          description="DorkOS then pings your devices and chat apps. Answer anywhere to quiet the rest."
+          description="DorkOS pings your devices and chat apps. Answering one quiets the rest."
         >
           <SegmentedControl
             value={String(prefs.escalation.phoneAfterMinutes)}
             onValueChange={(raw) => setPrefs({ escalation: { phoneAfterMinutes: toDelay(raw) } })}
             disabled={isPending}
-            aria-label="How long to wait before trying another way of reaching you"
+            aria-label="Wait before reaching you elsewhere"
           >
             {ESCALATION_CHOICES.map((choice) => (
               <SegmentedControlItem key={String(choice.value)} value={String(choice.value)}>
@@ -87,8 +87,7 @@ export function ReachMeSection() {
 
         {knowsWhatCanCarry && !off && push.devices.length === 0 && !chatCanCarry && (
           <p className="text-muted-foreground text-xs" role="status">
-            Nothing can carry that yet. Add this device below, or connect a chat app under
-            Connections and let an agent start conversations there.
+            Nothing can reach you yet. Add this device, or a chat app in Connections.
           </p>
         )}
 
@@ -159,15 +158,15 @@ export function ReachMeSection() {
 function availabilityCopy(availability: PushAvailability): string {
   switch (availability) {
     case 'available':
-      return 'Each browser you add here can be notified even when DorkOS is closed. Adding your phone’s browser is the point of this.';
+      return 'Added browsers get notified even when DorkOS is closed. Add your phone’s browser.';
     case 'desktop-shell':
-      return 'The desktop app is already running and shows its own notifications, so it does not need to be added here. Add your phone’s browser instead.';
+      return 'The desktop app shows its own notifications. Add your phone’s browser instead.';
     case 'unsupported':
-      return 'This browser cannot receive notifications while DorkOS is closed. Devices you added from another browser still work.';
+      return 'This browser can’t get notifications while DorkOS is closed. Other devices still work.';
     case 'insecure-context':
-      return 'Browsers only allow this over a secure connection. Open DorkOS at localhost, or over HTTPS, to add this device.';
+      return 'This needs a secure connection. Open DorkOS at localhost or over HTTPS.';
     case 'server-unavailable':
-      return 'DorkOS could not set up push notifications on this computer, so no device can be added right now.';
+      return 'DorkOS couldn’t set up notifications on this computer. No device can be added now.';
   }
 }
 

@@ -32,17 +32,19 @@ export function ResetSettingsDialog({ open, onOpenChange }: ResetSettingsDialogP
     resetAllSettings();
     setTheme('system');
     onOpenChange(false);
-    toast.success('Your settings are back to their defaults.');
+    toast.success('Settings are back to defaults');
   }
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Reset all settings</AlertDialogTitle>
-          <AlertDialogDescription>
-            This puts the theme, text, toggles, and panel layouts on this device back to how they
-            shipped. Nothing you have made is deleted. Your projects, agents, and chats stay.
+          <AlertDialogTitle>Reset all settings?</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2">
+              <p>Theme, text, toggles and layouts on this device go back to default.</p>
+              <p>Nothing you made is deleted. Your projects, agents and chats stay.</p>
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
