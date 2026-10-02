@@ -340,7 +340,10 @@ export async function delegateRuntimeLogin(
 ): Promise<DelegatedLoginResult> {
   if (deps.accountRoot !== undefined) {
     if (type !== 'claude-code') {
-      return { ok: false, error: `"${type}" does not support pinning a specific account.` };
+      return {
+        ok: false,
+        error: `${runtimeDisplayName(type)} does not support pinning a specific account.`,
+      };
     }
     if (!isKnownClaudeAccountRoot(deps.accountRoot)) {
       return { ok: false, error: 'That Claude account is not recognized on this machine.' };
@@ -366,7 +369,10 @@ export async function delegateRuntimeLogin(
     const resolveCommand = deps.resolveCommand ?? resolveLoginCommand;
     const cmd = await resolveCommand(type, { accountRoot: deps.accountRoot });
     if (!cmd) {
-      return { ok: false, error: `The ${type} CLI is not available to sign in.` };
+      return {
+        ok: false,
+        error: `The ${runtimeDisplayName(type)} CLI is not available to sign in.`,
+      };
     }
     const result = await runDelegatedLogin(cmd, deps);
     // A login that exited 0 is the vendor's own CLI reporting it wrote a working

@@ -223,7 +223,10 @@ describe('delegateRuntimeLogin', () => {
     const result = await delegateRuntimeLogin('codex', {
       resolveCommand: async () => null,
     });
-    expect(result).toEqual({ ok: false, error: expect.stringContaining('codex') });
+    expect(result).toEqual({
+      ok: false,
+      error: 'The Codex CLI is not available to sign in.',
+    });
   });
 
   it('spawns the resolved command and detects completion', async () => {
@@ -264,7 +267,7 @@ describe('delegateRuntimeLogin', () => {
       });
 
       expect(result.ok).toBe(false);
-      expect(result.error).toContain('codex');
+      expect(result.error).toBe('Codex does not support pinning a specific account.');
       // The type gate is checked BEFORE the known-roots check, so a root that
       // would otherwise be valid never even reaches resolveClaudeRootSet.
       expect(resolveClaudeRootSet).not.toHaveBeenCalled();

@@ -35,7 +35,7 @@ describe('resolveMessageAuthor', () => {
     expect(resolveMessageAuthor(msg(), { runtime: 'claude-code' })).toEqual({
       kind: 'agent',
       id: 'runtime:claude-code',
-      displayName: 'Claude',
+      displayName: 'Claude Code',
       runtime: 'claude-code',
     });
     expect(resolveMessageAuthor(msg(), { agent: null, runtime: 'codex' }).displayName).toBe(

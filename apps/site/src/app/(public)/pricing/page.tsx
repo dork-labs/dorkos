@@ -153,7 +153,7 @@ function AiUsage() {
         </h2>
         <p className="text-warm-gray mx-auto mt-4 max-w-xl text-lg text-pretty">
           Your agents use AI as they work, and pay for it in credits. One credit is 1¢. Today,
-          credits run Claude Code. Codex and OpenCode use their own sign-in for now.
+          credits pay for Claude Code. Codex and OpenCode use their own sign-in.
         </p>
       </div>
 
