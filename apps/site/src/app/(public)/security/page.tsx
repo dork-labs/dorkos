@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { company } from '@dorkos/shared/company';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
@@ -25,9 +26,9 @@ export default function SecurityPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Security</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 26, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: October 2, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is made by Blaze Ventures, LLC. It is an early open-source alpha, and we would
+            DorkOS is made by {company.legalName}. It is an early open-source alpha, and we would
             rather tell you exactly how it works than make it sound safer than it is.
           </p>
         </header>

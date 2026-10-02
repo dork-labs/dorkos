@@ -3,8 +3,8 @@
  * (DOR-2027): the plan card, the credits gauge with its per-agent breakdown and
  * local spend view, the upgrade nudge, "Use credits for", what is on the
  * account, seat management, the one-line account status the header menu
- * shows (DOR-2628), and the buttons that open the billing pages on the web
- * (DOR-2632).
+ * shows (DOR-2628), the buttons that open the billing pages on the web
+ * (DOR-2632), and deleting the account (DOR-2651).
  *
  * Its sibling `features/cloud-link` owns the door — the device-link flow — and
  * this owns the room behind it. Settings › DorkOS account composes both.
@@ -31,14 +31,11 @@ export { CreditsGauge } from './ui/CreditsGauge';
 export { UpgradeNudge } from './ui/UpgradeNudge';
 export { SeatManagement } from './ui/SeatManagement';
 export { CreditsNotices } from './ui/CreditsNotices';
-export {
-  ManageOnWeb,
-  BillingPageButton,
-  PlanOffers,
-  BillingNoticeView,
-  ExportAccountData,
-} from './ui/ManageOnWeb';
+export { ManageOnWeb, BillingPageButton, PlanOffers } from './ui/ManageOnWeb';
+export { BillingNoticeView } from './ui/BillingNoticeView';
+export { ExportAccountData } from './ui/ExportAccountData';
 export type { BillingPageButtonProps, PlanOffersProps } from './ui/ManageOnWeb';
+export { DeleteAccount, DELETE_CONFIRM_WORD } from './ui/DeleteAccount';
 export {
   cloudPlanKeys,
   useCloudMembers,
@@ -57,6 +54,8 @@ export type {
   BillingPageTarget,
   OpenBillingPage,
 } from './model/use-billing-page';
+export { useAccountDeletion, DELETION_CHECK_INTERVAL_MS } from './model/use-account-deletion';
+export type { AccountDeletionAttempt, AccountDeletionControl } from './model/use-account-deletion';
 export { useLocalSpend } from './model/use-local-spend';
 export {
   describeDorkosAccountLine,

@@ -57,6 +57,10 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./company": {
+      "types": "./src/company.ts",
+      "default": "./dist/company.js"
+    },
     "./bounded-read": {
       "types": "./src/bounded-read.ts",
       "default": "./dist/bounded-read.js"

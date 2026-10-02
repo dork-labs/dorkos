@@ -3587,6 +3587,23 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/link/check',
+  tags: ['Cloud'],
+  summary: 'Ask the DorkOS account now whether it still accepts this instance',
+  description:
+    'Sends one heartbeat and answers the settled summary. A key the account refuses ' +
+    '(the account was deleted, or this instance was unlinked on the web) is cleared and ' +
+    'the answer reads unlinked; an account that cannot be reached keeps the link.',
+  responses: {
+    200: {
+      description: 'Linked state, account label, and last heartbeat, after the check',
+      content: { 'application/json': { schema: CloudSummarySchema } },
+    },
+  },
+});
+
 // --- Cloud billing pages (DOR-2632) ---
 
 /**
@@ -3732,6 +3749,43 @@ registry.registerPath({
     200: {
       description: 'Where the export stands, or a refusal',
       content: { 'application/json': { schema: CloudAccountExportResponseDocSchema } },
+    },
+  },
+});
+
+const CloudAccountDeletionResponseDocSchema = z
+  .union([
+    z.object({
+      ok: z.literal(true),
+      deletion: z.object({
+        requestedAt: z.string(),
+        confirmationSentTo: z.string().openapi({
+          description: 'Where the confirmation link went, as the service chose to show it.',
+        }),
+        confirmBy: z
+          .string()
+          .nullable()
+          .openapi({ description: 'When the emailed link stops working, or null for no limit.' }),
+      }),
+    }),
+    z.object({ ok: z.literal(false), problem: CloudProblemDocSchema }),
+    z.object({ ok: z.literal(false), message: z.string() }),
+  ])
+  .openapi('CloudAccountDeletionResponse');
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/account/deletion',
+  tags: ['Cloud'],
+  summary: 'Ask for the DorkOS account to be deleted',
+  description:
+    'Deletes nothing: the service emails the account a confirmation link, and the account ' +
+    'is deleted only when the person follows it. A refusal answers 200 with the ' +
+    'service`s own problem envelope, or one plain sentence. Sent `no-store`.',
+  responses: {
+    200: {
+      description: 'Where the confirmation link went, or a refusal',
+      content: { 'application/json': { schema: CloudAccountDeletionResponseDocSchema } },
     },
   },
 });

@@ -6203,15 +6203,21 @@ describe('the 0.67.0 bodies (spec full-power-defaults)', () => {
 });
 
 describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
-  /** Run the real `'0.96.0'` upgrade over a file and return what is on disk. */
-  function upgrade(cloud: Record<string, unknown>): { cloud: Record<string, unknown> } {
+  /**
+   * Run the real upgrade to `'0.96.0'` over a file last written at `from`, and
+   * return what is on disk.
+   */
+  function upgrade(
+    cloud: Record<string, unknown>,
+    from = '0.95.0'
+  ): { cloud: Record<string, unknown> } {
     const dir = path.join(os.tmpdir(), 'test-dork-cloud-credits-' + Date.now() + Math.random());
     const cfgPath = path.join(dir, 'config.json');
     fs.mkdirSync(dir, { recursive: true });
     try {
       fs.writeFileSync(
         cfgPath,
-        JSON.stringify({ version: 1, cloud, __internal__: { migrations: { version: '0.95.0' } } }),
+        JSON.stringify({ version: 1, cloud, __internal__: { migrations: { version: from } } }),
         'utf-8'
       );
       new Conf({
@@ -6245,6 +6251,17 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
     expect(onDisk.cloud.credits).toEqual({ defaults: {}, offer: 'pending' });
     expect(onDisk.cloud.instanceToken).toBe('ik_live');
   });
+
+  // A computer that skipped 0.95.x (or is on an 0.94.x build) runs every key
+  // in between on the way up, and still gets the same single offer.
+  it.each(['0.94.0', '0.94.3'])(
+    'owes a linked computer upgrading from %s the same one offer',
+    (from) => {
+      const onDisk = upgrade(link, from);
+      expect(onDisk.cloud.credits).toEqual({ defaults: {}, offer: 'pending' });
+      expect(onDisk.cloud.instanceToken).toBe('ik_live');
+    }
+  );
 
   it('owes an unlinked computer nothing: its next link fills the gaps', () => {
     const onDisk = upgrade({ ...link, instanceToken: null });

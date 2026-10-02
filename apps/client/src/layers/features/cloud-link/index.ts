@@ -16,8 +16,10 @@ export {
   type CloudEligibilityNoteProps,
 } from './ui/CloudEligibilityNote';
 export {
+  useCheckCloudLink,
   useCloudLink,
   useCloudStatus,
   cloudStatusKey,
+  type CheckCloudLinkOptions,
   type CloudLinkView,
 } from './model/use-cloud-link';

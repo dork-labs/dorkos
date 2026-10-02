@@ -229,6 +229,7 @@ import type {
   CloudSeatActionResponse,
   CloudBillingPage,
   CloudBillingSessionResponse,
+  CloudAccountDeletionResponse,
   CloudAccountExportResponse,
   CloudOffersResponse,
   CloudSeatsResponse,
@@ -2905,6 +2906,13 @@ export interface Transport
   unlinkCloud(): Promise<{ ok: boolean }>;
   /** Read the settled linked/unlinked summary for the Settings panel's initial render. */
   getCloudStatus(): Promise<CloudLinkSummary>;
+  /**
+   * Ask the DorkOS account, now, whether it still accepts this computer, and
+   * read the settled summary that results. A computer whose account was deleted
+   * (or that was unlinked on the web) comes back unlinked, with its key
+   * cleared, instead of waiting for the next scheduled check.
+   */
+  checkCloudLink(): Promise<CloudLinkSummary>;
 
   // --- The plan-aware surfaces (DOR-2027) ---
 
@@ -2987,6 +2995,12 @@ export interface Transport
    * back as a value.
    */
   requestCloudAccountExport(): Promise<CloudAccountExportResponse>;
+  /**
+   * Ask for the DorkOS account to be deleted. Nothing is deleted by this call:
+   * the service emails the account a confirmation link, and the account goes
+   * only when the person follows it. A refusal comes back as a value.
+   */
+  requestCloudAccountDeletion(): Promise<CloudAccountDeletionResponse>;
   /**
    * Read whether DorkOS credits can be chosen on this computer, which runtimes
    * they reach, who chose them as a default, and the notices owed about choices
