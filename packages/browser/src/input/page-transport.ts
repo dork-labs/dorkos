@@ -1,0 +1,326 @@
+import type { CDPSession, Page } from 'playwright-core';
+import type { BrowserBinding } from '../contracts.js';
+import { sameBinding } from './binding.js';
+import { INPUT_BUDGET_MS, within } from './budget.js';
+import type { NativeInputStep, NativeInputTransport } from './types.js';
+
+/** Session custody only; neither detach nor these counts certify browser process closure. */
+export interface PageInputCustody {
+  readonly acquisitionPending: boolean;
+  readonly nativePending: number;
+  readonly detachPending: boolean;
+  readonly detached: boolean;
+  readonly uncertain: boolean;
+}
+/** Private canonical Page port, never accepted from an input command. */
+export interface PageTransportOptions {
+  readonly page: Page;
+  current(): boolean;
+  readBinding(): BrowserBinding | null;
+  retire(): void;
+}
+/** A preregistered acquisition with irreversible admission retirement and shared teardown. */
+export interface OwnedPageTransport {
+  readonly native: NativeInputTransport;
+  readonly ready: Promise<void>;
+  custody(): PageInputCustody;
+  close(deadline?: number): Promise<PageInputCustody>;
+}
+
+/** Own exactly one public Page CDPSession; expose only fixed composition/drag cancellation. */
+export function createPageTransport(options: PageTransportOptions): OwnedPageTransport {
+  const owner = new PageTransportOwner(options);
+  owner.acquire();
+  return Object.freeze({
+    native: owner.native,
+    ready: owner.ready,
+    custody: () => owner.custody(),
+    close: (deadline?: number) => owner.close(deadline),
+  });
+}
+
+class PageTransportOwner {
+  readonly ready: Promise<void>;
+  readonly native: NativeInputTransport;
+  private resolve!: () => void;
+  private reject!: (error: unknown) => void;
+  private session?: CDPSession;
+  private acquisition?: Promise<void>;
+  private acquisitionPending = true;
+  private nativePending = 0;
+  private readonly heldKeys = new Set<string>();
+  private readonly heldButtons = new Set<string>();
+  private retired = false;
+  private uncertain = false;
+  private detached = false;
+  private detachPromise?: Promise<void>;
+  private detachPending = false;
+  private closePromise?: Promise<PageInputCustody>;
+  private end?: number;
+
+  constructor(private readonly options: PageTransportOptions) {
+    this.ready = new Promise<void>((resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+    });
+    // Readiness failures are observable even if acquisition synchronously reenters close.
+    void this.ready.catch(() => {});
+    this.native = Object.freeze({
+      dispatch: (step: NativeInputStep, signal: AbortSignal) =>
+        this.call((guard) => this.dispatch(step, guard), signal),
+      cancelComposition: (signal: AbortSignal) =>
+        this.call((guard) => this.sendCancel('Input.imeSetComposition', guard), signal),
+      cancelDrag: (signal: AbortSignal) =>
+        this.call((guard) => this.sendCancel('Input.cancelDragging', guard), signal),
+    });
+  }
+
+  acquire(): void {
+    const end = performance.now() + INPUT_BUDGET_MS;
+    let complete!: () => void;
+    // Install custody before invoking the external, possibly reentrant acquisition port.
+    this.acquisition = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    const accept = (session: CDPSession) => {
+      this.session = session;
+      this.acquisitionPending = false;
+      complete();
+      if (this.retired) this.detach();
+    };
+    const fail = (error: unknown) => {
+      this.acquisitionPending = false;
+      complete();
+      this.reject(error);
+      this.retire();
+    };
+    try {
+      if (!this.current()) throw new Error('INPUT_TARGET_REFUSED');
+      const context = this.options.page.context();
+      const create = context.newCDPSession;
+      if (!this.current()) throw new Error('INPUT_TARGET_REFUSED');
+      void Promise.resolve(create.call(context, this.options.page)).then(accept, fail);
+    } catch (error) {
+      fail(error);
+    }
+    void within(this.acquisition, end)
+      .then(() => {
+        if (!this.session || !this.current()) throw new Error('INPUT_SESSION_REFUSED');
+        this.resolve();
+      })
+      .catch((error: unknown) => {
+        this.uncertain ||= this.acquisitionPending;
+        this.reject(error);
+        this.retire();
+        void this.close();
+      });
+  }
+
+  custody(): PageInputCustody {
+    return Object.freeze({
+      acquisitionPending: this.acquisitionPending,
+      nativePending: this.nativePending,
+      detachPending: this.detachPending,
+      detached: this.detached,
+      uncertain:
+        this.uncertain || this.acquisitionPending || this.nativePending > 0 || this.detachPending,
+    });
+  }
+
+  close(deadline?: number): Promise<PageInputCustody> {
+    if (this.closePromise) return this.closePromise;
+    this.end = Math.min(performance.now() + INPUT_BUDGET_MS, deadline ?? Infinity);
+    let resolve!: (custody: PageInputCustody) => void;
+    this.closePromise = new Promise((done) => {
+      resolve = done;
+    });
+    this.uncertain ||= this.heldKeys.size > 0 || this.heldButtons.size > 0;
+    this.retire();
+    void this.finishClose().then(resolve);
+    return this.closePromise;
+  }
+
+  private async finishClose(): Promise<PageInputCustody> {
+    // An expired wait budget cannot suppress an exact-owned cleanup attempt.
+    const detach = this.session ? this.detach() : undefined;
+    try {
+      if (this.acquisition) await within(this.acquisition, this.end!);
+      if (this.session) await within(detach ?? this.detach(), this.end!);
+      if (this.nativePending > 0) this.uncertain = true;
+    } catch {
+      this.uncertain = true;
+    }
+    return this.custody();
+  }
+
+  private retire(): void {
+    if (this.retired) return;
+    this.retired = true;
+    try {
+      this.options.retire();
+    } catch {
+      this.uncertain = true;
+    }
+  }
+
+  private current(): boolean {
+    if (this.retired) return false;
+    try {
+      const current = this.options.current() && !this.options.page.isClosed();
+      return current && !this.retired;
+    } catch {
+      return false;
+    }
+  }
+
+  private requireSession(): CDPSession {
+    if (!this.session) throw new Error('INPUT_SESSION_UNAVAILABLE');
+    return this.session;
+  }
+
+  private detach(): Promise<void> {
+    if (this.detachPromise) return this.detachPromise;
+    this.detachPending = true;
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    this.detachPromise = new Promise<void>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    void this.detachPromise.catch(() => {});
+    try {
+      void Promise.resolve(this.requireSession().detach()).then(
+        () => {
+          this.detachPending = false;
+          this.detached = true;
+          resolve();
+        },
+        (error: unknown) => {
+          this.detachPending = false;
+          this.uncertain = true;
+          reject(error);
+        }
+      );
+    } catch (error) {
+      this.detachPending = false;
+      this.uncertain = true;
+      reject(error);
+    }
+    return this.detachPromise;
+  }
+
+  private sendCancel(
+    method: 'Input.imeSetComposition' | 'Input.cancelDragging',
+    guard: () => void
+  ): Promise<void> {
+    const session = this.requireSession();
+    const send = session.send;
+    guard();
+    if (method === 'Input.imeSetComposition')
+      return send
+        .call(session, method, { text: '', selectionStart: 0, selectionEnd: 0 })
+        .then(() => {});
+    return send.call(session, method).then(() => {});
+  }
+
+  private call(start: (guard: () => void) => Promise<void>, signal: AbortSignal): Promise<void> {
+    this.nativePending++;
+    let binding: BrowserBinding | null;
+    try {
+      binding = this.options.readBinding();
+    } catch {
+      this.nativePending--;
+      return Promise.reject(new Error('INPUT_TARGET_REFUSED'));
+    }
+    const guard = () => {
+      if (
+        !this.session ||
+        signal.aborted ||
+        !this.current() ||
+        !binding ||
+        !sameBinding(this.options.readBinding(), binding) ||
+        !this.current() ||
+        this.retired ||
+        signal.aborted
+      )
+        throw new Error('INPUT_TARGET_REFUSED');
+    };
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const operation = new Promise<void>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    // Preregister before binding/current/API getters, which may synchronously reenter teardown.
+    const fail = (error: unknown) => {
+      this.nativePending--;
+      this.uncertain = true;
+      reject(error);
+    };
+    try {
+      guard();
+      void Promise.resolve(start(guard)).then(() => {
+        this.nativePending--;
+        resolve();
+      }, fail);
+    } catch (error) {
+      fail(error);
+    }
+    return operation;
+  }
+
+  private dispatch(step: NativeInputStep, guard: () => void): Promise<void> {
+    const page = this.options.page;
+    const mouse = page.mouse;
+    const keyboard = page.keyboard;
+    let run: () => Promise<void>;
+    switch (step.kind) {
+      case 'mouseMove': {
+        const size = page.viewportSize();
+        if (!size || step.x >= size.width || step.y >= size.height)
+          throw new Error('INPUT_VIEWPORT_REFUSED');
+        const move = mouse.move;
+        run = () => move.call(mouse, step.x, step.y);
+        break;
+      }
+      case 'mouseDown': {
+        const down = mouse.down;
+        run = () => down.call(mouse, { button: step.button });
+        break;
+      }
+      case 'mouseUp': {
+        const up = mouse.up;
+        run = () => up.call(mouse, { button: step.button });
+        break;
+      }
+      case 'wheel': {
+        const wheel = mouse.wheel;
+        run = () => wheel.call(mouse, step.deltaX, step.deltaY);
+        break;
+      }
+      case 'keyDown': {
+        const down = keyboard.down;
+        run = () => down.call(keyboard, step.key);
+        break;
+      }
+      case 'keyUp': {
+        const up = keyboard.up;
+        run = () => up.call(keyboard, step.key);
+        break;
+      }
+      case 'text': {
+        const insert = keyboard.insertText;
+        run = () => insert.call(keyboard, step.text);
+        break;
+      }
+    }
+    guard();
+    if (step.kind === 'keyDown') this.heldKeys.add(step.key);
+    if (step.kind === 'mouseDown') this.heldButtons.add(step.button);
+    return run().then(() => {
+      guard();
+      if (step.kind === 'keyUp') this.heldKeys.delete(step.key);
+      if (step.kind === 'mouseUp') this.heldButtons.delete(step.button);
+    });
+  }
+}
