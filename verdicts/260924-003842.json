@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "260924-003842",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-10-01T02:27:59Z; the verdict is computed on 2026-10-02.",
- "computed_at": "2026-10-01T11:30:05.253Z",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 260923-220553 changed the same gate inside the after-window (2026-09-24T02:27:59Z to 2026-10-01T02:27:59Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-10-02T10:59:38.504Z",
  "hypothesis_hash": "06d61237f6284435",
  "metric": "gate.wf.test.community-packaged.ejections_caused",
  "anchor": "2026-09-24T02:27:59Z",
