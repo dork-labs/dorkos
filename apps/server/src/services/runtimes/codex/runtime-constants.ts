@@ -140,9 +140,21 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // Effort is reported per model by app-server model discovery. The one bespoke
   // section is `runtime-usage`: the account's usage windows, drawn from its
   // usage ledger (spec `claude-account-ui` §6.5).
-  settings: { configSection: 'codex', supportsEffort: true, sections: [{ kind: 'runtime-usage' }] },
+  settings: {
+    configSection: 'codex',
+    supportsEffort: true,
+    // `credits-runs-on` draws only while the server reports Codex as wired
+    // for credits; until then the card is exactly what it was.
+    sections: [{ kind: 'credits-runs-on' }, { kind: 'runtime-usage' }],
+  },
   // Codex has no compaction/summarize API (`Thread.run` only, verified at the
   // 0.154.0 pin), so this stays honestly `false` (DOR-109 task 2.3).
   commandIntents: { compact: { supported: false } },
+  // DorkOS credits (ADR 261001-000811): a new thread set to credits runs in a
+  // DorkOS-owned Codex home with a `dorkos-credits` model provider DorkOS
+  // supplies per turn (`credits-launch.ts`). Codex speaks only the responses
+  // format, so credits reach it only once the endpoint serves that format;
+  // until then it is reported as not wired and nothing offers it.
+  credits: { protocol: 'openai-responses', scope: 'conversation' },
   features: {},
 };

@@ -52,6 +52,9 @@ export function UseCreditsFor() {
  * @param row - The runtime's row.
  */
 function rowDescription(row: CreditsForRow): string {
+  if (row.on && row.unreachable) {
+    return `${row.name} is set to DorkOS credits, which can't run it right now, so its new work stops instead of using your own sign-in. Turn this off to use its own sign-in.`;
+  }
   if (!row.on) {
     return row.previousSignIn === null
       ? `New ${row.name} work uses its own sign-in.`
@@ -61,7 +64,13 @@ function rowDescription(row: CreditsForRow): string {
     row.previousSignIn === null
       ? 'Turning this off puts it back on its own sign-in.'
       : `Turning this off puts it back on ${row.previousSignIn}.`;
-  return row.chosenBy === 'default'
-    ? `DorkOS turned this on when you linked, because ${row.name} had no sign-in. ${back}`
-    : `New ${row.name} work runs on your DorkOS credits unless an agent or a session picks another account. ${back}`;
+  if (row.chosenBy === 'default') {
+    return `DorkOS turned this on when you linked, because ${row.name} had no sign-in. ${back}`;
+  }
+  if (row.scope === 'runtime') {
+    return `${row.name} runs on your DorkOS credits, conversations already going included. ${back} It can't be switched while ${row.name} is in the middle of a reply.`;
+  }
+  return row.hasAccountPicks
+    ? `New ${row.name} work runs on your DorkOS credits unless an agent or a session picks another account. ${back}`
+    : `New ${row.name} conversations run on your DorkOS credits. ${back}`;
 }

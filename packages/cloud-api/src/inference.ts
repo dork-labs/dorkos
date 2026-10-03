@@ -17,19 +17,50 @@ export const InferenceTokenRequestSchema = z
   .describe('Mint a short-lived inference token for one instance.');
 
 /**
- * The endpoints a minted token may be used against.
+ * The endpoints a minted token may be used against, one per request format.
  *
  * Runtime values. No host, origin or URL literal belongs in this package, and
  * which provider serves a request is not part of this contract.
+ *
+ * Each field is a BASE a client appends its format's own path to (`/v1/messages`,
+ * `/chat/completions`, `/responses`), and each names a request format, never a
+ * supplier. The first two are always present; `openaiResponses` is optional.
+ * Whether a format is SERVED is said by the token's `served` list, not by an
+ * endpoint being present: a format the token does not list must not be sent
+ * with this token at all — not to its endpoint, not to another endpoint here,
+ * and not anywhere else — so an app offers a runtime that speaks only that
+ * format nothing until a token lists it.
  */
 export const InferenceEndpointsSchema = z
   .object({
     anthropicMessages: z.string().url(),
     openaiChat: z.string().url(),
+    openaiResponses: z
+      .string()
+      .url()
+      .optional()
+      .describe(
+        'Where to send requests in the responses format. Absent when this token may not be used for that format.'
+      ),
   })
   .describe(
-    'Where to send inference requests. Runtime values; no origin is baked into this package.'
+    'Where to send inference requests, one base per request format. Runtime values; no origin is baked into this package.'
   );
+
+/** Where a minted token may send each request format. */
+export type InferenceEndpoints = z.infer<typeof InferenceEndpointsSchema>;
+
+/**
+ * One request format, named by the endpoint field that carries it. Mechanism,
+ * not catalog: it says which wire a caller encodes in, never which supplier or
+ * model serves it.
+ */
+export const InferenceFormatSchema = z
+  .enum(['anthropicMessages', 'openaiChat', 'openaiResponses'])
+  .describe('A request format, named by its field in `endpoints`.');
+
+/** One request format. */
+export type InferenceFormat = z.infer<typeof InferenceFormatSchema>;
 
 /** What a minted token is allowed to do at once. */
 export const InferenceLimitsSchema = z
@@ -54,6 +85,16 @@ export const InferenceTokenSchema = z
     token: SecretValueSchema,
     expiresAt: TimestampSchema,
     endpoints: InferenceEndpointsSchema,
+    // Strings, not `InferenceFormatSchema`: a service a release ahead may list
+    // a format this package does not know yet, and that must never make the
+    // whole token fail to parse. A caller reads the values it knows
+    // (`InferenceFormatSchema.options`) and ignores the rest.
+    served: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'The request formats this token may be used for, by their `InferenceFormatSchema` names; a value a caller does not know is ignored, never an error. Absent means `anthropicMessages` only, which is what every service before this field served: an endpoint being present is not enough, the format must be listed here too.'
+      ),
     limits: InferenceLimitsSchema,
     catalogVersion: z
       .string()

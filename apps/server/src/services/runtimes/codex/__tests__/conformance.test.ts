@@ -199,6 +199,35 @@ function recordPrompts<T extends { runStreamed: (...args: never[]) => unknown }>
 // checkDependencies() shells out to `codex --version` / `codex login status`
 // for real — mock the probe so conformance never spawns (or requires) the
 // binary. The live smoke restores the real probe.
+/**
+ * What Codex's recorded Runs on default is, as the credits driver sets it: the
+ * way a person chooses credits for Codex (ADR 261001-000811), since Codex has
+ * no per-session account pick. Read by the mocked `creditsIsDefaultFor`.
+ */
+const codexRunsOnCredits = vi.hoisted(() => ({ value: false }));
+
+vi.mock('../../../core/cloud/credits-defaults.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/cloud/credits-defaults.js')>()),
+  creditsIsDefaultFor: (runtime: string) => runtime === 'codex' && codexRunsOnCredits.value,
+}));
+
+// The suite's computer reads as linked. A token is held only through the
+// credits module's test seam, and no cloud context is ever captured, so
+// nothing here can reach a real service.
+vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/cloud/v1-client.js')>()),
+  isCloudLinked: () => true,
+  captureCloudV1Context: () => null,
+}));
+
+// The credits home is never created on disk here, and no conformance thread
+// lives in it: every thread this suite starts is new, so the default decides.
+vi.mock('../credits-launch.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../credits-launch.js')>()),
+  ensureCreditsCodexHome: () => {},
+  threadRunsOnCredits: async () => false,
+}));
+
 vi.mock('../check-dependencies.js', async (importOriginal) => {
   if (LIVE) return importOriginal();
   return {
@@ -221,7 +250,9 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 
 import { CodexRuntime } from '../codex-runtime.js';
 import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
-import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
+import { InferenceTokenSchema } from '@dork-labs/cloud-api';
+// The fixture whose token serves every format: Codex speaks only `responses`.
+import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
@@ -439,19 +470,21 @@ runtimeConformance(
             'a live codex binary is a subprocess this suite hands an environment and cannot read back, so whether a credits token reached it is only observable in the mocked run',
         }
       : {
-          // ADR 261001-000811: Codex does not declare credits, so whatever the
-          // host holds and whatever the session asks for, no client, thread or
-          // prompt the adapter builds may carry a credits token.
+          // ADR 261001-000811. Credits are chosen the way a person chooses
+          // them for Codex: its recorded default. Everything the adapter built
+          // (clients, threads, prompts) is searched for the token, so a turn on
+          // the person's own sign-in must carry none of it.
           creditsTurn: async (runtime, { runsOn, heldToken }) => {
+            codexRunsOnCredits.value = runsOn === 'credits';
             __setCreditsStateForTests({
               token:
                 heldToken === null
                   ? null
-                  : {
+                  : InferenceTokenSchema.parse({
                       ...CREDITS_TOKEN_FIXTURE,
                       token: heldToken,
                       expiresAt: '2999-01-01T00:00:00.000Z',
-                    },
+                    }),
             });
             try {
               const clientsBefore = codexClientOptions.length;
@@ -462,7 +495,6 @@ runtimeConformance(
               const events = [];
               for await (const event of runtime.sendMessage(sessionId, 'conformance ping', {
                 cwd: projectDir,
-                ...(runsOn === 'credits' ? { accountHint: 'dorkos-credits' } : {}),
               })) {
                 events.push(event);
               }
@@ -479,6 +511,7 @@ runtimeConformance(
                 events,
               };
             } finally {
+              codexRunsOnCredits.value = false;
               __setCreditsStateForTests({ token: null });
             }
           },

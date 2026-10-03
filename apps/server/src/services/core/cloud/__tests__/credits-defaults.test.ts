@@ -44,7 +44,10 @@ function memoryConfig(cloud: Record<string, unknown> = {}): CreditsConfigPort & 
 function runtime(type: string, signIn: RuntimeSignInState, declares = true): CreditsRuntimeView {
   return {
     type,
-    capabilities: declares ? { credits: { protocol: 'anthropic-messages' } } : {},
+    capabilities: declares
+      ? { credits: { protocol: 'anthropic-messages', scope: 'conversation' } }
+      : {},
+    wired: declares,
     signIn: async () => signIn,
   };
 }
@@ -67,6 +70,18 @@ describe('filling the gaps on a new link', () => {
     expect(
       await creditsNotices(readCreditsSettings(config), { linked: true, runtimes: [] })
     ).toEqual([{ kind: 'filled', runtimes: ['claude-code'] }]);
+  });
+
+  it('never fills a runtime that declares credits in a format the endpoint does not serve', async () => {
+    const config = memoryConfig();
+    const unserved: CreditsRuntimeView = {
+      type: 'codex',
+      capabilities: { credits: { protocol: 'openai-responses', scope: 'conversation' } },
+      wired: false,
+      signIn: async () => 'none',
+    };
+    expect(await fillCreditsGaps([unserved], ACCOUNT, config)).toEqual([]);
+    expect(creditsIsDefaultFor('codex', config)).toBe(false);
   });
 
   it('never fills an expired or out-of-usage sign-in: it needs attention, not replacing', async () => {

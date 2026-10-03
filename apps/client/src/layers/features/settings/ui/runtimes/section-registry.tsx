@@ -14,6 +14,7 @@
  */
 import type { ReactNode } from 'react';
 import { ClaudeAccountsSection } from './sections/ClaudeAccountsSection';
+import { CreditsRunsOnSection } from './sections/CreditsRunsOnSection';
 import { PowerSourceSection } from './sections/PowerSourceSection';
 import { RuntimeUsageSection } from './sections/RuntimeUsageSection';
 
@@ -36,6 +37,9 @@ type SectionRenderer = (ctx: RuntimeSettingsSectionContext) => ReactNode;
 /** Every section kind this cockpit knows how to draw. */
 const SECTION_RENDERERS: Record<string, SectionRenderer> = {
   'claude-accounts': () => <ClaudeAccountsSection />,
+  // Codex and OpenCode: their own sign-in or DorkOS credits. Draws nothing
+  // until the server reports the runtime as wired for credits.
+  'credits-runs-on': ({ type }) => <CreditsRunsOnSection type={type} />,
   'opencode-power-source': ({ type }) => <PowerSourceSection type={type} />,
   // Codex and OpenCode: the account's usage, which Claude Code draws under
   // "Runs on" instead.

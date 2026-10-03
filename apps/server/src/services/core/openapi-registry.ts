@@ -25,6 +25,7 @@
  * @module services/openapi-registry
  */
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
+import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
@@ -1526,11 +1527,17 @@ const RuntimeCapabilitiesSchema = z.object({
       'Whether this runtime can run sessions on more than one registered billing account. The account chip, dots and badge show only when this is true and two or more accounts are registered.',
   }),
   credits: z
-    .object({ protocol: z.enum(['anthropic-messages']) })
+    .object({
+      protocol: z.enum(RUNTIME_CREDITS_PROTOCOLS),
+      scope: z.enum(['conversation', 'runtime']).openapi({
+        description:
+          'What a change of the credits choice reaches: `conversation` — new conversations follow it and one already going stays on what it started on; `runtime` — the whole runtime moves, so a switch is refused while it is in the middle of a reply.',
+      }),
+    })
     .optional()
     .openapi({
       description:
-        'Whether this runtime can run a turn on DorkOS credits, and the protocol it speaks to the credits endpoint (ADR 261001-000811). Absent means no: the server hands a credits token only to a runtime that declares this.',
+        'Whether this runtime can run a turn on DorkOS credits, the request format it speaks to the credits endpoint, and what a change of the choice reaches (ADRs 261001-000811, 261002-221210). Absent means no: the server hands a credits token only to a runtime that declares this, and offers it only while the endpoint serves its format.',
     }),
   permissionModes: z
     .object({

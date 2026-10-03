@@ -7,9 +7,18 @@
 import { deriveRuntimeReadiness, type DependencyCheck } from '@dorkos/shared/agent-runtime';
 import type { CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
 import { runtimeRegistry } from '../runtime-registry.js';
-import { creditsChoices, creditsNotices, readCreditsSettings } from './credits-defaults.js';
+import {
+  creditsChoices,
+  creditsNotices,
+  fillCreditsGaps,
+  readCreditsSettings,
+} from './credits-defaults.js';
 import type { CreditsRuntimeView, RuntimeSignInState } from './credits-defaults.js';
-import { creditsWiringReport } from './credits-inference.js';
+import {
+  awaitCreditsToken,
+  creditsRuntimeWired,
+  creditsWiringReport,
+} from './credits-inference.js';
 import { isCloudLinked } from './v1-client.js';
 
 /**
@@ -39,13 +48,17 @@ export function signInStateOf(
   return 'needs-attention';
 }
 
-/** Every registered runtime, with its declared capabilities and its sign-in state. */
+/** Every registered runtime, with its declared capabilities, whether credits reach it, and its sign-in state. */
 export function creditsRuntimeViews(): CreditsRuntimeView[] {
-  return runtimeRegistry.listRuntimes().map((runtime) => ({
-    type: runtime.type,
-    capabilities: runtime.getCapabilities(),
-    signIn: async () => signInStateOf(runtime.type, await runtime.checkDependencies()),
-  }));
+  return runtimeRegistry.listRuntimes().map((runtime) => {
+    const capabilities = runtime.getCapabilities();
+    return {
+      type: runtime.type,
+      capabilities,
+      wired: creditsRuntimeWired(capabilities),
+      signIn: async () => signInStateOf(runtime.type, await runtime.checkDependencies()),
+    };
+  });
 }
 
 /**
@@ -63,4 +76,23 @@ export async function creditsStatus(): Promise<CloudCreditsStatus> {
     defaults: creditsChoices(settings),
     notices: await creditsNotices(settings, { linked: isCloudLinked(), runtimes: views }),
   };
+}
+
+/**
+ * A new link's gap fill (ADR 261001-000811), after the link's first token has
+ * been minted (or the bounded wait for it has passed). Which runtimes credits
+ * reach depends on the formats that token lists, so filling before it arrives
+ * would read every runtime but Claude Code as unreachable and leave it
+ * unfilled for good; filling on a guess would be worse.
+ *
+ * @param accountKey - The account the new link was made under.
+ * @param waitForToken - The bounded wait for the first token.
+ * @returns The runtimes switched to credits.
+ */
+export async function fillCreditsGapsOnNewLink(
+  accountKey: string | null,
+  waitForToken: () => Promise<boolean> = () => awaitCreditsToken()
+): Promise<string[]> {
+  await waitForToken();
+  return fillCreditsGaps(creditsRuntimeViews(), { key: accountKey });
 }

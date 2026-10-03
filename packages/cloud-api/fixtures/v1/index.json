@@ -46,6 +46,7 @@
     "billing/offers.json": "OffersResponseSchema",
     "billing/offers-empty.json": "OffersResponseSchema",
     "inference/token.json": "InferenceTokenSchema",
+    "inference/token-every-format.json": "InferenceTokenSchema",
     "inference/models.json": "InferenceModelsResponseSchema",
     "inference/token-revoke.json": "InferenceTokenRevokeResponseSchema",
     "seats/org.json": "OrgSchema",

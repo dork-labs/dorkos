@@ -29,6 +29,7 @@ import type {
   RuntimeSettingsSection,
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
+import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
 import {
@@ -635,7 +636,7 @@ export interface CreditsTurnObservation {
 export const CONFORMANCE_CREDITS_TOKEN = 'conformance-credits-token-not-a-secret';
 
 /** The protocols a runtime may declare for credits (`RuntimeCapabilities.credits`). */
-const CREDITS_PROTOCOLS = ['anthropic-messages'];
+const CREDITS_PROTOCOLS: readonly string[] = RUNTIME_CREDITS_PROTOCOLS;
 
 /**
  * The credits declaration rule: a runtime wires the driver OR gives a reason it

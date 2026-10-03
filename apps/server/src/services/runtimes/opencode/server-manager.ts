@@ -23,11 +23,24 @@ import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
+import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
+import { CreditsUnavailableError } from '../../core/cloud/credits-protocols.js';
 import { configManager } from '../../core/config-manager.js';
 import { resolveOpenCodeProviderEnv } from '../../core/credential-env.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { resolveOpenCodeBinaryPath } from './providers/check-dependencies.js';
 import type { OpenCodeClientProvider } from './sessions/session-mapper.js';
+import {
+  OPENCODE_LABEL,
+  OpenCodeSwitchPendingError,
+  openCodeCreditsConfig,
+  openCodeCreditsEnv,
+  openCodeRunsOnCredits,
+  planSidecarWithoutCloud,
+  planTurnWithoutCloud,
+  type OpenCodeRelayGrant,
+  type OpenCodeSidecarPlan,
+} from './credits-sidecar.js';
 
 /** Loopback-only binding — the sidecar is never reachable off-machine (spec §Security). */
 const SIDECAR_HOSTNAME = '127.0.0.1';
@@ -71,6 +84,63 @@ export const SIDECAR_TIMING = {
 type SidecarPhase = 'idle' | 'starting' | 'ready' | 'stopped';
 
 /**
+ * The environment one sidecar boot is spawned with, for the plan it boots on
+ * (ADR 261001-000811). Pure, so what a credits sidecar is handed is testable
+ * without spawning one.
+ *
+ * - On the person's own sign-in: their provider's key and endpoint
+ *   (`providerEnv`, ADR-0315) and the safety ruleset. No credits variable.
+ * - On credits: none of the person's provider keys or endpoint, and the
+ *   credits provider merged last into the config, pointed at the credits
+ *   relay with this boot's key. No credits token: it never enters the sidecar.
+ *
+ * @param plan - What the sidecar boots on.
+ * @param password - The per-boot basic-auth secret.
+ * @param providerEnv - The person's own provider environment; ignored on credits.
+ * @param relay - This boot's relay grant, or `null` when credits cannot pay.
+ */
+export function buildSidecarSpawnEnv(
+  plan: OpenCodeSidecarPlan,
+  password: string,
+  providerEnv: Record<string, string>,
+  relay: OpenCodeRelayGrant | null = null
+): Record<string, string> {
+  if (plan.mode === 'own') {
+    return runtimeEnvironment('opencode', 'turn', {
+      ...providerEnv,
+      OPENCODE_SERVER_PASSWORD: password,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_SIDECAR_CONFIG),
+    });
+  }
+  const config = { ...OPENCODE_SIDECAR_CONFIG, ...openCodeCreditsConfig(relay, plan.models) };
+  return openCodeCreditsEnv(
+    runtimeEnvironment('opencode', 'turn', {
+      OPENCODE_SERVER_PASSWORD: password,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
+    })
+  );
+}
+
+/** How a sidecar boot and a turn are planned (ADR 261001-000811). */
+export interface OpenCodeSidecarPlanners {
+  /** What a boot nobody is sending a turn through runs on. Never throws. */
+  planSidecar: () => Promise<OpenCodeSidecarPlan>;
+  /** What a turn about to be sent needs the sidecar to run on; throws a credits refusal. */
+  planTurn: () => Promise<OpenCodeSidecarPlan>;
+  /**
+   * The credits relay a credits boot is pointed at. Without one, a credits
+   * sidecar can pay for nothing.
+   */
+  relay?: Pick<CreditsRelay, 'issue' | 'revoke'>;
+}
+
+/** Constructor seams for {@link OpenCodeServerManager}. */
+export interface OpenCodeServerManagerOptions extends Partial<OpenCodeSidecarPlanners> {
+  /** Whether OpenCode's recorded choice is credits, read on every client hand-out. */
+  runsOnCredits?: () => boolean;
+}
+
+/**
  * Manages the single `opencode serve` sidecar and hands out a ready SDK
  * client. Implements {@link OpenCodeClientProvider}: `getClient()` lazily
  * boots (cold start never blocks callers that use `peekClient()`), and a
@@ -85,6 +155,52 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private restartAttempts = 0;
   private readyAt = 0;
+  /** What the running (or booting) sidecar runs on; `null` while none is up. */
+  private running: OpenCodeSidecarPlan | null = null;
+  /** The plan a turn asked for, used by the next boot instead of planning again. */
+  private nextPlan: OpenCodeSidecarPlan | null = null;
+  private planSidecar: () => Promise<OpenCodeSidecarPlan>;
+  private planTurn: () => Promise<OpenCodeSidecarPlan>;
+  private readonly runsOnCredits: () => boolean;
+
+  /**
+   * Until the composition root installs planners that can reach the cloud
+   * ({@link usePlanners}), a manager plans without it and fails closed: a
+   * person who chose credits gets a sidecar that can pay for nothing and a
+   * refused turn, never their own providers.
+   *
+   * @param options - Planning seams.
+   */
+  constructor(options: OpenCodeServerManagerOptions = {}) {
+    this.runsOnCredits = options.runsOnCredits ?? openCodeRunsOnCredits;
+    this.planSidecar = options.planSidecar ?? (() => planSidecarWithoutCloud(this.runsOnCredits));
+    this.planTurn = options.planTurn ?? (() => planTurnWithoutCloud(this.runsOnCredits));
+  }
+
+  /**
+   * Install the planners that read the live credits token and model list. The
+   * composition root calls this once at startup; the cloud client stays out of
+   * this module's import graph.
+   *
+   * @param planners - The cloud-aware planners (`credits-mode.ts`).
+   */
+  usePlanners(planners: OpenCodeSidecarPlanners): void {
+    this.planSidecar = planners.planSidecar;
+    this.planTurn = planners.planTurn;
+    this.relay = planners.relay ?? null;
+  }
+
+  /** The credits relay, once installed. */
+  private relay: Pick<CreditsRelay, 'issue' | 'revoke'> | null = null;
+  /** The relay key the running (or booting) sidecar holds, revoked when it stops. */
+  private grantKey: string | null = null;
+
+  /** Forget the running sidecar's plan, and close the relay to its key. */
+  private clearRunning(): void {
+    this.running = null;
+    if (this.grantKey !== null) this.relay?.revoke(this.grantKey);
+    this.grantKey = null;
+  }
 
   /**
    * Client for the managed sidecar, booting it first when necessary.
@@ -101,9 +217,111 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     if (this.phase === 'stopped') {
       throw new Error('OpenCode sidecar manager has been shut down');
     }
+    // A sidecar on the other side of the person's Runs on choice is recycled
+    // before it is handed out, unless a turn is still running on it: that turn
+    // is never ended or moved by a switch. Reads (lists, history) keep using
+    // it meanwhile, and the switch happens when the last turn settles.
+    if (this.client && this.mismatched() && !this.busy()) await this.recycle();
     if (this.client) return this.client;
     if (this.starting) return this.starting;
     return this.trackBoot(this.boot());
+  }
+
+  /** The side OpenCode's recorded Runs on choice names right now. */
+  private desiredMode(): OpenCodeSidecarPlan['mode'] {
+    return this.runsOnCredits() ? 'credits' : 'own';
+  }
+
+  /** Whether the running sidecar is on the other side of the person's choice. */
+  private mismatched(): boolean {
+    return this.running !== null && this.running.mode !== this.desiredMode();
+  }
+
+  /** Whether any OpenCode turn is running; installed by the runtime. */
+  private busy: () => boolean = () => false;
+
+  /**
+   * Tell the manager how to ask whether any turn is running, so a switch of the
+   * person's Runs on choice waits for those turns rather than ending them.
+   *
+   * @param probe - Answers whether any OpenCode turn is in flight.
+   */
+  setBusyProbe(probe: () => boolean): void {
+    this.busy = probe;
+  }
+
+  /**
+   * A turn ended: apply a switch that was waiting for it, once nothing else is
+   * running on the sidecar.
+   */
+  async turnSettled(): Promise<void> {
+    if (this.mismatched() && !this.busy()) await this.recycle();
+  }
+
+  /**
+   * Make the sidecar right for a turn about to be sent, and say what it runs
+   * on (ADR 261001-000811). On credits this resolves the token and the model
+   * list first, and REFUSES (throws `CreditsUnavailableError`) when credits
+   * cannot pay, before anything is sent. A sidecar booted on another plan is
+   * recycled: when it is on the other side and nothing else is running on it
+   * (otherwise the turn is refused with `OpenCodeSwitchPendingError`), and on
+   * a new model list only when no other turn is running on it. A new token
+   * never needs a restart: the sidecar holds none, and the relay always sends
+   * the current one.
+   *
+   * @param othersActive - Whether another turn is running on the sidecar now.
+   * @returns The plan the turn runs on.
+   * @throws {CreditsUnavailableError} On credits, when credits cannot pay for it.
+   */
+  async prepareTurn(othersActive: boolean): Promise<OpenCodeSidecarPlan> {
+    const plan = await this.planTurn();
+    // Credits reach OpenCode only through the relay. Without one, a credits
+    // turn is refused with the credits card, never sent anywhere else.
+    if (plan.mode === 'credits' && this.relay === null) {
+      throw new CreditsUnavailableError('unreachable', OPENCODE_LABEL);
+    }
+    if (this.starting) await this.starting.catch(() => undefined);
+    const running = this.running;
+    // A switch between sides waits for every running turn: restarting now
+    // would end them, and sending this turn to the old side would run it on
+    // what the person just switched away from. Refused, with nothing sent.
+    if (running && running.mode !== plan.mode && othersActive) {
+      throw new OpenCodeSwitchPendingError(running.mode, plan.mode);
+    }
+    if (running && running.fingerprint !== plan.fingerprint) {
+      // A sidecar on the same side with other turns running is not restarted
+      // under them: only its model list differs, and the token is the relay's
+      // to keep current. (One with no models cannot have a credits turn on it.)
+      if (running.mode === plan.mode && othersActive && running.models.length > 0) {
+        return running;
+      }
+      await this.recycle();
+      this.nextPlan = plan;
+    } else if (!running) {
+      this.nextPlan = plan;
+    }
+    return plan;
+  }
+
+  /**
+   * Recycle the sidecar when it runs on credits, so the next use boots on what
+   * the link says now. Called when this computer is unlinked (a credits token
+   * must not outlive its link here) and on a new link (whose token belongs to
+   * whichever account was just linked). A no-op on the person's own sign-in.
+   */
+  async recycleIfOnCredits(): Promise<void> {
+    if (this.running?.mode === 'credits') await this.recycle();
+  }
+
+  /**
+   * Recycle a running sidecar that is on the other side of the person's Runs
+   * on choice, as soon as the choice changes rather than at its next use: a
+   * credits sidecar left idle after credits were turned off would keep the
+   * token in its environment, and one left on the person's providers after
+   * credits were turned on would keep their keys there.
+   */
+  async syncToChoice(): Promise<void> {
+    if (this.mismatched() && !this.busy()) await this.recycle();
   }
 
   /** The running sidecar's client, or `null` when no sidecar is up. Never boots. */
@@ -126,6 +344,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     }
     this.client = null;
     this.starting = null;
+    this.clearRunning();
     const child = this.child;
     this.child = null;
     if (child) {
@@ -162,6 +381,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     this.client = null;
     this.child = null;
     this.starting = null;
+    this.clearRunning();
     this.restartAttempts = 0;
     this.phase = 'idle';
     if (child) {
@@ -211,19 +431,28 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
 
     const { port } = configManager.get('runtimes').opencode;
     const password = randomBytes(32).toString('hex');
-    // Resolve the selected provider's stored credential REFERENCE into real
-    // env vars (e.g. OPENROUTER_API_KEY) for the sidecar at spawn (ADR-0315).
-    // A missing/dangling reference yields `{}` — the sidecar keeps its own auth.
-    const providerEnv = await resolveOpenCodeProviderEnv();
+    // What this boot runs on: the plan a waiting turn asked for, else the
+    // person's recorded choice (ADR 261001-000811). On their own sign-in,
+    // resolve the selected provider's stored credential REFERENCE into real
+    // env vars (e.g. OPENROUTER_API_KEY) at spawn (ADR-0315); a missing or
+    // dangling reference yields `{}` and the sidecar keeps its own auth. On
+    // credits, none of that is read.
+    const plan = this.nextPlan ?? (await this.planSidecar());
+    this.nextPlan = null;
+    const providerEnv = plan.mode === 'own' ? await resolveOpenCodeProviderEnv() : {};
+    // A credits boot that can pay gets a relay key of its own, revoked when
+    // this sidecar stops; the token itself stays in DorkOS.
+    const grant =
+      plan.mode === 'credits' && plan.models.length > 0 && this.relay
+        ? this.relay.issue('openai-chat-completions', OPENCODE_LABEL)
+        : null;
+    this.grantKey = grant?.key ?? null;
     const child = spawn(binary, ['serve', `--hostname=${SIDECAR_HOSTNAME}`, `--port=${port}`], {
-      env: runtimeEnvironment('opencode', 'turn', {
-        ...providerEnv,
-        OPENCODE_SERVER_PASSWORD: password,
-        OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_SIDECAR_CONFIG),
-      }),
+      env: buildSidecarSpawnEnv(plan, password, providerEnv, grant),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.child = child;
+    this.running = plan;
 
     let url: string;
     try {
@@ -257,7 +486,10 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
         child.exitCode === null &&
         child.signalCode === null;
       if (weOwnLiveChild) await this.killChild(child);
-      if (this.child === child) this.child = null;
+      if (this.child === child) {
+        this.child = null;
+        this.clearRunning();
+      }
       // shutdown() may have flipped the phase to 'stopped' while we awaited
       // readiness — never resurrect to 'idle' then. (The method call also
       // defeats CFA narrowing, which cannot see cross-await mutation.)
@@ -354,6 +586,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
   private handleUnexpectedExit(code: number | null, signal: NodeJS.Signals | null): void {
     this.client = null;
     this.child = null;
+    this.clearRunning();
     this.phase = 'idle';
     // A long healthy run means this crash is fresh, not part of a loop.
     if (Date.now() - this.readyAt >= SIDECAR_TIMING.backoffResetUptimeMs) {

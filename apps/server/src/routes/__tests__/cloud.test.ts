@@ -56,6 +56,7 @@ const mockCreditsRuntimes = vi.hoisted(() => ({
 vi.mock('../../services/core/cloud/credits-runtimes.js', () => mockCreditsRuntimes);
 
 const mockCreditsDefaults = vi.hoisted(() => ({
+  creditsIsDefaultFor: vi.fn(() => false),
   setCreditsDefault: vi.fn(),
   undoFilledDefaults: vi.fn(() => []),
   dismissCreditsNotice: vi.fn(),
@@ -64,6 +65,12 @@ vi.mock('../../services/core/cloud/credits-defaults.js', () => mockCreditsDefaul
 
 // Whether login is on, for the person-only bar on the link check.
 const posture = vi.hoisted(() => ({ authEnabled: false }));
+// The live runtimes the default route asks whether a whole-runtime switch
+// would cut a reply off.
+const liveRuntimes = vi.hoisted(() => ({ list: [] as unknown[] }));
+vi.mock('../../services/core/runtime-registry.js', () => ({
+  runtimeRegistry: { listRuntimes: () => liveRuntimes.list },
+}));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (key === 'auth' ? { enabled: posture.authEnabled } : undefined),
@@ -91,7 +98,11 @@ describe('cloud routes', () => {
     mockV1.isCloudLinked.mockReturnValue(true);
     mockCreditsRuntimes.creditsStatus.mockResolvedValue(STATUS);
     mockCreditsRuntimes.creditsRuntimeViews.mockReturnValue([
-      { type: 'claude-code', capabilities: { credits: { protocol: 'anthropic-messages' } } },
+      {
+        type: 'claude-code',
+        capabilities: { credits: { protocol: 'anthropic-messages', scope: 'conversation' } },
+        wired: true,
+      },
       { type: 'codex', capabilities: {} },
     ]);
   });
@@ -354,8 +365,58 @@ describe('cloud routes', () => {
         .put('/api/cloud/credits/default')
         .send({ runtime: 'codex', useCredits: true })
         .expect(400);
-      // The runtime's name, never its id: the sentence reaches the person.
       expect(res.body.error).toBe("Codex can't run on DorkOS credits yet.");
+      expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
+    });
+
+    it('refuses to switch a whole runtime while it is in the middle of a reply, and says why', async () => {
+      liveRuntimes.list = [
+        {
+          type: 'opencode',
+          getCapabilities: () => ({
+            credits: { protocol: 'openai-chat-completions', scope: 'runtime' },
+          }),
+          hasRunningTurns: () => true,
+        },
+      ];
+      try {
+        for (const [useCredits, current] of [
+          [true, false],
+          [false, true],
+        ] as const) {
+          mockCreditsDefaults.creditsIsDefaultFor.mockReturnValue(current);
+          const res = await request(server)
+            .put('/api/cloud/credits/default')
+            .send({ runtime: 'opencode', useCredits })
+            .expect(409);
+          expect(res.body.error).toBe(
+            'OpenCode is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.'
+          );
+        }
+        expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
+        // A change that changes nothing is never refused.
+        mockCreditsDefaults.creditsIsDefaultFor.mockReturnValue(false);
+        await request(server)
+          .put('/api/cloud/credits/default')
+          .send({ runtime: 'opencode', useCredits: false })
+          .expect(200);
+      } finally {
+        liveRuntimes.list = [];
+      }
+    });
+
+    it('refuses a runtime that declares credits in a format the endpoint does not serve', async () => {
+      mockCreditsRuntimes.creditsRuntimeViews.mockReturnValueOnce([
+        {
+          type: 'codex',
+          capabilities: { credits: { protocol: 'openai-responses', scope: 'conversation' } },
+          wired: false,
+        },
+      ]);
+      await request(server)
+        .put('/api/cloud/credits/default')
+        .send({ runtime: 'codex', useCredits: true })
+        .expect(400);
       expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
     });
 
