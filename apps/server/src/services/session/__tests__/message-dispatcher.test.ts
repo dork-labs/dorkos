@@ -45,8 +45,10 @@ import {
   listQueuedMessages,
   noteSessionOrphaned,
   noteTurnBoundary,
+  onDispatchLifecycle,
   resetMessageDispatcher,
   sweepOrphanedMessageQueues,
+  type DispatchLifecycleEvent,
 } from '../message-dispatcher.js';
 import {
   StagedContextStore,
@@ -2660,5 +2662,75 @@ describe('a queued room turn across a restart (spec `agent-home-desk` §5.10)', 
     // Only the turn that was already running ever reached the runtime.
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
     expect(prepareLaunch).not.toHaveBeenCalled();
+  });
+});
+
+describe('onDispatchLifecycle — what became of a message, by its id (DOR-2683)', () => {
+  let seen: DispatchLifecycleEvent[];
+  let stop: () => void;
+  beforeEach(() => {
+    seen = [];
+    stop = onDispatchLifecycle((event) => seen.push(event));
+  });
+  afterEach(() => stop());
+
+  it('accepts a message under the id its sender minted, and reports it start and settle', async () => {
+    runtime.withScenarios([quickTurn()]);
+
+    const result = await send('hello', { messageId: 'minted-by-sender' });
+    await settle();
+
+    expect(result.outcome.messageId).toBe('minted-by-sender');
+    expect(runtime.sendMessage).toHaveBeenCalledWith(
+      session,
+      'hello',
+      expect.objectContaining({ messageId: 'minted-by-sender' })
+    );
+    expect(seen).toEqual([
+      { phase: 'started', messageId: 'minted-by-sender', sessionId: session },
+      { phase: 'settled', messageId: 'minted-by-sender', sessionId: session, outcome: 'ok' },
+    ]);
+  });
+
+  it('queues a busy session’s message under the minted id, and reports a removal as dropped', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await send('waits', { messageId: 'waiting-one', clientId: 'extension:x' });
+    await settle();
+    expect(store.list(session).map((row) => row.id)).toEqual(['waiting-one']);
+
+    cancelQueuedMessage(session, 'waiting-one');
+    first.open();
+    await settle();
+
+    expect(seen.filter((e) => e.messageId === 'waiting-one')).toEqual([
+      { phase: 'dropped', messageId: 'waiting-one', reason: 'removed' },
+    ]);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the rows a vanished session’s sweep deletes', () => {
+    const gone = `${session}-gone`;
+    store.enqueue({ id: 'swept-one', sessionId: gone, content: 'gone', clientId: TAB });
+
+    noteSessionOrphaned(gone);
+    sweepOrphanedMessageQueues();
+
+    expect(seen).toEqual([{ phase: 'dropped', messageId: 'swept-one', reason: 'session_gone' }]);
+  });
+
+  it('keeps a listener that throws from breaking the dispatch', async () => {
+    const off = onDispatchLifecycle(() => {
+      throw new Error('a bad listener');
+    });
+    runtime.withScenarios([quickTurn()]);
+    try {
+      await send('still runs');
+      await settle();
+    } finally {
+      off();
+    }
+    expect(seen.map((e) => e.phase)).toEqual(['started', 'settled']);
   });
 });

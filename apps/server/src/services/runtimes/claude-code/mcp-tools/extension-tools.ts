@@ -227,6 +227,9 @@ interface DataProviderContext {
   readonly dorkHome: string; // the DorkOS data directory
   // Agent accounts, usage, and the account advisor; types in @dorkos/extension-api/server
   readonly accounts: AccountsApi;
+  // Message an agent: send({ to, text, context?, idempotencyKey }) → { messageId, status };
+  // subscribe(fn) → turn.started / turn.done / turn.failed by messageId
+  readonly agent: AgentApi;
 }
 \`\`\`
 
