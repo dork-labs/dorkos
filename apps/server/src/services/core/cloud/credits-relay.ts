@@ -160,7 +160,20 @@ export async function startCreditsRelay(options: CreditsRelayOptions = {}): Prom
   const issued = new Map<string, Issued>();
   const inFlight = new Set<AbortController>();
 
+  let origin = '';
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    // Only a local program talking to this exact address: a browser page
+    // (any Origin) or a request for another host name (DNS rebinding) is
+    // turned away before anything else is read.
+    if (req.headers.origin !== undefined || req.headers.host !== new URL(origin).host) {
+      refuse(res, 403, 'The credits relay answers local programs only.', 'forbidden');
+      return;
+    }
+    const controller = new AbortController();
+    // The backend hung up: stop, and stop paying for an answer nobody reads.
+    res.once('close', () => {
+      if (!res.writableFinished) controller.abort();
+    });
     const bearer = bearerOf(req);
     const grant = bearer === null ? undefined : issued.get(hashOf(bearer));
     if (!grant) {
@@ -191,13 +204,10 @@ export async function startCreditsRelay(options: CreditsRelayOptions = {}): Prom
       return;
     }
 
-    const controller = new AbortController();
+    // Gone while its body was read or its token resolved: send nothing.
+    if (controller.signal.aborted || res.destroyed) return;
     inFlight.add(controller);
     const timer = setTimeout(() => controller.abort(), limits.maxRequestMs);
-    // The backend hung up: stop paying for an answer nobody reads.
-    res.once('close', () => {
-      if (!res.writableFinished) controller.abort();
-    });
     try {
       const headers: Record<string, string> = { authorization: `Bearer ${launch.token}` };
       for (const name of FORWARDED_HEADERS) {
@@ -258,7 +268,7 @@ export async function startCreditsRelay(options: CreditsRelayOptions = {}): Prom
     server.close();
     throw new Error('The credits relay did not receive a TCP address.');
   }
-  const origin = `http://127.0.0.1:${address.port}`;
+  origin = `http://127.0.0.1:${address.port}`;
 
   return {
     issue(protocol, runtimeLabel) {

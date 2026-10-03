@@ -5,6 +5,7 @@ covers:
   - 'refactor(credits): export the one protocol-to-format mapping (DOR-2633)'
   - 'fix(credits): keep the credits token unnameable by project config, tolerate formats a newer service lists, and never restart OpenCode under a turn (DOR-2633)'
   - "fix(credits): route OpenCode's credits through a loopback relay so the token never enters its process (DOR-2633)"
+  - 'fix(credits): answer local programs only at the relay, and refuse OpenCode credits turns without one (DOR-2633)'
 ---
 
 ### Added

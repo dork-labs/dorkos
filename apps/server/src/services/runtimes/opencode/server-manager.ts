@@ -24,6 +24,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
 import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
+import { CreditsUnavailableError } from '../../core/cloud/credits-protocols.js';
 import { configManager } from '../../core/config-manager.js';
 import { resolveOpenCodeProviderEnv } from '../../core/credential-env.js';
 import { logger, logError } from '../../../lib/logger.js';
@@ -274,6 +275,11 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    */
   async prepareTurn(othersActive: boolean): Promise<OpenCodeSidecarPlan> {
     const plan = await this.planTurn();
+    // Credits reach OpenCode only through the relay. Without one, a credits
+    // turn is refused with the credits card, never sent anywhere else.
+    if (plan.mode === 'credits' && this.relay === null) {
+      throw new CreditsUnavailableError('unreachable', OPENCODE_LABEL);
+    }
     if (this.starting) await this.starting.catch(() => undefined);
     const running = this.running;
     // A switch between sides waits for every running turn: restarting now

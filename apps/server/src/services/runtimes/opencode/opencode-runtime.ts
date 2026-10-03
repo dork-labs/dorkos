@@ -490,7 +490,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   ): Promise<OpenCodeSidecarPlan> {
     const othersActive =
       [...this.activeTurns.keys()].some((id) => id !== sessionId) ||
-      [...this.settingUp].some((other) => other !== own);
+      [...this.settingUp].some((other) => other !== own && other.sessionId !== sessionId);
     if (this.provider.prepareTurn) return this.provider.prepareTurn(othersActive);
     // A provider that cannot be made right for credits never runs a turn the
     // person set to credits: refused, not sent on whatever it holds.

@@ -771,6 +771,19 @@ describe('OpenCodeServerManager', () => {
       });
     });
 
+    it('refuses a credits turn with the credits card when no relay is running', async () => {
+      const manager = new OpenCodeServerManager({ runsOnCredits: () => true });
+      manager.usePlanners({
+        planSidecar: async () => creditsPlan(),
+        planTurn: async () => creditsPlan(),
+      });
+      await expect(manager.prepareTurn(false)).rejects.toMatchObject({
+        code: 'credits_unavailable',
+        reason: 'unreachable',
+      });
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
     it('revokes a boot’s relay key when that sidecar stops, and issues a fresh one to the next', async () => {
       const { manager, relay } = creditsManager();
       const { child } = await bootReady(manager);

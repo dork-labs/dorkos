@@ -192,6 +192,41 @@ describe('the credits relay', () => {
     expect(['ended', 'cut off']).toContain(outcome);
   });
 
+  it('answers local programs only: any Origin, or another Host name, is turned away', async () => {
+    const grant = relay.issue('openai-chat-completions', 'OpenCode');
+    const fromPage = await ask(`${grant.baseUrl}/chat/completions`, {
+      key: grant.key,
+      body: '{}',
+      headers: { origin: 'https://some-page.invalid' },
+    });
+    expect(fromPage.status).toBe(403);
+    // A rebound name pointing at 127.0.0.1 still says its own Host.
+    const url = new URL(`${grant.baseUrl}/chat/completions`);
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: url.port,
+          path: url.pathname,
+          method: 'POST',
+          headers: {
+            host: `rebound.invalid:${url.port}`,
+            authorization: `Bearer ${grant.key}`,
+            'content-type': 'application/json',
+          },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        }
+      );
+      req.on('error', reject);
+      req.end('{}');
+    });
+    expect(status).toBe(403);
+    expect(seen).toEqual([]);
+  });
+
   it('carries no format it was not built for', () => {
     expect(() => relay.issue('anthropic-messages', 'Claude Code')).toThrow();
   });
