@@ -802,6 +802,7 @@ function badgeAccount(n: number, limitState?: 'limited' | 'waiting-reset'): Sess
     chipState: limit ? 'out' : 'ok',
     trackerItems: [],
     lifecycle: 'idle',
+    onCredits: false,
     pending: false,
   };
 }

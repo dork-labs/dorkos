@@ -40,6 +40,7 @@
  *
  * @module shared/lib/execution-config
  */
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { EffortLevel } from '@dorkos/shared/types';
 
@@ -91,6 +92,37 @@ export function knownModelsFrom(
   models: readonly { value: string }[] | undefined
 ): string[] | undefined {
   return models && models.length > 0 ? models.map((m) => m.value) : undefined;
+}
+
+/**
+ * Whether an agent's sessions run on DorkOS credits, as far as its settings
+ * go: its file names credits and a person allowed it, or it names no account
+ * while credits are the machine default. The same rule the server applies
+ * when it judges the agent's model (`agentRunsOnCredits`), so the Model row
+ * offers exactly the menu the server will accept (DOR-2636).
+ *
+ * Accounts are a Claude Code ladder, so only an agent on Claude Code, and only
+ * while that runtime declares a credits protocol, can be on credits.
+ *
+ * @param agent - The agent's id, runtime (absent: the default) and account.
+ * @param opts - The default runtime, whether it declares credits, and what
+ *   the server says about credits (`config.claudeCode.credits`).
+ */
+export function agentRunsOnCredits(
+  agent: { id: string; runtime?: string | null; account?: string | null },
+  opts: {
+    defaultRuntime: string;
+    runtimeDeclaresCredits: (runtime: string) => boolean;
+    credits: { isDefault: boolean; allowedAgents: readonly string[] } | null | undefined;
+  }
+): boolean {
+  const runtime = agent.runtime ?? opts.defaultRuntime;
+  if (runtime !== ACCOUNT_RUNTIME || !opts.runtimeDeclaresCredits(runtime) || !opts.credits) {
+    return false;
+  }
+  const account = agent.account ?? null;
+  if (account === CREDITS_ACCOUNT_ID) return opts.credits.allowedAgents.includes(agent.id);
+  return account === null && opts.credits.isDefault;
 }
 
 /**

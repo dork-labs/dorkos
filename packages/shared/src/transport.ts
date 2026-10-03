@@ -1601,8 +1601,19 @@ export interface Transport
    *   metadata row exists yet, so `sessionId` would wrongly infer the default.
    *   `sessionId` otherwise scopes the call to the runtime that owns the
    *   session. Omit both for cold-discovery (onboarding, first-run).
+   *   `account` is the account the person picked for a session that has not
+   *   started (or, with no session, `dorkos-credits` to ask for the models
+   *   DorkOS credits serve); `cwd` is the folder such a session runs in. A
+   *   session on credits gets only the models credits serve on its runtime's
+   *   protocol, and the call fails rather than fall back to the runtime's own
+   *   menu when that list cannot be read.
    */
-  getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]>;
+  getModels(opts?: {
+    sessionId?: string;
+    runtime?: string;
+    account?: string;
+    cwd?: string;
+  }): Promise<ModelOption[]>;
   /**
    * List available subagents reported by the resolved runtime.
    *

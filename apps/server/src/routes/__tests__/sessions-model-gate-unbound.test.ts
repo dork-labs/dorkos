@@ -61,6 +61,50 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
+// The fake service behind `GET /v1/inference/models`, for the credits gate.
+const service = vi.hoisted(() => ({ status: 200 }));
+vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
+  const { createCloudApiClient } = await import('@dork-labs/cloud-api/client');
+  const supports = { tools: true, promptCaching: true, streaming: true, thinking: true };
+  const body = {
+    catalogVersion: 'cv_1',
+    models: [
+      {
+        id: 'md_claude_pick',
+        displayName: 'Pick',
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+        supports,
+        protocols: ['anthropic-messages'],
+        recommendedOn: ['anthropic-messages'],
+      },
+      {
+        id: 'md_gpt_like',
+        displayName: 'Other protocol',
+        contextWindow: 128000,
+        maxOutputTokens: 16000,
+        supports,
+        protocols: ['openai-chat'],
+      },
+    ],
+  };
+  return {
+    ...(await importOriginal<typeof import('../../services/core/cloud/v1-client.js')>()),
+    captureCloudV1Context: () => ({
+      client: createCloudApiClient({
+        baseUrl: 'https://cloud.example.invalid',
+        token: 'ik',
+        fetch: async () =>
+          new Response(JSON.stringify(body), {
+            status: service.status,
+            headers: { 'content-type': 'application/json' },
+          }),
+      }),
+      isCurrent: () => true,
+    }),
+  };
+});
+
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { ModelOption, Session } from '@dorkos/shared/types';
@@ -69,6 +113,7 @@ import { projectModelOptions } from '../../services/runtimes/opencode/providers/
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { __resetCreditsModelsForTests } from '../../services/core/cloud/credits-models.js';
 
 const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
@@ -529,5 +574,95 @@ describe('PATCH /api/sessions/:id — the model menu and the write door agree', 
 
     expect(res.status).toBe(200);
     expect(rowFor(BOUND_OPENCODE)?.model).toBe('ollama/qwen2.5-coder:7b');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DOR-2636. A session on DorkOS credits may only be set to a model credits
+// serve on its runtime's protocol: the service's list is the catalog, and it
+// does not degrade.
+// ---------------------------------------------------------------------------
+
+describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
+  /** Which account the ladder says a session launches on. */
+  let ladderAccount: string;
+
+  beforeEach(() => {
+    db = createTestDb();
+    registerRuntimes();
+    __resetCreditsModelsForTests();
+    service.status = 200;
+    ladderAccount = 'default';
+    const base = claude.getCapabilities();
+    claude.getCapabilities.mockReturnValue({
+      ...base,
+      credits: { protocol: 'anthropic-messages' },
+    });
+    Object.assign(claude, {
+      checkLaunchAccount: vi.fn(async (_id: string, _dir: string, hintId?: string) => ({
+        ok: true,
+        root: '/accounts/x',
+        accountId: hintId ?? ladderAccount,
+      })),
+    });
+  });
+
+  it('stores a model credits serve on a session that runs on credits', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+
+    const res = await patch(BOUND_CLAUDE, { model: 'md_claude_pick' });
+
+    expect(res.status).toBe(200);
+    expect(rowFor(BOUND_CLAUDE)?.model).toBe('md_claude_pick');
+  });
+
+  it('refuses the runtime’s own model, and one offered only on another protocol', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+
+    for (const model of [CLAUDE_MODEL, 'md_gpt_like']) {
+      const res = await patch(BOUND_CLAUDE, { model });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('UNSUPPORTED_MODEL');
+      expect(res.body.error).toMatch(/DorkOS credits don't cover that model/);
+    }
+    expect(rowFor(BOUND_CLAUDE)?.model ?? null).toBeNull();
+  });
+
+  it('refuses every model while the list cannot be read', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+    service.status = 500;
+
+    const res = await patch(BOUND_CLAUDE, { model: 'md_claude_pick' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Couldn't load the models DorkOS credits cover/);
+  });
+
+  it('judges a session not yet started by the person’s pick of account', async () => {
+    const onCredits = await patch(UNBOUND, {
+      model: 'md_claude_pick',
+      runtime: 'claude-code',
+      account: 'dorkos-credits',
+    });
+    expect(onCredits.status).toBe(200);
+
+    const own = await patch(UNBOUND, {
+      model: 'md_claude_pick',
+      runtime: 'claude-code',
+      account: 'work',
+    });
+    expect(own.status).toBe(400);
+    expect(own.body.error).toContain('claude-code');
+  });
+
+  it('keeps the runtime’s own catalog for a session on its own sign-in', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+
+    const res = await patch(BOUND_CLAUDE, { model: CLAUDE_MODEL });
+
+    expect(res.status).toBe(200);
   });
 });

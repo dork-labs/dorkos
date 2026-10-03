@@ -1,4 +1,9 @@
-import { setCreditsAllowedForAgent } from '../../services/core/cloud/credits-defaults.js';
+import {
+  creditsAllowedForAgent,
+  creditsIsDefaultFor,
+  setCreditsAllowedForAgent,
+} from '../../services/core/cloud/credits-defaults.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
@@ -16,6 +21,15 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('../../services/core/cloud/credits-defaults.js', () => ({
   setCreditsAllowedForAgent: vi.fn(),
+  creditsAllowedForAgent: vi.fn(() => false),
+  creditsIsDefaultFor: vi.fn(() => false),
+}));
+
+// What DorkOS credits serve, for an agent on credits (DOR-2636).
+vi.mock('../../services/core/cloud/credits-models.js', () => ({
+  rejectNonCreditsModel: vi.fn(async (_capabilities: unknown, model: string) =>
+    model === 'md_served' ? null : "DorkOS credits don't cover that model."
+  ),
 }));
 
 // Mock boundary validation — default to passthrough (returns path as-is)
@@ -905,6 +919,78 @@ describe('Mesh routes', () => {
         .send({ account: 'dorkos-credits' });
 
       expect(setCreditsAllowedForAgent).not.toHaveBeenCalled();
+    });
+
+    describe('the model of an agent on DorkOS credits', () => {
+      beforeEach(() => {
+        const claude = {
+          type: 'claude-code',
+          getCapabilities: () => ({ credits: { protocol: 'anthropic-messages' } }),
+        };
+        vi.spyOn(runtimeRegistry, 'has').mockReturnValue(true);
+        vi.spyOn(runtimeRegistry, 'get').mockReturnValue(claude as never);
+        vi.spyOn(runtimeRegistry, 'getDefaultType').mockReturnValue('claude-code');
+        vi.mocked(creditsAllowedForAgent).mockReturnValue(false);
+        vi.mocked(creditsIsDefaultFor).mockReturnValue(false);
+      });
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('refuses a model credits do not serve, and writes nothing', async () => {
+        meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
+        vi.mocked(creditsAllowedForAgent).mockReturnValue(true);
+
+        const res = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ model: 'sonnet' });
+
+        expect(res.status).toBe(400);
+        expect(res.body).toMatchObject({ code: 'UNSUPPORTED_MODEL' });
+        expect(meshCore.update).not.toHaveBeenCalled();
+      });
+
+      it('stores a model credits serve', async () => {
+        meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
+        vi.mocked(creditsAllowedForAgent).mockReturnValue(true);
+        meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'md_served' });
+
+        const res = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ model: 'md_served' });
+
+        expect(res.status).toBe(200);
+      });
+
+      it('judges by credits when the same request puts the agent on them, or credits are the default', async () => {
+        meshCore.get.mockReturnValue(MOCK_MANIFEST);
+        const both = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ account: 'dorkos-credits', model: 'sonnet' });
+        expect(both.status).toBe(400);
+
+        vi.mocked(creditsIsDefaultFor).mockReturnValue(true);
+        const inherited = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ model: 'sonnet' });
+        expect(inherited.status).toBe(400);
+      });
+
+      it('keeps the runtime’s own menu for an agent on its own sign-in, or one nobody allowed', async () => {
+        meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet' });
+        meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'acme-corp' });
+        const own = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ model: 'sonnet' });
+        expect(own.status).toBe(200);
+
+        // A file naming credits nobody allowed runs on the default instead.
+        meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
+        const unallowed = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ model: 'sonnet' });
+        expect(unallowed.status).toBe(200);
+      });
     });
 
     it('reads a null account as "bill the server default again"', async () => {

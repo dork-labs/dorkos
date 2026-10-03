@@ -366,7 +366,12 @@ export type {
   PositionedItem,
   UnreadPlacement,
 } from './group-timeline';
-export { describeAgentExecution, effortLabel, knownModelsFrom } from './execution-config';
+export {
+  agentRunsOnCredits,
+  describeAgentExecution,
+  effortLabel,
+  knownModelsFrom,
+} from './execution-config';
 export type {
   AgentExecutionReport,
   DescribeAgentExecutionInput,

@@ -162,6 +162,11 @@ export interface ModelConfigPopoverProps {
   /** Resolved runtime (e.g. `'codex'`) so a not-yet-started session still shows the right models. */
   runtime?: string | null;
   /**
+   * The session runs on DorkOS credits: the server offers only the models
+   * credits serve on this runtime's protocol, and the popover says so.
+   */
+  onCredits?: boolean;
+  /**
    * Say it in as few pixels as possible — set below the status line's widest
    * tier. Keeps the model name and drops the effort and Fast badges, which the
    * Session panel and this popover both still report.
@@ -184,6 +189,7 @@ export function ModelConfigPopover({
   disabled,
   sessionId,
   runtime,
+  onCredits,
   compact,
 }: ModelConfigPopoverProps) {
   const {
@@ -272,14 +278,33 @@ export function ModelConfigPopover({
         data-testid="model-config-popover"
       >
         <ResponsivePopoverTitle>Model</ResponsivePopoverTitle>
+        {onCredits && (
+          // Who pays decides the menu: on credits it is the service's list,
+          // never the runtime's own (DOR-2636).
+          <p className="text-muted-foreground text-2xs mb-2" data-testid="model-credits-note">
+            Models your DorkOS credits cover
+          </p>
+        )}
 
         {isLoading && <ModelCardsSkeleton />}
-        {isError && <ModelLoadError onRetry={() => refetch()} />}
+        {isError && (
+          <ModelLoadError
+            onRetry={() => refetch()}
+            message={
+              onCredits
+                ? 'Couldn’t load the models DorkOS credits cover. Your model stays as it is.'
+                : undefined
+            }
+          />
+        )}
         {!isLoading && !isError && (
           <ModelSelectionList
             models={modelList}
             selectedModel={model}
             onChangeModel={onChangeModel}
+            emptyMessage={
+              onCredits ? 'DorkOS credits don’t cover a model for this runtime yet.' : undefined
+            }
           />
         )}
 

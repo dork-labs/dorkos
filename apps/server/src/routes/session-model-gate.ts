@@ -6,9 +6,29 @@
  *
  * @module routes/session-model-gate
  */
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { ModelOption } from '@dorkos/shared/types';
+import { validateBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import { DEFAULT_CWD } from '../lib/resolve-root.js';
+import {
+  creditsAllowedForAgent,
+  creditsIsDefaultFor,
+} from '../services/core/cloud/credits-defaults.js';
+import { rejectNonCreditsModel } from '../services/core/cloud/credits-models.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import type { LaunchAccountResolution } from '../services/runtimes/claude-code/claude-config-dir.js';
+
+/** What the model gate needs to know about who pays for the session. */
+export interface ModelGateOptions {
+  /**
+   * The session runs (or will run) on DorkOS credits, so the model has to be
+   * one credits serve on its runtime's protocol, whatever the runtime's own
+   * catalog says.
+   */
+  onCredits?: boolean;
+}
 
 /**
  * Check a requested model against the catalog its runtime offers, returning an
@@ -36,13 +56,26 @@ import { logger } from '../lib/logger.js';
  * WRITE PATH ONLY: a session already persisted on a now-absent model still loads
  * and runs, and the picker surfaces it as unavailable so the person can choose.
  *
+ * **On DorkOS credits none of that degrading applies.** The catalog is the
+ * service's list of what credits serve, filtered by the runtime's protocol,
+ * and it convicts: an unlisted model is refused, and so is every model while
+ * the list cannot be read (spec `dorkos-account-by-default` §1).
+ *
  * @param runtime - The runtime that owns the session being updated.
  * @param model - The model id the request asks to store.
+ * @param options - Whether the session runs on credits.
  */
 export async function rejectUnknownModel(
   runtime: AgentRuntime,
-  model: string
+  model: string,
+  options: ModelGateOptions = {}
 ): Promise<string | null> {
+  // On credits the service's list is the catalog, and it does not degrade:
+  // a model it does not list is never stored, and neither is anything while
+  // the list cannot be read (`rejectNonCreditsModel`).
+  if (options.onCredits) {
+    return rejectNonCreditsModel(runtime.getCapabilities(), model);
+  }
   let offered: ModelOption[];
   try {
     offered = await runtime.getSupportedModels();
@@ -115,4 +148,108 @@ function catalogUnfitToConvict(offered: ModelOption[]): string | null {
     return 'the catalog is a shortened, unconfirmed menu';
   }
   return null;
+}
+
+/**
+ * A runtime that can say which account one of its sessions launches on.
+ * Structural, as in `resolve-session-account.ts`: accounts are a Claude Code
+ * concept, and the port does not carry them.
+ */
+interface LaunchAccountAware {
+  checkLaunchAccount(
+    sessionId: string,
+    projectDir: string,
+    hintId?: string
+  ): Promise<LaunchAccountResolution>;
+}
+
+/** Whether this runtime can say which account a session launches on. */
+function isLaunchAccountAware(runtime: unknown): runtime is LaunchAccountAware {
+  return (
+    typeof runtime === 'object' &&
+    runtime !== null &&
+    typeof (runtime as LaunchAccountAware).checkLaunchAccount === 'function'
+  );
+}
+
+/**
+ * The folder a session's account ladder is read in: the agent folder the
+ * session is bound to, else the caller's working directory when it lies inside
+ * the boundary, else the server's default.
+ */
+async function sessionProjectDir(sessionId: string, cwd: string | undefined): Promise<string> {
+  const bound = await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null);
+  if (bound) return bound;
+  if (cwd) {
+    try {
+      return await validateBoundary(cwd);
+    } catch {
+      // A folder outside the boundary says nothing about this session.
+    }
+  }
+  return DEFAULT_CWD;
+}
+
+/**
+ * Whether a session runs on DorkOS credits, or will when it starts.
+ *
+ * The same answer its launch reaches: the account disk has already bound it
+ * to; else the person's pick for this session (`accountHint`); else the
+ * ladder (the folder's agent, then the machine default). A runtime that
+ * declares no credits protocol never runs on credits. One that does but has
+ * no account ladder of its own runs on credits only when the session's own
+ * pick names them.
+ *
+ * Never throws: a ladder that cannot be read answers `false`, and the model
+ * gate then judges against the runtime's own catalog, as it did before
+ * credits existed. The launch itself stays the authority on who pays.
+ *
+ * @param runtime - The session's runtime.
+ * @param sessionId - The session.
+ * @param opts - The person's pick for this session, and the folder it runs in.
+ * @param opts.accountHint - The account the person picked before the first message.
+ * @param opts.cwd - The caller's working directory, for a session not yet bound to one.
+ */
+export async function sessionRunsOnCredits(
+  runtime: AgentRuntime,
+  sessionId: string,
+  opts: { accountHint?: string | undefined; cwd?: string | undefined } = {}
+): Promise<boolean> {
+  if (runtime.getCapabilities().credits === undefined) return false;
+  if (!isLaunchAccountAware(runtime)) return opts.accountHint === CREDITS_ACCOUNT_ID;
+  try {
+    const projectDir = await sessionProjectDir(sessionId, opts.cwd);
+    const launch = await runtime.checkLaunchAccount(sessionId, projectDir, opts.accountHint);
+    return launch.ok && launch.accountId === CREDITS_ACCOUNT_ID;
+  } catch (err) {
+    logger.debug('[model gate] could not read the session account', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/**
+ * Whether an agent's sessions run on DorkOS credits, as far as its own
+ * settings go: its file names credits and a person allowed it (or is naming
+ * them in this very request), or it names no account and credits are the
+ * machine default for its runtime. A runtime that declares no credits
+ * protocol never does.
+ *
+ * @param runtime - The agent's runtime.
+ * @param agent - The agent's id and the account its settings will name.
+ * @param accountNamedNow - Whether the request being judged names the account
+ *   itself, which only a person can do (the route records their consent).
+ */
+export function agentRunsOnCredits(
+  runtime: AgentRuntime,
+  agent: { id: string; account: string | null | undefined },
+  accountNamedNow: boolean
+): boolean {
+  if (runtime.getCapabilities().credits === undefined) return false;
+  if (agent.account === CREDITS_ACCOUNT_ID) {
+    return accountNamedNow || creditsAllowedForAgent(agent.id);
+  }
+  return agent.account == null && creditsIsDefaultFor(runtime.type);
 }

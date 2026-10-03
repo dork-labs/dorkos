@@ -26,6 +26,7 @@ import { resolveClaudeCredentialEnv } from '../../../../core/credential-env.js';
 import { configManager } from '../../../../core/config-manager.js';
 
 const link = vi.hoisted(() => ({ linked: true }));
+const creditsModels = vi.hoisted(() => ({ recommended: null as string | null }));
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
 vi.mock('../context-builder.js', () => ({
@@ -52,6 +53,9 @@ vi.mock('../../../../core/credential-env.js', () => ({
 vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
   resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
+}));
+vi.mock('../../../../core/cloud/credits-models.js', () => ({
+  recommendedCreditsModel: vi.fn(async () => creditsModels.recommended),
 }));
 vi.mock('../../../../core/cloud/v1-client.js', () => ({
   isCloudLinked: () => link.linked,
@@ -102,6 +106,7 @@ describe('who pays for a Claude Code turn', () => {
     vi.stubEnv('ANTHROPIC_AUTH_TOKEN', undefined);
     vi.stubEnv('ANTHROPIC_BASE_URL', undefined);
     link.linked = true;
+    creditsModels.recommended = null;
     __setCreditsStateForTests({ token, now: liveClock });
   });
 
@@ -266,6 +271,26 @@ describe('who pays for a Claude Code turn', () => {
     expect(options?.env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(options?.env?.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(JSON.stringify(options?.env)).not.toContain(token.token);
+  });
+
+  it('starts a credits session nobody chose a model for on the service’s suggestion', async () => {
+    creditsModels.recommended = 'md_suggested';
+    const { options } = await launch(makeSession(creditsClaudeRoot()));
+    expect(options?.model).toBe('md_suggested');
+  });
+
+  it('keeps a model the person chose on credits, and the CLI default when nothing is suggested', async () => {
+    creditsModels.recommended = 'md_suggested';
+    const chosen = { ...makeSession(creditsClaudeRoot()), model: 'md_chosen' };
+    expect((await launch(chosen)).options?.model).toBe('md_chosen');
+    creditsModels.recommended = null;
+    expect((await launch(makeSession(creditsClaudeRoot()))).options?.model).toBeUndefined();
+  });
+
+  it('never puts the credits suggestion on a session on its own sign-in', async () => {
+    creditsModels.recommended = 'md_suggested';
+    const own = path.join(dorkHome, 'own-claude');
+    expect((await launch(makeSession(own))).options?.model).toBeUndefined();
   });
 
   it('keeps the person’s own stored key on their own sign-in', async () => {

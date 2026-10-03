@@ -1687,6 +1687,26 @@ describe('continuing on DorkOS credits', () => {
     expect(call.request).toMatchObject({ runtime: 'claude-code', account: 'dorkos-credits' });
   });
 
+  it('judges a model picked with credits against what credits serve, and an own account’s by its own menu', async () => {
+    creditsAvailable();
+    const checkModel = vi.fn(async () => null);
+    await limitedSession('src-1');
+    await continueSession(
+      'src-1',
+      { account: 'dorkos-credits', model: 'md_pick' },
+      {
+        ...deps,
+        checkModel,
+      }
+    );
+    expect(checkModel).toHaveBeenLastCalledWith(expect.anything(), 'md_pick', {
+      onCredits: true,
+    });
+    await limitedSession('src-2');
+    await continueSession('src-2', { account: 'spare', model: 'sonnet' }, { ...deps, checkModel });
+    expect(checkModel).toHaveBeenLastCalledWith(expect.anything(), 'sonnet', { onCredits: false });
+  });
+
   it('refuses credits when they are not on offer, and starts nothing', async () => {
     await limitedSession('src-1');
     const err = await refusal(continueSession('src-1', { account: 'dorkos-credits' }, deps));

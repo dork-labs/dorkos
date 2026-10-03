@@ -7162,6 +7162,9 @@
           },
           "runtime": {
             "type": "string"
+          },
+          "account": {
+            "type": "string"
           }
         }
       },
@@ -21017,8 +21020,50 @@
         "tags": [
           "Models"
         ],
-        "summary": "List available Claude models",
-        "description": "Returns models available to the user. Serves SDK-reported models if cached, otherwise returns defaults.",
+        "summary": "List the models a runtime offers",
+        "description": "Returns the models the resolved runtime offers. A session on DorkOS credits (or `account=dorkos-credits` with no session) gets only the models credits serve on the runtime's protocol, the recommended one first; 503 when that list cannot be read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The runtime whose models to list"
+            },
+            "required": false,
+            "description": "The runtime whose models to list",
+            "name": "runtime",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The session whose runtime and account decide the menu"
+            },
+            "required": false,
+            "description": "The session whose runtime and account decide the menu",
+            "name": "sessionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The account the person picked for a session that has not started, or `dorkos-credits` with no session to ask about credits directly"
+            },
+            "required": false,
+            "description": "The account the person picked for a session that has not started, or `dorkos-credits` with no session to ask about credits directly",
+            "name": "account",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The folder a session that has not started runs in"
+            },
+            "required": false,
+            "description": "The folder a session that has not started runs in",
+            "name": "cwd",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List of available models",
@@ -21037,6 +21082,26 @@
                   "required": [
                     "models"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown runtime",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The models DorkOS credits serve could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

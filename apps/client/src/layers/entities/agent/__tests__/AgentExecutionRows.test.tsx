@@ -36,9 +36,13 @@ beforeAll(() => {
   };
 });
 
+/** When set, the catalog read fails, as an unreadable credits list does. */
+let modelsFail = false;
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  modelsFail = false;
 });
 
 const DEFAULTS: ExecutionDefaults = {
@@ -168,7 +172,9 @@ function renderRows(
         tokenConfigured: false,
       },
     }),
-    getModels: vi.fn().mockResolvedValue(models),
+    getModels: modelsFail
+      ? vi.fn().mockRejectedValue(new Error('The models could not be read'))
+      : vi.fn().mockResolvedValue(models),
     // The Account row's one write path (DOR-1736). Answered with a manifest so
     // the mutation SETTLES — the invalidation this component hangs on
     // `onSettled` never runs against a promise nobody resolves.
@@ -571,6 +577,109 @@ describe('AgentExecutionRows — the Account row', () => {
     });
     expect(await screen.findByTestId('agent-account-row')).toHaveTextContent('DorkOS credits');
     expect(screen.queryByTestId('agent-credits-not-allowed')).toBeNull();
+  });
+
+  describe('on DorkOS credits (DOR-2636)', () => {
+    const CREDITS = {
+      id: 'dorkos-credits' as const,
+      path: '/Users/dev/.dork/runtimes/claude-code/credits',
+      available: true,
+      isDefault: false,
+      allowedAgents: ['a'],
+    };
+    /** Claude Code declaring the protocol it speaks to the credits endpoint. */
+    function withCredits() {
+      const map = capabilityMap(false);
+      return {
+        ...map,
+        capabilities: {
+          ...map.capabilities,
+          'claude-code': {
+            ...map.capabilities['claude-code'],
+            credits: { protocol: 'anthropic-messages' },
+          },
+        },
+      };
+    }
+    const NO_DEFAULT_MODEL: ExecutionDefaults = {
+      ...DEFAULTS,
+      perRuntime: DEFAULTS.perRuntime.map((row) => ({ ...row, model: null })),
+    };
+    const CREDIT_MODELS: ModelOption[] = [
+      { value: 'md_pick', displayName: 'Service pick', description: '', isDefault: true },
+      { value: 'md_other', displayName: 'Another', description: '' },
+    ];
+
+    it('asks for the models credits serve, and starts on the service’s suggestion', async () => {
+      const { transport } = renderRows(
+        manifest({ account: 'dorkos-credits' }),
+        NO_DEFAULT_MODEL,
+        CREDIT_MODELS,
+        withCredits() as never,
+        { ...TWO_ACCOUNTS, credits: CREDITS }
+      );
+      await waitFor(() =>
+        expect(transport.getModels).toHaveBeenCalledWith({
+          sessionId: undefined,
+          runtime: 'claude-code',
+          account: 'dorkos-credits',
+          cwd: undefined,
+        })
+      );
+      expect(await screen.findByTestId('agent-model-row')).toHaveTextContent('Service pick');
+      await userEvent.click(screen.getByTestId('agent-model-row'));
+      expect(await screen.findByTestId('agent-model-row-inherit')).toHaveTextContent(
+        'Use the suggested model: Service pick'
+      );
+    });
+
+    it('follows credits as the machine default for an agent that names no account', async () => {
+      const { transport } = renderRows(
+        manifest(),
+        NO_DEFAULT_MODEL,
+        CREDIT_MODELS,
+        withCredits() as never,
+        {
+          ...TWO_ACCOUNTS,
+          credits: { ...CREDITS, isDefault: true },
+        }
+      );
+      await waitFor(() =>
+        expect(
+          vi
+            .mocked(transport.getModels)
+            .mock.calls.some(([opts]) => opts?.account === 'dorkos-credits')
+        ).toBe(true)
+      );
+    });
+
+    it('keeps the runtime’s own menu and Automatic for an agent on its own sign-in', async () => {
+      const { transport } = renderRows(
+        manifest({ account: 'work' }),
+        NO_DEFAULT_MODEL,
+        MODELS,
+        withCredits() as never,
+        { ...TWO_ACCOUNTS, credits: CREDITS }
+      );
+      expect(await screen.findByTestId('agent-model-row')).toHaveTextContent('Automatic');
+      expect(
+        vi.mocked(transport.getModels).mock.calls.every(([opts]) => opts?.account === undefined)
+      ).toBe(true);
+    });
+
+    it('says so when the credits list cannot be read, instead of offering another menu', async () => {
+      modelsFail = true;
+      renderRows(
+        manifest({ account: 'dorkos-credits' }),
+        NO_DEFAULT_MODEL,
+        CREDIT_MODELS,
+        withCredits() as never,
+        { ...TWO_ACCOUNTS, credits: CREDITS }
+      );
+      expect(await screen.findByTestId('agent-credits-models-unavailable')).toHaveTextContent(
+        'Couldn’t load the models DorkOS credits cover. Try again in a moment.'
+      );
+    });
   });
 
   it('restores the server default through the footer, writing the wire null', async () => {

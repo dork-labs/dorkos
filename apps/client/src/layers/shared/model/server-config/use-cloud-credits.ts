@@ -14,6 +14,7 @@ import type {
   CloudCreditsNoticeDismissRequest,
   CloudCreditsStatus,
 } from '@dorkos/shared/cloud-schemas';
+import { MODELS_KEY } from '../../lib/models-query-key';
 import { useTransport } from '../TransportContext';
 import { accountKeys, configKeys } from './query-keys';
 
@@ -35,12 +36,17 @@ export function useCloudCredits() {
   });
 }
 
-/** Write the answer into the status cache, and refresh the config's Runs on entry. */
+/**
+ * Write the answer into the status cache, and refresh the config's Runs on
+ * entry and the model menus: a session left on the default reads the models
+ * credits cover only while credits are the default (DOR-2636).
+ */
 function useSettle() {
   const queryClient = useQueryClient();
   return (status: CloudCreditsStatus) => {
     queryClient.setQueryData(cloudCreditsKeys.status(), status);
     void queryClient.invalidateQueries({ queryKey: configKeys.all });
+    void queryClient.invalidateQueries({ queryKey: MODELS_KEY });
   };
 }
 

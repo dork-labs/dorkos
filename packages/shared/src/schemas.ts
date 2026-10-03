@@ -912,6 +912,18 @@ export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
    * get to argue with it.
    */
   runtime: z.string().optional(),
+  /**
+   * The account the person picked for this session before its first message,
+   * the same pick the first send carries as its launch hint — a HINT, never a
+   * binding, exactly like `runtime` above.
+   *
+   * It only decides which menu a model is judged against: a session that will
+   * launch on DorkOS credits (`dorkos-credits`) may be set only to a model
+   * credits serve on its runtime's protocol, and any other session to one its
+   * runtime offers. On a session whose account is already settled on disk it
+   * is ignored; nothing on this route writes an account.
+   */
+  account: z.string().optional(),
 }).openapi('UpdateSessionRequest');
 
 export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequestSchema>;

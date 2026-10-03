@@ -5,6 +5,7 @@ import type { EffortLevel } from '@dorkos/shared/types';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import {
+  agentRunsOnCredits,
   cn,
   CREDITS_ACCOUNT_LABEL,
   describeAgentExecution,
@@ -66,6 +67,7 @@ function ExecutionRow({
   showHeader = true,
   className,
   describedBy,
+  inheritText,
 }: {
   label: string;
   valueLabel: string;
@@ -91,6 +93,12 @@ function ExecutionRow({
    * to the choice rather than to either outcome.
    */
   showHeader?: boolean;
+  /**
+   * What the inherit line at the foot of the list says, when inheriting means
+   * something other than the server default (a model on DorkOS credits starts
+   * on the service's suggestion).
+   */
+  inheritText?: string;
 }) {
   const isMobile = useIsMobile();
   // Controlled so a choice can CLOSE it. Radix keeps an uncontrolled popover
@@ -175,9 +183,10 @@ function ExecutionRow({
             className="hover:bg-accent border-border text-muted-foreground mt-1 w-full border-t px-2 py-2 text-left text-xs transition-colors"
             data-testid={`${testId}-inherit`}
           >
-            {serverDefault
-              ? `Using server default: ${serverDefault}. Tap to restore`
-              : 'Use server default: the runtime picks'}
+            {inheritText ??
+              (serverDefault
+                ? `Using server default: ${serverDefault}. Tap to restore`
+                : 'Use server default: the runtime picks')}
           </button>
         </ResponsivePopoverContent>
       </ResponsivePopover>
@@ -242,7 +251,18 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const defaultRuntime = config?.executionDefaults?.runtime ?? 'claude-code';
   const runtime = agent.runtime ?? defaultRuntime;
   const serverForRuntime = config?.executionDefaults?.perRuntime.find((e) => e.runtime === runtime);
-  const { data: models } = useModels({ runtime });
+  // An agent on DorkOS credits is offered only what credits serve on its
+  // runtime's protocol (DOR-2636), the same menu the server accepts; every
+  // other agent gets the runtime's own menu.
+  const onCredits = agentRunsOnCredits(agent, {
+    defaultRuntime,
+    runtimeDeclaresCredits: (type) => capabilityMap?.capabilities[type]?.credits !== undefined,
+    credits: config?.claudeCode?.credits,
+  });
+  const { data: models, isError: modelsFailed } = useModels({
+    runtime,
+    ...(onCredits ? { account: CREDITS_ACCOUNT_ID } : {}),
+  });
 
   // `!= null`, not `!== undefined`, everywhere provenance is asked: an in-flight
   // optimistic update carries the wire's `null` for "go back to inheriting", and
@@ -252,7 +272,11 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const effortIsSetHere = agent.effort != null;
 
   const serverDefaultModel = serverForRuntime?.model ?? null;
-  const effectiveModel = agent.model ?? serverDefaultModel;
+  // On credits, nothing set here and no server default means the service's
+  // suggestion, which is what such a session starts on; "Automatic" is the
+  // runtime choosing, and that belongs to the person's own sign-ins.
+  const suggestedModel = onCredits ? (models ?? []).find((m) => m.isDefault) : undefined;
+  const effectiveModel = agent.model ?? serverDefaultModel ?? suggestedModel?.value ?? null;
   const selectedModel = effectiveModel
     ? (models ?? []).find((m) => m.value === effectiveModel)
     : undefined;
@@ -426,7 +450,9 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
       <div className="space-y-1.5">
         <ExecutionRow
           label="Model"
-          valueLabel={selectedModel?.displayName ?? effectiveModel ?? 'Automatic'}
+          valueLabel={
+            selectedModel?.displayName ?? effectiveModel ?? (onCredits ? 'Default' : 'Automatic')
+          }
           options={[
             ...(models ?? []).map((m) => ({
               value: m.value,
@@ -442,8 +468,25 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           onInherit={() => onUpdate({ model: null })}
           testId="agent-model-row"
           describedBy={catalogIsUnverified ? unverifiedNoticeId : undefined}
+          inheritText={
+            onCredits && !serverDefaultModel
+              ? suggestedModel
+                ? `Use the suggested model: ${suggestedModel.displayName}`
+                : 'Use the default model'
+              : undefined
+          }
         />
         {catalogIsUnverified && <UnverifiedCatalogNotice id={unverifiedNoticeId} />}
+        {onCredits && modelsFailed && (
+          // Fail honest: no menu of models credits may not serve. The agent
+          // keeps the model it has until the list can be read.
+          <p
+            className="text-muted-foreground text-xs"
+            data-testid="agent-credits-models-unavailable"
+          >
+            Couldn’t load the models DorkOS credits cover. Try again in a moment.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1">

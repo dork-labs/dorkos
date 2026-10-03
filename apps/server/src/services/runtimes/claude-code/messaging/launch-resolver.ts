@@ -58,6 +58,7 @@ import {
   CreditsUnavailableError,
   resolveCreditsLaunchEnv,
 } from '../../../core/cloud/credits-inference.js';
+import { recommendedCreditsModel } from '../../../core/cloud/credits-models.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
@@ -581,6 +582,13 @@ export async function resolveLaunch(args: {
 
   if (session.model) {
     sdkOptions.model = session.model;
+  } else if (onCredits) {
+    // Nobody chose a model, so a session on credits starts on the one the
+    // service suggests for this protocol, the same row the model menu marks as
+    // the default (DOR-2636). With no suggestion, or no list to read, the CLI's
+    // own default stands and the endpoint is the one that answers for it.
+    const recommended = await recommendedCreditsModel(CLAUDE_CODE_CAPABILITIES);
+    if (recommended) sdkOptions.model = recommended;
   }
   // Resolve thinking + effort together: adaptive-capable models (Opus 4.8/4.7 default
   // their thinking to omitted) get `display: 'summarized'` so thinking text streams;

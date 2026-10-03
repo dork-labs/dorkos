@@ -157,3 +157,27 @@ export const CLAUDE_CODE_CATALOG: ModelOption[] = [
     tier: 'fast',
   },
 ];
+
+/**
+ * A catalog as a session on DorkOS credits receives it: only what the service
+ * says credits cover on the runtime's protocol, the service's suggestion first
+ * and marked as the default, names as the service gives them. Placeholder ids
+ * and names; the real list is the service's and is never kept in this repo.
+ */
+export const CREDITS_CATALOG: ModelOption[] = [
+  {
+    value: 'credits-suggested',
+    displayName: 'Suggested model',
+    description: 'Recommended · Paid from DorkOS credits',
+    isDefault: true,
+    contextWindow: 200_000,
+    supportsToolUse: true,
+  },
+  {
+    value: 'credits-other',
+    displayName: 'Another covered model',
+    description: 'Paid from DorkOS credits',
+    contextWindow: 128_000,
+    supportsToolUse: true,
+  },
+];

@@ -438,6 +438,45 @@ describe('ModelConfigPopover', () => {
     });
   });
 
+  describe('on DorkOS credits', () => {
+    it('says the menu is the models credits cover, and only on credits', () => {
+      const { unmount } = render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
+      expect(screen.getByTestId('model-credits-note')).toHaveTextContent(
+        'Models your DorkOS credits cover'
+      );
+      unmount();
+      render(<ModelConfigPopover {...defaultProps()} />);
+      expect(screen.queryByTestId('model-credits-note')).not.toBeInTheDocument();
+    });
+
+    it('fails honest when the credits list cannot be read: no cards, the model kept', () => {
+      mockUseModels.mockImplementation(() => ({
+        data: undefined as unknown as unknown[],
+        isLoading: false,
+        isError: true,
+        refetch: mockRefetch,
+      }));
+      render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
+      expect(screen.getByTestId('model-load-error')).toHaveTextContent(
+        'Couldn’t load the models DorkOS credits cover. Your model stays as it is.'
+      );
+      expect(screen.queryByTestId('model-card-list')).not.toBeInTheDocument();
+    });
+
+    it('says credits cover no model here, rather than blaming the runtime', () => {
+      mockUseModels.mockImplementation(() => ({
+        data: [] as unknown[],
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+      }));
+      render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
+      expect(screen.getByTestId('model-catalog-unavailable')).toHaveTextContent(
+        'DorkOS credits don’t cover a model for this runtime yet.'
+      );
+    });
+  });
+
   describe('model cards', () => {
     it('renders a card for each model', () => {
       render(<ModelConfigPopover {...defaultProps()} />);

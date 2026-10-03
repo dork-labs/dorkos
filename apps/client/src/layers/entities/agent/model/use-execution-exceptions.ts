@@ -43,6 +43,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ModelOption } from '@dorkos/shared/types';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import {
+  agentRunsOnCredits,
   claudeAccountName,
   CREDITS_ACCOUNT_LABEL,
   describeAgentExecution,
@@ -210,7 +211,15 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
   for (const [path, agent] of Object.entries(agents)) {
     if (!agent) continue;
     const runtime = agent.runtime ?? defaultRuntime;
-    const catalog = byRuntime.get(runtime);
+    // An agent on DorkOS credits runs what credits serve, not its runtime's own
+    // menu, so that menu is no evidence about its model either way (its own
+    // Model row judges it against the credits list).
+    const onCredits = agentRunsOnCredits(agent, {
+      defaultRuntime,
+      runtimeDeclaresCredits: (type) => capabilityMap?.capabilities[type]?.credits !== undefined,
+      credits: config?.claudeCode?.credits,
+    });
+    const catalog = onCredits ? undefined : byRuntime.get(runtime);
     const serverDefaultModel = serverModelFor(runtime);
     // The model that will actually run this agent's turn — its own pin, else
     // what it inherits. The Runs on picker has always reasoned about this one; the
