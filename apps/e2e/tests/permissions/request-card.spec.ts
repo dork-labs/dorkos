@@ -163,7 +163,7 @@ test.describe('The request card @permissions', () => {
     const card = await openCard(basePage.page, approvalId);
     await expect(card.getByRole('button', { name: 'Allow', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Always allow' })).toBeVisible();
-    await expect(card.getByRole('button', { name: 'Deny' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Don’t allow' })).toBeVisible();
     await card.getByRole('button', { name: 'Allow', exact: true }).click();
     await answerLanded(request, approvalId);
     await expect(card.getByText('Allowed once')).toBeVisible();
@@ -321,7 +321,7 @@ test.describe('The request card @permissions', () => {
 
     await gotoActivity(basePage);
     const card = await openCard(basePage.page, approvalId);
-    await card.getByRole('button', { name: 'Deny' }).click();
+    await card.getByRole('button', { name: 'Don’t allow' }).click();
     await answerLanded(request, approvalId);
     await expect(card.getByText('Not allowed')).toBeVisible();
 
@@ -362,11 +362,11 @@ test.describe('The request card @permissions', () => {
 
     await gotoActivity(basePage);
     const card = await openCard(basePage.page, approvalId);
-    await expect(card.getByRole('button')).toHaveText(['Allow', 'Deny']);
+    await expect(card.getByRole('button')).toHaveText(['Allow', 'Don’t allow']);
     await expect(
-      card.getByText("Always allow isn't offered here. Changing this needs your yes every time.")
+      card.getByText('Always allow isn’t offered here. This always needs your yes.')
     ).toBeVisible();
-    await card.getByRole('button', { name: 'Deny' }).click();
+    await card.getByRole('button', { name: 'Don’t allow' }).click();
     await answerLanded(request, approvalId);
     await expect(card.getByText('Not allowed')).toBeVisible();
   });

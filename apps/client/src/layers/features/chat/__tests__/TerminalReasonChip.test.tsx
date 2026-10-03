@@ -26,9 +26,9 @@ describe('TerminalReasonChip', () => {
   // as specified. Driven table-style so new SDK reasons can be added without
   // adding a new test block.
   it.each([
-    ['aborted_tools', 'Tool aborted'],
-    ['aborted_streaming', 'Stream aborted'],
-    ['max_turns', 'Max turns reached'],
+    ['aborted_tools', 'Tool stopped'],
+    ['aborted_streaming', 'Reply stopped'],
+    ['max_turns', 'Turn limit reached'],
     ['blocking_limit', 'Blocking limit'],
     ['rapid_refill_breaker', 'Rate limit'],
     ['prompt_too_long', 'Prompt too long'],
@@ -54,7 +54,7 @@ describe('TerminalReasonChip', () => {
   // tech announces "Session ended: …" rather than just the bare label.
   it('exposes an aria-label with "Session ended:" prefix', () => {
     render(<TerminalReasonChip terminalReason="max_turns" />);
-    expect(screen.getByLabelText('Session ended: Max turns reached')).toBeInTheDocument();
+    expect(screen.getByLabelText('Session ended: Turn limit reached')).toBeInTheDocument();
   });
 
   // Purpose: stable test id is part of the component's test contract —

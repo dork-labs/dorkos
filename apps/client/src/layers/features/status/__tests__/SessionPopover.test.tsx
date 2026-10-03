@@ -174,7 +174,7 @@ describe('SessionPopover — rows', () => {
     renderPanel();
     expect(screen.getByText('Queued messages')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('Session id')).toBeInTheDocument();
+    expect(screen.getByText('Session ID')).toBeInTheDocument();
     expect(screen.getByText('session-42')).toBeInTheDocument();
   });
 
@@ -190,7 +190,7 @@ describe('SessionPopover — pins', () => {
     for (const label of [
       'Directory',
       'Git',
-      'Runtime',
+      'Runs on',
       'Model',
       'Context',
       'Usage & cost',
@@ -276,7 +276,7 @@ describe('SessionPopover — controls', () => {
 
 describe('SessionPopover — planning, at any width', () => {
   /** The Plan switch as this panel offers it. */
-  const PLAN_SWITCH = 'Work out a plan first, and change nothing until you approve it';
+  const PLAN_SWITCH = 'Plan first, change nothing until approved';
 
   it('offers the same switch the line’s chip carries', () => {
     // The line's width budget can drop the chip on a narrow bar; the panel is

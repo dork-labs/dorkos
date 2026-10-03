@@ -71,11 +71,11 @@ describe('InlineKillButton', () => {
     expect(screen.getByLabelText('Stop task')).toBeInTheDocument();
   });
 
-  it('has aria-label "Confirm stop task" in confirming state', () => {
+  it('has aria-label "Press again to stop task" in confirming state', () => {
     render(<InlineKillButton taskType="agent" onConfirm={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByLabelText('Confirm stop task')).toBeInTheDocument();
+    expect(screen.getByLabelText('Press again to stop task')).toBeInTheDocument();
   });
 
   it('is keyboard accessible with Enter key', () => {

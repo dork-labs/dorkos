@@ -291,7 +291,7 @@ describe('FileExplorer', () => {
     expect(dialog).toHaveTextContent(/isn.t empty/i);
 
     // Confirming retries with recursive: true.
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete folder' }));
     await waitFor(() =>
       expect(transport.deleteEntry).toHaveBeenLastCalledWith(CWD, 'pkg', { recursive: true })
     );
@@ -413,7 +413,7 @@ describe('FileExplorer', () => {
     fireEvent.keyDown(screen.getByRole('tree'), { key: 'Delete' });
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog).toHaveTextContent(/isn.t empty/i);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete folder' }));
 
     // The optimistic removal commits: pkg (and its child) briefly vanish.
     await waitFor(() =>

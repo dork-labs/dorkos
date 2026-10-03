@@ -66,8 +66,7 @@ const DOWNGRADE_NOTICE: Record<
   // sentence here would be a duplicate at best, and at worst it would imply a
   // failure where the design simply chose the later of two honest routes.
   'not-stageable': null,
-  'turn-owned-elsewhere':
-    'Couldn’t cut in. Something else is running this task, so it’s waiting in line.',
+  'turn-owned-elsewhere': 'Couldn’t cut in: something else is running it. It’s waiting in line.',
   'pending-interaction': 'Queued. The agent needs your answer first.',
 };
 

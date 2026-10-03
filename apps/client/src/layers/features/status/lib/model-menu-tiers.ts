@@ -52,7 +52,7 @@ const NO_TOOLS_NOTE = 'Can’t use tools, so it can’t read files or run comman
  * the other direction. Named here so the removal has an owner instead of
  * depending on someone remembering.
  */
-const IMAGE_OUTPUT_NOTE = 'Makes images, and DorkOS cannot show them yet.';
+const IMAGE_OUTPUT_NOTE = 'Makes images DorkOS can’t show yet.';
 
 /**
  * Model ids that ROUTE a prompt to some other model rather than answering

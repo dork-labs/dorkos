@@ -80,9 +80,7 @@ describe('STATUS_BAR_REGISTRY — the account chip', () => {
     expect(account.group).toBeNull();
     expect(isPinnable(account)).toBe(false);
     expect(account.label).toBe('Account');
-    expect(account.description).toBe(
-      'Which Claude account this session spends, and how much is left.'
-    );
+    expect(account.description).toBe('Which Claude account this uses, and what’s left');
   });
 
   it('promotes exactly while the identity gate is open', () => {

@@ -86,6 +86,8 @@ describe('connector management routes', () => {
       loginEnabled?: boolean;
       migrationFailed?: boolean;
       ownerUnavailable?: boolean;
+      /** The account that owns this install; `user-a` unless a test says otherwise. */
+      ownerUserId?: string;
     } = {}
   ) {
     const app = express();
@@ -110,6 +112,7 @@ describe('connector management routes', () => {
         loginEnabled: () => options.loginEnabled ?? false,
         trustedOrigins: () => ['http://localhost:4242'],
         verifyUser: async () => options.verifyUser ?? null,
+        isAccountOwner: (user) => user?.userId === (options.ownerUserId ?? 'user-a'),
       })
     );
     return app;
@@ -461,6 +464,78 @@ describe('connector management routes', () => {
       })
       .expect(400);
     expect(reconciliation.apply).not.toHaveBeenCalled();
+  });
+
+  // Connections reach their apps through this computer's DorkOS account, so
+  // with login on they are the owner's alone (DOR-2678).
+  describe('with login on, the owner of this DorkOS alone', () => {
+    const member = { userId: 'user-b', credential: 'cookie' } as const;
+
+    it.each([
+      [
+        'decide a review',
+        'post',
+        '/api/connectors/reviews/review-a/decision',
+        { decision: 'approved' },
+      ],
+      [
+        'decide an agent request',
+        'post',
+        '/api/connectors/agent-requests/request-a/decision',
+        { decision: 'denied' },
+      ],
+      [
+        'preview a grant change',
+        'post',
+        '/api/connectors/reconciliation/previews',
+        { connectionId: 'connection-a' },
+      ],
+      [
+        'apply a grant change',
+        'post',
+        '/api/connectors/reconciliation/apply',
+        { previewId: 'preview-a', grants: [] },
+      ],
+      [
+        'revoke every agent',
+        'delete',
+        '/api/connectors/connections/connection-a/every-agent',
+        undefined,
+      ],
+      ['list reviews', 'get', '/api/connectors/reviews', undefined],
+    ] as const)('refuses a signed-in non-owner trying to %s', async (_name, method, url, body) => {
+      const app = fixtureTarget.mount(buildApp({ user: member, loginEnabled: true }));
+      const call = request(app)[method](url).set('Origin', 'http://localhost:4242');
+      const res = await (body === undefined ? call : call.send(body)).expect(403);
+      expect(res.body).toEqual({
+        code: 'owner_only',
+        error: 'Only the owner of this DorkOS can manage the connections on its DorkOS account.',
+        message: 'Only the owner of this DorkOS can manage the connections on its DorkOS account.',
+      });
+      expect(reviews.resolve).not.toHaveBeenCalled();
+      expect(agentRequests.resolve).not.toHaveBeenCalled();
+      expect(reconciliation.preview).not.toHaveBeenCalled();
+      expect(reconciliation.apply).not.toHaveBeenCalled();
+      expect(reconciliation.revokeEveryAgent).not.toHaveBeenCalled();
+      expect(reviews.list).not.toHaveBeenCalled();
+    });
+
+    it('lets the owner signed in to the app revoke every agent', async () => {
+      const app = fixtureTarget.mount(
+        buildApp({ user: { userId: 'user-a', credential: 'cookie' }, loginEnabled: true })
+      );
+      await request(app)
+        .delete('/api/connectors/connections/connection-a/every-agent')
+        .set('Origin', 'http://localhost:4242')
+        .expect(200);
+      expect(reconciliation.revokeEveryAgent).toHaveBeenCalled();
+    });
+
+    it('with login off, lets the person at this computer through whoever is signed in', async () => {
+      const app = fixtureTarget.mount(buildApp({ user: member }));
+      await request(app).delete('/api/connectors/connections/connection-a/every-agent').expect(200);
+      expect(reconciliation.revokeEveryAgent).toHaveBeenCalled();
+    });
   });
 
   it('rejects a missing program credential id and an untrusted browser origin', async () => {

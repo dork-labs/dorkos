@@ -247,7 +247,7 @@ describe('RuntimeSetupPanel — ready-state reconnect (DOR-438)', () => {
     expect(within(section).getByTestId('reconnect-slot-kind-claude-code')).toHaveTextContent(
       'login'
     );
-    expect(within(section).getByText('Reconnect Claude')).toBeInTheDocument();
+    expect(within(section).getByText('Reconnect Claude Code')).toBeInTheDocument();
 
     // Cancel restores the calm ready state.
     await user.click(within(section).getByTestId('runtime-reconnect-cancel-claude-code'));

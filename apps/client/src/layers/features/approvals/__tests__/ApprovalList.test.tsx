@@ -66,7 +66,7 @@ describe('ApprovalList’s cap', () => {
 
     expect(cardCount()).toBe(6);
     expect(
-      screen.getByText('2 more requests are waiting. Answer some of these to see them.')
+      screen.getByText('2 more requests are waiting. Answer some to see them.')
     ).toBeInTheDocument();
   });
 
@@ -108,7 +108,7 @@ describe('ApprovalList’s cap', () => {
     act(() => holdDecidedApproval(approvals[0], 'granted'));
 
     expect(
-      screen.getByText('1 more request is waiting. Answer one of these to see it.')
+      screen.getByText('1 more request is waiting. Answer one to see it.')
     ).toBeInTheDocument();
   });
 });

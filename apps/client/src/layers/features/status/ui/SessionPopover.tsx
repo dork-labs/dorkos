@@ -186,7 +186,7 @@ export function SessionPopover({
               {group.group === 'diagnostics' && (
                 <>
                   <PlainRow label="Queued messages" value={String(diagnostics.queueDepth)} />
-                  <PlainRow label="Session id" value={diagnostics.sessionId || '—'} />
+                  <PlainRow label="Session ID" value={diagnostics.sessionId || '—'} />
                 </>
               )}
             </section>
@@ -267,7 +267,7 @@ function renderControl(key: StatusBarItemKey, controls: SessionControls): ReactN
       <Switch
         checked={controls.plan.active}
         onCheckedChange={controls.plan.onToggle}
-        aria-label="Work out a plan first, and change nothing until you approve it"
+        aria-label="Plan first, change nothing until approved"
       />
     );
   }

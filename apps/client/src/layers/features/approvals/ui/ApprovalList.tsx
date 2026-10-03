@@ -106,8 +106,8 @@ export function ApprovalList({ approvals }: ApprovalListProps) {
       {hidden > 0 && (
         <p className="text-muted-foreground text-xs">
           {hidden === 1
-            ? '1 more request is waiting. Answer one of these to see it.'
-            : `${hidden} more requests are waiting. Answer some of these to see them.`}
+            ? '1 more request is waiting. Answer one to see it.'
+            : `${hidden} more requests are waiting. Answer some to see them.`}
         </p>
       )}
     </motion.div>

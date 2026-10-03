@@ -65,9 +65,9 @@ function costBasisNote(usage: UsageStatus): string | null {
   if (usage.costUsd == null) return null;
   switch (usage.costBasis) {
     case 'unknown':
-      return 'Estimated — no price was listed for this model.';
+      return 'Estimated. This model has no listed price.';
     case 'managed':
-      return "Charged at your organization's own rates.";
+      return 'Charged at your organization’s own rates.';
     default:
       return null;
   }

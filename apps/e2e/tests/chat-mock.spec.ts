@@ -427,10 +427,10 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await new RightPanelPage(page).openProfilePage('sessions', agentDir);
     const rows = page.getByTestId('session-row');
     await expect(
-      rows.filter({ has: page.locator('[aria-label="Runtime: Test Mode"]') })
+      rows.filter({ has: page.locator('[aria-label="Runs on Test Mode"]') })
     ).toHaveCount(1);
     await expect(
-      rows.filter({ has: page.locator('[aria-label="Runtime: test-mode-b"]') })
+      rows.filter({ has: page.locator('[aria-label="Runs on test-mode-b"]') })
     ).toHaveCount(1);
   });
 

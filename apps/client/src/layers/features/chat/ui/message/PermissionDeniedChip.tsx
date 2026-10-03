@@ -61,12 +61,12 @@ export function PermissionDeniedChip({
       : isBackgroundHelper
         ? 'A background helper'
         : null;
-  const by = isClassifier ? ' by the auto-mode classifier' : '';
+  const by = isClassifier ? ' by auto mode' : '';
   const label =
     who !== null
       ? `${who} was blocked from using ${toolName}${by}: ${detail}`
       : isClassifier
-        ? `Blocked by auto-mode classifier: ${detail}`
+        ? `Blocked by auto mode: ${detail}`
         : `Blocked: ${detail}`;
 
   return (
@@ -86,10 +86,14 @@ export function PermissionDeniedChip({
       <div className="min-w-0 flex-1">
         <p className="text-sm">{label}</p>
         {isBackgroundHelper ? (
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            Helpers running in the background can’t ask you to approve anything, so this was turned
-            down for you. Run this step yourself, or ask the agent to do it in the foreground.
-          </p>
+          <>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Background helpers can’t ask for approval, so this was blocked.
+            </p>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Do it yourself, or ask the agent to run it in the foreground.
+            </p>
+          </>
         ) : null}
         <p className="text-muted-foreground mt-0.5 font-mono text-xs">{toolName}</p>
       </div>

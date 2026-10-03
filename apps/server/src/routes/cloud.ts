@@ -34,6 +34,7 @@
  */
 import { Router, type Response } from 'express';
 import { z } from 'zod';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { Problem } from '@dork-labs/cloud-api';
 import { runtimeDisplayName, type RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type {

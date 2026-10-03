@@ -335,7 +335,7 @@ describe('InboxBell', () => {
     // The decision itself is here, not a route away.
     expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
   });
 
   it('says so when the list cannot be read, rather than looking like silence', async () => {
@@ -345,9 +345,7 @@ describe('InboxBell', () => {
     expect(marker).toHaveAccessibleName('DorkOS could not check for approvals. Open for details.');
 
     await userEvent.click(marker);
-    expect(
-      await screen.findByText(/could not check whether anything is waiting/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t check for approvals/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 

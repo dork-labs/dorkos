@@ -110,9 +110,7 @@ describe('the warning', () => {
     // and a save refused MAIN_CHECKOUT_DIRTY tells a person in so many words
     // that "the warning above the files says how", which would be pointing at
     // an empty space.
-    expect(
-      await screen.findByText(/couldn’t check whether this room’s files are in order/)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t check this room’s files/)).toBeInTheDocument();
   });
 
   it('names the changes it found, so a person can recognise them', async () => {
@@ -123,7 +121,9 @@ describe('the warning', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('ROOM.md')).toBeInTheDocument();
     expect(screen.getByText('notes/scratch.md')).toBeInTheDocument();
-    expect(screen.getByText(/Nobody can save a file here/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Saves and agent merges wait until you keep or discard these/)
+    ).toBeInTheDocument();
   });
 
   it('says how many it is not showing when there are more than it lists', async () => {
@@ -151,7 +151,7 @@ describe('the warning', () => {
     // DorkOS does not check out over a branch it did not move, in case there is
     // work on it — so the warning says what happened and offers no button that
     // would be refused.
-    expect(await screen.findByText(/on wip instead of main/)).toBeInTheDocument();
+    expect(await screen.findByText(/on wip, not main/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Keep them all' })).not.toBeInTheDocument();
   });
 });
@@ -186,10 +186,10 @@ describe('the two ways out', () => {
     fireEvent.click(await screen.findByLabelText('notes/scratch.md'));
     fireEvent.click(screen.getByRole('button', { name: 'Discard 1' }));
 
-    expect(await screen.findByText(/cannot be brought back/)).toBeInTheDocument();
+    expect(await screen.findByText(/can’t be undone/)).toBeInTheDocument();
     expect(transport.repairRoomMain).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, discard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard change' }));
     await waitFor(() =>
       expect(transport.repairRoomMain).toHaveBeenCalledWith(ROOM_ID, {
         action: 'discard',
@@ -204,7 +204,7 @@ describe('the two ways out', () => {
 
     fireEvent.click(await screen.findByLabelText('notes/scratch.md'));
     fireEvent.click(screen.getByRole('button', { name: 'Discard 1' }));
-    expect(await screen.findByText(/cannot be brought back/)).toBeInTheDocument();
+    expect(await screen.findByText(/can’t be undone/)).toBeInTheDocument();
 
     // The list is re-read while this panel is open — somebody fixes their own
     // terminal edit, a merge lands — and the change this question was about is
@@ -222,10 +222,8 @@ describe('the two ways out', () => {
       await queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(ROOM_ID) });
     });
 
-    await waitFor(() =>
-      expect(screen.queryByText(/cannot be brought back/)).not.toBeInTheDocument()
-    );
-    expect(screen.queryByRole('button', { name: 'Yes, discard' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/can’t be undone/)).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Discard change' })).not.toBeInTheDocument();
   });
 
   it('says who may do it when this person may not', async () => {
@@ -240,7 +238,7 @@ describe('the two ways out', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Keep them all' }));
 
     expect(
-      await screen.findByText(/Only the person who owns this DorkOS can decide/)
+      await screen.findByText(/Only the owner of this DorkOS can keep or discard/)
     ).toBeInTheDocument();
   });
 });

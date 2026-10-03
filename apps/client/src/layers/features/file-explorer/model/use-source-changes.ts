@@ -291,7 +291,7 @@ export function useSourceChanges(deps: SourceChangesDeps): SourceChangesApi {
             const base = baseCommit ?? (await baseFor(fromDir));
             if (base === null) {
               rollback();
-              toast.error('There’s nothing in this room’s files to change yet.');
+              toast.error('This room has no files to change yet.');
               return false;
             }
             const outcome = await changes.move({ from: entry.path, to, baseCommit: base });
@@ -460,7 +460,7 @@ export function useSourceChanges(deps: SourceChangesDeps): SourceChangesApi {
       if (changes === undefined || files.length === 0) return;
       if (files.length > changes.maxUploadFiles) {
         toast.error(
-          `One upload can carry up to ${changes.maxUploadFiles} files, so nothing was uploaded. Try again with fewer.`
+          `Nothing was uploaded. One upload takes up to ${changes.maxUploadFiles} files.`
         );
         return;
       }

@@ -102,13 +102,13 @@ describe('ErrorMessageBlock', () => {
 
     expect(screen.getByText('Agent stopped unexpectedly')).toBeInTheDocument();
     expect(screen.getByText('API error')).toBeInTheDocument();
-    expect(screen.queryByText('An error occurred during execution.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong before it finished.')).not.toBeInTheDocument();
   });
 
   it('falls back to the generic execution_error copy when there is no message', () => {
     render(<ErrorMessageBlock message="   " category="execution_error" />);
 
-    expect(screen.getByText('An error occurred during execution.')).toBeInTheDocument();
+    expect(screen.getByText('Something went wrong before it finished.')).toBeInTheDocument();
   });
 
   it('keeps the category copy and does not paraphrase it with the runtime message', () => {
@@ -131,7 +131,7 @@ describe('ErrorMessageBlock', () => {
       />
     );
 
-    expect(screen.getByText('This session exceeded its budget.')).toBeInTheDocument();
+    expect(screen.getByText('This session hit its spending limit.')).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'https://dorkos.ai/settings/budget' })
     ).toBeInTheDocument();
@@ -285,9 +285,7 @@ describe('ErrorMessageBlock', () => {
 
       expect(screen.getByText('Sign in to Claude again')).toBeInTheDocument();
       expect(
-        screen.getByText(
-          'Your Claude login stopped working. Sign in again to pick up where you left off.'
-        )
+        screen.getByText('Your Claude login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
     });
 
@@ -296,9 +294,7 @@ describe('ErrorMessageBlock', () => {
 
       expect(screen.getByText('Sign in to your agent again')).toBeInTheDocument();
       expect(
-        screen.getByText(
-          'Your agent login stopped working. Sign in again to pick up where you left off.'
-        )
+        screen.getByText('Your agent login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
     });
 
@@ -326,9 +322,7 @@ describe('ErrorMessageBlock', () => {
       );
 
       expect(
-        screen.getByText(
-          'Your OpenCode login stopped working. Sign in again to pick up where you left off.'
-        )
+        screen.getByText('Your OpenCode login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
       expect(
         screen.getByRole('link', { name: 'https://openrouter.ai/settings/credits' })
@@ -351,9 +345,7 @@ describe('ErrorMessageBlock', () => {
       );
 
       expect(
-        screen.getByText(
-          'Your Claude login stopped working. Sign in again to pick up where you left off.'
-        )
+        screen.getByText('Your Claude login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
       expect(
         screen.queryByText('Your sign-in stopped working. Sign in again to keep going.')

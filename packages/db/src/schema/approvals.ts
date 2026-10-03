@@ -204,6 +204,14 @@ export const approvals = sqliteTable(
     /** When the operator granted or denied. ISO 8601 UTC, null while pending. */
     decidedAt: text('decided_at'),
 
+    /**
+     * The signed-in account that said yes, or null when nobody was signed in
+     * (login off) or the request was denied. Read when the yes is spent, so a
+     * change only the owner of this DorkOS may make (its DorkOS account
+     * settings) is not made on another account's yes (DOR-2678).
+     */
+    decidedByUserId: text('decided_by_user_id'),
+
     /** When the token was spent or written off. ISO 8601 UTC; enforces single use. */
     consumedAt: text('consumed_at'),
 

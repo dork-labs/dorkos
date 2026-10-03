@@ -3,9 +3,9 @@ import type { TerminalReason } from '@dorkos/shared/types';
 /** Fixed English labels for each known SDK TerminalReason value. */
 const KNOWN_LABELS: Readonly<Record<string, string>> = Object.freeze({
   completed: 'Completed',
-  aborted_tools: 'Tool aborted',
-  aborted_streaming: 'Stream aborted',
-  max_turns: 'Max turns reached',
+  aborted_tools: 'Tool stopped',
+  aborted_streaming: 'Reply stopped',
+  max_turns: 'Turn limit reached',
   blocking_limit: 'Blocking limit',
   rapid_refill_breaker: 'Rate limit',
   prompt_too_long: 'Prompt too long',

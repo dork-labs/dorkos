@@ -39,9 +39,9 @@ describe('ApprovalPrompt', () => {
   it('renders tool name and approve/deny buttons', () => {
     render(<ApprovalPrompt {...baseProps} />);
     expect(screen.getByText('Write test.txt')).toBeDefined();
-    expect(screen.getByText('Tool approval required')).toBeDefined();
-    expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /deny/i })).toBeDefined();
+    expect(screen.getByText('Your agent wants to use a tool')).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
   });
 
   it('renders tool arguments display', () => {
@@ -54,7 +54,7 @@ describe('ApprovalPrompt', () => {
       // The fast path is read the command, allow or deny. The field is an
       // affordance for the times you want to say more, not a step in the flow.
       render(<ApprovalPrompt {...baseProps} />);
-      expect(screen.queryByLabelText('Reason for denying')).toBeNull();
+      expect(screen.queryByLabelText('Reason for not allowing')).toBeNull();
       expect(screen.getByRole('button', { name: /add a reason/i })).toBeDefined();
     });
 
@@ -62,9 +62,9 @@ describe('ApprovalPrompt', () => {
       render(<ApprovalPrompt {...baseProps} />);
       fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
 
-      const field = screen.getByLabelText('Reason for denying');
+      const field = screen.getByLabelText('Reason for not allowing');
       fireEvent.change(field, { target: { value: 'Write it under tmp/ instead' } });
-      fireEvent.click(screen.getByRole('button', { name: /^deny/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^Don’t allow/ }));
 
       await waitFor(() => {
         expect(mockDenyTool).toHaveBeenCalledWith(
@@ -82,7 +82,7 @@ describe('ApprovalPrompt', () => {
       render(<ApprovalPrompt {...baseProps} isActive />);
       fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
 
-      const field = screen.getByLabelText('Reason for denying');
+      const field = screen.getByLabelText('Reason for not allowing');
       fireEvent.change(field, { target: { value: 'not that path' } });
       fireEvent.keyDown(field, { key: 'Enter' });
 
@@ -95,8 +95,10 @@ describe('ApprovalPrompt', () => {
     it('sends nothing when the field was opened and left blank', async () => {
       render(<ApprovalPrompt {...baseProps} />);
       fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
-      fireEvent.change(screen.getByLabelText('Reason for denying'), { target: { value: '   ' } });
-      fireEvent.click(screen.getByRole('button', { name: /^deny/i }));
+      fireEvent.change(screen.getByLabelText('Reason for not allowing'), {
+        target: { value: '   ' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /^Don’t allow/ }));
 
       await waitFor(() => {
         expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1', undefined);
@@ -109,12 +111,12 @@ describe('ApprovalPrompt', () => {
       // fail to send.
       render(<ApprovalPrompt {...baseProps} allowsDenyReason={false} />);
       expect(screen.queryByRole('button', { name: /add a reason/i })).toBeNull();
-      expect(screen.queryByLabelText('Reason for denying')).toBeNull();
+      expect(screen.queryByLabelText('Reason for not allowing')).toBeNull();
     });
 
     it('still denies cleanly, with no reason, when the affordance is hidden', async () => {
       render(<ApprovalPrompt {...baseProps} allowsDenyReason={false} />);
-      fireEvent.click(screen.getByRole('button', { name: /^deny/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^Don’t allow/ }));
 
       await waitFor(() => {
         expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1', undefined);
@@ -198,7 +200,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        expect(screen.getByText('Approved')).toBeDefined();
+        expect(screen.getByText('Allowed')).toBeDefined();
         // Check icon should be present with success color
         const container = screen.getByTestId('tool-approval-decided');
         const svg = container.querySelector('svg');
@@ -217,7 +219,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.deny();
 
       await waitFor(() => {
-        expect(screen.getByText('Denied')).toBeDefined();
+        expect(screen.getByText('Not allowed')).toBeDefined();
         // X icon should be present with error color
         const container = screen.getByTestId('tool-approval-decided');
         const svg = container.querySelector('svg');
@@ -250,7 +252,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        const badge = screen.getByText('Approved');
+        const badge = screen.getByText('Allowed');
         expect(badge.className).toContain('rounded-full');
         expect(badge.className).toContain('bg-status-success-bg');
         expect(badge.className).toContain('text-status-success-fg');
@@ -264,7 +266,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.deny();
 
       await waitFor(() => {
-        const badge = screen.getByText('Denied');
+        const badge = screen.getByText('Not allowed');
         expect(badge.className).toContain('rounded-full');
         expect(badge.className).toContain('bg-status-error-bg');
         expect(badge.className).toContain('text-status-error-fg');
@@ -278,7 +280,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        expect(screen.getByText('Approved')).toBeDefined();
+        expect(screen.getByText('Allowed')).toBeDefined();
       });
 
       // After decided, deny should not fire
@@ -316,7 +318,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        expect(screen.getByText('Approved')).toBeDefined();
+        expect(screen.getByText('Allowed')).toBeDefined();
       });
       // No user-facing error surfaced for the raced answer.
       expect(screen.queryByText(/try again/)).toBeNull();
@@ -333,7 +335,7 @@ describe('ApprovalPrompt', () => {
       ref.current!.deny();
 
       await waitFor(() => {
-        expect(screen.getByText('Denied')).toBeDefined();
+        expect(screen.getByText('Not allowed')).toBeDefined();
       });
       expect(screen.queryByText(/try again/)).toBeNull();
       expect(screen.queryByText(/failed/i)).toBeNull();
@@ -349,9 +351,9 @@ describe('ApprovalPrompt', () => {
       ref.current!.approve();
 
       await waitFor(() => {
-        expect(screen.getByText(/Approval request failed/)).toBeDefined();
+        expect(screen.getByText(/Couldn’t send your answer/)).toBeDefined();
       });
-      expect(screen.queryByText('Approved')).toBeNull();
+      expect(screen.queryByText('Allowed')).toBeNull();
     });
   });
 
@@ -464,8 +466,8 @@ describe('ApprovalPrompt', () => {
 
       expect(screen.queryByTestId('tool-approval-decided')).toBeNull();
       expect(screen.getByText('waiting for you')).toBeDefined();
-      expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
-      expect(screen.getByRole('button', { name: /deny/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
       // No draining bar over a wait that is not counting down.
       expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
     });
@@ -486,7 +488,7 @@ describe('ApprovalPrompt', () => {
       expect(screen.getByText('waiting for you')).toBeDefined();
       expect(screen.queryByText(/remaining/)).toBeNull();
       expect(document.querySelector('[data-slot="ask-countdown"] [aria-hidden]')).toBeNull();
-      expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
 
       // And it stays that way: no interval is ticking a ceiling down behind it.
       await act(async () => vi.advanceTimersByTime(120_000));
@@ -516,15 +518,15 @@ describe('ApprovalPrompt', () => {
       await renderAsync({ ...baseProps, timeoutMs: 600_000, approvalRemainingMs: 500 });
 
       // Approve/Deny are live before the (tiny) remaining window elapses.
-      expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
 
       // Drain the near-zero remaining window plus an interval tick.
       await act(async () => vi.advanceTimersByTime(1_000));
 
       expect(screen.queryByTestId('tool-approval-decided')).toBeNull();
       expect(screen.getByText('waiting for you')).toBeDefined();
-      expect(screen.getByRole('button', { name: /approve/i })).toBeDefined();
-      expect(screen.getByRole('button', { name: /deny/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Allow/ })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
       // Nothing was answered on anybody's behalf.
       expect(mockApproveTool).not.toHaveBeenCalled();
       expect(mockDenyTool).not.toHaveBeenCalled();
@@ -543,7 +545,7 @@ describe('ApprovalPrompt', () => {
         await vi.runAllTimersAsync();
       });
 
-      expect(screen.getByText('Denied')).toBeDefined();
+      expect(screen.getByText('Not allowed')).toBeDefined();
       expect(screen.queryByText(/Auto-denied/)).toBeNull();
       expect(screen.queryByText(/timed out/)).toBeNull();
     });
@@ -561,7 +563,7 @@ describe('ApprovalPrompt', () => {
         await vi.runAllTimersAsync();
       });
 
-      expect(screen.getByText('Approved')).toBeDefined();
+      expect(screen.getByText('Allowed')).toBeDefined();
       // No countdown in the decided state
       expect(document.querySelector('[data-slot="ask-countdown"]')).toBeNull();
       // No timeout message
@@ -647,7 +649,7 @@ describe('what "Always Allow" says it grants (DOR-1462)', () => {
     // this button does, so a screen-reader user must hear it before the press —
     // as one deterministic sentence, not whatever the engine assembles from the
     // children.
-    expect(screen.getByRole('button', { name: 'Always Allow, all your Claude sessions' })).toBe(
+    expect(screen.getByRole('button', { name: 'Always allow, all your Claude sessions' })).toBe(
       button
     );
 
@@ -679,7 +681,7 @@ describe('what "Always Allow" says it grants (DOR-1462)', () => {
     // A runtime with nothing to say leaves the button reading exactly as it
     // always did, rather than guessing at a promise nobody made.
     render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
-    const button = screen.getByRole('button', { name: 'Always Allow' });
+    const button = screen.getByRole('button', { name: 'Always allow' });
     expect(button.textContent).not.toContain('this session');
     expect(button.textContent).not.toContain('this project');
     expect(button.textContent).not.toContain('all your Claude sessions');

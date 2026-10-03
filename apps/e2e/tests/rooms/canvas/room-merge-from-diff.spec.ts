@@ -174,7 +174,7 @@ test.describe('Reviewing an agent’s work from the room’s canvas', () => {
     await expect(merge).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
     await merge.click();
-    const summary = page.getByRole('textbox', { name: /what this work does/i });
+    const summary = page.getByRole('textbox', { name: /one-line summary of this work/i });
     await expect(summary).toBeVisible();
     await summary.fill(`Rewrite the middle line ${tag}`);
     await page.getByRole('button', { name: /^merge$/i }).click();

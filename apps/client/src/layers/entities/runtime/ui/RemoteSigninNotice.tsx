@@ -32,9 +32,7 @@ export function RemoteSigninNotice({ onRetry }: { onRetry?: () => void }) {
     <div data-testid="remote-signin-notice">
       <p className="text-muted-foreground text-sm">Signing in needs the computer DorkOS runs on.</p>
       <p className="text-muted-foreground mt-1 text-sm">
-        {onRetry
-          ? 'Open DorkOS there and sign in, then press Retry here.'
-          : 'Open DorkOS there and sign in.'}
+        {onRetry ? 'Sign in to DorkOS there, then press Retry.' : 'Sign in to DorkOS there.'}
       </p>
       {/* The one case the two sentences above get wrong, kept quiet because it
           is the uncommon one: you ARE at that computer, but reached DorkOS by
