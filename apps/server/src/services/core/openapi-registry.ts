@@ -3690,7 +3690,7 @@ registry.registerPath({
     body: {
       content: {
         'application/json': {
-          schema: z.object({ path: z.string().min(1), ...DevLinkScopeBody }).strict(),
+          schema: z.object({ path: z.string().min(1).max(1024), ...DevLinkScopeBody }).strict(),
         },
       },
     },
@@ -3745,7 +3745,7 @@ registry.registerPath({
         'application/json': {
           schema: z
             .object({
-              path: z.string().min(1),
+              path: z.string().min(1).max(1024),
               ...DevLinkScopeBody,
               replaceInstalled: z.boolean().optional(),
               via: z.enum(['app', 'terminal']).optional(),
@@ -3773,7 +3773,9 @@ registry.registerPath({
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
-      description: 'The slot or the name is taken',
+      description:
+        'The slot or the name is taken, or the folder changed after it was approved ' +
+        '(`dev_link_changed`)',
       content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
     },
   },

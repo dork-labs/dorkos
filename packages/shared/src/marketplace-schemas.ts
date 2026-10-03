@@ -1733,6 +1733,8 @@ export const DevLinkRecordSchema = z
       .object({
         /** Extension approvals the link's own approvals replaced, by extension id. */
         extensions: z.record(z.string(), ExtensionApprovedSourceSchema).optional(),
+        /** Which of those ids were approved to run then; the rest only had a source. */
+        runIds: z.array(z.string()).optional(),
         /** Stored global-activation entries (`<name>@global-<digest>`) of the parked copy. */
         globalActivation: z.array(z.string()).optional(),
       })
@@ -1879,4 +1881,5 @@ export type DevLinkErrorCode =
   | 'dev_link_slot_taken'
   | 'dev_link_parked_exists'
   | 'dev_link_not_found'
+  | 'dev_link_changed'
   | 'package_is_dev_linked';

@@ -20,6 +20,10 @@ import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
 import type { DevLinkService } from '../../services/marketplace/dev-links/index.js';
 import type { MarketplaceRouteDeps } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
+import { DEV_LINK_PATH_MAX } from '../../services/marketplace-mcp/tool-link.js';
+
+/** The folder field: required, and capped like the capability's own input. */
+const PathField = z.string().min(1).max(DEV_LINK_PATH_MAX);
 
 /** Where a link goes: every session, or one project. */
 const ScopeFields = {
@@ -34,7 +38,7 @@ function scopeIsConsistent(body: { scope: 'global' | 'project'; projectPath?: st
 
 /** Body schema for `POST /api/marketplace/dev-links/preview`. */
 export const DevLinkPreviewBodySchema = z
-  .object({ path: z.string().min(1), ...ScopeFields })
+  .object({ path: PathField, ...ScopeFields })
   .strict()
   .refine(scopeIsConsistent, {
     message: 'projectPath is required for, and only for, scope project',
@@ -43,7 +47,7 @@ export const DevLinkPreviewBodySchema = z
 /** Body schema for `POST /api/marketplace/dev-links`. */
 export const DevLinkCreateBodySchema = z
   .object({
-    path: z.string().min(1),
+    path: PathField,
     ...ScopeFields,
     replaceInstalled: z.boolean().optional(),
     /** Where the person is linking from, for the record. Ignored for an agent. */
@@ -132,25 +136,40 @@ export function mountDevLinkRoutes(
     if (!devLinks) return;
     const body = parse(DevLinkCreateBodySchema, req, res);
     if (!body) return;
-    // The approval binds to what the caller sent, in the capability's own
-    // shape, so `dorkos call marketplace.link` and this route mint and honour
-    // the same token.
-    const decision = await ctx.authorize(req, res, 'marketplace.link', {
-      path: body.path,
-      ...(body.projectPath !== undefined && { projectPath: body.projectPath }),
-      ...(body.replaceInstalled !== undefined && { replaceInstalled: body.replaceInstalled }),
-    });
-    if (decision.outcome !== 'allowed') return ctx.gateResponse(res, decision);
+    // The project is confined first, so a path outside the boundary is refused
+    // before anyone is shown a card for it.
     const confined = await ctx.confineProjectPath(res, body.projectPath);
     if (confined.refused) return confined.refused;
-    const person = !!trustedCaller(readCallerAuthority(req, res));
+    const target = {
+      path: body.path,
+      scope: body.scope,
+      ...(confined.projectPath ? { projectPath: confined.projectPath } : {}),
+      ...(body.replaceInstalled ? { replaceInstalled: true } : {}),
+    };
     try {
+      // What the card says, read from the folder now and bound into the
+      // approval. A folder that cannot be linked is refused here, with no card.
+      const change = await devLinks.describeApproval(target);
+      // The approval binds to what the caller sent, in the capability's own
+      // shape, plus that description, so `dorkos call marketplace.link` and this
+      // route mint and honour the same token.
+      const decision = await ctx.authorize(
+        req,
+        res,
+        'marketplace.link',
+        {
+          path: body.path,
+          ...(body.projectPath !== undefined && { projectPath: body.projectPath }),
+          ...(body.replaceInstalled !== undefined && { replaceInstalled: body.replaceInstalled }),
+        },
+        change
+      );
+      if (decision.outcome !== 'allowed') return ctx.gateResponse(res, decision);
+      const person = !!trustedCaller(readCallerAuthority(req, res));
       const status = await devLinks.link({
-        path: body.path,
-        scope: body.scope,
-        ...(confined.projectPath ? { projectPath: confined.projectPath } : {}),
-        ...(body.replaceInstalled ? { replaceInstalled: true } : {}),
+        ...target,
         via: person ? (body.via ?? 'app') : 'agent-card',
+        expectedChange: change,
       });
       return res.status(201).json(status);
     } catch (err) {

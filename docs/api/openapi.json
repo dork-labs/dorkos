@@ -31318,7 +31318,8 @@
                 "properties": {
                   "path": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 1024
                   },
                   "scope": {
                     "type": "string",
@@ -31487,7 +31488,7 @@
             }
           },
           "409": {
-            "description": "The slot or the name is taken",
+            "description": "The slot or the name is taken, or the folder changed after it was approved (`dev_link_changed`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -31536,7 +31537,8 @@
                 "properties": {
                   "path": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 1024
                   },
                   "scope": {
                     "type": "string",

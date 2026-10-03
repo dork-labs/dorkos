@@ -4,10 +4,11 @@ covers:
   - 'feat(marketplace): no trust crosses between a dev link and an installed copy (DOR-2696)'
   - 'feat(marketplace): the marketplace.link capability, MCP tool and dev-link routes (DOR-2696)'
   - 'test(marketplace): read the dev-link source pin through the shared lexer (DOR-2696)'
+  - 'fix(marketplace): bind the dev-link card to what it showed, and harden link and unlink (DOR-2696)'
 ---
 
 ### Added
 
-- Run a plugin or skill pack straight from a folder on your computer while you build it, with no reinstall for each change (DOR-2696). For now an agent asks for it, and you approve it on a card.
-- The card shows the folder's full path every time, and no permission setting can approve it ahead of time.
-- If you already have that package installed, the installed copy is set aside, not deleted, and its approvals are kept for when you switch back.
+- An agent can ask to run a plugin or skill pack from a folder on your computer instead of an installed copy (DOR-2696). You approve it on a card, and nothing runs from the folder until you do.
+- The card shows the folder's full path and the extensions it would run. No permission setting can approve it ahead of time, and a folder that changes before you answer is asked about again.
+- If you already have that package installed, the installed copy is set aside, not deleted.

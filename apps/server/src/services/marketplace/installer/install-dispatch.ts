@@ -33,6 +33,7 @@ import { assertInstallable, type PackageStager, type StagedPackage } from './sta
 import { INSTALL_ROOT_DIR_BY_TYPE, projectScopeRoot } from '../lib/install-roots.js';
 import { DevLinkError, packageIsDevLinked } from '../dev-links/errors.js';
 import { devLinkInSlot } from '../dev-links/registry.js';
+import { withInstallTargetLock } from '../transaction.js';
 
 /** Sentinel marketplace value used when a package was resolved directly (git URL / local path). */
 const DIRECT_SOURCE_LABEL = '<direct>';
@@ -76,14 +77,15 @@ export class InstallDispatcher {
       // A dev link in the slot this would land in (DOR-2696): installing
       // would replace the link, and the person's folder behind it, without
       // the explicit switch. Unlink is the way back to an installed copy.
-      if (INSTALL_ROOT_DIR_BY_TYPE[packageType] === 'plugins') {
-        const slot = req.projectPath
-          ? path.join(projectScopeRoot(req.projectPath), 'plugins', staged.manifest.name)
-          : path.join(this.deps.dorkHome, 'plugins', staged.manifest.name);
-        if (await devLinkInSlot(this.deps.dorkHome, slot)) {
-          throw packageIsDevLinked(staged.manifest.name);
-        }
-      }
+      // Checked early, so a refusal comes before any preview work, and again
+      // under the slot's lock just before the flow writes (below).
+      const devLinkSlot =
+        INSTALL_ROOT_DIR_BY_TYPE[packageType] === 'plugins'
+          ? req.projectPath
+            ? path.join(projectScopeRoot(req.projectPath), 'plugins', staged.manifest.name)
+            : path.join(this.deps.dorkHome, 'plugins', staged.manifest.name)
+          : null;
+      if (devLinkSlot) await this.refuseDevLinkedSlot(devLinkSlot, staged.manifest.name);
 
       // Refusals that depend only on the package's content: a schedule that
       // could never run, an unparseable SKILL.md. Checked before any flow
@@ -140,7 +142,7 @@ export class InstallDispatcher {
       // nothing and an uninstall removes it (DOR-2318). Warnings wait for the
       // result, and a rolled-back install says nothing.
       const stagedScheduleWarnings: string[] = [];
-      const result = await this.dispatchFlow(staged.packagePath, staged.manifest, {
+      const flowRequest: InstallRequest = {
         ...req,
         ownership: {
           prepareStaged: async (stagingDir: string) => {
@@ -165,7 +167,18 @@ export class InstallDispatcher {
             source: recordSourceOf(staged.sourceKey, resolved),
           }),
         },
-      });
+      };
+      // The flow's own transaction takes the same per-slot lock and runs
+      // inline under this hold (the lock is re-entrant), so a dev link made
+      // while this install staged and previewed is refused here rather than
+      // moved aside and deleted by the transaction.
+      const runFlow = () => this.dispatchFlow(staged.packagePath, staged.manifest, flowRequest);
+      const result = devLinkSlot
+        ? await withInstallTargetLock(devLinkSlot, async () => {
+            await this.refuseDevLinkedSlot(devLinkSlot, staged.manifest.name);
+            return runFlow();
+          })
+        : await runFlow();
 
       // Turn the package's inline schedules into files. Type-agnostic and
       // therefore here rather than in each flow: a schedule means the same thing
@@ -320,6 +333,17 @@ export class InstallDispatcher {
       });
       throw err;
     }
+  }
+
+  /**
+   * Refuse when a dev link holds the slot an install would land in.
+   *
+   * @param slot - The install target.
+   * @param name - The package name, for the refusal.
+   * @internal
+   */
+  private async refuseDevLinkedSlot(slot: string, name: string): Promise<void> {
+    if (await devLinkInSlot(this.deps.dorkHome, slot)) throw packageIsDevLinked(name);
   }
 
   /**

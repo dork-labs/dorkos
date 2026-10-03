@@ -951,6 +951,50 @@ describe('MarketplaceInstaller', () => {
       }
     });
 
+    it('refuses a dev link made while the install was staging, under the slot lock', async () => {
+      // Purpose (DOR-2696): the early check runs before the preview; a dev link
+      // that lands after it must still be refused at the moment the flow
+      // would write, or the transaction would move it aside and delete it.
+      const home = await realpath(
+        await mkdtemp(nodePath.join(tmpdir(), 'installer-devlink-race-'))
+      );
+      try {
+        const work = nodePath.join(home, 'work');
+        await mkdir(work, { recursive: true });
+        const slot = nodePath.join(home, 'plugins', 'hello-plugin');
+        const { deps, resolver, previewBuilder, pluginFlow } = buildDeps();
+        const manifest = buildPluginManifest({ name: 'hello-plugin' });
+        wireLocalResolution(resolver, 'hello-plugin', '/tmp/hello-plugin');
+        mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+        previewBuilder.build.mockImplementation(async () => {
+          // The link appears between the early check and the flow.
+          await mkdir(nodePath.dirname(slot), { recursive: true });
+          await symlink(work, slot, 'dir');
+          await updateDevLinks(home, () => [
+            {
+              name: 'hello-plugin',
+              type: 'plugin',
+              scope: 'global',
+              slot,
+              target: work,
+              linkedAt: '2026-10-03T00:00:00.000Z',
+              linkedVia: 'app',
+            },
+          ]);
+          return buildEmptyPreview();
+        });
+
+        const installer = new MarketplaceInstaller({ ...deps, dorkHome: home });
+        await expect(installer.install({ name: 'hello-plugin' })).rejects.toMatchObject({
+          code: 'package_is_dev_linked',
+        });
+        expect(pluginFlow.install).not.toHaveBeenCalled();
+        expect(await readlink(slot)).toBe(work);
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+
     it('reports failure telemetry when a flow throws', async () => {
       const { deps, resolver, previewBuilder, pluginFlow } = buildDeps();
       const manifest = buildPluginManifest();

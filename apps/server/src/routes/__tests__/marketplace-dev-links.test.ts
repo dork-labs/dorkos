@@ -135,7 +135,9 @@ describe('POST /api/marketplace/dev-links', () => {
       status: 'approval_required',
       capabilityId: 'marketplace.link',
     });
-    expect(approvals.listPending()[0]?.detail).toBe(work);
+    const detail = approvals.listPending()[0]?.detail ?? '';
+    expect(detail).toContain(`Folder: ${work}`);
+    expect(detail).toContain('Extensions it may run: none');
     await expect(readlink(slot())).rejects.toThrow();
   });
 
@@ -163,6 +165,46 @@ describe('POST /api/marketplace/dev-links', () => {
       .send({ path: work, scope: 'global' });
     expect(same.status).toBe(201);
     expect(await readlink(slot())).toBe(work);
+  });
+
+  it('voids an approval when the folder gains an extension between the card and the retry', async () => {
+    // Purpose: the yes covers the extensions the card showed. One added after
+    // the card must not ride in on it, approved without anybody seeing it.
+    agentHeader = 'agent-token';
+    const first = await request(server)
+      .post('/api/marketplace/dev-links')
+      .send({ path: work, scope: 'global' });
+    approvals.grant(first.body.approvalId as string);
+    const added = path.join(work, '.dork', 'extensions', 'sneaky');
+    await mkdir(added, { recursive: true });
+    await writeFile(path.join(added, 'extension.json'), '{"id":"sneaky"}');
+
+    const retry = await request(server)
+      .post('/api/marketplace/dev-links')
+      .set('x-dorkos-approval', first.body.approvalToken as string)
+      .send({ path: work, scope: 'global' });
+    expect(retry.status).toBe(202);
+    await expect(readlink(slot())).rejects.toThrow();
+    expect(extensionApprovals.approvedToRun).toEqual([]);
+  });
+
+  it('refuses a project outside the boundary before raising any card', async () => {
+    // Purpose: a person must never be asked about a link that would be refused.
+    agentHeader = 'agent-token';
+    const res = await request(server)
+      .post('/api/marketplace/dev-links')
+      .send({ path: work, scope: 'project', projectPath: '/definitely/not/inside' });
+    expect(res.status).toBe(403);
+    expect(approvals.listPending()).toEqual([]);
+  });
+
+  it('answers an over-long path with 400, not a 500', async () => {
+    // Purpose: the capability caps the path; the route must refuse the same
+    // input cleanly instead of failing the input parse inside the gate.
+    const res = await request(server)
+      .post('/api/marketplace/dev-links')
+      .send({ path: `/${'a'.repeat(5000)}`, scope: 'global' });
+    expect(res.status).toBe(400);
   });
 
   it('refuses a body whose scope and project disagree', async () => {
@@ -267,7 +309,8 @@ describe('the marketplace.link gate and permission settings', () => {
       registry,
       'marketplace.link',
       { path: work },
-      { identity: agent, retryChannel: 'http-header' }
+      { identity: agent, retryChannel: 'http-header' },
+      { change: `Folder: ${work}` }
     );
     expect(link.outcome).toBe('approval_required');
 

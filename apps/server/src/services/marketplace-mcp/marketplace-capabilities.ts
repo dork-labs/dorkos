@@ -44,7 +44,7 @@ import { createInstallHandler, InstallInputSchema } from './tool-install.js';
 import { createUpdateHandler, UpdateInputSchema } from './tool-update.js';
 import { createUninstallHandler, UninstallInputSchema } from './tool-uninstall.js';
 import { createCreatePackageHandler, CreatePackageInputSchema } from './tool-create-package.js';
-import { createLinkHandler, LinkInputSchema } from './tool-link.js';
+import { createLinkHandler, describeLinkApproval, LinkInputSchema } from './tool-link.js';
 
 /**
  * Extend the shared dependency bag with the marketplace domain's service
@@ -363,7 +363,7 @@ export const marketplaceDomain: CapabilityDomain = {
       id: 'marketplace.link',
       title: 'Run a package from a folder',
       description:
-        'Run a plugin or skill pack from a folder on this computer, reloading on every edit. ' +
+        'Run a plugin or skill pack from a folder on this computer, so edits take effect without reinstalling. ' +
         'A person must approve the exact folder. Pass an absolute path. Use projectPath for one project.',
       // Destructive with no area: the tier gate asks a person on every call,
       // bound to this exact input, and no setting can pre-approve it. There is
@@ -374,10 +374,13 @@ export const marketplaceDomain: CapabilityDomain = {
         'Always asks: a dev link runs a folder’s code unreviewed on every edit, so no setting may pre-approve it.',
       input: LinkInputSchema,
       output: z.unknown(),
-      // The folder is the decision, so the card shows it whole (the detail
-      // field) rather than clipped in the sentence beside the other two.
-      approvalDisplayFields: ['projectPath', 'replaceInstalled'],
-      approvalDetailField: 'path',
+      // The sentence names the call; the card's detail is the folder in full
+      // plus the extensions it may run and what it runs, read from the folder
+      // now and BOUND into the approval, so a folder that changes between the
+      // card and the retry is asked about again rather than linked.
+      approvalDisplayFields: ['path', 'projectPath', 'replaceInstalled'],
+      describeApprovalChange: (deps, input) =>
+        describeLinkApproval(requireMarketplaceDeps(deps), input),
       surfaces: {
         mcp: {
           toolName: 'marketplace_link',

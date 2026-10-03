@@ -43,7 +43,8 @@ import {
 } from '@dorkos/shared/marketplace-schemas';
 import { getBoundary, isContained } from '../../../lib/boundary.js';
 import { readRunnableDeclarations } from '../preview/permission-preview.js';
-import { disclosedEffectsOf } from '../preview/disclosed-effects.js';
+import { describeDisclosedEffects, disclosedEffectsOf } from '../preview/disclosed-effects.js';
+import { APPROVAL_DETAIL_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
 import { readInstalledIdentity } from '../installed-scanner.js';
 import { withInstallTargetLock } from '../transaction.js';
 import type { NotifyPluginsChanged } from '../types.js';
@@ -112,6 +113,13 @@ export interface DevLinkRequest extends DevLinkTarget {
   replaceInstalled?: boolean;
   /** Where the person said yes. */
   via: DevLinkRecord['linkedVia'];
+  /**
+   * The approval card's description ({@link DevLinkService.describeApproval})
+   * the person said yes to. When given, the link is refused unless the folder
+   * still describes exactly the same way under the lock, so the yes covers the
+   * extensions and effects the card showed and nothing added since.
+   */
+  expectedChange?: string;
 }
 
 /** Which dev link to unlink. */
@@ -181,6 +189,24 @@ export class DevLinkService {
   }
 
   /**
+   * What the approval card for this link says, and what the approval binds:
+   * the folder in full, where it runs, what it sets aside, the extensions it
+   * may run, and what it runs on its own. A yes is bound to this text, so a
+   * folder that describes differently by the time the yes is used is asked
+   * about again rather than linked.
+   *
+   * @param request - The folder, scope and the explicit switch.
+   * @returns The description, at most `APPROVAL_DETAIL_MAX_LENGTH` characters.
+   * @throws {DevLinkError} When the folder cannot be linked as asked, so no
+   *   card is raised for a link that would be refused.
+   */
+  async describeApproval(request: DevLinkTarget & { replaceInstalled?: boolean }): Promise<string> {
+    const plan = await this.plan(request);
+    if (plan.slotHolds === 'installed' && !request.replaceInstalled) throw slotTaken(plan.preview);
+    return describePlan(plan.preview, request.replaceInstalled === true);
+  }
+
+  /**
    * Link a folder: set any installed copy aside, put the link in the slot,
    * record it, approve the extensions it carries now, and tell the rest of
    * DorkOS. Any failure after the installed copy was set aside puts it back.
@@ -197,6 +223,16 @@ export class DevLinkService {
       if (plan.slotHolds === 'installed' && !request.replaceInstalled) {
         throw slotTaken(plan.preview);
       }
+      if (
+        request.expectedChange !== undefined &&
+        describePlan(plan.preview, request.replaceInstalled === true) !== request.expectedChange
+      ) {
+        throw new DevLinkError(
+          'dev_link_changed',
+          409,
+          'The folder changed after you approved it. Ask again.'
+        );
+      }
       const { preview, projectPath } = plan;
       const slot = preview.slot;
       const parked =
@@ -212,7 +248,16 @@ export class DevLinkService {
           await this.fs.symlink(preview.path, slot, this.linkType());
           undo.push(() => this.removeLink(slot));
         }
-        const restoreExtensions = this.capturedApprovals(preview);
+        // The slot must now resolve to the folder the person approved, and to
+        // nothing else, before anything is recorded or approved.
+        if ((await realpath(slot).catch(() => null)) !== preview.path) {
+          throw new DevLinkError(
+            'dev_link_slot_is_linked',
+            409,
+            `${preview.name}'s folder link didn't point at ${preview.path}. Nothing was linked.`
+          );
+        }
+        const captured = this.capturedApprovals(preview);
         const record: DevLinkRecord = {
           name: preview.name,
           type: preview.type,
@@ -221,8 +266,11 @@ export class DevLinkService {
           slot,
           target: preview.path,
           ...(parked !== undefined && { parked }),
-          ...(Object.keys(restoreExtensions).length > 0 && {
-            restoreApprovals: { extensions: restoreExtensions },
+          ...(Object.keys(captured.extensions).length > 0 && {
+            restoreApprovals: {
+              extensions: captured.extensions,
+              ...(captured.runIds.length > 0 && { runIds: captured.runIds }),
+            },
           }),
           linkedAt: new Date().toISOString(),
           linkedVia: request.via,
@@ -258,8 +306,10 @@ export class DevLinkService {
   async unlink(request: DevUnlinkRequest): Promise<DevUnlinkResult> {
     const projectPath =
       request.scope === 'project' ? await this.canonicalProject(request.projectPath) : undefined;
-    const record = await this.findRecord(request.name, request.scope, projectPath);
-    return withInstallTargetLock(record.slot, async () => {
+    const first = await this.findRecord(request.name, request.scope, projectPath);
+    return withInstallTargetLock(first.slot, async () => {
+      // Read again under the lock: another unlink may have finished meanwhile.
+      const record = await this.findRecord(request.name, request.scope, projectPath);
       const state = await devLinkStateOf(record);
       if (state === 'active' || state === 'folder-missing') await this.removeLink(record.slot);
       let restored: DevUnlinkResult['restored'] = 'removed';
@@ -272,7 +322,9 @@ export class DevLinkService {
           restored = 'installed';
         }
       }
-      this.forgetApprovals(record);
+      const reading = await readDevLinks(this.deps.dorkHome);
+      const others = 'links' in reading ? reading.links.filter((l) => !sameLink(l, record)) : [];
+      this.forgetApprovals(record, restored === 'installed', others);
       await updateDevLinks(this.deps.dorkHome, (links) =>
         links.filter((link) => !sameLink(link, record))
       );
@@ -369,6 +421,16 @@ export class DevLinkService {
         ? path.join(this.deps.dorkHome, 'plugins', name)
         : path.join(projectPath, '.dork', 'plugins', name)
     );
+    // A plugin repo linked into a project that is (or contains) the repo
+    // itself: the slot would sit inside the folder it points at, a loop every
+    // scanner would follow, finding each extension twice.
+    if (isContained(slot, folder) || isContained(folder, slot)) {
+      throw new DevLinkError(
+        'dev_link_path_not_allowed',
+        400,
+        "A folder can't be linked into itself. Link it for another project, or for every session."
+      );
+    }
     if (await exists(`${slot}${MARKETPLACE_DEVLINK_PARKED_MARKER}`)) {
       throw new DevLinkError(
         'dev_link_parked_exists',
@@ -516,19 +578,25 @@ export class DevLinkService {
 
   /**
    * The approvals the link's own would replace, kept so unlink can put them
-   * back: for each extension the folder carries, whatever approval that id has
-   * now, when it is a real one (approved to run, not already a dev link's).
+   * back: for each extension the folder carries, whatever source that id has
+   * now (another dev link's included), and whether it was approved to run.
    *
    * @internal
    */
-  private capturedApprovals(preview: DevLinkPreview): Record<string, ExtensionApprovedSource> {
+  private capturedApprovals(preview: DevLinkPreview): {
+    extensions: Record<string, ExtensionApprovedSource>;
+    runIds: string[];
+  } {
     const current = this.deps.approvals.read();
-    const kept: Record<string, ExtensionApprovedSource> = {};
+    const extensions: Record<string, ExtensionApprovedSource> = {};
+    const runIds: string[] = [];
     for (const id of preview.extensions) {
       const source = current.approvedSources[id];
-      if (source && !source.devLink && current.approvedToRun.includes(id)) kept[id] = source;
+      if (!source) continue;
+      extensions[id] = source;
+      if (current.approvedToRun.includes(id)) runIds.push(id);
     }
-    return kept;
+    return { extensions, runIds };
   }
 
   /**
@@ -554,29 +622,40 @@ export class DevLinkService {
   }
 
   /**
-   * Forget every approval given to this dev link, putting back what it
-   * replaced. An id whose approval has since moved to another copy is left
-   * alone.
+   * Forget every approval given to THIS dev link (its folder, inside its own
+   * slot), putting back what it replaced. An id whose approval has since moved
+   * to another copy, or to another dev link of the same folder, is left alone.
    *
+   * A replaced approval comes back only where it is still about the right
+   * thing: one that named this slot only when the parked copy is back in it
+   * (otherwise the slot holds something nobody approved), and one that named
+   * another dev link only while that dev link still exists.
+   *
+   * @param record - The dev link being removed.
+   * @param installedBack - Whether the parked installed copy is back in the slot.
+   * @param others - Every other recorded dev link, read under the lock.
    * @internal
    */
-  private forgetApprovals(record: DevLinkRecord): void {
+  private forgetApprovals(
+    record: DevLinkRecord,
+    installedBack: boolean,
+    others: readonly DevLinkRecord[]
+  ): void {
     const current = this.deps.approvals.read();
     const restore = record.restoreApprovals?.extensions ?? {};
+    const runIds = new Set(record.restoreApprovals?.runIds ?? []);
     let approvedToRun = [...current.approvedToRun];
     const approvedSources = { ...current.approvedSources };
     let changed = false;
     for (const [id, source] of Object.entries(current.approvedSources)) {
-      if (source.devLink !== record.target) continue;
+      if (!isLinkApproval(source, record)) continue;
       changed = true;
       const previous = restore[id];
-      if (previous) {
-        approvedSources[id] = previous;
-        if (!approvedToRun.includes(id)) approvedToRun.push(id);
-      } else {
-        delete approvedSources[id];
-        approvedToRun = approvedToRun.filter((approved) => approved !== id);
-      }
+      delete approvedSources[id];
+      approvedToRun = approvedToRun.filter((approved) => approved !== id);
+      if (!previous || !stillMeaningful(previous, record, installedBack, others)) continue;
+      approvedSources[id] = previous;
+      if (runIds.has(id)) approvedToRun.push(id);
     }
     if (changed) this.deps.approvals.write({ approvedToRun, approvedSources });
   }
@@ -699,4 +778,48 @@ async function carriedExtensions(folder: string): Promise<string[]> {
     if (await exists(path.join(dir, entry.name, 'extension.json'))) ids.push(entry.name);
   }
   return ids.sort();
+}
+
+/** Whether an approval was given to this dev link: its folder, inside its own slot. */
+function isLinkApproval(source: ExtensionApprovedSource, record: DevLinkRecord): boolean {
+  return source.devLink === record.target && isContained(path.resolve(source.path), record.slot);
+}
+
+/**
+ * Whether a replaced approval still means what it meant once this dev link is
+ * gone. See `forgetApprovals`.
+ */
+function stillMeaningful(
+  previous: ExtensionApprovedSource,
+  record: DevLinkRecord,
+  installedBack: boolean,
+  others: readonly DevLinkRecord[]
+): boolean {
+  if (isContained(path.resolve(previous.path), record.slot))
+    return installedBack && !previous.devLink;
+  if (previous.devLink) return others.some((other) => isLinkApproval(previous, other));
+  return true;
+}
+
+/**
+ * The approval card text for a planned link. Deterministic, so the same folder
+ * describes the same way at the card and at the retry.
+ */
+function describePlan(preview: DevLinkPreview, replaceInstalled: boolean): string {
+  const lines = [
+    `Folder: ${preview.path}`,
+    `Package: ${preview.name} (${preview.type})`,
+    preview.scope === 'global'
+      ? 'Runs in: every session'
+      : `Runs in: the project at ${path.dirname(path.dirname(path.dirname(preview.slot)))}`,
+  ];
+  if (preview.replaces && replaceInstalled) {
+    lines.push(`Sets aside: the installed copy (v${preview.replaces.version}), not deleted`);
+  }
+  lines.push(
+    `Extensions it may run: ${preview.extensions.length > 0 ? preview.extensions.join(', ') : 'none'}`
+  );
+  lines.push(`It runs on its own: ${describeDisclosedEffects(preview.effects)}`);
+  lines.push('Edits to this folder run without another card.');
+  return lines.join('\n').slice(0, APPROVAL_DETAIL_MAX_LENGTH);
 }

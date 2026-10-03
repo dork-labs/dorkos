@@ -1280,6 +1280,9 @@ export class CapabilityGateRefusal extends Error {
  * @param id - The capability id the caller is about to perform.
  * @param input - Raw input; parsed against the capability's `input` schema.
  * @param context - Who is calling, any approval token, and any trusted marker.
+ * @param options.change - For a capability with `describeApprovalChange`: the
+ *   description the caller computed with it, bound into the approval exactly as
+ *   `registry.invoke` binds it. Required for such a capability.
  * @returns What the gate decided. Proceed only on `allowed`.
  * @throws If no capability is registered under `id`, or if `input` fails schema
  *   validation (a `ZodError`).
@@ -1288,11 +1291,21 @@ export async function authorizeCapability(
   registry: CapabilityRegistry,
   id: string,
   input: unknown,
-  context: CapabilityInvocationContext
+  context: CapabilityInvocationContext,
+  options: { change?: string } = {}
 ): Promise<TierEnforcementDecision> {
   const capability = registry.get(id);
   if (!capability) {
     throw new Error(`Capability registry: no capability registered for id "${id}".`);
+  }
+  // A capability that binds its approval to a description of the change must
+  // be authorized with that description, or a token minted here would bind
+  // the input alone and never match one minted by `registry.invoke`.
+  if (capability.describeApprovalChange && options.change === undefined && !context.trusted) {
+    throw new Error(
+      `Capability gate: "${id}" binds its approval to a described change; pass it as ` +
+        '`options.change` (the same text its `describeApprovalChange` returns).'
+    );
   }
   // The same contradiction `registry.invoke` refuses, refused in this seam too.
   // Unreachable today — this function's only caller cannot produce the pair — but
@@ -1330,6 +1343,7 @@ export async function authorizeCapability(
     permission,
     ...(context.identity ? { identity: context.identity } : {}),
     ...(context.approvalToken ? { approvalToken: context.approvalToken } : {}),
+    ...(options.change !== undefined ? { change: options.change } : {}),
     retryChannel: context.retryChannel ?? 'http-header',
   });
 }

@@ -330,6 +330,51 @@ describe('DevLinkService.link', () => {
     expect(approvals.approvedToRun).toEqual([]);
   });
 
+  it('links exactly what the card described, refusing a folder that changed since', async () => {
+    // Purpose: the yes covers the extensions the card listed; an extension
+    // added between the card and the link must not be approved with it.
+    const svc = service();
+    const shown = await svc.describeApproval({ path: work, scope: 'global' });
+    expect(shown).toContain('Extensions it may run: flow-dash');
+    const added = path.join(work, '.dork', 'extensions', 'sneaky');
+    await mkdir(added, { recursive: true });
+    await writeFile(path.join(added, 'extension.json'), '{"id":"sneaky"}');
+    const err = await refusal(
+      svc.link({ path: work, scope: 'global', via: 'agent-card', expectedChange: shown })
+    );
+    expect(err).toMatchObject({ code: 'dev_link_changed', status: 409 });
+    await expect(lstat(globalSlot())).rejects.toThrow();
+    expect(approvals.approvedToRun).toEqual([]);
+  });
+
+  it('refuses to link a plugin into its own folder', async () => {
+    // Purpose: <repo>/.dork/plugins/<name> pointing at <repo> is a loop every
+    // scanner would follow, finding each extension twice.
+    const err = await refusal(
+      service().preview({ path: work, scope: 'project', projectPath: work })
+    );
+    expect(err).toMatchObject({ code: 'dev_link_path_not_allowed', status: 400 });
+    expect(err.message).toContain("can't be linked into itself");
+  });
+
+  it('rolls back when the link in the slot does not resolve to the approved folder', async () => {
+    // Purpose: nothing is recorded or approved for a slot that points anywhere
+    // but the folder the person approved.
+    await writePackage(globalSlot(), { version: '0.9.2' });
+    const elsewhere = await writePackage(path.join(base, 'elsewhere', 'flow'));
+    const crooked = service({
+      symlink: async (_target, link, type) => symlink(elsewhere, link, type),
+    });
+    const err = await refusal(
+      crooked.link({ path: work, scope: 'global', replaceInstalled: true, via: 'app' })
+    );
+    expect(err.code).toBe('dev_link_slot_is_linked');
+    expect((await lstat(globalSlot())).isDirectory()).toBe(true);
+    await expect(lstat(`${globalSlot()}${MARKETPLACE_DEVLINK_PARKED_MARKER}`)).rejects.toThrow();
+    expect(await readDevLinks(home)).toEqual({ links: [] });
+    expect(approvals.approvedToRun).toEqual([]);
+  });
+
   it('adopts a link made by hand to the same folder without parking anything', async () => {
     // Purpose: `link` on a DOR-2194 hand-built link makes it a dev link in place.
     await symlink(work, globalSlot(), 'dir');
@@ -472,9 +517,19 @@ describe('DevLinkService.unlink', () => {
     expect(await readDevLinks(home)).toEqual({ links: [] });
   });
 
-  it('leaves a parked copy in place when something else holds the slot', async () => {
-    // Purpose: restoring would mean overwriting whatever is in the slot now.
-    await writePackage(globalSlot(), { version: '0.9.2' });
+  it('leaves a parked copy in place when something else holds the slot, and its approval too', async () => {
+    // Purpose: restoring would mean overwriting whatever is in the slot now;
+    // and the installed copy's approval names the slot's path, so putting it
+    // back would approve whatever someone put there instead.
+    await writePackage(globalSlot(), { version: '0.9.2', extensions: ['flow-dash'] });
+    const installedApproval = {
+      path: path.join(globalSlot(), '.dork', 'extensions', 'flow-dash'),
+      plugin: 'flow',
+    };
+    approvals = {
+      approvedToRun: ['flow-dash'],
+      approvedSources: { 'flow-dash': installedApproval },
+    };
     await service().link({ path: work, scope: 'global', replaceInstalled: true, via: 'app' });
     await rm(globalSlot());
     await mkdir(globalSlot());
@@ -484,6 +539,79 @@ describe('DevLinkService.unlink', () => {
       parkedLeftAt: parked,
     });
     expect((await lstat(parked)).isDirectory()).toBe(true);
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
+  });
+
+  it("does not put the installed copy's approval back when the parked copy is gone", async () => {
+    // Purpose: with nothing restored, an approval naming the slot would wait
+    // there for the next thing installed or linked into it.
+    await writePackage(globalSlot(), { version: '0.9.2', extensions: ['flow-dash'] });
+    approvals = {
+      approvedToRun: ['flow-dash'],
+      approvedSources: {
+        'flow-dash': {
+          path: path.join(globalSlot(), '.dork', 'extensions', 'flow-dash'),
+          plugin: 'flow',
+        },
+      },
+    };
+    await service().link({ path: work, scope: 'global', replaceInstalled: true, via: 'app' });
+    await rm(`${globalSlot()}${MARKETPLACE_DEVLINK_PARKED_MARKER}`, { recursive: true });
+    expect(await service().unlink({ name: 'flow', scope: 'global' })).toEqual({
+      restored: 'removed',
+    });
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
+  });
+
+  it('answers only one of two unlinks of the same link', async () => {
+    // Purpose: the record is read again under the lock, so a second unlink
+    // queued behind the first reports there is nothing left to unlink rather
+    // than acting on a record that is gone.
+    await service().link({ path: work, scope: 'global', via: 'app' });
+    const results = await Promise.allSettled([
+      service().unlink({ name: 'flow', scope: 'global' }),
+      service().unlink({ name: 'flow', scope: 'global' }),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(rejected.reason).toMatchObject({ code: 'dev_link_not_found' });
+  });
+
+  it('keeps an approval source that was never approved to run, without approving it', async () => {
+    // Purpose: a source with no run approval is still a record of which copy
+    // an id belongs to; dropping it loses that, and restoring it as approved
+    // would approve something nobody approved.
+    approvals = {
+      approvedToRun: [],
+      approvedSources: { 'flow-dash': { path: '/elsewhere/flow-dash' } },
+    };
+    await service().link({ path: work, scope: 'global', via: 'app' });
+    await service().unlink({ name: 'flow', scope: 'global' });
+    expect(approvals).toEqual({
+      approvedToRun: [],
+      approvedSources: { 'flow-dash': { path: '/elsewhere/flow-dash' } },
+    });
+  });
+
+  it("does not strip another dev link's approval when the same folder is linked twice", async () => {
+    // Purpose: a global link and a project link of one folder share its real
+    // path; unlinking one must forget only the approval given inside its slot.
+    const project = path.join(base, 'proj');
+    await mkdir(project);
+    await service().link({ path: work, scope: 'global', via: 'app' });
+    await service().link({ path: work, scope: 'project', projectPath: project, via: 'app' });
+    const projectApproval = approvals.approvedSources['flow-dash'];
+    expect(projectApproval?.path).toBe(
+      path.join(project, '.dork', 'plugins', 'flow', '.dork', 'extensions', 'flow-dash')
+    );
+    await service().unlink({ name: 'flow', scope: 'global' });
+    expect(approvals.approvedSources['flow-dash']).toEqual(projectApproval);
+    expect(approvals.approvedToRun).toEqual(['flow-dash']);
+
+    // And unlinking the project link does not resurrect the global link's
+    // approval it replaced, because that link is gone.
+    await service().unlink({ name: 'flow', scope: 'project', projectPath: project });
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
   });
 
   it('refuses a name with no dev link', async () => {
