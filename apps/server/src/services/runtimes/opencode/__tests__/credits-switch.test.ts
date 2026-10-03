@@ -48,4 +48,40 @@ describe('a turn while OpenCode waits to switch sides', () => {
     expect(create.mock.calls.length).toBe(createdBefore);
     expect(runtime.hasRunningTurns()).toBe(false);
   });
+
+  it('counts a turn as running while its sidecar is still being prepared', async () => {
+    let busy: () => boolean = () => false;
+    let release: () => void = () => {};
+    const prepared = new Promise<void>((resolve) => (release = resolve));
+    const turnSettled = vi.fn(async () => {});
+    const provider: OpenCodeClientProvider = {
+      getClient: vi.fn(async () => {
+        throw new Error('stop here: only the setup window is under test');
+      }),
+      peekClient: () => null,
+      prepareTurn: async () => {
+        await prepared;
+        return { mode: 'own', fingerprint: 'own', launch: null, models: [] };
+      },
+      setBusyProbe: (probe) => (busy = probe),
+      turnSettled,
+    };
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('s2', { permissionMode: 'default', cwd: '/repo' });
+    const drained = (async () => {
+      try {
+        for await (const _event of runtime.sendMessage('s2', 'hello', { cwd: '/repo' })) {
+          // Drained.
+        }
+      } catch {
+        // The stub client ends the turn; the window before it is what counts.
+      }
+    })();
+    await vi.waitFor(() => expect(busy()).toBe(true));
+    expect(runtime.hasRunningTurns()).toBe(true);
+    release();
+    await drained;
+    expect(busy()).toBe(false);
+    expect(turnSettled).toHaveBeenCalled();
+  });
 });

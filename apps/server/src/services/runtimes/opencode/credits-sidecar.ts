@@ -30,8 +30,14 @@
  *   provider package, the default models and the provider allow list all
  *   outrank a project's `opencode.json` (proved against the installed binary,
  *   `credits-mode.binary.test.ts`).
- * - The token is never in the config, only referenced (`{env:…}`), and rides
- *   the sidecar's environment, where the person's own provider keys are not.
+ * - The token is never in the config, only referenced (`{env:…}`) under a
+ *   variable name drawn fresh for every boot, and rides the sidecar's
+ *   environment, where the person's own provider keys are not. OpenCode
+ *   substitutes `{env:NAME}` and `{file:PATH}` in a project's config too, so
+ *   a fixed name would let a project's remote MCP header carry the token
+ *   away; a project cannot name a variable it never sees. (Reading the boot's
+ *   config with `{env:OPENCODE_CONFIG_CONTENT}` yields the name, not the
+ *   token: substitution is one pass.)
  *
  * What it does not protect against: code the sidecar runs for a project on
  * credits (its plugins, its tools) can read the token, as it could the person's
@@ -50,9 +56,9 @@
  */
 import type { InferenceModel } from '@dork-labs/cloud-api';
 import {
-  CREDITS_TOKEN_ENV_NAME,
   CreditsUnavailableError,
-  creditsEnvFor,
+  creditsTokenEnv,
+  isCreditsTokenVar,
   type CreditsLaunch,
 } from '../../core/cloud/credits-protocols.js';
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
@@ -96,16 +102,19 @@ const PERSON_PROVIDER_NAMES = new Set([
  *
  * @param projected - The environment `runtimeEnvironment` built for the sidecar.
  * @param launch - The credits launch, or `null` when no token is held.
+ * @param tokenVar - This boot's token variable, drawn fresh per boot so a
+ *   project's `opencode.json` cannot name it in an `{env:…}`.
  */
 export function openCodeCreditsEnv(
   projected: Readonly<Record<string, string>>,
-  launch: CreditsLaunch | null
+  launch: CreditsLaunch | null,
+  tokenVar: string
 ): Record<string, string> {
   const kept: Record<string, string> = {};
   for (const [name, value] of Object.entries(projected)) {
-    if (!PERSON_PROVIDER_NAMES.has(name) && name !== CREDITS_TOKEN_ENV_NAME) kept[name] = value;
+    if (!PERSON_PROVIDER_NAMES.has(name) && !isCreditsTokenVar(name)) kept[name] = value;
   }
-  return launch ? { ...kept, ...creditsEnvFor(launch) } : kept;
+  return launch ? { ...kept, ...creditsTokenEnv(launch, tokenVar) } : kept;
 }
 
 /**
@@ -135,10 +144,12 @@ export function creditsModelFor(
  *
  * @param launch - The credits launch, or `null` when no token is held.
  * @param available - The credits models.
+ * @param tokenVar - This boot's token variable, named here and set only in the env.
  */
 export function openCodeCreditsConfig(
   launch: CreditsLaunch | null,
-  available: readonly InferenceModel[]
+  available: readonly InferenceModel[],
+  tokenVar: string
 ): Record<string, unknown> {
   const pinned = { enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID] };
   const fallback = creditsModelFor(undefined, available);
@@ -156,7 +167,7 @@ export function openCodeCreditsConfig(
         // metered from what the endpoint itself reports.
         options: {
           baseURL: launch.baseUrl,
-          apiKey: `{env:${CREDITS_TOKEN_ENV_NAME}}`,
+          apiKey: `{env:${tokenVar}}`,
           includeUsage: true,
         },
         models: Object.fromEntries(
@@ -255,9 +266,10 @@ const SIDE_NAME: Record<OpenCodeSidecarMode, string> = {
 };
 
 /**
- * A turn asked for the other side of OpenCode's Runs on choice while another
- * OpenCode turn is still running on the side it is leaving. Switching restarts
- * OpenCode, which would end that turn, so the switch waits and this turn is
+ * A turn needs OpenCode restarted while another OpenCode turn is still
+ * running: either it asked for the other side of OpenCode's Runs on choice, or
+ * the running sidecar's credits token is too close to expiry to start another
+ * turn on. Restarting would end the running turn, so it waits, and this turn is
  * refused with nothing sent. The message is the sentence a person reads.
  */
 export class OpenCodeSwitchPendingError extends Error {
@@ -275,7 +287,9 @@ export class OpenCodeSwitchPendingError extends Error {
     readonly to: OpenCodeSidecarMode
   ) {
     super(
-      `OpenCode is still finishing a reply on ${SIDE_NAME[from]}, so it can't move to ${SIDE_NAME[to]} yet and nothing was sent. Send this again once that reply is done.`
+      from === to
+        ? 'OpenCode is still finishing a reply, and its DorkOS credits key has to be renewed before it can start another, so nothing was sent. Send this again once that reply is done.'
+        : `OpenCode is still finishing a reply on ${SIDE_NAME[from]}, so it can't move to ${SIDE_NAME[to]} yet and nothing was sent. Send this again once that reply is done.`
     );
     this.name = 'OpenCodeSwitchPendingError';
   }

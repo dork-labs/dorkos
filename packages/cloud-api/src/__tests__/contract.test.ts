@@ -846,9 +846,13 @@ describe('which formats a token is served for', () => {
       served: ['anthropicMessages', 'openaiChat'],
     });
     expect(parsed.success && parsed.data.served).toEqual(['anthropicMessages', 'openaiChat']);
-    expect(
-      contract.InferenceTokenSchema.safeParse({ ...token, served: ['someOtherWire'] }).success
-    ).toBe(false);
+    // A format this package does not know yet never rejects the token: a
+    // service a release ahead must not break every client a release behind.
+    const ahead = contract.InferenceTokenSchema.safeParse({
+      ...token,
+      served: ['aWireFromTheFuture', 'openaiChat'],
+    });
+    expect(ahead.success && ahead.data.served).toEqual(['aWireFromTheFuture', 'openaiChat']);
   });
 });
 

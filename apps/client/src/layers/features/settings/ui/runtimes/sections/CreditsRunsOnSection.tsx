@@ -23,16 +23,28 @@ import { CREDITS_ACCOUNT_LABEL, serverSentence } from '@/layers/shared/lib';
 type RunsOn = 'own-sign-in' | 'credits';
 
 /**
- * Whether the section draws for a runtime: credits can be had here and the
- * server reports this runtime as wired.
+ * Whether credits can be chosen for a runtime right now: credits can be had
+ * here and the server reports this runtime as wired.
+ *
+ * @param report - `GET /api/cloud/credits`, or `undefined` while it loads.
+ * @param type - The runtime.
+ */
+export function creditsReachable(report: CloudCreditsStatus | undefined, type: string): boolean {
+  return (
+    report?.enabled === true && report.runtimes[type as keyof typeof report.runtimes] === 'wired'
+  );
+}
+
+/**
+ * Whether the section draws for a runtime: credits can be chosen for it, or
+ * its recorded choice is already credits, which the person must always be able
+ * to turn off even while credits cannot reach it.
  *
  * @param report - `GET /api/cloud/credits`, or `undefined` while it loads.
  * @param type - The runtime.
  */
 export function creditsRunsOnShown(report: CloudCreditsStatus | undefined, type: string): boolean {
-  return (
-    report?.enabled === true && report.runtimes[type as keyof typeof report.runtimes] === 'wired'
-  );
+  return report?.defaults?.[type]?.runsOn === 'credits' || creditsReachable(report, type);
 }
 
 /**
@@ -67,6 +79,8 @@ export interface CreditsRunsOnSectionViewProps {
   chosenByDorkos: boolean;
   /** The runtime's declared credits scope. */
   scope: RuntimeCreditsSupport['scope'] | undefined;
+  /** Whether credits can be chosen now; `false` leaves only the way back to the own sign-in. */
+  canChooseCredits: boolean;
   /** A write is in flight. */
   pending: boolean;
   /** Why the last change did not take, or `null`. */
@@ -81,6 +95,7 @@ export function CreditsRunsOnSectionView({
   runsOn,
   chosenByDorkos,
   scope,
+  canChooseCredits,
   pending,
   failure,
   onChange,
@@ -105,12 +120,14 @@ export function CreditsRunsOnSectionView({
         <SegmentedControlItem value="own-sign-in">
           <span className="truncate">Your {name} sign-in</span>
         </SegmentedControlItem>
-        <SegmentedControlItem value="credits">
+        <SegmentedControlItem value="credits" disabled={!canChooseCredits && runsOn !== 'credits'}>
           <span className="truncate">{CREDITS_ACCOUNT_LABEL}</span>
         </SegmentedControlItem>
       </SegmentedControl>
       <p className="text-muted-foreground text-xs" data-testid="credits-runs-on-note">
-        {creditsRunsOnNote(name, scope, chosenByDorkos)}
+        {runsOn === 'credits' && !canChooseCredits
+          ? `DorkOS credits can't run ${name} right now, so its new work stops instead of using your own sign-in. Switch to your ${name} sign-in to keep going.`
+          : creditsRunsOnNote(name, scope, chosenByDorkos)}
       </p>
       {failure !== null && (
         <p className="text-destructive text-xs" role="alert">
@@ -141,6 +158,7 @@ export function CreditsRunsOnSection({ type }: { type: string }) {
       runsOn={runsOn}
       chosenByDorkos={runsOn === 'credits' && choice?.chosenBy === 'default'}
       scope={scope}
+      canChooseCredits={creditsReachable(data, type)}
       pending={setDefault.isPending}
       failure={
         setDefault.isError

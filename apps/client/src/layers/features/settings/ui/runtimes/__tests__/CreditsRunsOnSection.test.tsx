@@ -70,6 +70,22 @@ describe('whether the section shows', () => {
     expect(creditsRunsOnShown(undefined, 'opencode')).toBe(false);
   });
 
+  it('stays for a runtime recorded on credits that credits cannot reach, so it can be turned off', async () => {
+    const stranded: CloudCreditsStatus = {
+      ...LINKED,
+      enabled: false,
+      defaults: { codex: { runsOn: 'credits', chosenBy: 'user' } },
+    };
+    expect(creditsRunsOnShown(stranded, 'codex')).toBe(true);
+    const { setCloudCreditsDefault } = renderSection('codex', stranded);
+    expect(await screen.findByRole('radio', { name: 'DorkOS credits' })).toBeChecked();
+    expect(screen.getByTestId('credits-runs-on-note')).toHaveTextContent(
+      "DorkOS credits can't run Codex right now"
+    );
+    await userEvent.click(screen.getByRole('radio', { name: 'Your Codex sign-in' }));
+    await waitFor(() => expect(setCloudCreditsDefault).toHaveBeenCalledWith('codex', false));
+  });
+
   it('draws nothing for a runtime credits cannot reach', async () => {
     // OpenCode's section appearing proves the report has loaded, so Codex's
     // absence is the answer and not a race.

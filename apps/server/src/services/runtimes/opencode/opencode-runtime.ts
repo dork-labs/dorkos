@@ -180,6 +180,12 @@ interface ActiveTurn {
   connectorRevocation?: Promise<void>;
 }
 
+/** One turn that has started and is not yet tracked as active. Identity-compared. */
+interface SettingUpTurn {
+  /** The session the turn belongs to. */
+  sessionId: string;
+}
+
 /**
  * OpenCode runtime implementing the universal AgentRuntime interface.
  */
@@ -198,6 +204,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly approvalGate: ApprovalGateDeps;
   /** One record per in-flight turn (interrupt target). */
   private readonly activeTurns = new Map<string, ActiveTurn>();
+  /** Turns between their first step and being tracked in {@link activeTurns}. */
+  private readonly settingUp = new Set<SettingUpTurn>();
   /** In-flight OpenCode session creations, deduped per DorkOS session id. */
   private readonly binding = new Map<string, Promise<string>>();
   /** OpenCode session id → its `Session.directory` (the demux key half). */
@@ -231,7 +239,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     };
     // A switch between own sign-in and DorkOS credits restarts the sidecar,
     // so it waits while any turn here is running (ADR 261002-221210).
-    this.provider.setBusyProbe?.(() => this.activeTurns.size > 0);
+    this.provider.setBusyProbe?.(() => this.hasRunningTurns());
   }
 
   /** Install the internal connector tool boundary after its listener starts. */
@@ -466,17 +474,23 @@ export class OpenCodeRuntime implements AgentRuntime {
    * refused while this is true (ADR 261002-221210).
    */
   hasRunningTurns(): boolean {
-    return this.activeTurns.size > 0;
+    return this.activeTurns.size > 0 || this.settingUp.size > 0;
   }
 
   /**
    * What the sidecar runs this turn on, made so before anything is sent.
    *
    * @param sessionId - The session about to send.
+   * @param own - This turn's own setting-up marker, which is not "another".
    * @throws {CreditsUnavailableError} On credits, when credits cannot pay.
    */
-  private async prepareSidecar(sessionId: string): Promise<OpenCodeSidecarPlan> {
-    const othersActive = [...this.activeTurns.keys()].some((id) => id !== sessionId);
+  private async prepareSidecar(
+    sessionId: string,
+    own: SettingUpTurn
+  ): Promise<OpenCodeSidecarPlan> {
+    const othersActive =
+      [...this.activeTurns.keys()].some((id) => id !== sessionId) ||
+      [...this.settingUp].some((other) => other !== own);
     if (this.provider.prepareTurn) return this.provider.prepareTurn(othersActive);
     // A provider that cannot be made right for credits never runs a turn the
     // person set to credits: refused, not sent on whatever it holds.
@@ -518,10 +532,18 @@ export class OpenCodeRuntime implements AgentRuntime {
     // **Who pays** (ADR 261001-000811), decided before anything is sent: the
     // sidecar is made right for OpenCode's recorded choice, and a credits turn
     // that credits cannot pay for is REFUSED here, with nothing sent.
+    // Counted as running from here, before the sidecar is prepared: a switch
+    // between own sign-in and credits must not restart the sidecar under a
+    // turn that is still setting up. Released once the turn is tracked as
+    // active below, or when it ends before that.
+    const settingUp: SettingUpTurn = { sessionId };
+    this.settingUp.add(settingUp);
     let plan: OpenCodeSidecarPlan;
     try {
-      plan = await this.prepareSidecar(sessionId);
+      plan = await this.prepareSidecar(sessionId, settingUp);
     } catch (err) {
+      this.settingUp.delete(settingUp);
+      void this.provider.turnSettled?.().catch(() => undefined);
       if (err instanceof OpenCodeSwitchPendingError) {
         yield {
           type: 'error',
@@ -534,9 +556,18 @@ export class OpenCodeRuntime implements AgentRuntime {
       yield refusal;
       return;
     }
-    const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
-    const client = await this.provider.getClient(cwd);
-    const directory = await this.resolveSessionDirectory(client, ocSessionId);
+    let ocSessionId: string;
+    let client: OpencodeClient;
+    let directory: string;
+    try {
+      ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
+      client = await this.provider.getClient(cwd);
+      directory = await this.resolveSessionDirectory(client, ocSessionId);
+    } catch (err) {
+      this.settingUp.delete(settingUp);
+      void this.provider.turnSettled?.().catch(() => undefined);
+      throw err;
+    }
 
     const controller = new AbortController();
     const turn: ActiveTurn = {
@@ -546,6 +577,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       phase: this.connectorRuntimeTools ? 'waiting' : 'setup',
     };
     this.activeTurns.set(sessionId, turn);
+    this.settingUp.delete(settingUp);
     let lease: ConnectorTurnLease | undefined;
     let connectorInjection: ConnectorRuntimeMcpInjection | undefined;
     let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';

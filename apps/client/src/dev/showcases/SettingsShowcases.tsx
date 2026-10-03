@@ -125,6 +125,7 @@ function CreditsRunsOnShowcaseSection() {
             runsOn="own-sign-in"
             chosenByDorkos={false}
             scope="conversation"
+            canChooseCredits
             pending={false}
             failure={null}
             onChange={noop}
@@ -141,6 +142,24 @@ function CreditsRunsOnShowcaseSection() {
             runsOn="credits"
             chosenByDorkos
             scope="runtime"
+            canChooseCredits
+            pending={false}
+            failure={null}
+            onChange={noop}
+          />
+        </div>
+      </ShowcaseDemo>
+      <ShowcaseLabel>
+        Still set to credits, which cannot run it now: only the way back
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <CreditsRunsOnSectionView
+            type="codex"
+            runsOn="credits"
+            chosenByDorkos={false}
+            scope="conversation"
+            canChooseCredits={false}
             pending={false}
             failure={null}
             onChange={noop}
@@ -155,6 +174,7 @@ function CreditsRunsOnShowcaseSection() {
             runsOn="own-sign-in"
             chosenByDorkos={false}
             scope="runtime"
+            canChooseCredits
             pending={false}
             failure="Couldn’t change that. Try again in a moment."
             onChange={noop}

@@ -23,6 +23,10 @@ import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
+import {
+  CREDITS_REFRESH_MARGIN_MS,
+  mintCreditsTokenVar,
+} from '../../core/cloud/credits-protocols.js';
 import { configManager } from '../../core/config-manager.js';
 import { resolveOpenCodeProviderEnv } from '../../core/credential-env.js';
 import { logger, logError } from '../../../lib/logger.js';
@@ -92,11 +96,13 @@ type SidecarPhase = 'idle' | 'starting' | 'ready' | 'stopped';
  * @param plan - What the sidecar boots on.
  * @param password - The per-boot basic-auth secret.
  * @param providerEnv - The person's own provider environment; ignored on credits.
+ * @param tokenVar - The credits token's variable; a fresh one per boot unless a test names it.
  */
 export function buildSidecarSpawnEnv(
   plan: OpenCodeSidecarPlan,
   password: string,
-  providerEnv: Record<string, string>
+  providerEnv: Record<string, string>,
+  tokenVar: string = mintCreditsTokenVar()
 ): Record<string, string> {
   if (plan.mode === 'own') {
     return runtimeEnvironment('opencode', 'turn', {
@@ -105,13 +111,17 @@ export function buildSidecarSpawnEnv(
       OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_SIDECAR_CONFIG),
     });
   }
-  const config = { ...OPENCODE_SIDECAR_CONFIG, ...openCodeCreditsConfig(plan.launch, plan.models) };
+  const config = {
+    ...OPENCODE_SIDECAR_CONFIG,
+    ...openCodeCreditsConfig(plan.launch, plan.models, tokenVar),
+  };
   return openCodeCreditsEnv(
     runtimeEnvironment('opencode', 'turn', {
       OPENCODE_SERVER_PASSWORD: password,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
     }),
-    plan.launch
+    plan.launch,
+    tokenVar
   );
 }
 
@@ -259,14 +269,19 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
       throw new OpenCodeSwitchPendingError(running.mode, plan.mode);
     }
     if (running && running.fingerprint !== plan.fingerprint) {
-      // Kept only for a sidecar that can pay: same side, a token of its own.
-      const keep = running.mode === plan.mode && running.launch !== null && othersActive;
-      if (!keep) {
-        await this.recycle();
-        this.nextPlan = plan;
-      } else {
+      // A sidecar on the same side with other turns running is not restarted
+      // under them. It is kept only while its own token can still pay for a
+      // whole turn (more than the refresh margin left); otherwise this turn
+      // waits for those to finish, refused with nothing sent.
+      if (running.mode === plan.mode && othersActive) {
+        const fresh =
+          running.launch !== null &&
+          Date.parse(running.launch.expiresAt) - Date.now() > CREDITS_REFRESH_MARGIN_MS;
+        if (!fresh) throw new OpenCodeSwitchPendingError(running.mode, plan.mode);
         return running;
       }
+      await this.recycle();
+      this.nextPlan = plan;
     } else if (!running) {
       this.nextPlan = plan;
     }

@@ -25,7 +25,8 @@ import {
   __setCreditsModelsForTests,
   __setCreditsStateForTests,
 } from '../../../core/cloud/credits-inference.js';
-import { CREDITS_TOKEN_ENV_NAME } from '../../../core/cloud/credits-protocols.js';
+/** The token variable these cases name, so the expected shapes can say it. */
+const TOKEN_VAR = 'DORKOS_CREDITS_TOKEN_TEST';
 import { planOpenCodeSidecar, planOpenCodeTurn } from '../credits-mode.js';
 import {
   OPENCODE_CREDITS_PROVIDER_ID,
@@ -47,6 +48,7 @@ const LAUNCH = {
   baseUrl: TOKEN.endpoints.openaiChat,
   token: TOKEN.token,
   tokenId: TOKEN.tokenId,
+  expiresAt: TOKEN.expiresAt,
 };
 const model = (id: string, tools: boolean): InferenceModel => ({
   id,
@@ -73,18 +75,20 @@ describe('the credits sidecar’s environment', () => {
         ANTHROPIC_API_KEY: 'person',
         OPENAI_BASE_URL: 'https://elsewhere.invalid',
         GITHUB_TOKEN: 'gh',
+        DORKOS_CREDITS_TOKEN_OLD: 'an older boot’s token',
       },
-      LAUNCH
+      LAUNCH,
+      TOKEN_VAR
     );
     expect(env).toEqual({
       PATH: '/bin',
       GITHUB_TOKEN: 'gh',
-      [CREDITS_TOKEN_ENV_NAME]: LAUNCH.token,
+      [TOKEN_VAR]: LAUNCH.token,
     });
   });
 
   it('carries no token at all when none is held, so nothing on it can pay', () => {
-    expect(openCodeCreditsEnv({ PATH: '/bin', [CREDITS_TOKEN_ENV_NAME]: 'stale' }, null)).toEqual({
+    expect(openCodeCreditsEnv({ PATH: '/bin', [TOKEN_VAR]: 'stale' }, null, TOKEN_VAR)).toEqual({
       PATH: '/bin',
     });
   });
@@ -92,7 +96,11 @@ describe('the credits sidecar’s environment', () => {
 
 describe('the credits sidecar’s config', () => {
   it('enables the credits provider alone, names the token’s variable, and lists the models', () => {
-    const config = openCodeCreditsConfig(LAUNCH, [model('m-chat', false), model('m-tools', true)]);
+    const config = openCodeCreditsConfig(
+      LAUNCH,
+      [model('m-chat', false), model('m-tools', true)],
+      TOKEN_VAR
+    );
     expect(config).toEqual({
       enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
       model: `${OPENCODE_CREDITS_PROVIDER_ID}/m-tools`,
@@ -103,7 +111,7 @@ describe('the credits sidecar’s config', () => {
           npm: '@ai-sdk/openai-compatible',
           options: {
             baseURL: LAUNCH.baseUrl,
-            apiKey: `{env:${CREDITS_TOKEN_ENV_NAME}}`,
+            apiKey: `{env:${TOKEN_VAR}}`,
             includeUsage: true,
           },
           models: {
@@ -127,10 +135,10 @@ describe('the credits sidecar’s config', () => {
   });
 
   it('is the allow list alone with no token or no models, so no provider can run', () => {
-    expect(openCodeCreditsConfig(null, [model('m', true)])).toEqual({
+    expect(openCodeCreditsConfig(null, [model('m', true)], TOKEN_VAR)).toEqual({
       enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
     });
-    expect(openCodeCreditsConfig(LAUNCH, [])).toEqual({
+    expect(openCodeCreditsConfig(LAUNCH, [], TOKEN_VAR)).toEqual({
       enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
     });
   });

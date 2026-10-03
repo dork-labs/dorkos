@@ -7,7 +7,7 @@ import {
   useSetCreditsDefault,
 } from '@/layers/shared/model';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import { useSessionRuntime } from '@/layers/entities/session';
+import { useSessionRuntime, useStartNewSession } from '@/layers/entities/session';
 
 /** The part code of a turn refused because DorkOS credits could not pay for it. */
 export const CREDITS_UNAVAILABLE_CODE = 'credits_unavailable';
@@ -56,21 +56,31 @@ export function CreditsErrorActions({
   const setRetryAccount = useAppStore((s) => s.setRetryAccount);
   const keepOut = useKeepCreditsOutOfProject();
   const setCreditsDefault = useSetCreditsDefault();
+  const startNewSession = useStartNewSession();
   // A session with no row yet runs on the server's default runtime.
   const listedRuntime = useSessionRuntime(sessionId);
   const capabilities = useCapabilitiesForRuntime(listedRuntime ?? null);
   if (!onRetry) return null;
+  const way = ownSignInWay(capabilities);
+  const label = runtimeLabel ? `your ${runtimeLabel}` : 'your own';
   const useOwnSignIn = () => {
     if (capabilities === undefined) return;
-    if (!capabilities.supportsAccounts) {
-      setCreditsDefault.mutate(
-        { runtime: capabilities.type, useCredits: false },
-        { onSuccess: () => onRetry() }
-      );
+    if (way === 'pick-for-send') {
+      if (sessionId) setRetryAccount({ id: IMPLICIT_ACCOUNT_ID, sessionId });
+      onRetry();
       return;
     }
-    if (sessionId) setRetryAccount({ id: IMPLICIT_ACCOUNT_ID, sessionId });
-    onRetry();
+    setCreditsDefault.mutate(
+      { runtime: capabilities.type, useCredits: false },
+      {
+        // A conversation that started on credits lives where credits keep it
+        // and cannot move; a new one on the person's own sign-in can start.
+        onSuccess: () =>
+          way === 'new-conversation'
+            ? startNewSession(undefined, { runtime: capabilities.type })
+            : onRetry(),
+      }
+    );
   };
   const keepCreditsOut = () => {
     if (!sessionId) return;
@@ -97,7 +107,9 @@ export function CreditsErrorActions({
             // the runtime's capabilities rather than guess.
             disabled={capabilities === undefined || setCreditsDefault.isPending}
           >
-            Use {runtimeLabel ? `your ${runtimeLabel}` : 'your own'} sign-in
+            {way === 'new-conversation'
+              ? `Start a new conversation on ${label} sign-in`
+              : `Use ${label} sign-in`}
           </Button>
         )}
         {sessionId && reason === FOLDER_SIGN_IN_REASON && (
@@ -106,6 +118,12 @@ export function CreditsErrorActions({
           </Button>
         )}
       </div>
+      {sessionId && way === 'whole-runtime' && (
+        <p className="text-muted-foreground text-xs" data-testid="credits-own-sign-in-reach">
+          This moves all {runtimeLabel ?? 'its'} conversations to {label} sign-in, not just this
+          one.
+        </p>
+      )}
       {keepOut.error && (
         <p className="text-muted-foreground text-xs" role="status">
           {keepOut.error.message}
@@ -118,4 +136,23 @@ export function CreditsErrorActions({
       )}
     </div>
   );
+}
+
+/** How the way back to the person's own sign-in works for a runtime. */
+type OwnSignInWay = 'pick-for-send' | 'new-conversation' | 'whole-runtime';
+
+/**
+ * How a runtime goes back to the person's own sign-in after a refused credits
+ * turn: a one-shot account pick for the retried send (a runtime with accounts,
+ * Claude Code); a recorded "no" and a fresh conversation (a conversation-scoped
+ * runtime without accounts, Codex, whose conversation on credits cannot move);
+ * or a recorded "no" that moves the whole runtime, then a retry (OpenCode).
+ *
+ * @param capabilities - The session's runtime capabilities.
+ */
+function ownSignInWay(
+  capabilities: { supportsAccounts: boolean; credits?: { scope: string } } | undefined
+): OwnSignInWay {
+  if (capabilities === undefined || capabilities.supportsAccounts) return 'pick-for-send';
+  return capabilities.credits?.scope === 'conversation' ? 'new-conversation' : 'whole-runtime';
 }

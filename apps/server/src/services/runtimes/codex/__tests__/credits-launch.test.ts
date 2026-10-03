@@ -8,7 +8,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CREDITS_TOKEN_ENV_NAME } from '../../../core/cloud/credits-protocols.js';
+import { isCreditsTokenVar } from '../../../core/cloud/credits-protocols.js';
+
+/** The token variable these cases name, so the expected shapes can say it. */
+const TOKEN_VAR = 'DORKOS_CREDITS_TOKEN_TEST';
 import {
   CODEX_CREDITS_PROVIDER_ID,
   codexCreditsProcessEnv,
@@ -23,6 +26,7 @@ const LAUNCH = {
   baseUrl: 'https://credits.invalid/openai/v1',
   token: 'tok-not-a-secret',
   tokenId: 'it_1',
+  expiresAt: '2999-01-01T00:00:00.000Z',
 };
 
 let dorkHome: string;
@@ -92,8 +96,10 @@ describe('a credits turn’s environment', () => {
         OPENAI_BASE_URL: 'https://elsewhere.invalid',
         DORKOS_AGENT_TOKEN: 'agent',
         GITHUB_TOKEN: 'gh',
+        DORKOS_CREDITS_TOKEN_OLD: 'an older turn’s token',
       },
-      LAUNCH
+      LAUNCH,
+      TOKEN_VAR
     );
     expect(env).toEqual({
       PATH: '/bin',
@@ -101,7 +107,7 @@ describe('a credits turn’s environment', () => {
       DORKOS_AGENT_TOKEN: 'agent',
       GITHUB_TOKEN: 'gh',
       CODEX_HOME: creditsCodexHome(),
-      [CREDITS_TOKEN_ENV_NAME]: LAUNCH.token,
+      [TOKEN_VAR]: LAUNCH.token,
     });
   });
 });
@@ -114,7 +120,8 @@ describe('a credits turn’s client options', () => {
         config: { mcp_servers: { dorkos: { url: 'http://127.0.0.1:1/mcp' } } },
         env: { PATH: '/bin', OPENAI_API_KEY: 'person-key' },
       },
-      LAUNCH
+      LAUNCH,
+      TOKEN_VAR
     );
     expect(options.codexPathOverride).toBe('/bin/codex');
     expect(options.config).toEqual({
@@ -124,7 +131,7 @@ describe('a credits turn’s client options', () => {
         [CODEX_CREDITS_PROVIDER_ID]: {
           name: 'DorkOS credits',
           base_url: LAUNCH.baseUrl,
-          env_key: CREDITS_TOKEN_ENV_NAME,
+          env_key: TOKEN_VAR,
           wire_api: 'responses',
           requires_openai_auth: false,
         },
@@ -135,14 +142,27 @@ describe('a credits turn’s client options', () => {
     expect(options.env).toEqual({
       PATH: '/bin',
       CODEX_HOME: creditsCodexHome(),
-      [CREDITS_TOKEN_ENV_NAME]: LAUNCH.token,
+      [TOKEN_VAR]: LAUNCH.token,
     });
+  });
+
+  it('draw a fresh token variable for every turn unless one is named', () => {
+    const first = withCodexCredits({ env: {} }, LAUNCH);
+    const second = withCodexCredits({ env: {} }, LAUNCH);
+    const varOf = (options: typeof first) =>
+      (options.config?.model_providers as Record<string, { env_key: string }>)[
+        CODEX_CREDITS_PROVIDER_ID
+      ].env_key;
+    expect(isCreditsTokenVar(varOf(first))).toBe(true);
+    expect(varOf(first)).not.toBe(varOf(second));
+    expect(first.env?.[varOf(first)]).toBe(LAUNCH.token);
   });
 
   it('win over a provider any other contributor put in config', () => {
     const options = withCodexCredits(
       { config: { model_provider: 'theirs', model_providers: { theirs: {} } }, env: {} },
-      LAUNCH
+      LAUNCH,
+      TOKEN_VAR
     );
     expect(options.config?.model_provider).toBe(CODEX_CREDITS_PROVIDER_ID);
     expect(Object.keys(options.config?.model_providers as object)).toEqual([

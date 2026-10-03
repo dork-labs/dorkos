@@ -367,8 +367,9 @@ Which provider actually serves a request is not part of this contract and is pub
 
 Each endpoint is a base a client appends its format's own path to. The first two are always
 present; `openaiResponses` is optional. Which formats a token may be used for is its `served`
-list (`InferenceFormatSchema`, named by the endpoint fields), not the endpoints: an endpoint
-being present is not enough. **An absent `served` means `anthropicMessages` only**, which is what
+list (`InferenceFormatSchema` names, the endpoint fields), not the endpoints: an endpoint
+being present is not enough. The list is typed as strings so a format this package does not know
+yet never rejects a token; a caller reads the names it knows and ignores the rest. **An absent `served` means `anthropicMessages` only**, which is what
 every service before the field served, so an old service never starts another format by
 omission. A client one release behind ignores both fields and loses nothing.
 

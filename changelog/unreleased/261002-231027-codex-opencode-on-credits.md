@@ -3,6 +3,7 @@ covers:
   - "feat(credits): run Codex and OpenCode on DorkOS credits once each one's format is served (DOR-2633)"
   - 'fix(credits): offer Codex and OpenCode only once the service lists their format, and never switch OpenCode mid-reply (DOR-2633)'
   - 'refactor(credits): export the one protocol-to-format mapping (DOR-2633)'
+  - 'fix(credits): keep the credits token unnameable by project config, tolerate formats a newer service lists, and never restart OpenCode under a turn (DOR-2633)'
 ---
 
 ### Added
@@ -11,5 +12,6 @@ covers:
 
 ### Fixed
 
-- On credits, Codex and OpenCode never use your own sign-in or keys, and DorkOS never changes your own Codex or OpenCode settings. A project's own settings can't send your credits anywhere else. If credits can't be reached, the chat stops with **Retry** and **Use your Codex sign-in** (or OpenCode) instead of quietly running on your own account (DOR-2633)
+- On credits, Codex and OpenCode never use your own sign-in or keys, and DorkOS never changes your own Codex or OpenCode settings. If credits can't be reached, the chat stops instead of quietly running on your own account: Codex offers **Start a new conversation on your Codex sign-in**, and OpenCode offers **Use your OpenCode sign-in**, which switches all of OpenCode back (DOR-2633)
+- A runtime set to DorkOS credits keeps its **Use credits for** switch even while credits can't run it, so you can always switch it back (DOR-2633)
 - Claude Code on credits now also ignores five more ways another program can hand it an endpoint or a sign-in (DOR-2633)

@@ -52,6 +52,9 @@ export function UseCreditsFor() {
  * @param row - The runtime's row.
  */
 function rowDescription(row: CreditsForRow): string {
+  if (row.on && row.unreachable) {
+    return `${row.name} is set to DorkOS credits, which can't run it right now, so its new work stops instead of using your own sign-in. Turn this off to use its own sign-in.`;
+  }
   if (!row.on) {
     return row.previousSignIn === null
       ? `New ${row.name} work uses its own sign-in.`

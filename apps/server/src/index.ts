@@ -53,8 +53,7 @@ import {
   stopCreditsLifecycle,
 } from './services/core/cloud/credits-inference.js';
 import { readCloudAccountKey } from './services/core/cloud/v1-client.js';
-import { fillCreditsGaps } from './services/core/cloud/credits-defaults.js';
-import { creditsRuntimeViews } from './services/core/cloud/credits-runtimes.js';
+import { fillCreditsGapsOnNewLink } from './services/core/cloud/credits-runtimes.js';
 import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
 import {
   initConfigManager,
@@ -6041,9 +6040,7 @@ async function start() {
   getCloudLinkManager().setOnNewLink(async () => {
     // A new link's token belongs to the account just linked.
     await openCodeServerManager.recycleIfOnCredits();
-    const switched = await fillCreditsGaps(creditsRuntimeViews(), {
-      key: await readCloudAccountKey(),
-    });
+    const switched = await fillCreditsGapsOnNewLink(await readCloudAccountKey());
     if (switched.length > 0) {
       logger.info('[Cloud] New link: these runtimes now run on DorkOS credits by default', {
         runtimes: switched,

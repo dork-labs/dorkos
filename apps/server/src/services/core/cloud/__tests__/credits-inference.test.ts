@@ -32,12 +32,13 @@ import {
   __setCreditsStateForTests,
 } from '../credits-inference.js';
 import {
-  CREDITS_TOKEN_ENV_NAME,
   CreditsUnavailableError,
   asCreditsStopped,
   creditsEndpointFor,
   creditsEnvFor,
   creditsFormatOf,
+  isCreditsTokenVar,
+  mintCreditsTokenVar,
   creditsProtocolServed,
   creditsRefusalEvent,
 } from '../credits-protocols.js';
@@ -149,8 +150,10 @@ describe('a launch that chose credits', () => {
       baseUrl: token.endpoints.openaiChat,
       token: token.token,
       tokenId: token.tokenId,
+      expiresAt: token.expiresAt,
     });
-    expect(creditsEnvFor(launch)).toEqual({ [CREDITS_TOKEN_ENV_NAME]: token.token });
+    // Its token variable is the launch's own to name, never a fixed one.
+    expect(() => creditsEnvFor(launch)).toThrow();
   });
 
   it('is refused for a format the held token does not serve, never sent to another endpoint', async () => {
@@ -236,6 +239,7 @@ describe('the wiring report', () => {
       baseUrl: token.endpoints.anthropicMessages,
       token: token.token,
       tokenId: token.tokenId,
+      expiresAt: token.expiresAt,
     };
     expect(Object.keys(creditsEnvFor(launch))).toEqual([
       'ANTHROPIC_BASE_URL',
@@ -279,6 +283,18 @@ describe('the wiring report', () => {
   });
 });
 
+describe('the variable a Codex or OpenCode token rides in', () => {
+  it('is drawn fresh per launch, so no project config can name it', () => {
+    const first = mintCreditsTokenVar();
+    const second = mintCreditsTokenVar();
+    expect(first).toMatch(/^DORKOS_CREDITS_TOKEN_[0-9A-F]{32}$/);
+    expect(second).not.toBe(first);
+    expect(isCreditsTokenVar(first)).toBe(true);
+    expect(isCreditsTokenVar('DORKOS_CREDITS_TOKEN')).toBe(true);
+    expect(isCreditsTokenVar('DORKOS_AGENT_TOKEN')).toBe(false);
+  });
+});
+
 describe('the one mapping from a runtime protocol to its wire format', () => {
   it('names each protocol by its endpoint field, and these names are stable', () => {
     expect(creditsFormatOf('anthropic-messages')).toBe('anthropicMessages');
@@ -303,6 +319,15 @@ describe('which endpoint serves which format', () => {
     expect(creditsProtocolServed('openai-responses', null)).toBe(false);
     expect(creditsProtocolServed('openai-responses', everyFormat)).toBe(true);
     expect(creditsProtocolServed('openai-chat-completions', everyFormat)).toBe(true);
+    // A format this server does not know is ignored, never a reason to doubt
+    // the ones it does.
+    const ahead = InferenceTokenSchema.parse({
+      ...everyFormatFixture,
+      served: ['aWireFromTheFuture', 'openaiChat'],
+    });
+    expect(creditsProtocolServed('openai-chat-completions', ahead)).toBe(true);
+    expect(creditsProtocolServed('openai-responses', ahead)).toBe(false);
+    expect(creditsProtocolServed('anthropic-messages', ahead)).toBe(false);
     // Listed but with no endpoint to send it to: not served.
     expect(
       creditsProtocolServed('openai-responses', { ...token, served: ['openaiResponses'] })

@@ -13,6 +13,9 @@
  *   sign-in (`auth.json`) and their `OPENAI_BASE_URL` are neither read nor
  *   written by a credits turn. Credits are a model provider entry DorkOS hands
  *   the CLI per turn on its command line, not an edit to anything they wrote.
+ *   The flip side, said plainly: a credits conversation does not get their own
+ *   MCP servers, global `AGENTS.md` or profiles from `~/.codex` either; the
+ *   servers DorkOS injects per turn still ride `--config` as on any turn.
  * - **Nothing else can pay.** The folder holds no sign-in, and a credits turn's
  *   environment carries no `OPENAI_*` or `CODEX_*` name of the person's, so
  *   the only credential the CLI can find is the credits token. A turn that lost
@@ -33,7 +36,8 @@
  * none of it for a folder the home has not trusted, which the credits home
  * never does. The endpoint is not a secret and rides the command line; the
  * token is, and rides only the environment, named in config by
- * {@link CREDITS_TOKEN_ENV_NAME}.
+ * a variable whose name is drawn fresh for every turn
+ * (`mintCreditsTokenVar`), so nothing outside DorkOS can ask for it by name.
  *
  * What this does not protect against is the same as for Claude Code: code the
  * turn runs (an MCP server, a command) can read the token from its own
@@ -46,9 +50,10 @@ import type { CodexOptions } from '@openai/codex-sdk';
 import { logger } from '../../../lib/logger.js';
 import { creditsCodexHome } from './codex-home.js';
 import {
-  CREDITS_TOKEN_ENV_NAME,
   type CreditsLaunch,
-  creditsEnvFor,
+  creditsTokenEnv,
+  isCreditsTokenVar,
+  mintCreditsTokenVar,
 } from '../../core/cloud/credits-protocols.js';
 import { locateCodexRollout } from './turn-context-usage.js';
 
@@ -96,20 +101,23 @@ export function codexRoutesOrPays(name: string): boolean {
 
 /**
  * The process environment of a credits turn: the projected environment minus
- * every name that routes or pays, the credits home, and the token.
+ * every name that routes or pays (and any older credits token), the credits
+ * home, and the token under this turn's own variable.
  *
  * @param projected - The environment `buildCodexOptions` built for the turn.
  * @param launch - The resolved credits launch.
+ * @param tokenVar - This turn's token variable.
  */
 export function codexCreditsProcessEnv(
   projected: Readonly<Record<string, string>>,
-  launch: CreditsLaunch
+  launch: CreditsLaunch,
+  tokenVar: string
 ): Record<string, string> {
   const kept: Record<string, string> = {};
   for (const [name, value] of Object.entries(projected)) {
-    if (!codexRoutesOrPays(name)) kept[name] = value;
+    if (!codexRoutesOrPays(name) && !isCreditsTokenVar(name)) kept[name] = value;
   }
-  return { ...kept, CODEX_HOME: creditsCodexHome(), ...creditsEnvFor(launch) };
+  return { ...kept, CODEX_HOME: creditsCodexHome(), ...creditsTokenEnv(launch, tokenVar) };
 }
 
 /**
@@ -119,15 +127,19 @@ export function codexCreditsProcessEnv(
  * ChatGPT sign-in.
  *
  * @param launch - The resolved credits launch.
+ * @param tokenVar - This turn's token variable.
  */
-export function codexCreditsProviderConfig(launch: CreditsLaunch): Record<string, unknown> {
+export function codexCreditsProviderConfig(
+  launch: CreditsLaunch,
+  tokenVar: string
+): Record<string, unknown> {
   return {
     model_provider: CODEX_CREDITS_PROVIDER_ID,
     model_providers: {
       [CODEX_CREDITS_PROVIDER_ID]: {
         name: 'DorkOS credits',
         base_url: launch.baseUrl,
-        env_key: CREDITS_TOKEN_ENV_NAME,
+        env_key: tokenVar,
         wire_api: 'responses',
         requires_openai_auth: false,
       },
@@ -142,11 +154,16 @@ export function codexCreditsProviderConfig(launch: CreditsLaunch): Record<string
  *
  * @param options - The options `buildCodexOptions` built for the turn.
  * @param launch - The resolved credits launch.
+ * @param tokenVar - The token's variable; a fresh one per turn unless a test names it.
  */
-export function withCodexCredits(options: CodexOptions, launch: CreditsLaunch): CodexOptions {
+export function withCodexCredits(
+  options: CodexOptions,
+  launch: CreditsLaunch,
+  tokenVar: string = mintCreditsTokenVar()
+): CodexOptions {
   return {
     ...options,
-    config: { ...(options.config ?? {}), ...codexCreditsProviderConfig(launch) },
-    env: codexCreditsProcessEnv(options.env ?? {}, launch),
+    config: { ...(options.config ?? {}), ...codexCreditsProviderConfig(launch, tokenVar) },
+    env: codexCreditsProcessEnv(options.env ?? {}, launch, tokenVar),
   } as CodexOptions;
 }

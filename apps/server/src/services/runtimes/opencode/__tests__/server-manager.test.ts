@@ -117,6 +117,12 @@ function spawnEnv(index = 0): Record<string, string | undefined> {
   return options.env;
 }
 
+/** The credits token a spawn env carries, under whatever variable this boot drew. */
+function creditsTokenOf(env: Record<string, string | undefined>): string | undefined {
+  const name = Object.keys(env).find((key) => key.startsWith('DORKOS_CREDITS_TOKEN'));
+  return name === undefined ? undefined : env[name];
+}
+
 /** Boot the manager to the ready state and return the resolved client. */
 async function bootReady(
   manager: OpenCodeServerManager,
@@ -690,6 +696,7 @@ describe('OpenCodeServerManager', () => {
         baseUrl: 'https://credits.invalid/openai/v1',
         token: `tok-${tokenId}`,
         tokenId,
+        expiresAt: '2999-01-01T00:00:00.000Z',
       },
       models: [MODEL],
     });
@@ -717,13 +724,18 @@ describe('OpenCodeServerManager', () => {
       expect(resolveOpenCodeProviderEnv).not.toHaveBeenCalled();
       expect(env.OPENROUTER_API_KEY).toBeUndefined();
       expect(env.OPENAI_API_KEY).toBeUndefined();
-      expect(env.DORKOS_CREDITS_TOKEN).toBe('tok-it_1');
+      // The token rides a variable named fresh for this boot, and the config
+      // names that variable and nothing else of it.
+      const tokenVars = Object.keys(env).filter((name) => name.startsWith('DORKOS_CREDITS_TOKEN'));
+      expect(tokenVars).toHaveLength(1);
+      expect(tokenVars[0]).toMatch(/^DORKOS_CREDITS_TOKEN_[0-9A-F]{32}$/);
+      expect(env[tokenVars[0]!]).toBe('tok-it_1');
       const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!);
       expect(config.permission).toEqual(OPENCODE_SIDECAR_CONFIG.permission);
       expect(config.enabled_providers).toEqual(['dorkos-credits']);
       expect(config.provider['dorkos-credits'].options).toEqual({
         baseURL: 'https://credits.invalid/openai/v1',
-        apiKey: '{env:DORKOS_CREDITS_TOKEN}',
+        apiKey: `{env:${tokenVars[0]}}`,
         includeUsage: true,
       });
       expect(env.OPENCODE_CONFIG_CONTENT).not.toContain('tok-it_1');
@@ -735,7 +747,9 @@ describe('OpenCodeServerManager', () => {
       await bootReady(manager);
       const env = spawnEnv();
       expect(env.OPENROUTER_API_KEY).toBeUndefined();
-      expect(env.DORKOS_CREDITS_TOKEN).toBeUndefined();
+      expect(Object.keys(env).filter((name) => name.startsWith('DORKOS_CREDITS_TOKEN'))).toEqual(
+        []
+      );
       expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).enabled_providers).toEqual([
         'dorkos-credits',
       ]);
@@ -759,7 +773,7 @@ describe('OpenCodeServerManager', () => {
       children[1]!.emitReady();
       await pending;
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
-      expect(spawnEnv(1).DORKOS_CREDITS_TOKEN).toBe('tok-it_1');
+      expect(creditsTokenOf(spawnEnv(1))).toBe('tok-it_1');
     });
 
     it('boots a turn on the plan it asked for, and refuses with nothing spawned when credits cannot pay', async () => {
@@ -780,7 +794,7 @@ describe('OpenCodeServerManager', () => {
       });
       await manager.prepareTurn(false);
       await bootReady(manager);
-      expect(spawnEnv().DORKOS_CREDITS_TOKEN).toBe('tok-it_1');
+      expect(creditsTokenOf(spawnEnv())).toBe('tok-it_1');
     });
 
     it('moves to a new token when idle, and keeps a paying sidecar while other turns run on it', async () => {
@@ -801,7 +815,31 @@ describe('OpenCodeServerManager', () => {
       expect((await manager.prepareTurn(false)).fingerprint).toBe('credits:it_2');
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
       await bootReady(manager);
-      expect(spawnEnv(1).DORKOS_CREDITS_TOKEN).toBe('tok-it_2');
+      expect(creditsTokenOf(spawnEnv(1))).toBe('tok-it_2');
+    });
+
+    it('never keeps a busy sidecar on a token too close to expiry: the turn waits, and says so', async () => {
+      let tokenId = 'it_1';
+      let expiresAt = new Date(Date.now() + 60_000).toISOString();
+      const plan = () => ({
+        ...creditsPlan(tokenId),
+        launch: { ...creditsPlan(tokenId).launch, expiresAt },
+      });
+      const manager = new OpenCodeServerManager({
+        planSidecar: async () => plan(),
+        planTurn: async () => plan(),
+        runsOnCredits: () => true,
+      });
+      const { child } = await bootReady(manager);
+      exitOnKill(child);
+      tokenId = 'it_2';
+      expiresAt = '2999-01-01T00:00:00.000Z';
+      // Another turn runs on the old sidecar, whose token has a minute left.
+      await expect(manager.prepareTurn(true)).rejects.toMatchObject({
+        code: 'runtime_switch_pending',
+        message: expect.stringContaining('credits key has to be renewed'),
+      });
+      expect(child.kill).not.toHaveBeenCalled();
     });
 
     it('recycles at once across sides when nothing else is running', async () => {
@@ -850,7 +888,7 @@ describe('OpenCodeServerManager', () => {
       await manager.turnSettled();
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
       await bootReady(manager);
-      expect(spawnEnv(1).DORKOS_CREDITS_TOKEN).toBe('tok-it_1');
+      expect(creditsTokenOf(spawnEnv(1))).toBe('tok-it_1');
     });
 
     it('drops a credits sidecar on unlink or a new link, and follows a changed choice', async () => {

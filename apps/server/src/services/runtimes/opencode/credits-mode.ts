@@ -42,7 +42,13 @@ export async function planOpenCodeSidecar(): Promise<OpenCodeSidecarPlan> {
       : null;
   const launch: CreditsLaunch | null =
     token && baseUrl
-      ? { protocol: 'openai-chat-completions', baseUrl, token: token.token, tokenId: token.tokenId }
+      ? {
+          protocol: 'openai-chat-completions',
+          baseUrl,
+          token: token.token,
+          tokenId: token.tokenId,
+          expiresAt: token.expiresAt,
+        }
       : null;
   const available = launch ? ((await creditsModels())?.models ?? []) : [];
   return {

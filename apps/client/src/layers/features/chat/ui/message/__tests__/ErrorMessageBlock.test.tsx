@@ -35,6 +35,16 @@ vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOrigi
   useSessions: () => ({ sessions: sessionRows.current, isLoading: sessionsLoading.current }),
 }));
 
+// "Start a new conversation" opens one through the router, which this file
+// does not mount; the spy is what it would have been asked.
+const { startNewSession } = vi.hoisted(() => ({ startNewSession: vi.fn() }));
+vi.mock('@/layers/entities/session/model/navigation/use-session-id', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/layers/entities/session/model/navigation/use-session-id')
+  >()),
+  useStartNewSession: () => startNewSession,
+}));
+
 const SESSION_ID = 'session-1';
 
 /** A session-list row carrying only what the auth card reads off it. */
@@ -1186,6 +1196,15 @@ describe('ErrorMessageBlock rate_limit (spec claude-account-ui §6.7)', () => {
   });
 });
 
+/** A credits report as the default route answers it. */
+const CREDITS_STATUS = {
+  enabled: true,
+  killed: false,
+  linked: true,
+  ready: true,
+  runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'wired' },
+};
+
 describe('ErrorMessageBlock — a turn refused because DorkOS credits could not pay (ADR 261001-000811)', () => {
   afterEach(() => {
     cleanup();
@@ -1237,16 +1256,14 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
 
   // Codex and OpenCode have no account to pick per send: the way back to the
   // person's own sign-in is their recorded "no", then the retry.
-  it('puts a runtime with no account list back on its own sign-in, then retries', async () => {
+  // Codex has no account to pick per send, and a conversation that started on
+  // credits lives where credits keep it: the way back is the person's "no",
+  // then a new conversation on their own sign-in, never a retry refused again.
+  it('starts a new Codex conversation on the person’s own sign-in, never a retry refused again', async () => {
     sessionRows.current = [sessionRow('codex')];
+    startNewSession.mockClear();
     const onRetry = vi.fn();
-    const setCloudCreditsDefault = vi.fn().mockResolvedValue({
-      enabled: true,
-      killed: false,
-      linked: true,
-      ready: true,
-      runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'wired' },
-    });
+    const setCloudCreditsDefault = vi.fn().mockResolvedValue(CREDITS_STATUS);
     renderBlock(
       <ErrorMessageBlock
         message="Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your Codex sign-in."
@@ -1258,13 +1275,43 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
       />,
       { setCloudCreditsDefault }
     );
-    const button = screen.getByRole('button', { name: 'Use your Codex sign-in' });
-    // The runtime's capabilities arrive before the choice is made for it.
+    const button = await screen.findByRole('button', {
+      name: 'Start a new conversation on your Codex sign-in',
+    });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(startNewSession).toHaveBeenCalledWith(undefined, { runtime: 'codex' })
+    );
+    expect(setCloudCreditsDefault).toHaveBeenCalledWith('codex', false);
+    expect(onRetry).not.toHaveBeenCalled();
+    sessionRows.current = [];
+  });
+
+  // OpenCode's choice moves the whole runtime: the card says so, then retries.
+  it('puts all of OpenCode back on its own sign-in, says so, then retries', async () => {
+    sessionRows.current = [sessionRow('opencode')];
+    const onRetry = vi.fn();
+    const setCloudCreditsDefault = vi.fn().mockResolvedValue(CREDITS_STATUS);
+    renderBlock(
+      <ErrorMessageBlock
+        message="Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your OpenCode sign-in."
+        category="execution_error"
+        code="credits_unavailable"
+        onRetry={onRetry}
+        sessionId={SESSION_ID}
+        runtimeLabel="OpenCode"
+      />,
+      { setCloudCreditsDefault }
+    );
+    expect(await screen.findByTestId('credits-own-sign-in-reach')).toHaveTextContent(
+      'This moves all OpenCode conversations to your OpenCode sign-in, not just this one.'
+    );
+    const button = screen.getByRole('button', { name: 'Use your OpenCode sign-in' });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     await waitFor(() => expect(onRetry).toHaveBeenCalledTimes(1));
-    expect(setCloudCreditsDefault).toHaveBeenCalledWith('codex', false);
-    expect(useAppStore.getState().retryAccount).toBeNull();
+    expect(setCloudCreditsDefault).toHaveBeenCalledWith('opencode', false);
     sessionRows.current = [];
   });
 

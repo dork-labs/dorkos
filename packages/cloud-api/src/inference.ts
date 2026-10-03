@@ -85,11 +85,15 @@ export const InferenceTokenSchema = z
     token: SecretValueSchema,
     expiresAt: TimestampSchema,
     endpoints: InferenceEndpointsSchema,
+    // Strings, not `InferenceFormatSchema`: a service a release ahead may list
+    // a format this package does not know yet, and that must never make the
+    // whole token fail to parse. A caller reads the values it knows
+    // (`InferenceFormatSchema.options`) and ignores the rest.
     served: z
-      .array(InferenceFormatSchema)
+      .array(z.string())
       .optional()
       .describe(
-        'The request formats this token may be used for. Absent means `anthropicMessages` only, which is what every service before this field served: an endpoint being present is not enough, the format must be listed here too.'
+        'The request formats this token may be used for, by their `InferenceFormatSchema` names; a value a caller does not know is ignored, never an error. Absent means `anthropicMessages` only, which is what every service before this field served: an endpoint being present is not enough, the format must be listed here too.'
       ),
     limits: InferenceLimitsSchema,
     catalogVersion: z

@@ -61,6 +61,7 @@ import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 import { creditsKilled } from './credits-availability.js';
 import {
+  CREDITS_REFRESH_MARGIN_MS,
   CreditsUnavailableError,
   creditsEndpointFor,
   creditsEnvFor,
@@ -77,8 +78,6 @@ import {
   type CloudV1Context,
 } from './v1-client.js';
 
-/** Mint this long before a token expires. */
-const REFRESH_MARGIN_MS = 5 * 60_000;
 /** Never schedule a refresh sooner than this, so a short token cannot spin. */
 const MIN_REFRESH_DELAY_MS = 30_000;
 /** After a failed refresh, try again this much later. */
@@ -135,7 +134,7 @@ function live(): InferenceToken | null {
 function handoutable(): InferenceToken | null {
   const token = live();
   if (token === null) return null;
-  return Date.parse(token.expiresAt) - now() > REFRESH_MARGIN_MS ? token : null;
+  return Date.parse(token.expiresAt) - now() > CREDITS_REFRESH_MARGIN_MS ? token : null;
 }
 
 /**
@@ -242,7 +241,7 @@ function mintOnce(): Promise<boolean> {
 function scheduleRefresh(token: InferenceToken, delayOverride?: number): void {
   if (!lifecycleRunning) return;
   if (refreshTimer) clearTimeout(refreshTimer);
-  const due = Date.parse(token.expiresAt) - REFRESH_MARGIN_MS - now();
+  const due = Date.parse(token.expiresAt) - CREDITS_REFRESH_MARGIN_MS - now();
   const delay = delayOverride ?? Math.max(MIN_REFRESH_DELAY_MS, due);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
@@ -332,6 +331,20 @@ async function ensureCreditsToken(
     clearTimeout(timer);
   }
   return handoutable();
+}
+
+/**
+ * Wait (bounded) for a live token, minting one if none is held. For a step
+ * that must see which formats the service serves before it decides anything,
+ * such as filling the gaps on a new link.
+ *
+ * @param timeoutMs - How long to wait for the mint.
+ * @returns Whether a live token is held now.
+ */
+export async function awaitCreditsToken(
+  timeoutMs: number = CREDITS_LAUNCH_WAIT_MS
+): Promise<boolean> {
+  return (await ensureCreditsToken(timeoutMs)) !== null;
 }
 
 /** How long an unlink waits for the held token's revoke before it moves on. */
@@ -477,7 +490,13 @@ export async function resolveCreditsLaunch(
   if (baseUrl === null || !creditsProtocolServed(protocol, token)) {
     throw new CreditsUnavailableError('not-supported', runtimeLabel);
   }
-  return { protocol, baseUrl, token: token.token, tokenId: token.tokenId };
+  return {
+    protocol,
+    baseUrl,
+    token: token.token,
+    tokenId: token.tokenId,
+    expiresAt: token.expiresAt,
+  };
 }
 
 /**

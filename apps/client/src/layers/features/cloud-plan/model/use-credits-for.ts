@@ -37,6 +37,12 @@ export interface CreditsForRow {
   /** Whether turning it off from here can work. */
   canTurnOff: boolean;
   /**
+   * Whether credits cannot reach it right now (not linked, switched off, or
+   * its format not served) although its recorded choice is credits: its new
+   * work is refused until the person turns this off or credits come back.
+   */
+  unreachable: boolean;
+  /**
    * The sign-in turning it off goes back to, by the name the person gave it —
    * or `null` when it has none (never a raw folder name), which the row says
    * as "its own sign-in".
@@ -51,10 +57,12 @@ export interface CreditsForRow {
 /**
  * Read the rows from the credits report.
  *
- * Only a runtime the server reports as wired gets a row, and only while credits
- * can be chosen here at all (linked, not switched off): a switch for a runtime
- * credits cannot reach would be a promise about somebody's money that nothing
- * keeps.
+ * A runtime the server reports as wired gets a row while credits can be chosen
+ * here at all (linked, not switched off): a switch for a runtime credits
+ * cannot reach would be a promise about somebody's money that nothing keeps.
+ * The one exception is a runtime whose recorded choice is already credits: it
+ * keeps its row, which can only be turned off, so the person can always get
+ * back to their own sign-in.
  *
  * @param report - `GET /api/cloud/credits`, or `undefined` while it loads.
  * @param previousSignIn - Names the sign-in a runtime goes back to, if known.
@@ -65,24 +73,34 @@ export function readCreditsFor(
   previousSignIn: (runtime: string) => string | null = () => null,
   capabilities: Partial<Record<string, RuntimeCapabilities>> = {}
 ): CreditsForRow[] {
-  if (!report?.enabled) return [];
-  return Object.entries(report.runtimes)
-    .filter(([, state]) => state === 'wired')
-    .map(([runtime]) => {
-      const choice = report.defaults?.[runtime];
-      const on = choice?.runsOn === 'credits';
-      return {
+  if (!report) return [];
+  const runtimes = new Set([
+    ...Object.keys(report.runtimes),
+    ...Object.keys(report.defaults ?? {}),
+  ]);
+  return [...runtimes].flatMap((runtime) => {
+    const choice = report.defaults?.[runtime];
+    const on = choice?.runsOn === 'credits';
+    const reachable =
+      report.enabled && report.runtimes[runtime as keyof typeof report.runtimes] === 'wired';
+    // A runtime recorded on credits keeps its row even when credits cannot
+    // reach it now, so the person can always turn it off.
+    if (!reachable && !on) return [];
+    return [
+      {
         runtime,
         name: getRuntimeDescriptor(runtime).label,
         on,
         chosenBy: on ? (choice?.chosenBy ?? null) : null,
-        canTurnOn: true,
+        canTurnOn: reachable,
         canTurnOff: true,
+        unreachable: !reachable,
         previousSignIn: previousSignIn(runtime),
         scope: capabilities[runtime]?.credits?.scope,
         hasAccountPicks: capabilities[runtime]?.supportsAccounts === true,
-      };
-    });
+      },
+    ];
+  });
 }
 
 /**

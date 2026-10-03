@@ -10,6 +10,7 @@
  *
  * @module services/core/cloud/credits-protocols
  */
+import { randomBytes } from 'node:crypto';
 import type { InferenceFormat, InferenceToken } from '@dork-labs/cloud-api';
 import type { RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -124,13 +125,40 @@ function creditsRefusalSentence(reason: CreditsUnavailableReason, runtimeLabel: 
 }
 
 /**
- * The variable a credits launch carries its token in, for the runtimes whose
- * own config names the variable rather than holding the value (Codex's
- * `env_key`, OpenCode's `{env:…}`). Under `DORKOS_`, so no person's inherit
- * list can ever name it (`isReservedRuntimeEnvName`), and it means nothing to
- * any program but the one DorkOS pointed at it.
+ * The start of the variable a credits launch carries its token in, for the
+ * runtimes whose own config names the variable rather than holding the value
+ * (Codex's `env_key`, OpenCode's `{env:…}`). Under `DORKOS_`, so no person's
+ * inherit list can ever name it (`isReservedRuntimeEnvName`).
+ *
+ * The full name ends in random characters chosen per launch
+ * ({@link mintCreditsTokenVar}). A fixed name would let a project's own
+ * config ask for the token by name: OpenCode substitutes `{env:NAME}` in a
+ * project's `opencode.json`, so a remote MCP server's header could carry it
+ * off the machine. A project cannot guess a name it never sees.
  */
-export const CREDITS_TOKEN_ENV_NAME = 'DORKOS_CREDITS_TOKEN';
+export const CREDITS_TOKEN_ENV_PREFIX = 'DORKOS_CREDITS_TOKEN_';
+
+/** A fresh, unguessable variable name for one launch's credits token. */
+export function mintCreditsTokenVar(): string {
+  return `${CREDITS_TOKEN_ENV_PREFIX}${randomBytes(16).toString('hex').toUpperCase()}`;
+}
+
+/**
+ * Whether a variable name is a credits token's, so an environment built for a
+ * new launch never carries an older one along.
+ *
+ * @param name - The variable's name.
+ */
+export function isCreditsTokenVar(name: string): boolean {
+  return name.toUpperCase().startsWith('DORKOS_CREDITS_TOKEN');
+}
+
+/**
+ * How long before its expiry a token stops being handed to a new launch, or
+ * kept by a long-lived backend for one: a turn started on it could fail
+ * partway through.
+ */
+export const CREDITS_REFRESH_MARGIN_MS = 5 * 60_000;
 
 /**
  * The endpoint the held token may use for one protocol, or `null` when the
@@ -213,24 +241,33 @@ export interface CreditsLaunch {
   token: string;
   /** The token's id, so a long-lived backend can tell when it holds an old one. Not a secret. */
   tokenId: string;
+  /** When the token expires, as the service said at mint. Not a secret. */
+  expiresAt: string;
 }
 
 /**
- * The environment that carries a credits launch's token into its backend.
- * Pure, so the shape is testable without minting.
+ * The environment that carries a Claude Code credits launch's endpoint and
+ * token: its own two variables. Pure, so the shape is testable without
+ * minting.
  *
- * Claude Code reads its endpoint and bearer from its own two variables. Codex
- * and OpenCode name the variable in config DorkOS supplies, and take their
- * endpoint from that config, so they get only {@link CREDITS_TOKEN_ENV_NAME}.
- *
- * @param launch - The resolved credits launch.
+ * @param launch - The resolved credits launch, in the Anthropic format.
+ * @throws {Error} For another format, whose launch names its token variable
+ *   itself ({@link creditsTokenEnv}).
  */
 export function creditsEnvFor(launch: CreditsLaunch): Record<string, string> {
-  switch (launch.protocol) {
-    case 'anthropic-messages':
-      return { ANTHROPIC_BASE_URL: launch.baseUrl, ANTHROPIC_AUTH_TOKEN: launch.token };
-    case 'openai-chat-completions':
-    case 'openai-responses':
-      return { [CREDITS_TOKEN_ENV_NAME]: launch.token };
+  if (launch.protocol !== 'anthropic-messages') {
+    throw new Error('A credits launch in this format names its own token variable.');
   }
+  return { ANTHROPIC_BASE_URL: launch.baseUrl, ANTHROPIC_AUTH_TOKEN: launch.token };
+}
+
+/**
+ * The environment that carries a Codex or OpenCode credits launch's token,
+ * under the variable that launch's config names.
+ *
+ * @param launch - The resolved credits launch.
+ * @param tokenVar - The launch's own variable name ({@link mintCreditsTokenVar}).
+ */
+export function creditsTokenEnv(launch: CreditsLaunch, tokenVar: string): Record<string, string> {
+  return { [tokenVar]: launch.token };
 }
