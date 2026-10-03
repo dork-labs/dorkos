@@ -156,12 +156,26 @@ export function creditsEndpointFor(
   }
 }
 
-/** The `served` name (`InferenceFormatSchema`) of each protocol a runtime declares. */
+/**
+ * The `served` name (`InferenceFormatSchema`) of each protocol a runtime
+ * declares. The one mapping between the two vocabularies: anything that reads
+ * a format off the wire for a runtime goes through {@link creditsFormatOf}.
+ */
 const FORMAT_OF: Record<RuntimeCreditsProtocol, InferenceFormat> = {
   'anthropic-messages': 'anthropicMessages',
   'openai-chat-completions': 'openaiChat',
   'openai-responses': 'openaiResponses',
 };
+
+/**
+ * The wire format (`InferenceFormatSchema`) a runtime's declared protocol is
+ * sent in.
+ *
+ * @param protocol - The protocol a runtime declares.
+ */
+export function creditsFormatOf(protocol: RuntimeCreditsProtocol): InferenceFormat {
+  return FORMAT_OF[protocol];
+}
 
 /** What a token that lists nothing is served for: what every service before the list served. */
 const SERVED_WHEN_UNLISTED: readonly InferenceFormat[] = ['anthropicMessages'];
@@ -181,7 +195,7 @@ export function creditsProtocolServed(
   token: InferenceToken | null
 ): boolean {
   const served = token?.served ?? SERVED_WHEN_UNLISTED;
-  if (!served.includes(FORMAT_OF[protocol])) return false;
+  if (!served.includes(creditsFormatOf(protocol))) return false;
   return token === null || creditsEndpointFor(token.endpoints, protocol) !== null;
 }
 

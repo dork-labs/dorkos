@@ -2,6 +2,7 @@
 covers:
   - "feat(credits): run Codex and OpenCode on DorkOS credits once each one's format is served (DOR-2633)"
   - 'fix(credits): offer Codex and OpenCode only once the service lists their format, and never switch OpenCode mid-reply (DOR-2633)'
+  - 'refactor(credits): export the one protocol-to-format mapping (DOR-2633)'
 ---
 
 ### Added

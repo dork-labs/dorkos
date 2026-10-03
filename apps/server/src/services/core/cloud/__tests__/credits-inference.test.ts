@@ -37,6 +37,7 @@ import {
   asCreditsStopped,
   creditsEndpointFor,
   creditsEnvFor,
+  creditsFormatOf,
   creditsProtocolServed,
   creditsRefusalEvent,
 } from '../credits-protocols.js';
@@ -275,6 +276,14 @@ describe('the wiring report', () => {
     );
     expect(creditsRuntimeWired(SPEAKS_RESPONSES)).toBe(true);
     expect(creditsRuntimeWired({})).toBe(false);
+  });
+});
+
+describe('the one mapping from a runtime protocol to its wire format', () => {
+  it('names each protocol by its endpoint field, and these names are stable', () => {
+    expect(creditsFormatOf('anthropic-messages')).toBe('anthropicMessages');
+    expect(creditsFormatOf('openai-chat-completions')).toBe('openaiChat');
+    expect(creditsFormatOf('openai-responses')).toBe('openaiResponses');
   });
 });
 
