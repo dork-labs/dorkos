@@ -169,7 +169,7 @@ describe('managed operation wire mapping', () => {
     await client.close();
   });
 
-  it('keeps private and display-only operation fields off the wire', async () => {
+  it('sends the display hints and keeps the private revision off the wire', async () => {
     const tenant = await resolveConnectorTenant(db, 'owner-a');
     await registerManagedProvider(db, {
       tenantId: tenant.id,
@@ -220,9 +220,57 @@ describe('managed operation wire mapping', () => {
       const [wire] = page.operations;
       expect(wire).toMatchObject({ operationSlug: 'GMAIL_FETCH_EMAILS', toolkit: 'gmail' });
       expect(wire).not.toHaveProperty('providerRevisionRef');
-      expect(wire).not.toHaveProperty('displayName');
-      expect(wire).not.toHaveProperty('important');
+      expect(wire).toMatchObject({ displayName: 'Fetch emails', important: true });
       expect(JSON.stringify(page)).not.toContain('PRIVATE_REVISION_REF');
     }
+  });
+  it.each([
+    { name: '   ', expected: undefined },
+    { name: `${'a'.repeat(199)}😀`, expected: 'a'.repeat(199) },
+    { name: '  Send email  ', expected: 'Send email' },
+  ])('normalises an operation name: $name', async ({ name, expected }) => {
+    const tenant = await resolveConnectorTenant(db, 'owner-a');
+    await registerManagedProvider(db, {
+      tenantId: tenant.id,
+      providerInstanceId: 'managed:composio',
+      configurationDigest: 'digest-a',
+    });
+    const page = await listManagedOperationSchemas({
+      db,
+      principal: {
+        ownerId: 'owner-a',
+        instanceId: 'instance-a',
+        tenantId: tenant.id,
+        keyId: 'key-a',
+      },
+      rawRequest: { version: 1, toolkit: 'gmail', toolkitVersion: '20260901_00', limit: 100 },
+      signal,
+      operations: operationsClient({
+        listOperationSchemas: async () => ({
+          status: 'ok',
+          page: {
+            truncated: false,
+            operations: [
+              {
+                providerInstanceId: 'managed:composio',
+                toolkit: 'gmail',
+                operationSlug: 'GMAIL_SEND_EMAIL',
+                toolkitVersion: '20260901_00',
+                schemaHash: 'sha256:schema-b',
+                capabilityClassification: 'write' as const,
+                retryPolicy: 'never' as const,
+                inputSchema: { type: 'object' },
+                displayName: name,
+              },
+            ],
+          },
+        }),
+      }),
+    });
+    if (page.status !== 'ok') throw new Error('Expected an operation page.');
+    const [wire] = page.operations;
+    if (expected === undefined) expect(wire).not.toHaveProperty('displayName');
+    else expect(wire!.displayName).toBe(expected);
+    expect(wire).not.toHaveProperty('important');
   });
 });
