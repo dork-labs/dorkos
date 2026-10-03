@@ -228,6 +228,7 @@ describe('private browser package boundaries', () => {
           // Only pinned public types/library imports in these reviewed internal modules.
           // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [
+            'tabs/diagnostics.ts',
             'runtime/public-library.ts',
             'lifecycle/records.ts',
             'lifecycle/ownership.ts',

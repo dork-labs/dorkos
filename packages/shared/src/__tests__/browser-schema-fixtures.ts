@@ -116,3 +116,35 @@ export const correlation = (): SemanticEditCorrelationV1 => ({
     },
   ],
 });
+
+/** Maximum scalar-width fixture, not runtime resource or native capacity evidence. */
+export function maximumDiagnosticSummary() {
+  const max = Number.MAX_SAFE_INTEGER;
+  return {
+    binding: {
+      ...binding,
+      browserId: 'B'.repeat(64),
+      tabId: 'T'.repeat(64),
+      browserGeneration: max,
+      navigationGeneration: max,
+      viewportVersion: max,
+      epoch: max,
+      inputGeneration: max,
+    },
+    interval: { startOffsetMs: max, endOffsetMs: max },
+    entries: Array.from({ length: 256 }, (_, i) => ({
+      sequence: max - 255 + i,
+      atOffsetMs: max,
+      category: 'network' as const,
+      requestId: 'request_9007199254740991',
+      method: 'OPTIONS' as const,
+      resource: 'document' as const,
+      status: 'informational' as const,
+      duration: 'atLeast10s' as const,
+    })),
+    counts: { dropped: max, truncated: max, correlationDropped: max, unmatchedCallbacks: max },
+    terminal: 'counterExhausted' as const,
+    lastAccountedSequence: max,
+    subsequentEventsUncounted: true,
+  };
+}

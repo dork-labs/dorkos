@@ -1,3 +1,4 @@
+import { fakeJPEG } from './parent-fixture.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { BrowserContext } from 'playwright-core';
 import { createBrowserEngine } from '../engine.js';
@@ -289,7 +290,7 @@ it('capture deadline does not certify its still-held Page call settled or releas
   });
   expect((await closing).cleanup).toBe('unverified');
   expect(h.release).not.toHaveBeenCalled();
-  image.resolve(new Uint8Array([1, 2, 3]));
+  image.resolve(fakeJPEG(100, 80));
   await tick();
   expect(
     (
@@ -358,7 +359,7 @@ it('observes screenshot once and refuses its effect after the getter retires thi
   const h = fixture(),
     engine = createBrowserEngine(h.config),
     opened = await engine.open(command);
-  const effect = vi.fn(async () => new Uint8Array([9, 8, 7])),
+  const effect = vi.fn(async () => fakeJPEG(100, 80, 9)),
     getter = vi.fn(() => {
       h.event('close');
       return effect;
@@ -383,14 +384,14 @@ it('invokes a stable captured screenshot method once with its exact Page receive
     opened = await engine.open(command);
   const effect = vi.fn(async function (this: unknown) {
       expect(this).toBe(h.raw);
-      return new Uint8Array([9, 8, 7]);
+      return fakeJPEG(100, 80, 9);
     }),
     getter = vi.fn(() => effect);
   Object.defineProperty(h.raw, 'screenshot', { get: getter });
   const frame = await engine.capture({ kind: 'capture', requestId, binding: opened.tab });
   expect(getter).toHaveBeenCalledTimes(1);
   expect(effect).toHaveBeenCalledTimes(1);
-  expect(frame.bytes).toEqual(new Uint8Array([9, 8, 7]));
+  expect(frame.bytes).toEqual(fakeJPEG(100, 80, 9));
   expect(frame.receipt.binding).toEqual(opened.tab);
   expect(effect).toHaveBeenCalledWith({
     type: 'jpeg',
@@ -405,4 +406,31 @@ it('invokes a stable captured screenshot method once with its exact Page receive
     browserGeneration: 0,
   });
   expect(result.cleanup).toBe('observed');
+});
+it('passes one engine budget to every record before Page registration and isolates another engine', async () => {
+  const registry = await import('../tabs/registry.js');
+  const budgets: unknown[] = [];
+  const original = registry.trackPage;
+  const observed = vi.spyOn(registry, 'trackPage').mockImplementation((record, ...args) => {
+    expect(record.diagnosticsBudget.snapshot().owners).toBe(budgets.length === 1 ? 1 : 0);
+    budgets.push(record.diagnosticsBudget);
+    return original(record, ...args);
+  });
+  const h = fixture(),
+    second = fakePage(),
+    third = fakePage();
+  mocks.launch
+    .mockResolvedValueOnce(h.context)
+    .mockResolvedValueOnce({ ...h.context, pages: () => [second.page] })
+    .mockResolvedValueOnce({ ...h.context, pages: () => [third.page] });
+  const firstEngine = createBrowserEngine(h.config),
+    secondEngine = createBrowserEngine(h.config);
+  await firstEngine.open(command);
+  await firstEngine.open({ ...command, profileId: 'profile_subject_B_000000000000000' });
+  await secondEngine.open(command);
+  expect(observed).toHaveBeenCalledTimes(3);
+  expect(budgets[0]).toBe(budgets[1]);
+  expect(budgets[2]).not.toBe(budgets[0]);
+  await firstEngine.shutdown();
+  await secondEngine.shutdown();
 });

@@ -1,3 +1,7 @@
+import { fakeJPEG } from './parent-fixture.js';
+import { createPointerLedger } from '../tabs/pointer.js';
+import { unavailableDiagnostics } from '../tabs/diagnostics.js';
+import { createDiagnosticsBudget } from '../tabs/diagnostics-budget.js';
 import { createBrowserLifetime } from '../lifecycle/ownership.js';
 import { it, expect, vi } from 'vitest';
 import type { Page } from 'playwright-core';
@@ -12,6 +16,8 @@ import { configuration, requestId } from './lifecycle-fixture.js';
 async function setup(screenshot: () => Promise<Uint8Array>) {
   const config = await configuration('/tmp/browser-test-not-created', 'http://127.0.0.1:9001');
   const tab: TabRecord = {
+    pointer: createPointerLedger(() => (tab.stopped ? null : tab.binding)),
+    diagnostics: unavailableDiagnostics,
     page: {
       screenshot,
       viewportSize: () => ({ width: 10, height: 10 }),
@@ -32,6 +38,7 @@ async function setup(screenshot: () => Promise<Uint8Array>) {
     pending: 0,
   };
   const record: BrowserRecord = {
+    diagnosticsBudget: createDiagnosticsBudget(),
     lifetime: createBrowserLifetime(tab.binding.browserId, 0),
     browserId: tab.binding.browserId,
     browserGeneration: 0,
@@ -78,7 +85,7 @@ it('bounds capture queue and refuses generation changes during the actual byte a
     code: 'CAPTURE_QUEUE_FULL',
   });
   owned.tab.binding = { ...owned.tab.binding, navigationGeneration: 1 };
-  release(new Uint8Array([1, 2, 3]));
+  release(fakeJPEG(10, 10));
   await firstFailure;
   await secondFailure;
   expect(owned.tab.pending).toBe(0);
@@ -103,7 +110,7 @@ it.each(['policy', 'screenshot'] as const)(
 );
 
 it('refuses counter exhaustion without wrapping or leaving its canonical Page active', async () => {
-  const owned = await setup(async () => new Uint8Array([1, 2, 3]));
+  const owned = await setup(async () => fakeJPEG(10, 10));
   const close = vi.fn(async () => {});
   owned.tab.page.close = close;
   owned.tab.captureSequence = Number.MAX_SAFE_INTEGER;

@@ -81,6 +81,7 @@ class EngineInputOwner {
     // All local state and the terminal callback exist before session creation or Page callbacks.
     this.unregister = this.options.stopGate.register(this.initial, () => {
       // Gate.stop is admission only; parent supplies its existing deadline to close.
+      this.options.tab.pointer.invalidate();
       this.retired = true;
     });
     try {
@@ -89,6 +90,7 @@ class EngineInputOwner {
       this.page.on('framenavigated', this.navigation);
       this.acquiring = true;
       this.transport = createPageTransport({
+        pointer: this.options.tab.pointer,
         page: this.page,
         current: () => this.current(),
         readBinding: () => Object.freeze({ ...this.options.tab.binding }),
@@ -143,6 +145,7 @@ class EngineInputOwner {
   }
 
   reset(): Promise<ResetResult> {
+    this.options.tab.pointer.invalidate();
     if (this.resetPromise) return this.resetPromise;
     let resolve!: (result: ResetResult) => void;
     const shared = new Promise<ResetResult>((done) => {
@@ -181,6 +184,7 @@ class EngineInputOwner {
     this.closePromise = new Promise((done) => {
       resolve = done;
     });
+    this.options.tab.pointer.invalidate();
     this.retired = true;
     // stop first; reset on a stopped gate must never manufacture a native release.
     this.options.stopGate.stop();
@@ -252,6 +256,16 @@ class EngineInputOwner {
       )
     )
       throw new Error('INPUT_RESET_BINDING_REFUSED');
-    this.options.tab.binding = Object.freeze({ ...binding });
+    this.options.tab.pointer.invalidate();
+    const published = Object.freeze({ ...binding });
+    this.options.tab.binding = published;
+    const diagnostics = this.options.tab.diagnostics;
+    const refresh = diagnostics.replaceEpoch;
+    if (!this.current() || !sameBinding(this.options.tab.binding, published))
+      throw new Error('INPUT_RESET_BINDING_REFUSED');
+    Reflect.apply(refresh, diagnostics, []);
+    // Observer clock/current callbacks may synchronously retire or replace the canonical target.
+    if (!this.current() || !sameBinding(this.options.tab.binding, published))
+      throw new Error('INPUT_RESET_BINDING_REFUSED');
   }
 }

@@ -175,6 +175,12 @@ const ResultSchema = z.union([
   z
     .object({
       kind: z.literal('frame'),
+      rasterWidth: z.number().int().min(1).max(MAX_COORDINATE),
+      rasterHeight: z.number().int().min(1).max(MAX_COORDINATE),
+      pointer: z
+        .object({ x: coordinate, y: coordinate, revision: CounterSchema })
+        .strict()
+        .nullable(),
       binding: BindingSchema,
       captureSequence: CounterSchema,
       width: z.number().int().min(1).max(MAX_COORDINATE),
@@ -182,7 +188,12 @@ const ResultSchema = z.union([
       byteLength: z.number().int().min(1).max(MAX_FRAME_BYTES),
       format: z.enum(['jpeg', 'png']),
     })
-    .strict(),
+    .strict()
+    .refine(
+      (frame) =>
+        frame.rasterWidth * frame.rasterHeight <= 8 * 1024 * 1024 &&
+        (!frame.pointer || (frame.pointer.x < frame.width && frame.pointer.y < frame.height))
+    ),
 ]);
 
 /** Exact live Page/control identities; IDs alone grant no authority. */

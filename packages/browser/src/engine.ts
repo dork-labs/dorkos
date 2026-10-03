@@ -1,3 +1,4 @@
+import { createDiagnosticsBudget } from './tabs/diagnostics-budget.js';
 import { randomBytes } from 'node:crypto';
 import { validateEngineConfiguration } from './configuration.js';
 import {
@@ -34,6 +35,7 @@ export interface BrowserLifecycleEngine {
 /** Build a private engine; every runtime/root arrives from its trusted caller, never home discovery. */
 export function createBrowserEngine(configuration: unknown): BrowserLifecycleEngine {
   const config = validateEngineConfiguration(configuration);
+  const diagnosticsBudget = createDiagnosticsBudget();
   const records = new Map<string, BrowserRecord>();
   const opening = new Set<Promise<OpenedResult>>();
   let stopping = false;
@@ -77,6 +79,7 @@ export function createBrowserEngine(configuration: unknown): BrowserLifecycleEng
     if (!manager) throw new BrowserLifecycleError('PROCESS_OBSERVATION_UNAVAILABLE');
     const browserId = parseBrowserId(randomBytes(16).toString('base64url'));
     const record: BrowserRecord = {
+      diagnosticsBudget,
       browserId,
       lifetime: createBrowserLifetime(browserId, 0),
       browserGeneration: 0,
@@ -152,6 +155,7 @@ export function createBrowserEngine(configuration: unknown): BrowserLifecycleEng
       if (command.kind !== 'capture') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
       const record = find(command.binding.browserId, command.binding.browserGeneration);
       const tab = record.tabs.get(command.binding.tabId);
+      const page = tab?.page;
       const capture = await ownOperation(record, () => captureTab(config, record, command)).catch(
         (error: unknown) => {
           // The unchanged capture deadline bounds waiting, not an underlying Page effect.
@@ -168,6 +172,9 @@ export function createBrowserEngine(configuration: unknown): BrowserLifecycleEng
       );
       if (
         !tab ||
+        record.status !== 'running' ||
+        tab.stopped ||
+        tab.page !== page ||
         record.tabs.get(command.binding.tabId) !== tab ||
         record.lifetime.gate.stopped ||
         !sameBinding(tab.binding, command.binding)

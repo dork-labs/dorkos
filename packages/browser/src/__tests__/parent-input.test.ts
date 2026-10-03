@@ -1,3 +1,4 @@
+import { fakeJPEG } from './parent-fixture.js';
 import { it, expect, vi, afterEach } from 'vitest';
 import type { CDPSession } from 'playwright-core';
 import { composeInput } from '../lifecycle/input-owner.js';
@@ -105,7 +106,7 @@ it('stale capture cannot publish after reset counter publication before its ACK'
   const refusal = expect(capture).rejects.toMatchObject({ code: 'STALE_BINDING' });
   await tick();
   const reset = resetInput(h.record, old);
-  held.resolve(new Uint8Array([1, 2, 3]));
+  held.resolve(fakeJPEG(100, 80));
   await refusal;
   await reset;
   await closeRecord(c, h.record);
@@ -196,7 +197,7 @@ it('stable viewport capture observes its method once with the exact Page receive
   expect(getter).toHaveBeenCalledTimes(1);
   expect(viewport).toHaveBeenCalledTimes(1);
   expect(frame.receipt).toMatchObject({ width: 100, height: 80, captureSequence: 1 });
-  expect(frame.bytes).toEqual(new Uint8Array([1, 2, 3]));
+  expect(frame.bytes).toEqual(fakeJPEG(100, 80));
 });
 it.each(['getter', 'invoke'] as const)(
   'capture viewport %s canonical replacement cannot publish or advance sequence',
