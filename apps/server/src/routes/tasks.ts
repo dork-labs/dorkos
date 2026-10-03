@@ -60,6 +60,7 @@ import {
   scheduleAccountRefusal,
   scheduleRunFolder,
 } from '../services/tasks/lifecycle/schedule-account-eligibility.js';
+import { scheduleCreditsModelRefusal } from '../services/tasks/lifecycle/schedule-credits-model.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -393,6 +394,22 @@ export function createTasksRouter(
         : null;
     if (accountRefusal) {
       return res.status(409).json(accountRefusal.toBody());
+    }
+    // A schedule whose runs go on DorkOS credits names a model credits serve
+    // (DOR-2636). Asked when the request moves the model, the account or the
+    // runtime, against the schedule as it will be after the write.
+    if (data.model !== undefined || data.account !== undefined || data.runtime !== undefined) {
+      const modelRefusal = await scheduleCreditsModelRefusal({
+        model: data.model !== undefined ? data.model : existing.model,
+        account: data.account !== undefined ? data.account : existing.account,
+        runtime: data.runtime !== undefined ? data.runtime : existing.runtime,
+        folder: scheduleRunFolder(
+          existing.agentId ? meshCore?.getProjectPath(existing.agentId) : null
+        ),
+      });
+      if (modelRefusal) {
+        return res.status(400).json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' });
+      }
     }
 
     // The MERGED schedule is what gets registered, so the merged schedule is

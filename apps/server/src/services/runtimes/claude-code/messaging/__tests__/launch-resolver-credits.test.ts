@@ -20,13 +20,16 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
+import { createCloudApiClient } from '@dork-labs/cloud-api/client';
 import { __setCreditsStateForTests } from '../../../../core/cloud/credits-inference.js';
+import { __resetCreditsModelsForTests } from '../../../../core/cloud/credits-models.js';
 import { creditsClaudeRoot } from '../../credits-root.js';
 import { resolveClaudeCredentialEnv } from '../../../../core/credential-env.js';
 import { configManager } from '../../../../core/config-manager.js';
 
 const link = vi.hoisted(() => ({ linked: true }));
-const creditsModels = vi.hoisted(() => ({ recommended: null as string | null }));
+// What the fake service's `GET /v1/inference/models` answers, or null for no link context.
+const service = vi.hoisted(() => ({ list: null as unknown }));
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
 vi.mock('../context-builder.js', () => ({
@@ -54,13 +57,24 @@ vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
   resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
 }));
-vi.mock('../../../../core/cloud/credits-models.js', () => ({
-  recommendedCreditsModel: vi.fn(async () => creditsModels.recommended),
-}));
 vi.mock('../../../../core/cloud/v1-client.js', () => ({
   isCloudLinked: () => link.linked,
   readCloudInstanceToken: () => (link.linked ? 'ik' : null),
-  captureCloudV1Context: () => null,
+  captureCloudV1Context: () =>
+    service.list === null
+      ? null
+      : {
+          client: createCloudApiClient({
+            baseUrl: 'https://cloud.example.invalid',
+            token: 'ik',
+            fetch: async () =>
+              new Response(JSON.stringify(service.list), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              }),
+          }),
+          isCurrent: () => true,
+        },
   resolveCloudInstanceId: async () => null,
   problemOf: () => null,
 }));
@@ -106,7 +120,8 @@ describe('who pays for a Claude Code turn', () => {
     vi.stubEnv('ANTHROPIC_AUTH_TOKEN', undefined);
     vi.stubEnv('ANTHROPIC_BASE_URL', undefined);
     link.linked = true;
-    creditsModels.recommended = null;
+    service.list = null;
+    __resetCreditsModelsForTests();
     __setCreditsStateForTests({ token, now: liveClock });
   });
 
@@ -273,24 +288,99 @@ describe('who pays for a Claude Code turn', () => {
     expect(JSON.stringify(options?.env)).not.toContain(token.token);
   });
 
-  it('starts a credits session nobody chose a model for on the service’s suggestion', async () => {
-    creditsModels.recommended = 'md_suggested';
-    const { options } = await launch(makeSession(creditsClaudeRoot()));
-    expect(options?.model).toBe('md_suggested');
-  });
+  describe('the model a credits session runs (DOR-2636)', () => {
+    const supports = { tools: true, promptCaching: true, streaming: true, thinking: true };
+    const SAYS_PROTOCOLS = {
+      catalogVersion: 'cv_1',
+      models: [
+        {
+          id: 'md_suggested',
+          displayName: 'Suggested',
+          contextWindow: 200000,
+          maxOutputTokens: 64000,
+          supports,
+          protocols: ['anthropic-messages'],
+          recommendedOn: ['anthropic-messages'],
+        },
+        {
+          id: 'md_served',
+          displayName: 'Served',
+          contextWindow: 200000,
+          maxOutputTokens: 64000,
+          supports,
+          protocols: ['anthropic-messages'],
+        },
+      ],
+    };
+    /** A service older than the `protocols` field. */
+    const SAYS_NOTHING = {
+      catalogVersion: 'cv_0',
+      models: [{ ...SAYS_PROTOCOLS.models[1], protocols: undefined }],
+    };
+    const notices = (events: StreamEvent[]) =>
+      events.filter(
+        (event) =>
+          event.type === 'system_status' &&
+          String((event.data as { message?: string }).message).includes(
+            "DorkOS credits don't cover"
+          )
+      );
 
-  it('keeps a model the person chose on credits, and the CLI default when nothing is suggested', async () => {
-    creditsModels.recommended = 'md_suggested';
-    const chosen = { ...makeSession(creditsClaudeRoot()), model: 'md_chosen' };
-    expect((await launch(chosen)).options?.model).toBe('md_chosen');
-    creditsModels.recommended = null;
-    expect((await launch(makeSession(creditsClaudeRoot()))).options?.model).toBeUndefined();
-  });
+    it('starts a session nobody chose a model for on the service’s suggestion', async () => {
+      service.list = SAYS_PROTOCOLS;
+      const { options } = await launch(makeSession(creditsClaudeRoot()));
+      expect(options?.model).toBe('md_suggested');
+    });
 
-  it('never puts the credits suggestion on a session on its own sign-in', async () => {
-    creditsModels.recommended = 'md_suggested';
-    const own = path.join(dorkHome, 'own-claude');
-    expect((await launch(makeSession(own))).options?.model).toBeUndefined();
+    it('keeps a model credits serve', async () => {
+      service.list = SAYS_PROTOCOLS;
+      const { options, events } = await launch({
+        ...makeSession(creditsClaudeRoot()),
+        model: 'md_served',
+      });
+      expect(options?.model).toBe('md_served');
+      expect(notices(events)).toHaveLength(0);
+    });
+
+    it('runs a pinned model credits do not serve on the suggestion, and says so once', async () => {
+      service.list = SAYS_PROTOCOLS;
+      const pinned = { ...makeSession(creditsClaudeRoot()), model: 'claude-opus-4-6' };
+      const first = await launch(pinned);
+      expect(first.options?.model).toBe('md_suggested');
+      expect(notices(first.events)).toEqual([
+        {
+          type: 'system_status',
+          data: {
+            message:
+              "DorkOS credits don't cover claude-opus-4-6, so this chat runs on Suggested. Pick another model from the model menu.",
+          },
+        },
+      ]);
+      const second = await launch(pinned);
+      expect(second.options?.model).toBe('md_suggested');
+      expect(notices(second.events)).toHaveLength(0);
+    });
+
+    it('changes nothing while the service says nothing about protocols, or cannot be read', async () => {
+      service.list = SAYS_NOTHING;
+      const pinned = { ...makeSession(creditsClaudeRoot()), model: 'claude-opus-4-6' };
+      expect((await launch(pinned)).options?.model).toBe('claude-opus-4-6');
+      expect((await launch(makeSession(creditsClaudeRoot()))).options?.model).toBeUndefined();
+      __resetCreditsModelsForTests();
+      service.list = null;
+      expect((await launch(pinned)).options?.model).toBe('claude-opus-4-6');
+    });
+
+    it('never touches the model of a session on its own sign-in', async () => {
+      service.list = SAYS_PROTOCOLS;
+      const own = { ...makeSession(path.join(dorkHome, 'own-claude')), model: 'claude-opus-4-6' };
+      const { options, events } = await launch(own);
+      expect(options?.model).toBe('claude-opus-4-6');
+      expect(notices(events)).toHaveLength(0);
+      expect(
+        (await launch(makeSession(path.join(dorkHome, 'own-claude')))).options?.model
+      ).toBeUndefined();
+    });
   });
 
   it('keeps the person’s own stored key on their own sign-in', async () => {

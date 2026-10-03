@@ -62,7 +62,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 // The fake service behind `GET /v1/inference/models`, for the credits gate.
-const service = vi.hoisted(() => ({ status: 200 }));
+const service = vi.hoisted(() => ({ status: 200, saysProtocols: true }));
 vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
   const { createCloudApiClient } = await import('@dork-labs/cloud-api/client');
   const supports = { tools: true, promptCaching: true, streaming: true, thinking: true };
@@ -95,10 +95,22 @@ vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
         baseUrl: 'https://cloud.example.invalid',
         token: 'ik',
         fetch: async () =>
-          new Response(JSON.stringify(body), {
-            status: service.status,
-            headers: { 'content-type': 'application/json' },
-          }),
+          new Response(
+            JSON.stringify(
+              service.saysProtocols
+                ? body
+                : {
+                    ...body,
+                    models: body.models.map(
+                      ({ protocols: _p, recommendedOn: _r, ...rest }) => rest
+                    ),
+                  }
+            ),
+            {
+              status: service.status,
+              headers: { 'content-type': 'application/json' },
+            }
+          ),
       }),
       isCurrent: () => true,
     }),
@@ -592,6 +604,7 @@ describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
     registerRuntimes();
     __resetCreditsModelsForTests();
     service.status = 200;
+    service.saysProtocols = true;
     ladderAccount = 'default';
     const base = claude.getCapabilities();
     claude.getCapabilities.mockReturnValue({
@@ -630,9 +643,13 @@ describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
     expect(rowFor(BOUND_CLAUDE)?.model ?? null).toBeNull();
   });
 
-  it('refuses every model while the list cannot be read', async () => {
+  it('refuses every model once the service said and the list cannot be read', async () => {
     bindSession(BOUND_CLAUDE, 'claude-code');
     ladderAccount = 'dorkos-credits';
+    let clock = 0;
+    __resetCreditsModelsForTests({ now: () => clock });
+    expect((await patch(BOUND_CLAUDE, { model: 'md_claude_pick' })).status).toBe(200);
+    clock += 6 * 60_000;
     service.status = 500;
 
     const res = await patch(BOUND_CLAUDE, { model: 'md_claude_pick' });
@@ -656,6 +673,24 @@ describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
     });
     expect(own.status).toBe(400);
     expect(own.body.error).toContain('claude-code');
+  });
+
+  it('judges by the runtime’s own catalog while the service says nothing about protocols', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+    service.saysProtocols = false;
+
+    expect((await patch(BOUND_CLAUDE, { model: CLAUDE_MODEL })).status).toBe(200);
+    // And the runtime's own refusal still stands, as before.
+    expect((await patch(BOUND_CLAUDE, { model: 'md_claude_pick' })).status).toBe(400);
+  });
+
+  it('judges by the runtime’s own catalog when the list cannot be read and the service never said', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+    service.status = 500;
+
+    expect((await patch(BOUND_CLAUDE, { model: CLAUDE_MODEL })).status).toBe(200);
   });
 
   it('keeps the runtime’s own catalog for a session on its own sign-in', async () => {

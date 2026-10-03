@@ -162,8 +162,9 @@ export interface ModelConfigPopoverProps {
   /** Resolved runtime (e.g. `'codex'`) so a not-yet-started session still shows the right models. */
   runtime?: string | null;
   /**
-   * The session runs on DorkOS credits: the server offers only the models
-   * credits serve on this runtime's protocol, and the popover says so.
+   * The session runs on DorkOS credits. When the server answers with the
+   * models credits serve (`paidFromCredits`), the popover says so; its error
+   * line names the credits list.
    */
   onCredits?: boolean;
   /**
@@ -278,9 +279,10 @@ export function ModelConfigPopover({
         data-testid="model-config-popover"
       >
         <ResponsivePopoverTitle>Model</ResponsivePopoverTitle>
-        {onCredits && (
-          // Who pays decides the menu: on credits it is the service's list,
-          // never the runtime's own (DOR-2636).
+        {onCredits && modelList.some((m) => m.paidFromCredits) && (
+          // Who pays decides the menu: on credits, once the service says which
+          // protocols its models are on, it is the service's list (DOR-2636).
+          // Until then the runtime's own menu shows, and says nothing new.
           <p className="text-muted-foreground text-2xs mb-2" data-testid="model-credits-note">
             Models your DorkOS credits cover
           </p>

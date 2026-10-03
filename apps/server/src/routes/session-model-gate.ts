@@ -16,7 +16,7 @@ import {
   creditsAllowedForAgent,
   creditsIsDefaultFor,
 } from '../services/core/cloud/credits-defaults.js';
-import { rejectNonCreditsModel } from '../services/core/cloud/credits-models.js';
+import { judgeCreditsModel } from '../services/core/cloud/credits-models.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { LaunchAccountResolution } from '../services/runtimes/claude-code/claude-config-dir.js';
 
@@ -56,10 +56,12 @@ export interface ModelGateOptions {
  * WRITE PATH ONLY: a session already persisted on a now-absent model still loads
  * and runs, and the picker surfaces it as unavailable so the person can choose.
  *
- * **On DorkOS credits none of that degrading applies.** The catalog is the
- * service's list of what credits serve, filtered by the runtime's protocol,
- * and it convicts: an unlisted model is refused, and so is every model while
- * the list cannot be read (spec `dorkos-account-by-default` §1).
+ * **On DorkOS credits, once the service says which protocols its models are
+ * on, none of that degrading applies.** The catalog is the service's list of
+ * what credits serve, filtered by the runtime's protocol, and it convicts: an
+ * unlisted model is refused, and so is every model while the list cannot be
+ * read (spec `dorkos-account-by-default` §1). A service that says nothing about
+ * protocols leaves this gate exactly as it was.
  *
  * @param runtime - The runtime that owns the session being updated.
  * @param model - The model id the request asks to store.
@@ -70,11 +72,13 @@ export async function rejectUnknownModel(
   model: string,
   options: ModelGateOptions = {}
 ): Promise<string | null> {
-  // On credits the service's list is the catalog, and it does not degrade:
-  // a model it does not list is never stored, and neither is anything while
-  // the list cannot be read (`rejectNonCreditsModel`).
+  // On credits, once the service says which protocols its models are on, its
+  // list is the catalog and it does not degrade: a model it does not list is
+  // never stored, and neither is anything while the list cannot be read. A
+  // service that says nothing leaves the runtime's own check below in charge.
   if (options.onCredits) {
-    return rejectNonCreditsModel(runtime.getCapabilities(), model);
+    const verdict = await judgeCreditsModel(runtime.getCapabilities(), model);
+    if (verdict.judged) return verdict.refusal;
   }
   let offered: ModelOption[];
   try {

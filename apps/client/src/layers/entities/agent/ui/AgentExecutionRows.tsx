@@ -275,7 +275,10 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // On credits, nothing set here and no server default means the service's
   // suggestion, which is what such a session starts on; "Automatic" is the
   // runtime choosing, and that belongs to the person's own sign-ins.
-  const suggestedModel = onCredits ? (models ?? []).find((m) => m.isDefault) : undefined;
+  // Only the credits menu carries that suggestion: while the service says
+  // nothing about protocols, the runtime's own menu and Automatic stand.
+  const creditsMenu = onCredits && (models ?? []).some((m) => m.paidFromCredits);
+  const suggestedModel = creditsMenu ? (models ?? []).find((m) => m.isDefault) : undefined;
   const effectiveModel = agent.model ?? serverDefaultModel ?? suggestedModel?.value ?? null;
   const selectedModel = effectiveModel
     ? (models ?? []).find((m) => m.value === effectiveModel)
@@ -451,7 +454,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
         <ExecutionRow
           label="Model"
           valueLabel={
-            selectedModel?.displayName ?? effectiveModel ?? (onCredits ? 'Default' : 'Automatic')
+            selectedModel?.displayName ?? effectiveModel ?? (creditsMenu ? 'Default' : 'Automatic')
           }
           options={[
             ...(models ?? []).map((m) => ({
@@ -469,7 +472,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           testId="agent-model-row"
           describedBy={catalogIsUnverified ? unverifiedNoticeId : undefined}
           inheritText={
-            onCredits && !serverDefaultModel
+            creditsMenu && !serverDefaultModel
               ? suggestedModel
                 ? `Use the suggested model: ${suggestedModel.displayName}`
                 : 'Use the default model'

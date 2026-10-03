@@ -58,7 +58,7 @@ import {
   CreditsUnavailableError,
   resolveCreditsLaunchEnv,
 } from '../../../core/cloud/credits-inference.js';
-import { recommendedCreditsModel } from '../../../core/cloud/credits-models.js';
+import { resolveCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
@@ -155,6 +155,24 @@ export interface ResolvedLaunch {
  */
 export function resolveEffectiveCwd(opts: MessageSenderOpts, messageOpts?: MessageOpts): string {
   return messageOpts?.cwd || opts.sessionCwd || opts.cwd;
+}
+
+/** Which sessions were already told their model was replaced on credits. */
+const creditsModelSwapsSaid = new Set<string>();
+
+/**
+ * Whether this session still has to be told that credits run another model
+ * than the one it names, recording that it now has been: the notice is said
+ * once per session and model, not on every turn.
+ *
+ * @param sessionId - The session being launched.
+ * @param model - The model it names that credits do not serve.
+ */
+function noteCreditsModelSwap(sessionId: string, model: string): boolean {
+  const key = `${sessionId}\u0000${model}`;
+  if (creditsModelSwapsSaid.has(key)) return false;
+  creditsModelSwapsSaid.add(key);
+  return true;
 }
 
 /**
@@ -580,15 +598,26 @@ export async function resolveLaunch(args: {
   // launched with it.
   sdkOptions.allowDangerouslySkipPermissions = true;
 
-  if (session.model) {
-    sdkOptions.model = session.model;
-  } else if (onCredits) {
-    // Nobody chose a model, so a session on credits starts on the one the
-    // service suggests for this protocol, the same row the model menu marks as
-    // the default (DOR-2636). With no suggestion, or no list to read, the CLI's
-    // own default stands and the endpoint is the one that answers for it.
-    const recommended = await recommendedCreditsModel(CLAUDE_CODE_CAPABILITIES);
-    if (recommended) sdkOptions.model = recommended;
+  // On credits, once the service says which protocols its models are on, a
+  // session runs a model credits serve (DOR-2636): with none chosen it starts on
+  // the service's suggestion (the row the model menu marks as the default), and
+  // one credits do not serve (pinned on an agent, a schedule or the runtime's
+  // default) runs on the suggestion instead, said once in plain words, never a
+  // silent switch and never a failed launch. A service that says nothing about
+  // protocols changes nothing here.
+  const launchModel = onCredits
+    ? await resolveCreditsLaunchModel(CLAUDE_CODE_CAPABILITIES, session.model || undefined)
+    : { model: session.model || undefined };
+  if (launchModel.model) {
+    sdkOptions.model = launchModel.model;
+  }
+  if (launchModel.replaced && noteCreditsModelSwap(sessionId, launchModel.replaced.from)) {
+    statusEvents.push({
+      type: 'system_status',
+      data: {
+        message: `DorkOS credits don't cover ${launchModel.replaced.from}, so this chat runs on ${launchModel.replaced.to}. Pick another model from the model menu.`,
+      },
+    });
   }
   // Resolve thinking + effort together: adaptive-capable models (Opus 4.8/4.7 default
   // their thinking to omitted) get `display: 'summarized'` so thinking text streams;

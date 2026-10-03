@@ -269,14 +269,44 @@ describe('Models Routes', () => {
       expect(own.body.models).toEqual(claudeModels);
     });
 
-    it('fails honest: no menu at all, never the runtime’s own, while the list cannot be read', async () => {
+    it('fails honest: no menu at all, never the runtime’s own, once the service said and the list cannot be read', async () => {
       ladder.accountId = 'dorkos-credits';
+      let clock = 0;
+      __resetCreditsModelsForTests({ now: () => clock });
+      await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);
+      clock += 6 * 60_000;
       service.status = 500;
       const res = await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);
       expect(res.status).toBe(503);
       expect(res.body).toMatchObject({ code: 'CREDITS_MODELS_UNAVAILABLE' });
       expect(res.body.error).toMatch(/couldn't load the models DorkOS credits cover/i);
       expect(claudeRuntime.getSupportedModels).not.toHaveBeenCalled();
+    });
+
+    it('keeps the runtime’s own menu while the service says nothing about protocols', async () => {
+      ladder.accountId = 'dorkos-credits';
+      const saved = service.body;
+      service.body = {
+        catalogVersion: 'cv_0',
+        models: (saved as { models: Record<string, unknown>[] }).models.map(
+          ({ protocols: _p, recommendedOn: _r, ...rest }) => rest
+        ),
+      };
+      try {
+        const res = await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);
+        expect(res.status).toBe(200);
+        expect(res.body.models).toEqual(claudeModels);
+      } finally {
+        service.body = saved;
+      }
+    });
+
+    it('keeps the runtime’s own menu when the list cannot be read and the service never said', async () => {
+      ladder.accountId = 'dorkos-credits';
+      service.status = 500;
+      const res = await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);
+      expect(res.status).toBe(200);
+      expect(res.body.models).toEqual(claudeModels);
     });
 
     it('never treats a runtime that declares no credits protocol as on credits', async () => {

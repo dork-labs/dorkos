@@ -27,9 +27,10 @@ vi.mock('../../services/core/cloud/credits-defaults.js', () => ({
 
 // What DorkOS credits serve, for an agent on credits (DOR-2636).
 vi.mock('../../services/core/cloud/credits-models.js', () => ({
-  rejectNonCreditsModel: vi.fn(async (_capabilities: unknown, model: string) =>
-    model === 'md_served' ? null : "DorkOS credits don't cover that model."
-  ),
+  judgeCreditsModel: vi.fn(async (_capabilities: unknown, model: string) => ({
+    judged: true,
+    refusal: model === 'md_served' ? null : "DorkOS credits don't cover that model.",
+  })),
 }));
 
 // Mock boundary validation — default to passthrough (returns path as-is)

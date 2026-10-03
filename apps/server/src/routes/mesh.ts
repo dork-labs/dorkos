@@ -51,7 +51,7 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaults.js';
-import { rejectNonCreditsModel } from '../services/core/cloud/credits-models.js';
+import { judgeCreditsModel } from '../services/core/cloud/credits-models.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { agentRunsOnCredits } from './session-model-gate.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
@@ -595,7 +595,9 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     const runtime = runtimeRegistry.get(runtimeType);
     const account = accountNamedNow ? (fields.account ?? null) : existing?.account;
     if (!agentRunsOnCredits(runtime, { id, account }, accountNamedNow)) return null;
-    return rejectNonCreditsModel(runtime.getCapabilities(), fields.model as string);
+    // A service that says nothing about protocols judges nothing: as before.
+    const verdict = await judgeCreditsModel(runtime.getCapabilities(), fields.model as string);
+    return verdict.judged ? verdict.refusal : null;
   }
 
   // PATCH /agents/:id — Update agent fields

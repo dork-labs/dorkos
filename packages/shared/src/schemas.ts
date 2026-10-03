@@ -4817,6 +4817,10 @@ export const ModelOptionSchema = z
     supportsStreaming: z.boolean().optional(),
     supportsCodeExecution: z.boolean().optional(),
     isDeprecated: z.boolean().optional(),
+    paidFromCredits: z.boolean().optional().openapi({
+      description:
+        "True when this row comes from the models DorkOS credits serve on the runtime's protocol, so the menu is the credits menu rather than the runtime's own.",
+    }),
   })
   .openapi('ModelOption');
 

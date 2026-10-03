@@ -20,11 +20,11 @@ vi.mock('../../../../lib/logger.js', () => ({
 
 import {
   __resetCreditsModelsForTests,
+  creditsMenuFor,
   creditsModelOptions,
-  creditsModelsFor,
+  judgeCreditsModel,
   readCreditsCatalogWithContext,
-  recommendedCreditsModel,
-  rejectNonCreditsModel,
+  resolveCreditsLaunchModel,
 } from '../credits-models.js';
 
 const CLAUDE = { credits: { protocol: 'anthropic-messages' as const } };
@@ -188,36 +188,76 @@ describe('reading the service’s list', () => {
   });
 });
 
+/** The list a service older than the `protocols` field answers: no protocol said. */
+const OLD_LIST = {
+  catalogVersion: 'cv_0',
+  models: [model('md_one'), model('md_two')],
+};
+
 describe('a runtime on credits, end to end against the fake service', () => {
-  it('lists, suggests and accepts only what credits serve on its protocol', async () => {
+  it('lists, suggests and accepts only what credits serve on its protocol, once the service says', async () => {
     cloud.context = fakeCloud(() => answer(LIST)).context;
-    expect((await creditsModelsFor(CLAUDE))?.map((option) => option.value)).toEqual([
+    const menu = await creditsMenuFor(CLAUDE);
+    expect(menu.kind).toBe('filtered');
+    expect(menu.kind === 'filtered' && menu.models.map((option) => option.value)).toEqual([
       'md_claude_pick',
       'md_both',
     ]);
-    expect(await recommendedCreditsModel(CLAUDE)).toBe('md_claude_pick');
-    expect(await rejectNonCreditsModel(CLAUDE, 'md_both')).toBeNull();
-    expect(await rejectNonCreditsModel(CLAUDE, 'md_gpt_like')).toBe(
-      "DorkOS credits don't cover that model. Pick one from the model menu."
-    );
+    expect(await judgeCreditsModel(CLAUDE, 'md_both')).toEqual({ judged: true, refusal: null });
+    expect(await judgeCreditsModel(CLAUDE, 'md_gpt_like')).toEqual({
+      judged: true,
+      refusal: "DorkOS credits don't cover that model. Pick one from the model menu.",
+    });
     // A model of the runtime's own catalog is not a credits model.
-    expect(await rejectNonCreditsModel(CLAUDE, 'claude-opus-4-6')).not.toBeNull();
+    expect((await judgeCreditsModel(CLAUDE, 'claude-opus-4-6')).judged).toBe(true);
   });
 
-  it('refuses every model, suggests none and offers no menu while the list cannot be read', async () => {
+  it('changes nothing while the service says nothing about protocols', async () => {
+    cloud.context = fakeCloud(() => answer(OLD_LIST)).context;
+    expect(await creditsMenuFor(CLAUDE)).toEqual({ kind: 'unfiltered' });
+    expect(await judgeCreditsModel(CLAUDE, 'claude-opus-4-6')).toEqual({ judged: false });
+    expect(await resolveCreditsLaunchModel(CLAUDE, undefined)).toEqual({ model: undefined });
+    expect(await resolveCreditsLaunchModel(CLAUDE, 'opus')).toEqual({ model: 'opus' });
+  });
+
+  it('changes nothing when the list cannot be read and the service never said', async () => {
     cloud.context = fakeCloud(() => answer({}, 500)).context;
-    expect(await creditsModelsFor(CLAUDE)).toBeNull();
-    expect(await recommendedCreditsModel(CLAUDE)).toBeNull();
-    expect(await rejectNonCreditsModel(CLAUDE, 'md_claude_pick')).toBe(
-      "Couldn't load the models DorkOS credits cover, so the model wasn't changed. Try again."
-    );
+    expect(await creditsMenuFor(CLAUDE)).toEqual({ kind: 'unfiltered' });
+    expect(await judgeCreditsModel(CLAUDE, 'opus')).toEqual({ judged: false });
+  });
+
+  it('refuses every model and offers no menu once the service said and the list cannot be read', async () => {
+    let clock = 0;
+    __resetCreditsModelsForTests({ now: () => clock });
+    let healthy = true;
+    cloud.context = fakeCloud(() => (healthy ? answer(LIST) : answer({}, 500))).context;
+    expect((await creditsMenuFor(CLAUDE)).kind).toBe('filtered');
+    healthy = false;
+    clock += 6 * 60_000;
+    expect(await creditsMenuFor(CLAUDE)).toEqual({ kind: 'unavailable' });
+    expect(await judgeCreditsModel(CLAUDE, 'md_claude_pick')).toEqual({
+      judged: true,
+      refusal:
+        "Couldn't load the models DorkOS credits cover, so the model wasn't changed. Try again.",
+    });
+    // The launch never fails over it: the session's own model stands.
+    expect(await resolveCreditsLaunchModel(CLAUDE, 'md_both')).toEqual({ model: 'md_both' });
+  });
+
+  it('launches a model credits serve: the suggestion for none, and in place of one not served', async () => {
+    cloud.context = fakeCloud(() => answer(LIST)).context;
+    expect(await resolveCreditsLaunchModel(CLAUDE, undefined)).toEqual({ model: 'md_claude_pick' });
+    expect(await resolveCreditsLaunchModel(CLAUDE, 'md_both')).toEqual({ model: 'md_both' });
+    expect(await resolveCreditsLaunchModel(CLAUDE, 'opus')).toEqual({
+      model: 'md_claude_pick',
+      replaced: { from: 'opus', to: 'The service’s own name' },
+    });
   });
 
   it('offers nothing on credits to a runtime that declares no credits protocol', async () => {
     const service = fakeCloud(() => answer(LIST));
     cloud.context = service.context;
-    expect(await creditsModelsFor({})).toEqual([]);
-    expect(await rejectNonCreditsModel({}, 'md_gpt_like')).not.toBeNull();
+    expect(await creditsMenuFor({})).toEqual({ kind: 'unfiltered' });
     expect(service.fetch).not.toHaveBeenCalled();
   });
 });

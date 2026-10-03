@@ -5,8 +5,8 @@
  * The list is the service's own: `GET /v1/inference/models` names every model
  * the account may route to, with the protocols each one is offered on and the
  * one the service suggests starting with. Nothing here invents a model, names
- * one, or keeps a local list: a model credits do not serve is never offered,
- * and nothing is offered while the list cannot be read.
+ * one, or keeps a local list: once the service says which protocols its
+ * models are on, a model credits do not serve there is never offered.
  *
  * ## Filtered by protocol, never by runtime
  *
@@ -17,14 +17,16 @@
  * `openai-chat`. A runtime that joins credits later brings its protocol and
  * gets its list with no change here.
  *
- * ## Fail honest
+ * ## Only once the service says, and fail honest
  *
- * {@link readCreditsCatalog} answers `null` when the list cannot be had (not
- * linked, credits switched off, the service unreachable or answering something
- * that does not parse). The model menu then says the models could not be
- * loaded and keeps the runtime's default; the model gate refuses every model,
- * because a choice it cannot check against the service's list is a choice it
- * cannot honour.
+ * A service older than the `protocols` field lists models without saying
+ * which protocol each is on. Then nothing here changes anything: a runtime on
+ * credits keeps its own menu, catalog check and default, exactly as before
+ * this module existed ({@link CreditsMenu} `unfiltered`). Once the service
+ * says, the list decides, and a list that cannot be read then is
+ * `unavailable`: the menu says the models could not be loaded and keeps the
+ * session's model, and the model gate refuses, because offering the runtime's
+ * own models would offer models credits are known not to serve.
  *
  * @module services/core/cloud/credits-models
  */
@@ -49,6 +51,12 @@ const CATALOG_WAIT_MS = 5_000;
 let cached: { models: InferenceModel[]; readAt: number; isCurrent: () => boolean } | null = null;
 /** The one read in flight, shared by every caller that arrives while it runs. */
 let inflight: Promise<InferenceModel[] | null> | null = null;
+/**
+ * Whether the last list the service answered said which protocols its models
+ * are on. Kept past a failed read, so an outage after the service has said
+ * does not quietly reopen the runtime's whole menu.
+ */
+let serviceSaidProtocols = false;
 /** Injectable clock so the cache window is testable without waiting. */
 let now: () => number = () => Date.now();
 
@@ -61,7 +69,13 @@ let now: () => number = () => Date.now();
 export function __resetCreditsModelsForTests(opts: { now?: () => number } = {}): void {
   cached = null;
   inflight = null;
+  serviceSaidProtocols = false;
   now = opts.now ?? (() => Date.now());
+}
+
+/** Whether a list says which protocols any of its models are on. */
+function saysProtocols(models: readonly InferenceModel[]): boolean {
+  return models.some((model) => model.protocols !== undefined);
 }
 
 /**
@@ -96,6 +110,7 @@ export async function readCreditsCatalogWithContext(
       // to nobody, so it is neither kept nor answered.
       if (!context.isCurrent()) return null;
       cached = { models: body.models, readAt: now(), isCurrent: context.isCurrent };
+      serviceSaidProtocols = saysProtocols(body.models);
       return body.models;
     } catch (error) {
       // Status and code only: a schema error can quote what the service sent.
@@ -159,59 +174,105 @@ export function creditsModelOptions(
     maxOutputTokens: model.maxOutputTokens,
     supportsToolUse: model.supports.tools,
     supportsStreaming: model.supports.streaming,
+    paidFromCredits: true,
   }));
 }
 
 /**
- * The menu a runtime on credits offers, or `null` when the service's list
- * cannot be had. A runtime that declares no credits protocol has nothing to
- * offer on credits, so its menu is empty.
+ * What a runtime on credits is offered, by what the service has said.
+ *
+ * - `filtered` — the service says which protocols its models are on, so the
+ *   menu is exactly the models credits serve on the runtime's protocol.
+ * - `unfiltered` — the service says nothing about protocols (a service older
+ *   than the `protocols` field), or nothing has been said yet and the list
+ *   cannot be read. Everything behaves as it did before credits had a menu:
+ *   the runtime's own models, its own catalog check, its own default. A
+ *   filter the service has never asked for must never take a model away.
+ * - `unavailable` — the service HAS said which protocols its models are on,
+ *   and the list cannot be read now. Offering the runtime's own models then
+ *   would offer models credits are known not to serve.
+ */
+export type CreditsMenu =
+  { kind: 'filtered'; models: ModelOption[] } | { kind: 'unfiltered' } | { kind: 'unavailable' };
+
+/**
+ * The menu a runtime on credits is offered; see {@link CreditsMenu}.
  *
  * @param capabilities - The runtime's declared capabilities.
  */
-export async function creditsModelsFor(
+export async function creditsMenuFor(
   capabilities: Pick<RuntimeCapabilities, 'credits'>
-): Promise<ModelOption[] | null> {
+): Promise<CreditsMenu> {
   const protocol = capabilities.credits?.protocol;
-  if (protocol === undefined) return [];
+  if (protocol === undefined) return { kind: 'unfiltered' };
   const models = await readCreditsCatalog();
-  return models === null ? null : creditsModelOptions(models, protocol);
+  if (models === null)
+    return serviceSaidProtocols ? { kind: 'unavailable' } : { kind: 'unfiltered' };
+  if (!saysProtocols(models)) return { kind: 'unfiltered' };
+  return { kind: 'filtered', models: creditsModelOptions(models, protocol) };
 }
 
 /**
- * The model a launch on credits starts with when nobody chose one: the
- * service's suggestion for the runtime's protocol, or `null` when the service
- * suggests none or the list cannot be had (the runtime's own default then
- * stands).
+ * The model a launch on credits runs, and whether it had to replace the one
+ * the session named (spec `dorkos-account-by-default` §1, DOR-2636).
+ *
+ * Only when the service says which protocols its models are on: a session
+ * with no model starts on the service's suggestion, and one whose model
+ * credits do not serve (pinned on an agent, a schedule or the runtime's
+ * default before it ran on credits) runs on the suggestion instead, with
+ * `replaced` naming both so the person is told. Never a failed launch over a
+ * model, and never a change while the service says nothing about protocols.
  *
  * @param capabilities - The launching runtime's declared capabilities.
+ * @param model - The model the session names, if any.
  */
-export async function recommendedCreditsModel(
-  capabilities: Pick<RuntimeCapabilities, 'credits'>
-): Promise<string | null> {
-  const options = await creditsModelsFor(capabilities);
-  return options?.find((option) => option.isDefault)?.value ?? null;
+export async function resolveCreditsLaunchModel(
+  capabilities: Pick<RuntimeCapabilities, 'credits'>,
+  model: string | undefined
+): Promise<{ model: string | undefined; replaced?: { from: string; to: string } }> {
+  const menu = await creditsMenuFor(capabilities);
+  if (menu.kind !== 'filtered') return { model };
+  if (model !== undefined && menu.models.some((option) => option.value === model)) {
+    return { model };
+  }
+  const pick = menu.models.find((option) => option.isDefault) ?? menu.models[0];
+  if (!pick) return { model };
+  if (model === undefined) return { model: pick.value };
+  return { model: pick.value, replaced: { from: model, to: pick.displayName } };
 }
 
+/** How the credits list judged a model; see {@link judgeCreditsModel}. */
+export type CreditsModelVerdict = { judged: false } | { judged: true; refusal: string | null };
+
 /**
- * Whether a session on credits may be set to a model, as the sentence to
- * refuse with, or `null` when credits serve it on this runtime's protocol.
+ * Whether a session, agent or schedule on credits may be set to a model.
  *
- * Fails closed: while the service's list cannot be read, every model is
- * refused, because a choice that cannot be checked against what credits serve
- * cannot be promised to run.
+ * `judged: false` while the service says nothing about protocols: the caller
+ * then judges exactly as it did before (the runtime's own catalog, or no
+ * check at all). Once the service has said, the list convicts: a model it
+ * does not list on the runtime's protocol is refused, and so is every model
+ * while the list cannot be read.
  *
- * @param capabilities - The session's runtime's declared capabilities.
+ * @param capabilities - The runtime's declared capabilities.
  * @param model - The model id the request asks to store.
  */
-export async function rejectNonCreditsModel(
+export async function judgeCreditsModel(
   capabilities: Pick<RuntimeCapabilities, 'credits'>,
   model: string
-): Promise<string | null> {
-  const options = await creditsModelsFor(capabilities);
-  if (options === null) {
-    return "Couldn't load the models DorkOS credits cover, so the model wasn't changed. Try again.";
+): Promise<CreditsModelVerdict> {
+  const menu = await creditsMenuFor(capabilities);
+  if (menu.kind === 'unfiltered') return { judged: false };
+  if (menu.kind === 'unavailable') {
+    return {
+      judged: true,
+      refusal:
+        "Couldn't load the models DorkOS credits cover, so the model wasn't changed. Try again.",
+    };
   }
-  if (options.some((option) => option.value === model)) return null;
-  return "DorkOS credits don't cover that model. Pick one from the model menu.";
+  return {
+    judged: true,
+    refusal: menu.models.some((option) => option.value === model)
+      ? null
+      : "DorkOS credits don't cover that model. Pick one from the model menu.",
+  };
 }

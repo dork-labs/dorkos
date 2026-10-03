@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import { creditsModelsFor } from '../services/core/cloud/credits-models.js';
+import { creditsMenuFor } from '../services/core/cloud/credits-models.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { sessionRunsOnCredits } from './session-model-gate.js';
 
@@ -25,15 +25,16 @@ function queryString(value: unknown): string | undefined {
  * 3. Else the default runtime — the legitimate cold-discovery path for screens
  *    without session context (onboarding, first-run, agent creation).
  *
- * **On DorkOS credits the menu is the service's** (DOR-2636). A session that
- * runs on credits (its bound account; else the person's pick, `account`; else
- * the ladder for `cwd`), or a caller asking about credits directly
- * (`account=dorkos-credits` with no session, as the agent settings do), gets
- * only the models credits serve on the runtime's protocol, the service's
- * recommended one first. When that list cannot be read the answer is 503 and
- * no menu at all: offering the runtime's own models would offer models credits
- * may not serve. With no session and no `account`, the answer is always the
- * runtime's own catalog, because that is the menu for every sign-in.
+ * **On DorkOS credits the menu is the service's, once it says which protocols
+ * its models are on** (DOR-2636). A session that runs on credits (its bound
+ * account; else the person's pick, `account`; else the ladder for `cwd`), or a
+ * caller asking about credits directly (`account=dorkos-credits` with no
+ * session, as the agent settings do), gets only the models credits serve on
+ * the runtime's protocol, the service's recommended one first. When the
+ * service has said and the list cannot be read now, the answer is 503 and no
+ * menu at all. A service that says nothing about protocols leaves the
+ * runtime's own menu in place, as before. With no session and no `account`,
+ * the answer is always the runtime's own catalog, the menu every sign-in shares.
  */
 router.get('/', async (req, res) => {
   const runtimeParam = queryString(req.query.runtime);
@@ -58,14 +59,15 @@ router.get('/', async (req, res) => {
     ? await sessionRunsOnCredits(runtime, sessionId, { accountHint: account, cwd })
     : account === CREDITS_ACCOUNT_ID && runtime.getCapabilities().credits !== undefined;
   if (onCredits) {
-    const models = await creditsModelsFor(runtime.getCapabilities());
-    if (models === null) {
+    const menu = await creditsMenuFor(runtime.getCapabilities());
+    if (menu.kind === 'unavailable') {
       return res.status(503).json({
         error: "Couldn't load the models DorkOS credits cover. Try again in a moment.",
         code: 'CREDITS_MODELS_UNAVAILABLE',
       });
     }
-    return res.json({ models });
+    if (menu.kind === 'filtered') return res.json({ models: menu.models });
+    // The service says nothing about protocols: the runtime's own menu, as before.
   }
 
   const models = await runtime.getSupportedModels();

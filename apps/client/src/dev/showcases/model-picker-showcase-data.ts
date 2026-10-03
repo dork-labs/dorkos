@@ -172,6 +172,7 @@ export const CREDITS_CATALOG: ModelOption[] = [
     isDefault: true,
     contextWindow: 200_000,
     supportsToolUse: true,
+    paidFromCredits: true,
   },
   {
     value: 'credits-other',
@@ -179,5 +180,6 @@ export const CREDITS_CATALOG: ModelOption[] = [
     description: 'Paid from DorkOS credits',
     contextWindow: 128_000,
     supportsToolUse: true,
+    paidFromCredits: true,
   },
 ];

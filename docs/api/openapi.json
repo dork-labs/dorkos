@@ -7626,6 +7626,10 @@
           },
           "isDeprecated": {
             "type": "boolean"
+          },
+          "paidFromCredits": {
+            "type": "boolean",
+            "description": "True when this row comes from the models DorkOS credits serve on the runtime's protocol, so the menu is the credits menu rather than the runtime's own."
           }
         },
         "required": [

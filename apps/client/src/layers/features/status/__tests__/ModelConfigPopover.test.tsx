@@ -439,7 +439,11 @@ describe('ModelConfigPopover', () => {
   });
 
   describe('on DorkOS credits', () => {
-    it('says the menu is the models credits cover, and only on credits', () => {
+    it('says the menu is the models credits cover, and only for the credits menu', () => {
+      mockUseModels.mockImplementation(() => ({
+        ...mockUseModelsReturn,
+        data: mockModels.map((m) => ({ ...m, paidFromCredits: true })) as unknown[],
+      }));
       const { unmount } = render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
       expect(screen.getByTestId('model-credits-note')).toHaveTextContent(
         'Models your DorkOS credits cover'
@@ -447,6 +451,12 @@ describe('ModelConfigPopover', () => {
       unmount();
       render(<ModelConfigPopover {...defaultProps()} />);
       expect(screen.queryByTestId('model-credits-note')).not.toBeInTheDocument();
+    });
+
+    it('says nothing new while the service says nothing about protocols (the runtime’s own menu)', () => {
+      render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
+      expect(screen.queryByTestId('model-credits-note')).not.toBeInTheDocument();
+      expect(screen.getByTestId('model-card-list')).toHaveTextContent('Sonnet');
     });
 
     it('fails honest when the credits list cannot be read: no cards, the model kept', () => {

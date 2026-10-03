@@ -33,6 +33,17 @@ vi.mock('../../services/core/usage/account-eligibility.js', async (importOrigina
   projectOfFolder: vi.fn(async () => ({ root: '/work/project', name: 'project' })),
 }));
 
+// The credits model rule (DOR-2636): a schedule naming `md_not_covered` on
+// DorkOS credits is refused; the rule itself is tested on its own.
+vi.mock('../../services/tasks/lifecycle/schedule-credits-model.js', () => ({
+  scheduleCreditsModelRefusal: vi.fn(
+    async (opts: { model?: string | null; account?: string | null }) =>
+      opts.account === 'dorkos-credits' && opts.model === 'md_not_covered'
+        ? "DorkOS credits don't cover that model. Pick one from the model menu."
+        : null
+  ),
+}));
+
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -194,5 +205,31 @@ describe('PATCH /api/tasks/:id — the account rule', () => {
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({ error: SENTENCE, code: 'account_not_allowed_here' });
     expect(store.getTask(task.id)?.account).toBe('work');
+  });
+});
+
+describe('the model of a schedule on DorkOS credits (DOR-2636)', () => {
+  const REFUSAL = "DorkOS credits don't cover that model. Pick one from the model menu.";
+
+  it('refuses a create naming a model credits do not cover, saving nothing', async () => {
+    const res = await request(fixtureTarget.server)
+      .post('/api/tasks')
+      .send({ ...BODY, account: 'dorkos-credits', model: 'md_not_covered' });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: REFUSAL, code: 'UNSUPPORTED_MODEL' });
+    expect(store.getTasks()).toHaveLength(0);
+  });
+
+  it('refuses an edit that would leave the schedule on such a model, changing nothing', async () => {
+    const created = await request(fixtureTarget.server)
+      .post('/api/tasks')
+      .send({ ...BODY, account: 'dorkos-credits', model: 'md_covered' });
+    expect(created.status).toBe(201);
+    const res = await request(fixtureTarget.server)
+      .patch(`/api/tasks/${created.body.id}`)
+      .send({ model: 'md_not_covered' });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: REFUSAL, code: 'UNSUPPORTED_MODEL' });
+    expect(store.getTask(created.body.id)?.model).toBe('md_covered');
   });
 });

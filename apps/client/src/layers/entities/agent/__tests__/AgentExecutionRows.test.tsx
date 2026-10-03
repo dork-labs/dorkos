@@ -606,8 +606,14 @@ describe('AgentExecutionRows — the Account row', () => {
       perRuntime: DEFAULTS.perRuntime.map((row) => ({ ...row, model: null })),
     };
     const CREDIT_MODELS: ModelOption[] = [
-      { value: 'md_pick', displayName: 'Service pick', description: '', isDefault: true },
-      { value: 'md_other', displayName: 'Another', description: '' },
+      {
+        value: 'md_pick',
+        displayName: 'Service pick',
+        description: '',
+        isDefault: true,
+        paidFromCredits: true,
+      },
+      { value: 'md_other', displayName: 'Another', description: '', paidFromCredits: true },
     ];
 
     it('asks for the models credits serve, and starts on the service’s suggestion', async () => {
@@ -650,6 +656,21 @@ describe('AgentExecutionRows — the Account row', () => {
             .mocked(transport.getModels)
             .mock.calls.some(([opts]) => opts?.account === 'dorkos-credits')
         ).toBe(true)
+      );
+    });
+
+    it('keeps Automatic on credits while the service says nothing about protocols', async () => {
+      renderRows(
+        manifest({ account: 'dorkos-credits' }),
+        NO_DEFAULT_MODEL,
+        MODELS.map((m, i) => (i === 0 ? { ...m, isDefault: true } : m)),
+        withCredits() as never,
+        { ...TWO_ACCOUNTS, credits: CREDITS }
+      );
+      expect(await screen.findByTestId('agent-model-row')).toHaveTextContent('Automatic');
+      await userEvent.click(screen.getByTestId('agent-model-row'));
+      expect(await screen.findByTestId('agent-model-row-inherit')).toHaveTextContent(
+        'Use server default: the runtime picks'
       );
     });
 
