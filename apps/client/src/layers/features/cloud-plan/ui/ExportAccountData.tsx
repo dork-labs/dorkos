@@ -6,8 +6,9 @@ import { BillingNoticeView } from './BillingNoticeView';
 
 /**
  * Ask for a copy of everything the DorkOS account holds, and say where it
- * stands: being prepared (asking again later gets the link), ready with its
- * download, or why it could not be asked for.
+ * stands: being prepared (asking again later gets the link, and an email
+ * follows only when one was asked for), ready with its download, or why it
+ * could not be asked for.
  *
  * Self-contained: it owns its own request and renders nothing with no cloud
  * account.
@@ -34,7 +35,9 @@ export function ExportAccountData({ heading = 'Your data' }: { heading?: string 
         ) : (
           <div className="space-y-2">
             <p role="status" className="text-sm">
-              Your export is being prepared. Try again in a few minutes to get the link.
+              {state.export.emailRequested
+                ? 'Your export is being prepared. We’ll email you when it’s ready, or try again in a few minutes to get the link.'
+                : 'Your export is being prepared. Try again in a few minutes to get the link.'}
             </p>
             <Button type="button" size="sm" variant="outline" onClick={request}>
               Try again

@@ -209,11 +209,16 @@ describe('manage on the web', () => {
   });
 
   describe('exporting the account data', () => {
-    it('says the export is being prepared, promising nothing, while it has no link', async () => {
+    it('promises no email when none was asked for, while it has no link', async () => {
       const transport = linkedTransport();
       vi.mocked(transport.requestCloudAccountExport).mockResolvedValue({
         ok: true,
-        export: { requestedAt: '2026-09-15T12:00:00.000Z', readyAt: null, downloadUrl: null },
+        export: {
+          requestedAt: '2026-09-15T12:00:00.000Z',
+          readyAt: null,
+          downloadUrl: null,
+          emailRequested: false,
+        },
       });
       renderManage(transport);
       await userEvent.click(
@@ -232,11 +237,33 @@ describe('manage on the web', () => {
           requestedAt: '2026-09-15T12:00:00.000Z',
           readyAt: '2026-09-15T12:05:00.000Z',
           downloadUrl: 'https://example.invalid/exports/exp_0001',
+          emailRequested: false,
         },
       });
       await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
       expect(await screen.findByText('Your export is ready.')).toBeInTheDocument();
       expect(transport.requestCloudAccountExport).toHaveBeenCalledTimes(2);
+    });
+
+    it('says an email will follow only when one was asked for', async () => {
+      const transport = linkedTransport();
+      vi.mocked(transport.requestCloudAccountExport).mockResolvedValue({
+        ok: true,
+        export: {
+          requestedAt: '2026-09-15T12:00:00.000Z',
+          readyAt: null,
+          downloadUrl: null,
+          emailRequested: true,
+        },
+      });
+      renderManage(transport);
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Export your account data' })
+      );
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Your export is being prepared. We’ll email you when it’s ready, or try again in a few minutes to get the link.'
+      );
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     });
 
     it('offers the download once the export is ready, opening it only from a press', async () => {
@@ -248,6 +275,7 @@ describe('manage on the web', () => {
           requestedAt: '2026-09-15T12:00:00.000Z',
           readyAt: '2026-09-15T12:05:00.000Z',
           downloadUrl: link,
+          emailRequested: false,
         },
       });
       renderManage(transport);

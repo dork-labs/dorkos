@@ -10060,13 +10060,18 @@
                       "string",
                       "null"
                     ],
-                    "description": "A short-lived https link, null until the export is ready."
+                    "description": "An https link the person opens in their own browser to get the export; it may ask them to sign in. Null until the export is ready."
+                  },
+                  "emailRequested": {
+                    "type": "boolean",
+                    "description": "Whether an email for when the export is ready was asked for. Asked only when the first answer had no link."
                   }
                 },
                 "required": [
                   "requestedAt",
                   "readyAt",
-                  "downloadUrl"
+                  "downloadUrl",
+                  "emailRequested"
                 ]
               }
             },
