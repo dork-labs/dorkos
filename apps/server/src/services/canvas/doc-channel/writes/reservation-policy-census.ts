@@ -1,7 +1,6 @@
 /** Complete original-policy accounting; a held reservation never acquires new authority. */
 import { types as utilTypes } from 'node:util';
 import {
-  and,
   sql,
   type Db,
   asc,
@@ -26,6 +25,7 @@ import {
 import { hashApprovalInput } from '../../../core/approvals/approval-input-hash.js';
 import { redactSecretsInText } from '../../../core/approvals/approval-summary.js';
 import type { DocWriteIntentRow } from '../store.js';
+import { readPreparedEvent } from '../readers/prepared-readers.js';
 import { readChecked } from '../store-json.js';
 import { parseScope } from '../../scopes.js';
 import { freezeCheckboxData, validateCheckboxEvidence } from './checkbox-evidence.js';
@@ -321,10 +321,6 @@ export function readDocEventRow(
   eventId: string
 ): typeof canvasDocEvents.$inferSelect | undefined {
   return readChecked('canvas_doc_events', `${documentId}/${eventId}`, () =>
-    executor
-      .select()
-      .from(canvasDocEvents)
-      .where(and(eq(canvasDocEvents.documentId, documentId), eq(canvasDocEvents.eventId, eventId)))
-      .get()
+    readPreparedEvent(executor, documentId, eventId)
   );
 }

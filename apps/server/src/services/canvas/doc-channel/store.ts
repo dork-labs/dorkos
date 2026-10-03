@@ -33,6 +33,11 @@ import {
 import { assertJson, assertRowJson, readChecked, DocChannelCorruptionError } from './store-json.js';
 export { DocChannelCorruptionError } from './store-json.js';
 import { documentTransaction, type SynchronousResult } from './store-transaction.js';
+import {
+  readPreparedChannel,
+  readPreparedGrant,
+  readPreparedIntent,
+} from './readers/prepared-readers.js';
 import { requireDocEventUuidVacant, readDocEventRow } from './writes/reservation-policy-census.js';
 import { consumeCheckboxReservationAppend } from './writes/reservation-bridge.js';
 import { markDocWaitingWarning, markAcceptedDocWaitingWarning } from './store-warnings.js';
@@ -122,11 +127,7 @@ export class DocChannelStore {
 
   #getChannel(documentId: string, tx?: DbTransaction): DocChannelRow | undefined {
     return readChecked('canvas_doc_channels', documentId, () =>
-      (tx ?? this.#db)
-        .select()
-        .from(canvasDocChannels)
-        .where(eq(canvasDocChannels.documentId, documentId))
-        .get()
+      readPreparedChannel(tx ?? this.#db, documentId)
     );
   }
 
@@ -226,11 +227,7 @@ export class DocChannelStore {
   /** Read one exact authority record. */
   getGrant(grantId: string, tx?: DbTransaction): DocGrantRow | undefined {
     return readChecked('canvas_doc_grants', grantId, () =>
-      (tx ?? this.#db)
-        .select()
-        .from(canvasDocGrants)
-        .where(eq(canvasDocGrants.grantId, grantId))
-        .get()
+      readPreparedGrant(tx ?? this.#db, grantId)
     );
   }
 
@@ -453,11 +450,7 @@ export class DocChannelStore {
   /** Read a write intent for crash reconciliation. */
   getWriteIntent(id: string, tx?: DbTransaction): DocWriteIntentRow | undefined {
     return readChecked('canvas_doc_write_intents', id, () =>
-      (tx ?? this.#db)
-        .select()
-        .from(canvasDocWriteIntents)
-        .where(eq(canvasDocWriteIntents.intentId, id))
-        .get()
+      readPreparedIntent(tx ?? this.#db, id)
     );
   }
 

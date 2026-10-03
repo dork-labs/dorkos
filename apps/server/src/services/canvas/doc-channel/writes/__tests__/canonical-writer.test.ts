@@ -120,8 +120,12 @@ describe('canonical cooperative writer', () => {
       writes++;
     });
     await resolving.promise;
-    await unlink(f.a);
-    await writeFile(f.a, 'replacement');
+    const replacement = f.a + '.replacement';
+    await writeFile(replacement, 'replacement');
+    expect((await stat(replacement, { bigint: true })).ino).not.toBe(
+      (await stat(f.a, { bigint: true })).ino
+    );
+    await rename(replacement, f.a);
     held.release();
     await first;
     await expect(second).rejects.toBeInstanceOf(CanonicalFileIdentityChangedError);

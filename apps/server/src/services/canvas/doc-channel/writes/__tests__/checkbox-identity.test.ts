@@ -108,13 +108,20 @@ it('fences original and replacement hardlink aliases across file restart and rel
 });
 
 it('distinguishes fresh same-byte inodes while retaining the unresolved canonical pathname fence', async () => {
-  const h = await uncertain(),
-    original = await identity(h.path),
+  const h = await setup();
+  const retainedOriginal = join(h.dir, 'retained-original.md');
+  await link(h.path, retainedOriginal);
+  const beforeReplacement = await identity(retainedOriginal);
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('completion rollback');
+  expect(h.row().status).toBe('replaced');
+  const original = await identity(h.path),
     bytes = await readFile(h.path);
   const independent = join(h.dir, 'fresh.md');
   await writeFile(independent, bytes);
   const fresh = await identity(independent);
   expect(fresh.inode).not.toBe(original.inode);
+  expect(fresh.inode).not.toBe(beforeReplacement.inode);
   expect(() => h.service.writeFence.assertAdmission(fresh)).not.toThrow();
   await rename(independent, h.path);
   const replaced = await identity(h.path);

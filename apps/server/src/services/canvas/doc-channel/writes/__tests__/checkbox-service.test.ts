@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import {
   readFile,
   realpath,
+  rename,
   stat,
   chmod,
   writeFile,
   readdir,
-  unlink,
   link,
 } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -452,8 +452,12 @@ it('rejects replaced staging inode before it can replace the source', async () =
     checkpoint: async (point, intent) => {
       if (point === 'staged') {
         const path = join(h.dir, `.dork-checkbox-${intent.intentId}.tmp`);
-        await unlink(path);
-        await writeFile(path, 'unowned replacement');
+        const replacement = path + '.replacement';
+        await writeFile(replacement, 'unowned replacement');
+        expect((await stat(replacement, { bigint: true })).ino).not.toBe(
+          (await stat(path, { bigint: true })).ino
+        );
+        await rename(replacement, path);
       }
     },
   });
