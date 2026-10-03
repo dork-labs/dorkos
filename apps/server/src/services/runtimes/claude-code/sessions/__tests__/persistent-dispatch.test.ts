@@ -157,6 +157,7 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
+import { SESSIONS } from '../../../../../config/constants.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
@@ -411,6 +412,41 @@ describe('warmth is answered honestly', () => {
     const recovered = await turn(sessionId, 'try again');
     expect(recovered.some((e) => e.type === 'done')).toBe(true);
     expect(cli.launches).toBe(2);
+  });
+
+  // DOR-2681. A process DorkOS ends on purpose is not a crash, so `onCrash`
+  // never ran for it, and a turn still open on it sat dark until the stall
+  // watchdog gave up ten minutes later with nothing left to interrupt. Driven
+  // through the real eviction sweep, past the ceiling that finally lets it
+  // take a running turn.
+  it('ends a running turn at once when its process is evicted', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const first = cli.processes[0]!;
+    first.goSilent();
+
+    const hanging = turn(sessionId, 'this one is evicted');
+    await vi.waitFor(() => {
+      expect(first.received).toHaveLength(2);
+    });
+    // The turn is working, which is what starts the busy spell the ceiling is
+    // measured from; the eviction then lands long after it.
+    first.say('still building');
+    // One macrotask, so the pump has read that frame on the real clock before
+    // the clock below jumps; read under the jumped clock it would start the
+    // spell four hours late and the ceiling would never be reached.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      runtime.checkSessionHealth();
+    } finally {
+      clock.mockRestore();
+    }
+
+    const events = await hanging;
+    expect(events.some((e) => e.type === 'error')).toBe(true);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
   });
 });
 

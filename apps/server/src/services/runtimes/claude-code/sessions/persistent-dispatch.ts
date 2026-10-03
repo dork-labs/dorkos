@@ -1151,6 +1151,12 @@ export class PersistentDispatch {
           session.lastQuery = session.activeQuery;
           session.activeQuery = undefined;
         }
+        // A process DorkOS ends on purpose never reaches `onCrash`, so a turn
+        // still open on it is closed here, at the edge, rather than left dark
+        // for the stall watchdog (DOR-2681). Read through the bundle, not
+        // through `this.bundles`: eviction forgets the bundle before it tears
+        // the process down.
+        if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
         bundle.recovery.noteStateChange(change);
       },
       // The map's raw SIZE was the wrong answer, for the same reason it is

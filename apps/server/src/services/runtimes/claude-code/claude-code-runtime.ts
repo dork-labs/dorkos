@@ -1916,7 +1916,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // and evicts exactly as it did before.
     const evictedIds = this.sessionStore.checkSessionHealth(
       this.lockManager,
-      (sessionId) => this.pumps.peek(sessionId)?.isHoldingBackgroundWork() === true
+      (sessionId) => this.pumps.peek(sessionId)?.isHoldingWork() === true
     );
     for (const sessionId of evictedIds) {
       // No subprocess may outlive the session record it belongs to. Eviction

@@ -185,20 +185,24 @@ export class ProcessQuiet {
   }
 
   /**
-   * Is this process holding background work that record eviction must not throw
-   * away?
+   * Is this process doing work that record eviction must not throw away?
    *
-   * A narrower question than {@link quietness}: a turn in flight or a person
-   * being waited on are already exempt from eviction by their own rules, so the
-   * two reasons here are the ones eviction was blind to. Bounded by the
-   * four-hour ceiling, which is what stops a helper that will never finish from
-   * making a session record immortal.
+   * Every reason {@link quietness} gives except a person-wait: the store exempts
+   * that by its own rule, bounded by the park ceiling rather than this one. A
+   * turn being open counts on purpose (DOR-2681). This used to answer only for
+   * background work and an owed delivery, on the belief that an open turn was
+   * exempt by a rule of its own; no such rule existed, and because an open turn
+   * OUTRANKS background work in {@link blockingReason}, a turn the agent started
+   * — a helper's report still being written — was evicted mid-turn.
+   *
+   * Bounded by the four-hour ceiling, which is what stops work that will never
+   * finish from making a session record immortal.
    */
-  isHoldingBackgroundWork(): boolean {
+  isHoldingWork(): boolean {
     const quietness = this.quietness();
     if (quietness.quiet) return false;
     if (this.isPastCeiling(Date.now())) return false;
-    return quietness.because === 'background-work' || quietness.because === 'delivery-owed';
+    return quietness.because !== 'waiting-on-person';
   }
 
   /**
