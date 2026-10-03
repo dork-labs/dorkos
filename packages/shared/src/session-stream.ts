@@ -62,6 +62,7 @@ import {
 // beside it (spec `canvas-agent-seat` §1.3): one client reducer handles both
 // scopes, and two definitions of "what is on the table" would drift.
 import { CanvasDocumentSchema } from './canvas-schemas.js';
+import { CanvasChannelNotificationSchema } from './canvas-channel-schemas.js';
 import { AccountUsageSchema } from './account-usage.js';
 
 extendZodWithOpenApiOnce();
@@ -1255,3 +1256,11 @@ export class StaleResumeCursorError extends Error {
     this.name = 'StaleResumeCursorError';
   }
 }
+
+/** Document notifications are durable in their own store and carry no session cursor. */
+export const SessionWireEventSchema = z.union([
+  SessionEventSchema,
+  CanvasChannelNotificationSchema,
+]);
+/** A typed session wire frame, including independent document notifications. */
+export type SessionWireEvent = z.infer<typeof SessionWireEventSchema>;

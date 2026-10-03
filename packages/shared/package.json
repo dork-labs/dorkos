@@ -449,6 +449,10 @@
       "types": "./src/canvas-channel-schemas.ts",
       "default": "./dist/canvas-channel-schemas.js"
     },
+    "./canvas-doc-frame-wire": {
+      "types": "./src/canvas-doc-frame-wire.ts",
+      "default": "./dist/canvas-doc-frame-wire.js"
+    },
     "./canvas-app-manifest": {
       "types": "./src/canvas-app-manifest.ts",
       "default": "./dist/canvas-app-manifest.js"

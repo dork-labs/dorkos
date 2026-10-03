@@ -18,6 +18,8 @@ import type { WidgetNode, WidgetTone } from '@dorkos/shared/ui-widget';
 import { cn } from '@/layers/shared/lib';
 import { resolveWidgetIcon } from '../../../lib/widget-icon';
 import { useWidgetMotion } from '../../../lib/widget-motion';
+import { WidgetChannelStatus } from '../../WidgetChannelStatus';
+import { useWidgetNodePath } from '../../../model/widget-node-context';
 import { useWidgetActions } from '../../../model/widget-context';
 import {
   detectWinLine,
@@ -83,7 +85,8 @@ const WIN_TONE_TEXT: Record<WidgetTone, string> = {
  */
 export function BoardNode({ node }: { node: NodeOf<'board'> }) {
   const motionOn = useWidgetMotion();
-  const { latched, superseded } = useWidgetActions();
+  const { latched, superseded, channel } = useWidgetActions();
+  const path = useWidgetNodePath();
   // Heal cells the model rendered empty but recorded as occupied in its own
   // payload `state` strings (fill-only — see the lib's module doc). Runs BEFORE
   // win detection so a healed mark can complete a win line.
@@ -103,6 +106,7 @@ export function BoardNode({ node }: { node: NodeOf<'board'> }) {
 
   return (
     <div className="flex flex-col gap-1.5">
+      {channel && <p className="text-muted-foreground text-xs">To {channel.destinationLabel}</p>}
       {node.label && <p className="text-muted-foreground text-xs">{node.label}</p>}
       <div className={cn('relative w-fit', superseded && 'saturate-[0.9]')}>
         {thinking && (
@@ -158,6 +162,7 @@ export function BoardNode({ node }: { node: NodeOf<'board'> }) {
           />
         )}
       </div>
+      <WidgetChannelStatus controlId={path} descendants />
     </div>
   );
 }

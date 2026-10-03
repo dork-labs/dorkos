@@ -1,4 +1,8 @@
 import { DocChannelMetrics } from './services/observability/doc-channel-metrics.js';
+import { subscribeCommittedDocEvents } from './services/canvas/doc-channel/committed-events.js';
+import { DocChannelLiveBuffer } from './services/canvas/doc-channel/streams/live-buffer.js';
+import { DocScopeStream } from './services/canvas/doc-channel/streams/scope-stream.js';
+import { setDocScopeNotificationsFactory } from './services/canvas/doc-channel/streams/registry.js';
 import { DocBatchAdmission } from './services/canvas/doc-channel/delivery/batch-admission.js';
 import { privateDocTurnBudget } from './services/canvas/doc-channel/delivery/final-budget.js';
 import { DocBatchDeliveryPump } from './services/canvas/doc-channel/delivery/pump.js';
@@ -3240,6 +3244,45 @@ async function start() {
       docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
   });
   app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
+  const docStreamAuthority = {
+    resolveScope: (scope: string) => canvasDocuments.lifecycle.resolveScope(scope),
+    requireScopeCurrent: (
+      scope: string,
+      actor: import('./services/canvas/doc-channel/authorization.js').DocChannelActor
+    ): undefined => {
+      docChannelHttp.authorization.requireScopeCurrent(scope, actor);
+      return undefined;
+    },
+    requireDocumentCurrent: (
+      documentId: string,
+      scope: string,
+      actor: import('./services/canvas/doc-channel/authorization.js').DocChannelActor
+    ): undefined => {
+      if (docChannelHttp.authorization.requireCurrent(documentId, actor).scope !== scope)
+        throw new Error('Document stream scope changed.');
+      return undefined;
+    },
+  };
+  const docLive = new DocChannelLiveBuffer(docChannelHttp.channels, docStreamAuthority);
+  const disposeDocNotifications = subscribeCommittedDocEvents(db, (documentId) => {
+    docLive.notifyCommitted(documentId);
+    return undefined;
+  });
+  docNotificationCleanup = () => {
+    disposeDocNotifications();
+    setDocScopeNotificationsFactory(undefined);
+  };
+  const docScopes = new DocScopeStream(
+    canvasDocuments,
+    docChannelHttp.service,
+    docLive,
+    docStreamAuthority
+  );
+  setDocScopeNotificationsFactory(
+    (scope, req, res) => (signal) =>
+      docScopes.subscribe(scope, docChannelHttp.actor(req, res), signal)
+  );
+
   // An answer given after the in-session hold gave up has to reach the agent that
   // asked, or a person ends up relaying it by hand — which is the bug DOR-1931
   // reports. The subscription lives for the life of the process; its listener does
@@ -6105,11 +6148,15 @@ function stopCodexCreditsTurns(): void {
 
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
+let docNotificationCleanup: (() => void) | undefined;
+
 async function shutdownServices() {
   mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
   await stopDocDelivery?.();
   stopDocDelivery = undefined;
+  docNotificationCleanup?.();
+  docNotificationCleanup = undefined;
   logger.info('[DorkOS] shutting down services');
   stopSessionContinuation?.();
   stopSessionContinuation = undefined;
@@ -6280,6 +6327,8 @@ start().catch(async (err) => {
   testComposioFixture = undefined;
   await stopDocDelivery?.();
   stopDocDelivery = undefined;
+  docNotificationCleanup?.();
+  docNotificationCleanup = undefined;
   // Two startup failures are addressed to the operator rather than to whoever
   // maintains DorkOS: a database that will not open, and a backup that could not
   // be written. Both carry instructions in their message and both are resolved

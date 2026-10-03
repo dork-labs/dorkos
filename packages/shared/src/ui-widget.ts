@@ -15,6 +15,11 @@
  * @module shared/ui-widget
  */
 import { z } from 'zod';
+import {
+  CanvasChannelBindSchema,
+  CanvasChannelPublicEventTypeSchema,
+  CanvasChannelStateSchema,
+} from './canvas-channel-schemas.js';
 import { UiCommandSchema } from './schemas.js';
 
 /** Visual tone shared by `badge` nodes and list-item badges. */
@@ -25,8 +30,8 @@ export type WidgetTone = z.infer<typeof WidgetToneSchema>;
 
 /**
  * The `agent`-kind action variant — the single definition, reused as the
- * discriminated-union member in {@link WidgetActionSchema} and required
- * standalone by `form` submit buttons.
+ * discriminated-union member in {@link WidgetActionSchema} and permitted
+ * by native form/checklist submits.
  */
 export const AgentWidgetActionSchema = z.object({
   kind: z.literal('agent'),
@@ -37,18 +42,39 @@ export const AgentWidgetActionSchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
 });
 
-/** The `agent`-kind action variant (form submits). */
+/** The legacy inline agent action variant. */
 export type AgentWidgetAction = z.infer<typeof AgentWidgetActionSchema>;
+
+/** A native document event action; the host creates each click's event identity. */
+export const EmitWidgetActionSchema = z
+  .object({
+    kind: z.literal('emit'),
+    type: CanvasChannelPublicEventTypeSchema,
+    payload: CanvasChannelStateSchema.optional(),
+    coalesceKey: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+/** Native document event action. */
+export type EmitWidgetAction = z.infer<typeof EmitWidgetActionSchema>;
+/** Form/checklist submission excludes navigation and local UI commands. */
+export const WidgetSubmitActionSchema = z.discriminatedUnion('kind', [
+  AgentWidgetActionSchema,
+  EmitWidgetActionSchema,
+]);
+/** Native form/checklist action. */
+export type WidgetSubmitAction = z.infer<typeof WidgetSubmitActionSchema>;
 
 /**
  * An interactive action a widget node can trigger. Discriminated on `kind`:
- * - `agent` — POSTed to `/api/sessions/:id/ui-action` and injected into the
- *   agent's next turn (channel ships in PR E; rendered disabled until then).
+ * - `agent` — uses the inline session action path, or an approved document
+ *   route when rendered by a channel-enabled canvas host.
+ * - `emit` — saves a bounded public document event through the host transport.
  * - `ui` — dispatched locally through `executeUiCommand`, no agent wake.
  * - `url` — opens an external https link via the link-safety modal.
  */
 export const WidgetActionSchema = z.discriminatedUnion('kind', [
   AgentWidgetActionSchema,
+  EmitWidgetActionSchema,
   z.object({
     kind: z.literal('ui'),
     command: UiCommandSchema,
@@ -64,7 +90,7 @@ export const WidgetActionSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
-/** An interactive action a widget node can trigger (agent, ui, or url). */
+/** An interactive action a widget node can trigger (agent, emit, ui, or url). */
 export type WidgetAction = z.infer<typeof WidgetActionSchema>;
 
 /** Scalar cell value permitted in a `table` row. */
@@ -110,10 +136,11 @@ export type WidgetNode =
     }
   | { type: 'divider' }
   | { type: 'heading'; text: string; level?: 1 | 2 | 3 }
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; bind?: { text?: WidgetStateBinding } }
   | { type: 'badge'; text: string; tone?: WidgetTone }
   | {
       type: 'stat';
+      bind?: { value?: WidgetStateBinding };
       label: string;
       value: string | number;
       delta?: { value: string | number; direction: 'up' | 'down' | 'flat' };
@@ -123,15 +150,22 @@ export type WidgetNode =
     }
   | { type: 'keyValue'; items: { key: string; value: string }[] }
   | { type: 'image'; src: string; alt: string; caption?: string }
-  | { type: 'progress'; value: number; label?: string }
+  | {
+      type: 'progress';
+      value: number;
+      label?: string;
+      bind?: { value?: WidgetStateBinding; label?: WidgetStateBinding };
+    }
   | {
       type: 'table';
+      bind?: { rows?: WidgetStateBinding };
       columns: { key: string; label: string; align?: 'left' | 'center' | 'right' }[];
       rows: Record<string, string | number | boolean | null>[];
     }
   | { type: 'list'; items: WidgetListItem[] }
   | {
       type: 'chart';
+      bind?: { data?: WidgetStateBinding };
       kind: 'bar' | 'line' | 'area' | 'pie';
       /** Data points. Values are non-negative in v1 (no zero-baseline handling). */
       data: { label: string; value: number }[];
@@ -149,9 +183,16 @@ export type WidgetNode =
       label?: string;
       placeholder?: string;
       kind?: 'text' | 'number';
+      required?: boolean;
     }
-  | { type: 'select'; name: string; label?: string; options: { label: string; value: string }[] }
-  | { type: 'form'; children: WidgetNode[]; submit: { label: string; action: AgentWidgetAction } }
+  | {
+      type: 'select';
+      name: string;
+      label?: string;
+      required?: boolean;
+      options: { label: string; value: string }[];
+    }
+  | { type: 'form'; children: WidgetNode[]; submit: { label: string; action: WidgetSubmitAction } }
   | {
       type: 'timeline';
       items: {
@@ -165,7 +206,7 @@ export type WidgetNode =
   | {
       type: 'checklist';
       items: { label: string; checked?: boolean; note?: string }[];
-      action?: AgentWidgetAction;
+      action?: WidgetSubmitAction;
       submitLabel?: string;
     }
   | {
@@ -576,201 +617,247 @@ const boardRowsSchema = z.preprocess(
   z.array(z.array(boardCellSchema))
 );
 
+/** A display-only read from the current channel state, never an action or authority. */
+export type WidgetStateBinding = z.infer<typeof CanvasChannelBindSchema>;
+
+const widgetBindingSchemas = {
+  text: z.object({ text: CanvasChannelBindSchema.optional() }).strict(),
+  stat: z.object({ value: CanvasChannelBindSchema.optional() }).strict(),
+  progress: z
+    .object({
+      value: CanvasChannelBindSchema.optional(),
+      label: CanvasChannelBindSchema.optional(),
+    })
+    .strict(),
+  table: z.object({ rows: CanvasChannelBindSchema.optional() }).strict(),
+  chart: z.object({ data: CanvasChannelBindSchema.optional() }).strict(),
+};
+
 /**
  * Recursive schema for a widget node — `z.discriminatedUnion('type', …)` over
  * the v1 catalog, declared via `z.lazy` so container nodes (`stack`, `card`,
  * `form`) can reference the node union in their `children`/`footer`.
  */
 export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
-  z.discriminatedUnion('type', [
-    z.object({
-      type: z.literal('stack'),
-      direction: directionSchema,
-      gap: gapSchema.optional(),
-      children: z.array(WidgetNodeSchema),
-    }),
-    z.object({
-      type: z.literal('card'),
-      title: z.string().optional(),
-      description: z.string().optional(),
-      children: z.array(WidgetNodeSchema),
-      footer: z.array(WidgetNodeSchema).optional(),
-    }),
-    z.object({ type: z.literal('divider') }),
-    z.object({
-      type: z.literal('heading'),
-      text: z.string(),
-      level: levelSchema.optional(),
-    }),
-    z.object({ type: z.literal('text'), text: z.string() }),
-    z.object({
-      type: z.literal('badge'),
-      text: z.string(),
-      tone: toneSchema.optional(),
-    }),
-    z.object({
-      type: z.literal('stat'),
-      label: z.string(),
-      value: z.union([z.string(), z.number()]),
-      delta: deltaSchema.optional(),
-      hint: z.string().optional(),
-      // Optional sparkline series; cap at 50 points so a runaway array can't
-      // bloat the SVG. Stringified numbers coerce; non-finite values reject.
-      trend: z.array(z.coerce.number().finite()).max(50).optional(),
-    }),
-    z.object({
-      type: z.literal('keyValue'),
-      items: z.array(z.object({ key: z.string(), value: z.string() })),
-    }),
-    z.object({
-      type: z.literal('image'),
-      src: z.string().refine((src) => src.startsWith('https://') || src.startsWith('data:'), {
-        message: 'Widget image sources must be https or data URIs',
+  z.preprocess(
+    (raw, context) => {
+      if (typeof raw === 'object' && raw !== null && Object.hasOwn(raw, 'bind')) {
+        const node = raw as { type?: string; bind?: unknown };
+        const schema =
+          typeof node.type === 'string' && Object.hasOwn(widgetBindingSchemas, node.type)
+            ? widgetBindingSchemas[node.type as keyof typeof widgetBindingSchemas]
+            : undefined;
+        if (!schema || !schema.safeParse(node.bind).success) {
+          context.addIssue({
+            code: 'custom',
+            path: ['bind'],
+            message: 'This element needs a supported display field and a safe state path.',
+          });
+          return z.NEVER;
+        }
+      }
+      return raw;
+    },
+    z.discriminatedUnion('type', [
+      z.object({
+        type: z.literal('stack'),
+        direction: directionSchema,
+        gap: gapSchema.optional(),
+        children: z.array(WidgetNodeSchema),
       }),
-      alt: z.string(),
-      caption: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('progress'),
-      // Coerce stringified numbers ("72") and clamp to the 0-100 range rather
-      // than failing the widget when an agent reports e.g. 120%.
-      value: z.coerce
-        .number()
-        .finite()
-        .transform((v) => Math.min(100, Math.max(0, v))),
-      label: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('table'),
-      columns: z.array(
-        z.object({
-          key: z.string(),
-          label: z.string(),
-          align: z.enum(['left', 'center', 'right']).optional(),
-        })
-      ),
-      rows: z.array(z.record(z.string(), WidgetCellSchema)),
-    }),
-    z.object({
-      type: z.literal('list'),
-      items: z.array(
-        z.object({
-          title: z.string(),
-          subtitle: z.string().optional(),
-          /** Lucide icon name (validated against the registry at render time). */
-          icon: z.string().optional(),
-          /** Leading thumbnail; https/data only, same posture as the image node. */
-          image: z
-            .string()
-            .refine((src) => src.startsWith('https://') || src.startsWith('data:'), {
-              message: 'Widget image sources must be https or data URIs',
-            })
-            .optional(),
-          meta: z.string().optional(),
-          badge: listBadgeSchema.optional(),
-          actions: z.array(WidgetActionSchema).optional(),
-        })
-      ),
-    }),
-    z.object({
-      type: z.literal('chart'),
-      kind: chartKindSchema,
-      // v1 constraint: values are non-negative. The minimal renderer has no
-      // zero-baseline handling (negative bars/lines would render off-canvas),
-      // so the schema rejects them honestly instead of drawing garbage.
-      // Stringified numbers ("12") are coerced — a common LLM output. `.finite()`
-      // rejects "Infinity"/NaN, which coerce to non-finite numbers that min(0)
-      // and positive() would otherwise let through.
-      data: z.array(z.object({ label: z.string(), value: z.coerce.number().finite().min(0) })),
-      height: z.coerce.number().finite().positive().optional(),
-    }),
-    z.object({
-      type: z.literal('button'),
-      label: z.string(),
-      variant: variantSchema.optional(),
-      action: WidgetActionSchema,
-    }),
-    z.object({
-      type: z.literal('input'),
-      name: z.string().min(1),
-      label: z.string().optional(),
-      placeholder: z.string().optional(),
-      kind: z.enum(['text', 'number']).optional(),
-    }),
-    z.object({
-      type: z.literal('select'),
-      name: z.string().min(1),
-      label: z.string().optional(),
-      options: z.array(z.object({ label: z.string(), value: z.string() })),
-    }),
-    z.object({
-      type: z.literal('form'),
-      children: z.array(WidgetNodeSchema),
-      submit: z.object({ label: z.string(), action: AgentWidgetActionSchema }),
-    }),
-    z.object({
-      type: z.literal('timeline'),
-      items: z
-        .array(
+      z.object({
+        type: z.literal('card'),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        children: z.array(WidgetNodeSchema),
+        footer: z.array(WidgetNodeSchema).optional(),
+      }),
+      z.object({ type: z.literal('divider') }),
+      z.object({
+        type: z.literal('heading'),
+        text: z.string(),
+        level: levelSchema.optional(),
+      }),
+      z.object({
+        type: z.literal('text'),
+        text: z.string(),
+        bind: widgetBindingSchemas.text.optional(),
+      }),
+      z.object({
+        type: z.literal('badge'),
+        text: z.string(),
+        tone: toneSchema.optional(),
+      }),
+      z.object({
+        type: z.literal('stat'),
+        bind: widgetBindingSchemas.stat.optional(),
+        label: z.string(),
+        value: z.union([z.string(), z.number()]),
+        delta: deltaSchema.optional(),
+        hint: z.string().optional(),
+        // Optional sparkline series; cap at 50 points so a runaway array can't
+        // bloat the SVG. Stringified numbers coerce; non-finite values reject.
+        trend: z.array(z.coerce.number().finite()).max(50).optional(),
+      }),
+      z.object({
+        type: z.literal('keyValue'),
+        items: z.array(z.object({ key: z.string(), value: z.string() })),
+      }),
+      z.object({
+        type: z.literal('image'),
+        src: z.string().refine((src) => src.startsWith('https://') || src.startsWith('data:'), {
+          message: 'Widget image sources must be https or data URIs',
+        }),
+        alt: z.string(),
+        caption: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal('progress'),
+        bind: widgetBindingSchemas.progress.optional(),
+        // Coerce stringified numbers ("72") and clamp to the 0-100 range rather
+        // than failing the widget when an agent reports e.g. 120%.
+        value: z.coerce
+          .number()
+          .finite()
+          .transform((v) => Math.min(100, Math.max(0, v))),
+        label: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal('table'),
+        bind: widgetBindingSchemas.table.optional(),
+        columns: z.array(
           z.object({
-            time: z.string().optional(),
+            key: z.string(),
+            label: z.string(),
+            align: z.enum(['left', 'center', 'right']).optional(),
+          })
+        ),
+        rows: z.array(z.record(z.string(), WidgetCellSchema)),
+      }),
+      z.object({
+        type: z.literal('list'),
+        items: z.array(
+          z.object({
             title: z.string(),
             subtitle: z.string().optional(),
-            /** Lucide icon name; when present it fills the status dot slot. */
+            /** Lucide icon name (validated against the registry at render time). */
             icon: z.string().optional(),
-            status: timelineStatusSchema.optional(),
+            /** Leading thumbnail; https/data only, same posture as the image node. */
+            image: z
+              .string()
+              .refine((src) => src.startsWith('https://') || src.startsWith('data:'), {
+                message: 'Widget image sources must be https or data URIs',
+              })
+              .optional(),
+            meta: z.string().optional(),
+            badge: listBadgeSchema.optional(),
+            actions: z.array(WidgetActionSchema).optional(),
           })
-        )
-        .min(1),
-    }),
-    z.object({
-      type: z.literal('checklist'),
-      items: z.array(
-        z.object({
-          label: z.string(),
-          checked: flagSchema.optional(),
-          note: z.string().optional(),
-        })
-      ),
-      // When present, a submit button posts the checked/unchecked label sets
-      // back to the agent (merged into the action payload client-side).
-      action: AgentWidgetActionSchema.optional(),
-      submitLabel: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('compare'),
-      options: z.array(z.object({ name: z.string(), recommended: flagSchema.optional() })).min(1),
-      // Rows may be shorter than `options`; the renderer pads with null rather
-      // than failing the whole widget over a ragged matrix.
-      rows: z.array(z.object({ label: z.string(), values: z.array(WidgetCellSchema) })),
-    }),
-    z.object({
-      type: z.literal('rating'),
-      // Coerce stringified numbers and clamp to the 0-5 star range.
-      value: z.coerce
-        .number()
-        .finite()
-        .transform((v) => Math.min(5, Math.max(0, v))),
-      count: z.coerce.number().int().nonnegative().optional(),
-      label: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('mood'),
-      emotion: moodEmotionSchema,
-      message: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('board'),
-      rows: boardRowsSchema,
-      label: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('reveal'),
-      kind: revealKindSchema,
-      result: revealResultSchema,
-      label: z.string().optional(),
-    }),
-  ])
+        ),
+      }),
+      z.object({
+        type: z.literal('chart'),
+        bind: widgetBindingSchemas.chart.optional(),
+        kind: chartKindSchema,
+        // v1 constraint: values are non-negative. The minimal renderer has no
+        // zero-baseline handling (negative bars/lines would render off-canvas),
+        // so the schema rejects them honestly instead of drawing garbage.
+        // Stringified numbers ("12") are coerced — a common LLM output. `.finite()`
+        // rejects "Infinity"/NaN, which coerce to non-finite numbers that min(0)
+        // and positive() would otherwise let through.
+        data: z.array(z.object({ label: z.string(), value: z.coerce.number().finite().min(0) })),
+        height: z.coerce.number().finite().positive().optional(),
+      }),
+      z.object({
+        type: z.literal('button'),
+        label: z.string(),
+        variant: variantSchema.optional(),
+        action: WidgetActionSchema,
+      }),
+      z.object({
+        type: z.literal('input'),
+        name: z.string().min(1),
+        label: z.string().optional(),
+        placeholder: z.string().optional(),
+        kind: z.enum(['text', 'number']).optional(),
+        required: z.boolean().optional(),
+      }),
+      z.object({
+        type: z.literal('select'),
+        required: z.boolean().optional(),
+        name: z.string().min(1),
+        label: z.string().optional(),
+        options: z.array(z.object({ label: z.string(), value: z.string() })),
+      }),
+      z.object({
+        type: z.literal('form'),
+        children: z.array(WidgetNodeSchema),
+        submit: z.object({ label: z.string(), action: WidgetSubmitActionSchema }),
+      }),
+      z.object({
+        type: z.literal('timeline'),
+        items: z
+          .array(
+            z.object({
+              time: z.string().optional(),
+              title: z.string(),
+              subtitle: z.string().optional(),
+              /** Lucide icon name; when present it fills the status dot slot. */
+              icon: z.string().optional(),
+              status: timelineStatusSchema.optional(),
+            })
+          )
+          .min(1),
+      }),
+      z.object({
+        type: z.literal('checklist'),
+        items: z.array(
+          z.object({
+            label: z.string(),
+            checked: flagSchema.optional(),
+            note: z.string().optional(),
+          })
+        ),
+        // When present, a submit button posts the checked/unchecked label sets
+        // back to the agent (merged into the action payload client-side).
+        action: WidgetSubmitActionSchema.optional(),
+        submitLabel: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal('compare'),
+        options: z.array(z.object({ name: z.string(), recommended: flagSchema.optional() })).min(1),
+        // Rows may be shorter than `options`; the renderer pads with null rather
+        // than failing the whole widget over a ragged matrix.
+        rows: z.array(z.object({ label: z.string(), values: z.array(WidgetCellSchema) })),
+      }),
+      z.object({
+        type: z.literal('rating'),
+        // Coerce stringified numbers and clamp to the 0-5 star range.
+        value: z.coerce
+          .number()
+          .finite()
+          .transform((v) => Math.min(5, Math.max(0, v))),
+        count: z.coerce.number().int().nonnegative().optional(),
+        label: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal('mood'),
+        emotion: moodEmotionSchema,
+        message: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal('board'),
+        rows: boardRowsSchema,
+        label: z.string().optional(),
+      }),
+      z.object({
+        type: z.literal('reveal'),
+        kind: revealKindSchema,
+        result: revealResultSchema,
+        label: z.string().optional(),
+      }),
+    ])
+  )
 ) as z.ZodType<WidgetNode>;
 
 /**
