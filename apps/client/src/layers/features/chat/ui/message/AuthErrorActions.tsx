@@ -17,16 +17,26 @@
  *
  * @module features/chat/ui/message/AuthErrorActions
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Check, LogIn, RotateCcw } from 'lucide-react';
-import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { runtimeAuthConnectKind, runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
 import { Button, Spinner } from '@/layers/shared/ui';
-import { useSettingsDeepLink } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useCreditsOfferSlot,
+  useSetCreditsDefault,
+  useSettingsDeepLink,
+  type CreditsOfferSlot,
+} from '@/layers/shared/model';
 import { useLocalCaller } from '@/layers/entities/config';
 import {
   getLoginCopy,
+  getRuntimeDescriptor,
+  KeepItLocalNote,
   RemoteSigninNotice,
   useDelegateRuntimeLogin,
+  useRuntimeCreditsOffer,
 } from '@/layers/entities/runtime';
 import { useSessions } from '@/layers/entities/session';
 
@@ -214,6 +224,92 @@ function ProviderPickerActions({ onRetry }: { onRetry?: () => void }) {
 }
 
 /**
+ * Auth-error actions where DorkOS credits reach the runtime (spec
+ * `dorkos-account-by-default` §3).
+ *
+ * - `lead` — the runtime has no sign-in at all: credits first, the runtime's
+ *   own ways right under it, and the line that nothing has to leave this
+ *   computer.
+ * - otherwise the person turned credits off for this runtime: their own ways
+ *   lead, and credits are one row under them.
+ *
+ * Choosing credits is the person's choice, made here, and the card says what
+ * it changes before and after: new work on this runtime on this computer runs
+ * on credits, and the failed turn goes again on them. Signed out, the card
+ * links this computer in place first and then ASKS before sending anything —
+ * a send is spending, and it never happens unattended. A sign-in that expired
+ * or ran out never lands here; it leads with signing in again.
+ */
+function CreditsActions({
+  runtime,
+  sessionId,
+  onRetry,
+  renderOffer,
+  lead,
+  children,
+}: {
+  runtime: string;
+  sessionId: string;
+  onRetry?: () => void;
+  renderOffer: CreditsOfferSlot;
+  lead: boolean;
+  children: ReactNode;
+}) {
+  const remote = !useLocalCaller();
+  const setDefault = useSetCreditsDefault();
+  const setRetryAccount = useAppStore((s) => s.setRetryAccount);
+  const label = getRuntimeDescriptor(runtime).label;
+  const offer = renderOffer({
+    runtime,
+    origin: `auth-error:${sessionId}`,
+    note: `This makes new ${label} work on this computer run on your DorkOS credits.`,
+    chosen: onRetry
+      ? `New ${label} work on this computer now runs on your DorkOS credits. Sending your message again…`
+      : `New ${label} work on this computer now runs on your DorkOS credits.`,
+    ...(onRetry
+      ? {
+          confirmAfterLink: {
+            prompt: 'Linked. Send again on DorkOS credits?',
+            action: 'Send again',
+          },
+        }
+      : {}),
+    onChoose: async () => {
+      await setDefault.mutateAsync({ runtime, useCredits: true });
+      if (!onRetry) return;
+      setRetryAccount({ id: CREDITS_ACCOUNT_ID, sessionId });
+      onRetry();
+    },
+  });
+  const otherWays = (content: ReactNode) => (
+    <section aria-label="Other ways">
+      <p className="text-muted-foreground text-2xs font-medium tracking-wide uppercase">
+        Other ways
+      </p>
+      {content}
+    </section>
+  );
+  if (!lead) {
+    return (
+      <div data-testid="auth-error-credits-other-way">
+        {children}
+        <div className="mt-3">{otherWays(offer)}</div>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3 space-y-3" data-testid="auth-error-credits-first">
+      {offer}
+      {otherWays(children)}
+      <KeepItLocalNote
+        ollama={runtimeAuthConnectKind(runtime) === 'provider-picker'}
+        remote={remote}
+      />
+    </div>
+  );
+}
+
+/**
  * The half that reads data. Mounted only with a session id, so the session-list
  * query — and the QueryClient and Transport it needs — are required only on the
  * path that actually signs in.
@@ -230,21 +326,28 @@ function SessionSigninActions({
   const { sessions, isLoading } = useSessions();
   const isLocalCaller = useLocalCaller();
   const runtime = sessions.find((s) => s.id === sessionId)?.runtime;
+  const offer = useRuntimeCreditsOffer(runtime);
+  const renderOffer = useCreditsOfferSlot();
 
   // Answered before the runtime is, and without waiting for the session list,
   // because it does not depend on either: nothing that repairs a sign-in —
   // vendor login or pasted key, on any runtime — can run from a browser that is
-  // not on this machine (DOR-1655).
-  if (!isLocalCaller) return <RemoteSigninGuidance onRetry={onRetry} />;
+  // not on this machine (DOR-1655). DorkOS credits can (the link is approved on
+  // dorkos.ai), so once the runtime is known to be offered them, the guidance
+  // becomes one of the other ways under them, as in Settings.
+  const credited =
+    runtime !== undefined && renderOffer !== null && (offer === 'lead' || offer === 'other-way');
+  if (!isLocalCaller && !credited) return <RemoteSigninGuidance onRetry={onRetry} />;
 
   // While the list is still loading the runtime is unknown, not absent —
   // rendering the deep-link now would flip to a Sign in button a moment later.
   // Hold the actions back rather than show one and replace it.
   if (isLoading) return null;
-  if (!runtime || !runtimeSupportsLogin(runtime)) {
-    return <ProviderPickerActions onRetry={onRetry} />;
-  }
-  return (
+  const ownWays = !isLocalCaller ? (
+    <RemoteSigninGuidance onRetry={onRetry} />
+  ) : !runtime || !runtimeSupportsLogin(runtime) ? (
+    <ProviderPickerActions onRetry={onRetry} />
+  ) : (
     <InlineSigninActions
       runtime={runtime}
       sessionId={sessionId}
@@ -252,6 +355,20 @@ function SessionSigninActions({
       onSigninComplete={onSigninComplete}
     />
   );
+  if (credited && runtime && renderOffer) {
+    return (
+      <CreditsActions
+        runtime={runtime}
+        sessionId={sessionId}
+        onRetry={onRetry}
+        renderOffer={renderOffer}
+        lead={offer === 'lead'}
+      >
+        {ownWays}
+      </CreditsActions>
+    );
+  }
+  return ownWays;
 }
 
 /**

@@ -17,7 +17,12 @@ import type { Session, ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockSession, createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
-import { TransportProvider, accountKeys } from '@/layers/shared/model';
+import {
+  CreditsOfferProvider,
+  TransportProvider,
+  accountKeys,
+  type CreditsOfferSlot,
+} from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { useSessionStreamStore } from '@/layers/entities/session';
 
@@ -818,5 +823,83 @@ describe('the composer', () => {
     // A new limit (a new `since`) asks again.
     const second = limitOf('continued', { state: 'moved', since: at(MINUTE) });
     expect(composerFor(second).result.current.canSubmit).toBe(false);
+  });
+});
+
+describe('out of usage leads with DorkOS credits where they reach the runtime', () => {
+  /** A stand-in for the app shell's offer: its words and one button that makes the choice. */
+  const stubOffer: CreditsOfferSlot = ({ intent, onChoose }) => (
+    <button type="button" onClick={() => void onChoose?.()}>
+      Stand-in offer: {intent}
+    </button>
+  );
+
+  const wired = (runtime: 'wired' | 'follow-up' = 'wired', killed = false) =>
+    vi.fn().mockResolvedValue({
+      enabled: true,
+      killed,
+      linked: true,
+      ready: true,
+      runtimes: { 'claude-code': runtime, codex: 'follow-up', opencode: 'follow-up' },
+    });
+
+  async function renderWithOffer(setup: Setup) {
+    setSession(setup);
+    const transport = transportFor(setup);
+    const queryClient = createTestQueryClient();
+    render(
+      <CreditsOfferProvider slot={stubOffer}>
+        <AccountLimitBanner sessionId={SID} onSend={vi.fn()} />
+      </CreditsOfferProvider>,
+      { wrapper: providers(transport, queryClient) }
+    );
+    await waitFor(() => {
+      expect(queryClient.getQueryData(['capabilities'])).toBeDefined();
+      expect(queryClient.getQueryState(['cloud', 'plan-aware', 'credits'])?.status).toBe('success');
+    });
+    return { transport };
+  }
+
+  it('offers "keep going" first, and choosing it continues this session on credits', async () => {
+    const { transport } = await renderWithOffer({
+      limit: limitOf('ask'),
+      transport: { getCloudCredits: wired() },
+    });
+    const offer = await screen.findByRole('button', { name: 'Stand-in offer: keep-going' });
+    expect(buttons()[0]).toBe('Stand-in offer: keep-going');
+    await userEvent.click(offer);
+    expect(transport.continueSession).toHaveBeenCalledWith(SID, { account: 'dorkos-credits' });
+  });
+
+  it('offers nothing for a runtime credits are not wired for, or when they are switched off', async () => {
+    await renderWithOffer({
+      limit: limitOf('ask'),
+      transport: { getCloudCredits: wired('follow-up') },
+    });
+    expect(buttons()).toEqual(['Continue on another account…', 'Wait for reset']);
+    cleanup();
+    await renderWithOffer({
+      limit: limitOf('ask'),
+      transport: { getCloudCredits: wired('wired', true) },
+    });
+    expect(buttons()).toEqual(['Continue on another account…', 'Wait for reset']);
+  });
+
+  it('offers nothing when it is the credits that ran out', async () => {
+    await renderWithOffer({
+      limit: limitOf('ask', { accountId: 'dorkos-credits' }),
+      accountId: 'dorkos-credits',
+      transport: { getCloudCredits: wired() },
+    });
+    expect(screen.queryByRole('button', { name: /Stand-in offer/ })).not.toBeInTheDocument();
+  });
+
+  it('never moves the work by itself: nothing is posted until the person chooses', async () => {
+    const { transport } = await renderWithOffer({
+      limit: limitOf('ask'),
+      transport: { getCloudCredits: wired() },
+    });
+    await screen.findByRole('button', { name: 'Stand-in offer: keep-going' });
+    expect(transport.continueSession).not.toHaveBeenCalled();
   });
 });

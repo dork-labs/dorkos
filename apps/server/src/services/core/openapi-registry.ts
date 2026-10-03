@@ -3511,6 +3511,14 @@ const CloudLinkStatusSchema = z.object({
     description:
       'Present while linked after a relink ended without replacing the key: this computer stayed linked.',
   }),
+  pending: StartLinkResultSchema.optional().openapi({
+    description:
+      'The codes of the flow waiting for approval. Present only while pending, and only to the owner of this DorkOS.',
+  }),
+  approvedCode: z.string().optional().openapi({
+    description:
+      'The code whose approval made this link. Present only while linked by it, never after a relink that did not replace the link.',
+  }),
 });
 
 const CloudSummarySchema = z.object({

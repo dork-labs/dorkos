@@ -37,7 +37,7 @@ import {
   type CloudCreditsSettings,
   type UserConfig,
 } from '@dorkos/shared/config-schema';
-import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities, RuntimeSignInState } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 
@@ -47,15 +47,8 @@ export interface CreditsConfigPort {
   set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void;
 }
 
-/**
- * Where a runtime's own sign-in stands:
- *
- * - `working` — it serves turns.
- * - `needs-attention` — it exists but has expired or run out; a sign-in to
- *   renew, never a gap to fill with credits.
- * - `none` — there is no sign-in at all. The only state a new link fills.
- */
-export type RuntimeSignInState = 'working' | 'needs-attention' | 'none';
+/** Where a runtime's own sign-in stands (`deriveRuntimeSignIn` in `@dorkos/shared/agent-runtime`). */
+export type { RuntimeSignInState } from '@dorkos/shared/agent-runtime';
 
 /** What one runtime offers this module: its type, whether credits reach it, and its sign-in. */
 export interface CreditsRuntimeView {

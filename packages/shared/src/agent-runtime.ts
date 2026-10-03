@@ -495,6 +495,45 @@ export function deriveRuntimeReadiness(
 }
 
 /**
+ * Where a runtime's own sign-in stands:
+ *
+ * - `working` — it serves turns.
+ * - `needs-attention` — it exists but has expired or run out; a sign-in to
+ *   renew, never a gap to fill with DorkOS credits.
+ * - `none` — there is no sign-in at all. The only state DorkOS credits may be
+ *   offered first for, or filled into on a new link.
+ */
+export type RuntimeSignInState = 'working' | 'needs-attention' | 'none';
+
+/**
+ * Read where a runtime's own sign-in stands off the same dependency checks
+ * {@link deriveRuntimeReadiness} reads, so the server's credits defaults and
+ * every client surface that offers credits classify it identically:
+ *
+ * - ready → `working`;
+ * - an auth check that is missing WITH a known deadline, or outdated → the
+ *   sign-in exists and ran out: `needs-attention`, never a gap;
+ * - an auth check missing with no deadline → `none`, no sign-in at all.
+ *
+ * Anything this cannot classify reads as `needs-attention`, which offers and
+ * fills nothing: only a plain "no sign-in" may ever lead with credits.
+ *
+ * @param type - The runtime type.
+ * @param dependencies - Its dependency checks.
+ */
+export function deriveRuntimeSignIn(
+  type: string,
+  dependencies: readonly DependencyCheck[]
+): RuntimeSignInState {
+  if (deriveRuntimeReadiness(type, [...dependencies]).state === 'ready') return 'working';
+  const binary = dependencies.find((d) => /\bCLI\b/i.test(d.name)) ?? dependencies[0];
+  const auth = dependencies.find((d) => d !== binary && /auth|login/i.test(d.name));
+  if (!auth) return 'needs-attention';
+  if (auth.status === 'missing' && auth.expiresAt === undefined) return 'none';
+  return 'needs-attention';
+}
+
+/**
  * Per-runtime support for a single runtime-fulfilled command intent
  * (see {@link RuntimeCapabilities.commandIntents}).
  */

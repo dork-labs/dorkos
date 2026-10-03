@@ -63,6 +63,7 @@ export {
   type ClaudeAccountsView,
 } from './server-config/use-claude-accounts';
 export {
+  cloudCreditsKeys,
   useCloudCredits,
   useDismissCreditsNotice,
   useKeepCreditsOutOfProject,
@@ -84,6 +85,12 @@ export type {
   CoalescedInvalidationOptions,
 } from './query/use-coalesced-invalidation';
 export { useNow } from './use-now';
+export {
+  CreditsOfferProvider,
+  useCreditsOfferSlot,
+  type CreditsOfferProps,
+  type CreditsOfferSlot,
+} from './credits-offer/credits-offer-slot';
 export { useCommunityAuthority } from './use-community-authority';
 export {
   commitCommunityRouteEpoch,

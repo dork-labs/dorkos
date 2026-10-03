@@ -101,7 +101,11 @@ export function Banner({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {Icon && <Icon aria-hidden className="size-3.5 shrink-0" />}
         <div className="min-w-0 flex-1 basis-64 leading-snug">{children}</div>
-        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+        {actions && (
+          <div className="flex max-w-full min-w-0 shrink-0 flex-wrap items-center gap-2">
+            {actions}
+          </div>
+        )}
         {onDismiss && (
           <button
             type="button"
