@@ -890,9 +890,17 @@ describe('AppShell, when the server answers with an error', () => {
     // failure it never saw. "Something newer failed and we could not see what"
     // is exactly the unreachable case.
     vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
-    const first = renderAppShell();
+    const firstClient = makeQueryClient();
+    const first = renderAppShell(undefined, firstClient);
     await screen.findByTestId('server-error');
+    const firstFailureAt = firstClient.getQueryState(configKeys.current())?.errorUpdatedAt;
+    if (firstFailureAt === undefined) throw new Error('Expected the observed config failure');
+    expect(firstFailureAt).toBeGreaterThan(LAUNCH_STARTED_AT);
     first.unmount();
+
+    // The fixture must actually be newer, even when both renders share one millisecond.
+    const newerFailureAt = firstFailureAt + 1;
+    expect(newerFailureAt).toBeGreaterThan(firstFailureAt);
 
     // A fresh cache carrying a warm config and a failure stamped AFTER the 500,
     // with its error already gone. Nothing new goes out: the read hangs.
@@ -902,11 +910,36 @@ describe('AppShell, when the server answers with an error', () => {
       client
         .getQueryCache()
         .find({ queryKey: configKeys.current() })
-        ?.setState({ errorUpdateCount: 1, errorUpdatedAt: Date.now(), error: null });
+        ?.setState({ errorUpdateCount: 1, errorUpdatedAt: newerFailureAt, error: null });
     });
 
     expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
     expect(screen.queryByTestId('server-error')).not.toBeInTheDocument();
+  });
+
+  it('keeps the observed failure when the cache carries the same failure stamp', async () => {
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+    const firstClient = makeQueryClient();
+    const first = renderAppShell(undefined, firstClient);
+    await screen.findByTestId('server-error');
+    const firstFailureAt = firstClient.getQueryState(configKeys.current())?.errorUpdatedAt;
+    if (firstFailureAt === undefined) throw new Error('Expected the observed config failure');
+    expect(firstFailureAt).toBeGreaterThan(LAUNCH_STARTED_AT);
+    first.unmount();
+
+    // The error was cleared by a retry of the same failure, not a newer failure.
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    renderAppShell((client) => {
+      seedYesterdaysConfig(client);
+      client
+        .getQueryCache()
+        .find({ queryKey: configKeys.current() })
+        ?.setState({ errorUpdateCount: 1, errorUpdatedAt: firstFailureAt, error: null });
+    });
+
+    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
+    expect(screen.getByText(/didn’t load \(HTTP 500\)/)).toBeInTheDocument();
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
   });
 
   it('hands the window back when the server recovers', async () => {
