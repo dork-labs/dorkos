@@ -26,11 +26,14 @@ import { selectRuntimeReadiness } from '../model/use-runtime-requirements';
  *   first, its own sign-in and a key as visible rows under it.
  * - `on-credits` — its new work already runs on credits: "You're ready", no
  *   card.
+ * - `other-way` — it would lead, but the person turned credits off for this
+ *   runtime: their "no" stands, so credits are only one of the other ways,
+ *   under the runtime's own.
  * - `none` — no credits card. A working sign-in is ready on its own; one that
  *   expired or ran out leads with signing in again, never with credits; and a
  *   runtime credits cannot reach is offered only its own ways.
  */
-export type RuntimeCreditsOffer = 'lead' | 'on-credits' | 'none';
+export type RuntimeCreditsOffer = 'lead' | 'on-credits' | 'other-way' | 'none';
 
 /**
  * Whether the server reports DorkOS credits wired for a runtime and not
@@ -83,7 +86,8 @@ export function selectRuntimeSignIn(
  *
  * A working sign-in wins over everything: the person's own setup is never
  * second to an offer. Credits lead only for a runtime with no sign-in at all —
- * never for one whose sign-in expired or ran out, which needs signing in again.
+ * never for one whose sign-in expired or ran out, which needs signing in again
+ * — and never over a person's own recorded "no".
  *
  * @param signIn - Where the runtime's own sign-in stands, or `undefined` if unknown.
  * @param credits - `GET /api/cloud/credits`, or `undefined` while it loads.
@@ -96,6 +100,8 @@ export function creditsOfferFor(
 ): RuntimeCreditsOffer {
   if (signIn === 'working') return 'none';
   if (runsOnCredits(credits, type)) return 'on-credits';
-  if (signIn === 'none' && creditsWiredFor(credits, type)) return 'lead';
-  return 'none';
+  if (signIn !== 'none' || !creditsWiredFor(credits, type)) return 'none';
+  const choice = credits?.defaults?.[type];
+  if (choice?.runsOn === 'own-sign-in' && choice.chosenBy === 'user') return 'other-way';
+  return 'lead';
 }

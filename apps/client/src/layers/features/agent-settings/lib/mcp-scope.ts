@@ -10,7 +10,7 @@ export type McpServerScope = 'agent' | 'project' | 'plugin' | 'computer';
 /** The sentence a scope badge's tooltip expands to. */
 const MCP_SCOPE_TOOLTIP: Record<McpServerScope, string> = {
   agent: 'Added to this agent through DorkOS',
-  project: 'From this project, declared in its config files',
+  project: 'From this project’s config files',
   plugin: 'Comes with a plugin',
   computer: 'From your computer-wide config',
 };
@@ -131,7 +131,7 @@ export function deriveDiscoveredScope(
 }
 
 /** What a card says about an origin the runtime would not name. */
-const UNKNOWN_SCOPE_SENTENCE = 'This agent’s runtime loads this server. Add it to manage it here.';
+const UNKNOWN_SCOPE_SENTENCE = 'Loaded from outside DorkOS. Add it to manage it here.';
 
 /**
  * The tooltip for a scope badge, with the plugin named when one is known.

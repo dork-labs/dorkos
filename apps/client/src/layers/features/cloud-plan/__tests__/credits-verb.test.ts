@@ -41,6 +41,10 @@ describe('creditsVerb', () => {
     expect(creditsVerb(true, plan('5000000', '0', '2000000'))).toBe('Use');
   });
 
+  it('waits, saying nothing, while a signed-in plan is still loading', () => {
+    expect(creditsVerb(true, undefined)).toBeNull();
+  });
+
   it('says "Use" for any answer it cannot read', () => {
     expect(creditsVerb(true, { available: false })).toBe('Use');
     expect(creditsVerb(true, plan('5.0', '5.0', '0'))).toBe('Use');

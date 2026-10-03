@@ -3,10 +3,15 @@
  *
  * @module widgets/credits-offer/ui/CreditsOfferCard
  */
-import { useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { CloudLinkInline, useCloudLink, useCloudStatus } from '@/layers/features/cloud-link';
-import { BillingNoticeView, useCloudPlan, useOpenBillingPage } from '@/layers/features/cloud-plan';
+import {
+  BillingNoticeView,
+  creditsVerb,
+  useCloudPlan,
+  useOpenBillingPage,
+} from '@/layers/features/cloud-plan';
 import { creditsWiredFor, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -16,7 +21,6 @@ import {
   type CreditsOfferSlot,
 } from '@/layers/shared/model';
 import { Button, Spinner } from '@/layers/shared/ui';
-import { creditsVerb } from '../lib/credits-verb';
 
 /** The runtimes credits reach, by name, the way a person says them aloud. */
 function joinNames(names: string[]): string {
@@ -27,6 +31,14 @@ function joinNames(names: string[]): string {
 /** What a failed choice says when the request brought back no words of its own. */
 const CHOOSE_FAILED = 'Couldn’t switch to DorkOS credits. Try again in a moment.';
 
+/** What the card says when the plan could not be read before spending. */
+const PLAN_UNREAD = 'Couldn’t check your DorkOS credits. Try again in a moment.';
+
+/** The reason a request came back with, when it is a sentence; the fallback otherwise. */
+function reasonOf(err: unknown, fallback: string): string {
+  return err instanceof Error && /[.!?]$/.test(err.message.trim()) ? err.message : fallback;
+}
+
 /**
  * The default card of the default-first pattern (spec
  * `dorkos-account-by-default` §3): one button that runs a runtime on DorkOS
@@ -35,11 +47,14 @@ const CHOOSE_FAILED = 'Couldn’t switch to DorkOS credits. Try again in a momen
  * sends anybody to Settings.
  *
  * - **Signed out**: the button starts the ONE link flow (`features/cloud-link`)
- *   with this surface as its origin, and hands it the choice as what to do once
- *   the link lands. The code shows in place; approving it — here, or in
- *   Settings › DorkOS account, which shows the same code — makes the choice.
- * - **Signed in**: the button makes the choice now. "Buy…" opens the page to
- *   add credits on the web instead, since nothing can be spent yet.
+ *   with this surface as its origin, and remembers the code it started. When
+ *   THAT code is approved — here, or in Settings › DorkOS account, which shows
+ *   the same code — and this card is still on screen, it makes the choice, or
+ *   for a choice that spends at once (`confirmAfterLink`) asks first. A card
+ *   that has gone away, another tab, and a relink carry nothing on.
+ * - **Signed in**: the button makes the choice now. Before it does, the plan
+ *   is read again; an account with nothing left to spend is offered the page
+ *   to add credits instead, and never moved onto them.
  *
  * The choice is the surface's (`onChoose`), or by default the runtime's new
  * work going on credits, recorded as the person's choice. Nothing here ever
@@ -54,6 +69,9 @@ export function CreditsOfferCard({
   intent = 'start',
   onChoose,
   fullWidth = false,
+  confirmAfterLink,
+  note,
+  chosen,
 }: CreditsOfferProps) {
   const link = useCloudLink();
   const summary = useCloudStatus().data;
@@ -64,9 +82,22 @@ export function CreditsOfferCard({
   const setDefault = useSetCreditsDefault();
   const [choosing, setChoosing] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [nothingLeft, setNothingLeft] = useState(false);
+  const [done, setDone] = useState(false);
+  // The code THIS card started, held only while it is mounted: the link that
+  // lands is carried on from here only when it is this one.
+  const startedCode = useRef<string | null>(null);
 
   const verb = creditsVerb(linked, plan.data);
-  const label = intent === 'keep-going' ? 'Keep going on DorkOS credits' : `${verb} DorkOS credits`;
+  const label =
+    verb === null
+      ? 'Checking your DorkOS credits…'
+      : verb === 'Buy'
+        ? 'Buy DorkOS credits'
+        : intent === 'keep-going'
+          ? 'Keep going on DorkOS credits'
+          : `${verb} DorkOS credits`;
   const wired = credits
     ? Object.keys(credits.runtimes).filter((type) => creditsWiredFor(credits, type))
     : [];
@@ -75,25 +106,47 @@ export function CreditsOfferCard({
 
   const choose = async () => {
     setFailure(null);
+    setConfirming(false);
     setChoosing(true);
     try {
+      // Read again right before choosing: what the button said may be stale,
+      // and nothing is ever moved onto credits the account does not have.
+      const fresh = await plan.refetch();
+      if (fresh.isError || fresh.data === undefined) {
+        setFailure(PLAN_UNREAD);
+        return;
+      }
+      if (creditsVerb(true, fresh.data) === 'Buy') {
+        setNothingLeft(true);
+        return;
+      }
       if (onChoose) await onChoose();
       else await setDefault.mutateAsync({ runtime, useCredits: true });
+      setDone(true);
     } catch (err) {
-      setFailure(
-        err instanceof Error && /[.!?]$/.test(err.message.trim()) ? err.message : CHOOSE_FAILED
-      );
+      setFailure(reasonOf(err, CHOOSE_FAILED));
     } finally {
       setChoosing(false);
     }
   };
 
-  const press = () => {
+  const onLanded = useEffectEvent((userCode: string) => {
+    if (startedCode.current === null || startedCode.current !== userCode) return;
+    startedCode.current = null;
+    if (confirmAfterLink) setConfirming(true);
+    else void choose();
+  });
+  const landedCode = link.landed?.userCode ?? null;
+  useEffect(() => {
+    if (landedCode !== null) onLanded(landedCode);
+  }, [landedCode]);
+
+  const press = async () => {
     if (!linked) {
-      void link.start({ origin, afterLink: choose });
+      startedCode.current = await link.start({ origin });
       return;
     }
-    if (verb === 'Buy' && intent === 'start') {
+    if (verb === 'Buy') {
       billing.open({ page: 'topup' });
       return;
     }
@@ -101,25 +154,65 @@ export function CreditsOfferCard({
   };
 
   const waiting = link.view.kind === 'pending';
-  // Held until the link summary answers: pressed before then, a linked
-  // computer would be sent through the link flow again.
-  const busy = summary === undefined || choosing || link.starting || billing.pending !== null;
+  // Held until the link summary answers (pressed before then, a linked computer
+  // would be sent through the link flow again), and while a signed-in plan
+  // loads (the answer may be "Buy").
+  const busy =
+    summary === undefined || verb === null || choosing || link.starting || billing.pending !== null;
+
+  if (done && chosen) {
+    return (
+      <p className="text-sm" role="status" data-testid={`credits-offer-${runtime}`}>
+        {chosen}
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-2" data-testid={`credits-offer-${runtime}`}>
-      {!waiting && (
-        <Button
-          size="sm"
-          className={cn('gap-1.5', fullWidth && 'w-full')}
-          onClick={press}
-          disabled={busy}
-          data-testid="credits-offer-button"
-        >
-          {busy ? <Spinner size="xs" /> : <Sparkles className="size-3.5" aria-hidden />}
-          {label}
-        </Button>
+      {nothingLeft ? (
+        <div className="space-y-2" role="status">
+          <p className="text-sm">Your DorkOS account has no credits left to spend.</p>
+          <Button
+            size="sm"
+            className={cn(fullWidth && 'w-full')}
+            onClick={() => billing.open({ page: 'topup' })}
+            disabled={billing.pending !== null}
+          >
+            Buy DorkOS credits
+          </Button>
+        </div>
+      ) : confirming && confirmAfterLink ? (
+        <div className="space-y-2" role="status">
+          <p className="text-sm">{confirmAfterLink.prompt}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => void choose()} disabled={choosing}>
+              {choosing && <Spinner size="xs" />}
+              {confirmAfterLink.action}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+              Not now
+            </Button>
+          </div>
+        </div>
+      ) : (
+        !waiting && (
+          <Button
+            size="sm"
+            className={cn('h-auto min-h-8 gap-1.5 whitespace-normal', fullWidth && 'w-full')}
+            onClick={() => void press()}
+            disabled={busy}
+            data-testid="credits-offer-button"
+          >
+            {busy ? <Spinner size="xs" /> : <Sparkles className="size-3.5" aria-hidden />}
+            {label}
+          </Button>
+        )
       )}
-      {intent === 'start' && covers && !waiting && (
+      {!waiting && !confirming && !nothingLeft && note && (
+        <p className="text-muted-foreground text-xs">{note}</p>
+      )}
+      {intent === 'start' && covers && !waiting && !confirming && !nothingLeft && (
         <p className="text-muted-foreground text-xs">One account for {covers}.</p>
       )}
       <CloudLinkInline origin={origin} />

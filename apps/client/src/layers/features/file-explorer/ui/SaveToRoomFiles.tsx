@@ -153,7 +153,7 @@ function SaveToRoomFilesDialog({
       } catch {
         outcome = {
           status: 'refused' as const,
-          reason: roomChangeRefusalMessage(error) ?? 'That didn’t save. Try again in a moment.',
+          reason: roomChangeRefusalMessage(error) ?? 'Couldn’t save. Try again in a moment.',
         };
       }
       if (outcome.status === 'exists') {
@@ -166,8 +166,7 @@ function SaveToRoomFilesDialog({
         });
       } else if (outcome.status === 'conflict') {
         setProblem({
-          reason:
-            'Somebody changed this folder while you were choosing, so nothing was saved. Try again.',
+          reason: 'This folder changed while you chose, so nothing was saved. Try again.',
         });
         void listing.refetch();
       } else if (outcome.status === 'refused') {
@@ -184,8 +183,7 @@ function SaveToRoomFilesDialog({
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Save to room files</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            Keep this file with the room’s files, where everyone in the room and their agents can
-            find it.
+            Everyone in the room, and their agents, can find it there.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-3">

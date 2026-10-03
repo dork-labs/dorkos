@@ -190,9 +190,7 @@ describe('claim and connect', () => {
       })
     );
     expect(
-      screen.getByText(
-        'Finish in your browser. Sign in or create your account there, then come back.'
-      )
+      screen.getByText('Sign in or create an account in your browser, then come back.')
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Open in your browser/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'I’ve finished' })).toBeInTheDocument();
@@ -207,9 +205,7 @@ describe('claim and connect', () => {
       })
     );
     expect(
-      screen.getByText(
-        'Finish in your browser by signing in with your DorkOS account, then come back.'
-      )
+      screen.getByText('Sign in with your DorkOS account in your browser, then come back.')
     ).toBeInTheDocument();
     expect(screen.queryByText(/create your account/)).not.toBeInTheDocument();
   });
@@ -268,7 +264,7 @@ describe('claim and connect', () => {
   it('says it is done, and selected', () => {
     show(claimConnectStep({ ...base, state: { kind: 'done', ref: 'r' } }));
     expect(screen.getByRole('heading', { name: 'Night shift is ready' })).toBeInTheDocument();
-    expect(screen.getByText('It’s selected in your list of spaces.')).toBeInTheDocument();
+    expect(screen.getByText('It’s selected in your spaces.')).toBeInTheDocument();
   });
 });
 
@@ -276,11 +272,15 @@ describe('Move a space here', () => {
   it('explains what moves and how to export', () => {
     show(moveExplainStep(noop, noop));
     expect(
-      screen.getByText(
-        'Moving copies your space’s history and files to DorkOS. Everyone joins again and reconnects their DorkOS. Your old space keeps running until you delete it.'
-      )
+      screen.getByText('This copies your space’s history and files to DorkOS.')
     ).toBeInTheDocument();
-    expect(screen.getByText('Confirm with your password.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Everyone joins again and reconnects their DorkOS.')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Your old space keeps running until you delete it.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Enter your password.')).toBeInTheDocument();
     // Nothing is committed here yet; the line waits for the step that starts the move.
     expect(screen.queryByText(/18 or older/)).not.toBeInTheDocument();
   });
@@ -360,8 +360,9 @@ describe('Move a space here', () => {
     expect(
       screen.getByRole('heading', { name: 'This move has to start again' })
     ).toBeInTheDocument();
-    expect(screen.getByText(/DorkOS restarted since the move began/)).toBeInTheDocument();
-    expect(screen.getByText(/started on another computer/)).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS restarted, or the move began/)).toBeInTheDocument();
+    expect(screen.getByText(/start again with the same export/)).toBeInTheDocument();
+    expect(screen.getByText('Or finish it on the computer that started it.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel move' })).toBeInTheDocument();
     first.unmount();
     const expired = moveStepOf(
@@ -388,9 +389,7 @@ describe('Move a space here', () => {
         progressHandlers
       )
     );
-    expect(
-      screen.getByText(/You can close this window, but keep DorkOS running/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/You can close this window\. Keep DorkOS running/)).toBeInTheDocument();
   });
 
   it('says the import is running, with counts only, and that closing is fine', () => {
@@ -440,7 +439,7 @@ describe('Move a space here', () => {
 
   it('does not crash on a move state it does not know', () => {
     show(moveProgressStep(moveStepOf(move({ state: 'unrecognised' })) as never, progressHandlers));
-    expect(screen.getByText(/a state this version of DorkOS doesn’t know/)).toBeInTheDocument();
+    expect(screen.getByText(/Update DorkOS to see where this move is/)).toBeInTheDocument();
   });
 
   it('hands a ready or claimed move to claim and connect', () => {
@@ -521,9 +520,9 @@ describe('Your spaces', () => {
     } as HostedCommunity;
     list([odd]);
     expect(screen.getByText('Unknown state')).toBeInTheDocument();
-    expect(screen.getByText(/in a state this version of DorkOS doesn’t know/)).toBeInTheDocument();
+    expect(screen.getByText('Update DorkOS to see this space’s state.')).toBeInTheDocument();
     expect(
-      screen.getByText(/on hold for a reason this version of DorkOS doesn’t know/)
+      screen.getByText('This space is on hold. Update DorkOS to see why.')
     ).toBeInTheDocument();
   });
 
@@ -565,6 +564,6 @@ describe('Your spaces', () => {
       />
     );
     expect(screen.getByText('Part of this export is damaged.')).toBeInTheDocument();
-    expect(screen.getByText('You don’t have any spaces on DorkOS yet.')).toBeInTheDocument();
+    expect(screen.getByText('No spaces yet.')).toBeInTheDocument();
   });
 });

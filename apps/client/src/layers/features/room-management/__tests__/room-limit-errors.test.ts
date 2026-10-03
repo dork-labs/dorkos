@@ -20,13 +20,13 @@ describe('roomLimitsErrorMessage', () => {
       coded('OPERATOR_ONLY', 'Only you can change how much a room may spend on automatic replies')
     );
 
-    expect(said).toBe('Only the person who owns this DorkOS can change a room’s limits.');
+    expect(said).toBe('Only the owner of this DorkOS can change room limits.');
     expect(said).not.toMatch(/Only you/);
   });
 
   it('says what to do about an archived room', () => {
     expect(roomLimitsErrorMessage(coded('ROOM_ARCHIVED', 'Room is archived'))).toBe(
-      'This room is archived, so its limits are on hold. Bring it back first.'
+      'This room is archived. Bring it back to change its limits.'
     );
   });
 
@@ -37,9 +37,7 @@ describe('roomLimitsErrorMessage', () => {
   });
 
   it('still says something when the failure carried no sentence at all', () => {
-    expect(roomLimitsErrorMessage(new Error('   '))).toBe(
-      'That limit could not be saved. Try again.'
-    );
-    expect(roomLimitsErrorMessage(undefined)).toBe('That limit could not be saved. Try again.');
+    expect(roomLimitsErrorMessage(new Error('   '))).toBe('Couldn’t save that limit. Try again.');
+    expect(roomLimitsErrorMessage(undefined)).toBe('Couldn’t save that limit. Try again.');
   });
 });

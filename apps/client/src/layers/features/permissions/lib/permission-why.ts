@@ -52,18 +52,18 @@ export function stateWhy(input: StateWhyInput): string {
   const agent = input.agentName ?? 'this agent';
   switch (input.source) {
     case 'inactive':
-      return "Blocked, because this agent's access was turned off.";
+      return 'Blocked, because this agent’s access was turned off.';
     case 'floor':
-      return `${state}. This is a locked area, so it can never be Allowed.`;
+      return `${state}. This area is locked, so it’s never Allowed.`;
     case 'unchanged':
-      return `${state}. No preset is chosen yet, so it works as it did before.`;
+      return `${state}. No preset chosen yet, so it works as before.`;
     case 'always-asks':
-      return `${state}. This always shows you what it would change before it runs, so it is never Allowed.`;
+      return `${state}. It always shows you the change first, so it’s never Allowed.`;
     default:
       break;
   }
   if (input.destructiveAsk) {
-    return "Ask, because an action that can't be undone always asks unless you set it on its own.";
+    return 'Ask. Actions that can’t be undone ask unless you set them one by one.';
   }
   switch (input.source) {
     case 'agent-area':
@@ -96,18 +96,18 @@ export function filesWhy(
     case 'agent':
       return `${label}, set for ${agentName ?? 'this agent'}.`;
     case 'runtime':
-      return `${label}, set for its runtime in Settings → Runtimes.`;
+      return `${label}, set in Settings → Runtimes.`;
     case 'default':
       return `${label}, the setting everyone has.`;
     case 'runtime-own':
-      return 'Not set, so each runtime starts where it always has.';
+      return 'Not set, so each AI tool uses its own default.';
   }
 }
 
 /** Where a change was made, as the end of a sentence. */
 const SURFACE_PHRASE: Record<PermissionSurface, string> = {
   settings: ' in Settings',
-  'agent-page': " on the agent's page",
+  'agent-page': ' on the agent’s page',
   'control-center': ' in the Control Center',
   'request-card': ' from a request card',
   'first-run': ' during setup',
@@ -143,12 +143,12 @@ export function lastChangeWhy(change: PermissionLastChange | undefined): string 
       return `Changed by ${who} ${on}${where}.`;
     }
     case 'local-trust':
-      return `Changed by someone on this computer ${on}${where}. Login is off, so DorkOS can't confirm who.`;
+      return `Changed ${on}${where}. With login off, who is unknown.`;
     case 'agent-request-approved':
       return `Changed ${on}: ${change.actorLabel}.`;
     case 'upgrade':
       return `Set by an upgrade ${on}.`;
     case 'outside':
-      return `Changed outside DorkOS ${on}, by an edit to the agent's settings file.`;
+      return `Changed outside DorkOS ${on}, in the agent’s settings file.`;
   }
 }

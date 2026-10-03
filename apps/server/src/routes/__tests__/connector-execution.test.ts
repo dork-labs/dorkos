@@ -73,6 +73,7 @@ describe('connector execution routes', () => {
         },
         resolveOwner: () => OWNER,
         loginEnabled: () => Boolean(options.user),
+        isAccountOwner: (user) => user?.userId === 'user-a',
         verifyUser: async () => options.verifyUser ?? null,
         trustedOrigins: () => ['http://localhost:4242'],
       })

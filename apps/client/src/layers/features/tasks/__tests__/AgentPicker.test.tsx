@@ -104,7 +104,7 @@ describe('AgentPicker', () => {
     it('shows empty message when no agents exist', () => {
       render(<AgentPicker agents={[]} value={undefined} onValueChange={vi.fn()} />);
 
-      expect(screen.getByText(/No agents registered yet/)).toBeInTheDocument();
+      expect(screen.getByText('No agents yet')).toBeInTheDocument();
     });
   });
 });

@@ -178,6 +178,27 @@ describe('CloudLinkPanel — a relink that did not finish', () => {
     }
   );
 
+  it('says why a refused dismiss changed nothing', async () => {
+    const user = userEvent.setup();
+    const transport = linkedTransport();
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
+      state: 'linked',
+      accountLabel: 'kai@dork.dev',
+      relinkOutcome: 'failed',
+    });
+    // What the transport throws for the owner bar's 403 (DOR-2652).
+    const sentence =
+      'Only the owner of this DorkOS can stop linking this computer to a DorkOS account.';
+    vi.mocked(transport.cancelCloudLink).mockRejectedValue(
+      Object.assign(new Error(sentence), { status: 403, code: 'owner_only' })
+    );
+    renderPanel(transport);
+    await screen.findByText(/The new link couldn’t finish\./);
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(sentence);
+  });
+
   it('cancels a relink while its code is showing and goes back to Signed in', async () => {
     const user = userEvent.setup();
     const transport = linkedTransport();

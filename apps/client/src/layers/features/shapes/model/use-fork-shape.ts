@@ -57,7 +57,7 @@ export interface UseForkShapeOptions {
  * @param options - How to reach the inline error surface, if there still is one.
  * @returns The fork mutation — `mutate({ name, as })` copies the Shape with the
  *   live arrangement captured, then refreshes the installed-Shapes list so the
- *   copy appears with its "forked from …" caption.
+ *   copy appears with its "Copied from …" caption.
  */
 export function useForkShape({ isInlineErrorVisible }: UseForkShapeOptions) {
   const transport = useTransport();

@@ -76,24 +76,24 @@ function describeMany(checks: readonly InstallationUpdateCheck[]): ApplyOutcomeT
   const failed = checks.filter((c) => c.applyError).length;
   if (applied === total) {
     const message = checks.some(keptUnproven)
-      ? `Updated ${total} packages. One or more kept files DorkOS couldn’t sort; their rows say which.`
+      ? `Updated ${total} packages. Some kept files need sorting; see their rows.`
       : `Updated ${total} packages`;
     return { kind: 'success', message };
   }
   if (applied > 0) {
     return {
       kind: 'warning',
-      message: `Updated ${applied} of ${total} packages. Each package shows what happened.`,
+      message: `Updated ${applied} of ${total} packages. Each row shows why.`,
     };
   }
   if (failed > 0) {
     const count = failed === total ? `${total}` : `${failed} of ${total}`;
-    return { kind: 'error', message: `Couldn’t update ${count} packages. Each package shows why.` };
+    return { kind: 'error', message: `Couldn’t update ${count} packages. Each row shows why.` };
   }
   if (checks.every((c) => c.status === 'current')) {
-    return { kind: 'success', message: `These ${total} packages are already up to date` };
+    return { kind: 'success', message: `All ${total} packages are up to date` };
   }
-  return { kind: 'warning', message: 'Nothing was updated. Each package shows where it stands.' };
+  return { kind: 'warning', message: 'Nothing was updated. Each row shows why.' };
 }
 
 /**
@@ -137,16 +137,14 @@ function describeFailure(err: unknown, requested: readonly StaleInstallation[]):
     // Nothing changed on this machine. The check refreshes on its own, so the
     // next confirm shows what the package runs now.
     const subject = requested.length === 1 ? 'This package' : 'One of these packages';
-    return `${subject} changed what it runs since you looked, so nothing was updated. Review it again before updating.`;
+    return `${subject} changed what it runs since you looked. Review it again.`;
   }
   if (code === BATCH_NEEDS_APPROVAL) {
     // The next step names the command, with the package's own name when there
     // is one package (the name the update check and the CLI both use).
-    const next =
-      requested.length === 1
-        ? `Update it from the terminal with \`dorkos marketplace update ${requested[0]!.check.packageName} --apply\`.`
-        : 'Update each one from the terminal with `dorkos marketplace update <name> --apply`.';
-    return `Each of these installs needs your approval first, and DorkOS can’t ask for it here. ${next}`;
+    return requested.length === 1
+      ? `It needs your approval. Run \`dorkos marketplace update ${requested[0]!.check.packageName} --apply\` in a terminal.`
+      : 'Each needs your approval. Run `dorkos marketplace update <name> --apply` in a terminal.';
   }
   return err instanceof Error ? err.message : String(err);
 }

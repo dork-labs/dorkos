@@ -128,7 +128,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
           <div className="min-w-0">
             <p className="text-sm font-medium">Connect other apps to DorkOS</p>
             <p className="text-muted-foreground text-xs">
-              Let Claude Code, Cursor, and other apps use DorkOS as a tool server
+              Lets Claude Code, Cursor and others use DorkOS tools
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -189,8 +189,7 @@ function OutboundToolsCrossLink() {
 
   return (
     <p className="text-muted-foreground text-xs leading-relaxed">
-      Want to give one of your agents tools from another MCP server instead? That is the other
-      direction. Open the agent’s profile and go to MCP servers.{' '}
+      To give an agent another server’s tools, open its profile.{' '}
       <Button
         variant="link"
         size="sm"
@@ -224,7 +223,7 @@ function McpAuthRow({
     return (
       <SettingRow
         label="Authentication"
-        description="Gated by the MCP_API_KEY environment variable"
+        description="Protected by the MCP_API_KEY environment variable."
       >
         <Badge variant="outline">Environment variable</Badge>
       </SettingRow>
@@ -244,7 +243,7 @@ function McpAuthRow({
     return (
       <SettingRow
         label="Authentication"
-        description="Couldn’t generate a local token for this instance. External MCP clients won’t be able to authenticate until you restart DorkOS or turn on login."
+        description="Couldn’t make a token for other apps. Restart DorkOS or turn on login."
       >
         <Badge variant="outline" tone="warning">
           No key yet
@@ -260,9 +259,10 @@ function McpAuthRow({
         <KeyRound className="text-muted-foreground size-3.5" />
         <p className="text-sm font-medium">Authentication</p>
       </div>
+      <p className="text-muted-foreground text-xs">Other apps sign in with a personal API key.</p>
       <p className="text-muted-foreground text-xs">
-        MCP clients authenticate with a personal API key. Create or revoke keys in Settings → Login
-        & security → API keys, then pass it as a <code className="font-mono">Bearer</code> token.
+        Make one in Settings → Login & security. Send it as a{' '}
+        <code className="font-mono">Bearer</code> token.
       </p>
     </div>
   );
@@ -331,8 +331,7 @@ function LocalTokenAuthRow({
             <AlertDialogHeader>
               <AlertDialogTitle>Rotate the local MCP token?</AlertDialogTitle>
               <AlertDialogDescription>
-                This makes a new token and turns off the old one right away. Every MCP client you
-                already set up will stop working until you paste in the new token. There is no undo.
+                The old token stops working. Apps need the new one. This can’t be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -353,8 +352,10 @@ function LocalTokenAuthRow({
         </AlertDialog>
       </div>
       <p className="text-muted-foreground text-xs">
-        Paste this token into your MCP client as a <code className="font-mono">Bearer</code> token.
-        It protects the tools that change things on your machine; read-only checks work without it.
+        Paste it into your MCP client as a <code className="font-mono">Bearer</code> token.
+      </p>
+      <p className="text-muted-foreground text-xs">
+        It guards tools that change things. Read-only checks work without it.
       </p>
       {revealedToken ? (
         <div className="flex items-center gap-1.5">

@@ -49,25 +49,27 @@ export function RuntimeConnectFlow({
   const renderCreditsOffer = useCreditsOfferSlot();
   const setDefault = useSetCreditsDefault();
 
-  // Every flow below this line ends at a loopback-only endpoint — the delegated
-  // login and paste-key for Claude Code and Codex, and OpenCode's OpenRouter
-  // key, OAuth start and Ollama detect/pull/provision. So the guard belongs to
-  // the DISPATCHER rather than to one flow: put it inside `LoginConnect` and
-  // OpenCode's picker still hands a remote browser a set of controls that can
-  // only 403 (DOR-1655).
+  // Every flow of a runtime's OWN ends at a loopback-only endpoint — the
+  // delegated login and paste-key for Claude Code and Codex, and OpenCode's
+  // OpenRouter key, OAuth start and Ollama detect/pull/provision. So the guard
+  // belongs to the DISPATCHER rather than to one flow: put it inside
+  // `LoginConnect` and OpenCode's picker still hands a remote browser a set of
+  // controls that can only 403 (DOR-1655). Without it, the product contradicts
+  // itself two clicks apart: the chat auth-error card says sign-in needs the
+  // other computer, and Settings offers a button that says otherwise.
   //
-  // Without this, the product contradicts itself two clicks apart: the chat
-  // auth-error card says sign-in needs the other computer, and Settings offers
-  // a button that says otherwise.
-  if (!isLocalCaller) return <RemoteSigninNotice />;
-
+  // DorkOS credits are the exception, and the same one on every surface: the
+  // link is approved on dorkos.ai and the choice is an account write the
+  // owner may make from anywhere, so a phone is offered credits too, with the
+  // notice standing in for the runtime's own ways.
   const lead = offer === 'lead' && renderCreditsOffer !== null;
-  const ownWays =
-    connect.kind === 'provider-picker' ? (
-      <OpenCodeProviderPicker currentProvider={currentProvider} onConnected={onConnected} />
-    ) : connect.kind === 'login' ? (
-      <LoginConnect type={type} onConnected={onConnected} asOtherWay={lead} />
-    ) : null;
+  const ownWays = !isLocalCaller ? (
+    <RemoteSigninNotice />
+  ) : connect.kind === 'provider-picker' ? (
+    <OpenCodeProviderPicker currentProvider={currentProvider} onConnected={onConnected} />
+  ) : connect.kind === 'login' ? (
+    <LoginConnect type={type} onConnected={onConnected} asOtherWay={lead} />
+  ) : null;
   if (ownWays === null) return null;
 
   const label = getRuntimeDescriptor(type).label;
@@ -96,20 +98,34 @@ export function RuntimeConnectFlow({
   // Nothing works yet and credits reach this runtime: DorkOS first, the
   // runtime's own ways as visible rows right under it (a first visit), and the
   // line that nothing has to leave this computer.
+  const creditsOffer = (fullWidth: boolean) =>
+    renderCreditsOffer?.({
+      runtime: type,
+      origin: `runtime-connect:${type}`,
+      fullWidth,
+      onChoose: async () => {
+        await setDefault.mutateAsync({ runtime: type, useCredits: true });
+        onConnected?.(creditsConnectSuccess(label));
+      },
+    });
+
   if (lead) {
     return (
       <div className="space-y-4" data-testid={`default-first-${type}`}>
-        {renderCreditsOffer({
-          runtime: type,
-          origin: `runtime-connect:${type}`,
-          fullWidth: true,
-          onChoose: async () => {
-            await setDefault.mutateAsync({ runtime: type, useCredits: true });
-            onConnected?.(creditsConnectSuccess(label));
-          },
-        })}
+        {creditsOffer(true)}
         <OtherWays>{ownWays}</OtherWays>
         <KeepItLocalNote ollama={ollama} />
+      </div>
+    );
+  }
+
+  // The person turned credits off for this runtime: their own ways lead, and
+  // credits stay one quiet row under them.
+  if (offer === 'other-way' && renderCreditsOffer !== null) {
+    return (
+      <div className="space-y-4" data-testid={`credits-other-way-${type}`}>
+        {ownWays}
+        <OtherWays>{creditsOffer(false)}</OtherWays>
       </div>
     );
   }

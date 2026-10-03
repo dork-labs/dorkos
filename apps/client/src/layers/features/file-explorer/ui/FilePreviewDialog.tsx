@@ -153,7 +153,7 @@ export function FilePreviewDialog({
         setShareRefusal(
           error instanceof Error && error.message.trim().length > 0
             ? error.message
-            : 'DorkOS couldn’t reach the server. Check your connection and try again.'
+            : 'Couldn’t reach DorkOS. Check your connection and try again.'
         );
       } finally {
         setSharing(false);
@@ -287,7 +287,7 @@ export function FilePreviewDialog({
     onError: () => {
       setSaved(false);
       setConflict(null);
-      setRefusal('That didn’t save. Try again in a moment.');
+      setRefusal('Couldn’t save. Try again in a moment.');
     },
   });
 
@@ -334,7 +334,7 @@ export function FilePreviewDialog({
     // version "theirs", and move the optimistic lock onto a commit the room has
     // already left. Nothing is changed and the choice stays takeable.
     if (result.isError || result.data === undefined) {
-      setRefusal('Their version couldn’t be fetched just now, so nothing here changed.');
+      setRefusal('Couldn’t get their version, so nothing changed.');
       return;
     }
     const theirs = result.data;
@@ -345,8 +345,8 @@ export function FilePreviewDialog({
     if (theirs.body.kind !== 'text') {
       setRefusal(
         theirs.body.kind === 'not-readable'
-          ? `${theirs.body.reason} What you typed is still here. Save it over their change, or close this and copy it out first.`
-          : 'Their version isn’t something that can be shown here, so nothing here changed.'
+          ? `${theirs.body.reason} Your text is still here. Save over theirs, or copy it out first.`
+          : 'Their version can’t be shown here, so nothing changed.'
       );
       return;
     }
@@ -589,8 +589,8 @@ function ConflictNotice({
           choice, but something really did happen — so it says what. */}
       <p>
         {conflict.again
-          ? `${author} changed this file again while you were deciding, so it still isn’t saved.`
-          : `${author} changed this file while you were editing it, so nothing was saved.`}
+          ? `${author} changed this file again, so it still isn’t saved.`
+          : `${author} changed this file while you edited, so nothing was saved.`}
       </p>
       {who !== null && (
         // The commit's own subject, which is what makes a conflict resolvable by
@@ -638,14 +638,10 @@ function PreviewBody({ file }: { file: ExplorerFile }) {
         </pre>
       );
     case 'binary':
-      return (
-        <PreviewNote>This isn’t a text file, so it can’t be shown or edited here.</PreviewNote>
-      );
+      return <PreviewNote>Only text files can be shown or edited here.</PreviewNote>;
     case 'too-large':
       return (
-        <PreviewNote>
-          This file is larger than {formatBytes(file.body.maxBytes)}, so it isn’t shown here.
-        </PreviewNote>
+        <PreviewNote>Files over {formatBytes(file.body.maxBytes)} aren’t shown here.</PreviewNote>
       );
     case 'not-readable':
       return <PreviewNote>{file.body.reason}</PreviewNote>;

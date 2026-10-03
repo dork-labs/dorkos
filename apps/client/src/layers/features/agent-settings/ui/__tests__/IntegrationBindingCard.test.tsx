@@ -231,12 +231,8 @@ describe('IntegrationBindingCard', () => {
       const { view } = renderCard({ integrationName: 'Telegram' });
       await user.click(view.getByRole('button', { name: 'Actions' }));
       fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
-      expect(screen.getByText('Remove connection')).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /Remove the connection to Telegram\? The agent will no longer receive messages from it./
-        )
-      ).toBeInTheDocument();
+      expect(screen.getByText('Remove the Telegram connection?')).toBeInTheDocument();
+      expect(screen.getByText(/This agent stops getting messages from it./)).toBeInTheDocument();
     });
 
     it('calls onRemove when removal is confirmed', async () => {
@@ -251,7 +247,7 @@ describe('IntegrationBindingCard', () => {
       const dialogContent = screen.getByRole('alertdialog');
       const confirmButton = within(dialogContent)
         .getAllByRole('button')
-        .find((el) => el.textContent === 'Remove');
+        .find((el) => el.textContent === 'Remove connection');
       expect(confirmButton).toBeDefined();
       fireEvent.click(confirmButton!);
       expect(onRemove).toHaveBeenCalledTimes(1);
@@ -295,9 +291,9 @@ describe('IntegrationBindingCard', () => {
       expect(view.queryByText('Paused')).not.toBeInTheDocument();
     });
 
-    it('shows "Paused — no messages routing" subtitle when paused', () => {
+    it('shows "Paused: no messages delivered" subtitle when paused', () => {
       const { view } = renderCard({ binding: makeBinding({ enabled: false }) });
-      expect(view.getByText('Paused \u2014 no messages routing')).toBeInTheDocument();
+      expect(view.getByText('Paused: no messages delivered')).toBeInTheDocument();
     });
 
     it('shows gray status dot when paused (overrides adapter state)', () => {
@@ -322,7 +318,7 @@ describe('IntegrationBindingCard', () => {
     it('does not show preview sentence when paused (shows paused subtitle instead)', () => {
       const { view } = renderCard({ binding: makeBinding({ enabled: false }) });
       expect(view.queryByText('One thread for each conversation')).not.toBeInTheDocument();
-      expect(view.getByText('Paused \u2014 no messages routing')).toBeInTheDocument();
+      expect(view.getByText('Paused: no messages delivered')).toBeInTheDocument();
     });
   });
 
@@ -345,7 +341,7 @@ describe('IntegrationBindingCard', () => {
         binding: makeBinding({ enabled: false }),
         lastMessageAt: '2025-01-01T12:00:00.000Z',
       });
-      expect(view.getByText('Paused \u2014 no messages routing')).toBeInTheDocument();
+      expect(view.getByText('Paused: no messages delivered')).toBeInTheDocument();
       expect(view.queryByText(/Last received/)).not.toBeInTheDocument();
     });
 

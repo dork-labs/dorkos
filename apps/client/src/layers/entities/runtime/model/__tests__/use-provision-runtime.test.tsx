@@ -41,9 +41,7 @@ describe('useProvisionRuntime', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
 
-    expect(result.current.errorMessage).toBe(
-      'One-click install is not available for this runtime.'
-    );
+    expect(result.current.errorMessage).toBe('One-click install isn’t available here.');
     expect(result.current.errorMessage).not.toMatch(/\bagent\b/i);
   });
 
@@ -64,9 +62,7 @@ describe('useProvisionRuntime', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
 
-    expect(result.current.errorMessage).toBe(
-      'One-click install is not available for this runtime.'
-    );
+    expect(result.current.errorMessage).toBe('One-click install isn’t available here.');
   });
 
   it('passes through an honest server error message untouched', async () => {

@@ -106,7 +106,7 @@ export function RoomWorktreeDiff({ roomId, content, documentId, authorId }: Room
       <AnimatePresence>
         {review.conflict && (
           <Banner key="conflict" tone="warn" reduceMotion={reduceMotion}>
-            <span className="flex-1">This file changed since the diff was computed.</span>
+            <span className="flex-1">This file changed on disk. Refresh to see it.</span>
             <Button
               type="button"
               variant="ghost"
@@ -121,9 +121,7 @@ export function RoomWorktreeDiff({ roomId, content, documentId, authorId }: Room
         )}
         {review.writeFailed && (
           <Banner key="write-failed" tone="error" reduceMotion={reduceMotion}>
-            <span className="flex-1">
-              That change couldn’t be written to disk. Nothing was lost. Try again.
-            </span>
+            <span className="flex-1">Couldn’t save that change. Nothing was lost. Try again.</span>
             <Button
               type="button"
               variant="ghost"
@@ -162,7 +160,7 @@ export function RoomWorktreeDiff({ roomId, content, documentId, authorId }: Room
       {(hunkCount === 0 || base === current) && (
         <div className="text-muted-foreground pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
           <span className="bg-background/80 rounded-full border px-3 py-1 text-xs backdrop-blur">
-            Nothing here the room hasn’t got
+            The room already has all of this
           </span>
         </div>
       )}
@@ -267,8 +265,8 @@ function WorktreeDiffHeader({
             autoFocus
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
-            aria-label="What this work does, in one line"
-            placeholder="What this work does, in one line"
+            aria-label="One-line summary of this work"
+            placeholder="One-line summary of this work"
             className="h-7 min-w-0 flex-1 text-xs"
           />
           <Button
@@ -295,7 +293,7 @@ function WorktreeDiffHeader({
 
       {merged && (
         <p className="text-muted-foreground px-3 pb-2 text-xs">
-          This work is in the room now, and the room has been told once.
+          Merged into the room. The room got one note about it.
         </p>
       )}
 
@@ -303,8 +301,7 @@ function WorktreeDiffHeader({
         <div className="text-muted-foreground space-y-1 px-3 pb-2 text-xs">
           <p>{behindMainMessage(branch.behind, branch.ahead)}</p>
           <p>
-            That is {branch.agent}’s working copy, so ask {branch.agent} to do it rather than
-            running git in it yourself.
+            Ask {branch.agent} to do this. It’s {branch.agent}’s working copy.
           </p>
         </div>
       )}

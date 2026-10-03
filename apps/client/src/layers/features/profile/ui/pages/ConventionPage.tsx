@@ -25,7 +25,7 @@ import {
   SOUL_MAX_CHARS,
   extractCustomProse,
 } from '@dorkos/shared/convention-files';
-import { Button, Skeleton } from '@/layers/shared/ui';
+import { Button, MoreDetails, Skeleton } from '@/layers/shared/ui';
 import { ConventionFileEditor } from '@/layers/features/agent-settings';
 import { InjectionPreview } from '../InjectionPreview';
 import { soulFile } from '../../lib/soul-file';
@@ -35,19 +35,30 @@ import type { ProfilePageContentProps } from './types';
 
 /** Advisory that has to stay wherever NOPE.md is edited: these are instructions, not walls. */
 const NOPE_DISCLAIMER =
-  'These boundaries guide agent behavior but are not enforced at the tool level. They serve as strong instructions, not hard blocks.';
+  'These guide your agent but aren’t enforced. Treat them as strong instructions.';
 
 /**
  * Advisory that has to stay wherever MEMORY.md is edited.
  *
  * Two facts an operator cannot get from looking at the editor, and both change
- * what they would type into it: the agent writes here itself, and everything
- * here can surface in a room with other people in it. The visibility rule is
- * the same sentence the file's own header carries, so a person reads it whether
- * they arrive through this page or through the file.
+ * what they would type into it: everything here can come up in any chat the
+ * agent joins (this advisory, under the heading), and the agent writes here
+ * itself ({@link MEMORY_NOTE}, under the editor). Both stay visible. The
+ * visibility rule says what the file's own header says
+ * (`packages/memory/src/scaffold.ts`), so a person reads it whether they arrive
+ * through this page or through the file.
  */
 const MEMORY_DISCLAIMER =
-  'Your agent writes notes here as it works, and every note says where it was written. Anything in this file can come up in any conversation the agent joins, including rooms shared with other people, so never keep secrets, passwords or keys here. Deleting a line is forgetting it.';
+  'Anything here can come up in any chat. Never keep secrets, passwords or keys here.';
+
+/** The second visible MEMORY.md fact: nobody else is the only author here. */
+const MEMORY_NOTE = 'Your agent writes notes here as it works.';
+
+/** The rest of what MEMORY.md's advisory says, behind "More details". */
+const MEMORY_DETAILS = [
+  'Each note says where it was written.',
+  'Deleting a line makes your agent forget it.',
+] as const;
 
 /** Which file a page is about, and everything that differs because of it. */
 interface ConventionFile {
@@ -61,6 +72,10 @@ interface ConventionFile {
   maxChars: number;
   /** The advisory under the heading, when the file needs one. */
   disclaimer?: string;
+  /** One visible line under the editor, when the file needs one. */
+  note?: string;
+  /** Extra paragraphs behind "More details", under the editor. */
+  details?: readonly string[];
   /** What the operator actually edits, out of what is on disk. */
   read: (agent: ProfileAgentManifest) => string;
   /** What to write back, given what they typed. */
@@ -86,7 +101,7 @@ function soulProse(agent: ProfileAgentManifest, draft: string): string {
 
 const FILES: Record<'instructions' | 'boundaries' | 'memory', ConventionFile> = {
   instructions: {
-    title: 'Custom Instructions (SOUL.md)',
+    title: 'Custom instructions (SOUL.md)',
     errorLabel: 'Couldn’t save your instructions',
     key: 'soul',
     maxChars: SOUL_MAX_CHARS,
@@ -97,7 +112,7 @@ const FILES: Record<'instructions' | 'boundaries' | 'memory', ConventionFile> = 
     count: (agent, draft) => soulProse(agent, draft).length,
   },
   boundaries: {
-    title: 'Safety Boundaries (NOPE.md)',
+    title: 'Safety boundaries (NOPE.md)',
     errorLabel: 'Couldn’t save your boundaries',
     key: 'nope',
     maxChars: NOPE_MAX_CHARS,
@@ -112,6 +127,8 @@ const FILES: Record<'instructions' | 'boundaries' | 'memory', ConventionFile> = 
     key: 'memory',
     maxChars: MEMORY_MAX_CHARS,
     disclaimer: MEMORY_DISCLAIMER,
+    note: MEMORY_NOTE,
+    details: MEMORY_DETAILS,
     read: (agent) => agent.memoryContent ?? '',
     write: (_agent, draft) => ({ memoryContent: draft }),
     count: (_agent, draft) => draft.length,
@@ -123,8 +140,8 @@ function savedWords(at: number): string {
   const elapsed = Math.max(0, Date.now() - at);
   const minutes = Math.floor(elapsed / 60_000);
   if (minutes < 1) return 'Saved just now';
-  if (minutes < 60) return `Saved ${minutes} min ago`;
-  return `Saved ${Math.floor(minutes / 60)} h ago`;
+  if (minutes < 60) return `Saved ${minutes}m ago`;
+  return `Saved ${Math.floor(minutes / 60)}h ago`;
 }
 
 /** What the status line says, and whether Save is allowed to do anything. */
@@ -229,6 +246,14 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
         onChange={setDraft}
         onToggle={(enabled) => update({ conventions: { ...conventions, [file.key]: enabled } })}
       />
+      {file.note && <p className="text-muted-foreground shrink-0 text-xs">{file.note}</p>}
+      {file.details && (
+        <MoreDetails className="shrink-0">
+          {file.details.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </MoreDetails>
+      )}
       <div className="flex shrink-0 items-center gap-2">
         <span
           data-slot="profile-convention-status"

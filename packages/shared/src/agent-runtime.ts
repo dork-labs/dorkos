@@ -387,7 +387,7 @@ export interface SystemRequirements {
 
 /** Human-facing display names for the known runtime types (identity is honest, never a raw type slug). */
 const RUNTIME_DISPLAY_NAMES: Record<string, string> = {
-  'claude-code': 'Claude',
+  'claude-code': 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
 };

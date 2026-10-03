@@ -12,5 +12,7 @@ import { toast } from 'sonner';
  * @param err - What the write threw.
  */
 export function reportPermissionFailure(err: unknown): void {
-  toast.error(err instanceof Error && err.message ? err.message : "That change didn't save.");
+  toast.error(
+    err instanceof Error && err.message ? err.message : 'Couldn’t save that change. Try again.'
+  );
 }

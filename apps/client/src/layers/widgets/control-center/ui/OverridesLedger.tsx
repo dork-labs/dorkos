@@ -44,7 +44,7 @@ export function OverridesLedger() {
       <div>
         <p className="text-sm font-medium">Exceptions</p>
         <p className="text-muted-foreground text-xs">
-          These don’t follow the preset above. Choosing a preset leaves them as they are.
+          These skip the preset. Changing the preset leaves them alone.
         </p>
       </div>
 
@@ -52,7 +52,7 @@ export function OverridesLedger() {
         <p className="text-muted-foreground px-1 text-xs">Checking…</p>
       ) : isEmpty ? (
         <p data-testid="overrides-ledger-empty" className="text-muted-foreground px-1 text-xs">
-          Everything follows your preset. A conversation open in another project isn’t counted here.
+          Everything follows your preset. Chats open in other projects aren’t counted.
         </p>
       ) : (
         <ul className="flex flex-col gap-0.5">
@@ -111,8 +111,7 @@ export function OverridesLedger() {
           data-testid="overrides-ledger-permissions-error"
           className="text-muted-foreground px-1 text-xs"
         >
-          Couldn’t read which agents have permissions of their own, so they aren’t listed here.
-          Settings → Permissions shows them.
+          Couldn’t load agents with their own permissions. See Settings → Permissions.
         </p>
       ) : null}
     </section>

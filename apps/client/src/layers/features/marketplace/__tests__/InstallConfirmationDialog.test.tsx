@@ -373,9 +373,9 @@ describe('InstallConfirmationDialog', () => {
 
     render(<InstallConfirmationDialog />);
 
-    const installButton = screen.getByRole('button', { name: /cannot install/i });
+    const installButton = screen.getByRole('button', { name: /can’t install/i });
     expect(installButton).toBeDisabled();
-    expect(installButton.textContent).toMatch(/conflicts detected/i);
+    expect(installButton.textContent).toMatch(/conflicts found/i);
   });
 
   it('disables the Install button while the install mutation is in flight', () => {
@@ -512,9 +512,7 @@ describe('InstallConfirmationDialog', () => {
     expect(screen.queryByText('Install for')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('All agents (global)')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Specific agent')).not.toBeInTheDocument();
-    expect(
-      screen.getByText('Shapes set up your whole app, so they install once for you, not per agent.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Shapes apply to your whole app.')).toBeInTheDocument();
   });
 
   it('sends no projectPath for a shape install even with a stale agent-local selection', async () => {
@@ -593,9 +591,7 @@ describe('InstallConfirmationDialog', () => {
 
     await user.click(screen.getByLabelText('Specific agent'));
 
-    expect(
-      screen.getByText('Select an agent to preview what this install will do.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Pick an agent to preview this install.')).toBeInTheDocument();
     expect(screen.queryByText(/Reinstalling — the existing/)).not.toBeInTheDocument();
     // Undetermined target: framed as a plain install, and the button is
     // disabled until an agent is picked.

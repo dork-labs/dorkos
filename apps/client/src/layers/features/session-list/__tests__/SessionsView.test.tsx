@@ -99,8 +99,8 @@ describe('SessionsView', () => {
       />,
       { wrapper: Wrapper }
     );
-    expect(screen.getByLabelText('Runtime: Codex')).toBeDefined();
-    expect(screen.getByLabelText('Runtime: Claude Code')).toBeDefined();
+    expect(screen.getByLabelText('Runs on Codex')).toBeDefined();
+    expect(screen.getByLabelText('Runs on Claude Code')).toBeDefined();
   });
 
   it('shows the empty state when there are no sessions', () => {

@@ -114,7 +114,7 @@ describe('useRenameSession — account honesty', () => {
     );
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('Renamed on Acme Corp', {
-        description: 'Your session list shows the new name once you switch to that account.',
+        description: 'Shows once you switch to that account.',
       })
     );
   });
@@ -147,7 +147,7 @@ describe('useRenameSession — account honesty', () => {
     expect(titleInList()).toBe('Fix the parser');
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('Renamed on .claude2', {
-        description: 'Your session list shows the new name while .claude2 is the account in use.',
+        description: 'Shows while .claude2 is the active account.',
       })
     );
   });

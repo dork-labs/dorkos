@@ -180,7 +180,7 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('Expand tool calls')).toBeDefined();
     // The two rows that came back from the old Advanced tab (DOR-1758).
     expect(screen.getByText('Format text as you type')).toBeDefined();
-    expect(screen.getByText('Watch for agents you started somewhere else')).toBeDefined();
+    expect(screen.getByText('Watch for work started elsewhere')).toBeDefined();
     // The developer panel is a debugging aid; it went to Experiments.
     expect(screen.queryByText('Show dev tools')).toBeNull();
   });
@@ -397,9 +397,7 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/preferences/i);
     expect(screen.getByText('Feature suggestions')).toBeDefined();
-    expect(
-      screen.getByText('Show feature discovery cards on the dashboard and sidebar')
-    ).toBeDefined();
+    expect(screen.getByText('Feature tips on the dashboard and sidebar.')).toBeDefined();
   });
 
   // Verifies Feature suggestions toggle is enabled (promoEnabled defaults to true)
@@ -428,7 +426,7 @@ describe('SettingsDialog', () => {
       (el) => el.textContent
     );
     const celebrationsIdx = labels.indexOf('To-do celebrations');
-    const refreshIdx = labels.indexOf('Watch for agents you started somewhere else');
+    const refreshIdx = labels.indexOf('Watch for work started elsewhere');
     const promoIdx = labels.indexOf('Feature suggestions');
     expect(celebrationsIdx).toBeGreaterThanOrEqual(0);
     expect(refreshIdx).toBeGreaterThan(celebrationsIdx);

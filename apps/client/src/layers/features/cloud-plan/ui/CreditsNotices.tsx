@@ -8,6 +8,7 @@ import {
   useUndoFilledCredits,
 } from '@/layers/shared/model';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { errorReason } from '../model/use-credits-for';
 
 /** A runtime's name as the app shows it everywhere ("Claude Code"). */
 function runtimeLabel(type: string): string {
@@ -55,6 +56,14 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
   const setDefault = useSetCreditsDefault();
   const settings = useSettingsDeepLink();
   const busy = dismiss.isPending || undo.isPending || setDefault.isPending;
+  // Whichever answer failed last, in the server's own words when it gave some
+  // (only the install's owner may change credits): never a silent no-op.
+  const failed = [setDefault, undo, dismiss].find((mutation) => mutation.isError);
+  const failure = failed ? (
+    <p role="alert" className="text-destructive text-sm">
+      Couldn’t change that. {errorReason(failed.error)}
+    </p>
+  ) : null;
 
   if (notice.kind === 'filled') {
     const names = listOf(notice.runtimes);
@@ -89,6 +98,7 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
             OK
           </Button>
         </div>
+        {failure}
       </Notice>
     );
   }
@@ -116,6 +126,7 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
             Not now
           </Button>
         </div>
+        {failure}
       </Notice>
     );
   }
@@ -146,6 +157,7 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
           Keep credits
         </Button>
       </div>
+      {failure}
     </Notice>
   );
 }

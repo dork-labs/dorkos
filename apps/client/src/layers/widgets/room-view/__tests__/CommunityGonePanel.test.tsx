@@ -121,7 +121,7 @@ describe('CommunityGonePanel', () => {
       day: 'numeric',
     });
     expect(
-      screen.getByText(`Since ${expected}, Alpha has said this space doesn’t exist.`, {
+      screen.getByText(`Since ${expected}, Alpha says it doesn’t exist.`, {
         exact: false,
       })
     ).toBeInTheDocument();
@@ -131,7 +131,7 @@ describe('CommunityGonePanel', () => {
     expect(transport.disconnectCommunity).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Remove your copy of Alpha?');
 
-    await user.click(screen.getByRole('button', { name: 'Keep it' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(transport.disconnectCommunity).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Remove local copy' }));
@@ -160,7 +160,7 @@ describe('CommunityGonePanel', () => {
       },
     });
     expect(screen.getByText('This space was taken down')).toBeInTheDocument();
-    expect(screen.getByText(/Whoever runs Alpha took it down/)).toBeInTheDocument();
+    expect(screen.getByText(/If Alpha returns, you can connect again/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove from DorkOS' })).toBeInTheDocument();
   });
 
@@ -178,11 +178,7 @@ describe('CommunityGonePanel', () => {
       },
     });
     expect(screen.getByText('This space was deleted')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Alpha no longer exists, so DorkOS removed the copy it kept on this computer.'
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByText('DorkOS removed its copy from this computer.')).toBeInTheDocument();
   });
 
   // DOR-2575: what never reached a gone community, from both places it can be.

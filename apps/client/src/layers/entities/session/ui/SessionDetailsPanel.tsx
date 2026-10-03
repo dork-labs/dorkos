@@ -138,7 +138,7 @@ export function SessionDetailsPanel({
             <DetailRow label="Updated" align="start" valueClassName={FACT_VALUE}>
               {formatTimestamp(session.updatedAt)}
             </DetailRow>
-            <DetailRow label="Runtime" align="start" valueClassName={FACT_VALUE}>
+            <DetailRow label="Runs on" align="start" valueClassName={FACT_VALUE}>
               {getRuntimeDescriptor(session.runtime).label}
             </DetailRow>
             {accountName && (

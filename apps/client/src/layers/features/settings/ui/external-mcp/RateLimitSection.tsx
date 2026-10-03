@@ -22,7 +22,7 @@ export function RateLimitSection({ rateLimit, onUpdate }: RateLimitSectionProps)
     <div className="space-y-3">
       <SwitchSettingRow
         label="Cap incoming requests"
-        description="Limit how many requests other apps can send DorkOS in a stretch of time."
+        description="Limits how often other apps can call DorkOS."
         checked={rateLimit.enabled}
         onCheckedChange={(v) => onUpdate({ enabled: v })}
         ariaLabel="Toggle rate limiting"
@@ -65,9 +65,7 @@ export function RateLimitSection({ rateLimit, onUpdate }: RateLimitSectionProps)
               />
             </div>
           </div>
-          <p className="text-muted-foreground text-xs">
-            Rate limit changes take effect after server restart.
-          </p>
+          <p className="text-muted-foreground text-xs">Changes apply after DorkOS restarts.</p>
         </div>
       )}
     </div>

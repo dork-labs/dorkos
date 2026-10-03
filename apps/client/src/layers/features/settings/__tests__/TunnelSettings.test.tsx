@@ -155,28 +155,20 @@ describe('TunnelSettings', () => {
       render(
         <TunnelSettings
           {...defaultProps}
-          domainError="Sign in to DorkOS first. Only a signed-in person can change Remote access settings."
+          domainError="Sign in to DorkOS to change Remote access."
         />
       );
       await expandSettings();
 
-      expect(
-        screen.getByText(
-          'Sign in to DorkOS first. Only a signed-in person can change Remote access settings.'
-        )
-      ).toBeInTheDocument();
+      expect(screen.getByText('Sign in to DorkOS to change Remote access.')).toBeInTheDocument();
       // The hint steps aside so the two cannot be read as one sentence.
-      expect(
-        screen.queryByText('Leave blank to use a randomly assigned ngrok URL.')
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText('Leave blank for a random ngrok address.')).not.toBeInTheDocument();
     });
 
     it('shows the hint and no error when the domain saved cleanly', async () => {
       render(<TunnelSettings {...defaultProps} />);
       await expandSettings();
-      expect(
-        screen.getByText('Leave blank to use a randomly assigned ngrok URL.')
-      ).toBeInTheDocument();
+      expect(screen.getByText('Leave blank for a random ngrok address.')).toBeInTheDocument();
     });
   });
 

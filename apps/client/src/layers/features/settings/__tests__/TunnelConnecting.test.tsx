@@ -21,14 +21,14 @@ describe('TunnelConnecting', () => {
 
   it('renders the first step immediately on mount', () => {
     render(<TunnelConnecting />);
-    expect(screen.getByText('Initialising ngrok agent')).toBeInTheDocument();
+    expect(screen.getByText('Starting ngrok')).toBeInTheDocument();
   });
 
   it('renders all three step labels', () => {
     render(<TunnelConnecting />);
-    expect(screen.getByText('Initialising ngrok agent')).toBeInTheDocument();
-    expect(screen.getByText('Opening secure tunnel')).toBeInTheDocument();
-    expect(screen.getByText('Registering public URL')).toBeInTheDocument();
+    expect(screen.getByText('Starting ngrok')).toBeInTheDocument();
+    expect(screen.getByText('Opening a secure link')).toBeInTheDocument();
+    expect(screen.getByText('Getting your public address')).toBeInTheDocument();
   });
 
   it('shows the second step after 500ms', () => {

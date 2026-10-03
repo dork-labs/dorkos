@@ -146,7 +146,7 @@ function NewMenuShowcase() {
     showSessionShortcut: true,
     smartGroupPresets: [
       { label: 'Active now', rules: { statuses: ['needs-attention', 'active'] } },
-      { label: 'By runtime · Claude Code', rules: { runtimes: ['claude-code'] } },
+      { label: 'Runs on Claude Code', rules: { runtimes: ['claude-code'] } },
     ],
   });
 

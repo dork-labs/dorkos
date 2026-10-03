@@ -387,7 +387,13 @@ export interface TierDeniedPayload {
  */
 export type GrantedApproval =
   /** A person decided THIS call, and the approval was spent to allow it. */
-  | { via: 'approval'; approvalId: string; authorityBindingDigest?: string }
+  | {
+      via: 'approval';
+      approvalId: string;
+      authorityBindingDigest?: string;
+      /** The signed-in account that said yes; absent when nobody was signed in. */
+      decidedByUserId?: string;
+    }
   /**
    * The action's permission resolved to Allowed, so it ran without a card. The
    * source says which layer allowed it (spec `agent-permissions` D6).
@@ -1178,6 +1184,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
           ...(result.authorityBindingDigest
             ? { authorityBindingDigest: result.authorityBindingDigest }
             : {}),
+          ...(result.decidedByUserId ? { decidedByUserId: result.decidedByUserId } : {}),
         },
       };
 

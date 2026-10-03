@@ -42,6 +42,7 @@ import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   isLocalCaller,
   readCallerAuthority,
+  refuseUnlessAccountOwner,
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
 import { getLatestVersion } from '../services/core/update-checker.js';
@@ -479,6 +480,23 @@ function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAu
           error: OPERATOR_ONLY_CONFIG_ERROR,
           message: describeOperatorOnlyRefusal(paths),
           paths: [...paths],
+        };
+      }
+
+      // ## THE OWNER BAR — the DorkOS account's settings are its owner's alone
+      //
+      // `cloud.*` holds the account link's credential and which work runs on
+      // DorkOS credits, the same things `/api/cloud/*` guards with the owner
+      // bar (DOR-2652). Without it here, a signed-in person who does not own
+      // this DorkOS could do through a settings patch what those routes refuse.
+      const cloudPaths = paths.filter((path) => path.startsWith('cloud.'));
+      if (cloudPaths.length > 0 && refuseUnlessAccountOwner(req, res) !== undefined) {
+        return {
+          status: 403,
+          code: 'owner_only',
+          error: OPERATOR_ONLY_CONFIG_ERROR,
+          message: 'Only the owner of this DorkOS can change its DorkOS account settings.',
+          paths: cloudPaths,
         };
       }
 

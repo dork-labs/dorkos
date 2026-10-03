@@ -137,10 +137,10 @@ function makePromo(
     content: {
       icon: StubIcon,
       title: 'Run agents on a schedule',
-      shortDescription: 'Set a schedule and come back to finished work',
+      shortDescription: 'Come back to finished work',
       ctaLabel: 'Set up',
       suggestion: {
-        question: 'Want your agents working without you at the keyboard?',
+        question: 'Want agents working while you’re away?',
         action: 'Set up a schedule',
       },
       ...content,
@@ -172,9 +172,7 @@ describe('QuietSuggestion', () => {
     mockRegistry.push(makePromo({ id: 'schedules' }));
     render(<QuietSuggestion />);
 
-    expect(
-      screen.getByText('Want your agents working without you at the keyboard?')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Want agents working while you’re away?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Set up a schedule' })).toBeInTheDocument();
   });
 

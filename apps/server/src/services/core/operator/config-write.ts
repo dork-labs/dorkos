@@ -41,6 +41,7 @@
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
+import { isInstallOwner } from '../auth/install-owner.js';
 import {
   stampDisplayNameSource,
   type DisplayNameWriter,
@@ -170,6 +171,11 @@ export const OPERATOR_TOOL_AUTHORITY: ConfigWriteAuthority = {
   }),
 };
 
+/** What a person-approved patch of the DorkOS account settings says to anyone but the owner. */
+export const CLOUD_SETTINGS_OWNER_ONLY_MESSAGE =
+  'DorkOS changed nothing. Only the owner of this DorkOS can approve a change to its DorkOS ' +
+  'account settings. Ask them to approve it, or to change it in DorkOS Settings.';
+
 /**
  * The identity an agent's `config_patch` writes under once a PERSON approved that
  * exact call on a card (spec `agent-permissions` D6): it clears the operator bar.
@@ -186,10 +192,44 @@ export const OPERATOR_TOOL_AUTHORITY: ConfigWriteAuthority = {
  * Only ever chosen from `context.approval` with `via: 'approval'`, which the
  * registry sets after the gate spent a person's approval, never from anything a
  * caller sends.
+ *
+ * ## One more bar for the DorkOS account's own settings (`cloud.*`, DOR-2678)
+ *
+ * Those settings carry the account link's credential and which work runs on
+ * DorkOS credits, which the owner of this DorkOS alone may change everywhere
+ * else (`/api/cloud/*`, `PATCH /api/config`). With login on, a yes from any
+ * other signed-in account, or a yes nobody can be shown to have given, does
+ * not change them. With login off there are no accounts to tell apart, and the
+ * person bar that decided the card is the whole answer, as before.
+ *
+ * @param decidedByUserId - The signed-in account that said yes, as the
+ *   approval recorded it; absent when nobody was signed in.
+ * @param isLoginEnabled - Login-state lookup; defaults to the live config.
+ * @param isOwner - Whether an account owns this install; defaults to the
+ *   shared {@link isInstallOwner}.
  */
-export const PERSON_APPROVED_AUTHORITY: ConfigWriteAuthority = {
-  refuseOperatorOnly: () => undefined,
-};
+export function personApprovedAuthority(
+  decidedByUserId: string | undefined,
+  isLoginEnabled: () => boolean = () => configManager.get('auth')?.enabled === true,
+  isOwner: (userId: string | undefined) => boolean = (userId) =>
+    isInstallOwner(userId === undefined ? undefined : { userId })
+): ConfigWriteAuthority {
+  return {
+    refuseOperatorOnly: (paths) => {
+      const cloudPaths = paths.filter((path) => path.startsWith('cloud.'));
+      if (cloudPaths.length === 0 || !isLoginEnabled() || isOwner(decidedByUserId)) {
+        return undefined;
+      }
+      return {
+        status: 403,
+        code: 'owner_only',
+        error: OPERATOR_ONLY_CONFIG_ERROR,
+        message: CLOUD_SETTINGS_OWNER_ONLY_MESSAGE,
+        paths: cloudPaths,
+      };
+    },
+  };
+}
 
 /** One Files & commands stop a guarded write moved. */
 export interface TrustStopMove {

@@ -78,14 +78,14 @@ export function useProvisionRuntime(runtimeType: string): UseProvisionRuntime {
   // unexplained words (DOR-1334 / F4).
   const errorMessage =
     rawMessage?.trim().toLowerCase() === 'not found'
-      ? 'One-click install is not available for this runtime.'
+      ? 'One-click install isn’t available here.'
       : rawMessage;
 
   return {
     provision: () => mutation.mutate(),
     isPending: mutation.isPending,
     isError: failed,
-    errorMessage: failed ? (errorMessage ?? 'Something went wrong.') : null,
+    errorMessage: failed ? (errorMessage ?? 'Couldn’t install. Try again.') : null,
     progress,
     result: mutation.data,
   };

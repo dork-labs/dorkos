@@ -84,7 +84,7 @@ describe('a sign-in that could not start', () => {
       capabilityRejection(
         'SIGNIN_NO_APP_REGISTRATION',
         'HTTP 404: Invalid OAuth error response. Raw body: <html>Not Found</html>',
-        'This server doesn’t let DorkOS register itself. If you have app credentials from the provider, add them and try again.'
+        'This server doesn’t let DorkOS register itself. Add your own app credentials to try again.'
       )
     );
     renderHarness(transport);

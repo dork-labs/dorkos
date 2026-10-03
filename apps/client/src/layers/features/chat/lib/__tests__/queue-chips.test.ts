@@ -59,9 +59,7 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     // task had NOT finished — something else was running it — and the server never
     // checked whether it had. The chip now says only what the server verified.
     const notice = queueDowngradeNotice(downgraded('turn-owned-elsewhere'));
-    expect(notice).toBe(
-      'Couldn’t cut in. Something else is running this task, so it’s waiting in line.'
-    );
+    expect(notice).toBe('Couldn’t cut in: something else is running it. It’s waiting in line.');
     // No claim about the task being over, in any wording. This is the assertion
     // the old copy failed.
     expect(notice).not.toMatch(/finish|done|over|ended|complete/i);

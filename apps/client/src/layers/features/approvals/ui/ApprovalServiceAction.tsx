@@ -17,7 +17,7 @@ const DEPTH_INDENT = ['pl-0', 'pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-15', 'pl-18',
 /** "1 value is", "3 values are". */
 function cutLine(count: number): string {
   const values = count === 1 ? '1 value is' : `${count} values are`;
-  return `${values} too long to show here. If you're not sure what this sends, deny it.`;
+  return `${values} too long to show. If you’re unsure what this sends, don’t allow it.`;
 }
 
 /**
@@ -130,7 +130,7 @@ export function ApprovalServiceAction({
       )}
       {destructive && (
         <p data-slot="approval-irreversible" className="text-destructive mt-1.5 text-xs">
-          {`This is a high-risk action in ${action.serviceName}. Check what it does before you allow it.`}
+          {`High-risk action in ${action.serviceName}. Check it before you allow it.`}
         </p>
       )}
     </div>

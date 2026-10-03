@@ -1,7 +1,7 @@
 import { RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { Button } from '@/layers/shared/ui';
+import { Button, MoreDetails } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import {
   useExtensions,
@@ -44,11 +44,7 @@ export function ExtensionsSettingsTab() {
       {
         onSuccess: (result) => {
           const name = result.extension.manifest.name;
-          toast.success(
-            approve
-              ? `${name} can now run inside DorkOS`
-              : `${name} has stopped running inside DorkOS`
-          );
+          toast.success(approve ? `${name} can now run inside DorkOS` : `${name} stopped running`);
         },
         onError: (err) => {
           toast.error(approve ? 'Couldn’t let it run.' : 'Couldn’t stop it running.', {
@@ -116,12 +112,17 @@ export function ExtensionsSettingsTab() {
 
   return (
     <div className="space-y-6">
-      <p className="text-muted-foreground text-sm">
-        Extensions add new UI and capabilities to DorkOS. Core extensions ship with DorkOS;
-        installed extensions live in{' '}
-        <code className="bg-muted rounded px-1">~/.dork/extensions/</code> or{' '}
-        <code className="bg-muted rounded px-1">.dork/extensions/</code> in your project.
-      </p>
+      <div className="text-muted-foreground space-y-1 text-sm">
+        <p>Extensions add new screens and tools to DorkOS.</p>
+        <MoreDetails>
+          <p>Core extensions come with DorkOS.</p>
+          <p>
+            Installed ones live in{' '}
+            <code className="bg-muted rounded px-1">~/.dork/extensions/</code> or your project’s{' '}
+            <code className="bg-muted rounded px-1">.dork/extensions/</code>.
+          </p>
+        </MoreDetails>
+      </div>
 
       {extensions.length === 0 ? (
         <div className="text-muted-foreground py-8 text-center text-sm" data-testid="no-extensions">

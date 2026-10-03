@@ -138,3 +138,38 @@ export function getRuntimeDescriptor(type: string): RuntimeDescriptor {
     }
   );
 }
+
+/**
+ * Names for the agent tools discovery can report (`AgentRuntimeSchema`) that
+ * DorkOS does not run itself, so they have no full descriptor above. Kept here
+ * beside the descriptors so every runtime name lives in one file.
+ */
+const DISCOVERED_TOOL_LABELS: Record<string, string> = {
+  cursor: 'Cursor',
+  windsurf: 'Windsurf',
+  gemini: 'Gemini CLI',
+  cline: 'Cline',
+  'roo-code': 'Roo Code',
+  copilot: 'GitHub Copilot',
+  'amazon-q': 'Amazon Q',
+  continue: 'Continue',
+  augment: 'Augment',
+  'jetbrains-ai': 'JetBrains AI',
+  'kilo-code': 'Kilo Code',
+  trae: 'Trae',
+  other: 'Other',
+};
+
+/**
+ * The name a person reads for a runtime or discovered agent tool: "Claude
+ * Code", "Roo Code". Unlike {@link getRuntimeDescriptor}'s raw fallback, an id
+ * nobody has named yet still reads as words ("new-tool" becomes "New tool").
+ *
+ * @param type - Runtime or agent-tool id, e.g. `'claude-code'`.
+ */
+export function runtimeLabel(type: string): string {
+  if (Object.hasOwn(RUNTIME_DESCRIPTORS, type)) return RUNTIME_DESCRIPTORS[type]!.label;
+  if (Object.hasOwn(DISCOVERED_TOOL_LABELS, type)) return DISCOVERED_TOOL_LABELS[type]!;
+  const words = type.replace(/[-_]+/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : type;
+}

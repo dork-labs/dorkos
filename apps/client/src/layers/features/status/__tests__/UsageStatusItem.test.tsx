@@ -227,7 +227,7 @@ describe('UsageDetail — the sentence beside the figure', () => {
     render(<UsageDetail usage={{ kind: 'pay-as-you-go', costUsd: 1.5, costBasis: 'unknown' }} />, {
       wrapper: Wrapper,
     });
-    expect(screen.getByText('Estimated — no price was listed for this model.')).toBeInTheDocument();
+    expect(screen.getByText('Estimated. This model has no listed price.')).toBeInTheDocument();
   });
 
   it('says whose rates a managed cost was charged at, on a subscription too', () => {
@@ -242,7 +242,7 @@ describe('UsageDetail — the sentence beside the figure', () => {
       />,
       { wrapper: Wrapper }
     );
-    expect(screen.getByText("Charged at your organization's own rates.")).toBeInTheDocument();
+    expect(screen.getByText('Charged at your organization’s own rates.')).toBeInTheDocument();
   });
 
   it('says nothing when there is no figure for a basis to describe', () => {
@@ -349,6 +349,6 @@ describe('UsageDetail — on the inverted tooltip', () => {
       expect(screen.getByText(label)).toHaveClass('text-dui-background/70');
       expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground');
     }
-    expect(screen.getByText(/no price was listed/)).toHaveClass('text-dui-background/70');
+    expect(screen.getByText(/has no listed price/)).toHaveClass('text-dui-background/70');
   });
 });

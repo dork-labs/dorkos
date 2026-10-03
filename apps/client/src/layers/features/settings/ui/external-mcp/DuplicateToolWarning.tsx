@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
+import { MoreDetails } from '@/layers/shared/ui';
 
 /**
  * Warning banner shown at the top of the expanded External MCP card.
@@ -12,16 +13,14 @@ export function DuplicateToolWarning() {
     <div className="flex gap-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-3">
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
       <div className="space-y-1">
-        <p className="text-xs font-medium">
-          Do not configure this for agents running inside DorkOS.
-        </p>
+        <p className="text-xs font-medium">Not for agents that run inside DorkOS</p>
         <p className="text-muted-foreground text-xs">
-          DorkOS already provides tools to its managed agents internally. Adding DorkOS as an
-          external MCP server to those same agents causes duplicate tool names. The Anthropic API
-          will return HTTP 400 “Tool names must be unique” and all tool calls will fail. External
-          MCP access is for agents running <strong>outside</strong> of DorkOS (standalone Claude
-          Code, Cursor, Windsurf).
+          Those agents already have these tools. Adding them twice stops every tool call.
         </p>
+        <MoreDetails className="text-xs">
+          <p>Claude rejects the repeated tool names with “Tool names must be unique”.</p>
+          <p>This is for apps running on their own: Claude Code, Cursor, Windsurf.</p>
+        </MoreDetails>
       </div>
     </div>
   );

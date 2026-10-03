@@ -29,6 +29,7 @@ export {
   cloudLinkStatusKey,
   type CheckCloudLinkOptions,
   type CloudLinkView,
+  type LandedLink,
   type StartCloudLinkOptions,
   type UseCloudLink,
 } from './model/use-cloud-link';

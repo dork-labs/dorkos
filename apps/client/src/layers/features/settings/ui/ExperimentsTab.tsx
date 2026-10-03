@@ -58,7 +58,7 @@ function rowDescription(
   const parts = [description];
   if (costNote !== undefined) parts.push(costNote);
   if (envOverride !== undefined) {
-    parts.push(`Right now ${envOverride} on this machine decides it, so this switch cannot.`);
+    parts.push(`${envOverride} on this computer controls this switch.`);
   }
   return parts.join(' ');
 }
@@ -74,9 +74,7 @@ export function ExperimentsTab() {
 
   return (
     <div className="space-y-6" data-testid="experiments-tab">
-      <p className="text-muted-foreground text-xs">
-        Things we are still proving out. Not finished being proved, so you get to decide.
-      </p>
+      <p className="text-muted-foreground text-xs">Unfinished features you can try early.</p>
 
       {/* Pure client state — no server config in the loop — so it stays
           reachable exactly when the Server tab (config-dependent) is not: a
@@ -88,7 +86,7 @@ export function ExperimentsTab() {
         <FieldCardContent>
           <SwitchSettingRow
             label="Show dev tools"
-            description="Open the developer panel for digging into what the app has loaded."
+            description="Opens a panel showing what the app has loaded."
             checked={devtoolsOpen}
             onCheckedChange={() => toggleDevtools()}
           />
@@ -99,7 +97,7 @@ export function ExperimentsTab() {
           claim ("nothing is waiting on you") that is false mid-fetch. */}
       {isLoading ? null : experiments.length === 0 ? (
         <p className="text-muted-foreground text-sm" data-testid="experiments-empty">
-          Nothing’s cooking right now. Experiments show up here while we prove them out.
+          No experiments right now. New ones show up here.
         </p>
       ) : (
         <FieldCard>
@@ -125,7 +123,7 @@ export function ExperimentsTab() {
       )}
 
       <p className="text-muted-foreground text-xs">
-        These are off until you turn them on. Each one graduates or goes away.
+        These start off. Each one graduates or goes away.
       </p>
     </div>
   );

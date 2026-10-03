@@ -39,7 +39,7 @@ import {
   type StaleInstallation,
 } from '../lib/installed-updates';
 import { PermissionItem, withBreakPoints } from './PermissionPreviewSection';
-import { updateConsequence } from './InstallationIntegrityNote';
+import { updateConsequences } from './InstallationIntegrityNote';
 
 interface ConfirmUpdatesDialogProps {
   /** The installations to confirm; `null` keeps the dialog closed. */
@@ -211,9 +211,12 @@ function StaleItem({ integrity, ...item }: StaleInstallation & { integrity?: Ins
           <span className="sr-only">to</span> {to}
         </div>
       </div>
-      {integrity?.status === 'modified' && updateConsequence(integrity) && (
-        <p className="text-muted-foreground text-xs">{updateConsequence(integrity)}</p>
-      )}
+      {integrity?.status === 'modified' &&
+        updateConsequences(integrity).map((sentence) => (
+          <p key={sentence} className="text-muted-foreground text-xs">
+            {sentence}
+          </p>
+        ))}
       <Disclosure {...item} />
     </li>
   );
@@ -240,8 +243,8 @@ export function ConfirmUpdatesDialog({
               </ResponsiveDialogTitle>
               <ResponsiveDialogDescription className="text-left">
                 {stale.length === 1
-                  ? 'DorkOS replaces this package with its newest version, in the same place it is installed now. Check what the new version runs before you update.'
-                  : 'DorkOS replaces each package below with its newest version, in the same place it is installed now. Check what each new version runs before you update.'}
+                  ? 'The newest version replaces this one in place. Check what it runs first.'
+                  : 'Each newest version replaces the one installed. Check what each runs first.'}
               </ResponsiveDialogDescription>
               <p
                 className="text-foreground text-left text-xs font-medium"

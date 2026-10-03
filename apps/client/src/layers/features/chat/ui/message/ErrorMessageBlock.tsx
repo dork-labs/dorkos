@@ -24,12 +24,12 @@ const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retr
     },
     execution_error: {
       heading: 'Agent stopped unexpectedly',
-      subtext: 'An error occurred during execution.',
+      subtext: 'Something went wrong before it finished.',
       retryable: true,
     },
     budget_exceeded: {
       heading: 'Cost limit reached',
-      subtext: 'This session exceeded its budget.',
+      subtext: 'This session hit its spending limit.',
       retryable: false,
     },
     output_format_error: {
@@ -41,7 +41,7 @@ const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retr
       // Heading and subtext are finalized at render with the runtime name
       // (see authHeading / authSubtext); these are neutral placeholders.
       heading: 'Sign in again',
-      subtext: 'Your login stopped working. Sign in again to pick up where you left off.',
+      subtext: 'Your login stopped working. Sign in again to continue.',
       retryable: true,
     },
     model_unavailable: {
@@ -51,8 +51,7 @@ const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retr
     },
     runtime_update_required: {
       heading: 'Codex update required',
-      subtext:
-        'Update DorkOS (or your custom Codex installation), then try again. You can also choose another model.',
+      subtext: 'Update DorkOS or your Codex install, then try again. Or choose another model.',
       retryable: false,
     },
   };
@@ -87,7 +86,7 @@ function authHeading(runtimeLabel: string | undefined): string {
 /** Build the runtime-aware auth subtext. Neutral across causes. */
 function authSubtext(runtimeLabel: string | undefined): string {
   const name = runtimeLabel ?? AUTH_SUBTEXT_FALLBACK_NAME;
-  return `Your ${name} login stopped working. Sign in again to pick up where you left off.`;
+  return `Your ${name} login stopped working. Sign in again to continue.`;
 }
 
 interface ErrorMessageBlockProps {

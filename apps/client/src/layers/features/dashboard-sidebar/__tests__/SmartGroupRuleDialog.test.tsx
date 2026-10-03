@@ -30,14 +30,14 @@ describe('SmartGroupRuleDialog', () => {
           onSubmit={() => {}}
         />
       );
-      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Create group' })).toBeDisabled();
 
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'My group' } });
       // Name alone isn't enough — the schema requires >= 1 rule constraint.
-      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Create group' })).toBeDisabled();
 
       fireEvent.click(screen.getByRole('checkbox', { name: 'Codex' }));
-      expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Create group' })).toBeEnabled();
     });
 
     it('submits the trimmed name and the exact rules built from the form, then closes', () => {
@@ -55,7 +55,7 @@ describe('SmartGroupRuleDialog', () => {
       );
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  Codex fleet  ' } });
       fireEvent.click(screen.getByRole('checkbox', { name: 'Codex' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
 
       expect(onSubmit).toHaveBeenCalledWith({
         name: 'Codex fleet',
@@ -98,7 +98,7 @@ describe('SmartGroupRuleDialog', () => {
       );
       fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New agents' } });
       fireEvent.click(screen.getByRole('checkbox', { name: 'new' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
 
       expect(onSubmit).toHaveBeenCalledWith({
         name: 'New agents',
@@ -124,7 +124,7 @@ describe('SmartGroupRuleDialog', () => {
       fireEvent.change(screen.getByLabelText('Path starts with'), {
         target: { value: '/Users/dorian/work' },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
 
       expect(onSubmit).toHaveBeenCalledWith({
         name: 'Both',

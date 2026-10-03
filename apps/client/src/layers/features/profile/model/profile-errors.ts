@@ -50,10 +50,10 @@ export function handleErrorMessage(error: unknown, attempted: string): string {
     case 'INVALID_HANDLE':
       return (
         messageOf(error) ??
-        'That is not a handle DorkOS can use. Try lowercase letters, numbers, dots, underscores and hyphens.'
+        'That handle won’t work. Use lowercase letters, numbers, dots, underscores or hyphens.'
       );
     default:
-      return messageOf(error) ?? 'Your handle could not be saved. Try again.';
+      return messageOf(error) ?? 'Couldn’t save your handle. Try again.';
   }
 }
 
@@ -70,13 +70,13 @@ export function avatarErrorMessage(error: unknown): string {
     case 'AVATAR_TOO_LARGE':
       return 'That photo is over 2 MB. Pick a smaller one.';
     case 'AVATAR_TYPE_UNSUPPORTED':
-      return 'DorkOS can use a PNG, JPEG or WebP photo. That file is something else.';
+      return 'That file isn’t a photo DorkOS can use. Pick a PNG, JPEG or WebP.';
     case 'AVATAR_MISSING':
       return 'No photo came through. Pick the file again.';
     case 'OPERATOR_ONLY':
       return 'Only the person at the keyboard can change this photo.';
     default:
-      return messageOf(error) ?? 'Your photo could not be saved. Try again.';
+      return messageOf(error) ?? 'Couldn’t save your photo. Try again.';
   }
 }
 
@@ -89,7 +89,7 @@ export function nameErrorMessage(error: unknown): string {
   if (codeOf(error) === 'OPERATOR_ONLY') {
     return 'Only the person at the keyboard can change this name.';
   }
-  return messageOf(error) ?? 'Your name could not be saved. Try again.';
+  return messageOf(error) ?? 'Couldn’t save your name. Try again.';
 }
 
 /**
@@ -111,13 +111,13 @@ export function identityLinkErrorMessage(error: unknown, linking: boolean): stri
     case 'IDENTITY_NOT_EXTERNAL':
       return 'Only an account on another chat platform can be linked to you.';
     case 'OPERATOR_ONLY':
-      return 'Only the person who owns this install can say which accounts are theirs.';
+      return 'Only this install’s owner can link accounts.';
     default:
       return (
         messageOf(error) ??
         (linking
-          ? 'That account could not be linked to you. Try again.'
-          : 'That link could not be removed. Try again.')
+          ? 'Couldn’t link that account. Try again.'
+          : 'Couldn’t remove that link. Try again.')
       );
   }
 }

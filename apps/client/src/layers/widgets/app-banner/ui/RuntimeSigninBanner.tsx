@@ -1,6 +1,8 @@
 import { LogIn } from 'lucide-react';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 
+import { useCloudStatus } from '@/layers/features/cloud-link';
+import { creditsVerb, useCloudPlan } from '@/layers/features/cloud-plan';
 import {
   creditsOfferFor,
   KeepItLocalNote,
@@ -174,6 +176,9 @@ function CreditsLeadAction({
 }) {
   const requirements = useRuntimeRequirements();
   const { data: credits } = useCloudCredits();
+  // The trigger says what the offer inside it says ("Try…", "Buy…", "Use…").
+  const linked = useCloudStatus().data?.linked === true;
+  const verb = creditsVerb(linked, useCloudPlan({ enabled: linked }).data);
   const creditsFor = runtimes.find(
     (type) =>
       creditsOfferFor(selectRuntimeSignIn(requirements.data, type), credits, type) === 'lead'
@@ -182,8 +187,8 @@ function CreditsLeadAction({
   return (
     <ResponsivePopover>
       <ResponsivePopoverTrigger asChild>
-        <Button size="sm" data-testid="signin-banner-credits">
-          Use DorkOS credits
+        <Button size="sm" data-testid="signin-banner-credits" disabled={verb === null}>
+          {verb === null ? 'DorkOS credits' : `${verb} DorkOS credits`}
         </Button>
       </ResponsivePopoverTrigger>
       <ResponsivePopoverContent align="end" className="w-80 p-4">

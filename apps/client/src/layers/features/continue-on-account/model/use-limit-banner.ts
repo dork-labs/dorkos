@@ -80,8 +80,9 @@ export interface LimitBanner {
   canPick: boolean;
   /**
    * Whether the banner leads with "Keep going on DorkOS credits": the server
-   * reports credits wired for this runtime, the work may carry over, and it is
-   * not credits that ran out. Never acted on by itself.
+   * reports credits wired for this runtime, the work may carry over, it is
+   * not credits that ran out, and the person has not turned credits off for
+   * this runtime. Never acted on by itself.
    */
   creditsOffered: boolean;
   /** Names and colors an account of this session's runtime by its registry id. */
@@ -102,6 +103,15 @@ export interface LimitBanner {
   pending: boolean;
   /** What the last write failed with, in the server's words, or `null`. */
   failure: string | null;
+}
+
+/**
+ * Whether the person turned credits off for this runtime themselves: their
+ * "no" stands, so the banner does not lead with credits (the picker still lists
+ * them).
+ */
+function saidNo(choice: { runsOn: string; chosenBy: string } | undefined): boolean {
+  return choice?.runsOn === 'own-sign-in' && choice.chosenBy === 'user';
 }
 
 /** The message a refused write carries, for the inline alert. */
@@ -168,7 +178,8 @@ export function useLimitBanner(sessionId: string, injected?: LimitBannerAccount)
     CREDITS_LEAD.has(state) &&
     !refused &&
     limit?.accountId !== CREDITS_ACCOUNT_ID &&
-    creditsWiredFor(credits, runtime);
+    creditsWiredFor(credits, runtime) &&
+    !saidNo(credits?.defaults?.[runtime]);
 
   // A refused write belongs to the state it was made in: kept with that
   // state's key, and not shown once the limit has moved on.

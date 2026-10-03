@@ -435,16 +435,16 @@ function explainResolveError(
     case 'unsupported':
       return 'Local previews aren’t available in this environment.';
     case 'failed':
-      return 'This preview couldn’t be loaded. Reload to try again, or open the app in your browser.';
+      return 'Couldn’t load this preview. Reload, or open the app in your browser.';
     case 'tunnel':
-      return 'Dev-server previews aren’t available through a tunnel. Open DorkOS on the machine that runs it, or open the app in your browser.';
+      return 'Dev server previews don’t work remotely. Open DorkOS on the computer running it.';
     case 'no-port':
       return 'All preview ports are in use. Close a preview, then reload.';
     case 'origin-unreachable':
       // DorkOS can see the dev server; this browser cannot reach the port
       // DorkOS opened for it. Almost always a forwarded port that was not
       // forwarded wide enough — so the fix named is the one that always works.
-      return `DorkOS can see your dev server, but this connection doesn’t reach port ${error.listenPort} on ${error.host}. Open DorkOS on the machine that runs it, or open the app in your browser.`;
+      return `This view can’t reach port ${error.listenPort} on ${error.host}. Open DorkOS on the computer running it.`;
     case 'no-upstream': {
       // Named the way the user typed it: someone who entered `127.0.0.1:5399`
       // and is told about `localhost` doubts the message instead of the port.
@@ -468,7 +468,7 @@ function BrowserBody({
   onFrameLoad,
 }: BrowserBodyProps) {
   if (target.mode === 'blocked') {
-    return <BrowserMessage>This address can’t be displayed for security reasons.</BrowserMessage>;
+    return <BrowserMessage>This address is blocked for safety.</BrowserMessage>;
   }
   if (resolveError !== null) {
     return (
@@ -559,7 +559,7 @@ function PreviewFrame({
     <div className="flex min-h-0 flex-1 flex-col">
       {pastDeadline && !loaded && (
         <FrameBanner onOpenExternally={onOpenExternally} onReload={onReload}>
-          This preview is taking a long time to load.
+          This preview is slow to load.
         </FrameBanner>
       )}
       {resourceErrorCount > 0 && (

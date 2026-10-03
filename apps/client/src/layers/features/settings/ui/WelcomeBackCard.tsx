@@ -25,7 +25,7 @@
  *
  * @module features/settings/ui/WelcomeBackCard
  */
-import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/ui';
+import { FieldCard, FieldCardContent, InfoTip, SwitchSettingRow } from '@/layers/shared/ui';
 import { useWelcomeBack } from '@/layers/entities/config';
 
 /**
@@ -70,14 +70,22 @@ export function WelcomeBackCard() {
         <FieldCardContent>
           <SwitchSettingRow
             label="Welcome-back notes"
-            description={`Your agents may leave a short note in your team channel when you come back after ${humanizeMinutes(absenceThresholdMinutes)} away. Off means no note, and no work done deciding there was nothing to say. This one follows you to every device.`}
+            description={
+              <>
+                {`Agents may leave a short note in your team channel after ${humanizeMinutes(absenceThresholdMinutes)} away.`}{' '}
+                <InfoTip label="About welcome-back notes">
+                  <p>Off means no note, and no agent time spent checking.</p>
+                  <p>This setting follows you to every device.</p>
+                </InfoTip>
+              </>
+            }
             checked={enabled}
             onCheckedChange={setEnabled}
           />
           {enabled && (
             <SwitchSettingRow
               label="Next-step offers"
-              description="A note can end with one thing your agent wants you to decide. There is no way to know it has one without asking, so each offer runs that agent for a turn, at most one turn per agent that left you a note."
+              description="Notes can end with a decision for you. Each runs that agent for a turn."
               checked={offersEnabled}
               onCheckedChange={setOffersEnabled}
             />

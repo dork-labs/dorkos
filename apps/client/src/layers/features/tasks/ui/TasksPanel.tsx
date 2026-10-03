@@ -129,7 +129,7 @@ export function TasksPanel() {
               onClick={handleCreateBlank}
               className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
             >
-              New Schedule
+              New schedule
             </button>
           </div>
         ) : (
@@ -174,7 +174,7 @@ export function TasksPanel() {
             }}
             className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
           >
-            New Schedule
+            New schedule
           </button>
         </div>
       </div>

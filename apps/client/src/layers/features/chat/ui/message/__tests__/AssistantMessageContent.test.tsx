@@ -262,7 +262,7 @@ describe('AssistantMessageContent — inline capability approval', () => {
     // would resume nothing. The note says where the request still lives.
     expect(screen.queryByTestId('approval-card')).not.toBeInTheDocument();
     expect(screen.getByTestId('capability-approval-timed-out')).toBeInTheDocument();
-    expect(screen.getByText(/still in your Approvals list/)).toBeInTheDocument();
+    expect(screen.getByText(/is still in Approvals/)).toBeInTheDocument();
   });
 });
 
@@ -389,7 +389,7 @@ describe('AssistantMessageContent — error parts keep the server-authored messa
     expect(
       screen.getByText('That model isn’t available. Pick another one from the model menu.')
     ).toBeInTheDocument();
-    expect(screen.queryByText('An error occurred during execution.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong before it finished.')).not.toBeInTheDocument();
   });
 
   it('renders a URL in an error message as a real link', () => {

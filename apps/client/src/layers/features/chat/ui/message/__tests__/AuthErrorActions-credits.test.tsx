@@ -44,15 +44,24 @@ const SESSION_ID = 'session-1';
 const CLI: DependencyCheck = { name: 'Claude Code CLI', description: 'cli', status: 'satisfied' };
 
 /** A stand-in for the app shell's offer: one button that makes the choice. */
-const stubOffer: CreditsOfferSlot = ({ onChoose }) => (
-  <button type="button" onClick={() => void onChoose?.()}>
-    Stand-in credits offer
-  </button>
+const stubOffer: CreditsOfferSlot = ({ onChoose, note, confirmAfterLink }) => (
+  <div>
+    <button type="button" onClick={() => void onChoose?.()}>
+      Stand-in credits offer
+    </button>
+    <p>{note}</p>
+    <p data-testid="after-link">{confirmAfterLink?.prompt}</p>
+  </div>
 );
 
-function renderCard(signIn: 'none' | 'expired') {
+function renderCard(
+  signIn: 'none' | 'expired',
+  options: { remote?: boolean; saidNo?: boolean } = {}
+) {
   const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue({ version: '1.0.0', isLocalCaller: true, port: 4242 }),
+    getConfig: vi
+      .fn()
+      .mockResolvedValue({ version: '1.0.0', isLocalCaller: !options.remote, port: 4242 }),
   });
   vi.mocked(transport.checkRequirements).mockResolvedValue({
     runtimes: {
@@ -75,6 +84,13 @@ function renderCard(signIn: 'none' | 'expired') {
     linked: false,
     ready: false,
     runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
+    ...(options.saidNo
+      ? {
+          defaults: {
+            'claude-code': { runsOn: 'own-sign-in' as const, chosenBy: 'user' as const },
+          },
+        }
+      : {}),
   });
   const onRetry = vi.fn();
   const queryClient = new QueryClient({
@@ -132,5 +148,34 @@ describe('the auth-error card and DorkOS credits', () => {
     expect(
       screen.queryByRole('button', { name: 'Stand-in credits offer' })
     ).not.toBeInTheDocument();
+  });
+
+  it('says plainly what choosing credits changes, and asks before sending after a link', async () => {
+    renderCard('none');
+    expect(
+      await screen.findByText(
+        'This makes new Claude Code work on this computer run on your DorkOS credits.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('after-link')).toHaveTextContent(
+      'Linked. Send again on DorkOS credits?'
+    );
+  });
+
+  it('offers credits on a phone too, with the guidance under them', async () => {
+    renderCard('none', { remote: true });
+    expect(
+      await screen.findByRole('button', { name: 'Stand-in credits offer' })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('auth-error-remote-guidance')).toBeInTheDocument();
+    expect(screen.queryByTestId('auth-error-signin-button')).not.toBeInTheDocument();
+  });
+
+  it('keeps a person’s "no": signing in leads, credits are a row under it', async () => {
+    renderCard('none', { saidNo: true });
+    const offer = await screen.findByRole('button', { name: 'Stand-in credits offer' });
+    const signIn = screen.getByTestId('auth-error-signin-button');
+    expect(signIn.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('keep-it-local-note')).not.toBeInTheDocument();
   });
 });

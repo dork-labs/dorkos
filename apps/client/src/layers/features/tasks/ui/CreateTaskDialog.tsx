@@ -297,7 +297,7 @@ export function CreateTaskDialog({
               </button>
             )}
             <ResponsiveDialogTitle>
-              {formTask ? 'Edit Schedule' : 'New Schedule'}
+              {formTask ? 'Edit schedule' : 'New schedule'}
             </ResponsiveDialogTitle>
             {formTask && (
               <Switch
@@ -377,10 +377,9 @@ export function CreateTaskDialog({
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete scheduled task</DialogTitle>
+              <DialogTitle>Delete “{editTask.name}”?</DialogTitle>
               <DialogDescription>
-                Delete “{editTask.name}”? This will also remove all run history. This action cannot
-                be undone.
+                Its run history is deleted too. This can’t be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -395,7 +394,7 @@ export function CreateTaskDialog({
                 disabled={deleteTask.isPending}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60 inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
               >
-                {deleteTask.isPending ? 'Deleting…' : 'Delete'}
+                {deleteTask.isPending ? 'Deleting…' : 'Delete task'}
               </button>
             </DialogFooter>
           </DialogContent>

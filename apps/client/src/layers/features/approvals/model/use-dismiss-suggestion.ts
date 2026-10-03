@@ -79,7 +79,7 @@ export function useDismissSuggestion() {
       dismissed.delete(approvalId);
       notify();
       toast.error(
-        error instanceof Error && error.message ? error.message : "That didn't save. Try again."
+        error instanceof Error && error.message ? error.message : 'Couldn’t save that. Try again.'
       );
     },
     onSettled: () => {

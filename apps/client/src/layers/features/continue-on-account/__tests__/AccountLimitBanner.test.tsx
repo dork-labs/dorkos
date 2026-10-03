@@ -445,10 +445,10 @@ describe('wait-only (invariant 5)', () => {
     await waitFor(() => expect(buttons()).toEqual(['Wait for reset']));
   });
 
-  it('a one-account Claude session is named "Claude"', async () => {
+  it('a one-account Claude Code session is named "Claude Code"', async () => {
     await renderBanner({ accounts: 1, limit: limitOf('ask', { state: 'wait-only' }) });
     await waitFor(() =>
-      expect(bannerEl()).toHaveTextContent('Claude is out of usage until Tue 3pm.')
+      expect(bannerEl()).toHaveTextContent('Claude Code is out of usage until Tue 3pm.')
     );
     expect(buttons()).toEqual(['Wait for reset']);
   });

@@ -64,3 +64,17 @@ describe('creditsOfferFor', () => {
     expect(runsOnCredits({ ...ON_CREDITS, enabled: false }, 'claude-code')).toBe(false);
   });
 });
+
+describe('a person who said no', () => {
+  it('keeps credits as one of the other ways, never the lead', () => {
+    const no = report({ defaults: { 'claude-code': { runsOn: 'own-sign-in', chosenBy: 'user' } } });
+    expect(creditsOfferFor('none', no, 'claude-code')).toBe('other-way');
+  });
+
+  it('still leads where DorkOS, not the person, recorded the own sign-in', () => {
+    const filled = report({
+      defaults: { 'claude-code': { runsOn: 'own-sign-in', chosenBy: 'default' } },
+    });
+    expect(creditsOfferFor('none', filled, 'claude-code')).toBe('lead');
+  });
+});

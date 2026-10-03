@@ -743,10 +743,13 @@ function PrimitivesSection() {
       <ShowcaseDemo>
         <FieldCard>
           <FieldCardContent>
-            <SettingRow label="Show timestamps" description="Display message timestamps in chat">
+            <SettingRow label="Show timestamps" description="Shows the time on each message.">
               <Switch checked={toggleA} onCheckedChange={setToggleA} />
             </SettingRow>
-            <SettingRow label="Auto-hide tool calls" description="Fade out completed tool calls">
+            <SettingRow
+              label="Auto-hide tool calls"
+              description="Finished tool calls fade after a moment."
+            >
               <Switch checked={toggleB} onCheckedChange={setToggleB} />
             </SettingRow>
           </FieldCardContent>

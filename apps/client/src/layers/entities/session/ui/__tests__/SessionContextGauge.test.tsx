@@ -95,9 +95,7 @@ describe('SessionContextGauge', () => {
 
     expect(screen.getByLabelText('Context usage unknown')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Context usage isn’t available for this session yet. Open it to see live usage.'
-      )
+      screen.getByText('No context usage yet. Open the session to see it.')
     ).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });

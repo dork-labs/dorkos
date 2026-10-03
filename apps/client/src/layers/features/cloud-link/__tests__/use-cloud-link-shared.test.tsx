@@ -3,8 +3,8 @@
  */
 /**
  * One link flow for every surface (spec `dorkos-account-by-default` §3): two
- * readers share one code, the surface that started a link carries on once it
- * lands, and a relink that did not replace the link never does.
+ * readers share one code, the code that landed is recorded with the surface
+ * that started it, and a relink that did not replace the link records nothing.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
@@ -63,39 +63,51 @@ describe('the shared link flow', () => {
     expect(both.result.current.there.origin).toBe('runtime-connect:claude-code');
   });
 
-  it('runs what the starting surface asked for once the link lands, exactly once', async () => {
+  it('records the code that landed and the surface that started it, once approved', async () => {
     const { transport, both } = setup();
-    const afterLink = vi.fn();
     await flush();
-    await act(() => both.result.current.here.start({ origin: 'a', afterLink }));
+    let code: string | null = null;
+    await act(async () => {
+      code = await both.result.current.here.start({ origin: 'a' });
+    });
+    expect(code).toBe('WXYZ7890');
     await flush();
+    expect(both.result.current.there.landed).toBeNull();
     land(transport);
-    await flush(2500);
     await flush(2500);
     await flush(10);
 
     expect(both.result.current.there.view.kind).toBe('linked');
-    expect(afterLink).toHaveBeenCalledTimes(1);
+    expect(both.result.current.there.landed).toEqual({ userCode: 'WXYZ7890', origin: 'a' });
   });
 
-  it('never runs it for a relink that did not replace the link', async () => {
+  it('records nothing for a relink that did not replace the link', async () => {
     const { transport, both } = setup();
-    const afterLink = vi.fn();
     await flush();
-    await act(() => both.result.current.here.start({ origin: 'a', afterLink }));
+    await act(() => both.result.current.here.start({ origin: 'a' }));
     await flush();
     land(transport, 'denied');
     await flush(2500);
     await flush(10);
 
-    expect(afterLink).not.toHaveBeenCalled();
+    expect(both.result.current.there.landed).toBeNull();
   });
 
-  it('gets a new code for the same surface and next step after one expires', async () => {
+  it('names the surface before the request, so a start that fails says so where it was asked', async () => {
     const { transport, both } = setup();
-    const afterLink = vi.fn();
+    vi.mocked(transport.startCloudLink).mockRejectedValue(new Error('The cloud is down.'));
     await flush();
-    await act(() => both.result.current.here.start({ origin: 'a', afterLink }));
+    await act(() => both.result.current.here.start({ origin: 'a' }));
+    await flush();
+
+    expect(both.result.current.there.origin).toBe('a');
+    expect(both.result.current.there.startError).toBe('The cloud is down.');
+  });
+
+  it('gets a new code for the same surface after one expires', async () => {
+    const { transport, both } = setup();
+    await flush();
+    await act(() => both.result.current.here.start({ origin: 'a' }));
     await flush();
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'expired' });
     await flush(2500);
@@ -106,9 +118,6 @@ describe('the shared link flow', () => {
     await act(() => both.result.current.there.restart());
     await flush();
     expect(both.result.current.here.origin).toBe('a');
-    land(transport);
-    await flush(2500);
-    await flush(10);
-    expect(afterLink).toHaveBeenCalledTimes(1);
+    expect(both.result.current.here.view.kind).toBe('pending');
   });
 });

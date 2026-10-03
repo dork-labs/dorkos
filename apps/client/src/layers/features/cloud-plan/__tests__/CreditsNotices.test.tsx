@@ -68,6 +68,26 @@ describe('CreditsNotices', () => {
     await waitFor(() => expect(transport.undoFilledCloudCredits).toHaveBeenCalledOnce());
   });
 
+  it('says why an answer was refused, in the server’s own words', async () => {
+    const user = userEvent.setup();
+    const transport = renderSource({
+      defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'default' } },
+      notices: [{ kind: 'filled', runtimes: ['claude-code'] }],
+    });
+    // What the transport throws for the owner bar's 403 (DOR-2652).
+    const sentence = 'Only the owner of this DorkOS can choose what runs on DorkOS credits.';
+    vi.mocked(transport.undoFilledCloudCredits).mockRejectedValue(
+      Object.assign(new Error(sentence), {
+        status: 403,
+        code: 'owner_only',
+        body: { error: sentence, code: 'owner_only' },
+      })
+    );
+    await screen.findByTestId('credits-notice-filled');
+    await user.click(screen.getByRole('button', { name: 'Undo all' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(`Couldn’t change that. ${sentence}`);
+  });
+
   it('opens Runs on from the announcement, and settles it', async () => {
     const user = userEvent.setup();
     const transport = renderSource({

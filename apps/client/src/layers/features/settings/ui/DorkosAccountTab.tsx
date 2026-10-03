@@ -41,20 +41,22 @@ function SignedOutPage() {
     <div className="space-y-2">
       {runtimes.length > 0 ? (
         <>
-          <p className="text-sm">Link this computer to a DorkOS account to:</p>
+          <p className="text-sm">Link a DorkOS account to:</p>
           <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm">
             <li>
               Use one account for {runtimes.join(' and ')}: run{' '}
               {runtimes.length === 1 ? 'it' : 'them'} on your DorkOS credits.
             </li>
-            <li>See your plan, your credits and your seats here.</li>
+            <li>See your plan, credits and seats here.</li>
           </ul>
         </>
       ) : (
-        <p className="text-muted-foreground text-sm">
-          Link this computer to a DorkOS account to see your plan, your credits and your seats here.
-          Everything else works without one.
-        </p>
+        <>
+          <p className="text-muted-foreground text-sm">
+            Link a DorkOS account to see your plan, credits and seats here.
+          </p>
+          <p className="text-muted-foreground text-sm">Everything else works without one.</p>
+        </>
       )}
       {/* Said before anybody links in order to buy, not after. */}
       <CloudEligibilityNote />

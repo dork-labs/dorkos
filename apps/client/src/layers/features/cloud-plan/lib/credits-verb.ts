@@ -1,7 +1,7 @@
 /**
  * The word the credits offer opens with, read off what the account reports.
  *
- * @module widgets/credits-offer/lib/credits-verb
+ * @module features/cloud-plan/lib/credits-verb
  */
 import type { CloudPlanResponse } from '@dorkos/shared/cloud-schemas';
 
@@ -28,12 +28,19 @@ function micro(amount: string): bigint | null {
  * - **Use** — everything else: signed out (nothing is known about the account
  *   until it links), an account with credits it has spent from, and any answer
  *   this cannot read. "Use" promises nothing about money.
+ * - `null` — signed in, and the plan has not answered yet. A surface waits
+ *   rather than guess, since the answer may be "Buy".
  *
  * @param linked - Whether this computer is linked to a DorkOS account.
  * @param plan - `GET /api/cloud/plan`, or `undefined` while it loads.
  */
-export function creditsVerb(linked: boolean, plan: CloudPlanResponse | undefined): CreditsVerb {
-  if (!linked || !plan?.available || plan.balance === null) return 'Use';
+export function creditsVerb(
+  linked: boolean,
+  plan: CloudPlanResponse | undefined
+): CreditsVerb | null {
+  if (!linked) return 'Use';
+  if (plan === undefined) return null;
+  if (!plan.available || plan.balance === null) return 'Use';
   const { allowance, purchased } = plan.balance;
   const granted = micro(allowance.grantedMicro);
   const remaining = micro(allowance.remainingMicro);

@@ -161,7 +161,7 @@ describe('PermissionPreviewSection', () => {
     await openSection(EFFECTS);
 
     expect(
-      screen.getByText(/download 2 npm libraries, and everything they depend on/i)
+      screen.getByText(/download 2 npm libraries and their dependencies/i)
     ).toBeInTheDocument();
     expect(screen.getByText(/zod@\^4\.3\.6, cronstrue@~2\.0\.0/)).toBeInTheDocument();
   });
@@ -174,9 +174,7 @@ describe('PermissionPreviewSection', () => {
     );
     await openSection(EFFECTS);
 
-    expect(
-      screen.getByText(/download 1 npm library, and everything they depend on/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/download 1 npm library and their dependencies/i)).toBeInTheDocument();
   });
 
   it('marks an optionalDependency as optional', async () => {
@@ -248,9 +246,7 @@ describe('PermissionPreviewSection', () => {
     render(<PermissionPreviewSection preview={preview} />);
 
     expect(screen.getByText('Commands this package declares')).toBeInTheDocument();
-    expect(
-      screen.getByText('This package sets up a command to run, but we could not read it')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Sets up a command DorkOS couldn’t read')).toBeInTheDocument();
   });
 
   it('names a schedule permission mode in plain words, never as a raw id', () => {

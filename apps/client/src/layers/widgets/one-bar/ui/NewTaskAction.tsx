@@ -44,11 +44,11 @@ export function NewTaskAction() {
       variant="outline"
       size="xs"
       onClick={openBlank}
-      aria-label={isMobile ? 'New Schedule' : undefined}
+      aria-label={isMobile ? 'New schedule' : undefined}
       className={cn(isMobile && 'h-[35px] w-[35px] p-0')}
     >
       <Plus />
-      {!isMobile && 'New Schedule'}
+      {!isMobile && 'New schedule'}
     </Button>
   );
 }

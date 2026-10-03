@@ -12,4 +12,3 @@
  * @module widgets/credits-offer
  */
 export { CreditsOfferCard, renderCreditsOffer } from './ui/CreditsOfferCard';
-export { creditsVerb, type CreditsVerb } from './lib/credits-verb';

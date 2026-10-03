@@ -241,7 +241,7 @@ describe('ToolsTab — background system switches', () => {
     render(<ToolsTab />, { wrapper: Wrapper });
 
     await settled();
-    expect(backgroundCard().getByText(/failed to start/i)).toBeInTheDocument();
+    expect(backgroundCard().getByText(/didn’t start last time/i)).toBeInTheDocument();
     expect(backgroundCard().queryByText(/Saved\./)).not.toBeInTheDocument();
   });
 

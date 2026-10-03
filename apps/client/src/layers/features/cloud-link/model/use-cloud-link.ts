@@ -11,9 +11,11 @@
  * who started it live in the query cache rather than in one component, so the
  * code a person was shown in a runtime's connect card is the same code
  * Settings › DorkOS account shows, and either can finish or cancel it. The
- * surface that started a link names itself (`origin`) and may hand over what to
- * do once it lands (`afterLink`), so it picks up where it was after approval
- * even when the person approved it from another surface.
+ * surface that started a link names itself (`origin`), and the code that landed
+ * is recorded (`landed`), so a surface that is still on screen can tell that
+ * the code IT started was approved and carry on from where it was. Nothing is
+ * stored to run later: a surface that has gone away, another tab, or a relink
+ * that did not replace the link carries nothing on.
  *
  * This is INDEPENDENT of local login: nothing here reads the auth session or the
  * AuthGuard. The instance token never reaches the client and is never logged.
@@ -155,25 +157,29 @@ export interface StartCloudLinkOptions {
    * ever in flight, and every surface shows its code.
    */
   origin?: string;
-  /**
-   * What to do once THIS link lands, wherever it was approved from — how the
-   * surface that started it carries on from where it was. Runs once, only for
-   * a first link that was approved, and never for a relink that did not
-   * replace the link.
-   */
-  afterLink?: () => unknown;
+}
+
+/** The code whose approval linked this computer, and the surface that started it. */
+export interface LandedLink {
+  /** The code that was approved. */
+  userCode: string;
+  /** The surface that started it, or `null` when it named none. */
+  origin: string | null;
 }
 
 /** Everything the {@link CloudLinkPanel} needs to render and drive the flow. */
 export interface UseCloudLink {
   view: CloudLinkView;
-  /** Begin the device flow (or restart it after expiry/denial). */
-  start: (options?: StartCloudLinkOptions) => Promise<void>;
+  /**
+   * Begin the device flow (or restart it after expiry/denial). Resolves with
+   * the code it started, or `null` when it could not start one.
+   */
+  start: (options?: StartCloudLinkOptions) => Promise<string | null>;
   /**
    * Get a new code for the link that just expired or was turned down, for the
    * same surface and the same next step it was started with.
    */
-  restart: () => Promise<void>;
+  restart: () => Promise<string | null>;
   /** Unlink this computer from its DorkOS account. */
   unlink: () => Promise<void>;
   /** Stop a link in progress, or dismiss the note a relink that didn't finish left. */
@@ -182,15 +188,22 @@ export interface UseCloudLink {
   unlinking: boolean;
   /** Friendly message when `start` fails (e.g. the cloud was unreachable). */
   startError: string | null;
+  /** Why the last `unlink` changed nothing (e.g. only the install's owner may unlink). */
+  unlinkError: string | null;
   /** Which surface started the link in flight, or `null` when none named itself. */
   origin: string | null;
+  /**
+   * The code whose approval last linked this computer in this tab, or `null`.
+   * Never set by a relink that did not replace the link.
+   */
+  landed: LandedLink | null;
 }
 
 /** The codes in hand, and who asked for them — shared by every surface. */
 interface LinkFlowEntry {
   codes: StartLinkResult | null;
   origin: string | null;
-  afterLink: (() => unknown) | null;
+  landed: LandedLink | null;
   starting: boolean;
   startError: string | null;
 }
@@ -201,20 +214,18 @@ const IDLE: CloudLinkStatus = { state: 'idle' };
 const NO_FLOW: LinkFlowEntry = {
   codes: null,
   origin: null,
-  afterLink: null,
+  landed: null,
   starting: false,
   startError: null,
 };
 
 /**
- * Everything a link that just landed refreshes, then what the surface that
- * started it asked to happen next.
+ * Everything a link that just landed refreshes.
  *
  * @param queryClient - The app's query client.
- * @param afterLink - The starting surface's next step, or `null`.
  */
-async function land(queryClient: QueryClient, afterLink: (() => unknown) | null): Promise<void> {
-  await Promise.all([
+function land(queryClient: QueryClient): Promise<unknown> {
+  return Promise.all([
     queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
     queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
     // Which space sites sign in with the account belongs to the account.
@@ -223,12 +234,6 @@ async function land(queryClient: QueryClient, afterLink: (() => unknown) | null)
     queryClient.invalidateQueries({ queryKey: cloudCreditsKeys.status() }),
     queryClient.invalidateQueries({ queryKey: configKeys.all }),
   ]);
-  if (!afterLink) return;
-  try {
-    await afterLink();
-  } catch {
-    // The surface that asked shows its own failure; the link stands.
-  }
 }
 
 /** Extract a friendly message from a transport error. */
@@ -265,6 +270,8 @@ export function useCloudLink(): UseCloudLink {
   );
 
   const [unlinking, setUnlinking] = useState(false);
+  // Local on purpose: an unlink refusal belongs to the panel that asked.
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
 
   // The landing, read off the poll itself rather than an effect, so it runs
   // once per answer however many surfaces subscribe. It is not awaited by the
@@ -275,8 +282,15 @@ export function useCloudLink(): UseCloudLink {
     const next = await transport.getCloudLinkStatus();
     if (before?.state === 'pending' && next.state === 'linked') {
       const current = queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey) ?? NO_FLOW;
-      queryClient.setQueryData<LinkFlowEntry>(cloudLinkFlowKey, { ...current, afterLink: null });
-      void land(queryClient, next.relinkOutcome ? null : current.afterLink);
+      // Only a first link that was approved records its code; a relink that did
+      // not replace the link changed nothing a surface could carry on from.
+      if (current.codes && !next.relinkOutcome) {
+        queryClient.setQueryData<LinkFlowEntry>(cloudLinkFlowKey, {
+          ...current,
+          landed: { userCode: current.codes.userCode, origin: current.origin },
+        });
+      }
+      void land(queryClient);
     }
     return next;
   }, [transport, queryClient]);
@@ -318,22 +332,21 @@ export function useCloudLink(): UseCloudLink {
   }, [linkedNow, transport, queryClient]);
 
   const start = useCallback(
-    async (options: StartCloudLinkOptions = {}) => {
-      setFlow({ starting: true, startError: null });
+    async (options: StartCloudLinkOptions = {}): Promise<string | null> => {
+      // Named before the request, so a start that fails says so on the surface
+      // that asked, never on whichever surface started the last one.
+      setFlow({ starting: true, startError: null, origin: options.origin ?? null });
       // A mount-time read still in flight must not land over the `pending`
       // this start is about to write.
       await queryClient.cancelQueries({ queryKey: cloudLinkStatusKey });
       try {
         const codes = await transport.startCloudLink();
-        setFlow({
-          codes,
-          origin: options.origin ?? null,
-          afterLink: options.afterLink ?? null,
-          starting: false,
-        });
+        setFlow({ codes, starting: false });
         queryClient.setQueryData(cloudLinkStatusKey, PENDING);
+        return codes.userCode;
       } catch (err) {
         setFlow({ starting: false, startError: cloudErrorMessage(err) });
+        return null;
       }
     },
     [transport, queryClient, setFlow]
@@ -341,10 +354,7 @@ export function useCloudLink(): UseCloudLink {
 
   const restart = useCallback(() => {
     const previous = queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey) ?? NO_FLOW;
-    return start({
-      ...(previous.origin !== null ? { origin: previous.origin } : {}),
-      ...(previous.afterLink !== null ? { afterLink: previous.afterLink } : {}),
-    });
+    return start(previous.origin !== null ? { origin: previous.origin } : {});
   }, [queryClient, start]);
 
   const cancel = useCallback(async () => {
@@ -352,15 +362,21 @@ export function useCloudLink(): UseCloudLink {
     await queryClient.cancelQueries({ queryKey: cloudLinkStatusKey });
     try {
       queryClient.setQueryData(cloudLinkStatusKey, await transport.cancelCloudLink());
-    } catch {
+    } catch (err) {
       // The server keeps its own state; the next status read reconciles it.
       queryClient.setQueryData(cloudLinkStatusKey, null);
+      // A refusal (only the owner of this DorkOS may stop a link) is said, so
+      // the person is not left wondering why the code came back.
+      if ((err as { status?: unknown }).status === 403) {
+        setFlow({ startError: cloudErrorMessage(err) });
+      }
     }
     await queryClient.invalidateQueries({ queryKey: cloudStatusKey });
   }, [transport, queryClient, setFlow]);
 
   const unlink = useCallback(async () => {
     setUnlinking(true);
+    setUnlinkError(null);
     try {
       await transport.unlinkCloud();
       setFlow(null);
@@ -378,10 +394,12 @@ export function useCloudLink(): UseCloudLink {
         queryClient.invalidateQueries({ queryKey: cloudCreditsKeys.status() }),
         invalidateAccountReads(queryClient),
       ]);
-    } catch {
-      // Unlink failed (e.g. the local server call errored): the instance was not
-      // unlinked, so leave the panel in the linked view and let the user retry.
-      // Caught so a rejected transport call never becomes an unhandled rejection.
+    } catch (err) {
+      // Unlink failed (refused, or the local server call errored): the instance
+      // was not unlinked, so leave the panel in the linked view, say why, and
+      // let the user retry. Caught so a rejected transport call never becomes
+      // an unhandled rejection.
+      setUnlinkError(cloudErrorMessage(err));
     } finally {
       setUnlinking(false);
     }
@@ -433,6 +451,8 @@ export function useCloudLink(): UseCloudLink {
     starting: flow.starting,
     unlinking,
     startError: flow.startError,
+    unlinkError,
     origin: flow.origin,
+    landed: flow.landed,
   };
 }

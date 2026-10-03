@@ -148,7 +148,7 @@ test.describe('DorkOS credits first where nothing works yet @smoke', () => {
     settingsPage,
   }) => {
     test.setTimeout(120_000);
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 320, height: 700 });
     await noClaudeSignIn(page);
     await fakeCloud(page);
     await refuseSends(page);
@@ -167,7 +167,7 @@ test.describe('DorkOS credits first where nothing works yet @smoke', () => {
       await expect(button).toBeInViewport();
       const box = await button.boundingBox();
       expect(box!.x).toBeGreaterThanOrEqual(0);
-      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(320);
     }
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth

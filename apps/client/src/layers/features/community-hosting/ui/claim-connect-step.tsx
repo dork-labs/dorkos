@@ -33,7 +33,7 @@ export function claimConnectStep(props: ClaimConnectStepProps): HostingStep {
     case 'preparing':
       return {
         title: `Setting up ${name}`,
-        description: 'This takes a moment. You can keep this open or come back later.',
+        description: 'Keep this open, or come back later.',
         body: (
           <p role="status" className="text-muted-foreground flex items-center gap-2 text-sm">
             <Spinner className="size-4" /> Setting up…
@@ -49,8 +49,8 @@ export function claimConnectStep(props: ClaimConnectStepProps): HostingStep {
       return {
         title: `Make ${name} yours`,
         description: state.withAccount
-          ? 'Finish in your browser by signing in with your DorkOS account, then come back.'
-          : 'Finish in your browser. Sign in or create your account there, then come back.',
+          ? 'Sign in with your DorkOS account in your browser, then come back.'
+          : 'Sign in or create an account in your browser, then come back.',
         body: state.notice ? <HostingNoticeView notice={state.notice} /> : undefined,
         actions: (
           <>
@@ -78,7 +78,7 @@ export function claimConnectStep(props: ClaimConnectStepProps): HostingStep {
       return {
         title: `Connect this DorkOS to ${name}`,
         description: state.approvalUrl
-          ? `Approve this DorkOS on ${name}. This page moves on by itself once you do.`
+          ? `Approve this DorkOS on ${name}. This page then moves on.`
           : 'Getting the approval page ready…',
         body: (
           <>
@@ -108,7 +108,7 @@ export function claimConnectStep(props: ClaimConnectStepProps): HostingStep {
         body: (
           <p className="flex items-center gap-2 text-sm">
             <CheckCircle2 className="text-status-success-fg size-4" aria-hidden />
-            It’s selected in your list of spaces.
+            It’s selected in your spaces.
           </p>
         ),
         actions: <Button onClick={props.onClose}>Done</Button>,

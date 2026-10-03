@@ -140,7 +140,7 @@ describe('the Ask card', () => {
 
     await waitFor(() => expect(screen.queryByText('Allow')).toBeNull());
     expect(screen.getByText(/Already answered by Dorian/)).toBeDefined();
-    expect(screen.queryByText('Deny')).toBeNull();
+    expect(screen.queryByText('Don’t allow')).toBeNull();
   });
 
   it('says what happened for every way a prompt can end', async () => {

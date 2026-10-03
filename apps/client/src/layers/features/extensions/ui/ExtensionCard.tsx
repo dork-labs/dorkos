@@ -3,7 +3,7 @@ import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Badge, Button, Card, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { extensionConsentCopy } from '@/layers/entities/extension';
+import { EXTENSION_TRUST_COPY, extensionConsentCopy } from '@/layers/entities/extension';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -45,16 +45,16 @@ export function ExtensionCard({
   // Nothing about an unapproved extension runs: the server refuses its `server.ts`
   // AND withholds its client bundle, so the browser never imports it either
   // (DOR-516). This only picks which reach to name, because a server entry or data
-  // proxy adds "anything on this machine" to "anything you can do in DorkOS".
+  // proxy adds "anything DorkOS can" to acting as you in DorkOS.
   const runsInServer = extension.hasServerEntry || extension.hasDataProxy;
   // Health/availability state — communicated by a badge that is visually
   // distinct from the on/off toggle (an errored extension can still be "on").
   const healthLabel = hasError
-    ? 'Error'
+    ? 'Not working'
     : isIncompatible
       ? 'Incompatible'
       : isInvalid
-        ? 'Invalid'
+        ? 'Can’t load'
         : null;
 
   return (
@@ -105,7 +105,7 @@ export function ExtensionCard({
           {hasError && error && (
             <div className="space-y-1">
               <p className="text-status-warning-fg text-sm">
-                {status === 'compile_error' ? 'Compilation error: ' : 'Activation failed: '}
+                {status === 'compile_error' ? 'Couldn’t build: ' : 'Couldn’t start: '}
                 {error.message}
               </p>
               {error.details && (
@@ -135,8 +135,7 @@ export function ExtensionCard({
               about it — including the part that draws in this window — is fine. */}
           {serverError && (
             <p className="text-status-warning-fg text-sm">
-              Server side failed to rebuild: {serverError.message}. The previous version is still
-              running.
+              Couldn’t rebuild its server part: {serverError.message}. The last version still runs.
             </p>
           )}
 
@@ -149,11 +148,10 @@ export function ExtensionCard({
                 data-testid={`extension-run-allowed-${extension.id}`}
               >
                 <ShieldCheck className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>
-                  You allowed this to run inside DorkOS.
-                  {extension.originProblem === 'changed' &&
-                    ' You said yes to its files as they are now; they had changed after DorkOS installed it, so any further change will ask you again.'}
-                </span>
+                <span>You allowed this to run.</span>
+                {extension.originProblem === 'changed' && (
+                  <span>You approved its changed files. Any further change asks again.</span>
+                )}
                 <button
                   type="button"
                   onClick={() => onSetRunApproval(extension.id, false)}
@@ -179,15 +177,17 @@ export function ExtensionCard({
                     data-testid={`extension-origin-problem-${extension.id}`}
                   >
                     {extension.originProblem === 'changed'
-                      ? 'Its files changed after DorkOS installed it, so DorkOS can’t vouch for where this copy came from. It won’t run until you look it over and say yes.'
-                      : 'Its plugin holds a shortcut to files somewhere else, so DorkOS can’t vouch for where this copy came from. It won’t run until you say yes.'}
+                      ? 'Its files changed after install, so DorkOS can’t vouch for it. Look it over first.'
+                      : 'Its plugin links to files elsewhere, so DorkOS can’t vouch for its source.'}
                   </p>
                 )}
-                {/* One sentence shared with the Activity inbox's ⓘ panel
-                    (DOR-2517), so the two places that ask say the same thing. */}
+                {/* The consent sentence and the trust warning are shared with
+                    the Activity inbox's ⓘ panel (DOR-2517), so the two places
+                    that ask say the same thing. */}
                 <p className="text-muted-foreground text-sm">
                   {extensionConsentCopy(runsInServer)}
                 </p>
+                <p className="text-muted-foreground text-sm">{EXTENSION_TRUST_COPY}</p>
                 <Button
                   size="sm"
                   onClick={() => onSetRunApproval(extension.id, true)}
@@ -204,7 +204,7 @@ export function ExtensionCard({
             <Badge variant="outline">{scope}</Badge>
             {healthLabel && (
               <Badge
-                variant={healthLabel === 'Error' ? 'destructive' : 'secondary'}
+                variant={healthLabel === 'Not working' ? 'destructive' : 'secondary'}
                 data-testid={`extension-health-${extension.id}`}
               >
                 {healthLabel}
@@ -226,7 +226,7 @@ export function ExtensionCard({
           ) : (
             <Badge
               variant="secondary"
-              title="This extension is required and is always on"
+              title="This extension is always on"
               data-testid={`extension-required-${extension.id}`}
             >
               Required

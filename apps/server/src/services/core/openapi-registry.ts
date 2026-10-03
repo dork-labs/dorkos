@@ -1009,6 +1009,12 @@ registry.registerPath({
       description: 'Validation error',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    403: {
+      description:
+        'The message names DorkOS credits (`account: "dorkos-credits"`) and the caller is not ' +
+        'the owner of this DorkOS (`person_only`, `owner_only`); nothing started',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
     409: {
       description:
         'Refused before anything started, for where the turn would run ' +
@@ -3506,6 +3512,45 @@ const CloudSummarySchema = z.object({
   lastHeartbeatAt: z.string().nullable(),
 });
 
+/**
+ * The owner bar's refusal on a DorkOS account write that answers with a status
+ * object (`routes/cloud-owner-bar.ts`, DOR-2652).
+ */
+const CloudOwnerOnlyErrorDocSchema = z
+  .object({
+    error: z.string().openapi({ description: 'One plain sentence saying who may do this.' }),
+    code: z.enum(['person_only', 'owner_only']),
+  })
+  .openapi('CloudOwnerOnlyError');
+
+/** The same refusal, on a DorkOS account write whose answer is an `ok` envelope. */
+const CloudOwnerOnlyEnvelopeDocSchema = z
+  .object({
+    ok: z.literal(false),
+    code: z.enum(['person_only', 'owner_only']),
+    message: z.string().openapi({ description: 'One plain sentence saying who may do this.' }),
+  })
+  .openapi('CloudOwnerOnlyRefusal');
+
+/** What a 403 on a DorkOS account write means, said once for every one of them. */
+const OWNER_ONLY_403 =
+  'Only the owner of this DorkOS may do this: never an agent or a caller holding an ' +
+  'approval token, and with login on never an API key or another signed-in account.';
+
+const CLOUD_OWNER_ONLY_ERROR = {
+  403: {
+    description: OWNER_ONLY_403,
+    content: { 'application/json': { schema: CloudOwnerOnlyErrorDocSchema } },
+  },
+};
+
+const CLOUD_OWNER_ONLY_ENVELOPE = {
+  403: {
+    description: OWNER_ONLY_403,
+    content: { 'application/json': { schema: CloudOwnerOnlyEnvelopeDocSchema } },
+  },
+};
+
 registry.registerPath({
   method: 'post',
   path: '/api/cloud/link/start',
@@ -3520,6 +3565,7 @@ registry.registerPath({
       description: 'Device codes to display',
       content: { 'application/json': { schema: StartLinkResultSchema } },
     },
+    ...CLOUD_OWNER_ONLY_ERROR,
     502: {
       description: 'Could not reach the DorkOS cloud',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -3554,6 +3600,7 @@ registry.registerPath({
       description: 'The state the link flow settled in',
       content: { 'application/json': { schema: CloudLinkStatusSchema } },
     },
+    ...CLOUD_OWNER_ONLY_ERROR,
   },
 });
 
@@ -3567,6 +3614,7 @@ registry.registerPath({
       description: 'Unlinked',
       content: { 'application/json': { schema: z.object({ ok: z.boolean() }) } },
     },
+    ...CLOUD_OWNER_ONLY_ERROR,
     500: {
       description: 'Unlink failed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -3601,6 +3649,7 @@ registry.registerPath({
       description: 'Linked state, account label, and last heartbeat, after the check',
       content: { 'application/json': { schema: CloudSummarySchema } },
     },
+    ...CLOUD_OWNER_ONLY_ENVELOPE,
   },
 });
 
@@ -3703,6 +3752,7 @@ registry.registerPath({
       description: 'The page address, or a refusal',
       content: { 'application/json': { schema: CloudBillingSessionResponseDocSchema } },
     },
+    ...CLOUD_OWNER_ONLY_ENVELOPE,
     400: {
       description: 'A checkout that names no offer',
       content: {
@@ -3750,6 +3800,7 @@ registry.registerPath({
       description: 'Where the export stands, or a refusal',
       content: { 'application/json': { schema: CloudAccountExportResponseDocSchema } },
     },
+    ...CLOUD_OWNER_ONLY_ENVELOPE,
   },
 });
 
@@ -3787,6 +3838,7 @@ registry.registerPath({
       description: 'Where the confirmation link went, or a refusal',
       content: { 'application/json': { schema: CloudAccountDeletionResponseDocSchema } },
     },
+    ...CLOUD_OWNER_ONLY_ENVELOPE,
   },
 });
 

@@ -78,7 +78,7 @@ export function resolveCanvasMediaSrc(
 export function canvasMediaErrorMessage(error: CanvasMediaError, kind: CanvasMediaKind): string {
   switch (error) {
     case 'blocked':
-      return `This ${kind} source can’t be displayed for security reasons.`;
+      return `This ${kind} source is blocked for safety.`;
     case 'unsupported-data':
       return `This data URI isn’t a valid ${kind} source.`;
     case 'local-unavailable':

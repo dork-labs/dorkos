@@ -6,6 +6,7 @@
 import { Puzzle } from 'lucide-react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
+  EXTENSION_TRUST_COPY,
   extensionConsentCopy,
   useExtensionApprovalActions,
   type ExtensionAnswerInput,
@@ -64,6 +65,7 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
           more={
             <>
               <p>{extensionConsentCopy(approval.runsInServer)}</p>
+              <p>{EXTENSION_TRUST_COPY}</p>
               <p>
                 <button
                   type="button"

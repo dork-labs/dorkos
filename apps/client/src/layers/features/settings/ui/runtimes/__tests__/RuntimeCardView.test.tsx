@@ -256,7 +256,7 @@ describe('RuntimeCardView', () => {
 
     expect(screen.getByTestId('runtime-default-pill-claude-code')).toBeInTheDocument();
     expect(screen.getByTestId('runtime-default-broken-claude-code')).toHaveTextContent(
-      /default runtime isn’t connected/i
+      /default isn’t connected/i
     );
     expect(screen.getByRole('button', { name: 'Sign in to Claude Code' })).toBeInTheDocument();
   });
@@ -276,7 +276,7 @@ describe('RuntimeCardView', () => {
 
     expect(screen.getByTestId('runtime-ready-claude-code')).toBeInTheDocument();
     expect(screen.getByTestId('runtime-sign-in-expiring-claude-code')).toHaveTextContent(
-      'Your Claude Code sign-in runs out in 2 days. Sign in again before your agents stall.'
+      'Your Claude Code sign-in runs out in 2 days. Sign in again to keep agents working.'
     );
   });
 
@@ -287,7 +287,7 @@ describe('RuntimeCardView', () => {
 
     expect(screen.getByTestId('runtime-ready-claude-code')).toBeInTheDocument();
     expect(screen.getByTestId('runtime-sign-in-expiring-claude-code')).toHaveTextContent(
-      'Your Claude Code sign-in is out of time and will stop working shortly. Sign in again to avoid an interruption.'
+      'Your Claude Code sign-in stops working soon. Sign in again now.'
     );
   });
 
@@ -301,7 +301,7 @@ describe('RuntimeCardView', () => {
     renderCard({ ready: false, summary: [], expanded: true });
 
     expect(screen.getByTestId('runtime-card-locked-claude-code')).toHaveTextContent(
-      'One sign-in away. Settings unlock once it’s connected.'
+      'One sign-in away from its settings.'
     );
     expect(screen.queryByTestId('runtime-card-summary-claude-code')).not.toBeInTheDocument();
     expect(screen.queryByTestId('runtime-model-select-claude-code')).not.toBeInTheDocument();
@@ -317,7 +317,7 @@ describe('RuntimeCardView', () => {
     renderCard({ expanded: true, storesDefaults: false });
 
     expect(screen.getByTestId('runtime-card-no-settings-claude-code')).toHaveTextContent(
-      'Claude Code keeps no settings of its own.'
+      'Claude Code keeps no settings here.'
     );
     expect(screen.queryByTestId('runtime-model-select-claude-code')).not.toBeInTheDocument();
     expect(screen.queryByTestId(/^runtime-effort-/)).not.toBeInTheDocument();
@@ -429,7 +429,7 @@ describe('RuntimeCardView', () => {
     expect(onToggleExpanded).toHaveBeenCalledTimes(1);
 
     // The control does its own job and nothing else: the card stays open.
-    await user.click(screen.getByRole('button', { name: 'Use the setting above' }));
+    await user.click(screen.getByRole('button', { name: 'Use the shared setting' }));
     expect(onTrustChange).toHaveBeenCalledWith(null);
     expect(onToggleExpanded).toHaveBeenCalledTimes(1);
   });

@@ -115,8 +115,8 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
                 {installLimits === null
                   ? 'Whatever your settings say.'
                   : installLimits.turnLimitsEnabled
-                    ? 'Your settings limit automatic replies right now.'
-                    : 'Your settings do not limit automatic replies right now.'}
+                    ? 'Settings limit automatic replies now.'
+                    : 'Settings don’t limit automatic replies now.'}
               </p>
             </div>
           </div>
@@ -127,7 +127,7 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
                 Limited
               </Label>
               <p className="text-muted-foreground text-xs">
-                Keep this room limited even if your settings are not.
+                Limit this room even if Settings don’t.
               </p>
             </div>
           </div>
@@ -142,7 +142,7 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
                 Not limited
               </Label>
               <p className="text-muted-foreground text-xs">
-                Agents reply to each other here until you press Stop.
+                Agents keep replying until you press Stop.
               </p>
             </div>
           </div>
@@ -155,7 +155,7 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
       <div className="space-y-4">
         <RoomLimitRow
           label="Replies in a row"
-          description="How many replies agents may trade here before the room pauses them."
+          description="Replies agents can trade before the room pauses them."
           value={room.maxAgentDepth ?? null}
           fallback={installLimits?.maxAgentDepth ?? null}
           min={ROOM_TURN_LIMIT_BOUNDS.maxAgentDepth.min}
@@ -165,7 +165,7 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
         />
         <RoomLimitRow
           label="Replies from one agent"
-          description="How many turns any one agent may take here. Progress notes it posts while it works don’t count extra."
+          description="Turns one agent can take here. Progress notes don’t count."
           value={room.maxTurnsPerAgentPerCascade ?? null}
           fallback={installLimits?.maxTurnsPerAgentPerCascade ?? null}
           min={ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.min}
@@ -175,7 +175,7 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
         />
         <RoomLimitRow
           label="Replies each hour"
-          description="The most automatic replies this room may run in an hour."
+          description="Automatic replies this room can run per hour."
           value={room.maxAutoTurnsPerHour ?? null}
           fallback={installLimits?.maxAutomaticTurnsPerRoomPerHour ?? null}
           min={ROOM_TURN_LIMIT_BOUNDS.maxAutoTurnsPerHour.min}
@@ -196,8 +196,7 @@ export function RoomLimitsSection({ room }: RoomLimitsSectionProps) {
       )}
 
       <p className="text-muted-foreground text-xs">
-        The hourly limit across all of DorkOS still applies here. A room can go without its own
-        limits, not without your bill.
+        DorkOS’s overall hourly limit still applies, to protect your bill.
       </p>
     </CollapsibleFieldCard>
   );

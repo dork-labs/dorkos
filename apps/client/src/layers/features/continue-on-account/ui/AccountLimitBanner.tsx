@@ -311,6 +311,11 @@ export function AccountLimitBanner({
               runtime: banner.runtime,
               origin: `limit:${sessionId}`,
               intent: 'keep-going',
+              // Continuing spends at once, so after a link it asks, never acts.
+              confirmAfterLink: {
+                prompt: 'Linked. Continue on DorkOS credits?',
+                action: 'Continue',
+              },
               onChoose: () => banner.continueOn({ account: CREDITS_ACCOUNT_ID }),
             })}
           </div>

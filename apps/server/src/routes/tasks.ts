@@ -42,7 +42,13 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
-import { clearsTheAgentBar, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import {
+  clearsTheAgentBar,
+  refuseUnlessAccountOwner,
+  requireOperatorCookieUnderLogin,
+} from '../lib/caller-authority.js';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
@@ -202,6 +208,26 @@ async function describeTaskPermissionLevel(task: Task, meshCore?: MeshCore): Pro
 const NEXT_RUNS_PREVIEW_COUNT = 3;
 
 /**
+ * What a schedule on DorkOS credits says to a caller that is not the owner.
+ * Every run of such a schedule spends the DorkOS account's money, so naming
+ * credits, approving a schedule that names them, and running one now are the
+ * owner's alone (DOR-2652), like every other credits choice.
+ */
+const TASK_ON_CREDITS = {
+  personOnly: 'Only you can run a scheduled task on your DorkOS credits, from the DorkOS app.',
+  action: 'run a scheduled task on DorkOS credits',
+};
+
+/** Whether a task write body names DorkOS credits as its account. */
+function namesCredits(body: unknown): boolean {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    (body as { account?: unknown }).account === CREDITS_ACCOUNT_ID
+  );
+}
+
+/**
  * Create the Tasks router with schedule and run management endpoints.
  *
  * @param store - TaskStore for data persistence
@@ -298,6 +324,7 @@ export function createTasksRouter(
   router.post('/', async (req, res) => {
     const trusted = clearsTheAgentBar(req, res);
     if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
+    if (namesCredits(req.body) && refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)) return;
 
     // Everything from "is this a valid request" to "the cron job is running" lives
     // in `createScheduledTask`, because `tasks_create` on both MCP servers has to
@@ -367,6 +394,33 @@ export function createTasksRouter(
     if (!existing) {
       return res.status(404).json({ error: 'Scheduled task not found' });
     }
+
+    // Naming DorkOS credits, or approving a schedule that runs on them, spends
+    // the DorkOS account's money: the owner's call alone (DOR-2652).
+    const runsOnCredits =
+      (data.account !== undefined ? data.account : existing.account) === CREDITS_ACCOUNT_ID;
+    if (
+      (namesCredits(req.body) || (data.status === 'active' && runsOnCredits)) &&
+      refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)
+    ) {
+      return;
+    }
+    // Switching a credits schedule back on starts it spending again, so it is
+    // the owner's call too, whoever asks (DOR-2678).
+    if (
+      runsOnCredits &&
+      data.enabled === true &&
+      !existing.enabled &&
+      refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)
+    ) {
+      return;
+    }
+    // Whether this caller's edit keeps a live schedule approved (re-arms it)
+    // rather than parking it for a person to look at. A person's does — but
+    // for a schedule on DorkOS credits only the owner's (DOR-2678): another
+    // signed-in account's edit parks it for the owner to approve, the way an
+    // agent's does.
+    const rearms = trusted && (!runsOnCredits || refuseUnlessAccountOwner(req, res) === undefined);
 
     // A new timing and the package's own timing are two different answers to
     // one question; the request has to pick (DOR-2302).
@@ -501,7 +555,7 @@ export function createTasksRouter(
     // one it already had. The second half is the case a first pass missed: the
     // cockpit's edit form sends a prompt and no `status`, so a lost race
     // disarmed a running schedule with nothing anywhere saying why.
-    const intendedStatus = trusted
+    const intendedStatus = rearms
       ? (data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined))
       : undefined;
     if (intendedStatus !== undefined && updated.status !== intendedStatus) {
@@ -524,7 +578,7 @@ export function createTasksRouter(
     // substitution the bypass clamp exists to refuse, reintroduced one layer up.
     // So the grant is re-issued only for a caller that cleared the agent bar. An
     // agent's edit still re-parks, and a person still has to look at it.
-    if (trusted && changesFile && existing.status === 'active' && updated.status === 'active') {
+    if (rearms && changesFile && existing.status === 'active' && updated.status === 'active') {
       store.approvals.recordApproval(updated.id);
       updated = store.getTask(updated.id) ?? updated;
     }
@@ -537,8 +591,8 @@ export function createTasksRouter(
     // row-only timing, DOR-2302) re-approves in the same act; a person's
     // file-backed edit was re-approved just above. The park is then picked up by
     // the "entered `pending_approval`" edge below like any other.
-    if (!trusted || !changesFile) {
-      store.approvals.settleApprovedWorkChange(updated.id, before, { trusted });
+    if (!rearms || !changesFile) {
+      store.approvals.settleApprovedWorkChange(updated.id, before, { trusted: rearms });
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -752,6 +806,13 @@ export function createTasksRouter(
         fields: [],
         message: OPERATOR_ONLY_TRIGGER_REFUSAL,
       });
+    }
+
+    if (
+      store.getTask(req.params.id)?.account === CREDITS_ACCOUNT_ID &&
+      refuseErrorUnlessOwner(req, res, TASK_ON_CREDITS)
+    ) {
+      return;
     }
 
     const run = await scheduler.triggerManualRun(req.params.id);

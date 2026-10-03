@@ -3,6 +3,7 @@ import {
   BoundedNumberInput,
   FieldCard,
   FieldCardContent,
+  InfoTip,
   SettingRow,
   SwitchSettingRow,
 } from '@/layers/shared/ui';
@@ -77,9 +78,17 @@ export function ControlCenterSwitches() {
         <SwitchSettingRow
           label="Limit automatic replies"
           description={
-            limits?.turnLimitsEnabled === false
-              ? 'Agents can reply to each other without limit. The Stop button is the only brake.'
-              : 'Agents stop replying to each other once a back-and-forth has run far enough. Your next message starts the count over. Set the numbers in Settings → Advanced → Room limits.'
+            limits?.turnLimitsEnabled === false ? (
+              'Agents reply to each other without limit until you press Stop.'
+            ) : (
+              <>
+                Agents pause after a long back-and-forth.{' '}
+                <InfoTip label="About reply limits">
+                  <p>Your next message starts the count over.</p>
+                  <p>Set the numbers in Settings → Advanced → Room limits.</p>
+                </InfoTip>
+              </>
+            )
           }
           checked={limits?.turnLimitsEnabled ?? true}
           disabled={limits === null}
@@ -88,7 +97,15 @@ export function ControlCenterSwitches() {
 
         <SwitchSettingRow
           label="Warm agents"
-          description="Your agent stays running between messages, so replies start about 4× faster. Keeps up to about 1 GB of memory per warm agent, and at most twelve stay warm."
+          description={
+            <>
+              Replies start about 4× faster. Each warm agent uses up to about 1 GB.{' '}
+              <InfoTip label="About warm agents">
+                <p>Your agent stays running between messages.</p>
+                <p>At most twelve agents stay warm at once.</p>
+              </InfoTip>
+            </>
+          }
           checked={persistentSession}
           disabled={updateConfig.isPending}
           onCheckedChange={(next) =>
@@ -101,7 +118,7 @@ export function ControlCenterSwitches() {
 
         <SettingRow
           label="Scheduled runs at once"
-          description="How many scheduled tasks may run at the same time."
+          description="How many scheduled tasks run together."
         >
           <BoundedNumberInput
             value={maxConcurrentRuns}

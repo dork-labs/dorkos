@@ -74,7 +74,7 @@ export function SetupInstructions({ endpoint, apiKey }: SetupInstructionsProps) 
           {/* CLI command for Claude Code */}
           {setupTab === 'claude-code' && (
             <div className="relative">
-              <p className="text-muted-foreground mb-1 text-xs">Or add via CLI:</p>
+              <p className="text-muted-foreground mb-1 text-xs">Or add it from the terminal:</p>
               <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs leading-relaxed">
                 {snippets.claudeCodeCli}
               </pre>

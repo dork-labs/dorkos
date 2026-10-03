@@ -4,7 +4,16 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Login off, read by the key-change owner bar on the providers router
+// (DOR-2678); nothing else here reads the config store.
+vi.mock('../../../../core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'auth' ? { enabled: false } : undefined),
+    onChange: () => () => {},
+  },
+}));
 import { createDb, runMigrations, connectorEventInbox } from '@dorkos/db';
 import { startTestComposioFixture } from '../fixture.js';
 import { COMPOSIO_FIXTURE_KEY, COMPOSIO_FIXTURE_WEBHOOK_SECRET } from '../data.js';

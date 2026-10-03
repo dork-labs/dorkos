@@ -41,9 +41,7 @@ export function AddedServerSignin({ agentId, serverName, onDone }: AddedServerSi
     <FieldCard>
       <FieldCardContent className="space-y-2">
         <p className="text-sm font-medium">Sign in to {serverName}</p>
-        <p className="text-muted-foreground text-xs">
-          This server needs you to sign in before your agent can use it.
-        </p>
+        <p className="text-muted-foreground text-xs">Sign in so your agent can use this server.</p>
         <McpSigninBody
           flow={flow}
           serverName={serverName}

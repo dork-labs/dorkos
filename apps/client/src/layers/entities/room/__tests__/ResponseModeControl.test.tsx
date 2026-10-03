@@ -217,9 +217,7 @@ describe('ResponseModeControl', () => {
     it('writes one consequence, for the rung that is set', () => {
       renderControl({ on: 'desktop', value: 'engaged' });
 
-      expect(
-        screen.getByText(/keeps answering for 10 more minutes or 5 more messages/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/keeps answering for 10 minutes or 5 messages/)).toBeInTheDocument();
       expect(screen.queryByText('Never speaks here')).not.toBeInTheDocument();
     });
 
@@ -268,9 +266,7 @@ describe('ResponseModeControl', () => {
       expect(screen.getByText('Never speaks here')).toBeInTheDocument();
       expect(screen.getByText('Answers only when you @mention it.')).toBeInTheDocument();
       expect(screen.getByText('Answers every message in this room.')).toBeInTheDocument();
-      expect(
-        screen.getByText(/keeps answering for 10 more minutes or 5 more messages/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/keeps answering for 10 minutes or 5 messages/)).toBeInTheDocument();
     });
 
     it('describes each rung by its own line rather than by a shared one', () => {

@@ -36,8 +36,8 @@ describe('ServerRestartOverlay', () => {
 
   it('renders loading state when open', () => {
     render(<ServerRestartOverlay {...defaultProps} />, { wrapper: Wrapper });
-    expect(screen.getByText('Restarting server…')).toBeInTheDocument();
-    expect(screen.getByText('Waiting for server to come back…')).toBeInTheDocument();
+    expect(screen.getByText('Restarting DorkOS…')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for it to come back…')).toBeInTheDocument();
   });
 
   it('does not render when not open', () => {
@@ -75,9 +75,9 @@ describe('ServerRestartOverlay', () => {
     await act(async () => {
       vi.advanceTimersByTime(30_000);
     });
-    expect(screen.getByText(/did not restart within 30 seconds/i)).toBeInTheDocument();
+    expect(screen.getByText(/didn’t come back within 30 seconds/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /dismiss/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
   });
 
   it('Try Again resets to loading state', async () => {
@@ -86,13 +86,13 @@ describe('ServerRestartOverlay', () => {
     await act(async () => {
       vi.advanceTimersByTime(30_000);
     });
-    expect(screen.getByText(/did not restart within 30 seconds/i)).toBeInTheDocument();
+    expect(screen.getByText(/didn’t come back within 30 seconds/i)).toBeInTheDocument();
     // Click Try Again
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /try again/i }));
     });
     // Should be back to loading state
-    expect(screen.getByText('Restarting server…')).toBeInTheDocument();
+    expect(screen.getByText('Restarting DorkOS…')).toBeInTheDocument();
   });
 
   it('Dismiss calls onDismiss callback', async () => {
@@ -100,7 +100,7 @@ describe('ServerRestartOverlay', () => {
     await act(async () => {
       vi.advanceTimersByTime(30_000);
     });
-    fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+    fireEvent.click(screen.getByRole('button', { name: /close/i }));
     expect(defaultProps.onDismiss).toHaveBeenCalled();
   });
 });

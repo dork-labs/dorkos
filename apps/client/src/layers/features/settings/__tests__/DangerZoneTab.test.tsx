@@ -76,9 +76,7 @@ describe('DangerZoneTab', () => {
   // message box and background refresh to Preferences, logging to Server.
   it('holds nothing but the destructive actions', () => {
     render(<DangerZoneTab />, { wrapper: createWrapper() });
-    expect(
-      screen.queryByText('Watch for agents you started somewhere else')
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Watch for work started elsewhere')).not.toBeInTheDocument();
     expect(screen.queryByText('Format text as you type')).not.toBeInTheDocument();
     expect(screen.queryByText('Log level')).not.toBeInTheDocument();
     expect(screen.queryByText('Log location')).not.toBeInTheDocument();

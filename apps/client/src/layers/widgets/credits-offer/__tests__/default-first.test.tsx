@@ -9,6 +9,7 @@
  *
  * Nothing here can spend: every cloud answer is a fake the transport returns.
  */
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, act, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -79,6 +80,10 @@ interface Setup {
   planRead?: CloudPlanResponse;
   withSettings?: boolean;
   withSlot?: boolean;
+  /** A browser that is not on the computer DorkOS runs on. */
+  remote?: boolean;
+  /** Draw this in place of the connect step (a harness for the card alone). */
+  content?: ReactNode;
 }
 
 function setup({
@@ -88,8 +93,17 @@ function setup({
   planRead = { available: false },
   withSettings = false,
   withSlot = true,
+  remote = false,
+  content,
 }: Setup = {}) {
   const transport = createMockTransport();
+  if (remote) {
+    vi.mocked(transport.getConfig).mockResolvedValue({
+      version: '1.0.0',
+      isLocalCaller: false,
+      port: 4242,
+    } as never);
+  }
   vi.mocked(transport.checkRequirements).mockResolvedValue(requirements(signIn));
   vi.mocked(transport.getCloudCredits).mockResolvedValue(credits);
   vi.mocked(transport.getCloudStatus).mockResolvedValue({
@@ -116,19 +130,19 @@ function setup({
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const flow = (
+  const flow = content ?? (
     <RuntimeConnectFlow
       type="claude-code"
       connect={{ kind: 'login', label: 'Connect Claude' }}
       onConnected={onConnected}
     />
   );
-  render(
+  const tree = (showFlow: boolean) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
         {withSlot ? (
           <CreditsOfferProvider slot={renderCreditsOffer}>
-            <div data-testid="connect-step">{flow}</div>
+            {showFlow && <div data-testid="connect-step">{flow}</div>}
             {withSettings && (
               <div data-testid="settings-account">
                 <CloudLinkPanel />
@@ -136,12 +150,15 @@ function setup({
             )}
           </CreditsOfferProvider>
         ) : (
-          <div data-testid="connect-step">{flow}</div>
+          showFlow && <div data-testid="connect-step">{flow}</div>
         )}
       </TransportProvider>
     </QueryClientProvider>
   );
-  return { transport, onConnected, queryClient };
+  const view = render(tree(true));
+  /** Take the connect step off screen, leaving Settings where it is. */
+  const hideFlow = () => view.rerender(tree(false));
+  return { transport, onConnected, queryClient, hideFlow };
 }
 
 /** Flush promise microtasks + due timers under fake timers. */
@@ -368,5 +385,163 @@ describe('a runtime connect step that does not lead with credits', () => {
     await settled(queryClient);
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /DorkOS credits/ })).not.toBeInTheDocument();
+  });
+});
+
+/** Let the next poll say the code was approved. */
+function approve(transport: Transport) {
+  vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
+    state: 'linked',
+    accountLabel: 'kai@dork.dev',
+  });
+  vi.mocked(transport.getCloudStatus).mockResolvedValue({
+    linked: true,
+    accountLabel: 'kai@dork.dev',
+    lastHeartbeatAt: null,
+  });
+}
+
+describe('what happens once the link lands', () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('does nothing when the surface that started it is no longer on screen', async () => {
+    vi.useFakeTimers();
+    const { transport, hideFlow } = setup({ withSettings: true });
+    await flush();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Use DorkOS credits' }));
+    });
+    await flush();
+    hideFlow();
+    approve(transport);
+    await flush(2500);
+    await flush(10);
+
+    expect(screen.getByText('kai@dork.dev')).toBeInTheDocument();
+    expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for a code another surface started, even with this one on screen', async () => {
+    vi.useFakeTimers();
+    const { transport } = setup({ withSettings: true });
+    await flush();
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByTestId('settings-account')).getByRole('button', {
+          name: /link this computer/i,
+        })
+      );
+    });
+    await flush();
+    approve(transport);
+    await flush(2500);
+    await flush(10);
+
+    expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
+  });
+
+  it('does nothing in another tab, which never started the code', async () => {
+    vi.useFakeTimers();
+    // This tab: the offer on screen, nothing started here.
+    const { transport } = setup();
+    await flush();
+    // The server reports a link pending (another tab started it), then approved.
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'pending' });
+    await flush(2500);
+    approve(transport);
+    await flush(2500);
+    await flush(10);
+
+    expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
+  });
+
+  it('asks before a choice that spends, and spends only when told to', async () => {
+    vi.useFakeTimers();
+    const spend = vi.fn();
+    const { transport } = setup({
+      content: renderCreditsOffer({
+        runtime: 'claude-code',
+        origin: 'harness',
+        onChoose: spend,
+        confirmAfterLink: { prompt: 'Linked. Send again on DorkOS credits?', action: 'Send again' },
+      }),
+    });
+    await flush();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Use DorkOS credits' }));
+    });
+    await flush();
+    approve(transport);
+    await flush(2500);
+    await flush(10);
+
+    expect(screen.getByText('Linked. Send again on DorkOS credits?')).toBeInTheDocument();
+    expect(spend).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send again' }));
+    });
+    await flush(10);
+    expect(spend).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('before choosing, the account is read again', () => {
+  afterEach(cleanup);
+
+  it('never moves onto credits the account no longer has: it offers to add some instead', async () => {
+    const { transport } = setup({
+      linked: true,
+      credits: creditsReport({ enabled: true, linked: true }),
+      planRead: plan('5000000', '5000000', '0'),
+    });
+    const offer = await screen.findByRole('button', { name: 'Try DorkOS credits' });
+    await vi.waitFor(() => expect(offer).toBeEnabled());
+    vi.mocked(transport.getCloudPlan).mockResolvedValue(plan('5000000', '0', '0'));
+    fireEvent.click(offer);
+
+    expect(
+      await screen.findByText('Your DorkOS account has no credits left to spend.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy DorkOS credits' })).toBeInTheDocument();
+    expect(transport.setCloudCreditsDefault).not.toHaveBeenCalled();
+  });
+
+  it('holds the button while a signed-in plan is still loading, rather than guess', async () => {
+    const { transport } = setup({
+      linked: true,
+      credits: creditsReport({ enabled: true, linked: true }),
+    });
+    vi.mocked(transport.getCloudPlan).mockReturnValue(new Promise(() => {}));
+    const offer = await screen.findByRole('button', { name: /Checking your DorkOS credits/ });
+    expect(offer).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Use DorkOS credits' })).not.toBeInTheDocument();
+  });
+});
+
+describe('where the offer sits', () => {
+  afterEach(cleanup);
+
+  it('is offered on a phone too, with the notice standing in for signing in here', async () => {
+    const { queryClient } = setup({ remote: true });
+    await settled(queryClient);
+    expect(await screen.findByRole('button', { name: 'Use DorkOS credits' })).toBeInTheDocument();
+    expect(screen.getByTestId('remote-signin-notice')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Sign in with Claude/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps a person’s "no": their own sign-in leads, credits are a row under it', async () => {
+    setup({
+      credits: creditsReport({
+        defaults: { 'claude-code': { runsOn: 'own-sign-in', chosenBy: 'user' } },
+      }),
+    });
+    const signIn = await screen.findByRole('button', { name: 'Sign in' });
+    const offer = await screen.findByRole('button', { name: 'Use DorkOS credits' });
+    expect(before(signIn, offer)).toBe(true);
+    expect(screen.queryByTestId('default-first-claude-code')).not.toBeInTheDocument();
   });
 });

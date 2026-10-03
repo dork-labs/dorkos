@@ -104,7 +104,7 @@ export function TrustRow({
             disabled={disabled}
             onClick={() => onChange(null)}
           >
-            Use the setting above
+            Use the shared setting
           </Button>
         ) : (
           <span
@@ -123,8 +123,7 @@ export function TrustRow({
           data-testid={`runtime-trust-unavailable-${runtimeType}`}
           className="text-muted-foreground px-1 text-xs leading-relaxed"
         >
-          {runtimeLabel} hasn’t said what it can do, so there is nothing to choose from yet. New
-          sessions start where it starts them.
+          {runtimeLabel} hasn’t listed its options yet. New sessions use its own setting.
         </p>
       ) : (
         <TrustDial
@@ -135,7 +134,7 @@ export function TrustRow({
           stopLabels={SETTINGS_STOP_LABELS}
           disabled={disabled === true}
           strandsWorkingMode
-          strandedNote={`${runtimeLabel} has no setting at this stop, so new sessions start where it starts them.`}
+          strandedNote={`${runtimeLabel} has no setting here. New sessions use its own.`}
           onChangeMode={(next) => {
             const picked = descriptors.find((d) => d.id === next);
             if (picked) onChange(picked.stop);

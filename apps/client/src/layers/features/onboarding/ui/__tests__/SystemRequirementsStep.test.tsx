@@ -294,7 +294,7 @@ describe('SystemRequirementsStep', () => {
     await screen.findByRole('button', { name: 'Install OpenCode' });
     const section = within(screen.getByTestId('runtime-section-opencode'));
     // The friendly line is always visible; the raw command is not shown yet.
-    expect(section.getByText(/We’ll install OpenCode for you\./)).toBeInTheDocument();
+    expect(section.getByText(/DorkOS installs OpenCode for you\./)).toBeInTheDocument();
     expect(section.queryByText('npm i -g opencode-ai')).not.toBeInTheDocument();
 
     // Transparency is one tap away — reveal the exact command.

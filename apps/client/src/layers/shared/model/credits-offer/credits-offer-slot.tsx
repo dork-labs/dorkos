@@ -36,9 +36,21 @@ export interface CreditsOfferProps {
   /**
    * What choosing credits does once this computer is linked. Omitted, it puts
    * the runtime's new work on credits by default, recorded as the person's
-   * choice. Runs after the link lands when the person was signed out.
+   * choice. When the person was signed out it runs once the code THIS offer
+   * started is approved, and only while the offer is still on screen — or,
+   * with {@link CreditsOfferProps.confirmAfterLink}, only when they say so.
    */
   onChoose?: () => unknown;
+  /**
+   * For a choice that spends at once (sending a turn again, continuing a
+   * session): after the link lands, ask instead of acting. `prompt` is the
+   * question ("Linked. Send again on DorkOS credits?"), `action` its button.
+   */
+  confirmAfterLink?: { prompt: string; action: string };
+  /** One plain line under the button saying what choosing it changes. */
+  note?: string;
+  /** What the offer says once the choice is made, in place of the button. */
+  chosen?: string;
   /** Draw the button full width, for a surface whose other ways are full-width rows. */
   fullWidth?: boolean;
 }
