@@ -373,7 +373,7 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
 
     // The Browser tab starts empty, so the first page comes from its own
     // starting point — the same door the address bar is one step further along.
-    await page.getByRole('button', { name: /Web Page/ }).click();
+    await page.getByRole('button', { name: /^Web page/ }).click();
     await expect(roomsPage.browserDocuments).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
     // At rest the bar is a BUTTON showing a tidied URL; it becomes a text box

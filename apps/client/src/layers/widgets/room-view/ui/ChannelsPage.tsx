@@ -79,7 +79,7 @@ function ChannelsPageBody() {
         <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-sm">
           <MessagesSquare className="text-muted-foreground/50 size-10" aria-hidden />
           <p className="text-foreground font-medium">No channel selected</p>
-          <p className="max-w-sm">Choose an available channel from this space.</p>
+          <p className="max-w-sm">Choose a channel from this space.</p>
         </div>
       </CommunityGoneGuard>
     );
@@ -113,8 +113,8 @@ function ChannelsPageBody() {
         <p className="text-foreground font-medium">Pick a conversation</p>
         <p className="max-w-sm">
           {isMobile
-            ? 'Your channels and direct messages are under All, at the bottom of the screen. Open one to read it.'
-            : 'Your channels and direct messages are in the sidebar. Open one to read it, or use + next to Channels to start a new one.'}
+            ? 'Open one from All, at the bottom of the screen.'
+            : 'Open one from the sidebar, or use + next to Channels.'}
         </p>
       </div>
     );

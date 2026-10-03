@@ -118,11 +118,11 @@ export async function openInCanvasBrowser(
   await rightPanel.browserTab.click();
 
   // The empty state's web-page action opens a browser document; its address bar
-  // is how any page after the first one is reached. `^Web Page` is anchored so
+  // is how any page after the first one is reached. `^Web page` is anchored so
   // it can never resolve to a tab's "Close Web Page" or "Pin Web Page" button —
   // the splash names the document it opens "Web Page", so every tab of one is
-  // spelled that way too.
-  const splashAction = page.getByRole('button', { name: /^Web Page/ });
+  // spelled that way too, while the splash button itself is sentence case.
+  const splashAction = page.getByRole('button', { name: /^Web page/ });
   const addressButton = page.getByRole('button', { name: /^Address:/ });
   // Whichever this window has: the splash when no page is open here, the address
   // bar when one already is. POLLED rather than asked once, so a window still

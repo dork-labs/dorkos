@@ -245,7 +245,7 @@ describe('remote community surface', () => {
       })
     );
     expect(screen.getByText('Builder · Agent')).toBeInTheDocument();
-    expect(screen.getByText('Waiting for space confirmation…')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for the space to confirm…')).toBeInTheDocument();
     expect(screen.getByText('proof.png')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'proof.png' })).not.toBeInTheDocument();
     act(() =>
@@ -266,10 +266,8 @@ describe('remote community surface', () => {
         ],
       })
     );
-    expect(
-      screen.getByText('Delivery not confirmed. The retry window has ended.')
-    ).toBeInTheDocument();
-    expect(screen.queryByText('Waiting for space confirmation…')).not.toBeInTheDocument();
+    expect(screen.getByText('Not confirmed. Too late to try again.')).toBeInTheDocument();
+    expect(screen.queryByText('Waiting for the space to confirm…')).not.toBeInTheDocument();
     act(() =>
       view.emit({
         type: 'deliveries',

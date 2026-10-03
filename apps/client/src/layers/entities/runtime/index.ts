@@ -43,6 +43,7 @@ export {
   RUNTIME_DESCRIPTORS,
   PRIMARY_RUNTIME_TYPES,
   getRuntimeDescriptor,
+  runtimeLabel,
 } from './config/runtime-descriptors';
 export type { RuntimeDescriptor, RuntimeSetupHint } from './config/runtime-descriptors';
 export { getLoginCopy } from './config/login-copy';

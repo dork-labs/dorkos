@@ -107,7 +107,7 @@ export function RoomLimitRow({
       </div>
       {invalid && (
         <p id={errorId} className="text-destructive text-xs">
-          Enter a whole number from {min} to {max}, or leave it empty for the default.
+          Enter a whole number, {min} to {max}. Empty uses the default.
         </p>
       )}
       {/* Only when there is something to undo. Emptying the field does the same

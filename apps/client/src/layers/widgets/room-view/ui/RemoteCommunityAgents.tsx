@@ -85,7 +85,7 @@ export function RemoteCommunityAgents({
       await refresh();
     } catch (cause) {
       if (isCommunityContentAuthorityCurrent(captured))
-        setError(cause instanceof Error ? cause.message : 'The agent could not join this space.');
+        setError(cause instanceof Error ? cause.message : 'Couldn’t add the agent. Try again.');
     } finally {
       if (isCommunityContentAuthorityCurrent(captured)) setPending(false);
     }
@@ -94,12 +94,11 @@ export function RemoteCommunityAgents({
     <section className="mt-3 space-y-2 border-t pt-3" aria-label="Your agents in this space">
       <h3 className="text-sm font-medium">My agents</h3>
       <p className="text-muted-foreground text-xs">
-        Add an agent from this installation, then choose whether it joins this channel. Other
-        members can mention it when it has joined.
+        Add an agent from here, then choose whether it joins this channel.
       </p>
       {agents.isError && (
         <p role="alert">
-          Your agents in this space could not be loaded.{' '}
+          Couldn’t load your agents in this space.{' '}
           <Button variant="ghost" size="sm" onClick={() => void agents.refetch()}>
             Retry
           </Button>
@@ -116,7 +115,7 @@ export function RemoteCommunityAgents({
           onNotice={setNotice}
         />
       ))}
-      {local.isError && <p role="alert">Local agents could not be loaded.</p>}
+      {local.isError && <p role="alert">Couldn’t load the agents on this computer.</p>}
       {canEnroll && available.length > 0 && (
         <form onSubmit={(event) => void enroll(event)} className="flex flex-wrap items-end gap-2">
           <div className="min-w-40 flex-1 space-y-1">
@@ -190,7 +189,7 @@ function EnrolledAgent({
       await work();
       await onChanged();
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : 'The action could not be completed.');
+      setNotice(cause instanceof Error ? cause.message : 'Couldn’t finish that. Try again.');
     } finally {
       setPending(null);
     }
@@ -198,15 +197,15 @@ function EnrolledAgent({
   function cleanupNotice(result: RemoteCommunityEjectionResponse) {
     onNotice(
       result.remoteRevoked
-        ? 'Participation stopped.'
-        : 'Local participation stopped. Remote removal is not confirmed; retry when the space is reachable.'
+        ? 'Stopped taking part.'
+        : 'Stopped here, but the space wasn’t told. Try again when it’s reachable.'
     );
   }
   return (
     <div className="space-y-1 rounded-md border p-2">
       <p className="text-sm font-medium">
         {agent.displayName}
-        {!agent.active && ' · locally stopped'}{' '}
+        {!agent.active && ' · stopped here'}{' '}
         <span className="text-muted-foreground font-normal">
           · owned by {agent.ownerDisplayName}
         </span>
@@ -259,12 +258,11 @@ function EnrolledAgent({
             <AlertDialogHeader>
               <AlertDialogTitle>Remove {agent.displayName}?</AlertDialogTitle>
               <AlertDialogDescription>
-                This stops its participation in every channel in this space. You can add it again
-                later.
+                It leaves every channel in this space. You can re-add it.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Keep agent</AlertDialogCancel>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() =>
                   void run('remove', async () =>

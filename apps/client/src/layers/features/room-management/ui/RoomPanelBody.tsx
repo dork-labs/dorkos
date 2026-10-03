@@ -37,7 +37,7 @@ import { RoomPanelNotice } from './RoomPanelNotice';
 function dmAddNote(members: readonly RoomRosterEntry[]): string {
   const agent = members.find((member) => member.author.kind === 'agent');
   if (agent?.author.retired === true) {
-    return `${agent.author.displayName} is no longer on your team. Adding an agent turns this into a group conversation.`;
+    return `${agent.author.displayName} is no longer on your team. Adding an agent makes this a group conversation.`;
   }
   return 'Adding a second agent turns this into a group conversation.';
 }
@@ -387,7 +387,7 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
     return (
       <RoomPanelNotice
         title="That room isn’t here"
-        body="It may have been deleted, or the link may be out of date."
+        body="It may be deleted, or the link is old."
         action={
           <Button type="button" size="sm" variant="outline" onClick={view.retry}>
             Try again
@@ -437,8 +437,7 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
             id={dormantReasonId}
             className="bg-muted/50 text-muted-foreground rounded-lg px-3 py-2.5 text-xs"
           >
-            Nobody is triggered in an archived room, so its members and their settings are on hold.
-            Bring it back to change them.
+            Archived rooms don’t answer. Bring it back to make changes.
           </p>
         )}
         {/* Only once there is a roster: an empty one is a real answer here —
@@ -541,7 +540,7 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
             onSubmit={writes.addAgents}
             emptyRosterMessage={
               view.agents.candidates.length === 0
-                ? 'You have not added any agents yet.'
+                ? 'You don’t have any agents yet.'
                 : 'Every agent you have is already in here.'
             }
             // Only for the empty fleet, which is the one of those two sentences

@@ -120,8 +120,7 @@ describe('explainRung', () => {
       const { sentence } = explainRung('engaged', roomKind, WINDOW);
 
       expect(sentence).toBe(
-        'Answers when you @mention it, then keeps answering for 3 more minutes or ' +
-          '7 more messages, whichever runs out first.'
+        'Answers when @mentioned, then keeps answering for 3 minutes or 7 messages, whichever ends first.'
       );
     }
   );
@@ -132,7 +131,7 @@ describe('explainRung', () => {
       engagedWindowPosts: 1,
     });
 
-    expect(sentence).toContain('1 more minute or 1 more message,');
+    expect(sentence).toContain('1 minute or 1 message,');
   });
 
   it('invents no numbers while the window is still being read', () => {
@@ -152,7 +151,7 @@ describe('explainRung', () => {
       const { sentence, note } = explainRung('engaged', 'channel', off);
 
       expect(sentence).not.toContain('keeps answering');
-      expect(note).toContain('switched off');
+      expect(note).toContain('are off');
     }
   });
 

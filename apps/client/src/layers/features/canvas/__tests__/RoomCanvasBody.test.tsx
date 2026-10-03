@@ -327,7 +327,7 @@ describe('the room canvas — a document that names a file (§8.1)', () => {
     });
     renderTab('canvas');
 
-    expect(screen.getByText(/This file is in Ana’s project/)).toBeInTheDocument();
+    expect(screen.getByText(/Ana’s project isn’t open to you/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open file' })).not.toBeInTheDocument();
   });
 

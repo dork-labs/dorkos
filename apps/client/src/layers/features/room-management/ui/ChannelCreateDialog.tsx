@@ -138,10 +138,7 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
       >
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>New channel</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Name it, and pick the agents you want in it. A channel with nobody in it has nobody to
-            answer you.
-          </ResponsiveDialogDescription>
+          <ResponsiveDialogDescription>Name it, then pick who’s in it.</ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
         <ResponsiveDialogBody className="space-y-4">
@@ -174,8 +171,7 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
           <section aria-label="Agents in this channel" className="space-y-2 border-t pt-4">
             <h3 className="text-sm font-medium">Who’s in it</h3>
             <p className="text-muted-foreground text-xs">
-              They join when the channel is made and can read everything said in it. In a channel an
-              agent replies when you @mention it, until you say otherwise.
+              Agents read everything here and reply when @mentioned.
             </p>
             <AgentRosterPicker
               roster={agents}
@@ -202,8 +198,8 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
               // is: it names the next step, and the button that does it is on
               // screen underneath. An empty fleet is not a reason you cannot
               // make a channel.
-              emptyRosterMessage="You have not added any agents yet. You can still make the channel and put agents in it later."
-              allChosenMessage="That is every agent you have."
+              emptyRosterMessage="You don’t have any agents yet. You can add them to the channel later."
+              allChosenMessage="That’s every agent you have."
               isSubmitting={createChannel.isPending}
               submitDisabled={!nameIsValid}
               inputRef={searchRef}

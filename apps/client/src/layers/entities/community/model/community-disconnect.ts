@@ -117,11 +117,11 @@ export function disconnectOutcome(
   if (!remoteRevoked)
     return {
       tone: 'warning',
-      message: `${label} is disconnected here, but it couldn’t be reached. To finish on ${label}, remove ${names} under Agents, and disconnect this DorkOS under Connected installations.`,
+      message: `Disconnected here, but ${label} couldn’t be reached. Remove ${names} and this DorkOS there.`,
     };
   return {
     tone: 'warning',
-    message: `${label} is disconnected, but ${names} couldn’t be removed from it. To finish, remove ${agentsNotRemoved.length === 1 ? 'it' : 'them'} under Agents on ${label}.`,
+    message: `Disconnected, but ${names} couldn’t be removed. Remove ${agentsNotRemoved.length === 1 ? 'it' : 'them'} under Agents on ${label}.`,
   };
 }
 
@@ -132,5 +132,5 @@ export function disconnectOutcome(
  * @param label - The Community's name.
  */
 function unconfirmedDisconnectMessage(label: string): string {
-  return `${label} is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on ${label}.`;
+  return `Disconnected here, but ${label} couldn’t be reached. Finish under Connected installations on ${label}.`;
 }

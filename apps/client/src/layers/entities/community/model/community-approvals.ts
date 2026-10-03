@@ -205,7 +205,7 @@ function report(connection: CommunityConnectionDescriptor, outcome: CommunityApp
   else
     toast.warning(
       outcome === 'expired'
-        ? `Approval for ${connection.label} expired. Connect again to continue.`
+        ? `Approval for ${connection.label} ran out. Connect again.`
         : `Approval for ${connection.label} was cancelled.`,
       { id }
     );

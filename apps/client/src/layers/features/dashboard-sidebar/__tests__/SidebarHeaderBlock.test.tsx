@@ -1448,7 +1448,7 @@ describe('the context switcher’s lifecycle actions', () => {
       mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: false, agentsNotRemoved: [] })
     );
     expect(toast.warning).toHaveBeenCalledWith(
-      'Alpha is disconnected here, but it couldn’t be reached. To finish, disconnect this DorkOS under Connected installations on Alpha.',
+      'Disconnected here, but Alpha couldn’t be reached. Finish under Connected installations on Alpha.',
       expect.anything()
     );
     expect(toast.success).not.toHaveBeenCalledWith('Alpha is disconnected.');
@@ -1565,7 +1565,7 @@ describe('the context switcher’s lifecycle actions', () => {
       })
     );
     expect(toast.warning).toHaveBeenCalledWith(
-      'Alpha is disconnected here, but it couldn’t be reached. To finish on Alpha, remove Scout under Agents, and disconnect this DorkOS under Connected installations.',
+      'Disconnected here, but Alpha couldn’t be reached. Remove Scout and this DorkOS there.',
       expect.anything()
     );
     expect(toast.success).not.toHaveBeenCalled();
@@ -1607,7 +1607,7 @@ describe('the context switcher’s lifecycle actions', () => {
       })
     );
     expect(toast.warning).toHaveBeenCalledWith(
-      'Alpha is disconnected, but Scout and Echo couldn’t be removed from it. To finish, remove them under Agents on Alpha.',
+      'Disconnected, but Scout and Echo couldn’t be removed. Remove them under Agents on Alpha.',
       expect.anything()
     );
   });
@@ -1690,7 +1690,7 @@ describe('the context switcher’s lifecycle actions', () => {
       })
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Move one here' }));
-    expect(await screen.findByText('First, get an export of the old space:')).toBeInTheDocument();
+    expect(await screen.findByText('First, export the old space:')).toBeInTheDocument();
   });
 
   it('offers nothing when the linked account does not host communities', async () => {

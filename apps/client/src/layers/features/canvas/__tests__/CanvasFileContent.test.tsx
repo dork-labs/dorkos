@@ -304,7 +304,7 @@ describe('CanvasFileContent', () => {
     readFileContent.mockRejectedValue(Object.assign(new Error('binary'), { code: 'BINARY_FILE' }));
     renderFile('assets/blob.bin');
     await waitFor(() =>
-      expect(screen.getByText(/isn.t text and can.t be shown/i)).toBeInTheDocument()
+      expect(screen.getByText(/isn.t text, so the editor can.t show it/i)).toBeInTheDocument()
     );
   });
 });

@@ -123,8 +123,7 @@ export function roomDocumentReading(document: CanvasDocument): RoomDocumentReadi
     return {
       kind: 'elsewhere',
       sourcePath,
-      sentence:
-        'This file is in the room’s own files. Open it from the Files section of the Room tab.',
+      sentence: 'This file is in the room’s files. Open it from Files in the Room tab.',
     };
   }
 
@@ -149,9 +148,11 @@ export function roomDocumentReading(document: CanvasDocument): RoomDocumentReadi
   // can neither read nor write.
   if (document.content.type === 'markdown') return { kind: 'inline' };
 
+  // The owner opens the sentence, and the unnamed fallback is lower-case.
+  const owner = ownerOf(document);
   return {
     kind: 'elsewhere',
     sourcePath,
-    sentence: `This file is in ${ownerOf(document)}’s project, which you can’t open from here. Ask them to share it, or open your own copy.`,
+    sentence: `${owner.charAt(0).toUpperCase()}${owner.slice(1)}’s project isn’t open to you. Ask them to share it, or open your copy.`,
   };
 }

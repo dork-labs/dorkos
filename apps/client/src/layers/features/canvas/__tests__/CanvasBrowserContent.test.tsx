@@ -232,9 +232,7 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
 
     expect(
-      await screen.findByText(
-        /DorkOS can see your dev server, but this connection doesn’t reach port 4390 on localhost\./i
-      )
+      await screen.findByText(/This view can’t reach port 4390 on localhost\./i)
     ).toBeInTheDocument();
     expect(document.querySelector('iframe')).toBeNull();
     // Not a loopback page, so the dev server's own address was never tried.
@@ -255,7 +253,7 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
       what: 'a tunnel cockpit',
       mint: () => createProxyUrl.mockResolvedValue({ url: null, unavailable: 'tunnel' }),
       triesDirect: false,
-      message: /Dev-server previews aren’t available through a tunnel\./i,
+      message: /Dev server previews don’t work remotely\./i,
     },
     {
       what: 'every preview port taken',
@@ -267,13 +265,13 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
       what: 'the mint itself failing',
       mint: () => createProxyUrl.mockRejectedValue(new Error('network down')),
       triesDirect: true,
-      message: /This preview couldn’t be loaded\. Reload to try again/i,
+      message: /Couldn’t load this preview\. Reload/i,
     },
     {
       what: 'a preview origin this browser cannot reach',
       mint: () => createProxyUrl.mockResolvedValue({ url: PREVIEW_BOOTSTRAP }),
       triesDirect: true,
-      message: /DorkOS can see your dev server, but this connection doesn’t reach port 4390/i,
+      message: /This view can’t reach port 4390/i,
     },
   ] as const;
 
@@ -403,7 +401,7 @@ describe('CanvasBrowserContent — a preview that loads badly', () => {
       await act(async () => {
         vi.advanceTimersByTime(11_000);
       });
-      expect(screen.getByText(/This preview is taking a long time to load\./i)).toBeInTheDocument();
+      expect(screen.getByText(/This preview is slow to load\./i)).toBeInTheDocument();
       // A slow page is still a live page — never pull the frame out from under it.
       expect(document.querySelector('iframe')).not.toBeNull();
     } finally {
@@ -523,7 +521,7 @@ describe('CanvasBrowserContent — url content type routes here (DOR-233)', () =
         content={{ type: 'url', url: 'javascript:alert(1)' }}
       />
     );
-    expect(screen.getByText(/can’t be displayed for security reasons/i)).toBeInTheDocument();
+    expect(screen.getByText(/blocked for safety/i)).toBeInTheDocument();
     expect(document.querySelector('iframe')).toBeNull();
   });
 });
@@ -827,7 +825,7 @@ describe('CanvasBrowserContent — the address bar on a room route', () => {
     render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
     await typeAddress('https://example.com');
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/couldn’t reach the server/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/couldn’t reach DorkOS/i);
   });
 });
 

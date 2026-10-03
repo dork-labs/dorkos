@@ -21,9 +21,7 @@ function CanvasErrorFallback({
       <p>This tab hit a problem</p>
       {staleChunk ? (
         <>
-          <p className="text-sm">
-            The app may have updated since you opened this tab. Reloading usually fixes it.
-          </p>
+          <p className="text-sm">The app may have updated. Reloading usually fixes it.</p>
           <Button type="button" size="sm" onClick={() => window.location.reload()}>
             Reload DorkOS
           </Button>
