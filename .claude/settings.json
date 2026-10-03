@@ -15,7 +15,16 @@
       "Bash(mkdir:*)",
       "Bash(cp:*)",
       "Bash(rm:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(sleep:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh repo view:*)"
     ],
     "deny": [
       "Read(./.env)",
