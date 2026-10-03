@@ -19,6 +19,12 @@ export interface FakeLaunchBehavior {
   neonOrgs?: 'refuse';
   /** `neonctl projects create`: exits 1 with Neon's answer to a project-scoped key. */
   neonCreate?: 'refuse';
+  /**
+   * Answer every `neonctl` call as Neon answers this kind of key (DOR-2700, seen live).
+   * `organization`: only `api /regions` is refused, with "not allowed for organization API keys".
+   * `project`: that too, and `projects list --org-id` and `projects create` refuse the key.
+   */
+  neonKey?: 'organization' | 'project';
 }
 
 /** The exact refusal flyctl v0.4.110 printed for `fly apps create` in DOR-2170 L3. */
@@ -27,7 +33,7 @@ export const FLY_REFUSAL_OUTPUT =
 /** Neon's answer to a project-scoped key reading outside its project (DOR-2170 L3). */
 export const NEON_SCOPE_OUTPUT =
   'ERROR: not allowed to perform actions outside the project this key is scoped to';
-/** Neon's answer to a project-scoped key calling `neonctl api /regions` (DOR-2700). */
+/** Neon's answer to an organization or project key calling `neonctl api /regions` (DOR-2700). */
 export const NEON_ORG_KEY_OUTPUT = 'ERROR: not allowed for organization API keys';
 /** Neon's answer to a project-scoped key creating a project (DOR-2170 L3). */
 export const NEON_CREATE_OUTPUT = 'ERROR: project-scoped keys are not allowed to create projects';
@@ -115,9 +121,9 @@ else if (name === 'fly' && args[0] === 'secrets' && args[1] === 'list') value = 
 else if (name === 'fly' && args[0] === 'secrets' && args[1] === 'import') { const input = fs.readFileSync(0, 'utf8'); for (const line of input.trim().split('\\n')) { const secret = line.slice(0, line.indexOf('=')); state.secrets[secret] = {digest:'digest-' + secret.toLowerCase().replaceAll('_', '-'),status:'Staged'}; } save(); value = {}; }
 else if (name === 'neonctl' && args[0] === '--version') { process.stdout.write('5.0.0'); process.exit(0); }
 else if (name === 'neonctl' && args[0] === 'orgs') { if (behavior.neonOrgs === 'refuse') fail(${JSON.stringify(NEON_SCOPE_OUTPUT)}); value = [{id:'org-dorian',name:'Dorian'}]; }
-else if (name === 'neonctl' && args[0] === 'api' && args[1] === '/regions') value = {regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:'40.4',geo_long:'-82.9'}]};
-else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'list') value = state.neonProject ? [state.neonProject] : [];
-else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'create') { if (behavior.neonCreate === 'refuse') fail(${JSON.stringify(NEON_CREATE_OUTPUT)}); state.neonRole = at('--role'); state.neonProject = {id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version')),created_at:new Date().toISOString()}; save(); value = {project: state.neonProject}; }
+else if (name === 'neonctl' && args[0] === 'api' && args[1] === '/regions') { if (behavior.neonKey) fail(${JSON.stringify(NEON_ORG_KEY_OUTPUT)}); value = {regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:'40.4',geo_long:'-82.9'}]}; }
+else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'list') { if (behavior.neonKey === 'project') fail(${JSON.stringify(NEON_SCOPE_OUTPUT)}); value = state.neonProject ? [state.neonProject] : []; }
+else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'create') { if (behavior.neonCreate === 'refuse' || behavior.neonKey === 'project') fail(${JSON.stringify(NEON_CREATE_OUTPUT)}); state.neonRole = at('--role'); state.neonProject = {id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version')),created_at:new Date().toISOString()}; save(); value = {project: state.neonProject}; }
 else if (name === 'neonctl' && args[0] === 'branches') value = [{id:'branch-1',project_id:'neon-project-1',name:'main',default:true}];
 else if (name === 'neonctl' && args[0] === 'databases') value = [{id:4821907,branch_id:'branch-1',name:'community',owner_name:state.neonRole,created_at:'2026-09-21T00:00:00Z',updated_at:'2026-09-21T00:00:00Z'}];
 else if (name === 'neonctl' && args[0] === 'roles') value = [{branch_id:'branch-1',name:state.neonRole}];

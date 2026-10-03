@@ -10,10 +10,13 @@ import {
   readNeonOrganizations,
   readNeonProjects,
   readNeonRegions,
+  readNeonRegionsForKey,
+  NEON_PUBLISHED_REGION_IDS,
   readNeonDirectConnection,
   readNeonEndpoints,
   verifyNeonDirectEndpoint,
 } from '../neon-read.js';
+import { NEON_ORG_KEY_OUTPUT, NEON_SCOPE_OUTPUT } from './fake-launch-tools.js';
 import { mutateTrustedProviderFields } from './provider-contract-harness.js';
 
 const temporaryDirectories: string[] = [];
@@ -67,6 +70,45 @@ cat "$FIXTURE_PATH"
         longitude: null,
       },
     ]);
+  });
+  describe('for a key that may not read the region list (DOR-2700)', () => {
+    const answering = (stderr: string) => fakeNeon(`printf '%s\\n' '${stderr}' >&2\nexit 1`);
+
+    // Neon answers an organization key this way, and setup's other reads accept that key.
+    // Catches the key the docs recommend being stopped by the region read.
+    it('uses the list the Neon CLI publishes when Neon says this kind of key may not read it', async () => {
+      const executable = await answering(NEON_ORG_KEY_OUTPUT);
+      const regions = await readNeonRegionsForKey(options(executable));
+      expect(regions.map(({ id }) => id)).toEqual([...NEON_PUBLISHED_REGION_IDS]);
+      expect(regions.filter(({ isDefault }) => isDefault).map(({ id }) => id)).toEqual([
+        'aws-us-east-2',
+      ]);
+    });
+
+    it('reads the live list whenever the key may', async () => {
+      const executable = await fakeNeon(`cat "$FIXTURE_PATH"`);
+      const regions = await readNeonRegionsForKey(
+        options(executable, {
+          FIXTURE_PATH: fileURLToPath(new URL('./fixtures/neon/regions.json', import.meta.url)),
+        })
+      );
+      expect(regions.map(({ id }) => id)).toEqual(['aws-us-east-2', 'aws-fixture-unknown-1']);
+    });
+
+    // Catches the fallback hiding an outage, an old CLI, or a real refusal.
+    it.each([
+      'ERROR: Request timed out',
+      'ERROR: internal server error',
+      'ERROR: Unknown command: api',
+      NEON_SCOPE_OUTPUT,
+      'ERROR: not allowed for now',
+    ])('still fails on %j', async (stderr) => {
+      const executable = await answering(stderr);
+      await expect(readNeonRegionsForKey(options(executable))).rejects.toMatchObject({
+        code: 'EXIT',
+        keyKindLimited: false,
+      });
+    });
   });
   it('rejects every mutation of trusted active-region fields', async () => {
     const fixture = JSON.parse(

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { isProviderAccessRefusal, ProviderCommandError } from '../provider-process.js';
+import {
+  isProviderAccessRefusal,
+  isProviderKeyKindLimit,
+  ProviderCommandError,
+} from '../provider-process.js';
 import { readDefaultCommunityPreflight } from '../runtime/default-services.js';
 import {
   assertCommunityCliVersions,
@@ -29,7 +33,7 @@ const reads = vi.hoisted(() => ({
   readFlyRegions: vi.fn(),
   readFlyApps: vi.fn(),
   readNeonOrganizations: vi.fn(),
-  readNeonRegions: vi.fn(),
+  readNeonRegionsForKey: vi.fn(),
   readNeonProjects: vi.fn(),
   runProviderCommand: vi.fn(),
 }));
@@ -42,7 +46,7 @@ vi.mock('../fly-read.js', () => ({
 }));
 vi.mock('../neon-read.js', () => ({
   readNeonOrganizations: reads.readNeonOrganizations,
-  readNeonRegions: reads.readNeonRegions,
+  readNeonRegionsForKey: reads.readNeonRegionsForKey,
   readNeonProjects: reads.readNeonProjects,
   readNeonBranches: vi.fn(),
   readNeonBranchTopology: vi.fn(),
@@ -63,7 +67,7 @@ beforeEach(() => {
     readFlyRegions: deferred(),
     readFlyApps: deferred(),
     readNeonOrganizations: deferred(),
-    readNeonRegions: deferred(),
+    readNeonRegionsForKey: deferred(),
     readNeonProjects: deferred(),
   };
   for (const name of Object.keys(pending) as ReadName[]) {
@@ -96,7 +100,7 @@ const FLY_REFUSED =
 
 /** The error a real neonctl exit with this stderr becomes at the process boundary. */
 const neonExit = (stderr: string) =>
-  new ProviderCommandError('EXIT', isProviderAccessRefusal(stderr));
+  new ProviderCommandError('EXIT', isProviderAccessRefusal(stderr), isProviderKeyKindLimit(stderr));
 
 /** Let every settled read's handlers run before the next one settles. */
 const drain = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -130,15 +134,16 @@ const flyFine: [ReadName, (read: Deferred) => void][] = [
 ];
 
 describe('preflight reads report the same failure whatever order they finish in (DOR-2700)', () => {
-  // The live case: a project-scoped Neon key. `projects list --org-id` and `api /regions` both
-  // refuse it in their own words, and `orgs list` answers. Catches either wording going
-  // unrecognised, and the race picking the message.
+  // The live case: a project-scoped Neon key. `projects list --org-id` refuses it, and the region
+  // read is answered "not allowed for organization API keys"; that read now falls back on its
+  // own, but a key-kind limit reaching preflight from any read must still lose to the refusal.
+  // Catches the race, or the key-kind limit, picking the message.
   it.each([
-    ['regions first', ['readNeonRegions', 'readNeonProjects'] as const],
-    ['projects first', ['readNeonProjects', 'readNeonRegions'] as const],
+    ['regions first', ['readNeonRegionsForKey', 'readNeonProjects'] as const],
+    ['projects first', ['readNeonProjects', 'readNeonRegionsForKey'] as const],
   ])('names the Neon key for a project-scoped key, %s', async (_label, [first, second]) => {
     const failures = {
-      readNeonRegions: neonExit(NEON_ORG_KEY_OUTPUT),
+      readNeonRegionsForKey: neonExit(NEON_ORG_KEY_OUTPUT),
       readNeonProjects: neonExit(NEON_SCOPE_OUTPUT),
     };
     const error = await preflightFailure([
@@ -149,6 +154,35 @@ describe('preflight reads report the same failure whatever order they finish in 
     ]);
     expect(error).toBeInstanceOf(CommunityProviderPreflightError);
     expect(error).toMatchObject({ provider: 'neon', code: 'ACCESS_DENIED', message: NEON_REFUSED });
+  });
+
+  // Neon may also answer another read "not allowed for organization API keys" (its CLI docs
+  // say so of `orgs list`). That says nothing about the organization. Catches it being worded
+  // as "can't read organization", or losing to an unrelated outage.
+  it.each([
+    ['limit first', true],
+    ['outage first', false],
+  ])('says the key kind is not accepted, %s', async (_label, limitFirst) => {
+    const limit: [ReadName, (read: Deferred) => void] = [
+      'readNeonOrganizations',
+      fails(neonExit(NEON_ORG_KEY_OUTPUT)),
+    ];
+    const outage: [ReadName, (read: Deferred) => void] = [
+      'readNeonRegionsForKey',
+      fails(new ProviderCommandError('TIMEOUT')),
+    ];
+    const error = await preflightFailure([
+      ...flyFine,
+      ...(limitFirst ? [limit, outage] : [outage, limit]),
+      ['readNeonProjects', ok()],
+    ]);
+    expect(error).toMatchObject({
+      provider: 'neon',
+      code: 'KEY_KIND_UNSUPPORTED',
+      message:
+        "The Neon key in NEON_API_KEY is a kind of key Neon won't take for a read setup needs. Use a personal key or sign in with neonctl auth, then retry. https://neon.com/docs/reference/cli-auth",
+    });
+    expect((error as Error).message).not.toContain("can't read organization");
   });
 
   // Catches "unavailable" winning when it merely finished first: one read refused, the other
@@ -162,7 +196,7 @@ describe('preflight reads report the same failure whatever order they finish in 
       fails(neonExit(NEON_SCOPE_OUTPUT)),
     ];
     const outage: [ReadName, (read: Deferred) => void] = [
-      'readNeonRegions',
+      'readNeonRegionsForKey',
       fails(new ProviderCommandError('TIMEOUT')),
     ];
     const error = await preflightFailure([
@@ -182,7 +216,7 @@ describe('preflight reads report the same failure whatever order they finish in 
   ])('keeps %j unavailable', async (stderr) => {
     const error = await preflightFailure([
       ...flyFine,
-      ['readNeonRegions', fails(neonExit(stderr))],
+      ['readNeonRegionsForKey', fails(neonExit(stderr))],
       ['readNeonOrganizations', ok()],
       ['readNeonProjects', fails(new ProviderCommandError('TIMEOUT'))],
     ]);
@@ -206,7 +240,7 @@ describe('preflight reads report the same failure whatever order they finish in 
       ['readFlyOrganizations', ok()],
       ...(unavailableFirst ? [outage, refusal] : [refusal, outage]),
       ['readNeonOrganizations', ok()],
-      ['readNeonRegions', ok()],
+      ['readNeonRegionsForKey', ok()],
       ['readNeonProjects', ok()],
     ]);
     expect(error).toMatchObject({ provider: 'fly', code: 'ACCESS_DENIED', message: FLY_REFUSED });
@@ -224,7 +258,7 @@ describe('preflight reads report the same failure whatever order they finish in 
     ];
     const neon: [ReadName, (read: Deferred) => void][] = [
       ['readNeonOrganizations', ok()],
-      ['readNeonRegions', ok()],
+      ['readNeonRegionsForKey', ok()],
       ['readNeonProjects', fails(neonExit(NEON_SCOPE_OUTPUT))],
     ];
     const error = await preflightFailure(flyFirst ? [...fly, ...neon] : [...neon, ...fly]);
@@ -239,7 +273,7 @@ describe('preflight reads report the same failure whatever order they finish in 
       flyRegions: ['readFlyRegions'],
       flyApps: ['readFlyApps'],
       neonOrganizations: ['readNeonOrganizations'],
-      neonRegions: ['readNeonRegions'],
+      neonRegions: ['readNeonRegionsForKey'],
       neonProjects: ['readNeonProjects'],
     });
   });

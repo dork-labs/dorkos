@@ -26,7 +26,7 @@ import { stopForRefusedCreate } from '../runtime/refused-create.js';
 import { createNeonProject } from '../neon-mutate.js';
 import { createLaunchPlan } from '../plan.js';
 import { ProviderMutationError, runProviderMutation } from '../provider-mutation.js';
-import { isProviderAccessRefusal } from '../provider-process.js';
+import { isProviderAccessRefusal, isProviderKeyKindLimit } from '../provider-process.js';
 import {
   FLY_REFUSAL_OUTPUT,
   NEON_CREATE_OUTPUT,
@@ -78,7 +78,6 @@ describe('access refusals at a create (DOR-2656)', () => {
     'Error: forbidden',
     NEON_SCOPE_OUTPUT,
     NEON_CREATE_OUTPUT,
-    NEON_ORG_KEY_OUTPUT,
     `INFO: some notice\n${NEON_CREATE_OUTPUT}\n`,
   ])('recognises %j as a refusal', (stderr) => {
     expect(isProviderAccessRefusal(stderr)).toBe(true);
@@ -98,8 +97,25 @@ describe('access refusals at a create (DOR-2656)', () => {
     'ERROR: Unknown command: api',
     'ERROR: something went wrong, not allowed for now',
     'error: unauthorized',
+    // Says the endpoint does not serve this kind of key, not that the key can't reach the
+    // organization: an organization key gets it from the region list and reaches everything else.
+    NEON_ORG_KEY_OUTPUT,
   ])('does not call %j a refusal', (stderr) => {
     expect(isProviderAccessRefusal(stderr)).toBe(false);
+  });
+
+  // DOR-2700. Catches the key-kind answer going unrecognised, or swallowing other failures.
+  it.each([
+    [NEON_ORG_KEY_OUTPUT, true],
+    [`INFO: some notice\n${NEON_ORG_KEY_OUTPUT}\n`, true],
+    ['ERROR: not allowed for project-scoped API keys', true],
+    ['ERROR: not allowed for now', false],
+    ['ERROR: not allowed for organization API keys, and the server is down', false],
+    [NEON_SCOPE_OUTPUT, false],
+    ['ERROR: Request timed out', false],
+    ['Error: unauthorized', false],
+  ])('reads %j as a key-kind limit: %s', (stderr, expected) => {
+    expect(isProviderKeyKindLimit(stderr)).toBe(expected);
   });
 
   const failing = (stderr: string, exit = 1) =>

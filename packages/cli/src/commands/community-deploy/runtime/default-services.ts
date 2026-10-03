@@ -17,7 +17,7 @@ import {
   readNeonEndpoints,
   readNeonOrganizations,
   readNeonProjects,
-  readNeonRegions,
+  readNeonRegionsForKey,
 } from '../neon-read.js';
 import { createNeonProject } from '../neon-mutate.js';
 import { FlyGraphqlClientError, FlyTigrisGraphqlClient } from '../fly-graphql-client.js';
@@ -109,7 +109,7 @@ export async function readDefaultCommunityPreflight(
       'neon',
       [
         readNeonOrganizations(options.neon),
-        readNeonRegions(options.neon),
+        readNeonRegionsForKey(options.neon),
         readNeonProjects(options.neon, selection.neonOrganization),
       ],
       { env: options.neon.env, organization: selection.neonOrganization }

@@ -10,7 +10,7 @@ import {
   parseExternalJson,
   requireUniqueExternalIds,
 } from './provider-contract.js';
-import { runProviderCommand } from './provider-process.js';
+import { ProviderCommandError, runProviderCommand } from './provider-process.js';
 
 const NeonOrganizationSchema = z
   .object({ id: ExternalIdentifierSchema, name: ExternalLabelSchema })
@@ -308,6 +308,48 @@ export async function readNeonRegions(options: NeonReadOptions): Promise<NeonReg
     latitude: coordinate(region.geo_lat),
     longitude: coordinate(region.geo_long),
   }));
+}
+
+/**
+ * The regions Neon's own CLI offers when its key may not read the region list (neonctl 7.0.1,
+ * `neon/dist/commands/projects.js` `REGIONS`, used by `link`'s `staticRegionsFallback`). Kept
+ * exactly as Neon ships it: a region missing here is refused before consent, never guessed at.
+ */
+export const NEON_PUBLISHED_REGION_IDS = [
+  'aws-us-west-2',
+  'aws-ap-southeast-1',
+  'aws-ap-southeast-2',
+  'aws-eu-central-1',
+  'aws-us-east-2',
+  'aws-us-east-1',
+  'azure-eastus2',
+] as const;
+
+/**
+ * Read the region list, or, when Neon answers that this kind of key may not read it at all, the
+ * list Neon's own CLI falls back to ({@link NEON_PUBLISHED_REGION_IDS}).
+ *
+ * `GET /regions` serves only a personal key or sign-in; an organization key gets "not allowed
+ * for organization API keys" (DOR-2700, and the neonctl README's note on org-scoped keys). Every
+ * other read and write setup makes accepts that key, so without this the key the docs recommend
+ * could never pass preflight. Any other failure is still thrown.
+ *
+ * @param options - Neon CLI process boundary.
+ * @returns The live list, or the published list when this key kind cannot read it.
+ */
+export async function readNeonRegionsForKey(options: NeonReadOptions): Promise<NeonRegion[]> {
+  try {
+    return await readNeonRegions(options);
+  } catch (error) {
+    if (!(error instanceof ProviderCommandError) || !error.keyKindLimited) throw error;
+    return NEON_PUBLISHED_REGION_IDS.map((id) => ({
+      id,
+      name: id,
+      isDefault: id === 'aws-us-east-2',
+      latitude: null,
+      longitude: null,
+    }));
+  }
 }
 
 /** Read projects only inside one explicitly selected organization. */

@@ -49,7 +49,7 @@ Setup uses your saved `fly` and `neonctl` sign-ins. If you export `FLY_API_TOKEN
 Setup creates a new Fly app and a new Neon project, so each token has to be allowed to do that:
 
 - For Fly, use an organization token, not a deploy token.
-- For Neon, use an organization key, not a project key.
+- For Neon, use an organization key, not a project key. Neon doesn't let an organization key read its list of regions, so setup checks `--neon-region` against the regions Neon's own CLI lists instead.
 
 If a token can't do what setup needs, setup stops and tells you which token and which organization. It never prints the token. If nothing was made yet, start setup again with a token that can. If something was, resume with the command it prints.
 
