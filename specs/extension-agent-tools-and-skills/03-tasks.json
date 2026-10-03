@@ -1,0 +1,239 @@
+{
+  "spec": "specs/extension-agent-tools-and-skills/02-specification.md",
+  "slug": "extension-agent-tools-and-skills",
+  "generatedAt": "2026-10-03T20:07:45.599Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Live registry",
+      "subject": "[extension-agent-tools-and-skills] [P1] Add a live extension layer to the capability registry",
+      "description": "Goal: `composeRegistry` (apps/server/src/services/core/capabilities/registry.ts) keeps composing and validating core domains at boot exactly as today (still throws on any core conflict), and the returned registry also accepts per-extension contributions at runtime.\n\nChanges:\n- New module `apps/server/src/services/core/capabilities/extension-contribution.ts` exporting:\n  - `extensionDomainName(extensionId: string): string` → `'ext_' + extensionId.replaceAll('-', '_')` (injective because EXTENSION_ID_REGEX `/^[a-z0-9][a-z0-9-]*$/` forbids underscores).\n  - `interface ExtensionToolSpec { name: string; title: string; description: string; tier: CapabilityTier; input: z.ZodObject; approvalDisplayFields?: readonly string[]; searchHint?: string; invoke: (input: unknown, ctx: CapabilityHandlerContext) => Promise<unknown> }`\n  - `interface ExtensionContribution { owner: string /* extension id */; displayName: string; tools: readonly ExtensionToolSpec[] }`\n  - `buildExtensionDefinitions(c: ExtensionContribution, area: PermissionAreaId): CapabilityDefinition[]` producing id `<domain>.<name>`, MCP toolName `<domain>__<name>`, `surfaces: { mcp: { toolName, servers: ['in-session'] } }`, `output: z.unknown()`, the given area, and NO preflight / forwardsApproval / inSessionCard / approvalSubject / areasForInput / readOnlyCarveOut / cli / http / annotation overrides. Attach `source: { kind: 'extension', id, name }` metadata.\n- `CapabilityRegistry` gains:\n  - `readonly capabilities` becomes a getter returning a frozen array: core (registration order) then contributions (contribution order); rebuilt only on change.\n  - `contribute(c: ExtensionContribution): { ok: true; remove(): void } | { ok: false; reason: string }` — never throws. Refuses: an owner that already has a live contribution; any id or MCP tool name already claimed by core or another contribution (check all before adding anything: all-or-nothing). `remove()` is idempotent.\n  - `onChange(listener: (version: number) => void): () => void`; version is a monotonically increasing integer bumped on every successful contribute/remove.\n- `composeRegistry` throws if any CORE domain name starts with `ext_`.\n- The lazily cached serialized catalog (`serializedCache`) is invalidated on every change; `catalogVersion` is recomputed from the full list (so it returns to the original value after a contribution is removed).\n- `invoke` on an id that matches the `ext_` prefix but is not registered throws `CapabilityToolError` with message \"That tool isn't available right now: its extension is stopped or restarting.\" (instead of the generic \"no capability registered\" Error). Core unknown ids keep today's behaviour.\n- The gate inside `invoke` is unchanged: extension capabilities go through the same tier + permission enforcement and the same invocation observer.\n\nAcceptance criteria / tests (registry.test.ts, new cases, each with a purpose comment):\n1. contribute adds tools visible via get/capabilities/catalog; remove takes them away; catalogVersion differs while contributed and equals the original after remove.\n2. duplicate id vs core → refused, registry unchanged; duplicate MCP tool name vs another contribution → refused, nothing from the second contribution added.\n3. second contribute for the same owner while live → refused; after remove → accepted.\n4. composeRegistry with a core domain named `ext_x` throws.\n5. onChange fires once per contribute/remove with increasing versions; unsubscribe works.\n6. invoke on a removed ext id → CapabilityToolError with the stopped/restarting message.\n7. A built extension definition has none of the privileged optional fields (assert keys).\nBefore pushing: `pnpm vitest run apps/server/src/services/core`, `pnpm vitest run apps/server/src/services/runtimes/`, `pnpm vitest run apps/server/src/services/extensions`, then `pnpm --filter @dorkos/server test -- --run` and `pnpm verify`. Rebuild `@dorkos/shared` first if imports resolve stale.",
+      "activeForm": "Adding the extension layer to the registry",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Live registry",
+      "subject": "[extension-agent-tools-and-skills] [P1] Expose extension provenance and live changes on the catalog",
+      "description": "Goal: everything that reads the catalog can say where a tool came from, and open clients learn when the catalog changed.\n\nChanges:\n- `packages/shared/src/capabilities.ts`: `SerializedCapability` gains optional `source?: { kind: 'extension'; id: string; name: string }` (Zod schema + type, TSDoc). Core capabilities omit it.\n- `serializeCapability` in registry.ts emits `source` for extension definitions.\n- `services/core/self-description/catalog-projection.ts`: compact and full projections carry `source` when present.\n- Boot (apps/server/src/index.ts): subscribe to `capabilityRegistry.onChange` and broadcast `capabilities_changed { version }` on the unified `/api/events` stream (follow how `commands_changed` is broadcast). Add the event to the shared event schema.\n- Client: the permissions page query and anything keyed on the catalog invalidate on `capabilities_changed` (TanStack Query invalidation in the existing events subscriber).\n\nTests: serializeCapability includes source for an extension definition and omits it for core; the catalog route returns source; an events-stream test sees capabilities_changed after a contribute. Purpose comments on each.\nBefore pushing: `pnpm vitest run apps/server/src/services/core`, `pnpm vitest run apps/server/src/services/runtimes/`, `pnpm vitest run apps/server/src/services/extensions`, then `pnpm --filter @dorkos/server test -- --run` and `pnpm verify`. Rebuild `@dorkos/shared` first if imports resolve stale.",
+      "activeForm": "Exposing extension provenance on the catalog",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Live registry",
+      "subject": "[extension-agent-tools-and-skills] [P1] Add the Extension tools permission area",
+      "description": "Goal (Decision for Dorian 2, recommended pick (a); if Dorian picks (b) replace this task with manifest-declared area validation against PERMISSION_AREA_IDS minus floor areas): every extension tool sits in one new area so a person can block, ask about or allow all extension tools at once, with per-tool overrides.\n\nChanges:\n- `packages/shared/src/permissions/permission-ids.ts`: add `'extensions'` to PERMISSION_AREA_IDS (not a floor area).\n- `permission-areas.ts`: `{ id: 'extensions', label: 'Extension tools', description: 'Use tools that installed extensions add', floor: false, kind: 'state' }` (copy checked with writing-app-copy: dry, under 15 words).\n- `permission-presets.ts`: careful = ask, balanced = allowed, full = allowed. Destructive actions still resolve to Ask through resolvePermission's existing destructive rule.\n- The host passes area `'extensions'` to buildExtensionDefinitions (task 1.1).\n- Config: no migration; a missing area resolves to the preset default. Verify with the adding-config-fields skill whether the permissions config schema enumerates areas; if it does, follow its migration checklist.\n- Update the permission area census guard (`services/core/capabilities/__tests__/permission-area-census.test.ts`) deliberately, with a comment naming DOR-2685.\n- Client permissions page: the new area renders from the shared list; its rows come from the live catalog and show the extension name from `source` (wire the label; full card styling lands in phase 5).\n\nTests: resolvePermission for area 'extensions' under each preset; a destructive action in an Allowed extensions area resolves to Ask; an agent override Blocked hides a fixture extension tool via resolveToolVisibility. Purpose comments.\nBefore pushing: `pnpm vitest run apps/server/src/services/core`, `pnpm vitest run apps/server/src/services/runtimes/`, `pnpm vitest run apps/server/src/services/extensions`, then `pnpm --filter @dorkos/server test -- --run` and `pnpm verify`. Rebuild `@dorkos/shared` first if imports resolve stale.",
+      "activeForm": "Adding the Extension tools permission area",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Manifest and lifecycle",
+      "subject": "[extension-agent-tools-and-skills] [P2] Declare tools and skills in the extension manifest",
+      "description": "Goal: `extension.json` can declare agent tools and skills, validated identically by discovery and by `dorkos marketplace validate`.\n\nChanges in `packages/extension-api/src/manifest-schema.ts`:\n- `ExtensionToolDeclarationSchema = z.object({ name: z.string().regex(/^[a-z][a-z0-9_]*$/), title: z.string().min(1).max(80), description: z.string().min(1).max(1024), tier: z.enum(['observe','act','destructive']), inputSchema: z.object({ type: z.literal('object') }).passthrough(), approvalDisplayFields: z.array(z.string()).optional(), timeoutSeconds: z.number().int().min(1).max(300).default(60) })`. The tool name must not contain `__`.\n- `ExtensionManifestSchema` gains `tools: z.array(ExtensionToolDeclarationSchema).optional()` and `skills: z.array(z.string()).optional()` (each entry passes @dorkos/skills validateSlug — import the regex only if extension-api may depend on it; otherwise duplicate the slug regex with a comment and a test pinning equality).\n- superRefine: tool names unique; `tools` requires `serverCapabilities`; every approvalDisplayFields entry is a key of inputSchema.properties; qualified length `'mcp__dorkos__ext_' + id.replaceAll('-','_') + '__' + name` ≤ 64 characters, with an error naming the tool and the budget.\n- Export types `ExtensionToolDeclaration`. TSDoc on every export.\n- `capabilities: { events }` unchanged.\n- Check `packages/marketplace` validator uses this schema for extension packages; if it has its own copy, point it at this one.\n\nTests (packages/extension-api/src/__tests__): valid manifest with tools+skills parses; each refinement failure has a message naming the field; tools without serverCapabilities invalid; a 70-char qualified name invalid.\nRun `pnpm vitest run packages/extension-api` and `pnpm --filter @dorkos/extension-api typecheck`.",
+      "activeForm": "Declaring tools and skills in the manifest",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Manifest and lifecycle",
+      "subject": "[extension-agent-tools-and-skills] [P2] Accept only listable tool input schemas",
+      "description": "Goal: a tool the host accepts is a tool the Claude Agent SDK can list. One record-shaped schema must never empty the whole `dorkos` tools/list (tool-exposure.ts: SDK 0.3.257+ with zod 4.5.3+ throws inside tools/list on any z.record).\n\nNew module `apps/server/src/services/extensions/extension-tool-schema.ts`:\n- `checkToolInputSchema(json: unknown): { ok: true; zod: z.ZodObject } | { ok: false; reason: string }`.\n- Allowed keywords: type (object, array, string, number, integer, boolean, null), properties, required, items, enum, const, description, default, minimum, maximum, minLength, maxLength, pattern, format, minItems, maxItems, anyOf, title, and additionalProperties only when exactly false. Refuse with a named reason: additionalProperties true or a schema, patternProperties, $ref, $defs, propertyNames, unknown keywords. Root must be type object.\n- Convert with the host zod `z.fromJSONSchema`; walk the result and refuse any ZodRecord at any depth.\n- Listability check: run the converted schema through `portableInputShape` (mcp-projection.ts) and the same zod→JSON Schema conversion the in-session server uses at tools/list (reuse the helper the tool-exposure test uses; if none is exported, export one from mcp-projection.ts). Any throw → refuse with \"can't be listed: <message>\".\n- Discovery (`extension-discovery.ts` or the record builder) runs the check per declared tool and stores `record.toolChecks: { name, ok, reason? }[]`; a refused tool never reaches the lifecycle; siblings still load.\n\nTests: each refused keyword; a nested additionalProperties:{} deep in an array item refused; an accepted schema round-trips through the real listing conversion; a regression test where a refused schema sits beside valid tools and the real in-session tools/list (tool-exposure harness) still lists every core tool. Purpose comments.\nBefore pushing: `pnpm vitest run apps/server/src/services/core`, `pnpm vitest run apps/server/src/services/runtimes/`, `pnpm vitest run apps/server/src/services/extensions`, then `pnpm --filter @dorkos/server test -- --run` and `pnpm verify`. Rebuild `@dorkos/shared` first if imports resolve stale.",
+      "activeForm": "Checking extension tool schemas",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "1.2",
+        "1.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Manifest and lifecycle",
+      "subject": "[extension-agent-tools-and-skills] [P2] Bind tool handlers through ctx.tools and contribute them at load",
+      "description": "Goal: an extension's declared tools register when its server half starts and are removed when it stops, on every path (boot, rescan, reloadExtension, enable/disable, approveToRun/revokeRunApproval, uninstall) — all of which go through ExtensionServerLifecycle.initialize/shutdown.\n\nPublic API (`packages/extension-api/src/extension-tools.ts`, re-exported from server-extension-api.ts):\n```ts\nexport interface ToolsApi { handle(name: string, handler: ExtensionToolHandler): void }\nexport type ExtensionToolHandler = (input: unknown, call: ExtensionToolCall) => unknown | Promise<unknown>;\nexport interface ExtensionToolCall { readonly signal: AbortSignal; readonly agentId: string | null }\n```\n`DataProviderContext` gains `readonly tools: ToolsApi` (\"Probe with ctx.tools !== undefined\"). `handle` throws for an undeclared name, a refused name, or a second handler for one name.\n\nServer (`apps/server/src/services/extensions/extension-tools.ts` + lifecycle + extension-server-api-factory.ts):\n- createDataProviderContext builds ctx.tools over the record's accepted tools.\n- After register() settles successfully (not on timeout, not on throw), collect handlers. Declared-but-unhandled tools are dropped with a warning recorded on `record.toolsError` (\"declares <name> but never handles it\"). Call `registry.contribute` once with all handled tools; on refusal set `record.toolsError` to the reason and keep the extension running (do NOT touch record.status/serverError — DOR-1336 rule: a server-side problem must not pull a working client UI).\n- Store the remove handle and an AbortController on ActiveServerExtension. `shutdown(id)`: call remove() FIRST, then abort the stop controller, then the existing teardown.\n- Host-built invoke wrapper per tool: look up the live handler (none → CapabilityToolError \"<extension name> isn't available right now.\"); compose an AbortSignal from the registry's per-call signal, a deadline of timeoutSeconds started now (the gate already ran, so approval wait is excluded), and the stop signal; agentId from context.identity when present else null. Throw/reject → CapabilityToolError(\"<extension name>: <message truncated to 500 chars>\"), logged with the extension id, never an unhandled rejection. Deadline → \"<extension name> didn't answer in N seconds.\" Stopped mid-call → \"<extension name> stopped while this ran.\" and any late result discarded. Output: strings pass through; otherwise JSON.stringify; non-serializable → tool error; serialized size > 256 KB (named constant EXTENSION_TOOL_RESULT_MAX_BYTES) → tool error \"<extension name> returned more than the agent can read.\"\n- buildSourceKey adds a sha256 of canonical JSON of manifest.tools and manifest.skills, so a manifest-only edit restarts the extension.\n- Expose the registry to the lifecycle through the constructor (boot wiring in index.ts after composeDorkOsCapabilityRegistry).\n- GET /api/extensions records gain `tools: { name, title, tier, status: 'active' | 'refused', reason? }[]` (public record shape + shared schema).\n\nFixture: `apps/server/src/services/extensions/__fixtures__/agent-tools-ext/` with extension.json declaring one observe, one act, one destructive tool and one skill, and a server.ts handling them (echo, a counter, a delete-like no-op).\n\nTests (each with a purpose comment): tools contribute only after a successful register; register timeout contributes nothing; register throw contributes nothing; unhandled declared tool dropped with warning; handle(undeclared) throws; shutdown removes before cleanup runs (assert order) and aborts an in-flight call whose late result is discarded; handler throw → tool error with extension name; deadline → timeout error; sourceKey changes on a tools-only manifest edit and not on a whitespace-only edit; disable → tools gone; re-enable → back; gate parity: the act tool in a Blocked extensions area is refused exactly like a core act capability in a Blocked area; destructive without token → approval-required payload; with a granted token → runs; Activity observer records the act call.\nBefore pushing: `pnpm vitest run apps/server/src/services/core`, `pnpm vitest run apps/server/src/services/runtimes/`, `pnpm vitest run apps/server/src/services/extensions`, then `pnpm --filter @dorkos/server test -- --run` and `pnpm verify`. Rebuild `@dorkos/shared` first if imports resolve stale.\nAlso update the server API docs in `EXTENSION_API_REFERENCE` (mcp-tools/extension-tools.ts) with ctx.tools and the manifest tools/skills fields.",
+      "activeForm": "Wiring extension tools into the lifecycle",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "2.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Agent tool lists",
+      "subject": "[extension-agent-tools-and-skills] [P3] Relaunch warm Claude Code processes when the tool surface changes",
+      "description": "Goal: a warm Claude Code process whose `dorkos` tool list differs from what a fresh launch would list is relaunched before its next dispatch, never mid-turn. Today launch-fingerprint.ts drops the in-process server's `instance`, leaving only `{type:'sdk', name}`, so a tool-list change (extension tools, or permission hiding) never reaches a warm process.\n\nChanges:\n- mcp-tools/index.ts: after building the tools array, compute `surfaceDigest` = sha256 of canonical JSON of the sorted list of { name, inputJsonSchema } and record it in an exported WeakMap keyed by the server instance (`dorkosToolSurfaceOf(instance)`). Nothing new is sent to the CLI.\n- sessions/launch-fingerprint.ts: new pin `toolSurface` with disposition 'relaunch' in PIN_DISPOSITIONS, described from the sdk servers' recorded digests; document in the module doc and NOTES.md why it is relaunch (setMcpServers replacing an sdk server's tool list in place is not live-verified; house rule resolves unverified behaviour toward relaunch) and the condition for moving it to 'live' (a live test proving in-place replacement).\n- Note in permission-tool-filter.ts's module doc that the \"next turn\" promise now holds under warm pumps too.\n\nTests (sessions/__tests__/launch-fingerprint.test.ts and a persistent-dispatch test using fake-persistent-cli/fake-pump-query): equal surfaces ride the warm process; a surface with one extra tool relaunches at the next dispatch; a change during a running turn takes effect only after it ends; a server.ts-only extension restart (same declarations) leaves the digest equal; a permission change hiding a tool relaunches. Purpose comments.\nBefore pushing: `pnpm vitest run apps/server/src/services/core`, `pnpm vitest run apps/server/src/services/runtimes/`, `pnpm vitest run apps/server/src/services/extensions`, then `pnpm --filter @dorkos/server test -- --run` and `pnpm verify`. Rebuild `@dorkos/shared` first if imports resolve stale.",
+      "activeForm": "Pinning the DorkOS tool surface on warm processes",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.3"
+      ],
+      "parallelWith": [
+        "3.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Agent tool lists",
+      "subject": "[extension-agent-tools-and-skills] [P3] Guard extension tools in every tool list",
+      "description": "Goal: prove extension tools reach and leave every agent tool list, and can never slip into a privileged set.\n\nTests to add (no production change expected; if one fails, fix the cause):\n- Core never uses the namespace: no capability id in composeCapabilityRegistryForDocs() starts with 'ext_'; no core or hand-registered in-session tool name starts with 'ext_' or contains '__' (handRegisteredInSessionTools).\n- With the agent-tools-ext fixture contributed: none of its tool names (qualified via inSessionToolName) is in ALWAYS_LOADED_TOOLS, AGENT_TO_AGENT_TOOLS, DORKOS_AGENT_TOOLS, READ_ONLY_TOOLS (interactive-handlers.ts) or READ_ONLY_MCP_TOOL_NAMES; each has area 'extensions' (or the Decision 2(b) area) and a non-empty searchHint.\n- Real in-session tools/list (the tool-exposure.test.ts harness through createDorkOsToolServer) lists the fixture tools after contribute and not after remove; likewise createAgentRuntimeMcpServer (Codex/OpenCode listener) per request.\n- hiddenToolNames: an agent with the extensions area Blocked does not see the fixture tools in either list, and the gate still refuses a direct invoke.\n- The existing count guards (tool-exposure toHaveLength, context-tool-names advertised.size) stay unchanged — assert in a comment why (docs registry composes no extensions).\nRun `pnpm vitest run apps/server/src/services/runtimes/` and `pnpm vitest run apps/server/src/services/core` and the full server suite.",
+      "activeForm": "Adding extension tool census guards",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.3"
+      ],
+      "parallelWith": [
+        "3.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Skills",
+      "subject": "[extension-agent-tools-and-skills] [P4] Publish the running extensions' skills ledger",
+      "description": "Goal: one derived file says which extension skills should be projected right now, so the server and a terminal `dorkos harness sync` plan the same thing.\n\nChanges:\n- New `packages/harness/src/sources/running-extension-skills.ts`: Zod schema + reader for `{dorkHome}/extensions/running-skills.json`: `{ version: 1, extensions: [{ id, scope: 'global' | 'local', projectRoot?: string /* local only, absolute */, skillsDir: string /* absolute */, skills: string[], devLink?: string }] }`. Reader: absent or unparseable → empty list with a recorded warning, never a throw.\n- New `apps/server/src/services/extensions/running-skills-ledger.ts`: `reconcileRunningSkills(records, config)` selects extensions that are enabled, `mayRunExtensionCode`, valid, compatible, the running copy for their id, and declare skills; skillsDir = path.join(record.runPath ?? record.path, 'skills'); keep only declared skills whose `<skillsDir>/<name>/SKILL.md` exists. Write atomically (temp + rename) only when the content changed; return the set of affected scopes/project roots (old ∪ new).\n- ExtensionManager: call reconcile after every rescan settles (boot, reload, enable/disable, approve/revoke, uninstall), then trigger projection: runAutoProjection-equivalent for each affected local project root (respect harness.autoSync), and the global refresh (task 4.3) for global scope. Best-effort: failures log a warning, never throw into the request path.\n- devLink: set when the record is dev-linked (dev-link registry from DOR-2696; if that field is not available yet, omit and leave a typed optional).\n\nTests: enabled+approved extension with a skill appears; disabled, unapproved, invalid, shadowed copies do not; trusted copy uses runPath; a declared skill missing on disk is omitted; unchanged set performs no write (assert mtime); deleting the file and rescanning rewrites it. Purpose comments.\nRun `pnpm vitest run apps/server/src/services/extensions packages/harness`.",
+      "activeForm": "Publishing the running skills ledger",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "1.1",
+        "2.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "Skills",
+      "subject": "[extension-agent-tools-and-skills] [P4] Project extension skills like a plugin's at project scope",
+      "description": "Goal: a local-scope extension's skills appear as `.claude/skills/<id>__<skill>` and `.agents/skills/<id>__<skill>` symlinks, exactly as a project-scoped plugin's (ADR 260706-192819), and are swept when the extension stops.\n\nChanges in packages/harness:\n- `scanInstalledSources` reads the ledger (dorkHome is already an input) and surfaces each local entry whose projectRoot equals the repo root being synced as an InstalledPlugin with `kind: 'extension'`, name = extension id, skills only (no commands, hooks, tasks), skill dir = skillsDir/<name>. Parse each SKILL.md with @dorkos/skills; invalid → ProjectionWarning, dropped.\n- installed-projector: extension-kind packages project skills through the same symlink path as plugins; never commands/hooks.\n- Collision: if a plugin package already plans `<id>__<skill>`, the plugin wins; the extension's is dropped with a warning naming both sources.\n- Orphan sweep: a ledger entry removed or whose skillsDir is gone → its links are swept (existing sweep, verify).\n- devLink entries are labelled `(dev link: <path>)` in the plan, `dorkos harness sync --check` output and services/harness/status.ts, matching the dev-link spec's plugin labelling.\n- CLI parity: `dorkos harness sync` (packages/cli) passes dorkHome so it reads the same ledger; add a test that a terminal sync on a dorkHome whose ledger lists an extension skill plans no removal of it.\n\nTests: project with ledger entry → both links planned; entry removed → links swept; collision → plugin kept + warning; invalid SKILL.md → warning; services/harness/__tests__ suites stay green (watch project-agent-workspace pack-inventory pins). Purpose comments.\nRun `pnpm vitest run packages/harness apps/server/src/services/harness`.",
+      "activeForm": "Projecting extension skills",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.3",
+      "phase": 4,
+      "phaseName": "Skills",
+      "subject": "[extension-agent-tools-and-skills] [P4] Deliver global extension skills through the global plugin path",
+      "description": "Goal: a global-scope extension's skills reach agents exactly as a global plugin's do: the global projector tiers (only where harness.global was answered) and, for DorkOS Claude Code sessions, SDK plugin activation.\n\nChanges:\n- packages/harness global-projector: include global ledger entries as extension-kind packages (skills only) in the three tiers, same collision rule (plugin wins).\n- Server: for each global ledger entry, maintain a generated plugin root `{dorkHome}/cache/extensions/skill-plugins/<id>/` containing `.claude-plugin/plugin.json` ({ \"name\": \"<id>\", \"version\": \"<manifest version>\" }) and a `skills` symlink to the entry's skillsDir; remove roots no longer in the ledger. `ClaudeCodeRuntime.refreshActivatedPlugins` appends these roots to activatedPlugins (they are already consented: the extension's run approval is the consent). Growing the set rides reloadPlugins; shrinking already relaunches warm processes (DOR-2306) — add a test proving an unloaded extension's skill plugin is gone from the next launch.\n- Call refreshActivatedPlugins after a reconcile that changed global entries.\n\nTests: global entry → plugin root generated and included; entry removed → root deleted and excluded; harness.global unanswered → no user-tier links but DorkOS Claude sessions still get the plugin root; answered → links planned. Purpose comments.\nBefore pushing: `pnpm vitest run apps/server/src/services/core`, `pnpm vitest run apps/server/src/services/runtimes/`, `pnpm vitest run apps/server/src/services/extensions`, then `pnpm --filter @dorkos/server test -- --run` and `pnpm verify`. Rebuild `@dorkos/shared` first if imports resolve stale.",
+      "activeForm": "Delivering global extension skills",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [
+        "4.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "Surfaces and docs",
+      "subject": "[extension-agent-tools-and-skills] [P5] Show extension tools and skills where people decide about them",
+      "description": "Goal: a person sees what an extension gives agents before and after approving it, and where each tool sits in permissions.\n\nChanges (apps/client, FSD layers; follow writing-app-copy: no \"we\", ≤15 words per block, run `pnpm check:copy-length`):\n- Settings → Extensions card: one line \"Gives agents 3 tools and 1 skill\" (pluralised), expandable to rows: tool title + tier label (observe → \"Reads\", act → \"Acts\", destructive → \"Asks you first\") and skill names; refused tools/dropped skills show their reason in muted text.\n- Extension approval row/card (Activity inbox, extension.approval) lists the same summary so the person sees tools and tiers before first run. Server side: include the tool/skill summary in the approval payload.\n- Permissions page: extension tool rows show \"from <extension name>\" using catalog `source`.\n- Destructive approval card for an extension tool: title is the tool title, subtitle \"from <extension name>\" (read source from the capability; extend the card view model, not the generic gate).\n- Grep apps/e2e for any Settings→Extensions strings you change; update browser specs in the same PR.\n- Dev Playground: add a showcase for the card's tools list if the card already has one (maintaining-dev-playground skill).\n\nTests: RTL tests for the card summary (0, 1, many; refused reason), approval card subtitle, permissions row label. Purpose comments.\nRun `pnpm vitest run apps/client` targeted files and `pnpm --filter @dorkos/client typecheck`.",
+      "activeForm": "Showing extension tools and skills in the app",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.3",
+        "4.1",
+        "1.2"
+      ],
+      "parallelWith": [
+        "5.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.2",
+      "phase": 5,
+      "phaseName": "Surfaces and docs",
+      "subject": "[extension-agent-tools-and-skills] [P5] Document extension tools and skills",
+      "description": "Goal: authors and people can learn the feature without reading source.\n\nChanges:\n- contributing/extension-authoring.md: \"Giving agents tools\" and \"Shipping skills\" sections: manifest fields with a complete example (mail-style send_message tool), the JSON Schema subset and why (one record schema would hide every DorkOS tool), naming (`ext_<id>__<tool>`; tell skill authors to name tools by bare name because the qualified spelling differs per runtime), tiers and what each means for cards, errors/timeouts/256 KB cap, the stop/restart behaviour, and the dev-link loop.\n- docs/integrations/extensions.mdx (writing-for-humans; no \"integration/connector/adapter/provider\" as user-facing nouns; never \"mission control\"/\"cockpit\"): what it means when an extension gives agents tools and skills, where to see them, how to block them in permissions.\n- contributing/architecture.md: registry paragraph — frozen core, live extension layer.\n- Confirm EXTENSION_API_REFERENCE (task 2.3) matches the shipped types.\n- Changelog fragment in changelog/unreleased/ (id from .claude/scripts/id.ts, covers: block per changelog/README.md), plain language: \"Extensions can now give your agents tools and skills.\"\n- Run scripts/check-banned-words.sh and `pnpm exec tsx scripts/check-vocab-gate.ts` (or the typecheck workflow equivalent) locally.\n- After merge: /adr:from-spec to promote design-decisions.md D1–D7 that still hold.",
+      "activeForm": "Documenting extension tools and skills",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "2.3",
+        "4.2"
+      ],
+      "parallelWith": [
+        "5.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    }
+  ]
+}

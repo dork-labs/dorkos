@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261003-200014",
+      "slug": "extension-agent-tools-and-skills",
+      "title": "Extensions give agents tools and skills, registered at extension load",
+      "created": "2026-10-03",
+      "status": "specified",
+      "project": "extensibility-platform",
+      "linearIssue": "DOR-2685"
+    },
+    {
       "id": "261003-184400",
       "slug": "marketplace-dev-link",
       "title": "Dev link: run a marketplace package from a working folder, owner-only, hot-reloaded",
