@@ -81,7 +81,7 @@ export class CommunityProviderPreflightError extends Error {
 }
 
 /**
- * Convert a bounded provider-process failure into provider-specific preflight guidance.
+ * Turn a bounded provider-process failure into provider-specific preflight guidance.
  *
  * A read the service refused outright (see `isProviderAccessRefusal`) says so, naming the
  * credential and organization from `access`. For Fly that refusal also covers an expired or
@@ -93,20 +93,101 @@ export class CommunityProviderPreflightError extends Error {
  * @param access - The credential and organization the read used; without it a refusal is worded
  *   as unavailable.
  */
+function describeCommunityProviderPreflightFailure(
+  provider: CommunityProvider,
+  error: unknown,
+  access?: CommunityPreflightAccess
+): CommunityProviderPreflightError {
+  if (error instanceof CommunityProviderPreflightError) return error;
+  if (error instanceof ProviderCommandError) {
+    if (error.code === 'SPAWN')
+      return new CommunityProviderPreflightError(provider, 'CLI_NOT_FOUND');
+    if (error.refused && access) {
+      return new CommunityProviderPreflightError(provider, 'ACCESS_DENIED', access);
+    }
+  }
+  return new CommunityProviderPreflightError(provider, 'PROVIDER_UNAVAILABLE');
+}
+
+/**
+ * Throw the preflight guidance for one failed read ({@link describeCommunityProviderPreflightFailure}).
+ *
+ * @param provider - The service whose read failed.
+ * @param error - What the read threw.
+ * @param access - The credential and organization the read used.
+ */
 export function classifyCommunityProviderPreflightFailure(
   provider: CommunityProvider,
   error: unknown,
   access?: CommunityPreflightAccess
 ): never {
-  if (error instanceof CommunityProviderPreflightError) throw error;
-  if (error instanceof ProviderCommandError) {
-    if (error.code === 'SPAWN')
-      throw new CommunityProviderPreflightError(provider, 'CLI_NOT_FOUND');
-    if (error.refused && access) {
-      throw new CommunityProviderPreflightError(provider, 'ACCESS_DENIED', access);
-    }
+  throw describeCommunityProviderPreflightFailure(provider, error, access);
+}
+
+/**
+ * Which failure speaks when several preflight reads fail, most specific first. A missing CLI or
+ * sign-in is the first thing to fix; a refusal names the credential; "unavailable" is the
+ * catch-all, so it only speaks when nothing more specific did (DOR-2700).
+ */
+const PREFLIGHT_FAILURE_PRECEDENCE: readonly CommunityProviderPreflightError['code'][] = [
+  'CLI_NOT_FOUND',
+  'AUTH_REQUIRED',
+  'ACCESS_DENIED',
+  'PROVIDER_UNAVAILABLE',
+];
+
+function failureRank(reason: unknown): number {
+  return reason instanceof CommunityProviderPreflightError
+    ? PREFLIGHT_FAILURE_PRECEDENCE.indexOf(reason.code)
+    : PREFLIGHT_FAILURE_PRECEDENCE.length;
+}
+
+/**
+ * Wait for every read, then resolve with all their values or reject with one failure chosen by
+ * what failed, never by which read finished first: the most specific failure by
+ * {@link PREFLIGHT_FAILURE_PRECEDENCE}, and among equals the one listed first. So the same
+ * outcomes always give the same message (DOR-2700, where a refusal and an "unavailable" raced).
+ *
+ * @param reads - The reads to settle, in a fixed order.
+ * @returns Every read's value, in order.
+ */
+export async function settleCommunityPreflightReads<const T extends readonly unknown[]>(
+  reads: T
+): Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }> {
+  const settled = await Promise.allSettled(reads);
+  let chosen: PromiseRejectedResult | undefined;
+  for (const result of settled) {
+    if (result.status !== 'rejected') continue;
+    if (!chosen || failureRank(result.reason) < failureRank(chosen.reason)) chosen = result;
   }
-  throw new CommunityProviderPreflightError(provider, 'PROVIDER_UNAVAILABLE');
+  if (chosen) throw chosen.reason;
+  return settled.map((result) => (result as PromiseFulfilledResult<unknown>).value) as {
+    -readonly [P in keyof T]: Awaited<T[P]>;
+  };
+}
+
+/**
+ * Run one provider's preflight reads together and classify their failures for that provider, so
+ * an access refusal from any read wins over another read being unavailable, whatever the order
+ * they finish in.
+ *
+ * @param provider - The service the reads ask.
+ * @param reads - The reads, in a fixed order.
+ * @param access - The credential and organization the reads used, to word a refusal.
+ * @returns Every read's value, in order.
+ */
+export function settleCommunityProviderPreflight<const T extends readonly unknown[]>(
+  provider: CommunityProvider,
+  reads: T,
+  access?: CommunityPreflightAccess
+): Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }> {
+  return settleCommunityPreflightReads(
+    reads.map((read) =>
+      Promise.resolve(read).catch((error: unknown) =>
+        classifyCommunityProviderPreflightFailure(provider, error, access)
+      )
+    )
+  ) as Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }>;
 }
 
 /** Stable local-version refusal. */
@@ -142,17 +223,21 @@ export async function assertCommunityCliVersions(
   neon: NeonReadOptions,
   minimums: { fly: string; neon: string }
 ): Promise<void> {
-  const [flyVersion, neonVersion] = await Promise.all([
-    runProviderCommand({
-      ...fly,
-      args: ['version', '--json'],
-      parse: (stdout) => FlyVersionSchema.parse(JSON.parse(stdout)).Version,
-    }).catch((error: unknown) => classifyCommunityProviderPreflightFailure('fly', error)),
-    runProviderCommand({
-      ...neon,
-      args: ['--version'],
-      parse: (stdout) => VersionSchema.parse(stdout.trim()),
-    }).catch((error: unknown) => classifyCommunityProviderPreflightFailure('neon', error)),
+  const [flyVersion, neonVersion] = await settleCommunityPreflightReads([
+    settleCommunityProviderPreflight('fly', [
+      runProviderCommand({
+        ...fly,
+        args: ['version', '--json'],
+        parse: (stdout) => FlyVersionSchema.parse(JSON.parse(stdout)).Version,
+      }),
+    ]).then(([version]) => version),
+    settleCommunityProviderPreflight('neon', [
+      runProviderCommand({
+        ...neon,
+        args: ['--version'],
+        parse: (stdout) => VersionSchema.parse(stdout.trim()),
+      }),
+    ]).then(([version]) => version),
   ]);
   if (compare(flyVersion.value, minimums.fly) < 0) throw new CommunityCliVersionError('fly');
   if (compare(neonVersion.value, minimums.neon) < 0) {

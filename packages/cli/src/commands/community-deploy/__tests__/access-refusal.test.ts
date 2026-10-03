@@ -27,7 +27,12 @@ import { createNeonProject } from '../neon-mutate.js';
 import { createLaunchPlan } from '../plan.js';
 import { ProviderMutationError, runProviderMutation } from '../provider-mutation.js';
 import { isProviderAccessRefusal } from '../provider-process.js';
-import { FLY_REFUSAL_OUTPUT, NEON_CREATE_OUTPUT, NEON_SCOPE_OUTPUT } from './fake-launch-tools.js';
+import {
+  FLY_REFUSAL_OUTPUT,
+  NEON_CREATE_OUTPUT,
+  NEON_ORG_KEY_OUTPUT,
+  NEON_SCOPE_OUTPUT,
+} from './fake-launch-tools.js';
 
 const temporaryDirectories: string[] = [];
 const network = 'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a';
@@ -73,6 +78,7 @@ describe('access refusals at a create (DOR-2656)', () => {
     'Error: forbidden',
     NEON_SCOPE_OUTPUT,
     NEON_CREATE_OUTPUT,
+    NEON_ORG_KEY_OUTPUT,
     `INFO: some notice\n${NEON_CREATE_OUTPUT}\n`,
   ])('recognises %j as a refusal', (stderr) => {
     expect(isProviderAccessRefusal(stderr)).toBe(true);
@@ -89,6 +95,8 @@ describe('access refusals at a create (DOR-2656)', () => {
     'INFO: Authentication failed, deleting credentials...',
     'ERROR: Request timed out',
     'ERROR: internal server error',
+    'ERROR: Unknown command: api',
+    'ERROR: something went wrong, not allowed for now',
     'error: unauthorized',
   ])('does not call %j a refusal', (stderr) => {
     expect(isProviderAccessRefusal(stderr)).toBe(false);

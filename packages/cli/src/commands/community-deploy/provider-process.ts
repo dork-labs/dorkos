@@ -23,11 +23,12 @@ const FLY_REFUSAL =
 /**
  * neonctl prints an API refusal's own message as `ERROR: <message>` (neonctl `src/index.ts`
  * `handleError`, `src/log.ts`). These are Neon's answers to a key that may not act there, seen
- * live in DOR-2170 L3: "not allowed to perform actions outside the project this key is scoped to"
- * and "project-scoped keys are not allowed to create projects".
+ * live in DOR-2170 L3: "not allowed to perform actions outside the project this key is scoped to",
+ * "project-scoped keys are not allowed to create projects", and, from `neonctl api /regions` with
+ * a project-scoped key, "not allowed for organization API keys" (DOR-2700).
  */
 const NEON_REFUSAL =
-  /^ERROR: (?:not allowed to |[a-z-]+ keys are not allowed to |permission denied\b)/u;
+  /^ERROR: (?:not allowed (?:to|for) |[a-z-]+ keys are not allowed to |permission denied\b)/u;
 
 /**
  * Whether a provider CLI's error output is a definite access refusal: the service answered and

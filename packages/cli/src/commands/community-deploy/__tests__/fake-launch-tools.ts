@@ -27,6 +27,8 @@ export const FLY_REFUSAL_OUTPUT =
 /** Neon's answer to a project-scoped key reading outside its project (DOR-2170 L3). */
 export const NEON_SCOPE_OUTPUT =
   'ERROR: not allowed to perform actions outside the project this key is scoped to';
+/** Neon's answer to a project-scoped key calling `neonctl api /regions` (DOR-2700). */
+export const NEON_ORG_KEY_OUTPUT = 'ERROR: not allowed for organization API keys';
 /** Neon's answer to a project-scoped key creating a project (DOR-2170 L3). */
 export const NEON_CREATE_OUTPUT = 'ERROR: project-scoped keys are not allowed to create projects';
 

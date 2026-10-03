@@ -46,7 +46,7 @@ import type {
 import type { LaunchJournal } from '../journal.js';
 import type { LaunchPlan } from '../plan.js';
 import { ProviderMutationError } from '../provider-mutation.js';
-import { classifyCommunityProviderPreflightFailure } from './versions.js';
+import { settleCommunityPreflightReads, settleCommunityProviderPreflight } from './versions.js';
 
 /** Stop before recording an intent while Fly still holds the name of an app a removal deleted. */
 export class FlyNameStillHeldError extends Error {
@@ -93,26 +93,26 @@ export async function readDefaultCommunityPreflight(
   options: CommunityServiceOptions,
   selection: CommunityPreflightSelection
 ): Promise<CommunityPreflightInventory> {
-  const [flyInventory, neonInventory] = await Promise.all([
-    Promise.all([
-      readFlyOrganizations(options.fly),
-      readFlyRegions(options.fly),
-      readFlyApps(options.fly, selection.flyOrganization),
-    ]).catch((error: unknown) =>
-      classifyCommunityProviderPreflightFailure('fly', error, {
-        env: options.fly.env,
-        organization: selection.flyOrganization,
-      })
+  // Every read settles before anything is reported, so the message depends on what failed and
+  // never on which read finished first (DOR-2700).
+  const [flyInventory, neonInventory] = await settleCommunityPreflightReads([
+    settleCommunityProviderPreflight(
+      'fly',
+      [
+        readFlyOrganizations(options.fly),
+        readFlyRegions(options.fly),
+        readFlyApps(options.fly, selection.flyOrganization),
+      ],
+      { env: options.fly.env, organization: selection.flyOrganization }
     ),
-    Promise.all([
-      readNeonOrganizations(options.neon),
-      readNeonRegions(options.neon),
-      readNeonProjects(options.neon, selection.neonOrganization),
-    ]).catch((error: unknown) =>
-      classifyCommunityProviderPreflightFailure('neon', error, {
-        env: options.neon.env,
-        organization: selection.neonOrganization,
-      })
+    settleCommunityProviderPreflight(
+      'neon',
+      [
+        readNeonOrganizations(options.neon),
+        readNeonRegions(options.neon),
+        readNeonProjects(options.neon, selection.neonOrganization),
+      ],
+      { env: options.neon.env, organization: selection.neonOrganization }
     ),
   ]);
   const [flyOrganizations, flyRegions, flyApps] = flyInventory;
