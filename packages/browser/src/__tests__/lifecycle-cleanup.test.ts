@@ -1,3 +1,6 @@
+import { createPointerLedger } from '../tabs/pointer.js';
+import { unavailableDiagnostics } from '../tabs/diagnostics.js';
+import { createDiagnosticsBudget } from '../tabs/diagnostics-budget.js';
 import { createBrowserLifetime } from '../lifecycle/ownership.js';
 import { it, expect } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -98,6 +101,7 @@ function ledger(
   context: BrowserContext
 ): BrowserRecord {
   return {
+    diagnosticsBudget: createDiagnosticsBudget(),
     lifetime: createBrowserLifetime('browser_0123456789abcdef0123456789ab', 0),
     browserId: parseBrowserId('browser_0123456789abcdef0123456789ab'),
     browserGeneration: 0,
@@ -197,6 +201,8 @@ it('drops acquired Page and context references only after fresh complete disappe
     } as unknown as BrowserContext);
     const tabId = parseTabId('tab_0123456789abcdef0123456789abcdef');
     record.tabs.set(tabId, {
+      pointer: createPointerLedger(() => null),
+      diagnostics: unavailableDiagnostics,
       page: {} as TabRecord['page'],
       binding: {
         browserId: record.browserId,

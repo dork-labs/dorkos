@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CDPSession, Page } from 'playwright-core';
 import { createPageTransport } from '../page-transport.js';
+import { createPointerLedger, type PointerLedger } from '../../tabs/pointer.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import type { BrowserBinding } from '../../contracts.js';
 
@@ -13,7 +14,7 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-function fixture(observeBinding?: () => void) {
+function fixture(observeBinding?: () => void, pointer?: PointerLedger) {
   let binding: BrowserBinding = {
     browserId: parseBrowserId('browser_subject_A_000000000000000'),
     browserGeneration: 0,
@@ -45,7 +46,9 @@ function fixture(observeBinding?: () => void) {
     viewportSize: () => ({ width: 100, height: 80 }),
     isClosed: () => false,
   };
+  const ledger = pointer ?? createPointerLedger(() => (current ? binding : null));
   const owner = createPageTransport({
+    pointer: ledger,
     page: page as unknown as Page,
     current: () => current,
     readBinding: () => {
@@ -58,6 +61,7 @@ function fixture(observeBinding?: () => void) {
   });
   return {
     owner,
+    pointer: ledger,
     page,
     context,
     session,
@@ -229,6 +233,7 @@ it('late session after acquisition deadline is detached without publishing readi
   h.context.newCDPSession.mockImplementation(() => session.promise);
   let current = true;
   const owner = createPageTransport({
+    pointer: h.pointer,
     page: h.page as unknown as Page,
     current: () => current,
     readBinding: () => null,
@@ -327,3 +332,60 @@ it.each(['composition', 'drag'] as const)(
     await h.owner.close();
   }
 );
+
+it('unsupported observer return is refused without observing promise species or replacing native errors', async () => {
+  const observed = vi.fn();
+  const unexpected = Object.defineProperty({}, 'then', { get: observed });
+  const unavailable = vi.fn();
+  const pointer = {
+    beginMove: () => unexpected,
+    accepts: () => false,
+    success: () => undefined,
+    invalidate: () => undefined,
+    unavailable,
+    read: () => ({ revision: 0, terminal: true, marker: null }),
+  };
+  const h = fixture(undefined, pointer);
+  await h.owner.ready;
+  await h.owner.native.dispatch({ kind: 'mouseMove', x: 1, y: 2 }, signal());
+  expect(unavailable).toHaveBeenCalledOnce();
+  expect(observed).not.toHaveBeenCalled();
+  const failure = Error('PRIMARY_NATIVE_FAILURE');
+  h.mouse.move.mockRejectedValueOnce(failure);
+  await expect(h.owner.native.dispatch({ kind: 'mouseMove', x: 1, y: 2 }, signal())).rejects.toBe(
+    failure
+  );
+  expect(observed).not.toHaveBeenCalled();
+});
+it('missing observer refuses before session acquisition and unsupported accepts return is not truthy authority', async () => {
+  const h = fixture();
+  await h.owner.ready;
+  h.context.newCDPSession.mockClear();
+  expect(() =>
+    createPageTransport({
+      page: h.page,
+      current: () => true,
+      readBinding: () => null,
+      retire: () => {},
+    } as unknown as Parameters<typeof createPageTransport>[0])
+  ).toThrow('POINTER_OBSERVER_UNAVAILABLE');
+  expect(h.context.newCDPSession).not.toHaveBeenCalled();
+  const read = vi.fn();
+  const invalid = Object.defineProperty({}, 'then', { get: read });
+  const unavailable = vi.fn();
+  const pointer = {
+    beginMove: () => Object.freeze({}),
+    accepts: () => invalid as unknown as boolean,
+    success: () => undefined,
+    invalidate: () => undefined,
+    unavailable,
+    read: () => ({ revision: 0, terminal: true, marker: null }),
+  };
+  const owned = fixture(undefined, pointer);
+  await owned.owner.ready;
+  await owned.owner.native.dispatch({ kind: 'mouseMove', x: 1, y: 2 }, signal());
+  expect(unavailable).toHaveBeenCalledOnce();
+  expect(read).not.toHaveBeenCalled();
+  await owned.owner.close();
+  await h.owner.close();
+});

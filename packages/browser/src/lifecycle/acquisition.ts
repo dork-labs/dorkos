@@ -74,6 +74,8 @@ export async function acquireBrowser(
 ): Promise<void> {
   if (new URL(config.network.origin).protocol !== 'http:')
     throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
+  if (!record.diagnosticsBudget) throw new Error('DIAGNOSTIC_OWNERSHIP_UNAVAILABLE');
+  const diagnosticNow = config.clock.monotonicNow.bind(config.clock);
   const stopped = () => cancelled() || record.status !== 'opening' || record.lifetime.gate.stopped;
   const chromium = await deadline(
     ownOperation(record, () => verifiedLibrary(config.runtime)),
@@ -183,7 +185,7 @@ export async function acquireBrowser(
       Reflect.apply(on, context, [event, callback]);
     });
   await register('page', (page: import('playwright-core').Page) => {
-    const tab = trackPage(record, page, config.network.origin);
+    const tab = trackPage(record, page, config.network.origin, diagnosticNow);
     if (record.status === 'running' && !record.lifetime.gate.stopped) {
       try {
         composeInput(config, record, tab);
@@ -201,7 +203,7 @@ export async function acquireBrowser(
     if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
     return Reflect.apply(list, context, []) as ReturnType<typeof list>;
   });
-  for (const page of pages) trackPage(record, page, config.network.origin);
+  for (const page of pages) trackPage(record, page, config.network.origin, diagnosticNow);
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   const first =
     record.tabs.values().next().value ??
@@ -212,7 +214,8 @@ export async function acquireBrowser(
         if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
         return Reflect.apply(create, context, []) as ReturnType<typeof create>;
       }),
-      config.network.origin
+      config.network.origin,
+      diagnosticNow
     );
   try {
     first.initialNavigation = true;

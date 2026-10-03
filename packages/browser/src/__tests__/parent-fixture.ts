@@ -1,3 +1,4 @@
+import { createDiagnosticsBudget } from '../tabs/diagnostics-budget.js';
 import { vi, type Mock } from 'vitest';
 import type { Page, CDPSession, BrowserContext } from 'playwright-core';
 import type { EngineConfiguration } from '../configuration.js';
@@ -53,6 +54,7 @@ export function configuration(): EngineConfiguration {
 export function record(status: BrowserRecord['status'] = 'running'): BrowserRecord {
   const browserId = parseBrowserId('browser_subject_A_000000000000000');
   return {
+    diagnosticsBudget: createDiagnosticsBudget(),
     browserId,
     browserGeneration: 0,
     mode: 'persistent',
@@ -87,8 +89,8 @@ export function fakePage() {
     setDefaultTimeout: vi.fn<() => void>(),
     setDefaultNavigationTimeout: vi.fn<() => void>(),
     viewportSize: () => ({ width: 100, height: 80 }),
-    screenshot: vi.fn<() => Promise<Uint8Array>>(
-      async (): Promise<Uint8Array> => new Uint8Array([1, 2, 3])
+    screenshot: vi.fn<() => Promise<Uint8Array>>(async (): Promise<Uint8Array> =>
+      fakeJPEG(100, 80)
     ),
     mouse: {
       move: action('move'),
@@ -117,14 +119,14 @@ export function fakePage() {
     context,
     session,
     effects,
-    event: (event: string) => {
-      for (const callback of callbacks.get(event) ?? []) callback(frame);
+    event: (event: string, value: unknown = frame) => {
+      for (const callback of callbacks.get(event) ?? []) callback(value);
     },
   };
 }
-export function tabFixture(r = record()) {
+export function tabFixture(r = record(), now: () => number = () => 0) {
   const p = fakePage();
-  const tab = trackPage(r, p.page, 'http://127.0.0.1:9001');
+  const tab = trackPage(r, p.page, 'http://127.0.0.1:9001', now);
   return {
     ...p,
     tab,
@@ -136,4 +138,38 @@ export function tabFixture(r = record()) {
       steps: [{ kind: 'text' as const, text: 'FIXTURE_CHALLENGE' }],
     }),
   };
+}
+
+/** Synthetic baseline header fixture only; it does not certify decoder-valid image content. */
+export function fakeJPEG(width = 100, height = 80, marker = 1): Uint8Array {
+  return new Uint8Array([
+    255,
+    216,
+    255,
+    192,
+    0,
+    11,
+    8,
+    height >> 8,
+    height & 255,
+    width >> 8,
+    width & 255,
+    1,
+    1,
+    17,
+    0,
+    255,
+    218,
+    0,
+    8,
+    1,
+    1,
+    0,
+    0,
+    63,
+    0,
+    marker,
+    255,
+    217,
+  ]);
 }
