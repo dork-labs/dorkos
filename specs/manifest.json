@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261003-204731",
+      "slug": "isolated-extension-backends",
+      "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",
+      "created": "2026-10-03",
+      "status": "specified",
+      "project": "extensibility-platform",
+      "linearIssue": "DOR-2686"
+    },
+    {
       "id": "261003-184400",
       "slug": "marketplace-dev-link",
       "title": "Dev link: run a marketplace package from a working folder, owner-only, hot-reloaded",
