@@ -5,7 +5,7 @@ import path from 'path';
 import { DEFAULT_ACCOUNT_COLORS, type AccountUsage } from '@dorkos/shared/account-usage';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
 import { setStartWorkService, type StartWorkService } from '../start-work.js';
-import { setAgentSendService, type AgentSendService } from '../agent-send.js';
+import { setAgentSendService, type AgentSendService } from '../agent-send/agent-send.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import {
   __resetAccountAdvisorForTests,

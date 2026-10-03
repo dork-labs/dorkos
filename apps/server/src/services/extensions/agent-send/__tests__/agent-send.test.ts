@@ -19,7 +19,7 @@ import type { AgentDeliveryEvent } from '@dorkos/extension-api/server';
 
 // The neutral context bag is assembled off the real filesystem (git status);
 // these cases care about delivery, not context.
-vi.mock('../../session/context-assembler.js', () => ({
+vi.mock('../../../session/context-assembler.js', () => ({
   assembleAdditionalContext: vi.fn(async () => []),
 }));
 
@@ -28,16 +28,20 @@ import {
   dispatchMessage,
   isTurnInFlight,
   resetMessageDispatcher,
-} from '../../session/message-dispatcher.js';
-import { MessageQueueStore, setMessageQueueStore } from '../../session/message-queue-store.js';
-import { cancelQueuedMessage } from '../../session/queued-message-edits.js';
-import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
+} from '../../../session/message-dispatcher.js';
+import { MessageQueueStore, setMessageQueueStore } from '../../../session/message-queue-store.js';
+import { cancelQueuedMessage } from '../../../session/queued-message-edits.js';
+import {
+  disposeProjector,
+  getOrCreateProjector,
+} from '../../../session/session-state-projector.js';
 import type {
   DispatchSessionMessageOpts,
   DispatchSessionMessageResult,
-} from '../../session/launch/launch-session.js';
+} from '../../../session/launch/launch-session.js';
 import { AgentSendStore } from '../agent-send-store.js';
-import { AgentSendService, renderAppMessage, type SessionFacts } from '../agent-send.js';
+import { AgentSendService, type SessionFacts } from '../agent-send.js';
+import { renderAppMessage } from '../agent-send-message.js';
 
 const EXT = 'flow-dashboard';
 const PERSON = 'window-a';
@@ -157,8 +161,7 @@ function build(overrides: Partial<ConstructorParameters<typeof AgentSendService>
       get: ((id: string) => (agents.has(id) ? { id } : undefined)) as never,
       getProjectPath: (id: string) => agents.get(id),
     }),
-    describeSession: async (id) =>
-      sessions.get(id) ?? chat({ bound: false, launchOrigin: null }),
+    describeSession: async (id) => sessions.get(id) ?? chat({ bound: false, launchOrigin: null }),
     sessionCwd: async () => '/work/project',
     isBusy: async (id) => isTurnInFlight(id, runtime),
     dispatch: fakeDispatch,
@@ -625,9 +628,18 @@ describe('ctx.agent.send — who it is for', () => {
   });
 
   it('writes only into its own extension chats, never another extension’s', async () => {
-    sessions.set('theirs-started', chat({ launchOrigin: 'extension-start', startedByExtension: 'other-app' }));
-    sessions.set('theirs-agent-chat', chat({ launchOrigin: 'agent-launch', startedByExtension: 'other-app' }));
-    sessions.set('mine-started', chat({ launchOrigin: 'extension-start', startedByExtension: EXT }));
+    sessions.set(
+      'theirs-started',
+      chat({ launchOrigin: 'extension-start', startedByExtension: 'other-app' })
+    );
+    sessions.set(
+      'theirs-agent-chat',
+      chat({ launchOrigin: 'agent-launch', startedByExtension: 'other-app' })
+    );
+    sessions.set(
+      'mine-started',
+      chat({ launchOrigin: 'extension-start', startedByExtension: EXT })
+    );
     sessions.set('unowned-ext-chat', chat({ launchOrigin: 'extension-message' }));
     runtime.withScenarios([quickTurn()]);
 
@@ -660,7 +672,11 @@ describe('ctx.agent.send — the extension stops', () => {
   it('fails its held messages with `stopped`, and keeps them out of any chat', async () => {
     capFull = true;
     const receipt = await service.send(EXT, { to: session, text: 'soon', idempotencyKey: 'k' });
-    const other = await service.send('other-app', { to: session, text: 'soon', idempotencyKey: 'k' });
+    const other = await service.send('other-app', {
+      to: session,
+      text: 'soon',
+      idempotencyKey: 'k',
+    });
 
     service.extensionStopped(EXT);
     capFull = false;
@@ -668,7 +684,11 @@ describe('ctx.agent.send — the extension stops', () => {
     await settle();
 
     expect(events).toEqual([
-      expect.objectContaining({ kind: 'turn.failed', messageId: receipt.messageId, reason: 'stopped' }),
+      expect.objectContaining({
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        reason: 'stopped',
+      }),
     ]);
     // Only the other extension's message was sent.
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);

@@ -7,7 +7,7 @@
  *
  * Every method is synchronous (better-sqlite3).
  *
- * @module services/extensions/agent-send-store
+ * @module services/extensions/agent-send/agent-send-store
  */
 import {
   and,

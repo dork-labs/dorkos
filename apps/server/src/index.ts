@@ -603,8 +603,8 @@ import {
   AgentSendService,
   getAgentSendService,
   setAgentSendService,
-} from './services/extensions/agent-send.js';
-import { AgentSendStore } from './services/extensions/agent-send-store.js';
+} from './services/extensions/agent-send/agent-send.js';
+import { AgentSendStore } from './services/extensions/agent-send/agent-send-store.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,

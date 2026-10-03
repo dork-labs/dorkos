@@ -2710,6 +2710,57 @@ describe('onDispatchLifecycle — what became of a message, by its id (DOR-2683)
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it('settles a removed message’s caller, so nothing it held until the turn settles leaks', async () => {
+    const first = gate();
+    const onSettled = vi.fn();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await send('waits', { messageId: 'waiting-one', onSettled });
+    await settle();
+
+    cancelQueuedMessage(session, 'waiting-one');
+
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('failed');
+  });
+
+  it('does not report a message removed while its launch is under way, since its turn still starts', async () => {
+    // The launch is parked assembling its context; the row is still on the
+    // queue (it leaves at turn_start) when a person removes it.
+    let release!: () => void;
+    vi.mocked(assembleAdditionalContext).mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve([])))
+    );
+    runtime.withScenarios([quickTurn()]);
+    const sent = send('runs anyway', { messageId: 'launching-one' });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+
+    cancelQueuedMessage(session, 'launching-one');
+    release();
+    await sent;
+    await settle();
+
+    expect(seen.filter((e) => e.messageId === 'launching-one').map((e) => e.phase)).toEqual([
+      'started',
+      'settled',
+    ]);
+  });
+
+  it('settles a swept message’s caller too', async () => {
+    // Parked with no turn open (a report the runtime owes is on its way), so
+    // the sweep may take the session.
+    Object.assign(runtime, { isSegmentPending: () => true });
+    const onSettled = vi.fn();
+    await send('waits', { messageId: 'swept-waiting', onSettled });
+
+    noteSessionOrphaned(session);
+    sweepOrphanedMessageQueues({ isLive: () => false });
+
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('failed');
+    expect(seen).toEqual([
+      { phase: 'dropped', messageId: 'swept-waiting', reason: 'session_gone' },
+    ]);
+  });
+
   it('reports the rows a vanished session’s sweep deletes', () => {
     const gone = `${session}-gone`;
     store.enqueue({ id: 'swept-one', sessionId: gone, content: 'gone', clientId: TAB });

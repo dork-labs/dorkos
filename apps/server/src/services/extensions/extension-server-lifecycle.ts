@@ -23,7 +23,7 @@ import {
 } from './extension-load-policy.js';
 import { configManager } from '../core/config-manager.js';
 import { getExtensionInbox } from './inbox/extension-inbox.js';
-import { getAgentSendService } from './agent-send.js';
+import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
 
 const require = createRequire(import.meta.url);

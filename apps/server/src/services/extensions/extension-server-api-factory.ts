@@ -27,7 +27,7 @@ import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
 import { recordContinuation } from '../core/usage/session-continuation.js';
 import { createProjectsApi } from '../projects/extension-projects-api.js';
 import { getStartWorkService } from './start-work.js';
-import { getAgentSendService } from './agent-send.js';
+import { getAgentSendService } from './agent-send/agent-send.js';
 import { projectRegistry } from '../projects/project-registry.js';
 import {
   createInboxApi,
