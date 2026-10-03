@@ -233,8 +233,8 @@ importers:
         specifier: ^6.2.6
         version: 6.2.6(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       blintz:
-        specifier: ^0.5.0
-        version: 0.5.0(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
+        specifier: ^0.6.0
+        version: 0.6.0(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)
       canvas-confetti:
         specifier: ^1.9.4
         version: 1.9.4
@@ -6817,8 +6817,8 @@ packages:
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
 
-  blintz@0.5.0:
-    resolution: {integrity: sha512-uBxPrXxciCk3mYHfeLFy8oel+2Hga38SpvM9FnNjeZ9bEoUja0syIxHoW2ZgkCHb+lALB8gXD683QpJ+aRVfdA==}
+  blintz@0.6.0:
+    resolution: {integrity: sha512-yp/oQkjg8ULxRJWNpmELrml8nu1Usa3tGHc+1EnkMH1qx+yHtB7fGvtC/NTOER+11HdrAx8wxZ9/o4X75YVl4w==}
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
@@ -16939,7 +16939,7 @@ snapshots:
       inherits: 2.0.4
       readable-stream: 3.6.2
 
-  blintz@0.5.0(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3):
+  blintz@0.6.0(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3):
     dependencies:
       '@codemirror/commands': 6.11.0
       '@codemirror/language': 6.12.4
