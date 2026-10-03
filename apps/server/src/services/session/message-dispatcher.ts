@@ -271,6 +271,61 @@ const dispatchMutex = new Map<string, Promise<void>>();
 const orphanedSessions = new Set<string>();
 
 /**
+ * One moment in an accepted message's life, as {@link onDispatchLifecycle}
+ * reports it, keyed by the message id the queue row and the turn share.
+ *
+ * - `started` — a turn began with the message (its `turn_start`).
+ * - `settled` — that turn ended, however it ended.
+ * - `dropped` — the message left the queue without running and never will:
+ *   `removed` when a person took it off (Remove, or Stop clearing the queue),
+ *   `session_gone` when the orphan sweep deleted its vanished session's queue.
+ *
+ * A message whose launch the write-lock refused is NOT dropped: it goes back in
+ * line ({@link returnToQueue}). That is why a queued message has no expiry
+ * event — see {@link DispatchMessageOpts.queueWaitMs}.
+ */
+export type DispatchLifecycleEvent =
+  | { phase: 'started'; messageId: string; sessionId: string }
+  | { phase: 'settled'; messageId: string; sessionId: string; outcome: 'ok' | 'failed' }
+  | { phase: 'dropped'; messageId: string; reason: 'removed' | 'session_gone' };
+
+const lifecycleListeners = new Set<(event: DispatchLifecycleEvent) => void>();
+
+/**
+ * Hear every accepted message start, settle or drop, whoever sent it and
+ * however it got here — including rows {@link adoptQueuedMessages} recovered
+ * after a restart, whose original caller's callbacks died with the old process.
+ * That is what this exists for: a sender that has to learn, by message id, what
+ * became of a message it was told was accepted (`ctx.agent.send`, DOR-2683).
+ *
+ * Listeners run synchronously inside the dispatcher's own bookkeeping, so they
+ * must be quick and must not throw; a throw is logged and swallowed.
+ *
+ * @param listener - Receives each {@link DispatchLifecycleEvent}
+ * @returns A function that stops listening
+ */
+export function onDispatchLifecycle(listener: (event: DispatchLifecycleEvent) => void): () => void {
+  lifecycleListeners.add(listener);
+  return () => {
+    lifecycleListeners.delete(listener);
+  };
+}
+
+function emitLifecycle(event: DispatchLifecycleEvent): void {
+  for (const listener of lifecycleListeners) {
+    try {
+      listener(event);
+    } catch (err) {
+      logger.warn('[MessageDispatcher] a lifecycle listener threw', {
+        messageId: event.messageId,
+        phase: event.phase,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
+/**
  * Run `fn` with this session's dispatch mutex held.
  *
  * Every decision that starts or ends a turn goes through here, so two of them
@@ -738,6 +793,17 @@ export interface DispatchMessageOpts {
   clientId: string;
   /** The person's words, passed through pristine. */
   content: string;
+  /**
+   * The id this message is accepted under, when the SENDER minted it — the
+   * queue row's id, the turn's `messageId`, and the id every
+   * {@link DispatchLifecycleEvent} carries. Absent, the dispatcher mints one.
+   *
+   * For a sender that must hand its own caller a receipt before the message is
+   * dispatched at all (`ctx.agent.send` holding a message for capacity), so the
+   * id on the receipt and the id on the turn are the same id. Must be unique: it
+   * is a primary key.
+   */
+  messageId?: string;
   /** What the sender asked be done when the session is busy. Defaults to `queue`. */
   disposition?: MessageDisposition;
   cwd?: string;
@@ -807,6 +873,16 @@ export interface DispatchMessageOpts {
    * take the lock out from under the turn ahead, so an owner is never the last
    * to get in. Whatever is left of it when the message launches is what the
    * chain underneath is given, so the two waits cannot add up past the budget.
+   *
+   * **For a queueing caller this is not an expiry.** When the budget runs out
+   * the message LAUNCHES anyway, meeting the write-lock as a stranger would;
+   * a live lock is never replaced (`session-lock.ts`), so behind a turn that is
+   * still running that launch is refused and the message goes back in line
+   * with a fresh budget ({@link returnToQueue}). A queued message therefore
+   * waits for as long as the turn ahead of it runs, however long that is, and
+   * leaves the queue only by running or by being removed
+   * ({@link DispatchLifecycleEvent} `dropped`). Only a refusing caller's wait
+   * ends at its budget.
    */
   queueWaitMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
@@ -1181,6 +1257,7 @@ function returnToQueue(plan: DispatchPlan): void {
     // No row to put back (it was removed, or never written): no turn will
     // start for this message, so its caller hears that now, or never (a
     // launch-cap slot is released on it).
+    emitLifecycle({ phase: 'dropped', messageId: plan.messageId, reason: 'removed' });
     plan.turn.onSettled?.('failed');
     return;
   }
@@ -1345,6 +1422,7 @@ function launchDispatchInner(
         // not annotate a newer turn's slot.
         const slot = inFlight.get(sessionKey);
         if (slot?.token === token) slot.sawTurnStart = true;
+        emitLifecycle({ phase: 'started', messageId, sessionId: sessionKey });
         turn.onTurnStart?.(seq);
       },
       projector: plan.projector,
@@ -1357,6 +1435,7 @@ function launchDispatchInner(
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
         }
+        emitLifecycle({ phase: 'settled', messageId, sessionId: sessionKey, outcome: turnOutcome });
         turn.onSettled?.(turnOutcome);
       },
     });
@@ -1676,6 +1755,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const record =
     whenBusy === 'queue'
       ? getMessageQueueStore()?.enqueue({
+          ...(opts.messageId !== undefined ? { id: opts.messageId } : {}),
           sessionId: queueKey,
           content,
           clientId,
@@ -1683,7 +1763,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
           context: opts.context ?? null,
         })
       : undefined;
-  const messageId = record?.id ?? crypto.randomUUID();
+  const messageId = record?.id ?? opts.messageId ?? crypto.randomUUID();
   // A row gives a real position. Without one the answer depends on WHY there is
   // no row: a refusing caller is deliberately rowless and reports `0` (it is on
   // no queue at all, transient or not), while a host with no store wired — as
@@ -2574,7 +2654,15 @@ export function sweepOrphanedMessageQueues(opts?: {
   let removed = 0;
   for (let i = 0; i < doomed.length; i += SWEEP_CHUNK_SIZE) {
     const chunk = doomed.slice(i, i + SWEEP_CHUNK_SIZE).map(queueKeyOf);
+    // Named before they go, so a sender waiting on one hears it will never run.
+    const gone = lifecycleListeners.size > 0 ? chunk.flatMap((id) => store?.list(id) ?? []) : [];
     removed += store?.deleteForSessions(chunk) ?? 0;
+    for (const row of gone) {
+      const entry = pending.get(row.id);
+      if (entry) clearTimeout(entry.timer);
+      pending.delete(row.id);
+      emitLifecycle({ phase: 'dropped', messageId: row.id, reason: 'session_gone' });
+    }
     // Held staged words go with the queue: same reason, same beat. A session
     // nobody can open again will never dispatch, so its hold can only sit there
     // for the life of the install.
@@ -2626,6 +2714,10 @@ export async function suspendPrivateDispatches(signal: AbortSignal): Promise<voi
  * @returns True when a dispatch was armed and is now cancelled
  */
 export function cancelPendingDispatch(messageId: string): boolean {
+  // Reported whether or not an entry was armed: a row adopted by nobody yet
+  // (after a restart) is removed just as surely, and its sender is owed the
+  // same answer.
+  emitLifecycle({ phase: 'dropped', messageId, reason: 'removed' });
   const entry = pending.get(messageId);
   if (!entry) return false;
   clearTimeout(entry.timer);

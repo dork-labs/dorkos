@@ -42,4 +42,5 @@ export * from './search.js';
 export * from './notifications.js';
 export * from './projects.js';
 export * from './extensions/extension-decisions.js';
+export * from './extensions/extension-agent-sends.js';
 export * from './canvas/channel.js';

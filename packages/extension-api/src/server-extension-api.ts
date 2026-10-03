@@ -3,17 +3,29 @@
  *
  * Defines the contract for server-side extension entry points, including
  * the encrypted secret store, scoped storage, lifecycle hooks, read access to
- * the agent accounts DorkOS knows, and the account advisor seam.
+ * the agent accounts DorkOS knows, the account advisor seam, and sending the
+ * person's agents a message.
  *
  * @module @dorkos/extension-api/server
  */
 import type { AccountUsage as CoreAccountUsage } from '@dorkos/shared/account-usage';
 import type { DecisionActions, ProjectRef } from './extension-api.js';
 import type { StartWorkInput } from './start-work.js';
+import type { AgentApi } from './agent-messaging.js';
 
 export type { DecisionActions, ProjectRef } from './extension-api.js';
 export type { StartWorkInput } from './start-work.js';
 export { StartWorkError } from './start-work.js';
+export type {
+  AgentApi,
+  AgentDeliveryEvent,
+  AgentDeliveryFailureReason,
+  AgentSendErrorCode,
+  AgentSendInput,
+  AgentSendReceipt,
+  AgentSendWaitReason,
+} from './agent-messaging.js';
+export { AgentSendError } from './agent-messaging.js';
 
 /**
  * One account's usage as an extension sees it: identity, resolved color, the
@@ -308,6 +320,12 @@ export interface DataProviderContext {
    * §7.7). Probe with `ctx.sessions !== undefined`.
    */
   readonly sessions: SessionsApi;
+  /**
+   * Send one of the person's agents a message, held while the agent is busy,
+   * with a receipt at once and delivery events after (DOR-2683). Probe with
+   * `ctx.agent !== undefined`.
+   */
+  readonly agent: AgentApi;
 }
 
 /** `ctx.sessions`: starting work in a new chat without a person (spec §7.7). */
