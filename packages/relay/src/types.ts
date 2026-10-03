@@ -13,6 +13,7 @@
  */
 import type {
   RelayEnvelope,
+  RelayDeliveryReceipt,
   RelayBudget,
   Signal,
   RelayAccessRule,
@@ -96,7 +97,7 @@ export interface EndpointInfo {
    * registering caller supplied one.
    *
    * Absent for endpoints the server registers on its own behalf (the system
-   * console, Mesh-managed agent endpoints, endpoints created from the cockpit's
+   * console, Mesh-managed agent endpoints, endpoints created from the app's
    * HTTP route). An absent owner means **nobody** owns the endpoint, never
    * "everybody": callers that gate access on ownership must deny on `undefined`
    * rather than fall through to allow.
@@ -243,6 +244,8 @@ export interface RelayOptions {
   dataDir?: string;
   /** Drizzle database instance. When provided, SqliteIndex uses this instead of creating its own. */
   db?: import('@dorkos/db').Db;
+  /** Receipt timestamps; observer process identity always uses the real wall clock. */
+  receiptNow?: () => number;
   maxHops?: number;
   defaultTtlMs?: number;
   defaultCallBudget?: number;
@@ -347,7 +350,14 @@ export interface PrivateNotificationOptions {
   authorizeDispatch(): boolean;
 }
 
+/** Trusted, in-process HTTP observation context; never part of an envelope or request schema. */
+export interface ReceiptContext {
+  ownerUserId: string | null;
+  onReceiptCreated: (messageId: string) => void;
+}
+
 export interface PublishOptions {
+  receiptContext?: ReceiptContext;
   from: string;
   replyTo?: string;
   budget?: Partial<RelayBudget>;
@@ -427,6 +437,8 @@ export interface AdapterOutboundCallbacks {
  * without introducing a circular import through relay-core.ts.
  */
 export interface PublishResult {
+  /** Persisted agent-target observation, independently of mailbox fan-out counts. */
+  receipt?: RelayDeliveryReceipt;
   /** The ULID message ID assigned to the published envelope. */
   messageId: string;
 

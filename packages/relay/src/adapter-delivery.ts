@@ -18,6 +18,8 @@
  *
  * @module relay/adapter-delivery
  */
+import type { ReceiptObservation } from './lib/receipt-observation.js';
+import { isDetachedAgentSubject } from './lib/detached-agent-subject.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { SqliteIndex } from './sqlite-index.js';
 import type { MaildirStore } from './maildir-store.js';
@@ -27,9 +29,6 @@ import type { ChatNoticeSender } from './chat-notice.js';
 import { requiresInitiateConsent } from './lib/consent-scope.js';
 
 import type { Logger } from '@dorkos/shared/logger';
-
-/** Subject prefix for agent-session deliveries that run detached. */
-const AGENT_SUBJECT_PREFIX = 'relay.agent.';
 
 /**
  * Which chat notice a failed delivery deserves.
@@ -219,14 +218,14 @@ export class AdapterDelivery {
     subject: string,
     envelope: RelayEnvelope,
     contextBuilder?: (subject: string) => AdapterContext | undefined,
-    opts?: { counted?: boolean }
+    opts?: { counted?: boolean; observation?: ReceiptObservation }
   ): Promise<DeliveryResult | null> {
     const registry = this.deps.adapterRegistry;
     if (!registry) return null;
 
     const context = contextBuilder?.(subject);
 
-    if (subject.startsWith(AGENT_SUBJECT_PREFIX)) {
+    if (isDetachedAgentSubject(subject)) {
       // Check for a matching adapter BEFORE acknowledging acceptance. When
       // none matches (e.g. the CCA adapter failed to start), returning null
       // preserves the normal pipeline semantics — publish() pending-buffers
@@ -234,7 +233,13 @@ export class AdapterDelivery {
       if (registry.getBySubject && !registry.getBySubject(subject)) {
         return null;
       }
-      return this.deliverDetached(subject, envelope, context, opts?.counted === true);
+      return this.deliverDetached(
+        subject,
+        envelope,
+        context,
+        opts?.counted === true,
+        opts?.observation
+      );
     }
 
     return this.deliverWithTimeout(subject, envelope, context);
@@ -260,7 +265,8 @@ export class AdapterDelivery {
     subject: string,
     envelope: RelayEnvelope,
     context: AdapterContext | undefined,
-    counted: boolean
+    counted: boolean,
+    observation?: ReceiptObservation
   ): DeliveryResult {
     const startTime = Date.now();
 
@@ -274,32 +280,74 @@ export class AdapterDelivery {
       ? { ...context, onHeld: () => void this.noticeHeld(subject, envelope) }
       : context;
 
-    void this.deps
-      .adapterRegistry!.deliver(subject, envelope, heldContext)
-      .then(async (result) => {
-        if (result === null) {
-          // Acceptance was already reported, so a no-match here (registry
-          // without getBySubject, or the adapter vanished mid-flight) must
-          // dead-letter — otherwise the message is silently swallowed.
-          await this.deadLetterDetached(subject, envelope, 'no adapter matched subject', counted);
-        } else if (!result.success) {
-          await this.deadLetterDetached(
-            subject,
-            envelope,
-            result.error ?? 'unknown error',
-            counted,
-            result.code
-          );
-        } else {
-          this.indexDelivered(subject, envelope);
-        }
-      })
-      .catch(async (err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        await this.deadLetterDetached(subject, envelope, message, counted);
-      });
+    let delivery: Promise<DeliveryResult | null>;
+    try {
+      delivery = this.deps.adapterRegistry!.deliver(subject, envelope, heldContext);
+    } catch (error) {
+      // Preserve synchronous publisher failure while recording only an unknown observation.
+      observation?.settle(envelope.id, { state: 'outcome_unknown' });
+      throw error;
+    }
+    // The rejection handler belongs to the adapter promise alone. Bookkeeping exceptions
+    // in either outcome handler cannot enter it and manufacture a delivery failure.
+    void delivery.then(
+      (result) => this.finishDetached(subject, envelope, counted, observation, result),
+      (error: unknown) =>
+        this.finishDetachedRejection(subject, envelope, counted, observation, error)
+    );
 
     return { success: true, durationMs: Date.now() - startTime };
+  }
+
+  private async finishDetached(
+    subject: string,
+    envelope: RelayEnvelope,
+    counted: boolean,
+    observation: ReceiptObservation | undefined,
+    result: DeliveryResult | null
+  ): Promise<void> {
+    observation?.observeAdapter(envelope.id, result);
+    try {
+      if (result === null) {
+        await this.deadLetterDetached(subject, envelope, 'no adapter matched subject', counted);
+      } else if (!result.success) {
+        await this.deadLetterDetached(
+          subject,
+          envelope,
+          result.error ?? 'unknown error',
+          counted,
+          result.code
+        );
+      } else if (!result.skipped) {
+        this.indexDelivered(subject, envelope);
+      }
+    } catch {
+      this.warnBookkeeping();
+    }
+  }
+
+  private async finishDetachedRejection(
+    subject: string,
+    envelope: RelayEnvelope,
+    counted: boolean,
+    observation: ReceiptObservation | undefined,
+    error: unknown
+  ): Promise<void> {
+    observation?.settle(envelope.id, { state: 'outcome_unknown' });
+    try {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.deadLetterDetached(subject, envelope, message, counted);
+    } catch {
+      this.warnBookkeeping();
+    }
+  }
+
+  private warnBookkeeping(): void {
+    try {
+      this.logger.warn('RelayCore: detached delivery bookkeeping failed.');
+    } catch {
+      /* A diagnostic cannot create another failed delivery. */
+    }
   }
 
   /**

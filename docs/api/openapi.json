@@ -8530,6 +8530,94 @@
           "state"
         ]
       },
+      "RelayDeliveryReceipt": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "$ref": "#/components/schemas/RelayMessageId"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "agent_delivery"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "delivered",
+              "failed",
+              "outcome_unknown"
+            ]
+          },
+          "acceptedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "settledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "failure": {
+            "$ref": "#/components/schemas/RelayDeliveryFailure"
+          }
+        },
+        "required": [
+          "messageId",
+          "scope",
+          "state",
+          "acceptedAt",
+          "updatedAt",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "RelayMessageId": {
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "RelayDeliveryFailure": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/RelayDeliveryFailureCode"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "RelayDeliveryFailureCode": {
+        "type": "string",
+        "enum": [
+          "at_capacity",
+          "chat_unavailable",
+          "rate_limited",
+          "budget_exceeded",
+          "initiate_denied",
+          "untrusted_bridge_principal",
+          "turn_ceiling",
+          "adapter_unavailable",
+          "not_dispatched",
+          "adapter_failed",
+          "observation_lost"
+        ]
+      },
       "RelaySendMessageRequest": {
         "type": "object",
         "properties": {
@@ -22227,7 +22315,7 @@
         },
         "responses": {
           "200": {
-            "description": "Message sent",
+            "description": "Publication result. Agent-target scheduling counts do not confirm delivery or turn success; receipt/statusUrl observe target delivery.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22238,6 +22326,82 @@
                     },
                     "deliveredTo": {
                       "type": "number"
+                    },
+                    "rejected": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "endpointHash": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "backpressure",
+                              "circuit_open",
+                              "rate_limited",
+                              "budget_exceeded",
+                              "initiate_denied",
+                              "untrusted_bridge_principal",
+                              "turn_ceiling"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "endpointHash",
+                          "reason"
+                        ]
+                      }
+                    },
+                    "mailboxPressure": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    },
+                    "adapterResult": {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean"
+                        },
+                        "durationMs": {
+                          "type": "number"
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "at_capacity",
+                            "chat_unavailable",
+                            "rate_limited"
+                          ]
+                        },
+                        "skipped": {
+                          "type": "boolean"
+                        },
+                        "retryAfterMs": {
+                          "type": "number"
+                        },
+                        "deadLettered": {
+                          "type": "boolean"
+                        },
+                        "responseMessageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "success"
+                      ]
+                    },
+                    "receipt": {
+                      "$ref": "#/components/schemas/RelayDeliveryReceipt"
+                    },
+                    "statusUrl": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -22254,6 +22418,93 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login requires a verified session or per-user API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Reserved sender, destination or reply address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Publication refused before acceptance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Receipt storage/observer/caller transaction unavailable before acceptance, or response unavailable after durable acceptance. A retained locator does not permit replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "RELAY_RECEIPT_TRANSACTION_ACTIVE",
+                            "RELAY_RECEIPT_OBSERVER_BUSY",
+                            "RELAY_RECEIPT_STORAGE_UNAVAILABLE"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "RELAY_RECEIPT_RESPONSE_UNAVAILABLE"
+                          ]
+                        },
+                        "messageId": {
+                          "$ref": "#/components/schemas/RelayMessageId"
+                        },
+                        "statusUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "messageId",
+                        "statusUrl"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -22335,6 +22586,102 @@
                   },
                   "required": [
                     "messages"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/messages/{messageId}/status": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Read a delivery receipt",
+        "description": "Authoritative metadata for an HTTP agent-target publication, independent of the derived message index. Delivered confirms target delivery, not agent turn success. With login on, only the verified owner may read it; historical local-trust receipts belong to the verified install owner. With login off, local trust applies. Receipts expire seven days after acceptance. No replay or message content is provided.",
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/RelayMessageId"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minimized delivery receipt",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelayDeliveryReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_RELAY_MESSAGE_ID after authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_REQUIRED before ID validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RELAY_RECEIPT_NOT_FOUND: unknown, expired, untracked and other-owner locators have the same response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Receipt observer/storage/caller transaction unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RELAY_RECEIPT_TRANSACTION_ACTIVE",
+                        "RELAY_RECEIPT_OBSERVER_BUSY",
+                        "RELAY_RECEIPT_STORAGE_UNAVAILABLE"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
                   ]
                 }
               }

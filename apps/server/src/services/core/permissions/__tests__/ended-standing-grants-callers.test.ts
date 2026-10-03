@@ -30,7 +30,7 @@ const EXEMPT: Record<string, string> = {
   'apps/server/src/harness-boot.ts':
     'the in-process test server, over a fresh sandbox data directory every run',
   'packages/evals/src/suite/operate.ts': 'an eval sandbox, created empty for each run',
-  'packages/relay/src/relay-core.ts':
+  'packages/relay/src/lib/relay-database.ts':
     "relay's own legacy index.db, a separate file no standing permission was ever written to",
 };
 

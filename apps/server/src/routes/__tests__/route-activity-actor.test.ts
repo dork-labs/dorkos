@@ -46,7 +46,7 @@
  * a legal half must not launder an illegal one.
  *
  * The sites in {@link EXEMPT_SITES} are redacted from the source before rule 2
- * scans it, rather than their whole FILE being skipped. `relay.ts` names its
+ * scans it, rather than their whole FILE being skipped. `relay-delivery-receipts.ts` names its
  * actor from the message in two reasoned places; skipping the file for that reason
  * would also license a hoisted operator const anywhere else in it, which is the
  * hole rule 2 exists to close.
@@ -97,7 +97,7 @@ const EXEMPT_SITES: Record<string, Array<{ contains: string; reason: string }>> 
         'the same honesty rule.',
     },
   ],
-  'relay.ts': [
+  'relay-delivery-receipts.ts': [
     {
       contains: "'relay.message_delivered'",
       reason:

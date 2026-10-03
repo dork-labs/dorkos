@@ -7,6 +7,8 @@
  *
  * @module relay/relay-publish
  */
+import type { DeliveryReceiptStore } from './delivery-receipt-store.js';
+import { ReceiptObservation } from './lib/receipt-observation.js';
 import { monotonicFactory } from 'ulidx';
 import { validateSubject, matchesPattern } from './subject-matcher.js';
 import { mayReachServerDestination } from './lib/reserved-subjects.js';
@@ -58,6 +60,7 @@ export interface PublishResolvedOptions {
 
 /** Dependencies injected into the RelayPublishPipeline. */
 export interface PublishDeps {
+  receiptStore?: DeliveryReceiptStore;
   endpointRegistry: EndpointRegistry;
   subscriptionRegistry: SubscriptionRegistry;
   maildirStore: MaildirStore;
@@ -228,7 +231,7 @@ export class RelayPublishPipeline {
    *
    * Deliberately reuses {@link rejectAtGate}'s three channels rather than
    * inventing a fourth: the warning log, a dead letter under the target subject
-   * (which is what fires the host's `onDeadLetter` — the cockpit's Pulse badge
+   * (which is what fires the host's `onDeadLetter` — the app's Pulse badge
    * and the dead-letters inbox), and the reply-failure notifier that settles a
    * caller blocked in `relay_send_and_wait` or the A2A executor instead of
    * leaving it to time out saying "timed out" when the truth was a ceiling.
@@ -243,28 +246,40 @@ export class RelayPublishPipeline {
   private async refuseAgentTurn(
     envelope: RelayEnvelope,
     subject: string,
-    reason: string
+    reason: string,
+    observation: ReceiptObservation
   ): Promise<void> {
+    observation.assertOutsideTransaction();
     this.deps.logger?.warn?.(
       `publish refused at turn ceiling: subject=${subject}, from=${envelope.from}, reason=${reason}`
     );
 
     try {
       await this.deps.maildirStore.ensureMaildir(subject);
-      await this.deps.deadLetterQueue.reject(subject, envelope, reason);
+      observation.assertOutsideTransaction();
+      await this.deps.deadLetterQueue.reject(
+        subject,
+        envelope,
+        reason,
+        observation.enabled ? () => observation.assertOutsideTransaction() : undefined
+      );
     } catch (err) {
+      observation.assertOutsideTransaction();
       const message = err instanceof Error ? err.message : String(err);
       this.deps.logger?.warn?.(`failed to dead-letter a ceiling refusal: ${message}`);
     }
 
+    observation.assertOutsideTransaction();
     if (envelope.replyTo && this.replyFailureNotifier) {
       try {
         await this.replyFailureNotifier(envelope.replyTo, reason, envelope);
       } catch (err) {
+        observation.assertOutsideTransaction();
         const message = err instanceof Error ? err.message : String(err);
         this.deps.logger?.warn?.(`failed to notify reply inbox of a ceiling refusal: ${message}`);
       }
     }
+    observation.assertOutsideTransaction();
   }
 
   /** Update the rate limit config (called on hot-reload). */
@@ -433,6 +448,13 @@ export class RelayPublishPipeline {
     payload: unknown,
     options: PublishOptions
   ): Promise<PublishResult> {
+    const observation = new ReceiptObservation(
+      subject,
+      options.receiptContext,
+      this.deps.receiptStore,
+      this.deps.logger
+    );
+    observation.assertOutsideTransaction();
     // 1. Validate subject
     const validation = validateSubject(subject);
     if (!validation.valid) {
@@ -465,9 +487,29 @@ export class RelayPublishPipeline {
     // can be traced like every other non-delivery. It used to return an empty
     // messageId and record nothing at all, which is how a whole class of
     // refusal stayed invisible to every surface that reads traces.
+    observation.prepare();
     const messageId = generateUlid();
-    const createdAt = new Date().toISOString();
+    observation.create(messageId, subject);
+    try {
+      observation.captureLocator(messageId);
+      return observation.withReceipt(
+        await this.publishAccepted(subject, payload, options, messageId, observation)
+      );
+    } catch (error) {
+      observation.settle(messageId, { state: 'outcome_unknown' });
+      throw error;
+    }
+  }
 
+  private async publishAccepted(
+    subject: string,
+    payload: unknown,
+    options: PublishOptions,
+    messageId: string,
+    observation: ReceiptObservation
+  ): Promise<PublishResult> {
+    observation.assertOutsideTransaction();
+    const createdAt = new Date().toISOString();
     // 3. Rate limit check (per-sender, before fan-out)
     if (this.rateLimitConfig.enabled) {
       const windowStartIso = new Date(
@@ -481,6 +523,7 @@ export class RelayPublishPipeline {
           `messages from ${options.from} in ${this.rateLimitConfig.windowSecs}s`;
         this.deps.logger?.warn?.(`publish rate-limited: ${reason}, subject=${subject}`);
         const rejected: PublishResult['rejected'] = [{ endpointHash: '*', reason: 'rate_limited' }];
+        observation.settle(messageId, { state: 'failed', code: 'rate_limited' });
         this.recordTrace({
           messageId,
           subject,
@@ -520,6 +563,7 @@ export class RelayPublishPipeline {
 
     // Index for rate-limit counting (before fan-out so every published
     // message is tracked regardless of delivery path)
+    observation.assertOutsideTransaction();
     this.deps.sqliteIndex.insertMessage({
       id: messageId,
       subject,
@@ -531,7 +575,7 @@ export class RelayPublishPipeline {
     });
 
     // 5-11. Budget gate, deliver, dead-letter, and trace
-    return this.deliverAndFinalize(envelope, subject, options, messageId);
+    return this.deliverAndFinalize(envelope, subject, options, messageId, observation);
   }
 
   /**
@@ -544,7 +588,8 @@ export class RelayPublishPipeline {
     envelope: RelayEnvelope,
     subject: string,
     options: PublishOptions,
-    messageId: string
+    messageId: string,
+    observation: ReceiptObservation
   ): Promise<PublishResult> {
     // 4a. Server-only bridge-principal guard (DOR-889). A `relay.bridge.*`
     //     `from` is emitted only by trusted server code, which asserts that
@@ -566,6 +611,7 @@ export class RelayPublishPipeline {
         envelope,
         subject,
         messageId,
+        observation,
         'untrusted_bridge_principal',
         `untrusted bridge principal: "${envelope.from}" was published without the ` +
           `server trust marker, so it is treated as a caller-supplied principal and rejected`
@@ -585,6 +631,7 @@ export class RelayPublishPipeline {
         envelope,
         subject,
         messageId,
+        observation,
         'initiate_denied',
         consent.reason ?? consent.code ?? 'agent is not allowed to start conversations here'
       );
@@ -604,6 +651,7 @@ export class RelayPublishPipeline {
         envelope,
         subject,
         messageId,
+        observation,
         'budget_exceeded',
         gate.reason ?? 'budget enforcement failed',
         gate.code
@@ -618,7 +666,13 @@ export class RelayPublishPipeline {
     const mailboxPressure: Record<string, number> = {};
 
     for (const endpoint of matchingEndpoints) {
-      const result = await this.deps.deliveryPipeline.deliverToEndpoint(endpoint, envelope);
+      observation.assertOutsideTransaction();
+      const result = await this.deps.deliveryPipeline.deliverToEndpoint(
+        endpoint,
+        envelope,
+        observation.enabled ? () => observation.assertOutsideTransaction() : undefined
+      );
+      observation.assertOutsideTransaction();
       if (result.delivered) {
         deliveredTo++;
         // A delivery counts as activity — an inbox still receiving replies must
@@ -647,6 +701,7 @@ export class RelayPublishPipeline {
     //     indistinguishable from an agent that ignored you.
     let adapterResult: DeliveryResult | null = null;
     let ceilingRefusal: string | undefined;
+    observation.assertOutsideTransaction();
     if (this.deps.adapterRegistry) {
       const ceiling = this.willDispatchAgentTurn(subject)
         ? this.turnCeiling.tryReserve(subject)
@@ -654,7 +709,8 @@ export class RelayPublishPipeline {
       if (ceiling && !ceiling.allowed) {
         ceilingRefusal = ceilingRefusalReason(ceiling.scope!, subject);
         rejected.push({ endpointHash: subject, reason: 'turn_ceiling' });
-        await this.refuseAgentTurn(envelope, subject, ceilingRefusal);
+        observation.settle(messageId, { state: 'failed', code: 'turn_ceiling' });
+        await this.refuseAgentTurn(envelope, subject, ceilingRefusal, observation);
       } else {
         const adapterEnvelope: RelayEnvelope = { ...envelope, budget: gate.updatedBudget! };
         adapterResult = await this.deps.adapterDelivery.deliver(
@@ -666,8 +722,9 @@ export class RelayPublishPipeline {
           // adapter that answers `startsAgentTurns: false` on an agent-shaped
           // subject is uncounted here, and a refund that assumed otherwise would
           // pop somebody else's live reservation.
-          { counted: ceiling?.counted === true }
+          { counted: ceiling?.counted === true, observation }
         );
+        observation.assertOutsideTransaction();
         // The reservation is given back when the dispatch it paid for did not
         // happen: no adapter matched after all, the adapter refused, or it
         // deliberately sent nothing. This is the AWAITED half — a detached
@@ -690,6 +747,14 @@ export class RelayPublishPipeline {
       if (adapterResult?.success && !adapterResult.skipped) deliveredTo++;
     }
 
+    if (!ceilingRefusal) {
+      // A detached success here is only scheduling; AdapterDelivery observes the real outcome.
+      if (!adapterResult || adapterResult.skipped || !adapterResult.success) {
+        observation.observeAdapter(messageId, adapterResult);
+      }
+    }
+    observation.assertOutsideTransaction();
+
     // 8. Dispatch to subscription handlers when no Maildir endpoints exist.
     //    `matched` is how many handlers were invoked; `handled` is how many
     //    took the message. Only the second is a delivery — but the first is
@@ -699,12 +764,13 @@ export class RelayPublishPipeline {
     let matchedSubscribers = 0;
     let refusal: string | undefined;
     if (matchingEndpoints.length === 0) {
-      const dispatch = await this.dispatchToSubscribers(envelope, subject);
+      const dispatch = await this.dispatchToSubscribers(envelope, subject, observation);
       matchedSubscribers = dispatch.matched;
       refusal = dispatch.refusal;
       deliveredTo += dispatch.handled;
     }
 
+    observation.assertOutsideTransaction();
     // 9. Buffer for late subscribers when no handlers matched.
     //    NOT when the ceiling refused: the buffer exists so a subscriber that
     //    arrives a moment late still sees the message, and replaying a turn the
@@ -723,7 +789,8 @@ export class RelayPublishPipeline {
       !adapterResult?.skipped &&
       !ceilingRefusal
     ) {
-      await this.deadLetter(subject, envelope, adapterResult);
+      await this.deadLetter(subject, envelope, adapterResult, observation);
+      observation.assertOutsideTransaction();
     }
 
     // 11. Record trace span
@@ -810,12 +877,14 @@ export class RelayPublishPipeline {
    */
   private async dispatchToSubscribers(
     envelope: RelayEnvelope,
-    subject: string
+    subject: string,
+    observation: ReceiptObservation
   ): Promise<{ matched: number; handled: number; refusal?: string }> {
     let handled = 0;
     let refusal: string | undefined;
     const subscribers = this.deps.subscriptionRegistry.getSubscribers(subject);
     for (const handler of subscribers) {
+      observation.assertOutsideTransaction();
       try {
         const verdict = await handler(envelope);
         // A handler that says it did nothing is not a delivery. The first
@@ -852,17 +921,33 @@ export class RelayPublishPipeline {
     envelope: RelayEnvelope,
     subject: string,
     messageId: string,
+    observation: ReceiptObservation,
     rejectionCode: NonNullable<PublishResult['rejected']>[number]['reason'],
     reason: string,
     budgetCode?: BudgetRejectionCode
   ): Promise<PublishResult> {
+    const code =
+      rejectionCode === 'untrusted_bridge_principal'
+        ? 'untrusted_bridge_principal'
+        : rejectionCode === 'initiate_denied'
+          ? 'initiate_denied'
+          : 'budget_exceeded';
+    observation.settle(messageId, { state: 'failed', code });
+    observation.assertOutsideTransaction();
     this.deps.logger?.warn?.(
       `publish rejected at ${rejectionCode} gate: subject=${subject}, ` +
         `from=${envelope.from}, reason=${reason}`
     );
 
     await this.deps.maildirStore.ensureMaildir(subject);
-    await this.deps.deadLetterQueue.reject(subject, envelope, reason);
+    observation.assertOutsideTransaction();
+    await this.deps.deadLetterQueue.reject(
+      subject,
+      envelope,
+      reason,
+      observation.enabled ? () => observation.assertOutsideTransaction() : undefined
+    );
+    observation.assertOutsideTransaction();
 
     // Settle a waiting caller (relay_send_and_wait, the A2A executor) now
     // instead of leaving it to block until its own timeout.
@@ -870,11 +955,13 @@ export class RelayPublishPipeline {
       try {
         await this.replyFailureNotifier(envelope.replyTo, reason, envelope);
       } catch (err) {
+        observation.assertOutsideTransaction();
         const message = err instanceof Error ? err.message : String(err);
         this.deps.logger?.warn?.(`failed to notify reply inbox of gate rejection: ${message}`);
       }
     }
 
+    observation.assertOutsideTransaction();
     const rejected: PublishResult['rejected'] = [{ endpointHash: subject, reason: rejectionCode }];
     this.recordTrace({
       messageId,
@@ -897,14 +984,22 @@ export class RelayPublishPipeline {
   private async deadLetter(
     subject: string,
     envelope: RelayEnvelope,
-    adapterResult: DeliveryResult | null
+    adapterResult: DeliveryResult | null,
+    observation: ReceiptObservation
   ): Promise<void> {
+    observation.assertOutsideTransaction();
     await this.deps.maildirStore.ensureMaildir(subject);
+    observation.assertOutsideTransaction();
 
     const reason = adapterResult?.error
       ? `adapter delivery failed: ${adapterResult.error}`
       : 'no matching endpoints or adapters';
-    await this.deps.deadLetterQueue.reject(subject, envelope, reason);
+    await this.deps.deadLetterQueue.reject(
+      subject,
+      envelope,
+      reason,
+      observation.enabled ? () => observation.assertOutsideTransaction() : undefined
+    );
   }
 
   /**

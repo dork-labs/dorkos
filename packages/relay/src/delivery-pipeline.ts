@@ -111,8 +111,10 @@ export class DeliveryPipeline {
    */
   async deliverToEndpoint(
     endpoint: EndpointInfo,
-    envelope: RelayEnvelope
+    envelope: RelayEnvelope,
+    beforeEffect?: () => void
   ): Promise<EndpointDeliveryResult> {
+    beforeEffect?.();
     // 1. Backpressure check
     const newCount = this.deps.sqliteIndex.countNewByEndpoint(endpoint.hash);
     const bpResult = checkBackpressure(newCount, this.backpressureConfig);
@@ -135,6 +137,7 @@ export class DeliveryPipeline {
       };
     }
 
+    beforeEffect?.();
     // 2. Circuit breaker check
     const cbResult = this.deps.circuitBreaker.check(endpoint.hash);
     if (!cbResult.allowed) {
@@ -148,10 +151,12 @@ export class DeliveryPipeline {
     // 3. Budget enforcement
     const budgetResult = enforceBudget(envelope, endpoint.subject);
     if (!budgetResult.allowed) {
+      beforeEffect?.();
       await this.deps.deadLetterQueue.reject(
         endpoint.hash,
         envelope,
-        budgetResult.reason ?? 'budget enforcement failed'
+        budgetResult.reason ?? 'budget enforcement failed',
+        beforeEffect
       );
       return {
         delivered: false,
@@ -167,13 +172,16 @@ export class DeliveryPipeline {
     };
 
     // 4. Deliver to Maildir
+    beforeEffect?.();
     const deliverResult = await this.deps.maildirStore.deliver(endpoint.hash, deliveryEnvelope);
+    beforeEffect?.();
     if (!deliverResult.ok) {
       this.deps.circuitBreaker.recordFailure(endpoint.hash);
       await this.deps.deadLetterQueue.reject(
         endpoint.hash,
         envelope,
-        `delivery failed: ${deliverResult.error}`
+        `delivery failed: ${deliverResult.error}`,
+        beforeEffect
       );
       return { delivered: false, pressure: bpResult.pressure };
     }
@@ -182,6 +190,7 @@ export class DeliveryPipeline {
     this.deps.circuitBreaker.recordSuccess(endpoint.hash);
 
     // Index in SQLite
+    beforeEffect?.();
     this.deps.sqliteIndex.insertMessage({
       id: deliverResult.messageId,
       subject: deliveryEnvelope.subject,
@@ -194,7 +203,7 @@ export class DeliveryPipeline {
     });
 
     // Synchronous fast-path: dispatch to matching subscription handlers
-    await this.dispatchToSubscribers(endpoint, deliverResult.messageId);
+    await this.dispatchToSubscribers(endpoint, deliverResult.messageId, beforeEffect);
 
     return { delivered: true, pressure: bpResult.pressure };
   }
@@ -209,12 +218,18 @@ export class DeliveryPipeline {
    * @param endpoint - The endpoint that received the message
    * @param messageId - The Maildir-assigned message ID (ULID filename)
    */
-  async dispatchToSubscribers(endpoint: EndpointInfo, messageId: string): Promise<void> {
+  async dispatchToSubscribers(
+    endpoint: EndpointInfo,
+    messageId: string,
+    beforeEffect?: () => void
+  ): Promise<void> {
+    beforeEffect?.();
     const handlers = this.deps.subscriptionRegistry.getSubscribers(endpoint.subject);
     if (handlers.length === 0) return;
 
     // Claim the message (move from new/ to cur/)
     const claimResult = await this.deps.maildirStore.claim(endpoint.hash, messageId);
+    beforeEffect?.();
     if (!claimResult.ok) return;
 
     // Mark as dispatched before invoking handlers so WatcherManager can skip
@@ -226,20 +241,50 @@ export class DeliveryPipeline {
     }, DISPATCH_DEDUP_TTL_MS);
     this.dedupTimers.add(timer);
 
-    try {
-      await Promise.all(handlers.map((handler) => handler(claimResult.envelope)));
+    if (!beforeEffect) {
+      // Preserve watcher/recovery and ordinary untracked delivery behavior.
+      try {
+        await Promise.all(handlers.map((handler) => handler(claimResult.envelope)));
+        await this.deps.maildirStore.complete(endpoint.hash, messageId);
+        this.deps.sqliteIndex.updateStatus(messageId, endpoint.hash, 'delivered');
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const result = await this.deps.maildirStore.fail(endpoint.hash, messageId, reason);
+        if (result.ok) {
+          this.deps.sqliteIndex.updateStatus(messageId, endpoint.hash, 'failed');
+          this.deps.circuitBreaker.recordFailure(endpoint.hash);
+        }
+      }
+      return;
+    }
 
-      // All handlers succeeded — complete the message
+    // Only handler errors are captured. Effect-fence errors reject the publish,
+    // never entering the failed-message path or consuming caller transactions.
+    const outcomes = await Promise.all(
+      handlers.map(async (handler) => {
+        beforeEffect();
+        try {
+          await handler(claimResult.envelope);
+          return undefined;
+        } catch (error) {
+          return { error };
+        }
+      })
+    );
+    beforeEffect();
+    const handlerFailure = outcomes.find((outcome) => outcome !== undefined);
+
+    beforeEffect?.();
+    if (!handlerFailure) {
       await this.deps.maildirStore.complete(endpoint.hash, messageId);
+      beforeEffect?.();
       this.deps.sqliteIndex.updateStatus(messageId, endpoint.hash, 'delivered');
-    } catch (err) {
-      // Handler failed — move to failed/ and record for circuit breaker.
-      // When the cur/ file is already gone (fail() returns ok:false), a
-      // concurrent invocation (e.g. a crash-recovery re-drive race) already
-      // settled this message — do NOT flip a delivered message to failed or
-      // ding the breaker for a phantom failure.
-      const reason = err instanceof Error ? err.message : String(err);
+    } else {
+      // If cur/ was already settled concurrently, do not fabricate a failure.
+      const error = handlerFailure.error;
+      const reason = error instanceof Error ? error.message : String(error);
       const failResult = await this.deps.maildirStore.fail(endpoint.hash, messageId, reason);
+      beforeEffect?.();
       if (failResult.ok) {
         this.deps.sqliteIndex.updateStatus(messageId, endpoint.hash, 'failed');
         this.deps.circuitBreaker.recordFailure(endpoint.hash);

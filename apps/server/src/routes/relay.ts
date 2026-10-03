@@ -25,13 +25,13 @@ import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
-import type { ActivityService } from '../services/activity/activity-service.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
 import { isServerOnlyPrincipal } from '../services/relay/initiate-consent.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readHomeManifest } from '../services/core/agent-identity/index.js';
 import { createAdapterRouter } from './relay-adapters.js';
 import { logger } from '../lib/logger.js';
+import { createReceiptStatusHandler, publishRelayMessage } from './relay-delivery-receipts.js';
 
 /** Allowed subject prefixes for SSE subscription patterns. */
 const ALLOWED_PREFIXES = ['relay.human.console.', 'relay.system.', 'relay.signal.'];
@@ -229,72 +229,10 @@ export function createRelayRouter(
       });
     }
 
-    try {
-      const publishResult = await relayCore.publish(result.data.subject, result.data.payload, {
-        from: result.data.from,
-        replyTo: result.data.replyTo,
-        budget: result.data.budget,
-      });
-
-      // Emit message delivery/failure activity events when an adapter was involved
-      if (publishResult.adapterResult && adapterManager) {
-        const activityService = req.app.locals.activityService as ActivityService | undefined;
-        if (activityService) {
-          const from = result.data.from;
-          const isAgent = from?.startsWith('relay.agent.');
-          const actorType = isAgent ? ('agent' as const) : ('system' as const);
-          // Extract the sessionId/agentId slot via the shared parser so both
-          // legacy and runtime-scoped `from` subjects produce a stable label.
-          const actorLabel = isAgent ? (extractSessionIdFromSubject(from) ?? 'Agent') : 'System';
-
-          // Resolve adapter from the subject
-          const matchedAdapter = adapterManager.getRegistry().getBySubject(result.data.subject);
-          const adapterId = matchedAdapter?.id ?? 'unknown';
-          const adapterName = adapterManager.resolveAdapterName(adapterId);
-
-          if (publishResult.adapterResult.success) {
-            // Agent deliveries are detached: success here means the message
-            // was accepted for a turn, not that the turn completed.
-            const isAgentSubject = result.data.subject.startsWith('relay.agent.');
-            await activityService.emit({
-              actorType,
-              actorLabel,
-              category: 'relay',
-              eventType: 'relay.message_delivered',
-              resourceType: 'adapter',
-              resourceId: adapterId,
-              resourceLabel: adapterName,
-              summary: isAgentSubject
-                ? `Accepted message for ${adapterName}`
-                : `Delivered message via ${adapterName}`,
-              linkPath: '/',
-            });
-          } else {
-            await activityService.emit({
-              actorType,
-              actorLabel,
-              category: 'relay',
-              eventType: 'relay.message_failed',
-              resourceType: 'adapter',
-              resourceId: adapterId,
-              resourceLabel: adapterName,
-              summary: `Failed to deliver via ${adapterName}: ${publishResult.adapterResult.error ?? 'unknown error'}`,
-              linkPath: '/',
-              metadata: { error: publishResult.adapterResult.error ?? 'unknown error' },
-            });
-          }
-        }
-      }
-
-      return res.json(publishResult);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Publish failed';
-      return res.status(422).json({
-        error: message,
-        code: (err as Error & { code?: string })?.code ?? 'PUBLISH_FAILED',
-      });
-    }
+    return publishRelayMessage(req, res, relayCore, adapterManager, result.data);
   });
+
+  router.get('/messages/:messageId/status', createReceiptStatusHandler(relayCore));
 
   // GET /messages — List with filters and cursor pagination
   router.get('/messages', (_req, res) => {

@@ -2,6 +2,25 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261001-201108",
+      "slug": "relay-delivery-receipts-own-authoritative-metadata",
+      "title": "Relay delivery receipts own authoritative metadata separate from the message index",
+      "status": "accepted",
+      "created": "2026-10-01",
+      "extractedFrom": "relay-delivery-receipts",
+      "specSlug": "relay-delivery-receipts",
+      "amends": "0013",
+      "supersedes": null,
+      "affects": [
+        "packages/db/src/schema/relay-delivery-receipts.ts",
+        "packages/relay/src/delivery-receipt-store.ts",
+        "packages/relay/src/relay-core.ts",
+        "packages/relay/src/relay-publish.ts",
+        "packages/relay/src/adapter-delivery.ts",
+        "apps/server/src/routes/relay.ts"
+      ]
+    },
+    {
       "id": "261001-185204",
       "slug": "granted-document-events-use-a-durable-outbox",
       "title": "Granted document events use a durable outbox and remain untrusted",

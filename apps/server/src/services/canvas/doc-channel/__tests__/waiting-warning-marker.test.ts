@@ -172,7 +172,11 @@ it('upgrades populated accounting-era batches without changing their existing da
   ) as {
     entries: { tag: string }[];
   };
-  journal.entries.pop();
+  const warningIndex = journal.entries.findIndex(
+    (entry) => entry.tag === '20261002045158_doc_batch_waiting_warning'
+  );
+  expect(warningIndex).toBeGreaterThan(0);
+  journal.entries = journal.entries.slice(0, warningIndex);
   expect(journal.entries.at(-1)?.tag).toBe('0138_canvas_channel_accounting');
   for (const entry of journal.entries)
     copyFileSync(

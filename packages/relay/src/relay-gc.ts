@@ -8,7 +8,7 @@
  * sweep, `countNewByEndpoint` grows monotonically until a persistent inbox
  * bricks at `maxMailboxSize` and rejects every further delivery (H4).
  *
- * This module runs one periodic sweep with five phases, ordered so each frees
+ * This module runs one periodic sweep with six phases, ordered so each frees
  * work for the next:
  *
  * 1. **Expiry** — delete expired, non-dead-letter index rows AND their Maildir
@@ -30,6 +30,8 @@
  *    registry is in-memory, so after a restart every directory is briefly
  *    "unowned" and a persistent inbox holding unread mail must survive until
  *    its owner re-registers.
+ * 6. **Receipt retention** — delete one bounded batch of expired authoritative
+ *    delivery observations, independently of payload and derived-index phases.
  *
  * @module relay/relay-gc
  */
@@ -134,6 +136,8 @@ export interface RelayGcDeps {
    */
   traceStore?: TraceStoreLike;
   logger?: RelayLogger;
+  /** Internal ready-only pruning; never initializes an unused receipt observer. */
+  pruneDeliveryReceipts?: () => number;
 }
 
 /** Per-phase counts from a single {@link RelayGc.sweep}. */
@@ -148,6 +152,8 @@ export interface RelayGcResult {
   tracesPruned: number;
   /** Orphan mailbox directories removed. */
   orphansReaped: number;
+  /** Expired authoritative delivery observations removed (at most 500). */
+  receiptsPruned: number;
 }
 
 // === Helpers ===
@@ -203,6 +209,7 @@ export class RelayGc {
       inFlightRecovered: 0,
       tracesPruned: 0,
       orphansReaped: 0,
+      receiptsPruned: 0,
     };
 
     result.expiredRemoved = await this.guard('expiry', () => this.collectExpired(now));
@@ -216,6 +223,11 @@ export class RelayGc {
     if (!options?.skipOrphanReap) {
       result.orphansReaped = await this.guard('orphan reap', () => this.reapOrphanMaildirs(now));
     }
+
+    result.receiptsPruned = await this.guard(
+      'receipt retention',
+      async () => this.deps.pruneDeliveryReceipts?.() ?? 0
+    );
 
     return result;
   }

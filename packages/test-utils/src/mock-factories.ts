@@ -1038,6 +1038,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Relay
     listRelayMessages: vi.fn().mockResolvedValue({ messages: [] }),
     getRelayMessage: vi.fn(),
+    getRelayDeliveryReceipt: vi.fn(),
     sendRelayMessage: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 0 }),
     listRelayEndpoints: vi.fn().mockResolvedValue([]),
     registerRelayEndpoint: vi.fn(),
