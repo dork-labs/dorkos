@@ -17,8 +17,12 @@ export interface FakeLaunchBehavior {
   flyOrgs?: 'refuse';
   /** `neonctl orgs list`: exits 1 with Neon's answer to a project-scoped key. */
   neonOrgs?: 'refuse';
-  /** `neonctl projects create`: exits 1 with Neon's answer to a project-scoped key. */
-  neonCreate?: 'refuse';
+  /**
+   * `neonctl projects create`: `refuse` exits 1 with Neon's answer to a project-scoped key;
+   * `lost-once` makes nothing and prints cut-off JSON the first time, as when a run is stopped
+   * after it saved the create intent, then answers normally.
+   */
+  neonCreate?: 'refuse' | 'lost-once';
 }
 
 /** The exact refusal flyctl v0.4.110 printed for `fly apps create` in DOR-2170 L3. */
@@ -115,7 +119,7 @@ else if (name === 'neonctl' && args[0] === '--version') { process.stdout.write('
 else if (name === 'neonctl' && args[0] === 'orgs') { if (behavior.neonOrgs === 'refuse') fail(${JSON.stringify(NEON_SCOPE_OUTPUT)}); value = [{id:'org-dorian',name:'Dorian'}]; }
 else if (name === 'neonctl' && args[0] === 'api' && args[1] === '/regions') value = {regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:'40.4',geo_long:'-82.9'}]};
 else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'list') value = state.neonProject ? [state.neonProject] : [];
-else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'create') { if (behavior.neonCreate === 'refuse') fail(${JSON.stringify(NEON_CREATE_OUTPUT)}); state.neonRole = at('--role'); state.neonProject = {id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version')),created_at:new Date().toISOString()}; save(); value = {project: state.neonProject}; }
+else if (name === 'neonctl' && args[0] === 'projects' && args[1] === 'create') { if (behavior.neonCreate === 'refuse') fail(${JSON.stringify(NEON_CREATE_OUTPUT)}); if (behavior.neonCreate === 'lost-once' && !state.neonCreateLost) { state.neonCreateLost = true; save(); process.stdout.write('{"project":{"id":'); process.exit(0); } state.neonRole = at('--role'); state.neonProject = {id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version')),created_at:new Date().toISOString()}; save(); value = {project: state.neonProject}; }
 else if (name === 'neonctl' && args[0] === 'branches') value = [{id:'branch-1',project_id:'neon-project-1',name:'main',default:true}];
 else if (name === 'neonctl' && args[0] === 'databases') value = [{id:4821907,branch_id:'branch-1',name:'community',owner_name:state.neonRole,created_at:'2026-09-21T00:00:00Z',updated_at:'2026-09-21T00:00:00Z'}];
 else if (name === 'neonctl' && args[0] === 'roles') value = [{branch_id:'branch-1',name:state.neonRole}];

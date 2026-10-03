@@ -8,7 +8,8 @@
  */
 import { ExternalLabelSchema } from '../provider-contract.js';
 import { tigrisAccessKeySteps } from './tigris-access-key.js';
-import type { LaunchJournal } from '../journal.js';
+import { journalRecordsNoResource, type LaunchJournal } from '../journal.js';
+import { runResources, type RunResource } from './forget-launch.js';
 import type {
   CandidateSummary,
   ProvedResource,
@@ -24,6 +25,8 @@ export interface RemovalOutputContext {
   journal: LaunchJournal;
   /** The exact `--resume` command, or `null` for a journal without saved choices. */
   resumeCommand: string | null;
+  /** The same choices as a fresh launch, or `null` for a journal without saved choices. */
+  startCommand?: string | null;
   /** The existing recovery report for the journal. */
   recovery: string;
 }
@@ -47,7 +50,7 @@ const OWNER: Record<RemovalProvider, string> = {
 };
 
 /** Show a read value only when it is a plain printable label. */
-function shown(value: string | undefined | null): string {
+export function shown(value: string | undefined | null): string {
   return value !== undefined && value !== null && ExternalLabelSchema.safeParse(value).success
     ? value
     : '(unreadable)';
@@ -202,7 +205,7 @@ function manualSteps(provider: RemovalProvider, journal: LaunchJournal): string[
  * When an absent run can be cleared, in plain words: "in about 12 minutes (after 10:44 UTC)".
  * The clock time is rounded up to the next whole minute, so "after" is never early.
  */
-function whenClearable(clearableAfter: string, clearableInMs: number | undefined): string {
+export function whenClearable(clearableAfter: string, clearableInMs: number | undefined): string {
   const at = Date.parse(clearableAfter);
   const minute = new Date(Math.ceil(at / 60_000) * 60_000).toISOString().slice(11, 16);
   if (clearableInMs === undefined) return `after ${minute} UTC`;
@@ -212,6 +215,46 @@ function whenClearable(clearableAfter: string, clearableInMs: number | undefined
 
 function removeCommand(runId: string, token?: string): string {
   return `dorkos community deploy --remove-uncertain ${runId}${token ? ` --confirm ${shown(token)}` : ''}`;
+}
+
+/**
+ * Every resource a run made, where it lives and how to remove it, for a run DorkOS cannot finish.
+ *
+ * @param resources - The resources to list; nothing is printed for none.
+ * @param runId - The run, for the `--forget` command that retires it once they are gone.
+ */
+export function formatRunResources(resources: readonly RunResource[], runId: string): string[] {
+  if (resources.length === 0) return [];
+  const lines = ['This run made these. They may incur charges until you remove them:'];
+  for (const resource of resources) {
+    const name = shown(resource.name);
+    const id = shown(resource.id);
+    const where = resource.organization
+      ? `, in ${OWNER[resource.provider]} ${shown(resource.organization)}`
+      : '';
+    if (resource.provider === 'neon') {
+      lines.push(
+        `  ${SERVICE.neon} ${name} (project id ${id})${where}`,
+        `    Remove: neonctl projects delete ${id}`
+      );
+    } else {
+      lines.push(
+        `  ${SERVICE[resource.provider]} ${name}${where}`,
+        resource.provider === 'fly'
+          ? `    Remove: fly apps destroy ${name}`
+          : `    Remove: fly storage destroy ${name}`
+      );
+    }
+  }
+  lines.push(
+    `Once they are gone, stop listing this run: dorkos community deploy --forget ${runId}`
+  );
+  return lines;
+}
+
+/** {@link formatRunResources} for every resource the run's journal recorded. */
+function madeByRun(context: RemovalOutputContext): string[] {
+  return formatRunResources(runResources(context.journal), context.runId);
 }
 
 function continueWith(context: RemovalOutputContext): string {
@@ -254,18 +297,41 @@ export function formatRemovalOutcome(
       return done([
         'This run stopped while checking secrets, not while creating something. There is nothing to remove.',
         context.recovery,
+        ...madeByRun(context),
       ]);
     case 'nothing-pending':
       return done(['This run has no unresolved resource.']);
-    case 'absent':
-      return done([
-        `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)}. The create probably never landed.`,
-        outcome.cleared
-          ? 'Nothing was changed there. This run made nothing else, so DorkOS removed its saved record and it no longer shows in --list-incomplete. Start a new launch instead.'
-          : outcome.clearableAfter
-            ? `Nothing was changed. The create was sent recently and could still appear, so DorkOS keeps this run for now. Run ${removeCommand(context.runId)} again ${whenClearable(outcome.clearableAfter, outcome.clearableInMs)} to check once more and clear it.`
-            : 'Nothing was changed. This run cannot be resumed; start a new launch instead.',
-      ]);
+    case 'absent': {
+      const absent = `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)}. The create never landed.`;
+      if (outcome.released) {
+        const kept = runResources(context.journal).map(
+          (resource) => `${SERVICE[resource.provider]} ${shown(resource.name)}`
+        );
+        return done([
+          absent,
+          kept.length > 0
+            ? `This run keeps what it already made (${kept.join(', ')}) and can continue from where it stopped.`
+            : 'This run can continue from where it stopped.',
+          continueWith(context),
+        ]);
+      }
+      if (outcome.cleared) {
+        return done([
+          absent,
+          'This run made nothing else, so DorkOS removed its saved record and it no longer shows in --list-incomplete.',
+          context.startCommand
+            ? `Start again with: ${context.startCommand}`
+            : 'Start a new launch instead.',
+        ]);
+      }
+      if (outcome.clearableAfter) {
+        return done([
+          `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)} yet. The create was sent recently and could still appear, so nothing was changed.`,
+          `Run ${removeCommand(context.runId)} again ${whenClearable(outcome.clearableAfter, outcome.clearableInMs)}. If it is still missing then, ${journalRecordsNoResource(context.journal) ? 'DorkOS clears this run.' : 'the run can continue from where it stopped.'}`,
+        ]);
+      }
+      return done([absent, 'Nothing was changed.', ...madeByRun(context)], 1);
+    }
     case 'unproved':
       return done([
         `DorkOS will not remove anything for this run: ${unprovedReasonText(outcome.reason, outcome.provider)}.`,
@@ -284,6 +350,7 @@ export function formatRemovalOutcome(
             ]
           : []),
         ...manualSteps(outcome.provider, context.journal),
+        ...madeByRun(context),
       ]);
     case 'unreachable':
       return done(
@@ -318,7 +385,11 @@ export function formatRemovalOutcome(
       );
     case 'too-many-removals':
       return done(
-        ['This run has already removed as many resources as it can. Start a new launch instead.'],
+        [
+          'This run has already removed as many resources as it can, so DorkOS will not remove more for it.',
+          ...manualSteps(context.journal.pendingIntent?.provider ?? 'fly', context.journal),
+          ...madeByRun(context),
+        ],
         1
       );
     case 'removed':

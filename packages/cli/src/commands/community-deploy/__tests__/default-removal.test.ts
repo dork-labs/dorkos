@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LaunchJournalSchema, type LaunchJournal } from '../journal.js';
-import { createDefaultRemovalProbes } from '../runtime/default-removal.js';
+import {
+  createDefaultLaunchResourceChecks,
+  createDefaultRemovalProbes,
+} from '../runtime/default-removal.js';
+import { FlyGraphqlClientError } from '../fly-graphql-client.js';
+import { FLY_APP_NOT_FOUND } from '../fly-graphql-contract.js';
 import type { RemovalTarget } from '../provenance/uncertain-removal.js';
 
 const mocks = vi.hoisted(() => ({
@@ -13,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   deleteNeonProject: vi.fn(),
   readFlySecretInventory: vi.fn(),
   readAppProvenance: vi.fn(),
+  readAppProvenanceOrNotFound: vi.fn(),
+  readTigris: vi.fn(),
+  isTigrisNameHeld: vi.fn(),
   readTigrisOnApp: vi.fn(),
   deleteTigris: vi.fn(),
   isAppNameAvailable: vi.fn(),
@@ -37,9 +45,16 @@ vi.mock('../tigris-session.js', () => ({
   })),
 }));
 vi.mock('../fly-graphql-client.js', () => ({
-  FlyGraphqlClientError: class extends Error {},
+  FlyGraphqlClientError: class extends Error {
+    constructor(readonly code: string) {
+      super(code);
+    }
+  },
   FlyTigrisGraphqlClient: class {
     readAppProvenance = mocks.readAppProvenance;
+    readAppProvenanceOrNotFound = mocks.readAppProvenanceOrNotFound;
+    readTigris = mocks.readTigris;
+    isTigrisNameHeld = mocks.isTigrisNameHeld;
     readTigrisOnApp = mocks.readTigrisOnApp;
     deleteTigris = mocks.deleteTigris;
     isAppNameAvailable = mocks.isAppNameAvailable;
@@ -118,7 +133,7 @@ beforeEach(() => {
 
 describe('Fly removal probe', () => {
   it('reads the app with its token taken from internalNumericId, never the name', async () => {
-    mocks.readAppProvenance.mockResolvedValue(provenance());
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(provenance());
     await expect(probes('fly').find(intent, journal)).resolves.toEqual({
       kind: 'fly',
       app: {
@@ -137,13 +152,23 @@ describe('Fly removal probe', () => {
   });
 
   it('reports a same-name app in another organization as absent', async () => {
-    mocks.readAppProvenance.mockResolvedValue(provenance({ organizationSlug: 'someone-else' }));
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(
+      provenance({ organizationSlug: 'someone-else' })
+    );
     await expect(probes('fly').find(intent, journal)).resolves.toEqual({ kind: 'absent' });
   });
 
-  // `app: null` is how Fly answers an unknown name, and also how a server error can look.
-  it('calls a missing app absent only when the organization listing agrees', async () => {
-    mocks.readAppProvenance.mockResolvedValue(null);
+  // `app: null` is how Fly answers an unknown name, and also how a server error can look. "Absent"
+  // can now let a run create the name again (DOR-2701), so it takes DOR-2656's exact NOT_FOUND
+  // plus a listing without the name; a bare null is a failed read.
+  it('calls a missing app absent only on exact NOT_FOUND when the organization listing agrees', async () => {
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(null);
+    await expect(probes('fly').find(intent, journal)).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    expect(mocks.readFlyApps).not.toHaveBeenCalled();
+
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(FLY_APP_NOT_FOUND);
     await expect(probes('fly').find(intent, journal)).resolves.toEqual({ kind: 'absent' });
     expect(mocks.readFlyApps).toHaveBeenCalledWith(options.fly, 'acme');
 
@@ -333,5 +358,56 @@ describe('Tigris removal probe', () => {
   it('deletes the add-on by the proved name', async () => {
     await probes('tigris').remove(target);
     expect(mocks.deleteTigris).toHaveBeenCalledWith('community-acme');
+  });
+});
+
+describe("checks that a run's resources are gone (--forget)", () => {
+  const checks = createDefaultLaunchResourceChecks(options);
+
+  it('calls a Fly app gone only on exact NOT_FOUND and a listing without it', async () => {
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(FLY_APP_NOT_FOUND);
+    await expect(checks.flyAppGone('community-acme', 'acme')).resolves.toBe(true);
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(provenance());
+    await expect(checks.flyAppGone('community-acme', 'acme')).resolves.toBe(false);
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(null);
+    await expect(checks.flyAppGone('community-acme', 'acme')).rejects.toThrow();
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(FLY_APP_NOT_FOUND);
+    mocks.readFlyApps.mockResolvedValue([{ id: 'community-acme', name: 'community-acme' }]);
+    await expect(checks.flyAppGone('community-acme', 'acme')).rejects.toThrow();
+  });
+
+  it('calls a Neon project gone only when the full listing lacks its id', async () => {
+    mocks.readNeonProjects.mockResolvedValue([{ id: 'project-2', name: 'community-acme' }]);
+    await expect(checks.neonProjectGone('project-1', 'org-acme')).resolves.toBe(true);
+    mocks.readNeonProjects.mockResolvedValue([{ id: 'project-1', name: 'community-acme' }]);
+    await expect(checks.neonProjectGone('project-1', 'org-acme')).resolves.toBe(false);
+    mocks.readNeonProjects.mockRejectedValue(new Error('EXIT'));
+    await expect(checks.neonProjectGone('project-1', 'org-acme')).rejects.toThrow();
+  });
+
+  it("calls a Tigris bucket gone only on Fly's missing-add-on answer", async () => {
+    mocks.readTigris.mockRejectedValue(new FlyGraphqlClientError('ADD_ON_MISSING'));
+    await expect(checks.tigrisBucketGone('addon-5')).resolves.toBe(true);
+    mocks.readTigris.mockResolvedValue({ addOnId: 'addon-5' });
+    await expect(checks.tigrisBucketGone('addon-5')).resolves.toBe(false);
+    mocks.readTigris.mockRejectedValue(new FlyGraphqlClientError('PROVIDER_UNAVAILABLE'));
+    await expect(checks.tigrisBucketGone('addon-5')).rejects.toThrow();
+  });
+
+  it("reads an unresolved create's name in its own organization", async () => {
+    mocks.readNeonProjects.mockResolvedValue([{ id: 'project-2', name: 'other' }]);
+    await expect(
+      checks.intendedCreateAbsent(
+        { ...intent, provider: 'neon', organizationId: 'org-acme' },
+        journal
+      )
+    ).resolves.toBe(true);
+    expect(mocks.readNeonProjects).toHaveBeenCalledWith(options.neon, 'org-acme');
+    mocks.isTigrisNameHeld.mockResolvedValue(true);
+    await expect(
+      checks.intendedCreateAbsent({ ...intent, provider: 'tigris' }, journal)
+    ).resolves.toBe(false);
+    mocks.readAppProvenanceOrNotFound.mockResolvedValue(FLY_APP_NOT_FOUND);
+    await expect(checks.intendedCreateAbsent(intent, journal)).resolves.toBe(true);
   });
 });

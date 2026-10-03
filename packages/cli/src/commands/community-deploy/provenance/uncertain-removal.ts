@@ -39,11 +39,31 @@ export * from './uncertain-verdict.js';
 export const DEFAULT_ABSENCE_DEADLINE_MS = 60_000;
 
 /**
- * How long past its create window an absent create must be before its run is cleared. A create
- * the launcher cut off at its deadline may still be under way at the service; until well after
- * that, its marker in the journal is the only way to prove the resource later.
+ * How long past its create window an absent create must be before its run, or its unresolved
+ * intent, is cleared. A create the launcher cut off at its deadline may still be under way at the
+ * service; until well after that, its marker in the journal is the only way to prove the resource
+ * later.
  */
 export const CLEAR_ABSENT_MARGIN_MS = 10 * 60_000;
+
+/**
+ * When a create that was not found counts as one that never landed: its create deadline plus
+ * {@link CLEAR_ABSENT_MARGIN_MS} after the run asked for it.
+ *
+ * @param intent - The unresolved creation intent.
+ * @param createDeadlineMs - Deadline the create ran under; defaults to the provider's.
+ * @returns Milliseconds since the epoch, or `null` for an intent with no readable request time.
+ */
+export function absentCreateSettledAt(
+  intent: PendingIntent,
+  createDeadlineMs?: number
+): number | null {
+  const requestedAt = Date.parse(intent.requestedAt ?? '');
+  if (!Number.isFinite(requestedAt)) return null;
+  return (
+    requestedAt + (createDeadlineMs ?? createDeadlineFor(intent.provider)) + CLEAR_ABSENT_MARGIN_MS
+  );
+}
 
 const FIRST_POLL_DELAY_MS = 1_000;
 const MAX_POLL_DELAY_MS = 10_000;
@@ -108,8 +128,13 @@ export type RemovalOutcome =
       /** The run made nothing else, so its journal was deleted and it is no longer listed. */
       cleared: boolean;
       /**
-       * Set when the run would be cleared but its create is too recent to rule out a late landing:
-       * the time after which the same command clears it.
+       * The run made something earlier, so only the unresolved intent was cleared: the run keeps
+       * every resource it confirmed and `--resume` continues from the step that stopped.
+       */
+      released?: true;
+      /**
+       * Set when the create is too recent to rule out a late landing: the time after which the
+       * same command clears the run, or its unresolved intent.
        */
       clearableAfter?: string;
       /** With `clearableAfter`: how long from this check until then, in milliseconds. */
@@ -367,35 +392,44 @@ export async function runUncertainRemoval(
         ...pendingFlag,
       };
     }
-    // The one create this run tried is not there, the run recorded nothing else, and the create
-    // is long past its window, so nothing is left to resume, remove or track (DOR-2656). Its
-    // journal goes, so `--list-incomplete` stops listing it. A run that did make something keeps
-    // its journal, which points at it.
-    if (!journalRecordsNoResource(journal)) return { outcome: 'absent', provider, cleared: false };
-    // A create cut off at its deadline can still land. Keep its marker until well after the window.
-    const requestedAt = Date.parse(intent.requestedAt ?? '');
-    if (!Number.isFinite(requestedAt)) return { outcome: 'absent', provider, cleared: false };
-    const clearableAt =
-      requestedAt +
-      (dependencies.createDeadlineMs ?? createDeadlineFor(provider)) +
-      CLEAR_ABSENT_MARGIN_MS;
+    // A create cut off at its deadline can still land, so nothing changes until well after its
+    // window: until then, the marker in the journal is the only way to prove the resource later.
+    const settledAt = absentCreateSettledAt(intent, dependencies.createDeadlineMs);
+    if (settledAt === null) return { outcome: 'absent', provider, cleared: false };
     const checkedAt = Date.parse(dependencies.now());
-    if (checkedAt < clearableAt) {
+    if (checkedAt < settledAt) {
       return {
         outcome: 'absent',
         provider,
         cleared: false,
-        clearableAfter: new Date(clearableAt).toISOString(),
-        clearableInMs: clearableAt - checkedAt,
+        clearableAfter: new Date(settledAt).toISOString(),
+        clearableInMs: settledAt - checkedAt,
       };
     }
     try {
-      await dependencies.discard(journal.revision);
+      // The one create this run tried is not there and the run recorded nothing else, so nothing
+      // is left to resume, remove or track (DOR-2656). Its journal goes, so `--list-incomplete`
+      // stops listing it.
+      if (journalRecordsNoResource(journal)) {
+        await dependencies.discard(journal.revision);
+        return { outcome: 'absent', provider, cleared: true };
+      }
+      // The run made something earlier. Only the unresolved intent goes: every resource the run
+      // confirmed stays in its journal, so `--resume` keeps them and continues from this step
+      // with a fresh marker (DOR-2701).
+      await dependencies.persist(
+        revise(journal, dependencies.now(), {
+          pendingIntent: null,
+          state: journal.completedSteps.at(-1) ?? 'planned',
+          lastSafeError: null,
+        }),
+        journal.revision
+      );
+      return { outcome: 'absent', provider, cleared: false, released: true };
     } catch (error) {
       if (error instanceof LaunchJournalConflictError) return { outcome: 'changed' };
       throw error;
     }
-    return { outcome: 'absent', provider, cleared: true };
   }
   if (verdict.verdict === 'unproved') {
     return {
