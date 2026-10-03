@@ -70,10 +70,19 @@ export const HOLD_ANNOUNCE_AFTER_MS = 10_000;
  */
 export const WAITING_PER_SLOT = 10;
 
+/** Module-private brand; only this pool can issue an acquired lease. */
+const CAPACITY_LEASE = Symbol('capacity-lease');
+
+/** A genuine acquired slot, settled once against its original pool. */
+export interface CapacityLease {
+  readonly kind: 'acquired';
+  readonly [CAPACITY_LEASE]: true;
+}
+
 /** How a request for a session slot ended. */
 export type SlotOutcome =
   /** A slot was taken. The caller MUST call {@link CapacityHold.release}. */
-  | 'acquired'
+  | CapacityLease
   /** Every slot was busy and the waiting line was full. Nothing was taken. */
   | 'line_full'
   /** The delivery waited out `holdCeilingMs` and no slot came. */
@@ -137,7 +146,7 @@ export class CapacityHold {
   private readonly announceAfterMs: number;
   private readonly maxWaiting: number;
   /** Slots currently taken. */
-  private active = 0;
+  private readonly active = new Set<CapacityLease>();
   /** Deliveries waiting for a slot, oldest first. */
   private readonly line: Waiter[] = [];
 
@@ -155,7 +164,7 @@ export class CapacityHold {
 
   /** Slots currently taken by a running turn. */
   get running(): number {
-    return this.active;
+    return this.active.size;
   }
 
   /** Deliveries currently waiting for a slot. */
@@ -166,16 +175,13 @@ export class CapacityHold {
   /**
    * Take a slot, or wait for one, or say why neither happened.
    *
-   * Resolves `'acquired'` only when a slot was taken; the caller owes exactly
+   * Resolves an acquired lease only when a slot was taken; the caller owes exactly
    * one {@link release} for it. Every other outcome takes nothing.
    *
    * @param request - Whether this delivery may wait, and how to announce it.
    */
   async acquire(request: SlotRequest): Promise<SlotOutcome> {
-    if (this.active < this.maxConcurrent) {
-      this.active++;
-      return 'acquired';
-    }
+    if (this.active.size < this.maxConcurrent) return this.takeSlot();
     if (!request.mayWait || this.line.length >= this.maxWaiting) return 'line_full';
 
     return new Promise<SlotOutcome>((resolve) => {
@@ -211,19 +217,29 @@ export class CapacityHold {
   /**
    * Give a slot back and start the oldest delivery waiting for one.
    *
-   * Must be called exactly once for every `'acquired'` — from a `finally`, so a
-   * turn that threw releases the same as one that answered.
+   * Accepts only the original acquired lease. Duplicate, copied or foreign
+   * leases cannot release another delivery's slot.
+   *
+   * @param lease - The acquired lease from this pool.
    */
-  release(): void {
-    if (this.active > 0) this.active--;
-    while (this.active < this.maxConcurrent) {
+  release(lease: CapacityLease): void {
+    if (!this.active.delete(lease)) return;
+    while (this.active.size < this.maxConcurrent) {
       const next = this.line[0];
       if (!next) return;
       // Taken here rather than by the waiter, so the slot cannot be claimed by a
       // fresh `acquire()` in the gap before the parked delivery resumes.
-      this.active++;
-      next.settle('acquired');
+      next.settle(this.takeSlot());
     }
+  }
+
+  private takeSlot(): CapacityLease {
+    const lease: CapacityLease = Object.freeze<CapacityLease>({
+      kind: 'acquired',
+      [CAPACITY_LEASE]: true,
+    });
+    this.active.add(lease);
+    return lease;
   }
 
   /**

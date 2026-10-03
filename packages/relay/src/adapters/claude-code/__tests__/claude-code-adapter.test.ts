@@ -3,6 +3,7 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { StreamEventTypeSchema } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeAdapter } from '../index.js';
+import { CapacityHold } from '../capacity-hold.js';
 import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
@@ -444,6 +445,51 @@ describe('ClaudeCodeAdapter', () => {
         expect(manager.sendMessage).toHaveBeenCalledTimes(2);
       } finally {
         vi.useRealTimers();
+      }
+    });
+
+    it('returns its original acquired lease once without releasing another delivery', async () => {
+      const acquire = vi.spyOn(CapacityHold.prototype, 'acquire');
+      const releaseSlot = vi.spyOn(CapacityHold.prototype, 'release');
+      const { adapter: capped, manager, release } = hangingAdapter(2);
+      try {
+        await capped.start(relay);
+        const first = capped.deliver('relay.agent.claude-code.custody-one', createTestEnvelope());
+        const second = capped.deliver('relay.agent.claude-code.custody-two', createTestEnvelope());
+        await vi.waitFor(() => expect(manager.sendMessage).toHaveBeenCalledTimes(2));
+        const pool = acquire.mock.contexts[0];
+        if (!(pool instanceof CapacityHold))
+          throw new Error('Expected the actual acquisition pool');
+        const firstLease = await acquire.mock.results[0]!.value;
+        const secondLease = await acquire.mock.results[1]!.value;
+        expect(pool.running).toBe(2);
+        const refused = await capped.deliver(
+          'relay.agent.claude-code.custody-third',
+          createTestEnvelope()
+        );
+        expect(refused).toMatchObject({ success: false, code: 'at_capacity' });
+        expect(releaseSlot).not.toHaveBeenCalled();
+        expect(pool.running).toBe(2);
+        expect(manager.sendMessage).toHaveBeenCalledTimes(2);
+
+        release();
+        await expect(first).resolves.toMatchObject({ success: true });
+        await expect(second).resolves.toMatchObject({ success: true });
+        expect(releaseSlot).toHaveBeenCalledTimes(2);
+        expect(releaseSlot.mock.calls[0]?.[0]).toBe(firstLease);
+        expect(releaseSlot.mock.calls[1]?.[0]).toBe(secondLease);
+        expect(pool.running).toBe(0);
+
+        const successor = await pool.acquire({ mayWait: false });
+        pool.release(firstLease);
+        expect(pool.running).toBe(1);
+        if (typeof successor === 'string') throw new Error('Expected successor acquisition');
+        pool.release(successor);
+        expect(pool.running).toBe(0);
+      } finally {
+        release();
+        acquire.mockRestore();
+        releaseSlot.mockRestore();
       }
     });
 
