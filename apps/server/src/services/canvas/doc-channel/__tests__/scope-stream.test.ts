@@ -6,7 +6,7 @@ import { deliverSessionStream } from '../../../core/streams/session-stream-deliv
 /** Real authorized storage replays without borrowing transcript or room entry cursors. */
 import { randomUUID } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
-import { canvasDocChannels, canvasDocEvents, eq, type Db } from '@dorkos/db';
+import { canvasDocChannels, canvasDocEvents, eq, type Db, type DbTransaction } from '@dorkos/db';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { DocChannelAuthorization } from '../authorization.js';
 import { DocChannelService } from '../service.js';
@@ -50,17 +50,20 @@ function fixture() {
   const live = new DocChannelLiveBuffer(f.store, ports);
   const stream = new DocScopeStream(f.documents, service, live, ports);
   const doc = f.canvas.open(FROM, 'agent', { type: 'file', sourcePath: '/fake/lifeos/tasks.md' });
-  const append = () =>
-    f.store.appendEvent({
-      documentId: doc.id,
-      eventId: randomUUID(),
-      direction: 'system',
-      type: 'state.changed',
-      payload: { stateRev: 1 },
-      envelopeHash: 'a'.repeat(64),
-      receivedAt: NOW,
-      provenance: {},
-    });
+  const append = (tx?: DbTransaction) =>
+    f.store.appendEvent(
+      {
+        documentId: doc.id,
+        eventId: randomUUID(),
+        direction: 'system',
+        type: 'state.changed',
+        payload: { stateRev: 1 },
+        envelopeHash: 'a'.repeat(64),
+        receivedAt: NOW,
+        provenance: {},
+      },
+      tx
+    );
   const controller = new AbortController();
   const reader = () => stream.subscribe(FROM, actor, controller.signal)[Symbol.asyncIterator]();
   return {
@@ -248,7 +251,7 @@ it('explicit return releases an idle scope generator without an external abort',
 
 it('replays more than 2000 retained inputs on cold connect and reconnect with bounded pages', async () => {
   const f = fixture();
-  const rows = f.store.transaction(() => Array.from({ length: 2001 }, () => f.append()));
+  const rows = f.store.transaction((tx) => Array.from({ length: 2001 }, () => f.append(tx)));
   const replay = vi.spyOn(f.service, 'replay');
   const expected = rows.map((row) => ({ id: row.eventId, docSeq: row.docSeq }));
   for (let connection = 0; connection < 2; connection++) {
