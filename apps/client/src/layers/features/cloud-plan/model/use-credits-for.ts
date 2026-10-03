@@ -17,7 +17,8 @@
  * @module features/cloud-plan/model/use-credits-for
  */
 import type { CloudCreditsChosenBy, CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
-import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import type { RuntimeCapabilities, RuntimeCreditsSupport } from '@dorkos/shared/agent-runtime';
+import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { claudeAccountName } from '@/layers/shared/lib';
 import { useClaudeAccounts, useCloudCredits, useSetCreditsDefault } from '@/layers/shared/model';
 
@@ -41,6 +42,10 @@ export interface CreditsForRow {
    * as "its own sign-in".
    */
   previousSignIn: string | null;
+  /** What a change reaches, as the runtime declares it; `undefined` while capabilities load. */
+  scope: RuntimeCreditsSupport['scope'] | undefined;
+  /** Whether an agent or a session can pick another account for this runtime. */
+  hasAccountPicks: boolean;
 }
 
 /**
@@ -53,10 +58,12 @@ export interface CreditsForRow {
  *
  * @param report - `GET /api/cloud/credits`, or `undefined` while it loads.
  * @param previousSignIn - Names the sign-in a runtime goes back to, if known.
+ * @param capabilities - Each runtime's declared capabilities, for what a change reaches.
  */
 export function readCreditsFor(
   report: CloudCreditsStatus | undefined,
-  previousSignIn: (runtime: string) => string | null = () => null
+  previousSignIn: (runtime: string) => string | null = () => null,
+  capabilities: Partial<Record<string, RuntimeCapabilities>> = {}
 ): CreditsForRow[] {
   if (!report?.enabled) return [];
   return Object.entries(report.runtimes)
@@ -72,6 +79,8 @@ export function readCreditsFor(
         canTurnOn: true,
         canTurnOff: true,
         previousSignIn: previousSignIn(runtime),
+        scope: capabilities[runtime]?.credits?.scope,
+        hasAccountPicks: capabilities[runtime]?.supportsAccounts === true,
       };
     });
 }
@@ -112,11 +121,15 @@ export interface UseCreditsFor {
 export function useCreditsFor(): UseCreditsFor {
   const { data } = useCloudCredits();
   const setDefault = useSetCreditsDefault();
+  const { data: capabilities } = useRuntimeCapabilities();
   const { accounts, ownResolvedAccount, nameFor } = useClaudeAccounts();
-  const rows = readCreditsFor(data, (runtime) =>
-    runtime === 'claude-code' && ownResolvedAccount
-      ? givenName(ownResolvedAccount, accounts, nameFor)
-      : null
+  const rows = readCreditsFor(
+    data,
+    (runtime) =>
+      runtime === 'claude-code' && ownResolvedAccount
+        ? givenName(ownResolvedAccount, accounts, nameFor)
+        : null,
+    capabilities?.capabilities
   );
 
   const setOn = (runtime: string, on: boolean) => {

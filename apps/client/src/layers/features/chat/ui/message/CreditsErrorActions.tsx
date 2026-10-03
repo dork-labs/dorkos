@@ -1,7 +1,13 @@
 import { RotateCcw } from 'lucide-react';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { Button } from '@/layers/shared/ui';
-import { useAppStore, useKeepCreditsOutOfProject } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useKeepCreditsOutOfProject,
+  useSetCreditsDefault,
+} from '@/layers/shared/model';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { useSessionRuntime } from '@/layers/entities/session';
 
 /** The part code of a turn refused because DorkOS credits could not pay for it. */
 export const CREDITS_UNAVAILABLE_CODE = 'credits_unavailable';
@@ -27,9 +33,13 @@ const FOLDER_SIGN_IN_REASON = 'folder-sign-in';
  * keep credits out of this project for good. Nothing was sent and nothing was
  * billed, so every one is safe.
  *
- * "Use … sign-in" is a choice the person makes for THIS send: it rides the
- * retried message as a one-shot account, which the server honours only while
- * the session has not launched (a refused credits turn never did).
+ * "Use … sign-in" is a choice the person makes for THIS send on a runtime
+ * with accounts of its own (Claude Code): it rides the retried message as a
+ * one-shot account, which the server honours only while the session has not
+ * launched (a refused credits turn never did). A runtime with no account
+ * list (Codex, OpenCode) has nothing per send to pick, so there it records
+ * the person's "no" for that runtime, exactly as turning credits off does,
+ * and then retries.
  *
  * "Don't use credits in this project" is the way on for a folder with a
  * sign-in of its own, which credits can never run, so it is offered for that
@@ -45,8 +55,20 @@ export function CreditsErrorActions({
 }: CreditsErrorActionsProps) {
   const setRetryAccount = useAppStore((s) => s.setRetryAccount);
   const keepOut = useKeepCreditsOutOfProject();
+  const setCreditsDefault = useSetCreditsDefault();
+  // A session with no row yet runs on the server's default runtime.
+  const listedRuntime = useSessionRuntime(sessionId);
+  const capabilities = useCapabilitiesForRuntime(listedRuntime ?? null);
   if (!onRetry) return null;
   const useOwnSignIn = () => {
+    if (capabilities === undefined) return;
+    if (!capabilities.supportsAccounts) {
+      setCreditsDefault.mutate(
+        { runtime: capabilities.type, useCredits: false },
+        { onSuccess: () => onRetry() }
+      );
+      return;
+    }
     if (sessionId) setRetryAccount({ id: IMPLICIT_ACCOUNT_ID, sessionId });
     onRetry();
   };
@@ -67,7 +89,14 @@ export function CreditsErrorActions({
           Retry
         </Button>
         {sessionId && (
-          <Button size="sm" variant="outline" onClick={useOwnSignIn}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={useOwnSignIn}
+            // Which way back is right depends on the runtime, so it waits for
+            // the runtime's capabilities rather than guess.
+            disabled={capabilities === undefined || setCreditsDefault.isPending}
+          >
             Use {runtimeLabel ? `your ${runtimeLabel}` : 'your own'} sign-in
           </Button>
         )}
@@ -80,6 +109,11 @@ export function CreditsErrorActions({
       {keepOut.error && (
         <p className="text-muted-foreground text-xs" role="status">
           {keepOut.error.message}
+        </p>
+      )}
+      {setCreditsDefault.isError && (
+        <p className="text-muted-foreground text-xs" role="status">
+          Couldn’t switch to your own sign-in. Try again in a moment.
         </p>
       )}
     </div>

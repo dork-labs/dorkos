@@ -84,7 +84,16 @@ import {
 } from '../../core/agent-identity/index.js';
 import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
-import { readCodexTurnContextUsage } from './turn-context-usage.js';
+import { readCodexTurnContextUsage, readCodexTurnReading } from './turn-context-usage.js';
+import { ensureCreditsCodexHome, threadRunsOnCredits, withCodexCredits } from './credits-launch.js';
+import { creditsCodexHome } from './codex-home.js';
+import { resolveCreditsLaunch } from '../../core/cloud/credits-inference.js';
+import {
+  asCreditsStopped,
+  creditsRefusalEvent,
+  type CreditsLaunch,
+} from '../../core/cloud/credits-protocols.js';
+import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
 import { captureCodexMedia } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { CodexSessionRegistry } from './session-registry.js';
@@ -219,6 +228,8 @@ export class CodexRuntime implements AgentRuntime {
   /** Floor of the turn cwd resolution chain — see {@link CodexRuntimeOptions.defaultCwd}. */
   private readonly defaultCwd: string;
   private readonly registry = new CodexSessionRegistry();
+  /** The in-flight turns running on DorkOS credits, so an unlink can stop them at once. */
+  private readonly creditsTurns = new Set<AbortController>();
   private readonly locks = new SessionLockManager();
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
   private readonly activeTurns = new Map<string, AbortController>();
@@ -306,6 +317,37 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   /**
+   * Stop every turn running on DorkOS credits (ADR 261001-000811): called when
+   * this computer is unlinked, so no credits turn outlives the link it was
+   * paid under. The next turn of such a session is refused, never moved.
+   */
+  stopCreditsTurns(): void {
+    for (const controller of this.creditsTurns) controller.abort();
+  }
+
+  /**
+   * The credits endpoint and token this turn runs on, or `null` when it runs on
+   * the person's own Codex sign-in.
+   *
+   * Codex has no per-session account pick (the launch route passes an account
+   * hint to Claude Code only), so a new thread follows Codex's recorded
+   * default, and an existing one follows the home its rollout is in.
+   *
+   * @param boundThreadId - The thread already bound to the session, if any.
+   * @throws {CreditsUnavailableError} When the turn is on credits and credits
+   *   cannot pay for it.
+   */
+  private async creditsLaunchFor(boundThreadId: string | undefined): Promise<CreditsLaunch | null> {
+    const onCredits =
+      boundThreadId !== undefined
+        ? await threadRunsOnCredits(boundThreadId)
+        : creditsIsDefaultFor(this.type);
+    if (!onCredits) return null;
+    ensureCreditsCodexHome();
+    return resolveCreditsLaunch(this.getCapabilities(), 'Codex');
+  }
+
+  /**
    * The `Codex` client for one turn.
    *
    * Returns the shared client (subprocess receives a complete projected env,
@@ -325,14 +367,26 @@ export class CodexRuntime implements AgentRuntime {
    *   so a client holding one can never be shared across turns.
    * @param connectorTools - The same turn binding on the private connector
    *   capability route, or null when this turn has none.
+   * @param credits - The credits endpoint and token when this turn runs on
+   *   DorkOS credits, else null. A credits client is always turn-scoped and
+   *   built by {@link withCodexCredits}; no other client ever carries the token.
    */
   private async clientForTurn(
     tokenEnv: Record<string, string>,
     managed: CodexManagedMcpServers,
     dorkosTools: DorkosMcpInjection | null,
-    connectorTools: ConnectorRuntimeMcpInjection | null
+    connectorTools: ConnectorRuntimeMcpInjection | null,
+    credits: CreditsLaunch | null = null
   ): Promise<Codex> {
     const binary = await this.resolveTurnBinary();
+    if (credits) {
+      return new Codex(
+        withCodexCredits(
+          buildCodexOptions(binary, tokenEnv, managed, dorkosTools, connectorTools),
+          credits
+        )
+      );
+    }
     const hasToken = Object.keys(tokenEnv).length > 0;
     const hasManaged = Object.keys(managed.servers).length > 0;
     if (hasToken || hasManaged || dorkosTools || connectorTools) {
@@ -598,8 +652,24 @@ export class CodexRuntime implements AgentRuntime {
     const agentPath = this.identityPathFor(cwd, turnAgentOf(opts));
     const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
 
+    // **Who pays** (ADR 261001-000811), decided before anything starts. A
+    // thread that already exists stays on whatever paid for it: its rollout
+    // lives in exactly one Codex home. A new thread runs on DorkOS credits
+    // when that is Codex's recorded default. A credits turn with no live token
+    // is REFUSED here, and nothing is spawned.
+    let credits: CreditsLaunch | null;
+    try {
+      credits = await this.creditsLaunchFor(boundThreadId);
+    } catch (err) {
+      const refusal = creditsRefusalEvent(err);
+      if (!refusal) throw err;
+      yield refusal;
+      return;
+    }
+
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);
+    if (credits) this.creditsTurns.add(controller);
     let connectorBinding: OpenConnectorTurnResult | undefined;
     let connectorSupervisor: ConnectorTurnLeaseSupervisorHandle | undefined;
     let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
@@ -686,7 +756,8 @@ export class CodexRuntime implements AgentRuntime {
         agentTokenEnv,
         managedMcpServers,
         dorkosTools,
-        connectorTools
+        connectorTools,
+        credits
       );
       // A fresh thread holds nothing this session's previous thread was ever sent,
       // so the gate is cleared BEFORE it is consulted (DOR-477).
@@ -749,7 +820,26 @@ export class CodexRuntime implements AgentRuntime {
       // reads the room this turn is answering in from the runtime-neutral turn
       // facts the trigger bound (spec `canvas-agent-seat` §5). The mapper has
       // nothing left to refuse.
-      const ctx = createCodexEventContext(sessionId);
+      // A credits thread's rollout is in the credits home. Its context reading
+      // is read from there, and its rate limits are dropped: they are the
+      // credits endpoint's, not the person's Codex account's, and must never
+      // be filed under that account's usage.
+      const ctx = createCodexEventContext(
+        sessionId,
+        credits
+          ? {
+              readTurnContextUsage: async (threadId, turnStartedAtMs, signal) => {
+                const reading = await readCodexTurnReading({
+                  threadId,
+                  turnStartedAtMs,
+                  signal,
+                  codexHome: creditsCodexHome(),
+                });
+                return reading ? { ...reading, rateLimits: [] } : null;
+              },
+            }
+          : {}
+      );
       let bound = boundThreadId !== undefined;
       connectorRevokeReason = 'runtime_failed';
       const { events } = await thread.runStreamed(
@@ -782,7 +872,9 @@ export class CodexRuntime implements AgentRuntime {
           event.data.terminalReason === 'completed'
         )
           completedTurn = true;
-        yield event;
+        // On credits, a refused token is the credits card, never a Codex
+        // sign-in error: the person's own sign-in was not used.
+        yield credits ? asCreditsStopped(event, 'Codex') : event;
         if (
           event.type === 'session_status' &&
           'terminalReason' in event.data &&
@@ -815,6 +907,7 @@ export class CodexRuntime implements AgentRuntime {
           );
         }
       } finally {
+        this.creditsTurns.delete(controller);
         // Guard against clearing a NEWER turn's controller: this turn's entry
         // may already have been replaced if a second send raced in.
         if (this.activeTurns.get(sessionId) === controller) {
@@ -1278,7 +1371,12 @@ export class CodexRuntime implements AgentRuntime {
   ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
     const threadId = this.threadMap.get(sessionId)?.threadId;
     if (!threadId) return null;
-    return readCodexTurnContextUsage({ threadId, timeoutMs: CONTEXT_USAGE_AT_REST_TIMEOUT_MS });
+    const codexHome = (await threadRunsOnCredits(threadId)) ? creditsCodexHome() : undefined;
+    return readCodexTurnContextUsage({
+      threadId,
+      timeoutMs: CONTEXT_USAGE_AT_REST_TIMEOUT_MS,
+      ...(codexHome ? { codexHome } : {}),
+    });
   }
 
   // --- Dependency injection ---

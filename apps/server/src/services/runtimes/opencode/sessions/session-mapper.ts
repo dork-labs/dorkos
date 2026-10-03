@@ -48,6 +48,7 @@ import {
   storableImageExtension,
 } from '../../../session/attachments/session-media-types.js';
 import type { SessionAttachmentStore } from '../../../session/attachments/session-attachment-store.js';
+import type { OpenCodeSidecarPlan } from '../credits-sidecar.js';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.js';
 
 /**
@@ -90,6 +91,17 @@ export interface OpenCodeClientProvider {
    * sidecar can never stall the aggregated session list.
    */
   peekClient(): OpencodeClient | null;
+
+  /**
+   * Make the sidecar right for a turn about to be sent, and say what it runs
+   * on: the person's own sign-in, or DorkOS credits (ADR 261001-000811).
+   * Throws the credits refusal when the turn is on credits and credits cannot
+   * pay. Optional for test providers; the runtime refuses a credits turn on a
+   * provider that lacks it rather than send it anywhere.
+   *
+   * @param othersActive - Whether another turn is running on the sidecar now.
+   */
+  prepareTurn?(othersActive: boolean): Promise<OpenCodeSidecarPlan>;
 }
 
 /**

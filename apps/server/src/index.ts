@@ -22,6 +22,8 @@ import {
   OpenCodeRuntime,
   OpenCodeSessionMap,
   openCodeServerManager,
+  planOpenCodeSidecar,
+  planOpenCodeTurn,
 } from './services/runtimes/opencode/index.js';
 import {
   runtimeRegistry,
@@ -1765,6 +1767,12 @@ async function start() {
         'OpenCodeRuntime',
         'install the OpenCode CLI or set runtimes.opencode.enabled to false in config to silence this',
         () => {
+          // The sidecar plans each boot and turn with the live credits token
+          // and model list (ADR 261001-000811); without these it fails closed.
+          openCodeServerManager.usePlanners({
+            planSidecar: planOpenCodeSidecar,
+            planTurn: planOpenCodeTurn,
+          });
           const openCodeRuntime = new OpenCodeRuntime({
             provider: openCodeServerManager,
             // Durable sessionId <-> OpenCode-session-id map on the shared Drizzle
@@ -6019,8 +6027,20 @@ async function start() {
   getCloudLinkManager().setOnUnlink(async () => {
     await revokeHeldCreditsToken();
     await claudeRuntime?.stopCreditsSessions();
+    stopCodexCreditsTurns();
+    await openCodeServerManager.recycleIfOnCredits();
+  });
+  // OpenCode's credits are a mode of its one sidecar: a change of its Runs on
+  // choice recycles a sidecar left on the other side at once.
+  configManager.onChange((change) => {
+    if (!change.paths.some((path) => path === 'cloud' || path.startsWith('cloud.credits'))) return;
+    void openCodeServerManager.syncToChoice().catch((err) => {
+      logger.warn('[OpenCode] could not follow the Runs on choice', logError(err));
+    });
   });
   getCloudLinkManager().setOnNewLink(async () => {
+    // A new link's token belongs to the account just linked.
+    await openCodeServerManager.recycleIfOnCredits();
     const switched = await fillCreditsGaps(creditsRuntimeViews(), {
       key: await readCloudAccountKey(),
     });
@@ -6030,6 +6050,17 @@ async function start() {
       });
     }
   });
+}
+
+/**
+ * Stop every Codex turn running on DorkOS credits, when Codex is registered.
+ * Structural, because the Codex runtime is constructed inside an optional
+ * registration and is not held here.
+ */
+function stopCodexCreditsTurns(): void {
+  const codex = runtimeRegistry.listRuntimes().find((runtime) => runtime.type === 'codex') as
+    { stopCreditsTurns?: () => void } | undefined;
+  codex?.stopCreditsTurns?.();
 }
 
 // Ordered teardown of all running services WITHOUT calling process.exit().

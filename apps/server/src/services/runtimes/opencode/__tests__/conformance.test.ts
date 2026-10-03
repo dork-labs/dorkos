@@ -145,9 +145,35 @@ vi.mock('../providers/check-dependencies.js', async (importOriginal) => {
   };
 });
 
+/**
+ * Whether OpenCode's recorded Runs on default is credits, as the credits driver
+ * sets it: the way a person chooses credits for OpenCode (ADR 261001-000811).
+ */
+const openCodeRunsOnCreditsFlag = vi.hoisted(() => ({ value: false }));
+
+vi.mock('../../../core/cloud/credits-defaults.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/cloud/credits-defaults.js')>()),
+  creditsIsDefaultFor: (runtime: string) =>
+    runtime === 'opencode' && openCodeRunsOnCreditsFlag.value,
+}));
+
+// Linked, with no cloud context ever captured: a token and a model list are
+// held only through the credits module's test seams.
+vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/cloud/v1-client.js')>()),
+  isCloudLinked: () => true,
+  captureCloudV1Context: () => null,
+}));
+
 import { OpenCodeRuntime } from '../opencode-runtime.js';
-import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
+import {
+  __setCreditsModelsForTests,
+  __setCreditsStateForTests,
+} from '../../../core/cloud/credits-inference.js';
+import { buildSidecarSpawnEnv } from '../server-manager.js';
+import { planOpenCodeTurn } from '../credits-mode.js';
 import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
+import CREDITS_MODELS_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/models.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import {
@@ -470,8 +496,19 @@ function makeMockedProvider(
   return {
     getClient: async () => client,
     peekClient: () => client,
+    // What the real sidecar manager does before a turn: plan it (refusing a
+    // credits turn credits cannot pay for) and boot on that plan. The boot is
+    // recorded as the exact environment the manager would spawn it with.
+    prepareTurn: async () => {
+      const plan = await planOpenCodeTurn();
+      sidecarSpawns.push(buildSidecarSpawnEnv(plan, 'conformance-password', {}));
+      return plan;
+    },
   };
 }
+
+/** Every sidecar environment a mocked provider was asked to boot with, in order. */
+const sidecarSpawns: Record<string, string>[] = [];
 
 /**
  * The mocked client behind whichever runtime `makeRuntime()` most recently
@@ -590,14 +627,21 @@ runtimeConformance(
             'a live OpenCode sidecar is a separate process this suite can only send to, so whether a credits token reached it is only observable in the mocked run',
         }
       : {
-          // ADR 261001-000811: OpenCode does not declare credits, so whatever
-          // the host holds and whatever the session asks for, nothing the
-          // adapter sends the sidecar for the turn may carry a credits token.
+          // ADR 261001-000811. Credits are chosen the way a person chooses them
+          // for OpenCode: its recorded default. What the backend was handed is
+          // the sidecar environment it was booted with and every prompt it was
+          // sent, so a turn on the person's own sign-in must carry none of the
+          // token anywhere.
           creditsTurn: async (runtime, { runsOn, heldToken }) => {
             const client = lastClient;
             if (!client) {
               throw new Error('OpenCode conformance: no mocked client to read the turn off');
             }
+            openCodeRunsOnCreditsFlag.value = runsOn === 'credits';
+            __setCreditsModelsForTests({
+              catalogVersion: 'cv_conformance',
+              models: CREDITS_MODELS_FIXTURE.models,
+            });
             __setCreditsStateForTests({
               token:
                 heldToken === null
@@ -612,19 +656,25 @@ runtimeConformance(
               const sessionId = randomUUID();
               runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
               const events: StreamEvent[] = [];
+              const spawnsBefore = sidecarSpawns.length;
               for await (const event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
                 cwd: PROJECT_DIR,
-                ...(runsOn === 'credits' ? { accountHint: 'dorkos-credits' } : {}),
               })) {
                 events.push(event);
               }
               const sent = vi.mocked(client.session.promptAsync).mock.calls;
               return {
                 launched: sent.length > 0,
-                handed: { prompts: sent, created: vi.mocked(client.session.create).mock.calls },
+                handed: {
+                  sidecar: sidecarSpawns.slice(spawnsBefore),
+                  prompts: sent,
+                  created: vi.mocked(client.session.create).mock.calls,
+                },
                 events,
               };
             } finally {
+              openCodeRunsOnCreditsFlag.value = false;
+              __setCreditsModelsForTests(null);
               __setCreditsStateForTests({ token: null });
             }
           },

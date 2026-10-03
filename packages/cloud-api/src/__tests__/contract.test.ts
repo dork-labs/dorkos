@@ -795,6 +795,36 @@ describe('the seat activity event', () => {
   });
 });
 
+describe('the inference endpoints, one per request format', () => {
+  const both = {
+    anthropicMessages: 'https://example.invalid/a',
+    openaiChat: 'https://example.invalid/c',
+  };
+
+  it('still reads a token from a service that serves only the first two formats', () => {
+    // Additive within `/v1`: a service one release behind sends no
+    // `openaiResponses`, and that token must keep parsing, with the format
+    // reading as not served rather than as an error.
+    const parsed = contract.InferenceEndpointsSchema.safeParse(both);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.openaiResponses).toBeUndefined();
+  });
+
+  it('carries the responses format when the service serves it', () => {
+    const parsed = contract.InferenceEndpointsSchema.safeParse({
+      ...both,
+      openaiResponses: 'https://example.invalid/r',
+    });
+    expect(parsed.success && parsed.data.openaiResponses).toBe('https://example.invalid/r');
+  });
+
+  it('refuses an endpoint that is not a URL, so nothing can be sent to a bare string', () => {
+    expect(
+      contract.InferenceEndpointsSchema.safeParse({ ...both, openaiResponses: 'not a url' }).success
+    ).toBe(false);
+  });
+});
+
 describe('the inference refusal reasons', () => {
   it('keeps every reason it published before, which is what additive means', () => {
     for (const reason of [

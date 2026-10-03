@@ -17,19 +17,38 @@ export const InferenceTokenRequestSchema = z
   .describe('Mint a short-lived inference token for one instance.');
 
 /**
- * The endpoints a minted token may be used against.
+ * The endpoints a minted token may be used against, one per request format.
  *
  * Runtime values. No host, origin or URL literal belongs in this package, and
  * which provider serves a request is not part of this contract.
+ *
+ * Each field is a BASE a client appends its format's own path to (`/v1/messages`,
+ * `/chat/completions`, `/responses`), and each names a request format, never a
+ * supplier. The first two are always present. `openaiResponses` is optional:
+ * a service that does not serve that format for this token leaves it out, and
+ * **an absent endpoint means that format is not served**. A caller must then
+ * not send that format's requests with this token at all — not to another
+ * endpoint here, and not anywhere else — so an app offers a runtime that
+ * speaks only that format nothing until a token carrying the field arrives.
  */
 export const InferenceEndpointsSchema = z
   .object({
     anthropicMessages: z.string().url(),
     openaiChat: z.string().url(),
+    openaiResponses: z
+      .string()
+      .url()
+      .optional()
+      .describe(
+        'Where to send requests in the responses format. Absent when this token may not be used for that format.'
+      ),
   })
   .describe(
-    'Where to send inference requests. Runtime values; no origin is baked into this package.'
+    'Where to send inference requests, one base per request format. Runtime values; no origin is baked into this package.'
   );
+
+/** Where a minted token may send each request format. */
+export type InferenceEndpoints = z.infer<typeof InferenceEndpointsSchema>;
 
 /** What a minted token is allowed to do at once. */
 export const InferenceLimitsSchema = z

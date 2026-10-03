@@ -1,0 +1,15 @@
+{
+  "tokenId": "it_0002",
+  "token": "itv_0002_opaque",
+  "expiresAt": "2026-10-15T12:00:00.000Z",
+  "endpoints": {
+    "anthropicMessages": "https://example.invalid/proxy/anthropic",
+    "openaiChat": "https://example.invalid/proxy/openai/v1",
+    "openaiResponses": "https://example.invalid/proxy/openai/v1"
+  },
+  "limits": {
+    "concurrentStreams": 4,
+    "requestsPerMinute": 120
+  },
+  "catalogVersion": "cv_0001"
+}

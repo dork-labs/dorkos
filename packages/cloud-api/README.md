@@ -359,11 +359,16 @@ grouped the way `en-US` groups them. The module imports nothing.
 No host, origin or URL literal appears in this package. Inference endpoints are runtime values
 the mint call returns, and the client takes its `baseUrl` from the caller.
 
-No supplier is named anywhere. The two exceptions are the field names
-`endpoints.anthropicMessages` and `endpoints.openaiChat`, and they are a deliberate carve-out
-rather than an oversight: they name a **request format** a caller encodes in — both are de-facto
-public standards — not a supplier a request is routed to. Which provider actually serves a
-request is not part of this contract and is published nowhere.
+No supplier is named anywhere. The three exceptions are the field names
+`endpoints.anthropicMessages`, `endpoints.openaiChat` and `endpoints.openaiResponses`, and they
+are a deliberate carve-out rather than an oversight: they name a **request format** a caller
+encodes in — all three are de-facto public standards — not a supplier a request is routed to.
+Which provider actually serves a request is not part of this contract and is published nowhere.
+
+Each endpoint is a base a client appends its format's own path to. The first two are always
+present. `openaiResponses` arrives optional: a token without it may not be used for that format
+at all, so an app offers a runtime that speaks only that format nothing until a token carrying
+the field arrives. A client one release behind ignores the field and loses nothing.
 
 ### Where amounts appear, and where they do not
 

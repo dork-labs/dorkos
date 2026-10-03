@@ -27,6 +27,7 @@
 import { Router, type Response } from 'express';
 import { z } from 'zod';
 import type { Problem } from '@dork-labs/cloud-api';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type {
   CloudAccountDeletionResponse,
   CloudAccountExportResponse,
@@ -490,8 +491,9 @@ const CreditsDefaultBodySchema = z.object({
 /**
  * PUT /api/cloud/credits/default — a person's choice for one runtime's default:
  * run new work on DorkOS credits, or go back to the runtime's own sign-in.
- * Recorded as chosen by the person (ADR 261001-000811). Refuses a runtime that
- * does not declare credits, and turning credits ON while they cannot be had,
+ * Recorded as chosen by the person (ADR 261001-000811). Refuses a runtime
+ * credits do not reach (undeclared, or its protocol not served), and turning
+ * credits ON while they cannot be had,
  * so nothing is ever set that would refuse every turn.
  */
 router.put('/credits/default', async (req, res) => {
@@ -502,8 +504,10 @@ router.put('/credits/default', async (req, res) => {
   const { runtime, useCredits } = parsed.data;
   if (useCredits) {
     const view = creditsRuntimeViews().find((candidate) => candidate.type === runtime);
-    if (!view?.capabilities.credits) {
-      return res.status(400).json({ error: `${runtime} can't run on DorkOS credits yet.` });
+    if (!view?.wired) {
+      return res
+        .status(400)
+        .json({ error: `${runtimeDisplayName(runtime)} can't run on DorkOS credits yet.` });
     }
     if (creditsKilled()) {
       return res.status(409).json({ error: 'DorkOS credits are turned off on this computer.' });

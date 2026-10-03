@@ -390,3 +390,51 @@ export async function readCodexTurnReading(
     options.signal?.removeEventListener('abort', abort);
   }
 }
+
+/** How long {@link locateCodexRollout} may spend before it answers "not found". */
+const LOCATE_TIMEOUT_MS = 2_000;
+
+/**
+ * Where a thread's rollout file is in one Codex home, live or archived, or
+ * `null` when it is not there (or could not be told within the bounds this
+ * module reads under: three day directories, the archive, a deadline).
+ *
+ * @param options - The thread and the home to look in.
+ * @param options.threadId - Codex thread id emitted by `thread.started`.
+ * @param options.codexHome - The Codex home to look in.
+ * @param options.timeoutMs - Deadline for the whole lookup.
+ * @returns The rollout's path, or `null`.
+ */
+export async function locateCodexRollout(options: {
+  threadId: string;
+  codexHome: string;
+  timeoutMs?: number;
+}): Promise<string | null> {
+  const match = UUID_V7.exec(options.threadId);
+  if (match === null) return null;
+  const timestampMs = Number.parseInt(`${match[1]}${match[2]}`, 16);
+  if (!Number.isSafeInteger(timestampMs)) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? LOCATE_TIMEOUT_MS);
+  const id = options.threadId.toLowerCase();
+  try {
+    const live = await findRollout(
+      liveCandidateDirectories(options.codexHome, timestampMs),
+      id,
+      DEFAULT_MAX_DIRECTORY_ENTRIES,
+      controller.signal
+    );
+    if (live) return live;
+    const archived = await findRollout(
+      [path.join(options.codexHome, 'archived_sessions')],
+      id,
+      DEFAULT_MAX_DIRECTORY_ENTRIES,
+      controller.signal
+    );
+    return archived ?? null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

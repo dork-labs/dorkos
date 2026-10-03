@@ -9,7 +9,7 @@ import type { CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
 import { runtimeRegistry } from '../runtime-registry.js';
 import { creditsChoices, creditsNotices, readCreditsSettings } from './credits-defaults.js';
 import type { CreditsRuntimeView, RuntimeSignInState } from './credits-defaults.js';
-import { creditsWiringReport } from './credits-inference.js';
+import { creditsRuntimeWired, creditsWiringReport } from './credits-inference.js';
 import { isCloudLinked } from './v1-client.js';
 
 /**
@@ -39,13 +39,17 @@ export function signInStateOf(
   return 'needs-attention';
 }
 
-/** Every registered runtime, with its declared capabilities and its sign-in state. */
+/** Every registered runtime, with its declared capabilities, whether credits reach it, and its sign-in state. */
 export function creditsRuntimeViews(): CreditsRuntimeView[] {
-  return runtimeRegistry.listRuntimes().map((runtime) => ({
-    type: runtime.type,
-    capabilities: runtime.getCapabilities(),
-    signIn: async () => signInStateOf(runtime.type, await runtime.checkDependencies()),
-  }));
+  return runtimeRegistry.listRuntimes().map((runtime) => {
+    const capabilities = runtime.getCapabilities();
+    return {
+      type: runtime.type,
+      capabilities,
+      wired: creditsRuntimeWired(capabilities),
+      signIn: async () => signInStateOf(runtime.type, await runtime.checkDependencies()),
+    };
+  });
 }
 
 /**

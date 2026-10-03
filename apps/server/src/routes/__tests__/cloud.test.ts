@@ -91,7 +91,11 @@ describe('cloud routes', () => {
     mockV1.isCloudLinked.mockReturnValue(true);
     mockCreditsRuntimes.creditsStatus.mockResolvedValue(STATUS);
     mockCreditsRuntimes.creditsRuntimeViews.mockReturnValue([
-      { type: 'claude-code', capabilities: { credits: { protocol: 'anthropic-messages' } } },
+      {
+        type: 'claude-code',
+        capabilities: { credits: { protocol: 'anthropic-messages', scope: 'conversation' } },
+        wired: true,
+      },
       { type: 'codex', capabilities: {} },
     ]);
   });
@@ -350,6 +354,22 @@ describe('cloud routes', () => {
     });
 
     it('refuses to set credits on a runtime that does not declare them', async () => {
+      const res = await request(server)
+        .put('/api/cloud/credits/default')
+        .send({ runtime: 'codex', useCredits: true })
+        .expect(400);
+      expect(res.body.error).toBe("Codex can't run on DorkOS credits yet.");
+      expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
+    });
+
+    it('refuses a runtime that declares credits in a format the endpoint does not serve', async () => {
+      mockCreditsRuntimes.creditsRuntimeViews.mockReturnValueOnce([
+        {
+          type: 'codex',
+          capabilities: { credits: { protocol: 'openai-responses', scope: 'conversation' } },
+          wired: false,
+        },
+      ]);
       await request(server)
         .put('/api/cloud/credits/default')
         .send({ runtime: 'codex', useCredits: true })

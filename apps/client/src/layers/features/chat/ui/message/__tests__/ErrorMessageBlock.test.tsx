@@ -1216,7 +1216,7 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
     expect(useAppStore.getState().retryAccount).toBeNull();
   });
 
-  it('sends the retried message on this computer’s own sign-in when the person asks', () => {
+  it('sends the retried message on this computer’s own sign-in when the person asks', async () => {
     const onRetry = vi.fn();
     renderBlock(
       <ErrorMessageBlock
@@ -1228,9 +1228,44 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
         runtimeLabel="Claude Code"
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Use your Claude Code sign-in' }));
+    const button = screen.getByRole('button', { name: 'Use your Claude Code sign-in' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
     expect(useAppStore.getState().retryAccount).toEqual({ id: 'default', sessionId: SESSION_ID });
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  // Codex and OpenCode have no account to pick per send: the way back to the
+  // person's own sign-in is their recorded "no", then the retry.
+  it('puts a runtime with no account list back on its own sign-in, then retries', async () => {
+    sessionRows.current = [sessionRow('codex')];
+    const onRetry = vi.fn();
+    const setCloudCreditsDefault = vi.fn().mockResolvedValue({
+      enabled: true,
+      killed: false,
+      linked: true,
+      ready: true,
+      runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'wired' },
+    });
+    renderBlock(
+      <ErrorMessageBlock
+        message="Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your Codex sign-in."
+        category="execution_error"
+        code="credits_unavailable"
+        onRetry={onRetry}
+        sessionId={SESSION_ID}
+        runtimeLabel="Codex"
+      />,
+      { setCloudCreditsDefault }
+    );
+    const button = screen.getByRole('button', { name: 'Use your Codex sign-in' });
+    // The runtime's capabilities arrive before the choice is made for it.
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(onRetry).toHaveBeenCalledTimes(1));
+    expect(setCloudCreditsDefault).toHaveBeenCalledWith('codex', false);
+    expect(useAppStore.getState().retryAccount).toBeNull();
+    sessionRows.current = [];
   });
 
   // A folder with its own sign-in can never run on credits: the card's way on

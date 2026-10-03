@@ -104,6 +104,13 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'credits-runs-on',
+    title: 'Credits Runs On',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: ['codex', 'opencode', 'credits', 'runs on', 'sign-in', 'dorkos account', 'section'],
+  },
+  {
     id: 'claude-code-accounts',
     title: 'Claude Code Accounts',
     page: 'settings',
