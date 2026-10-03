@@ -351,7 +351,12 @@ describe('approvals routes', () => {
           .send();
 
         expect(res.status).toBe(200);
-        expect(approvals.consume(ticket.token, BINDING).outcome).toBe('granted');
+        // Kept with the yes, so a change only the owner of this DorkOS may make
+        // is held to the owner's yes when it is spent (DOR-2678).
+        expect(approvals.consume(ticket.token, BINDING)).toMatchObject({
+          outcome: 'granted',
+          decidedByUserId: 'user_123',
+        });
         expect(emitted).toHaveLength(1);
         expect(emitted[0]).toMatchObject({
           eventType: 'permission.answered',

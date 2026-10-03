@@ -60,7 +60,7 @@ import type {
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
-import { readOwnerAccount } from '../services/core/auth/index.js';
+import { isInstallOwner } from '../services/core/auth/install-owner.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import { isLocalRequest } from './trusted-origins.js';
@@ -349,7 +349,5 @@ export function refuseUnlessAccountOwner(
   // Login is on, so the agent bar above has already required a browser
   // session. An install with no owner account to compare against is refused:
   // nobody can be shown to own it.
-  const user = res.locals.user as RequestUser | undefined;
-  const owner = readOwnerAccount();
-  return owner !== null && user?.userId === owner.id ? undefined : 'not-the-owner';
+  return isInstallOwner(res.locals.user as RequestUser | undefined) ? undefined : 'not-the-owner';
 }
