@@ -715,6 +715,43 @@ describe.skipIf(LIVE)('the model a Codex credits turn runs (DOR-2636)', () => {
     expect(events[0]).toMatchObject({ type: 'error', data: { reason: 'no-models' } });
   });
 
+  it('keeps the swap notice, named from Codex’s catalog, in the rebuilt history', async () => {
+    __setCreditsCatalogForTests([served('gpt-pick', ['openaiResponses'], ['openaiResponses'])]);
+    codexRunsOnCredits.value = true;
+    __setCreditsStateForTests({
+      token: InferenceTokenSchema.parse({
+        ...CREDITS_TOKEN_FIXTURE,
+        expiresAt: '2999-01-01T00:00:00.000Z',
+      }),
+    });
+    try {
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/bin/codex',
+      });
+      vi.spyOn(runtime, 'getSupportedModels').mockResolvedValue([
+        { value: 'gpt-old', displayName: 'GPT Old', description: '' },
+      ]);
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+      await runtime.updateSession(sessionId, { model: 'gpt-old' });
+      const history = await driveDurableTurn(runtime, sessionId, 'ping', projectDir);
+      const notice = history.find((m) => m.id.startsWith('model-substituted-'));
+      expect(notice?.parts).toEqual([
+        expect.objectContaining({
+          type: 'model_substituted',
+          from: 'gpt-old',
+          fromName: 'GPT Old',
+          to: 'gpt-pick',
+          toName: 'Name gpt-pick',
+        }),
+      ]);
+    } finally {
+      codexRunsOnCredits.value = false;
+      __setCreditsStateForTests({ token: null });
+    }
+  });
+
   it('changes nothing while the service says nothing about formats', async () => {
     __setCreditsCatalogForTests([{ ...served('m', []), protocols: undefined }]);
     const { events, threads } = await creditsTurn('gpt-whatever');

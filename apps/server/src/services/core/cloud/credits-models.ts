@@ -446,6 +446,29 @@ function markCreditsSwapTold(sessionId: string, model: string): void {
   }
 }
 
+/**
+ * A model's name for a person, from the runtime's own catalog (`displayName`,
+ * matched by value or by the id an alias expands to), else the last segment of
+ * its id (`openrouter/vendor/some-model` reads `some-model`), so a notice never
+ * shows a provider path a person did not type. Never throws.
+ *
+ * @param runtime - The runtime whose catalog names the model.
+ * @param model - The model value as stored.
+ */
+export async function catalogNameFor(
+  runtime: { getSupportedModels(): Promise<ModelOption[]> },
+  model: string
+): Promise<string> {
+  try {
+    const rows = await runtime.getSupportedModels();
+    const row = rows.find((option) => option.value === model || option.resolvedModel === model);
+    if (row) return row.displayName;
+  } catch {
+    // A catalog that cannot be read names nothing; the id's own name stands in.
+  }
+  return model.split('/').at(-1) || model;
+}
+
 /** What a launch on credits runs, and what it owes once it says so. */
 export interface CreditsModelDecision {
   /** The model to launch with (`undefined`: the runtime's own default). */
@@ -481,7 +504,8 @@ export interface CreditsModelDecision {
  * @param opts.sessionId - The session, for the told-once memory.
  * @param opts.model - The model the session names, if any.
  * @param opts.resolvedModel - The id that model expands to, when the runtime knows.
- * @param opts.fromName - That model's display name, when the runtime knows.
+ * @param opts.nameOf - That model's name for a person, read only when it is
+ *   replaced (a runtime's catalog read can cost a request).
  * @param opts.remember - Make a model the session's own (taken by the commit).
  * @throws {CreditsUnavailableError} `no-models` when the service lists formats but none for this runtime.
  */
@@ -491,7 +515,7 @@ export async function decideCreditsLaunchModel(opts: {
   sessionId: string;
   model: string | undefined;
   resolvedModel?: string | undefined;
-  fromName?: string | undefined;
+  nameOf?: (() => Promise<string | undefined>) | undefined;
   remember: (model: string) => Promise<void>;
 }): Promise<CreditsModelDecision> {
   const decided = await resolveCreditsLaunchModel(
@@ -508,6 +532,7 @@ export async function decideCreditsLaunchModel(opts: {
       return { model: decided.model };
     case 'replaced': {
       const told = creditsModelSwapsSaid.has(swapKey(opts.sessionId, decided.from));
+      const fromName = told ? undefined : await opts.nameOf?.();
       return {
         model: decided.model,
         swap: {
@@ -518,7 +543,7 @@ export async function decideCreditsLaunchModel(opts: {
                 type: 'model_substituted',
                 data: {
                   from: decided.from,
-                  fromName: opts.fromName ?? decided.from,
+                  fromName: fromName ?? decided.from,
                   to: decided.model,
                   toName: decided.toName,
                   reason: 'credits-not-covered',

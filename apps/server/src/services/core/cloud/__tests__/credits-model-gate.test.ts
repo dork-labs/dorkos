@@ -111,6 +111,10 @@ describe('sessionRunsOnCredits for a runtime with no account ladder', () => {
       }) as unknown as AgentRuntime;
     expect(await sessionRunsOnCredits(answers(true), 's')).toBe(true);
     expect(await sessionRunsOnCredits(answers(false), 's')).toBe(false);
+    // A stale pick of credits never overrules what the runtime says.
+    expect(await sessionRunsOnCredits(answers(false), 's', { accountHint: 'dorkos-credits' })).toBe(
+      false
+    );
   });
 
   it('falls back to its recorded default, and to a pick of credits', async () => {

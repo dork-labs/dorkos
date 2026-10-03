@@ -6,6 +6,7 @@ covers:
   - 'fix(credits): keep the model swap in the conversation, resolve aliases, keep the last good list, gate every model write (DOR-2636)'
   - 'fix(credits): save a model swap only with its notice, place it in its turn, read context markers, cap the kept list (DOR-2636)'
   - 'fix(credits): one format vocabulary and one model list for every runtime on credits (DOR-2636)'
+  - 'fix(credits): keep the swap notice in Codex and OpenCode history, name models from each catalog (DOR-2636)'
 ---
 
 ### Added

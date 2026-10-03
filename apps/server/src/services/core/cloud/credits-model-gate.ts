@@ -111,14 +111,17 @@ export async function sessionRunsOnCredits(
     // A runtime with no account ladder answers for its own sessions (Codex: the
     // home a thread's rollout lives in, else its recorded default; OpenCode:
     // its one sidecar's mode); one that cannot, by its recorded default.
-    if (opts.accountHint === CREDITS_ACCOUNT_ID) return true;
-    try {
-      return isCreditsAware(runtime)
-        ? await runtime.sessionRunsOnCredits(sessionId)
-        : creditsIsDefaultFor(runtime.type);
-    } catch {
-      return false;
+    // A runtime that answers for its own sessions is asked, never overruled by
+    // an account hint: it has no per-session account to pick, so a hint is at
+    // best stale (a pick made before a runtime switch) and its launch ignores it.
+    if (isCreditsAware(runtime)) {
+      try {
+        return await runtime.sessionRunsOnCredits(sessionId);
+      } catch {
+        return false;
+      }
     }
+    return opts.accountHint === CREDITS_ACCOUNT_ID || creditsIsDefaultFor(runtime.type);
   }
   try {
     const projectDir = await sessionProjectDir(sessionId, opts.cwd);

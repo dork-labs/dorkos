@@ -165,6 +165,14 @@ vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
   captureCloudV1Context: () => null,
 }));
 
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  SessionEventStore,
+  disposeProjector,
+  feedProjector,
+  getOrCreateProjector,
+  setSessionEventStore,
+} from '../../../session/index.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
 import { __setCreditsCatalogForTests } from '../../../core/cloud/credits-models.js';
@@ -1087,6 +1095,49 @@ describe.skipIf(LIVE)('the model an OpenCode credits turn runs (DOR-2636)', () =
         data: expect.objectContaining({ from: 'openrouter/some-model', to: 'chat-pick' }),
       }),
     ]);
+  });
+
+  it('keeps the swap notice, named from OpenCode’s catalog, in a reopened conversation', async () => {
+    __setCreditsCatalogForTests([listed('chat-pick', ['openaiChat'], ['openaiChat'])]);
+    openCodeRunsOnCreditsFlag.value = true;
+    __setCreditsStateForTests({
+      token: InferenceTokenSchema.parse({
+        ...CREDITS_TOKEN_FIXTURE,
+        expiresAt: '2999-01-01T00:00:00.000Z',
+      }),
+    });
+    const store = new SessionEventStore(createTestDb());
+    setSessionEventStore(store);
+    try {
+      const runtime = new OpenCodeRuntime({ provider: makeMockedProvider() });
+      vi.spyOn(runtime, 'getSupportedModels').mockResolvedValue([
+        { value: 'openrouter/some-model', displayName: 'Some Model', description: '' },
+      ]);
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
+      await runtime.updateSession(sessionId, { model: 'openrouter/some-model' });
+      const projector = getOrCreateProjector(sessionId, PROJECT_DIR, { persist: 'history' });
+      await feedProjector(
+        projector,
+        runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, { cwd: PROJECT_DIR }),
+        { userMessage: CONFORMANCE_PROMPT }
+      );
+      disposeProjector(sessionId);
+      const history = await runtime.getMessageHistory(PROJECT_DIR, sessionId);
+      const notice = history.find((m) => m.id.startsWith('model-substituted-'));
+      expect(notice?.parts).toEqual([
+        expect.objectContaining({
+          type: 'model_substituted',
+          from: 'openrouter/some-model',
+          fromName: 'Some Model',
+          to: 'chat-pick',
+        }),
+      ]);
+    } finally {
+      setSessionEventStore(undefined);
+      openCodeRunsOnCreditsFlag.value = false;
+      __setCreditsStateForTests({ token: null });
+    }
   });
 
   it('keeps a credits model it serves', async () => {

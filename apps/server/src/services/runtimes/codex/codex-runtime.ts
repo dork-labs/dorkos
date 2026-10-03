@@ -89,6 +89,7 @@ import { ensureCreditsCodexHome, threadRunsOnCredits, withCodexCredits } from '.
 import { creditsCodexHome } from './codex-home.js';
 import { resolveCreditsLaunch } from '../../core/cloud/credits-inference.js';
 import {
+  catalogNameFor,
   decideCreditsLaunchModel,
   type CreditsModelDecision,
 } from '../../core/cloud/credits-models.js';
@@ -691,6 +692,8 @@ export class CodexRuntime implements AgentRuntime {
           runtimeLabel: 'Codex',
           sessionId,
           model: settings.model,
+          nameOf: async () =>
+            settings.model === undefined ? undefined : catalogNameFor(this, settings.model),
           remember: async (model) => {
             await this.updateSession(sessionId, { model });
           },

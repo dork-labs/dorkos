@@ -69,6 +69,7 @@ import {
   streamGenerationOf,
 } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
+import { overlayModelSubstitutions } from '../../session/overlays/model-substitution-overlay.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
@@ -142,6 +143,7 @@ import {
   creditsRefusalEvent,
 } from '../../core/cloud/credits-protocols.js';
 import {
+  catalogNameFor,
   decideCreditsLaunchModel,
   type CreditsModelDecision,
 } from '../../core/cloud/credits-models.js';
@@ -385,6 +387,8 @@ export class OpenCodeRuntime implements AgentRuntime {
           runtimeLabel: OPENCODE_LABEL,
           sessionId,
           model: creditsModelIdOf(settings.model),
+          nameOf: async () =>
+            settings.model === undefined ? undefined : catalogNameFor(this, settings.model),
           remember: async (id) => {
             await this.updateSession(sessionId, { model: creditsSelection(id) });
           },
@@ -1087,7 +1091,13 @@ export class OpenCodeRuntime implements AgentRuntime {
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
     try {
-      return await this.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId);
+      // The sidecar's store names the model that ran and never one DorkOS
+      // credits put in place of the session's (DOR-2636), so that notice is
+      // put back from the durable event record, as for Claude Code.
+      return overlayModelSubstitutions(
+        sessionId,
+        await this.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId)
+      );
     } catch (err) {
       logger.debug(
         '[OpenCodeRuntime] native history read failed — serving durable EventLog fallback',

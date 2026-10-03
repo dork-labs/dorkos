@@ -1024,3 +1024,35 @@ describe('reconstructHistoryFromEvents — images (DOR-1663)', () => {
     expect(JSON.stringify(messages)).not.toContain('data:');
   });
 });
+
+describe('a model DorkOS credits ran in place of the session’s (DOR-2636)', () => {
+  it('comes back as a lasting notice in the turn it opened', () => {
+    const history = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'go' },
+        {
+          seq: 2,
+          type: 'model_substituted',
+          from: 'gpt-old',
+          fromName: 'GPT Old',
+          to: 'gpt-pick',
+          toName: 'GPT Pick',
+          reason: 'credits-not-covered',
+        },
+        { seq: 3, type: 'text_delta', text: 'done' },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+    expect(history.map((m) => m.id)).toEqual(['user-1', 'model-substituted-2', 'assistant-1']);
+    expect(history[1]!.parts).toEqual([
+      {
+        type: 'model_substituted',
+        from: 'gpt-old',
+        fromName: 'GPT Old',
+        to: 'gpt-pick',
+        toName: 'GPT Pick',
+        reason: 'credits-not-covered',
+      },
+    ]);
+  });
+});

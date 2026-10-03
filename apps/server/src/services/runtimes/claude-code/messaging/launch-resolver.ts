@@ -581,7 +581,7 @@ export async function resolveLaunch(args: {
       sessionId,
       model: launchModel,
       resolvedModel: named?.resolvedModel,
-      fromName: named?.displayName,
+      nameOf: async () => named?.displayName,
       remember: async (model) => {
         await opts.rememberSessionModel?.(model);
       },
