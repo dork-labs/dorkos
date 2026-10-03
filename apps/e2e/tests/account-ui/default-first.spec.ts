@@ -260,36 +260,53 @@ test.describe('DorkOS credits first where nothing works yet @smoke', () => {
     );
 
     const tabA = page;
-    const tabB = await context.newPage();
-    for (const tab of [tabA, tabB]) {
-      await tab.goto('/?settings=runtimes');
-      await tab.waitForSelector('[data-testid="app-shell"]', { timeout: 30_000 });
-    }
+    await tabA.goto('/?settings=runtimes');
     await basePage.waitForAppReady();
     const offerIn = (tab: Page) =>
       tab
         .getByTestId('default-first-claude-code')
         .getByRole('button', { name: 'Use DorkOS credits' });
+    /** The next link-status answer `tab` reads that names `userCode` as waiting. */
+    const statusNaming = (tab: Page, userCode: string) =>
+      tab.waitForResponse(
+        async (response) =>
+          /\/api\/cloud\/link\/status(\?|$)/.test(response.url()) &&
+          (await response.json().catch(() => null))?.pending?.userCode === userCode,
+        { timeout: 30_000 }
+      );
 
-    // Tab A starts the first code. Tab B shows that same code rather than
-    // offering a second start; it stops it and starts its own instead.
+    // Tab A starts the first code.
     await offerIn(tabA).click();
     await expect(tabA.getByText('CODE1111')).toBeVisible();
-    await tabB.bringToFront();
-    // Soft, so a tab that cannot see the shared code still goes on to show
+
+    // Tab B opens Settings while that code waits. Opening reads the link state
+    // at once, so it shows the same code rather than offering a second start.
+    // Driven by that read, not by a poll interval, so a loaded runner waits
+    // for the answer instead of a clock.
+    const tabB = await context.newPage();
+    const tabBRead = statusNaming(tabB, 'CODE1111');
+    await tabB.goto('/?settings=runtimes');
+    await tabB.waitForSelector('[data-testid="app-shell"]', { timeout: 30_000 });
+    await tabBRead;
+    // Soft, so a tab that cannot show the shared code still goes on to show
     // the failure this test exists for: carrying on for a code it did not start.
     const shared = tabB.getByText('CODE1111');
-    await expect.soft(shared).toBeVisible({ timeout: 10_000 });
+    await expect.soft(shared).toBeVisible();
     if (await shared.isVisible()) {
       await tabB
         .getByTestId('default-first-claude-code')
         .getByRole('button', { name: 'Cancel' })
         .click();
     }
+
+    // Tab B starts its own code, which replaces the first on the server.
+    const tabARead = statusNaming(tabA, 'CODE2222');
     await offerIn(tabB).click();
     await expect(tabB.getByText('CODE2222')).toBeVisible();
-    // Tab A follows the server to the one code it waits on.
-    await expect.soft(tabA.getByText('CODE2222')).toBeVisible({ timeout: 10_000 });
+    // Tab A, still waiting on its code, reads the server's answer and follows
+    // it to the one code it waits on.
+    await tabARead;
+    await expect.soft(tabA.getByText('CODE2222')).toBeVisible();
 
     // The code tab B started is approved.
     approved = 'CODE2222';
