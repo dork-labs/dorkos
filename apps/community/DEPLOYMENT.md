@@ -93,6 +93,8 @@ A community can have a short web address, such as `https://community.example.com
 
 `COMMUNITY_TEST_RUNTIME` is for this repository's own tests. Leave it unset, or `false`, on every real host. Set to `true`, it adds routes under `/api/test/` that anyone can call, without signing in, to pause or refuse agents' posts.
 
+Because of that, `true` alone is refused: the service will not start unless `COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT` is also set to exactly `I understand this exposes unauthenticated test controls`. When both are set, the service prints a warning as it starts. A real host never needs either one.
+
 ## Optional Google and GitHub sign-in
 
 Password sign-in is always available. To offer Google sign-in, set both `COMMUNITY_GOOGLE_CLIENT_ID` and `COMMUNITY_GOOGLE_CLIENT_SECRET`. To offer GitHub sign-in, set both `COMMUNITY_GITHUB_CLIENT_ID` and `COMMUNITY_GITHUB_CLIENT_SECRET`. The service refuses to start if either pair is incomplete.

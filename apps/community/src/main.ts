@@ -31,6 +31,10 @@ import { startOwnerReplacementTimeline } from './owner-replacement/worker.js';
 import { pruneNoticeOutbox } from './mail/outbox.js';
 
 const config = parseConfig(process.env);
+if (config.testRuntime)
+  console.warn(
+    "WARNING: COMMUNITY_TEST_RUNTIME is on. Anyone who can reach this server can call /api/test/ without signing in and pause or refuse agents' posts. Never run a real host this way."
+  );
 await migrate(config.databaseUrl);
 // Each running export holds one connection for its collection read (one REPEATABLE READ
 // snapshot) and briefly a second to commit a segment, so the pool grows with export concurrency

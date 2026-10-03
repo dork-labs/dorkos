@@ -234,7 +234,10 @@ export class Infrastructure {
         COMMUNITY_PUBLIC_URL: origin,
         COMMUNITY_PORT: String(port),
         COMMUNITY_STORAGE_PATH: storage,
+        // Unauthenticated test controls need the exact acknowledgement too (DOR-2655).
         COMMUNITY_TEST_RUNTIME: 'true',
+        COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT:
+          'I understand this exposes unauthenticated test controls',
         ...extraEnv,
       },
     });
