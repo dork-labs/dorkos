@@ -1,0 +1,164 @@
+{
+  "spec": "specs/marketplace-dev-link/02-specification.md",
+  "slug": "marketplace-dev-link",
+  "generatedAt": "2026-10-03T18:51:21.334Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Registry, service, trust and the gated door",
+      "subject": "[marketplace-dev-link] [P1] Add the dev-link registry schema, reader/writer and parked-sibling marker",
+      "description": "Goal: one schema for {dorkHome}/marketplace/dev-links.json that the server, @dorkos/harness and the CLI all parse.\n\n1. packages/shared/src/marketplace-schemas.ts (existing subpath @dorkos/shared/marketplace-schemas; do NOT add a new subpath):\n   - DevLinkRecordSchema = z.object({ name: PackageNameSchema, type: z.enum(['plugin','skill-pack']), scope: z.enum(['global','project']), projectPath: z.string().optional() /* required when scope==='project' (refine) */, slot: z.string() /* absolute path of the link */, target: z.string() /* realpath of the working folder */, parked: z.string().optional() /* absolute path of the set-aside installed copy */, restoreApprovals: z.object({ extensions: z.record(z.string(), ExtensionApprovedSourceSchema).optional(), globalActivation: z.array(z.string()).optional() }).optional(), linkedAt: z.string(), linkedVia: z.enum(['app','terminal','agent-card']) }).\n   - DevLinksFileSchema = z.object({ version: z.literal(1), links: z.array(DevLinkRecordSchema) }).\n   - DevLinkStatus type: { name, type, scope, projectPath?, path, state: 'active'|'folder-missing'|'link-missing'|'link-replaced', parked: { version?: string } | null, linkedAt, lastReloadAt? }.\n   - Add MARKETPLACE_DEVLINK_PARKED_MARKER = '.dorkos-devlink-parked' to MARKETPLACE_INSTALL_SIBLING_MARKERS so isInstallSiblingName hides the parked copy from every reader. The name carries no <timestamp>-<uuid> stamp, so recovery and the backup janitor leave it alone.\n   - Pure parseDevLinksFile(text): DevLinksFile | 'unreadable' and a pure isActiveDevLink(record, { lstatIsLink, realpathOfSlot }) helper.\n   TSDoc on every export (hard rule 4).\n2. ExtensionApprovedSourceSchema in packages/shared/src/config-schema.ts gains devLink: z.string().min(1).optional() (\"the realpath of the dev link this approval was given to; absent for an installed copy\"). Follow the adding-config-fields skill checklist (optional additive field, no default; docs in contributing/configuration.md if it lists the fields).\n3. apps/server/src/services/marketplace/dev-links/registry.ts: readDevLinks(dorkHome) (async; returns { links } or { unreadable: reason }), writeDevLinks(dorkHome, file) with in-process serialisation and fsynced atomic rename, modelled exactly on lib/project-install-index.ts. A file that does not parse is refused by readers; the next write moves it aside to dev-links.json.corrupt-<time>.\n\nAcceptance / tests (each with a purpose comment):\n- round-trip; corrupt file refused by readers and moved aside on next write; two concurrent writes both land (serialised).\n- isInstallSiblingName('flow.dorkos-devlink-parked') is true; installed-scanner, harness scanPluginsRoot, extension discovery and readTrustedInstalls all skip a parked folder; recovery/backup-janitor leave it untouched.\n- schema refuses scope 'project' without projectPath.",
+      "activeForm": "Adding the dev-link registry",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Registry, service, trust and the gated door",
+      "subject": "[marketplace-dev-link] [P1] Implement DevLinkService: preview, link, unlink, list, reconcile",
+      "description": "File: apps/server/src/services/marketplace/dev-links/dev-link-service.ts (+ errors.ts, index.ts barrel).\n\nAPI: preview({ path, scope, projectPath }), link({ path, scope, projectPath, replaceInstalled, via }), unlink({ name, scope, projectPath }), list(), reconcile().\n\nValidation, in this order, each a typed error with one plain sentence (writing-app-copy: no \"we\", say what did not happen and what to do):\n1. path absolute and realpath(path) === path, else dev_link_path_not_real carrying realPath (\"That path is a link. Use <real> instead.\").\n2. a readable directory, inside the configured directory boundary (lib/boundary.ts), not inside {dorkHome} -> dev_link_path_not_allowed.\n3. package identity via readInstalledIdentity (installed-scanner.ts) + the package validator from @dorkos/marketplace -> dev_link_not_a_package with the first problem.\n4. type is plugin or skill-pack -> dev_link_unsupported_type.\n5. project scope: projectPath canonical (the route passes it through ctx's boundary helper).\n6. no existing dev link for the same name+scope -> dev_link_exists.\n7. slot = {dorkHome}/plugins/<name> or <projectPath>/.dork/plugins/<name>: empty OK; an unregistered link whose realpath === path -> adopt (no parking); an unregistered link elsewhere -> dev_link_slot_is_linked; an installed copy -> dev_link_slot_taken (carry installed version) unless replaceInstalled; an existing <slot>.dorkos-devlink-parked -> dev_link_parked_exists.\n\npreview returns { name, type, version?, path, scope, slot, replaces: { version } | null, effects (disclosedEffectsOf from preview/disclosed-effects.ts), extensions: string[] (ids under .dork/extensions) }.\n\nlink, inside withInstallTargetLock(slot) (transaction.ts:348):\n1. if replacing: rename(slot, slot + MARKETPLACE_DEVLINK_PARKED_MARKER); capture the parked copy's current extensions.approvedSources entries for the ids it carries and its stored global-activation entries (<name>@global-<digest>) into restoreApprovals.\n2. symlink(target, slot, process.platform === 'win32' ? 'junction' : 'dir').\n3. write the registry record.\n4. record the person's yes for the folder's CURRENT extensions: approvedToRun += id; approvedSources[id] = { path: <slot>/.dork/extensions/<id>, plugin: name, devLink: target } (global consent + hook consent come in task 2.2).\n5. notify: onPluginsChanged({ projectPath }) and extensionManager.requestRefresh().\nAny failure after step 1 undoes earlier steps in reverse (remove link, rename parked back) before rethrowing.\n\nunlink, same lock: remove the link with unlink() (symlink) or rmdir() (junction) - NEVER a recursive delete; if parked, rename back and restore restoreApprovals (each extension entry only if the id's current approval still carries this devLink); forget the dev-link approvals; drop the record; notify. Returns { restored: 'installed' | 'removed' }. Works from every reconcile state; never touches a slot that is no longer the recorded link.\n\nreconcile/list: per record state active | folder-missing | link-missing | link-replaced (realpath(slot) !== target or slot is a real folder). Never repairs on its own.\n\nTests: every refusal; parked copy byte-identical; rollback after a forced failure post-parking; unlink of a junction-shaped link leaves the target's files (test fails if rm -r is used); restoreApprovals round trip; unlink from each state; adoption of a hand-built link.",
+      "activeForm": "Building the dev-link service",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Registry, service, trust and the gated door",
+      "subject": "[marketplace-dev-link] [P1] Bind trust: dev-linked copies get no origin and their own approvals",
+      "description": "Goal: no approval, origin, digest or source trust ever crosses between an installed copy and a dev link at the same path.\n\n1. apps/server/src/services/extensions/extension-trusted-origin.ts: proveOrigin gains devLinkedRoots: ReadonlySet<string> (install roots of ACTIVE registry records, read once per discovery pass). If installRootOf(copy.path) is in it, return { origin: null, problem: 'dev-link', pinnedDigest: null } BEFORE reading any install record or digest, at both scopes. OriginProblem becomes 'changed' | 'linked' | 'dev-link'.\n2. packages/extension-api/src/types.ts: originProblem adds 'dev-link' (both places, lines ~63 and ~164); ExtensionRecord/Public gain devLink?: { path: string }.\n3. extension-discovery.ts / extension-manager.ts: pass devLinkedRoots; set record.devLink.\n4. extension-load-policy.ts: approvedSourceOf sets source.devLink = copy.devLink.path for a dev-linked copy (no digest). isApprovedByPath additionally requires (source.devLink ?? null) === (copy.devLink?.path ?? null). A dev-linked copy is approved by path alone, so edits never ask.\n5. installed-scanner.ts: InstalledPackage gains devLink?: { path, state, parked: boolean } from the registry; a registered dev link does NOT set linked: true. A record whose slot no longer resolves still yields a row built from the registry.\n6. Guards (409 package_is_dev_linked, \"<Name> runs from a dev link. Unlink it first.\"): MarketplaceInstaller install into a dev-linked slot; UninstallFlow for a registered dev link. UpdateFlow reports a registered dev link as unknown with note 'Dev link — runs from your folder' and never applies it. Hand-built links keep LINKED_INSTALL_NOTE and today's uninstall.\n7. Install telemetry is never emitted for a dev link.\n\nTests: proveOrigin returns dev-link even with a matching project-installs record carrying source; installed-copy approval does not cover a dev-linked copy at the same path; dev-link approval does not cover the restored installed copy; retargeted link (realpath != target) is not a dev link; trustSource never covers a dev-linked copy; each guard refuses; hand-built link regression pins.",
+      "activeForm": "Binding dev-link trust",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "Registry, service, trust and the gated door",
+      "subject": "[marketplace-dev-link] [P1] Add the marketplace.link capability, MCP tool and /dev-links routes",
+      "description": "1. apps/server/src/services/marketplace-mcp/tool-link.ts + an entry in marketplace-capabilities.ts:\n   id 'marketplace.link', title 'Run a package from a folder', tier 'destructive', area null, areaNote 'Always asks: a dev link runs a folder’s code unreviewed on every edit, so no setting may pre-approve it.', input z.object({ path: z.string(), projectPath: z.string().optional(), replaceInstalled: z.boolean().optional() }), approvalDisplayFields ['path','projectPath','replaceInstalled'], approvalDetailField 'path', surfaces.mcp { toolName: 'marketplace_link', servers: ['in-session','external'] }. Scope = projectPath ? 'project' : 'global'. linkedVia = context.trusted ? (app|terminal from the caller) : 'agent-card'.\n   Description (model-facing): 'Run a plugin or skill pack from a folder on this computer, reloading on every edit. A person must approve the exact folder. Pass an absolute path. Use projectPath for one project.'\n   Decide always-loaded vs deferred for the claude-code tool census: DEFERRED. Update the two census count guards (see services/runtimes tests) and run them.\n2. apps/server/src/routes/marketplace/dev-links.ts mounted from routes/marketplace.ts:\n   - POST /dev-links/preview (read-only) -> preview or typed refusal (400/403/409).\n   - POST /dev-links -> ctx.gate('marketplace.link', input) (202 approval card / 403 / run) -> 201 DevLinkStatus. Use the existing ctx helper so authorizeCapability gains no new importer (its importers are pinned by a source scan).\n   - GET /dev-links -> { links: DevLinkStatus[], registryUnreadable?: string }.\n   - POST /dev-links/:name/unlink, body { scope, projectPath? } -> trustedCaller(readCallerAuthority(req,res)) bar copied from routes/marketplace/held-back.ts (403 operator_only for an agent, cookie-required under login) -> { restored }.\n   projectPath goes through ctx's boundary helper.\n3. openapi-registry.ts entries; regenerate docs/api/openapi.json and commit it.\n\nTests: agent caller gets approval_required; an approved retry with a different path is refused (input binding); an \"Always allow\" recorded on a marketplace_link card does not let the next call run; trusted caller links; unlink refuses an agent; routes validate bodies.",
+      "activeForm": "Wiring the dev-link door",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Harness projection and consent",
+      "subject": "[marketplace-dev-link] [P2] Project registered dev links in Harness Sync and label them dev",
+      "description": "1. packages/harness/src/sources/dev-links.ts: sync reader of {dorkHome}/marketplace/dev-links.json using parseDevLinksFile from @dorkos/shared/marketplace-schemas. No dorkHome -> no dev links.\n2. sources/installed.ts: scanInstalledSources(opts) gains devLinks?: readonly DevLinkRecord[]. scanPluginsRoot accepts a symlinked entry ONLY when a record names that exact slot and realpathSync(slot) === record.target; every other link is skipped as today (containment rule, reproduced 2026-09-07). Inner scans keep followSymlinks: false. InstalledPlugin gains devLink?: { path }.\n3. plan/installed-projector.ts: generated command wrappers for a dev-linked plugin get a second marker line '<!-- dorkos:dev-link <target> -->' beside GENERATED_COMMAND_MARKER; managed hook groups carry _dorkosDevLink: '<target>' beside _dorkosHarness; the drop list / --check output and services/harness/status.ts mark the package '(dev link: <path>)'. Skill link names stay <pkg>__<name>.\n4. Pass devLinks from every caller: runAutoProjection, services/harness/skills-watcher.ts, project-with-consent.ts, and the dorkos harness sync CLI.\n5. Unlink already calls onPluginsChanged; verify the projection run removes (package gone) or rewrites (installed copy restored) the projections with no dev markers left.\n\nTests: link skipped without record / followed with matching record / skipped when target differs; inner symlink still refused; markers present; re-plan after unlink drops markers and orphans.",
+      "activeForm": "Projecting dev links",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Harness projection and consent",
+      "subject": "[marketplace-dev-link] [P2] Record the link-time yes for global activation and project hooks",
+      "description": "In DevLinkService.link (after the registry write), using the declarations shown on the card (readRunnableDeclarations / activationEffectsOf):\n- global scope: record a global-activation yes via recordApprovedEntry bound to bindingOf({ kind: 'linked', path: target }) and the current declarations (consent/global-plugin-consent.ts). Before that, capture the parked copy's existing <name>@global-<digest> entries into restoreApprovals.globalActivation; unlink restores them verbatim (they bind the parked copy's unchanged content hash).\n- project scope: record hook-consent approvals for the plugin's current hooks (services/harness/hook-consent.ts).\nA new declaration later is a different thing and asks through its existing card (held-back card / hook consent). Editing never asks.\n\nTests: after link, the global dev link loads into a session without a held-back card; adding a hook to the folder holds it back once; unlink restores the installed copy's approval so it is not held back.",
+      "activeForm": "Recording link-time consent",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Hot reload",
+      "subject": "[marketplace-dev-link] [P3] Watch each dev link and drive the existing reload seams",
+      "description": "File: apps/server/src/services/marketplace/dev-links/dev-link-watcher.ts, started at boot for every active record and by link/unlink.\n\n- One chokidar watch per active record on target, ignoreInitial true, ignoring .git/, node_modules/ and isRuntimeStatePath (lib/content-hash.ts).\n- Collect events per link; flush after a 300 ms quiet period. Classify by path relative to target:\n  - .dork/extensions/<id>/** for a known id -> extensionManager.reloadExtension(id) when enabled and allowed to run;\n  - a new/removed .dork/extensions/<id>/ -> extensionManager.requestRefresh();\n  - skills/**, .dork/tasks/**, commands/**, hooks/** -> harness re-projection for the link's scope;\n  - .dork/manifest.json, .claude-plugin/plugin.json, hooks/**, bin/**, and every other file readRunnableDeclarations reads -> onPluginsChanged({ projectPath }).\n- Re-arm + sweep every 60 s, following services/harness/skills-watcher.ts (chokidar drops 13-40% of events right after a watch opens; a missing folder cannot be watched).\n- target disappears -> record state folder-missing; the sweep re-arms when it returns.\n- After each flush broadcast marketplace_dev_link_reloaded { name, scope, projectPath?, at, actions: ('extension'|'projection'|'plugins')[], errors?: string[] } on the global event stream (add it to the shared event schema); keep lastReloadAt for DevLinkStatus.\n\nTests: classification table; debounce coalesces a burst into one flush; ignored paths never fire; a reload writes nothing under target (no self-trigger; the compiler writes to the build cache under dorkHome); folder removed and restored is re-armed.\nIntegration (\"Done when\"): link a fixture plugin with an extension + a skill; edit the extension source -> extension_reloaded with a new sourceHash and no pending approval; add a skill -> .claude/skills/<pkg>__<new> exists; unlink -> installed copy back with its approval.",
+      "activeForm": "Building the dev-link watcher",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.4",
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "CLI and doctor",
+      "subject": "[marketplace-dev-link] [P4] Add dorkos marketplace link/unlink and the Dev links doctor check",
+      "description": "1. packages/cli/src/commands/marketplace-link.ts: 'dorkos marketplace link <path> [--project <path>] [--replace-installed] [--yes] [--approval <token>] [--json]'. Resolve <path> against the caller's cwd and to its realpath; --project via resolveProjectFlag. Call POST /api/marketplace/dev-links/preview, print name, real path, what it runs, what it replaces; ask 'Run <name> from <path>?' with lib/confirm-prompt.ts on a TTY (--yes skips). Then POST /dev-links. An agent caller gets approval_required: print the approval id and 'Retry with: dorkos marketplace link <path> --approval <token>', exactly like commands/uninstall.ts.\n2. marketplace-unlink.ts: 'dorkos marketplace unlink <name> [--project <path>] [--json]' -> POST /dev-links/:name/unlink; prints 'Your installed copy of <name> is back.' or '<name> removed. Your folder was not touched.'\n3. marketplace-dispatcher.ts wiring + help text; marketplace-installed.ts marks rows 'dev link -> <path>' and a missing folder.\n4. doctor-checks.ts checkDevLinks(dorkHome): reads the registry file directly (no server). ok with none or all active (list each); warn per record not active with the fix 'dorkos marketplace unlink <name>'; warn when the file does not parse. Return the same CheckResult from GET /api/health/deep.\n\nTests: link prompts and sends the realpath; --yes; agent retry line; unlink messages; doctor states (none, active, folder-missing, unreadable).",
+      "activeForm": "Adding the CLI verbs",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "1.4"
+      ],
+      "parallelWith": [
+        "5.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "App",
+      "subject": "[marketplace-dev-link] [P5] Show dev links in the app: badge, link dialog, unlink, switch",
+      "description": "All copy follows writing-app-copy: <=15 words per block (pnpm check:copy-length), no \"we\", exact-action buttons, no code names; never \"integration/connector/adapter/provider\". grep apps/e2e for any Installed-row string before changing it.\n\n1. shared/ui DevLinkTag (presentational: 'Dev link' tag + 'Dev link: <path>' line, path wraps with [overflow-wrap:anywhere], muted, no alarm colour). FSD: features and widgets each pass the path they have.\n2. entities/marketplace: useDevLinks (GET /dev-links), usePreviewDevLink, useLinkFolder, useUnlinkDevLink; invalidate installed + dev-links queries on marketplace_dev_link_reloaded.\n3. features/marketplace:\n   - Installed toolbar 'Link a folder' -> LinkFolderDialog: path field (+ Browse via the existing DirectoryPicker in the desktop app), the install dialog's scope choice; preview on blur; inline refusals keep input ('No package found in this folder.', 'That path is a link. Use <real> instead.'); ready card: title 'Run <Name> from this folder?', monospace path, 'Edits here run in DorkOS right away, without asking.', when replacing 'Your installed copy (v<x>) is set aside, not deleted.' + required checkbox 'Use my folder instead of the installed copy', the install dialog's 'It runs:' disclosure; buttons 'Cancel' / 'Link folder'. A 202 approval answer is impossible for the app (trusted caller) but handle it with the standard pending notice.\n   - Installed row for devLink: DevLinkTag, status 'Reloaded 4s ago' | 'Couldn’t reload: <extension> has a build error.' (+ Details) | 'Folder missing. Restore it or unlink.'; actions 'Use installed copy' (parked), 'Install published version' (no parked, package found in a marketplace: unlink then open the normal install dialog), 'Unlink'. No Update/Uninstall on these rows.\n   - UnlinkDialog: 'Unlink <Name>?' / 'Your installed copy comes back.' or '<Name> is removed. Your folder is not touched.' / 'Cancel' 'Unlink'. Toasts: '<Name> runs from the installed copy.' / '<Name> removed.'\n   - Package sheet + browse card: 'Dev link' replaces 'Installed vX'.\n4. features/extensions ExtensionCard: render originProblem 'dev-link' as DevLinkTag with links to the Installed row.\n5. widgets/extension-page (/x/<extensionId>, the Flow tab): slim strip 'Dev link: <path>' + 'Use installed copy' when the page's extension record has devLink.\n6. Dev Playground showcase for the row states (maintaining-dev-playground), mocks in dev/showcases/marketplace-mocks.ts.\n7. One Playwright spec (apps/e2e, test-mode server, temp folder): link via dialog, see badge+path on Installed and Settings -> Extensions, unlink.\n8. Docs: docs/marketplace guide 'Develop a package with a dev link' (writing-for-humans); contributing/marketplace-installs.md dev-link section; contributing/extension-authoring.md pointer; changelog/unreleased fragment.\n\nTests (RTL + mock Transport): badge on each surface; dialog states incl. replace checkbox gating 'Link folder'; unlink copy per parked/not; SSE event updates 'Reloaded'.",
+      "activeForm": "Building the dev-link UI",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "1.4"
+      ],
+      "parallelWith": [
+        "4.1",
+        "3.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    }
+  ]
+}

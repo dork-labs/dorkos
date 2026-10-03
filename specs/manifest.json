@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261003-184400",
+      "slug": "marketplace-dev-link",
+      "title": "Dev link: run a marketplace package from a working folder, owner-only, hot-reloaded",
+      "created": "2026-10-03",
+      "status": "specified",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2696"
+    },
+    {
       "id": "261001-201020",
       "slug": "relay-delivery-receipts",
       "title": "Durable Relay HTTP delivery receipts",
