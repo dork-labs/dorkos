@@ -292,7 +292,7 @@ export class AgentSendService {
   private readonly describeSession: (sessionId: string) => Promise<SessionFacts>;
   private readonly sessionCwd: (sessionId: string) => Promise<string | undefined>;
   private readonly isBusy: (sessionId: string) => Promise<boolean>;
-  private readonly dispatch: NonNullable<AgentSendDeps['dispatch']>;
+  private readonly dispatchSessionMessage: NonNullable<AgentSendDeps['dispatch']>;
   private readonly reserveChat: NonNullable<AgentSendDeps['reserveChat']>;
   private readonly isQueued: (messageId: string) => boolean;
   private readonly resumeQueue: NonNullable<AgentSendDeps['resumeQueue']>;
@@ -335,7 +335,7 @@ export class AgentSendService {
     this.isBusy =
       deps.isBusy ??
       (async (sessionId) => isTurnInFlight(sessionId, await runtimeRegistry.resolveForSession(sessionId)));
-    this.dispatch = deps.dispatch ?? dispatchSessionMessage;
+    this.dispatchSessionMessage = deps.dispatch ?? dispatchSessionMessage;
     this.reserveChat =
       deps.reserveChat ??
       ((extensionId, sessionId) => {
@@ -555,7 +555,7 @@ export class AgentSendService {
     const name = sanitizeIdentity(this.deps.extensionName(row.extensionId)) ?? row.extensionId;
     let result: DispatchSessionMessageResult;
     try {
-      result = await this.dispatch({
+      result = await this.dispatchSessionMessage({
         origin: { kind: 'extension-message' },
         sessionId,
         messageId: row.id,

@@ -164,17 +164,14 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
  * the server half is code the person already chose to run, and a declaration
  * it writes about itself would hold nothing back.
  */
-function createAgentApi(
-  extensionId: string,
-  isDisposed: () => boolean
-): { agent: AgentApi; release: () => void } {
+function createAgentApi(extensionId: string): { agent: AgentApi; release: () => void } {
   const releases = new Set<() => void>();
   let released = false;
   const agent: AgentApi = {
     async send(input) {
-      // A given-up or shut-down instance sends nothing: the message would run
-      // after the extension that sent it was stopped.
-      if (isDisposed() || released) {
+      // A shut-down instance sends nothing: the message would run after the
+      // extension that sent it was stopped.
+      if (released) {
         throw new AgentSendError(
           'stopped',
           'This extension was stopped, so it cannot send messages. Reload it to try again.'
@@ -187,7 +184,7 @@ function createAgentApi(
       return service.send(extensionId, input);
     },
     subscribe(listener) {
-      if (isDisposed() || released) {
+      if (released) {
         throw new Error(
           `agent.subscribe was called after the extension "${extensionId}" shut down or reloaded.`
         );
@@ -320,7 +317,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     extensionId,
     dorkHome
   );
-  const { agent, release: releaseAgent } = createAgentApi(extensionId, () => disposed);
+  const { agent, release: releaseAgent } = createAgentApi(extensionId);
 
   // Every way this instance can start something that outlives the call.
   const guardedAccounts = accounts && {
@@ -339,6 +336,21 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     ...inbox,
     onAction: (handler: Parameters<typeof inbox.onAction>[0]) =>
       disposed ? inert('inbox.onAction') : inbox.onAction(handler),
+  };
+  const guardedAgent: AgentApi = {
+    // A given-up instance sends nothing: the message would run after the
+    // extension that sent it was stopped.
+    send: async (input) => {
+      if (disposed) {
+        inert('agent.send');
+        throw new AgentSendError(
+          'stopped',
+          'This extension was stopped before it finished starting, so it cannot send messages. Reload it to try again.'
+        );
+      }
+      return agent.send(input);
+    },
+    subscribe: (listener) => (disposed ? inert('agent.subscribe') : agent.subscribe(listener)),
   };
   const guardedProjectSettings = {
     ...projectSettings,
@@ -375,7 +387,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         return service.start(extensionId, input, 'ctx');
       },
     },
-    agent,
+    agent: guardedAgent,
   };
 
   const releaseListeners = () => {
