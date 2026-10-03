@@ -57,10 +57,18 @@ export interface ExtensionRecord {
    * Why a copy the installer recorded has no trusted origin: `changed` (a
    * project copy whose plugin folder no longer holds what DorkOS installed,
    * or now holds a symbolic link) or `linked` (a global plugin holding a
-   * symbolic link). A `changed` copy runs only while a person's yes names its
-   * files exactly as they are now.
+   * symbolic link) or `dev-link` (its plugin runs from a folder a person
+   * linked, DOR-2696). A `changed` copy runs only while a person's yes names
+   * its files exactly as they are now; a `dev-link` copy only while a yes
+   * given to that dev link names it.
    */
-  originProblem?: 'changed' | 'linked';
+  originProblem?: 'changed' | 'linked' | 'dev-link';
+  /**
+   * Set when the plugin carrying this copy is a dev link (DOR-2696): the real
+   * path of the folder it runs from. Such a copy never has a trusted origin,
+   * and only an approval given to this dev link covers it.
+   */
+  devLink?: { path: string };
   /**
    * The whole plugin folder's digest now, for a `changed` copy: what a
    * person's approval of it is pinned to.
@@ -158,10 +166,13 @@ export interface ExtensionRecordPublic {
    * Why DorkOS can't vouch for where this copy came from, although its
    * installer recorded it: `changed` (its plugin's files changed after DorkOS
    * installed it) or `linked` (its plugin holds a shortcut to files
-   * elsewhere). Settings says so on its card. Absent otherwise. A changed
-   * copy of an id a person approved for another copy is not listed at all.
+   * elsewhere) or `dev-link` (its plugin runs from a folder you linked).
+   * Settings says so on its card. Absent otherwise. A changed copy of an id a
+   * person approved for another copy is not listed at all.
    */
-  originProblem?: 'changed' | 'linked';
+  originProblem?: 'changed' | 'linked' | 'dev-link';
+  /** Set when the copy runs from a dev link: the real path of its folder. */
+  devLink?: { path: string };
 }
 
 /** The interface an extension module must export. */

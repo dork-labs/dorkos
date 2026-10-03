@@ -140,5 +140,6 @@ export function toPublic(
     approvedToRun: mayRunExtensionCode(record, approvals),
     shadowedBy: record.shadowedBy ?? null,
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
+    ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),
   };
 }

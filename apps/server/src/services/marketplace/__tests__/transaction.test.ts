@@ -772,6 +772,39 @@ describe('withInstallTargetLock (re-entrancy)', () => {
     ).resolves.toBe('reached');
   });
 
+  it('keys a target that is itself a link on the slot, not on the folder it points at', async () => {
+    // Purpose (DOR-2696): a dev link puts a link IN the install slot. Were the
+    // leaf resolved, the slot would lock on the developer's folder while the
+    // link is in place and on the slot otherwise, so a link and an install of
+    // one package could hold "the same" target at once. Holding the slot must
+    // make a take of the folder it points at a DIFFERENT lock (runs at once),
+    // while a take of the slot itself waits.
+    const devFolder = path.join(scratch, 'work', 'flow');
+    await mkdir(devFolder, { recursive: true });
+    const slot = path.join(scratch, 'plugins', 'flow');
+    await mkdir(path.dirname(slot), { recursive: true });
+    await symlink(devFolder, slot, 'dir');
+
+    const release = deferredVoid();
+    const entered = deferredVoid();
+    const holder = withInstallTargetLock(slot, async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    // The folder behind the link is not the slot: it does not wait on the hold.
+    await expect(withInstallTargetLock(devFolder, async () => 'free')).resolves.toBe('free');
+    let slotEntered = false;
+    const second = withInstallTargetLock(slot, async () => {
+      slotEntered = true;
+    });
+    await withInstallTargetLock(path.join(scratch, 'unrelated'), async () => undefined);
+    expect(slotEntered).toBe(false);
+    release.resolve();
+    await Promise.all([holder, second]);
+    expect(slotEntered).toBe(true);
+  });
+
   it('still makes a second holder wait, because re-entry is scoped to one context', async () => {
     // Re-entrancy must not be a hole in the mutual exclusion: only the context
     // that already holds the target skips the queue.
