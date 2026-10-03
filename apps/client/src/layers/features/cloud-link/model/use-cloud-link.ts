@@ -322,6 +322,10 @@ export function useCloudLink(): UseCloudLink {
     queryKey: cloudLinkStatusKey,
     queryFn: readStatus,
     retry: false,
+    // Always stale, never the app's 30-second default: a tab the person comes
+    // back to must read the flow on focus, or it would keep offering a new
+    // start while another tab's code is already waiting.
+    staleTime: 0,
     // Poll while a link waits for approval, whichever tab started it; every
     // terminal state stops it.
     refetchInterval: (query) => (query.state.data?.state === 'pending' ? POLL_INTERVAL_MS : false),
