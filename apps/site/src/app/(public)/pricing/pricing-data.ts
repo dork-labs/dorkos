@@ -43,7 +43,7 @@ export const TAX_NOTE =
  * the note says so in the same breath.
  */
 export const ELIGIBILITY_NOTE =
-  'Paid plans and spaces we run for you are for people in the United States who are 18 or older. The free, open-source app is open to everyone, wherever they live, and so is running DorkOS or a space on your own computer or server.';
+  'Paid plans and hosted spaces are for people in the United States, 18 or older. The free app is open to everyone, and so is running DorkOS or a space yourself.';
 
 // ── Credits and money ────────────────────────────────────────────────────────
 //
