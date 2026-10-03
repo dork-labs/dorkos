@@ -489,7 +489,12 @@ router.post('/account/export', async (req, res) => {
     const job = await requestAccountExport();
     const body: CloudAccountExportResponse = {
       ok: true,
-      export: { requestedAt: job.requestedAt, readyAt: job.readyAt, downloadUrl: job.downloadUrl },
+      export: {
+        requestedAt: job.requestedAt,
+        readyAt: job.readyAt,
+        downloadUrl: job.downloadUrl,
+        emailRequested: job.emailRequested,
+      },
     };
     return res.json(body);
   } catch (err) {

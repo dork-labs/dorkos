@@ -87,7 +87,9 @@ export const AccountExportResponseSchema = z
       .string()
       .url()
       .nullable()
-      .describe('A short-lived download link, null until the export is ready.'),
+      .describe(
+        'A link a person opens in their own browser to get the export; it may ask them to sign in first. Null until the export is ready.'
+      ),
   })
   .describe('The state of an account export the caller asked for.');
 

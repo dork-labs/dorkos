@@ -3920,10 +3920,14 @@ const CloudAccountExportResponseDocSchema = z
       export: z.object({
         requestedAt: z.string(),
         readyAt: z.string().nullable(),
-        downloadUrl: z
-          .string()
-          .nullable()
-          .openapi({ description: 'A short-lived https link, null until the export is ready.' }),
+        downloadUrl: z.string().nullable().openapi({
+          description:
+            'An https link the person opens in their own browser to get the export; it may ask them to sign in. Null until the export is ready.',
+        }),
+        emailRequested: z.boolean().openapi({
+          description:
+            'Whether an email for when the export is ready was asked for. Asked only when the first answer had no link.',
+        }),
       }),
     }),
     z.object({ ok: z.literal(false), problem: CloudProblemDocSchema }),

@@ -78,8 +78,19 @@ interface Seen {
   authorization: string | null;
 }
 
-/** Answer `/v1` requests by path, recording each one; any other path fails the test. */
-function fakeAccount(routes: Record<string, { status: number; body: unknown }>) {
+/** One answer from the fake account. */
+interface FakeAnswer {
+  status: number;
+  body: unknown;
+}
+
+/**
+ * Answer `/v1` requests by path, recording each one; any other path fails the
+ * test. A path given a list answers with each entry in turn, then repeats the
+ * last one.
+ */
+function fakeAccount(routes: Record<string, FakeAnswer | FakeAnswer[]>) {
+  const calls: Record<string, number> = {};
   const seen: Seen[] = [];
   vi.stubGlobal(
     'fetch',
@@ -92,8 +103,10 @@ function fakeAccount(routes: Record<string, { status: number; body: unknown }>) 
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
         authorization: headers.get('authorization'),
       });
-      const hit = routes[path];
-      if (!hit) throw new Error(`unexpected request: ${path}`);
+      const route = routes[path];
+      if (!route) throw new Error(`unexpected request: ${path}`);
+      const n = (calls[path] = (calls[path] ?? 0) + 1);
+      const hit = Array.isArray(route) ? route[Math.min(n, route.length) - 1] : route;
       return new Response(JSON.stringify(hit.body), {
         status: hit.status,
         headers: { 'content-type': 'application/json' },
@@ -250,34 +263,60 @@ describe('billing-page routes', () => {
   });
 
   describe('POST /api/cloud/account/export', () => {
-    it('asks for the export and says it is still being prepared while it has no link', async () => {
+    it('asks again with the ready email only when the first answer has no link', async () => {
       const seen = fakeAccount({ '/v1/account/export': { status: 200, body: exportFixture } });
       const res = await request(server).post('/api/cloud/account/export').expect(200);
       expect(res.body).toEqual({
         ok: true,
-        export: { requestedAt: exportFixture.requestedAt, readyAt: null, downloadUrl: null },
+        export: {
+          requestedAt: exportFixture.requestedAt,
+          readyAt: null,
+          downloadUrl: null,
+          emailRequested: true,
+        },
       });
       expect(res.headers['cache-control']).toBe('no-store');
-      expect(seen[0]).toMatchObject({
+      expect(seen.map((r) => r.body)).toEqual([{ notifyEmail: false }, { notifyEmail: true }]);
+      expect(seen[1]).toMatchObject({
         method: 'POST',
         path: '/v1/account/export',
-        body: { notifyEmail: true },
         authorization: 'Bearer tok_test',
       });
     });
 
-    it('passes on the download link once the export is ready', async () => {
+    it('asks once, with no email, when the export is ready straight away', async () => {
       const ready = {
         ...exportFixture,
         readyAt: '2026-09-15T12:05:00.000Z',
         downloadUrl: 'https://files.example.invalid/exp_0001',
       };
-      fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
+      const seen = fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
       const res = await request(server).post('/api/cloud/account/export').expect(200);
       expect(res.body.export).toEqual({
         requestedAt: ready.requestedAt,
         readyAt: ready.readyAt,
         downloadUrl: ready.downloadUrl,
+        emailRequested: false,
+      });
+      expect(seen.map((r) => r.body)).toEqual([{ notifyEmail: false }]);
+    });
+
+    it('passes on a link that arrives on the second request, still saying an email was asked for', async () => {
+      const ready = {
+        ...exportFixture,
+        readyAt: '2026-09-15T12:05:00.000Z',
+        downloadUrl: 'https://files.example.invalid/exp_0001',
+      };
+      fakeAccount({
+        '/v1/account/export': [
+          { status: 200, body: exportFixture },
+          { status: 200, body: ready },
+        ],
+      });
+      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      expect(res.body.export).toMatchObject({
+        downloadUrl: ready.downloadUrl,
+        emailRequested: true,
       });
     });
 
@@ -287,9 +326,15 @@ describe('billing-page routes', () => {
         readyAt: '2026-09-15T12:05:00.000Z',
         downloadUrl: 'http://files.example.invalid/x',
       };
-      fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
+      const seen = fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
       const res = await request(server).post('/api/cloud/account/export').expect(200);
-      expect(res.body.export).toMatchObject({ readyAt: null, downloadUrl: null });
+      expect(res.body.export).toMatchObject({
+        readyAt: null,
+        downloadUrl: null,
+        emailRequested: false,
+      });
+      // The export was ready; an email would announce a link this app drops.
+      expect(seen.map((r) => r.body)).toEqual([{ notifyEmail: false }]);
     });
 
     it.each([
