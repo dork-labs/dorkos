@@ -388,7 +388,10 @@ export const marketplaceDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) =>
-        createLinkHandler(requireMarketplaceDeps(deps))(input, { trusted: !!context.trusted }),
+        createLinkHandler(requireMarketplaceDeps(deps))(input, {
+          trusted: !!context.trusted,
+          ...(context.approvedChange !== undefined && { approvedChange: context.approvedChange }),
+        }),
     }),
   ],
 };

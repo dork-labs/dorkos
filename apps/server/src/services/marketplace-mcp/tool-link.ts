@@ -113,20 +113,27 @@ export async function describeLinkApproval(
 }
 
 /**
- * Build the handler. It links exactly what the card described: the
- * description is read again and the link is refused if the folder no longer
- * matches it. Refusals come back as the tool's error result, with the refusal
+ * Build the handler. It links exactly what the card described: the link is
+ * held to the description the gate let through (`approvedChange`), and is
+ * refused if the folder no longer matches it under the lock. Refusals come back as the tool's error result, with the refusal
  * code and one sentence the agent can act on.
  *
  * @param deps - The marketplace service bundle.
- * @returns The handler: arguments plus whether the caller is the person.
+ * @returns The handler: arguments, whether the caller is the person, and the
+ *   approved description when the gate let the call through on one.
  */
 export function createLinkHandler(deps: MarketplaceMcpDeps) {
-  return async (args: LinkToolArgs, caller: { trusted: boolean }): Promise<DevLinkStatus> => {
+  return async (
+    args: LinkToolArgs,
+    caller: { trusted: boolean; approvedChange?: string }
+  ): Promise<DevLinkStatus> => {
     const devLinks = requireDevLinks(deps);
     const target = await targetOf(args);
     return refusing(async () => {
-      const expectedChange = await devLinks.describeApproval(target);
+      // The text the gate let through, which is what the person approved.
+      // Only a trusted caller, whom the gate does not stop, has none; it is
+      // the person, and the folder as it is now is what they are linking.
+      const expectedChange = caller.approvedChange ?? (await devLinks.describeApproval(target));
       return devLinks.link({
         ...target,
         via: caller.trusted ? 'terminal' : 'agent-card',

@@ -261,6 +261,14 @@ export interface CapabilityHandlerContext {
    */
   approval?: GrantedApproval;
   /**
+   * For a capability with `describeApprovalChange`: the description the gate
+   * computed and let through, which is exactly the text the person approved
+   * when an approval was spent (DOR-2696). Set by the registry, never by a
+   * caller. A handler that acts on what the card showed acts on THIS text
+   * rather than reading the state again, which could have moved since.
+   */
+  approvedChange?: string;
+  /**
    * The approval token the caller presented, handed to the handler only for a
    * capability that declares `forwardsApproval` (the request tool), which passes
    * it on to the action it asked for. Every other handler never sees a token.
@@ -684,6 +692,7 @@ export function composeRegistry(
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
         if (decision.approval) invocationContext.approval = decision.approval;
+        if (change !== undefined) invocationContext.approvedChange = change;
       }
 
       // No observer, or nothing to attribute: run the original path untouched so
