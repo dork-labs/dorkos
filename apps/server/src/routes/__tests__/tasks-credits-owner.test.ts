@@ -100,6 +100,7 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
   it('refuses an agent moving a schedule onto credits', async () => {
     const other = store.createTask({
       name: 'weekly',
+      description: 'runs on its own sign-in',
       prompt: 'p',
       cron: '0 4 * * 1',
       filePath: '/tmp/tasks/weekly/SKILL.md',
@@ -137,6 +138,7 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
       signedInUser = { userId: 'user_member', credential: 'cookie' };
       const other = store.createTask({
         name: 'weekly',
+        description: 'runs on its own sign-in',
         prompt: 'p',
         cron: '0 4 * * 1',
         filePath: '/tmp/tasks/weekly/SKILL.md',

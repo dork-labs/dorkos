@@ -936,7 +936,9 @@ describe('Mesh routes', () => {
 
       afterEach(async () => {
         const { configManager } = await import('../../services/core/config-manager.js');
-        vi.mocked(configManager.get).mockImplementation(() => undefined);
+        vi.mocked(configManager.get).mockImplementation(
+          (() => undefined) as unknown as typeof configManager.get
+        );
       });
 
       it('records no consent for a signed-in person who does not own this DorkOS', async () => {
