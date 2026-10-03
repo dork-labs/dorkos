@@ -22,7 +22,7 @@ Count the words in each **block**: one label, one title, one body, one toast, on
 | 7-15  | Allowed, flagged. Shorten if you can |
 | 16+   | Never                                |
 
-`pnpm check:copy-length` measures every block in `apps/client/src` and lists the long ones, worst first (`--warnings` lists the 7-15 ones too). It runs in the `typecheck` CI job, report-only until the app-wide copy sweep lands; after that, a 16+ block fails the build. It counts `{name}` as one word, and joins `Couldn’t reach {name}. Try again.` into one block.
+`pnpm check:copy-length` measures every block in `apps/client/src` and lists the long ones, worst first (`--warnings` lists the 7-15 ones too). It runs in the `typecheck` CI job, and a 16+ block fails the build. It counts `{name}` as one word, and joins `Couldn’t reach {name}. Try again.` into one block.
 
 **When there is more to say,** climb this ladder and stop at the first rung that works:
 

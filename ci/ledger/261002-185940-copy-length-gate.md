@@ -20,9 +20,9 @@ classifier and file walk, and joins JSX text split by an interpolation so a sent
 in it counts as one block. It rides the `typecheck` job next to the vocab gate, for the same
 reason that gate does: `typecheck` is required, unfiltered and reports on `merge_group`.
 
-It lands with `--report-only`, so it prints the offenders and always exits 0. The app-wide copy
-sweep brings every block under the cap and drops the flag in the same PR, which turns it into a
-gate. The step adds a few seconds of TypeScript parsing to a job that already installs
+It landed with `--report-only`, so it printed the offenders and always exited 0. The app-wide
+copy sweep (seven PRs, #2481 to #2489 and the last wave) brought every block under the cap, and
+its last PR dropped the flag, which turned it into a gate. The step adds a few seconds of TypeScript parsing to a job that already installs
 everything it needs.
 
 Revert or revisit if the step's duration becomes noticeable in `typecheck`, or if its idea of a
