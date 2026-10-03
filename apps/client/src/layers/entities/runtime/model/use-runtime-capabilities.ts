@@ -85,3 +85,21 @@ export function useCapabilitiesForRuntime(
   const type = runtimeType ?? data.defaultRuntime;
   return Object.hasOwn(data.capabilities, type) ? data.capabilities[type] : undefined;
 }
+
+/**
+ * What each of these runtimes does not get on DorkOS credits, in each
+ * runtime's own sentence (`RuntimeCapabilities.credits.caveat`), in order and
+ * without repeats. Every surface that can move a runtime onto credits shows
+ * these beside the choice.
+ *
+ * @param runtimes - The runtime types the surface offers or reports credits for.
+ */
+export function useCreditsCaveats(runtimes: readonly string[]): string[] {
+  const { data } = useRuntimeCapabilities();
+  const caveats: string[] = [];
+  for (const type of runtimes) {
+    const caveat = data?.capabilities[type]?.credits?.caveat;
+    if (caveat && !caveats.includes(caveat)) caveats.push(caveat);
+  }
+  return caveats;
+}

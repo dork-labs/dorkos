@@ -114,7 +114,7 @@ describe('what a runtime does not get on credits', () => {
   it('says it beside the choice, in the runtime’s own sentence', async () => {
     renderSection('codex', { ...LINKED, runtimes: { ...LINKED.runtimes, codex: 'wired' } });
     expect(await screen.findByTestId('credits-runs-on-note')).toHaveTextContent(
-      "Web search isn't available on DorkOS credits."
+      "Codex can't search the web on DorkOS credits."
     );
   });
 });

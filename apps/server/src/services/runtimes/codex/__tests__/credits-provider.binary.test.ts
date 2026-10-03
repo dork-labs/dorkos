@@ -45,6 +45,17 @@ const PERSON_KEY = 'fake-person-openai-key-never-real';
 /** The token variable this file names, so a case can take the token away again. */
 const TOKEN_VAR = 'DORKOS_CREDITS_TOKEN_BINARYTEST';
 
+/**
+ * The tool kinds Codex runs on this machine itself. Anything else (web
+ * search, or any later tool the vendor runs and bills) cannot ride credits.
+ */
+const LOCAL_TOOL_TYPES = new Set(['function', 'namespace', 'custom']);
+
+/** Fail on any tool in a credits request that Codex does not run itself. */
+function expectOnlyLocalTools(toolTypes: string[]): void {
+  expect(toolTypes.filter((type) => !LOCAL_TOOL_TYPES.has(type))).toEqual([]);
+}
+
 /** The credits launch every credits case runs on, against this run's fake credits server. */
 function launch(): CreditsLaunch {
   return {
@@ -226,9 +237,10 @@ describe.skipIf(BINARY === null)('Codex on DorkOS credits, against the real bina
     expect(seen[0]?.path).toBe('/v1/responses');
     for (const hit of seen) expect(hit.authorization).toBe(`Bearer ${TOKEN}`);
     // The vendor's billed web search, which the credits endpoint refuses, is
-    // not offered: the request still carries Codex's own tools.
+    // not offered: the request still carries Codex's own tools, and only the
+    // kinds Codex runs itself, so a new vendor-run tool fails this too.
     expect(seen[0]?.toolTypes.length).toBeGreaterThan(0);
-    for (const hit of seen) expect(hit.toolTypes).not.toContain('web_search');
+    for (const hit of seen) expectOnlyLocalTools(hit.toolTypes);
     // The person's home was never the one the CLI ran in.
     expect(options.env?.CODEX_HOME).toBe(creditsCodexHome());
     expect(fs.readdirSync(personHome)).toEqual(['config.toml']);
@@ -239,6 +251,9 @@ describe.skipIf(BINARY === null)('Codex on DorkOS credits, against the real bina
   // plants a trust entry for the project so its `.codex/config.toml` IS read,
   // and the provider DorkOS passes on the command line must still win.
   it('keeps the credits provider even in a folder Codex trusts, whose own config is read', async () => {
+    // The trusted project also asks for live web search: the turn's own
+    // setting must still win.
+    fs.appendFileSync(path.join(folder, '.codex', 'config.toml'), '\nweb_search = "live"\n');
     fs.writeFileSync(
       path.join(creditsCodexHome(), 'config.toml'),
       [`[projects."${folder}"]`, 'trust_level = "trusted"'].join('\n')
@@ -247,6 +262,7 @@ describe.skipIf(BINARY === null)('Codex on DorkOS credits, against the real bina
     expect(seen.length, 'the credits turn reached neither server').toBeGreaterThan(0);
     expect(seen.every((hit) => hit.server === 'credits')).toBe(true);
     for (const hit of seen) expect(hit.authorization).toBe(`Bearer ${TOKEN}`);
+    for (const hit of seen) expectOnlyLocalTools(hit.toolTypes);
   }, 60_000);
 
   it('sends nothing at all when a credits turn has lost its token (fail closed)', async () => {

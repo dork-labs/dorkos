@@ -128,12 +128,12 @@ describe('readCreditsFor — what a runtime does not get on credits', () => {
         credits: {
           protocol: 'openai-responses',
           scope: 'conversation',
-          caveat: "Web search isn't available on DorkOS credits.",
+          caveat: "Codex can't search the web on DorkOS credits.",
         },
       } as never,
     });
     expect(rows.find((row) => row.runtime === 'codex')?.caveat).toBe(
-      "Web search isn't available on DorkOS credits."
+      "Codex can't search the web on DorkOS credits."
     );
     expect(rows.find((row) => row.runtime === 'claude-code')?.caveat).toBeUndefined();
   });

@@ -7,7 +7,7 @@ import {
   useSettingsDeepLink,
   useUndoFilledCredits,
 } from '@/layers/shared/model';
-import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { getRuntimeDescriptor, useCreditsCaveats } from '@/layers/entities/runtime';
 import { errorReason } from '../model/use-credits-for';
 
 /** A runtime's name as the app shows it everywhere ("Claude Code"). */
@@ -52,6 +52,8 @@ export function CreditsNotices() {
 
 function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
   const dismiss = useDismissCreditsNotice();
+  // What the runtimes DorkOS moved onto credits do not get there.
+  const caveats = useCreditsCaveats(notice.kind === 'filled' ? notice.runtimes : []);
   const undo = useUndoFilledCredits();
   const setDefault = useSetCreditsDefault();
   const settings = useSettingsDeepLink();
@@ -73,6 +75,7 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
           {names} now {notice.runtimes.length === 1 ? 'runs' : 'run'} on your DorkOS credits,
           because {notice.runtimes.length === 1 ? 'it' : 'they'} had no working sign-in when you
           linked your account.
+          {caveats.map((caveat) => ` ${caveat}`).join('')}
         </p>
         <div className="flex flex-wrap gap-2">
           <Button

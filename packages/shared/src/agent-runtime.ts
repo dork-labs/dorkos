@@ -843,8 +843,12 @@ export interface RuntimeCreditsSupport {
   scope: 'conversation' | 'runtime';
   /**
    * What a person does not get on credits that they would on their own
-   * sign-in, as one plain sentence every surface that offers the choice shows
-   * beside it. Absent when nothing is missing.
+   * sign-in, as one plain sentence. Every client surface that can move the
+   * runtime onto credits shows it beside the choice, read through
+   * `useCreditsCaveats` (`entities/runtime`): the runtime card's Runs on, "Use
+   * credits for", the default-first credits card (and its "chosen" line), the
+   * "You're ready" status after it, and the notice when a new link filled a
+   * gap. Absent when nothing is missing.
    */
   caveat?: string;
 }

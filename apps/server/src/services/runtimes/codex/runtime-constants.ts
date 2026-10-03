@@ -160,7 +160,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   credits: {
     protocol: 'openai-responses',
     scope: 'conversation',
-    caveat: "Web search isn't available on DorkOS credits.",
+    caveat: "Codex can't search the web on DorkOS credits.",
   },
   features: {},
 };

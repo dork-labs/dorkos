@@ -26,6 +26,7 @@ import {
   getRuntimeDescriptor,
   KeepItLocalNote,
   RemoteSigninNotice,
+  useCreditsCaveats,
   useRuntimeCreditsOffer,
   type RuntimeConnectSlot,
   type RuntimeConnectSlotProps,
@@ -48,6 +49,7 @@ export function RuntimeConnectFlow({
   const offer = useRuntimeCreditsOffer(type);
   const renderCreditsOffer = useCreditsOfferSlot();
   const setDefault = useSetCreditsDefault();
+  const creditsCaveats = useCreditsCaveats([type]);
 
   // Every flow of a runtime's OWN ends at a loopback-only endpoint — the
   // delegated login and paste-key for Claude Code and Codex, and OpenCode's
@@ -88,6 +90,7 @@ export function RuntimeConnectFlow({
           </p>
           <p className="text-muted-foreground mt-1 text-xs">
             New work on {label} runs on your DorkOS credits.
+            {creditsCaveats.map((caveat) => ` ${caveat}`).join('')}
           </p>
         </div>
         <OtherWays collapsed>{ownWays}</OtherWays>
