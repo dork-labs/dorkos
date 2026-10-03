@@ -27,7 +27,7 @@ export type PrivateBindingRefusal =
 /** Private result carrying either retained output or an explicit refusal. */
 export type PrivateBindingResult<T> =
   { ok: true; value: T } | { ok: false; reason: PrivateBindingRefusal };
-interface Record {
+interface BindingRecord {
   input: SuppliedPrivateSemanticBinding;
   generation: PrivateSemanticGeneration;
   cellRevision: object;
@@ -109,7 +109,7 @@ export function createPrivateSemanticBindings(
   readGeneration: () => PrivateSemanticGeneration | null,
   now: () => number
 ) {
-  const records = new Map<PrivateSemanticReference, Record>();
+  const records = new Map<PrivateSemanticReference, BindingRecord>();
   let revision: object = {};
   let terminal = false;
   let lastTime = -Infinity;
