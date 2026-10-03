@@ -179,7 +179,10 @@ function createAgentApi(extensionId: string): { agent: AgentApi; release: () => 
       }
       const service = getAgentSendService();
       if (!service) {
-        throw new AgentSendError('unavailable', 'DorkOS cannot send messages yet. Try again in a moment.');
+        throw new AgentSendError(
+          'unavailable',
+          'DorkOS cannot send messages yet. Try again in a moment.'
+        );
       }
       return service.send(extensionId, input);
     },

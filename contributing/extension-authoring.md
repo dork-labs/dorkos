@@ -895,9 +895,38 @@ if (ctx.sessions !== undefined) {
 
 The input, the limits, the refusals and the first line are exactly `api.startWork`'s, with one difference: the project must hold a copy of your extension or be one you reported. A `watch` on an inbox row may point only at a chat you started, or one your chats started; any other is dropped.
 
+#### `ctx.agent`
+
+Send one of the person's agents a message, and hear what became of it (DOR-2683). `to` is a Mesh agent id or a chat id; an agent id is tried first.
+
+```typescript
+if (ctx.agent !== undefined) {
+  ctx.agent.subscribe((event) => {
+    // turn.started is the ack. Then exactly one of turn.done or turn.failed.
+    if (event.kind === 'turn.failed') markUnsent(event.messageId, event.reason);
+  });
+
+  const receipt = await ctx.agent.send({
+    to: '01JN4M2X5SZMHXP3EZFM9DWRXF', // a Mesh agent id, or a chat id
+    text: 'A reviewer left 3 comments on DOR-123. Reply in the thread.',
+    context: 'Thread: …',
+    idempotencyKey: 'reply:DOR-123:4',
+  });
+  // { messageId, status: 'started' | 'queued', reason?: 'busy' | 'at_capacity', sessionId }
+}
+```
+
+- **Where it goes.** A chat id is used as it is. An agent id goes to the one chat your extension keeps with that agent: the first message opens it in the agent's home (its first line says your extension started it, and it counts against the start limits above), and every later message lands in the same chat. Rooms, chats bridged from Telegram or Slack, agent-to-agent threads and scheduled runs are refused (`not_allowed`).
+- **A busy agent holds the message.** It waits in the chat's queue, where the person can see, edit or remove it, and runs when the current turn ends. There is no time limit on that wait: the dispatcher's five-minute wait budget only makes the message try again, and a turn still running turns that try away, so the message goes back in line. It survives a restart.
+- **No room means waiting, not a refusal.** When too many chats nobody typed into are running, or opening the agent's chat would pass your start limits, the receipt says `queued` with `reason: 'at_capacity'` and the message is sent as soon as there is room (retried every 5 seconds, across restarts).
+- **The ack.** `ctx.agent.subscribe` hears every message your extension sent, by `messageId`: `turn.started`, then `turn.done` (`outcome: 'ok' | 'error'`), or `turn.failed` when it will never run, with `reason` `removed` (a person took it off the queue or pressed Stop), `session_gone`, `interrupted` (DorkOS restarted mid-turn) or `undeliverable` (it waited for room and the chat could no longer take it). These are not limited to the chat a person has open, unlike `api.events`. Events that arrive while nothing listens, such as around a restart, go to your first listener.
+- **Resends are safe.** The same `idempotencyKey` answers with the first receipt and sends nothing, for 24 hours and for as long as the message is unfinished. A refused send remembers nothing.
+- **It cannot shape the turn.** Any field other than `to`, `text`, `context` and `idempotencyKey` (a `cwd`, a `permissionMode`, a `forAgent`) is refused with `invalid_input`. The agent reads your words inside a fence that labels them as data from your app, not instructions, and a chat your extension opens starts with no permission mode of its own.
+- **Refusals** throw `AgentSendError` with `code` `invalid_input`, `not_found`, `not_allowed`, `unavailable` or `stopped`; nothing was sent. No manifest capability is needed, on the same terms as `ctx.sessions`.
+
 #### Feature detection
 
-Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
+Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `ctx.agent !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
 
 ### Route Conventions
 

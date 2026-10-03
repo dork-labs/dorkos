@@ -81,7 +81,9 @@ export class AgentSendStore {
    * @param id - The message id.
    */
   get(id: string): AgentSendRecord | null {
-    return this.db.select().from(extensionAgentSends).where(eq(extensionAgentSends.id, id)).get() ?? null;
+    return (
+      this.db.select().from(extensionAgentSends).where(eq(extensionAgentSends.id, id)).get() ?? null
+    );
   }
 
   /**

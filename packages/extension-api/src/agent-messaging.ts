@@ -71,10 +71,7 @@ export interface AgentSendReceipt {
  *   the agent or chat could no longer take it (removed, or not allowed there).
  */
 export type AgentDeliveryFailureReason =
-  | 'removed'
-  | 'session_gone'
-  | 'interrupted'
-  | 'undeliverable';
+  'removed' | 'session_gone' | 'interrupted' | 'undeliverable';
 
 /**
  * What happened to a message this extension sent: the acknowledgement for a
