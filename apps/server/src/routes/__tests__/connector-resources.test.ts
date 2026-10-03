@@ -68,6 +68,51 @@ describe('connector resource routes', () => {
     return request(fixtureTarget.mount(app));
   }
 
+  // A connection reaches its app through this computer's DorkOS account, so
+  // with login on connecting, reconnecting and disconnecting are the owner's
+  // alone (DOR-2678).
+  describe('with login on, the owner of this DorkOS alone', () => {
+    function signedInAs(userId: string) {
+      const signedIn = express();
+      signedIn.use(express.json());
+      signedIn.use((_req, res, next) => {
+        res.locals.user = { userId, credential: 'cookie' };
+        next();
+      });
+      signedIn.use(
+        '/api/connectors',
+        createConnectorResourcesRouter({
+          ...deps,
+          loginEnabled: () => true,
+          isAccountOwner: (user) => user?.userId === 'user-owner',
+        })
+      );
+      return request(fixtureTarget.mount(signedIn));
+    }
+
+    it.each([
+      ['connect an app', 'post', '/api/connectors/connections'],
+      ['reconnect one', 'post', '/api/connectors/connections/connection-a/reconnect'],
+      ['disconnect one', 'delete', '/api/connectors/connections/connection-a'],
+      ['pause one', 'post', '/api/connectors/connections/connection-a/pause'],
+    ] as const)('refuses a signed-in non-owner trying to %s', async (_name, method, url) => {
+      const res = await signedInAs('user-member')[method](url).send({}).expect(403);
+      expect(res.body.code).toBe('owner_only');
+      expect(res.body.error).toBe(
+        'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
+      );
+      expect(deps.authentication.start).not.toHaveBeenCalled();
+      expect(deps.authentication.reconnect).not.toHaveBeenCalled();
+      expect(deps.lifecycle.disconnect).not.toHaveBeenCalled();
+      expect(deps.lifecycle.pause).not.toHaveBeenCalled();
+    });
+
+    it('lets the owner signed in to the app disconnect one', async () => {
+      await signedInAs('user-owner').delete('/api/connectors/connections/connection-a').expect(200);
+      expect(deps.lifecycle.disconnect).toHaveBeenCalled();
+    });
+  });
+
   it('serves a kept logo as an inert image a browser will not sniff or script', async () => {
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>x()</script></svg>');
     vi.mocked(deps.logos.get).mockResolvedValue({ bytes: svg, contentType: 'image/svg+xml' });

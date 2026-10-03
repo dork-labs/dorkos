@@ -1,4 +1,17 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+/** Whether login is on, read by the key-change owner bar (DOR-2678). */
+const posture = vi.hoisted(() => ({ loginOn: false }));
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'auth' ? { enabled: posture.loginOn } : undefined),
+    onChange: () => () => {},
+  },
+}));
+vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: () => ({ id: 'user_owner', name: 'Owner' }),
+}));
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -78,6 +91,7 @@ describe('connector-providers router', () => {
   let credentials: CredentialProvider;
 
   beforeEach(() => {
+    posture.loginOn = false;
     db = createDb(':memory:');
     runMigrations(db);
     registry = new ConnectorRegistry({ db });
@@ -87,6 +101,8 @@ describe('connector-providers router', () => {
   function buildApp(opts?: {
     nangoEnv?: () => { baseUrl?: string; encryptionKey?: string };
     testConnector?: boolean;
+    /** Who `sessionGate` resolved, as a browser session. */
+    signedInAs?: string;
   }) {
     const bootstrapper = new ConnectorProviderBootstrapper({
       rawMcpPendingConnect: () => undefined,
@@ -99,6 +115,10 @@ describe('connector-providers router', () => {
     });
     const app = express();
     app.use(express.json());
+    app.use((_req, res, next) => {
+      if (opts?.signedInAs) res.locals.user = { userId: opts.signedInAs, credential: 'cookie' };
+      next();
+    });
     app.use(
       '/api/connectors/providers',
       createConnectorProvidersRouter({ bootstrapper, credentialStore: store })
@@ -121,6 +141,55 @@ describe('connector-providers router', () => {
     expect(res.body.appConnections).toEqual({
       ways: [],
       newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+    });
+  });
+
+  // A saved key decides which account every connection's calls go out on, so
+  // it is the owner's to change: never an agent's, and with login on never
+  // another signed-in account's (DOR-2678).
+  describe('who may change a key', () => {
+    it('refuses an agent saving or removing one, and stores nothing', async () => {
+      const app = fixtureTarget.mount(buildApp());
+      const saved = await request(app)
+        .put('/api/connectors/providers/composio/credential')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ secret: SECRET })
+        .expect(403);
+      expect(saved.body).toEqual({
+        code: 'person_only',
+        error: 'Only you can change the keys DorkOS uses to reach your apps, from the DorkOS app.',
+      });
+      await request(app)
+        .delete('/api/connectors/providers/composio/credential')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .expect(403);
+      expect(await store.get('composio.apiKey')).toBeNull();
+      expect(registry.resolveProvider('composio')).toBeUndefined();
+    });
+
+    it('with login on, refuses a signed-in account that does not own this DorkOS', async () => {
+      posture.loginOn = true;
+      const app = fixtureTarget.mount(buildApp({ signedInAs: 'user_member' }));
+      const res = await request(app)
+        .put('/api/connectors/providers/composio/credential')
+        .send({ secret: SECRET })
+        .expect(403);
+      expect(res.body).toEqual({
+        code: 'owner_only',
+        error: 'Only the owner of this DorkOS can change the keys it uses to reach apps.',
+      });
+      await request(app).delete('/api/connectors/providers/composio/credential').expect(403);
+      expect(registry.resolveProvider('composio')).toBeUndefined();
+    });
+
+    it('with login on, lets the owner signed in to the app save one', async () => {
+      posture.loginOn = true;
+      const app = fixtureTarget.mount(buildApp({ signedInAs: 'user_owner' }));
+      await request(app)
+        .put('/api/connectors/providers/composio/credential')
+        .send({ secret: SECRET })
+        .expect(200);
+      expect(registry.resolveProvider('composio')).toBeDefined();
     });
   });
 
