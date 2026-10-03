@@ -9,13 +9,16 @@ import { toSession } from '@/layers/shared/lib';
 export function useStartNewSession(): (dir?: string, options?: StartNewSessionOptions) => void {
   const navigate = useNavigate();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
 
   return useCallback(
     (dir?: string, options?: StartNewSessionOptions) => {
       const target = dir ?? selectedCwd ?? undefined;
-      void navigate(toSession({ dir: target, session: crypto.randomUUID(), seed: options?.seed }));
+      const session = crypto.randomUUID();
+      if (options?.runtime) setPendingRuntime({ sessionId: session, type: options.runtime });
+      void navigate(toSession({ dir: target, session, seed: options?.seed }));
     },
-    [navigate, selectedCwd]
+    [navigate, selectedCwd, setPendingRuntime]
   );
 }
 
@@ -26,6 +29,11 @@ export interface StartNewSessionOptions {
    * text, and never anything the caller has not enumerated in the route schema.
    */
   seed?: 'dorkbot-help';
+  /**
+   * The runtime the fresh conversation starts on, picked for it exactly as the
+   * runtime chip's pre-launch pick is. Omitted, it starts on the default.
+   */
+  runtime?: string;
 }
 
 /** Options for the session-id setter. */

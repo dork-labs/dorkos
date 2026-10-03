@@ -795,6 +795,67 @@ describe('the seat activity event', () => {
   });
 });
 
+describe('the inference endpoints, one per request format', () => {
+  const both = {
+    anthropicMessages: 'https://example.invalid/a',
+    openaiChat: 'https://example.invalid/c',
+  };
+
+  it('still reads a token from a service that serves only the first two formats', () => {
+    // Additive within `/v1`: a service one release behind sends no
+    // `openaiResponses`, and that token must keep parsing, with the format
+    // reading as not served rather than as an error.
+    const parsed = contract.InferenceEndpointsSchema.safeParse(both);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.openaiResponses).toBeUndefined();
+  });
+
+  it('carries the responses format when the service serves it', () => {
+    const parsed = contract.InferenceEndpointsSchema.safeParse({
+      ...both,
+      openaiResponses: 'https://example.invalid/r',
+    });
+    expect(parsed.success && parsed.data.openaiResponses).toBe('https://example.invalid/r');
+  });
+
+  it('refuses an endpoint that is not a URL, so nothing can be sent to a bare string', () => {
+    expect(
+      contract.InferenceEndpointsSchema.safeParse({ ...both, openaiResponses: 'not a url' }).success
+    ).toBe(false);
+  });
+});
+
+describe('which formats a token is served for', () => {
+  const token = JSON.parse(
+    readFileSync(
+      path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'v1', 'inference', 'token.json'),
+      'utf8'
+    )
+  );
+
+  it('still reads a token minted before the list existed, which lists nothing', () => {
+    // Absent means the first format only: a client reads it that way, so an
+    // old service never starts the other formats by omission.
+    const parsed = contract.InferenceTokenSchema.safeParse(token);
+    expect(parsed.success && parsed.data.served).toBeUndefined();
+  });
+
+  it('carries the formats a service serves, by their endpoint field names', () => {
+    const parsed = contract.InferenceTokenSchema.safeParse({
+      ...token,
+      served: ['anthropicMessages', 'openaiChat'],
+    });
+    expect(parsed.success && parsed.data.served).toEqual(['anthropicMessages', 'openaiChat']);
+    // A format this package does not know yet never rejects the token: a
+    // service a release ahead must not break every client a release behind.
+    const ahead = contract.InferenceTokenSchema.safeParse({
+      ...token,
+      served: ['aWireFromTheFuture', 'openaiChat'],
+    });
+    expect(ahead.success && ahead.data.served).toEqual(['aWireFromTheFuture', 'openaiChat']);
+  });
+});
+
 describe('the inference refusal reasons', () => {
   it('keeps every reason it published before, which is what additive means', () => {
     for (const reason of [

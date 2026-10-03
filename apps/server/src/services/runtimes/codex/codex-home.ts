@@ -37,6 +37,7 @@
  */
 import path from 'path';
 import os from 'os';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
 
 /**
  * The Codex CLI's own home directory: `$CODEX_HOME`, else `~/.codex`.
@@ -84,6 +85,25 @@ export function machineDefaultCodexHome(): string {
  * @returns The rollout roots, live first.
  */
 export function resolveCodexRolloutRoots(env: NodeJS.ProcessEnv = process.env): string[] {
-  const home = resolveCodexHome(env);
+  return codexRolloutRootsIn(resolveCodexHome(env));
+}
+
+/**
+ * The DorkOS-owned Codex home every DorkOS credits conversation runs in (ADR
+ * 261002-221210): `<dorkHome>/runtimes/codex/credits`. Never the person's
+ * `~/.codex`, so a credits turn reads and writes nothing of theirs.
+ *
+ * @returns The absolute folder.
+ */
+export function creditsCodexHome(): string {
+  return path.join(resolveDorkHome(), 'runtimes', 'codex', 'credits');
+}
+
+/**
+ * Every directory holding rollout files in one Codex home, live first.
+ *
+ * @param home - The Codex home.
+ */
+export function codexRolloutRootsIn(home: string): string[] {
   return [path.join(home, 'sessions'), path.join(home, 'archived_sessions')];
 }

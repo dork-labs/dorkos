@@ -17,3 +17,4 @@ export {
 export { OpenCodeSessionMap } from './sessions/session-map.js';
 export { checkOpenCodeDependencies } from './providers/check-dependencies.js';
 export { OPENCODE_CAPABILITIES } from './runtime-constants.js';
+export { planOpenCodeSidecar, planOpenCodeTurn } from './credits-mode.js';

@@ -54,10 +54,8 @@ import {
   resolveAgentHome,
   turnAgentOf,
 } from '../../../core/agent-identity/index.js';
-import {
-  CreditsUnavailableError,
-  resolveCreditsLaunchEnv,
-} from '../../../core/cloud/credits-inference.js';
+import { resolveCreditsLaunchEnv } from '../../../core/cloud/credits-inference.js';
+import { creditsRefusalEvent as creditsRefusalEventFor } from '../../../core/cloud/credits-protocols.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
@@ -792,14 +790,5 @@ function forCredits(
  * @param err - Whatever `resolveLaunch` threw.
  */
 export function creditsRefusalEvent(err: unknown): StreamEvent | null {
-  if (!(err instanceof CreditsUnavailableError)) return null;
-  return {
-    type: 'error',
-    data: {
-      message: err.message,
-      code: err.code,
-      category: 'execution_error',
-      reason: err.reason,
-    },
-  };
+  return creditsRefusalEventFor(err);
 }

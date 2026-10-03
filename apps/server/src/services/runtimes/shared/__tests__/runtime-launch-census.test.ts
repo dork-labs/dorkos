@@ -15,7 +15,7 @@ const expected: Record<string, number> = {
   'claude-code/sdk/sdk-utils.ts': 1,
   'claude-code/tooling/provision.ts': 1,
   'codex/model-catalog.ts': 1,
-  'codex/codex-runtime.ts': 2,
+  'codex/codex-runtime.ts': 3,
   'codex/provision.ts': 1,
   'connect/delegated-login.ts': 2,
   'opencode/server-manager.ts': 1,
@@ -48,8 +48,13 @@ function census(text: string, name: string): { count: number; unprojected: strin
   function visit(node: ts.Node): void {
     if (ts.isNewExpression(node) && node.expression.getText(source) === 'Codex') {
       count++;
-      if (!node.arguments?.[0]?.getText(source).startsWith('buildCodexOptions('))
-        unprojected.push('Codex');
+      const options = node.arguments?.[0]?.getText(source) ?? '';
+      // A DorkOS credits turn (ADR 261002-221210) wraps the same projected
+      // options: `withCodexCredits` only removes names and adds the credits ones.
+      const projected =
+        options.startsWith('buildCodexOptions(') ||
+        /^withCodexCredits\(\s*buildCodexOptions\(/.test(options);
+      if (!projected) unprojected.push('Codex');
     }
     if (ts.isCallExpression(node) && childCalls.has(node.expression.getText(source))) {
       count++;
@@ -63,7 +68,10 @@ function census(text: string, name: string): { count: number; unprojected: strin
           call === '{ prompt: heldPrompt.prompt, options: sdkOptions }') ||
         (name === 'claude-code/sessions/pump-launch.ts' && call.includes('...plan.sdkOptions')) ||
         (name === 'claude-code/sessions/tracked-spawn.ts' && /\benv,/.test(call)) ||
-        (name === 'codex/model-catalog.ts' && call === "{ stdio: 'pipe', env: environment }");
+        (name === 'codex/model-catalog.ts' && call === "{ stdio: 'pipe', env: environment }") ||
+        // The sidecar's env is built by `buildSidecarSpawnEnv`, which projects
+        // through `runtimeEnvironment` on both sides (own sign-in and credits).
+        (name === 'opencode/server-manager.ts' && /env: buildSidecarSpawnEnv\(/.test(call));
       if (!forwarded && !(/\benv:/.test(call) && /runtimeEnvironment\(/.test(call)))
         unprojected.push(kind);
     }

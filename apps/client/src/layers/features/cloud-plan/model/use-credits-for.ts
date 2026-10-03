@@ -17,8 +17,9 @@
  * @module features/cloud-plan/model/use-credits-for
  */
 import type { CloudCreditsChosenBy, CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
-import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { claudeAccountName } from '@/layers/shared/lib';
+import type { RuntimeCapabilities, RuntimeCreditsSupport } from '@dorkos/shared/agent-runtime';
+import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { claudeAccountName, serverSentence } from '@/layers/shared/lib';
 import { useClaudeAccounts, useCloudCredits, useSetCreditsDefault } from '@/layers/shared/model';
 
 /** One runtime the credits path is wired for, as the switch row reads it. */
@@ -36,44 +37,70 @@ export interface CreditsForRow {
   /** Whether turning it off from here can work. */
   canTurnOff: boolean;
   /**
+   * Whether credits cannot reach it right now (not linked, switched off, or
+   * its format not served) although its recorded choice is credits: its new
+   * work is refused until the person turns this off or credits come back.
+   */
+  unreachable: boolean;
+  /**
    * The sign-in turning it off goes back to, by the name the person gave it —
    * or `null` when it has none (never a raw folder name), which the row says
    * as "its own sign-in".
    */
   previousSignIn: string | null;
+  /** What a change reaches, as the runtime declares it; `undefined` while capabilities load. */
+  scope: RuntimeCreditsSupport['scope'] | undefined;
+  /** Whether an agent or a session can pick another account for this runtime. */
+  hasAccountPicks: boolean;
 }
 
 /**
  * Read the rows from the credits report.
  *
- * Only a runtime the server reports as wired gets a row, and only while credits
- * can be chosen here at all (linked, not switched off): a switch for a runtime
- * credits cannot reach would be a promise about somebody's money that nothing
- * keeps.
+ * A runtime the server reports as wired gets a row while credits can be chosen
+ * here at all (linked, not switched off): a switch for a runtime credits
+ * cannot reach would be a promise about somebody's money that nothing keeps.
+ * The one exception is a runtime whose recorded choice is already credits: it
+ * keeps its row, which can only be turned off, so the person can always get
+ * back to their own sign-in.
  *
  * @param report - `GET /api/cloud/credits`, or `undefined` while it loads.
  * @param previousSignIn - Names the sign-in a runtime goes back to, if known.
+ * @param capabilities - Each runtime's declared capabilities, for what a change reaches.
  */
 export function readCreditsFor(
   report: CloudCreditsStatus | undefined,
-  previousSignIn: (runtime: string) => string | null = () => null
+  previousSignIn: (runtime: string) => string | null = () => null,
+  capabilities: Partial<Record<string, RuntimeCapabilities>> = {}
 ): CreditsForRow[] {
-  if (!report?.enabled) return [];
-  return Object.entries(report.runtimes)
-    .filter(([, state]) => state === 'wired')
-    .map(([runtime]) => {
-      const choice = report.defaults?.[runtime];
-      const on = choice?.runsOn === 'credits';
-      return {
+  if (!report) return [];
+  const runtimes = new Set([
+    ...Object.keys(report.runtimes),
+    ...Object.keys(report.defaults ?? {}),
+  ]);
+  return [...runtimes].flatMap((runtime) => {
+    const choice = report.defaults?.[runtime];
+    const on = choice?.runsOn === 'credits';
+    const reachable =
+      report.enabled && report.runtimes[runtime as keyof typeof report.runtimes] === 'wired';
+    // A runtime recorded on credits keeps its row even when credits cannot
+    // reach it now, so the person can always turn it off.
+    if (!reachable && !on) return [];
+    return [
+      {
         runtime,
         name: getRuntimeDescriptor(runtime).label,
         on,
         chosenBy: on ? (choice?.chosenBy ?? null) : null,
-        canTurnOn: true,
+        canTurnOn: reachable,
         canTurnOff: true,
+        unreachable: !reachable,
         previousSignIn: previousSignIn(runtime),
-      };
-    });
+        scope: capabilities[runtime]?.credits?.scope,
+        hasAccountPicks: capabilities[runtime]?.supportsAccounts === true,
+      },
+    ];
+  });
 }
 
 /**
@@ -112,11 +139,15 @@ export interface UseCreditsFor {
 export function useCreditsFor(): UseCreditsFor {
   const { data } = useCloudCredits();
   const setDefault = useSetCreditsDefault();
+  const { data: capabilities } = useRuntimeCapabilities();
   const { accounts, ownResolvedAccount, nameFor } = useClaudeAccounts();
-  const rows = readCreditsFor(data, (runtime) =>
-    runtime === 'claude-code' && ownResolvedAccount
-      ? givenName(ownResolvedAccount, accounts, nameFor)
-      : null
+  const rows = readCreditsFor(
+    data,
+    (runtime) =>
+      runtime === 'claude-code' && ownResolvedAccount
+        ? givenName(ownResolvedAccount, accounts, nameFor)
+        : null,
+    capabilities?.capabilities
   );
 
   const setOn = (runtime: string, on: boolean) => {
@@ -153,27 +184,12 @@ function givenName(
 const NO_REASON = 'Try again in a moment.';
 
 /**
- * The reason a failed turn-on came back with, when the SERVER gave one; the
- * plain fallback otherwise.
- *
- * A transport error's message is not always words meant for a person: a
- * network failure reads "Failed to fetch" or "Load failed", and a response
- * with no JSON body falls back to its status text or "HTTP 500". Only a
- * message the server wrote is passed through — the request got an answer (a
- * numeric `status`), the answer's own JSON `error` field is the message, and
- * it is a sentence (status texts and bare codes never end in one).
+ * The reason a failed turn-on came back with, when the SERVER gave one
+ * ({@link serverSentence}); the plain fallback otherwise.
  *
  * @param error - What the transport rejected with.
  * @internal Exported for testing only.
  */
 export function errorReason(error: unknown): string {
-  if (!(error instanceof Error)) return NO_REASON;
-  const { status, body } = error as Error & { status?: unknown; body?: unknown };
-  const written =
-    typeof status === 'number' &&
-    typeof body === 'object' &&
-    body !== null &&
-    (body as { error?: unknown }).error === error.message &&
-    /[.!?]$/.test(error.message.trim());
-  return written ? error.message : NO_REASON;
+  return serverSentence(error) ?? NO_REASON;
 }

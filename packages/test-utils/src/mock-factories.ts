@@ -877,6 +877,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsQuestionPrompt: false,
           supportsPlugins: false,
           supportsAccounts: false,
+          credits: { protocol: 'openai-responses', scope: 'conversation' },
           permissionModes: {
             supported: true,
             default: 'default',
@@ -927,6 +928,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsQuestionPrompt: false,
           supportsPlugins: false,
           supportsAccounts: false,
+          credits: { protocol: 'openai-chat-completions', scope: 'runtime' },
           permissionModes: {
             supported: true,
             default: 'default',

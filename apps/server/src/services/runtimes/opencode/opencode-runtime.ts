@@ -128,6 +128,20 @@ import type {
 } from '../../connectors/runtime-principal-port.js';
 import { ConnectorTurnLeaseManager, type ConnectorTurnLease } from './mcp/connector-turn-lease.js';
 import {
+  OPENCODE_CREDITS_PROVIDER_ID,
+  OPENCODE_LABEL,
+  OPENCODE_OWN_PLAN,
+  OpenCodeSwitchPendingError,
+  creditsModelFor,
+  openCodeRunsOnCredits,
+  type OpenCodeSidecarPlan,
+} from './credits-sidecar.js';
+import {
+  CreditsUnavailableError,
+  asCreditsStopped,
+  creditsRefusalEvent,
+} from '../../core/cloud/credits-protocols.js';
+import {
   ConnectorTurnLeaseSupervisor,
   type ConnectorTurnLeaseSupervisorHandle,
 } from '../connectors/connector-turn-lease-supervisor.js';
@@ -166,6 +180,12 @@ interface ActiveTurn {
   connectorRevocation?: Promise<void>;
 }
 
+/** One turn that has started and is not yet tracked as active. Identity-compared. */
+interface SettingUpTurn {
+  /** The session the turn belongs to. */
+  sessionId: string;
+}
+
 /**
  * OpenCode runtime implementing the universal AgentRuntime interface.
  */
@@ -184,6 +204,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly approvalGate: ApprovalGateDeps;
   /** One record per in-flight turn (interrupt target). */
   private readonly activeTurns = new Map<string, ActiveTurn>();
+  /** Turns between their first step and being tracked in {@link activeTurns}. */
+  private readonly settingUp = new Set<SettingUpTurn>();
   /** In-flight OpenCode session creations, deduped per DorkOS session id. */
   private readonly binding = new Map<string, Promise<string>>();
   /** OpenCode session id → its `Session.directory` (the demux key half). */
@@ -215,6 +237,9 @@ export class OpenCodeRuntime implements AgentRuntime {
       approvals: this.approvals,
       registry: this.registry,
     };
+    // A switch between own sign-in and DorkOS credits restarts the sidecar,
+    // so it waits while any turn here is running (ADR 261002-221210).
+    this.provider.setBusyProbe?.(() => this.hasRunningTurns());
   }
 
   /** Install the internal connector tool boundary after its listener starts. */
@@ -340,14 +365,19 @@ export class OpenCodeRuntime implements AgentRuntime {
       sessionId,
       cwd,
       opts?.title,
-      async (client, ocSessionId, dorkosApplied, connectionsApplied) => {
+      async (client, ocSessionId, dorkosApplied, connectionsApplied, plan) => {
         // Build the prompt only after the leased MCP reconcile, so the room
         // verbs describe what this exact turn can actually call.
         // The agent this turn acts as — anchored, so a room worktree reads as its
         // agent and a room turn as nobody but the agent it is for (DOR-2091).
         const agentPath = homeOf(resolveAgentHome(cwd, forAgent));
         const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied, agentPath);
-        const model = parseModelSelection(settings.model);
+        // On credits the prompt always names the credits provider: the
+        // session's model when it is a credits model, else the default one.
+        const model =
+          plan.mode === 'credits'
+            ? creditsPromptModel(settings.model, plan)
+            : parseModelSelection(settings.model);
         const agent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
         const accessContext =
           connectionsApplied && this.connectorRuntimeTools && agent
@@ -414,20 +444,58 @@ export class OpenCodeRuntime implements AgentRuntime {
     // the first rung of the compaction model ladder.
     const settings = await this.resolveTurnSettings(sessionId, opts);
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
-    yield* this.runOpenCodeTurn(sessionId, cwd, undefined, async (client, ocSessionId) => {
-      const model = await resolveCompactionModel(client, {
-        ocSessionId,
-        cwd,
-        trackedModel: settings.model,
-      });
-      const summarized = await client.session.summarize({
-        path: { id: ocSessionId },
-        body: model,
-      });
-      if (summarized.error !== undefined) {
-        throw new Error(`OpenCode session.summarize failed: ${JSON.stringify(summarized.error)}`);
+    yield* this.runOpenCodeTurn(
+      sessionId,
+      cwd,
+      undefined,
+      async (client, ocSessionId, _d, _c, plan) => {
+        const model =
+          plan.mode === 'credits'
+            ? creditsPromptModel(settings.model, plan)
+            : await resolveCompactionModel(client, {
+                ocSessionId,
+                cwd,
+                trackedModel: settings.model,
+              });
+        const summarized = await client.session.summarize({
+          path: { id: ocSessionId },
+          body: model,
+        });
+        if (summarized.error !== undefined) {
+          throw new Error(`OpenCode session.summarize failed: ${JSON.stringify(summarized.error)}`);
+        }
       }
-    });
+    );
+  }
+
+  /**
+   * Whether any OpenCode turn is running now. Switching OpenCode between its
+   * own sign-in and DorkOS credits restarts its one process, so the switch is
+   * refused while this is true (ADR 261002-221210).
+   */
+  hasRunningTurns(): boolean {
+    return this.activeTurns.size > 0 || this.settingUp.size > 0;
+  }
+
+  /**
+   * What the sidecar runs this turn on, made so before anything is sent.
+   *
+   * @param sessionId - The session about to send.
+   * @param own - This turn's own setting-up marker, which is not "another".
+   * @throws {CreditsUnavailableError} On credits, when credits cannot pay.
+   */
+  private async prepareSidecar(
+    sessionId: string,
+    own: SettingUpTurn
+  ): Promise<OpenCodeSidecarPlan> {
+    const othersActive =
+      [...this.activeTurns.keys()].some((id) => id !== sessionId) ||
+      [...this.settingUp].some((other) => other !== own && other.sessionId !== sessionId);
+    if (this.provider.prepareTurn) return this.provider.prepareTurn(othersActive);
+    // A provider that cannot be made right for credits never runs a turn the
+    // person set to credits: refused, not sent on whatever it holds.
+    if (openCodeRunsOnCredits()) throw new CreditsUnavailableError('not-supported', OPENCODE_LABEL);
+    return OPENCODE_OWN_PLAN;
   }
 
   /**
@@ -456,13 +524,50 @@ export class OpenCodeRuntime implements AgentRuntime {
       client: OpencodeClient,
       ocSessionId: string,
       dorkosApplied: boolean,
-      connectionsApplied: boolean
+      connectionsApplied: boolean,
+      plan: OpenCodeSidecarPlan
     ) => Promise<void>,
     opts?: { connectorTurn?: boolean; forAgent?: string; grants?: readonly DirectoryGrant[] }
   ): AsyncGenerator<StreamEvent> {
-    const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
-    const client = await this.provider.getClient(cwd);
-    const directory = await this.resolveSessionDirectory(client, ocSessionId);
+    // **Who pays** (ADR 261001-000811), decided before anything is sent: the
+    // sidecar is made right for OpenCode's recorded choice, and a credits turn
+    // that credits cannot pay for is REFUSED here, with nothing sent.
+    // Counted as running from here, before the sidecar is prepared: a switch
+    // between own sign-in and credits must not restart the sidecar under a
+    // turn that is still setting up. Released once the turn is tracked as
+    // active below, or when it ends before that.
+    const settingUp: SettingUpTurn = { sessionId };
+    this.settingUp.add(settingUp);
+    let plan: OpenCodeSidecarPlan;
+    try {
+      plan = await this.prepareSidecar(sessionId, settingUp);
+    } catch (err) {
+      this.settingUp.delete(settingUp);
+      void this.provider.turnSettled?.().catch(() => undefined);
+      if (err instanceof OpenCodeSwitchPendingError) {
+        yield {
+          type: 'error',
+          data: { message: err.message, code: err.code, category: 'execution_error' },
+        };
+        return;
+      }
+      const refusal = creditsRefusalEvent(err);
+      if (!refusal) throw err;
+      yield refusal;
+      return;
+    }
+    let ocSessionId: string;
+    let client: OpencodeClient;
+    let directory: string;
+    try {
+      ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
+      client = await this.provider.getClient(cwd);
+      directory = await this.resolveSessionDirectory(client, ocSessionId);
+    } catch (err) {
+      this.settingUp.delete(settingUp);
+      void this.provider.turnSettled?.().catch(() => undefined);
+      throw err;
+    }
 
     const controller = new AbortController();
     const turn: ActiveTurn = {
@@ -472,6 +577,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       phase: this.connectorRuntimeTools ? 'waiting' : 'setup',
     };
     this.activeTurns.set(sessionId, turn);
+    this.settingUp.delete(settingUp);
     let lease: ConnectorTurnLease | undefined;
     let connectorInjection: ConnectorRuntimeMcpInjection | undefined;
     let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
@@ -572,7 +678,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
 
-      await trigger(client, ocSessionId, mcpResult.dorkosApplied, mcpResult.connectorApplied);
+      await trigger(client, ocSessionId, mcpResult.dorkosApplied, mcpResult.connectorApplied, plan);
 
       const routing: ApprovalRouting = {
         sessionId,
@@ -581,7 +687,10 @@ export class OpenCodeRuntime implements AgentRuntime {
         permissions: ctx,
         ...(opts?.grants ? { grants: opts.grants } : {}),
       };
-      for await (const event of mapOpenCodeTurn(queue, ctx)) {
+      for await (const mapped of mapOpenCodeTurn(queue, ctx)) {
+        // On credits, a refused token is the credits card, never an OpenCode
+        // sign-in error: the person's own sign-in was not used.
+        const event = plan.mode === 'credits' ? asCreditsStopped(mapped, OPENCODE_LABEL) : mapped;
         if (event.type === 'error') sawRuntimeError = true;
         yield* enforceApprovals(this.approvalGate, routing, event);
         // The async half of media mapping. `mapOpenCodeTurn` is pure and cannot
@@ -616,6 +725,13 @@ export class OpenCodeRuntime implements AgentRuntime {
           this.approvals.clearSession(sessionId);
           this.activeTurns.delete(sessionId);
         }
+        // A Runs on switch that waited for running turns may happen now.
+        void this.provider.turnSettled?.().catch((err) => {
+          logger.warn(
+            '[OpenCodeRuntime] could not apply the waiting Runs on switch',
+            logError(err)
+          );
+        });
       }
     }
   }
@@ -1333,4 +1449,21 @@ export class OpenCodeRuntime implements AgentRuntime {
     if (tracked.model !== undefined) session.model = tracked.model;
     if (tracked.fastMode !== undefined) session.fastMode = tracked.fastMode;
   }
+}
+
+/**
+ * The `{providerID, modelID}` a credits turn sends: the session's model when it
+ * is one of the credits models, else the default one.
+ *
+ * @param selected - The session's model setting.
+ * @param plan - The credits plan the sidecar runs on.
+ * @throws {CreditsUnavailableError} When the plan has no model at all.
+ */
+function creditsPromptModel(
+  selected: string | undefined,
+  plan: OpenCodeSidecarPlan
+): { providerID: string; modelID: string } {
+  const modelID = creditsModelFor(selected, plan.models);
+  if (modelID === null) throw new CreditsUnavailableError('unreachable', OPENCODE_LABEL);
+  return { providerID: OPENCODE_CREDITS_PROVIDER_ID, modelID };
 }

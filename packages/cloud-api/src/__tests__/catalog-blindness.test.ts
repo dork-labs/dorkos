@@ -170,6 +170,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   UsageStateSchema: 'how a credit or subscription position reads at a glance',
   UsageGroupBySchema: 'how to group a query',
   InferenceRefusalReasonSchema: 'conditions a caller can act on',
+  InferenceFormatSchema: 'which wire a request is encoded in, named by its endpoint field',
   OrgKindSchema: 'personal or shared; a structural fact',
   MemberRoleSchema: 'what a member may do',
   InvitationStatusSchema: 'how far an invitation has got',
@@ -580,7 +581,7 @@ describe('catalog blindness: the emitted declarations', () => {
   });
 
   it('names no provider or vendor in the inference surface', () => {
-    // Which provider serves a request is not part of this contract. The two
+    // Which provider serves a request is not part of this contract. The three
     // wire-format field names below are the sole carve-out: they name a REQUEST
     // FORMAT a caller encodes in, not a supplier we route to, and a client has
     // to know which format an endpoint speaks.
@@ -588,7 +589,8 @@ describe('catalog blindness: the emitted declarations', () => {
     expect(inference, 'inference.d.ts was not emitted').toBeDefined();
     const text = (inference as [string, string])[1]
       .replace(/anthropicMessages/g, '')
-      .replace(/openaiChat/g, '');
+      .replace(/openaiChat/g, '')
+      .replace(/openaiResponses/g, '');
     for (const vendor of ['anthropic', 'openai', 'google', 'bedrock', 'vertex', 'azure', 'aws']) {
       expect(
         text.toLowerCase(),

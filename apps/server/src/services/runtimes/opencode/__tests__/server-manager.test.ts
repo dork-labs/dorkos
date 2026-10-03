@@ -89,7 +89,9 @@ let children: FakeChild[] = [];
  * async (T0), so spawn no longer happens synchronously within `getClient()`.
  */
 async function flushBoot(): Promise<void> {
-  await Promise.resolve();
+  // A boot awaits the binary, then its plan, then the provider env: one
+  // microtask each, and a few more for the async planners behind them.
+  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve();
 }
 
 function mockRuntimesConfig(
@@ -669,6 +671,257 @@ describe('OpenCodeServerManager', () => {
       await manager.recycle();
       await expect(manager.getClient('/repo')).rejects.toThrow(/shut down/);
       expect(spawn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DorkOS credits (ADR 261002-221210)', () => {
+    const MODEL = {
+      id: 'md_1',
+      displayName: 'Model one',
+      contextWindow: 1000,
+      maxOutputTokens: 100,
+      supports: { tools: true, promptCaching: false, streaming: true, thinking: false },
+    };
+    const creditsPlan = (models = [MODEL]) => ({
+      mode: 'credits' as const,
+      fingerprint: `credits:${models.map((m) => m.id).join(',')}`,
+      models,
+    });
+    const OWN = { mode: 'own' as const, fingerprint: 'own', models: [] };
+
+    /** A relay stand-in that records the keys it issued and revoked. */
+    function fakeRelay() {
+      let next = 0;
+      const live = new Set<string>();
+      return {
+        live,
+        issue: vi.fn(() => {
+          next += 1;
+          const key = `relay-key-${next}`;
+          live.add(key);
+          return { baseUrl: 'http://127.0.0.1:9/relay/openai-chat-completions', key };
+        }),
+        revoke: vi.fn((key: string) => live.delete(key)),
+      };
+    }
+
+    /** Make every fake child exit as soon as it is told to stop, so a recycle settles. */
+    function exitOnKill(child: FakeChild): void {
+      child.kill.mockImplementation((signal) => {
+        queueMicrotask(() => child.emitExit(0, (signal as NodeJS.Signals) ?? 'SIGTERM'));
+        return true;
+      });
+    }
+
+    /** A manager on credits with a fake relay installed. */
+    function creditsManager(
+      over: {
+        planSidecar?: () => Promise<unknown>;
+        planTurn?: () => Promise<unknown>;
+        runsOnCredits?: () => boolean;
+      } = {}
+    ) {
+      const relay = fakeRelay();
+      const manager = new OpenCodeServerManager({
+        runsOnCredits: over.runsOnCredits ?? (() => true),
+      });
+      manager.usePlanners({
+        planSidecar: (over.planSidecar ?? (async () => creditsPlan())) as never,
+        planTurn: (over.planTurn ?? (async () => creditsPlan())) as never,
+        relay,
+      });
+      return { manager, relay };
+    }
+
+    it('boots a credits sidecar pointed at the relay, with no credits token and none of the person’s keys', async () => {
+      vi.mocked(resolveOpenCodeProviderEnv).mockResolvedValue({
+        OPENROUTER_API_KEY: 'sk-or-person',
+      });
+      vi.stubEnv('OPENAI_API_KEY', 'person-openai-key');
+      const { manager, relay } = creditsManager();
+      await bootReady(manager);
+      const env = spawnEnv();
+      expect(resolveOpenCodeProviderEnv).not.toHaveBeenCalled();
+      expect(env.OPENROUTER_API_KEY).toBeUndefined();
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+      expect(Object.keys(env).filter((name) => name.startsWith('DORKOS_CREDITS_TOKEN'))).toEqual(
+        []
+      );
+      const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!);
+      expect(config.permission).toEqual(OPENCODE_SIDECAR_CONFIG.permission);
+      expect(config.enabled_providers).toEqual(['dorkos-credits']);
+      expect(config.provider['dorkos-credits'].options).toEqual({
+        baseURL: 'http://127.0.0.1:9/relay/openai-chat-completions',
+        apiKey: 'relay-key-1',
+        includeUsage: true,
+      });
+      expect(relay.live).toEqual(new Set(['relay-key-1']));
+    });
+
+    it('fails closed with no relay or planners installed: a person on credits gets a sidecar that pays for nothing', async () => {
+      vi.mocked(resolveOpenCodeProviderEnv).mockResolvedValue({ OPENROUTER_API_KEY: 'sk-or' });
+      const manager = new OpenCodeServerManager({ runsOnCredits: () => true });
+      await bootReady(manager);
+      const env = spawnEnv();
+      expect(env.OPENROUTER_API_KEY).toBeUndefined();
+      const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!);
+      expect(config).toEqual({ ...OPENCODE_SIDECAR_CONFIG, enabled_providers: ['dorkos-credits'] });
+      await expect(manager.prepareTurn(false)).rejects.toMatchObject({
+        code: 'credits_unavailable',
+      });
+    });
+
+    it('refuses a credits turn with the credits card when no relay is running', async () => {
+      const manager = new OpenCodeServerManager({ runsOnCredits: () => true });
+      manager.usePlanners({
+        planSidecar: async () => creditsPlan(),
+        planTurn: async () => creditsPlan(),
+      });
+      await expect(manager.prepareTurn(false)).rejects.toMatchObject({
+        code: 'credits_unavailable',
+        reason: 'unreachable',
+      });
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it('revokes a boot’s relay key when that sidecar stops, and issues a fresh one to the next', async () => {
+      const { manager, relay } = creditsManager();
+      const { child } = await bootReady(manager);
+      exitOnKill(child);
+      await manager.recycle();
+      expect(relay.revoke).toHaveBeenCalledWith('relay-key-1');
+      await bootReady(manager);
+      expect(relay.live).toEqual(new Set(['relay-key-2']));
+    });
+
+    it('never hands out a sidecar on the other side of the person’s choice', async () => {
+      const choice = { credits: false };
+      const { manager } = creditsManager({
+        planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
+        planTurn: async () => (choice.credits ? creditsPlan() : OWN),
+        runsOnCredits: () => choice.credits,
+      });
+      const { child } = await bootReady(manager);
+      exitOnKill(child);
+      choice.credits = true;
+      const pending = manager.getClient('/repo');
+      await vi.waitFor(() => expect(children.length).toBe(2));
+      children[1]!.emitReady();
+      await pending;
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(JSON.parse(spawnEnv(1).OPENCODE_CONFIG_CONTENT!).enabled_providers).toEqual([
+        'dorkos-credits',
+      ]);
+    });
+
+    it('boots a turn on the plan it asked for, and refuses with nothing spawned when credits cannot pay', async () => {
+      const refusing = new OpenCodeServerManager({
+        planTurn: async () => {
+          throw Object.assign(new Error('no'), { code: 'credits_unavailable' });
+        },
+      });
+      await expect(refusing.prepareTurn(false)).rejects.toMatchObject({
+        code: 'credits_unavailable',
+      });
+      expect(spawn).not.toHaveBeenCalled();
+
+      const { manager } = creditsManager({ planSidecar: async () => OWN });
+      await manager.prepareTurn(false);
+      await bootReady(manager);
+      expect(
+        JSON.parse(spawnEnv().OPENCODE_CONFIG_CONTENT!).provider['dorkos-credits']
+      ).toBeDefined();
+    });
+
+    it('never restarts for a new token, and keeps a busy sidecar when only the model list moved', async () => {
+      let models = [MODEL];
+      const { manager } = creditsManager({
+        planSidecar: async () => creditsPlan(models),
+        planTurn: async () => creditsPlan(models),
+      });
+      const { child } = await bootReady(manager);
+      exitOnKill(child);
+      // Same plan (a new token changes nothing the sidecar holds): kept.
+      await manager.prepareTurn(false);
+      expect(child.kill).not.toHaveBeenCalled();
+      // A new model list while another turn runs: kept, not restarted under it.
+      models = [MODEL, { ...MODEL, id: 'md_2' }];
+      expect((await manager.prepareTurn(true)).fingerprint).toBe('credits:md_1');
+      expect(child.kill).not.toHaveBeenCalled();
+      // Idle: recycled onto the new list.
+      expect((await manager.prepareTurn(false)).fingerprint).toBe('credits:md_1,md_2');
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    it('recycles at once across sides when nothing else is running', async () => {
+      const choice = { credits: true };
+      const { manager } = creditsManager({
+        planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
+        planTurn: async () => (choice.credits ? creditsPlan() : OWN),
+        runsOnCredits: () => choice.credits,
+      });
+      const { child } = await bootReady(manager);
+      exitOnKill(child);
+      choice.credits = false;
+      expect((await manager.prepareTurn(false)).mode).toBe('own');
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    it('never ends or re-bills a running turn: a switch across sides waits for it, and says so', async () => {
+      const choice = { credits: false };
+      let running = 1;
+      const { manager } = creditsManager({
+        planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
+        planTurn: async () => (choice.credits ? creditsPlan() : OWN),
+        runsOnCredits: () => choice.credits,
+      });
+      manager.setBusyProbe(() => running > 0);
+      const { child, client } = await bootReady(manager);
+      exitOnKill(child);
+      choice.credits = true;
+
+      await manager.syncToChoice();
+      expect(await manager.getClient('/repo')).toBe(client);
+      await expect(manager.prepareTurn(true)).rejects.toMatchObject({
+        code: 'runtime_switch_pending',
+        message: expect.stringContaining(
+          "still finishing a reply on your own sign-in, so it can't move to DorkOS credits yet"
+        ),
+      });
+      expect(child.kill).not.toHaveBeenCalled();
+
+      running = 0;
+      await manager.turnSettled();
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+      await bootReady(manager);
+      expect(JSON.parse(spawnEnv(1).OPENCODE_CONFIG_CONTENT!).enabled_providers).toEqual([
+        'dorkos-credits',
+      ]);
+    });
+
+    it('drops a credits sidecar on unlink or a new link, and follows a changed choice', async () => {
+      const choice = { credits: true };
+      const { manager } = creditsManager({
+        planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
+        runsOnCredits: () => choice.credits,
+      });
+      const first = await bootReady(manager);
+      exitOnKill(first.child);
+      await manager.recycleIfOnCredits();
+      expect(first.child.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(manager.peekClient()).toBeNull();
+
+      const second = await bootReady(manager);
+      exitOnKill(second.child);
+      await manager.syncToChoice();
+      expect(second.child.kill).not.toHaveBeenCalled();
+      choice.credits = false;
+      await manager.syncToChoice();
+      expect(second.child.kill).toHaveBeenCalledWith('SIGTERM');
+
+      const third = await bootReady(manager);
+      await manager.recycleIfOnCredits();
+      expect(third.child.kill).not.toHaveBeenCalled();
     });
   });
 });

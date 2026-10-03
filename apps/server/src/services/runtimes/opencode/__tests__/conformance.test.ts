@@ -145,9 +145,38 @@ vi.mock('../providers/check-dependencies.js', async (importOriginal) => {
   };
 });
 
+/**
+ * Whether OpenCode's recorded Runs on default is credits, as the credits driver
+ * sets it: the way a person chooses credits for OpenCode (ADR 261001-000811).
+ */
+const openCodeRunsOnCreditsFlag = vi.hoisted(() => ({ value: false }));
+
+vi.mock('../../../core/cloud/credits-defaults.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/cloud/credits-defaults.js')>()),
+  creditsIsDefaultFor: (runtime: string) =>
+    runtime === 'opencode' && openCodeRunsOnCreditsFlag.value,
+}));
+
+// Linked, with no cloud context ever captured: a token and a model list are
+// held only through the credits module's test seams.
+vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/cloud/v1-client.js')>()),
+  isCloudLinked: () => true,
+  captureCloudV1Context: () => null,
+}));
+
 import { OpenCodeRuntime } from '../opencode-runtime.js';
-import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
-import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
+import {
+  __setCreditsModelsForTests,
+  __setCreditsStateForTests,
+} from '../../../core/cloud/credits-inference.js';
+import { buildSidecarSpawnEnv } from '../server-manager.js';
+import { planOpenCodeTurn } from '../credits-mode.js';
+import { startCreditsRelay, type CreditsRelay } from '../../../core/cloud/credits-relay.js';
+import { InferenceTokenSchema } from '@dork-labs/cloud-api';
+// The fixture whose token serves every format, chat completions included.
+import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
+import CREDITS_MODELS_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/models.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import {
@@ -470,8 +499,58 @@ function makeMockedProvider(
   return {
     getClient: async () => client,
     peekClient: () => client,
+    // What the real sidecar manager does before a turn: plan it (refusing a
+    // credits turn credits cannot pay for) and boot on that plan. The boot is
+    // recorded as the exact environment the manager would spawn it with.
+    prepareTurn: async () => {
+      const plan = await planOpenCodeTurn();
+      // A credits boot is handed a relay key, exactly as the manager hands one.
+      const grant =
+        plan.mode === 'credits' && plan.models.length > 0
+          ? (await conformanceRelay()).issue('openai-chat-completions', 'OpenCode')
+          : null;
+      const env = buildSidecarSpawnEnv(plan, 'conformance-password', {}, grant);
+      sidecarSpawns.push(env);
+      // What OpenCode would do with that config: send its request to the
+      // relay with the key it was given. What the relay then sends upstream
+      // is what the backend's inference was handed.
+      if (grant) {
+        const options = JSON.parse(env.OPENCODE_CONFIG_CONTENT!).provider['dorkos-credits'].options;
+        await fetch(`${options.baseURL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${options.apiKey}`,
+            'content-type': 'application/json',
+          },
+          body: '{}',
+        });
+      }
+      return plan;
+    },
   };
 }
+
+/** Every request the conformance relay sent upstream, with its headers. */
+const relayedUpstream: { url: string; headers: unknown }[] = [];
+
+/** The real credits relay, its upstream captured rather than reached. */
+let relayInstance: Promise<CreditsRelay> | null = null;
+function conformanceRelay(): Promise<CreditsRelay> {
+  relayInstance ??= startCreditsRelay({
+    fetchImpl: (async (url: string, init: { headers: unknown }) => {
+      relayedUpstream.push({ url, headers: init.headers });
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as never,
+  });
+  return relayInstance;
+}
+
+afterAll(async () => {
+  await (await relayInstance)?.close();
+});
+
+/** Every sidecar environment a mocked provider was asked to boot with, in order. */
+const sidecarSpawns: Record<string, string>[] = [];
 
 /**
  * The mocked client behind whichever runtime `makeRuntime()` most recently
@@ -590,41 +669,58 @@ runtimeConformance(
             'a live OpenCode sidecar is a separate process this suite can only send to, so whether a credits token reached it is only observable in the mocked run',
         }
       : {
-          // ADR 261001-000811: OpenCode does not declare credits, so whatever
-          // the host holds and whatever the session asks for, nothing the
-          // adapter sends the sidecar for the turn may carry a credits token.
+          // ADR 261001-000811. Credits are chosen the way a person chooses them
+          // for OpenCode: its recorded default. What the backend was handed is
+          // the sidecar environment it was booted with and every prompt it was
+          // sent, so a turn on the person's own sign-in must carry none of the
+          // token anywhere.
           creditsTurn: async (runtime, { runsOn, heldToken }) => {
             const client = lastClient;
             if (!client) {
               throw new Error('OpenCode conformance: no mocked client to read the turn off');
             }
+            openCodeRunsOnCreditsFlag.value = runsOn === 'credits';
+            __setCreditsModelsForTests({
+              catalogVersion: 'cv_conformance',
+              models: CREDITS_MODELS_FIXTURE.models,
+            });
             __setCreditsStateForTests({
               token:
                 heldToken === null
                   ? null
-                  : {
+                  : InferenceTokenSchema.parse({
                       ...CREDITS_TOKEN_FIXTURE,
                       token: heldToken,
                       expiresAt: '2999-01-01T00:00:00.000Z',
-                    },
+                    }),
             });
             try {
               const sessionId = randomUUID();
               runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
               const events: StreamEvent[] = [];
+              const spawnsBefore = sidecarSpawns.length;
+              const upstreamBefore = relayedUpstream.length;
               for await (const event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
                 cwd: PROJECT_DIR,
-                ...(runsOn === 'credits' ? { accountHint: 'dorkos-credits' } : {}),
               })) {
                 events.push(event);
               }
               const sent = vi.mocked(client.session.promptAsync).mock.calls;
               return {
                 launched: sent.length > 0,
-                handed: { prompts: sent, created: vi.mocked(client.session.create).mock.calls },
+                handed: {
+                  sidecar: sidecarSpawns.slice(spawnsBefore),
+                  // The sidecar never holds the token: on credits it reaches
+                  // inference only through the relay, which is where to look.
+                  upstream: relayedUpstream.slice(upstreamBefore),
+                  prompts: sent,
+                  created: vi.mocked(client.session.create).mock.calls,
+                },
                 events,
               };
             } finally {
+              openCodeRunsOnCreditsFlag.value = false;
+              __setCreditsModelsForTests(null);
               __setCreditsStateForTests({ token: null });
             }
           },

@@ -42,6 +42,7 @@ import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
 import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
 import { AccountColorControl } from '@/layers/features/settings/ui/runtimes/sections/AccountColorControl';
 import { RuntimeUsageSection } from '@/layers/features/settings/ui/runtimes/sections/RuntimeUsageSection';
+import { CreditsRunsOnSectionView } from '@/layers/features/settings/ui/runtimes/sections/CreditsRunsOnSection';
 import { FoundAccountsGroup } from '@/layers/features/settings/ui/runtimes/sections/FoundAccountsGroup';
 import { ControlCenterBody } from '@/layers/widgets/control-center';
 import {
@@ -68,6 +69,7 @@ export function SettingsShowcases() {
       <FullSettingsDialogSection />
       <IndividualTabsSection />
       <ClaudeAccountsShowcaseSection />
+      <CreditsRunsOnShowcaseSection />
       <FoundAccountsGroupShowcaseSection />
       <RuntimeUsageShowcaseSection />
       <ExecutionExceptionsSection />
@@ -96,6 +98,87 @@ function ControlCenterShowcaseSection() {
       <ShowcaseDemo>
         <div className="max-w-sm">
           <ControlCenterBody />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * The Runs on choice on Codex's and OpenCode's cards (ADR 261002-221210), in the
+ * states the playground's default data never reaches: each scope's copy, the
+ * choice DorkOS made on a link, and a refused write. It renders only while the
+ * server reports the runtime as wired, so it is shown here as the pure view.
+ */
+function CreditsRunsOnShowcaseSection() {
+  const noop = () => {};
+  return (
+    <PlaygroundSection
+      title="Credits Runs On"
+      description="Codex or OpenCode on its own sign-in or on DorkOS credits, with what a change reaches."
+    >
+      <ShowcaseLabel>Codex on its own sign-in: a change applies to new conversations</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <CreditsRunsOnSectionView
+            type="codex"
+            runsOn="own-sign-in"
+            chosenByDorkos={false}
+            scope="conversation"
+            canChooseCredits
+            pending={false}
+            failure={null}
+            onChange={noop}
+          />
+        </div>
+      </ShowcaseDemo>
+      <ShowcaseLabel>
+        OpenCode on credits DorkOS chose on a link: the whole runtime moves
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <CreditsRunsOnSectionView
+            type="opencode"
+            runsOn="credits"
+            chosenByDorkos
+            scope="runtime"
+            canChooseCredits
+            pending={false}
+            failure={null}
+            onChange={noop}
+          />
+        </div>
+      </ShowcaseDemo>
+      <ShowcaseLabel>
+        Still set to credits, which cannot run it now: only the way back
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <CreditsRunsOnSectionView
+            type="codex"
+            runsOn="credits"
+            chosenByDorkos={false}
+            scope="conversation"
+            canChooseCredits={false}
+            pending={false}
+            failure={null}
+            onChange={noop}
+          />
+        </div>
+      </ShowcaseDemo>
+      <ShowcaseLabel>A change that did not take</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <CreditsRunsOnSectionView
+            type="opencode"
+            runsOn="own-sign-in"
+            chosenByDorkos={false}
+            scope="runtime"
+            canChooseCredits
+            pending={false}
+            failure="Couldn’t change that. Try again in a moment."
+            onChange={noop}
+          />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
