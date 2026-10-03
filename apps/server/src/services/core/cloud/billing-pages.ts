@@ -98,7 +98,9 @@ export type RequestedAccountExport = AccountExport & {
  * downloads it now, and an email about it would be noise. Only an answer
  * without a link is followed by a second request that asks for the email, and
  * only then may the app say one will come. A service that assembles exports at
- * once never sees the second request.
+ * once never sees the second request. A service that queues them must treat
+ * that second request as the same export job, not a new one; the contract
+ * does not say so yet.
  *
  * A link is held to the same rule as a billing page; one that fails it is
  * dropped, so the export reads as still being prepared rather than offering a
@@ -115,12 +117,23 @@ export async function requestAccountExport(signal?: AbortSignal): Promise<Reques
       signal,
     });
     const downloadUrl = job.downloadUrl === null ? null : safePageUrl(job.downloadUrl);
-    return { ...job, downloadUrl, readyAt: downloadUrl === null ? null : job.readyAt };
+    return {
+      job: { ...job, downloadUrl, readyAt: downloadUrl === null ? null : job.readyAt },
+      // Whether the service sent any link at all, before this app's own check.
+      served: job.downloadUrl !== null,
+    };
   };
   const first = await ask(false);
-  if (first.downloadUrl !== null) return { ...first, emailRequested: false };
+  // A link the service sent means the export is ready, even when it fails the
+  // https check above and is dropped: asking again for an email would only
+  // announce a link this app will not open.
+  if (first.served) return { ...first.job, emailRequested: false };
+  // The second request names the same export as the first. A service that
+  // queues exports has to treat it as that job, not a new one; the contract
+  // does not say so yet, and today's service never gets here, because it
+  // answers the first request with a link.
   const second = await ask(true);
-  return { ...second, emailRequested: true };
+  return { ...second.job, emailRequested: true };
 }
 
 /**

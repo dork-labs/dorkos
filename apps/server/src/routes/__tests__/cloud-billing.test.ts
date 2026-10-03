@@ -326,9 +326,15 @@ describe('billing-page routes', () => {
         readyAt: '2026-09-15T12:05:00.000Z',
         downloadUrl: 'http://files.example.invalid/x',
       };
-      fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
+      const seen = fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
       const res = await request(server).post('/api/cloud/account/export').expect(200);
-      expect(res.body.export).toMatchObject({ readyAt: null, downloadUrl: null });
+      expect(res.body.export).toMatchObject({
+        readyAt: null,
+        downloadUrl: null,
+        emailRequested: false,
+      });
+      // The export was ready; an email would announce a link this app drops.
+      expect(seen.map((r) => r.body)).toEqual([{ notifyEmail: false }]);
     });
 
     it.each([
