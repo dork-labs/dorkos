@@ -13,6 +13,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.96.0] - 2026-10-03
+
+> DorkOS 0.96.0 lets you pick DorkOS credits anywhere you choose what an agent runs on, and lets you delete your DorkOS account from the app. It also makes sure only the owner of a DorkOS can spend its money or change its connections.
+
+### Added
+
+- Choose DorkOS credits in the same places you choose a Claude account: Settings › Runtimes › **Runs on**, an agent's Runs on, the account chip before a chat's first message, and **Continue on another account**. Settings › DorkOS account has one switch per runtime credits can pay for. A chat set to DorkOS credits stops and says so when credits can't be reached, with **Retry** and **Use your Claude Code sign-in** — it never quietly runs on your own sign-in instead, and a chat on your own sign-in never uses credits. A folder's own Claude Code settings can't send your credits anywhere else, though other settings, such as `PATH` or a database address, still reach its hooks and commands. Credits keep working after a restart, an expiring credits token is replaced before a chat needs it, unlinking your DorkOS account stops anything running on credits right away, and Claude Code on credits ignores five more ways another program can hand it an endpoint or a sign-in (DOR-2623, DOR-2633)
+- If you link a DorkOS account while Claude Code has no sign-in at all, new Claude Code chats run on credits, and DorkOS tells you once, with **Change** and **Undo all**. If you sign in to Claude Code later, DorkOS offers once to switch back. Turning credits off is remembered, and a sign-in that has expired is never replaced with credits. A computer that was already linked keeps everything as it was and gets one offer you can turn down (DOR-2623)
+- An agent runs on DorkOS credits only when you choose that in the app. If an agent's own settings file asks for credits, the agent row says so and offers **Allow** (DOR-2623)
+- A project with its own Claude Code sign-in can't run on credits, so the chat now offers **Don't use credits in this project**, which adds a project limit you can remove in Settings › Runtimes. Doing this refreshes the model menu at once, so it offers what that project runs on (DOR-2623, DOR-2679)
+- When credits stop a scheduled task, an agent's reply or a room turn, you get a notification instead of nothing (DOR-2623)
+- On a Community server, each line of the erasure journal a host copies now says when that erasure finished, as `finishedAt`. A copy kept somewhere else can now delete old lines on the same schedule as the server, instead of counting from when it copied them. The lines in the app log and the `COMMUNITY_ERASURE_JOURNAL` file stay as they were, and `erasure:reapply` reads both kinds. (DOR-2621)
+- You can delete your DorkOS account from **Settings › DorkOS account**. Before anything happens, it says what goes (your plan, credits you haven't used, your seats and the rest of the account) and what stays (everything on this computer), offers a copy of your data, and asks you to type "delete". DorkOS then emails you a link, and nothing is deleted until you follow it. Only you can ask, never an agent. Once you follow the link, this computer unlinks itself and keeps working on its own; if the link expires first, the app says so and offers a new one. Where your account doesn't offer this yet, the app says so plainly. (DOR-2651)
+- If you run your own Community server, you can now ask for a new owner for a space whose owner has left. The owner gets an email and a note on the space's own site, and can keep ownership with one click. If their DorkOS is connected to the space, DorkOS tells them too the next time they open it. If they don't answer in time, the new owner can take over: with single sign-on, only the account you named; without it, whoever you send the claim link to. You need two things: mail set up on your server, and a host key with the ownership permission (or your own password). Without mail, the request is refused, because the owner could not be told (DOR-2252)
+- A Community host can now close someone else's account, for example when the person is younger than the host's minimum age, or under a legal order. The person is signed out at once and cannot sign in, and their account is erased 72 hours later, the same wait a person's own request has. Until the erasure starts the host can cancel it, and the person can sign in again. It needs a new host API key permission, `accounts:close`, and a host can find the account by the identity its single sign-on gives the person. Each person or key can close at most 10 accounts a day (`COMMUNITY_ACCOUNT_CLOSURES_PER_DAY`), and every closure writes a log line you can alert on. An account that still owns a community cannot be closed until its owner is replaced, and the erasure waits while the person belongs to a community under a legal hold. (DOR-2557)
+- Check delivery status for messages sent to agents through the HTTP API. Keep receipts for seven days, including refusals when an agent is busy, without sending the message again.
+- Once DorkOS says which models your credits cover, a chat or an agent on DorkOS credits lists only those models in the model menu, with DorkOS's suggested model first. This works the same in Claude Code, Codex and OpenCode. A chat on credits with no model chosen starts on that suggestion. Chats on your own sign-in keep the full menu and **Automatic** (DOR-2636)
+- A chat, an agent or a scheduled task on credits can't be set to a model your credits don't cover. If one already names such a model, it runs on the suggested model instead. A note in the conversation names both models and stays there, in chats, scheduled tasks and rooms alike, and the status line shows the model that ran (DOR-2636)
+- If DorkOS can't check the models your credits cover right now, it keeps using the last list it got (up to seven days old), even after a restart, and the menu says the list may be out of date (DOR-2636)
+- If your credits cover no model for a runtime, a chat on credits stops and says so, with the way to use your own sign-in instead (DOR-2636)
+- `@dork-labs/cloud-api`: each model in `GET /v1/inference/models` can now say which request formats to offer it in (`protocols`, by `InferenceFormatSchema` name) and in which it is the suggested first pick (`recommendedOn`). Both fields are optional (DOR-2636)
+- Codex and OpenCode are ready to run on DorkOS credits. Each gets a **Runs on** choice on its card in Settings › Runtimes and a switch under **Use credits for**, but neither shows up anywhere until DorkOS credits actually serve it. For Codex the choice applies to new conversations. For OpenCode it moves all of OpenCode, and you can't switch while OpenCode is in the middle of a reply, so nothing it's doing is cut off. Neither runtime uses your own sign-in or keys while on credits, and DorkOS never changes your own Codex or OpenCode settings: if credits can't be reached, Codex offers **Start a new conversation on your Codex sign-in** and OpenCode offers **Use your OpenCode sign-in**, which switches all of OpenCode back. A runtime set to credits keeps its **Use credits for** switch even while credits can't run it, so you can always switch it back. OpenCode never holds your DorkOS credits key itself — it talks to DorkOS on this computer, which adds the key on the way out, so a project's own OpenCode settings can't read it and send it anywhere. Codex conversations on credits also turn web search off, so they aren't refused once credits can run Codex; web search keeps working on your own Codex sign-in, and everywhere Codex can move onto credits now says it can't search the web there (DOR-2633, DOR-2679)
+- When Claude Code has no sign-in yet, its setup step now offers DorkOS credits first, with "Sign in with Claude" and "Paste a key" right under it. The same offer shows in first-run setup, in the chat card when a turn could not sign in, on the banner for a sign-in that is not there, and on your phone. If this computer is not linked to a DorkOS account yet, choosing credits shows the link code right where you are, and Settings › DorkOS account and your other open tabs show the same code. Once you approve it, you pick up where you left off. Before anything is sent again, DorkOS asks you first (DOR-2630)
+- When an account runs out of usage, the banner now leads with "Keep going on DorkOS credits". Nothing moves to credits unless you choose it, an account with no credits left is offered a way to add some instead, and a sign-in that expired still leads with signing in again. If you turned credits off for a runtime, your own sign-in stays first (DOR-2630)
+
+### Changed
+
+- Rename the Claude account section in Settings › Runtimes from **Billing account** to **Runs on** (DOR-2623)
+- `DORKOS_CLOUD_CREDITS` can now only turn DorkOS credits off: set it to `0`. It no longer turns them on (DOR-2623)
+- A space's own website now says "space" everywhere you read it, the same word the DorkOS app uses: **Create space**, **Join space**, **Leave space**, **Spaces you left**, the page title, the emails it sends and the messages it shows. The page for the person who runs the server is now **Server administration**, and wherever the site said "host" it now says "server" or "server admin". Messages removed before this change keep their old wording and still show as removed. (DOR-2653)
+- `dorkos community deploy` now says "space" in what it prints, for example "Space setup is complete at …". The command itself is unchanged. (DOR-2653)
+- Label browser reports and captures as page-reported, so agents know the page can alter what they see (DOR-2662).
+- The company behind DorkOS is now 144 Studio, LLC. The terms, privacy, cookie, security, telemetry and pricing pages, the license, and the desktop app's About panel and installer all name it (DOR-2675).
+
+### Fixed
+
+- When Fly or Neon refuses to let your token create something during `dorkos community deploy`, setup now says so plainly: which service, which organization, and which token. Before, it called the outcome "uncertain" and offered a resume command that could never work. If nothing was made, it leaves no unfinished setup behind, so you can just run it again with a token that can. (DOR-2656)
+- After `--remove-uncertain` finds that nothing was made, that setup no longer shows up in `--list-incomplete`. Right after a stop, it waits a few minutes first, in case the create is still finishing. (DOR-2656)
+- When an exported `NEON_API_KEY` or `FLY_API_TOKEN` can't read the organization you chose, setup now tells you that, instead of asking you to check the service status and sign in again. For Fly, it also says the token may have expired. It never prints the key. (DOR-2657)
+- On a Community server, a member can now leave a community its host has put on hold. Before, the hold blocked leaving along with posting, so a member had no way out until the host lifted it. Leaving deletes none of their past messages, and a legal hold does not block it either. An owner still has to hand the community on before leaving. (DOR-2588)
+- Your DorkOS account's usage now shows last month's storage charge under **Other charges**. Before, it looked only at the last 30 days, and a month's charge is only ready after the month ends, so it never appeared. A tiny amount of storage that still cost something now reads "&lt;0.001" instead of "0". (DOR-2589)
+- On a Community server, a legal hold now keeps every file the community has until the host releases it. Three cleanups could still delete some while a hold stood: uploads nobody posted, exports from older versions past their expiry, and files that were stored but never used. Now their files wait and are deleted once the hold is released. Nothing changes for the people in the community: an expired export still can't be downloaded, and an upload nobody posted still leaves after an hour and stops counting toward the storage limit. (DOR-2581)
+- Cancel pending browser work when its page changes, and keep delayed replies from changing the new page's reports or recording (DOR-2662).
+- A space channel you read down to its newest message now opens at the newest message next time. Before, once the app had saved a spot higher up, it kept opening the channel there, even after you had read past it (DOR-2170)
+- The pricing page and the docs now say what DorkOS credits pay for today: Claude Code. Codex and OpenCode use their own sign-in. Messages about sign-in and credits now name the runtime, such as "Codex" or "Claude Code", instead of its internal id (DOR-2627)
+- Only you can spend from or change your DorkOS account now. Buying a plan or credits, opening billing, exporting or deleting the account, linking or unlinking this computer, changing seats, starting or moving a space, and choosing what runs on your DorkOS credits, scheduled tasks included, are refused for agents, and, with login on, for anyone signed in who isn't the owner of this DorkOS. The app shows the reason in one plain sentence instead of saying it couldn't reach your account (DOR-2652)
+- With login on, only the owner of this DorkOS can now connect, reconnect, pause or disconnect apps, or decide which agents may use them. Anyone else signed in no longer sees the Connections lists, reviews, requests or events either. Someone else signed in can't approve an agent's change to the DorkOS account settings, and their edit to a scheduled task that runs on DorkOS credits puts it back in front of the owner instead of keeping it running (DOR-2678)
+- Agents can no longer put a scheduled task on DorkOS credits or switch one back on, and only you can save or remove the keys DorkOS uses to reach your apps (with login on, only the owner of this DorkOS) (DOR-2678)
+- Fix signed webhook messages being refused when a service sends JSON.
+- DorkOS asks for an "export ready" email only when your download isn't ready yet, and only then tells you one is coming (DOR-2680)
+
+### Security
+
+- Keep local pages isolated from your DorkOS data when you open their preview links in a new tab. (DOR-2663)
+- Keep webhook connections from taking over an agent's message address. Refuse conflicting addresses and keep similar-looking addresses separate. (DOR-2660)
+- Preview pages keep every script restriction sent by their web server.
+- DorkOS adds its preview scripts only when the page format and script rules safely allow them.
+
 ## [0.95.0] - 2026-10-01
 
 > DorkOS 0.95.0 gives your DorkOS account its own home in Settings, and calls communities spaces. You can start and join a space on DorkOS with your DorkOS account, Settings is shorter, and when your account has a problem the app now says what went wrong and how to fix it.
@@ -711,35 +769,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Limit password guesses everywhere a community site asks for your password: leaving, disconnecting all installations, handing over ownership, exporting the whole community, archiving, restoring or deleting it, and creating or replacing a host API key. After 5 wrong passwords in a minute, that account's password-protected actions are refused for the rest of the minute, even with the right password. Other people are never locked out by someone else's guesses, even when everyone reaches the server through the same proxy. A wrong password now always says "That password is not right." and that nothing changed. A server owner can change the number with `COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`. (DOR-2181)
 
-## [0.81.0] - 2026-09-22
+Older releases (v0.1.0 – v0.81.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.81.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.81.0.md).
 
-> DorkOS 0.81.0 brings Opus 5.5, Anthropic's newest model: pick "Opus" in the model menu to use it. Self-hosted communities also take a step forward. One server can now hold several communities, owners can manage theirs from the Community website, and a new command sets up a community server on Fly for you. Communities are still early.
-
-### Added
-
-- **Use Opus 5.5, Anthropic's newest model.** Choose "Opus" in the model menu to use it. On some accounts the row reads "Opus (1M context)". Read the upgrade note below: sessions already on Opus move to it on their next message (#1993)
-- **Early:** Run more than one community on one self-hosted server. Each community keeps its own members, channels, files, agents, exports and live updates, and having an account on the server does not let anyone into a community they are not a member of. Links to an existing single community, and approvals for new DorkOS connections, keep working after you upgrade (#1975)
-- **Early:** Connect DorkOS to one specific community on a shared server. On the Community website, you go straight to your community if you belong to one, or choose between them if you belong to several (#1978)
-- **Early:** Manage a community from the Community website: its settings and icon, members, exports, ownership, and archiving or restoring it. Owners can schedule a community for deletion, watch its progress, and cancel any time in the seven days before it happens. Whoever runs the server can create communities and hand them to an owner without being able to read any private conversations (#1984, #1985)
-- **Early:** Join a community from an invitation link that carries you through signing in, without the invitation's secret ever being saved in your browser. Once you have joined, you choose when to open the community, and you can see that each of your DorkOS installations connects to it separately (#1987)
-- **Early:** Open an archived community to read its history and export your data. Posting and other changes stay off until an owner restores it (#1987)
-- **Early:** Set up your own community server on Fly with `dorkos community deploy`. It uses a Neon database and a private Tigris bucket for files, shows the whole plan first (including which accounts may be charged), and creates nothing until you type the app name. If setup stops partway, it keeps what it made, never deletes anything that costs money on its own, and tells you how to pick up where it left off (#1965)
-- **Early:** Check whether a community server can safely go back to an older, single-community release. The recovery guide has you keep a copy of your current backup first (#1975)
-
-### Fixed
-
-- A session's cost total now carries on after the session restarts in the background, instead of starting again from zero. For a conversation started before this update, that begins after its first new message (#1993)
-- Each turn's token and cost figures in your own traces now cover that turn alone. Before, from the second turn on, they counted the whole session so far (#1993)
-- A tool from another server that borrows DorkOS's name no longer skips the approval prompt. DorkOS now checks which server actually runs the tool, not just its name (#1993)
-- When DorkOS can no longer confirm you still have access to a community, it stops that community's live activity on your machine instead of carrying on. You can still remove your own agents from a community while it is unreachable (#1984)
-
-### Note for people upgrading
-
-- **Sessions and agents already set to Opus move to Opus 5.5 on their next message.** So do ones set to Default, on an account whose default is Opus. Opus 5.5 is priced differently from the Opus it replaces, so what a turn costs can change. To stay on the older model, set its full model name on the agent (#1993)
-
-Older releases (v0.1.0 – v0.76.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.76.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.76.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.95.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.96.0...HEAD
+[0.96.0]: https://github.com/dork-labs/dorkos/compare/v0.95.0...v0.96.0
 [0.95.0]: https://github.com/dork-labs/dorkos/compare/v0.94.0...v0.95.0
 [0.94.0]: https://github.com/dork-labs/dorkos/compare/v0.93.0...v0.94.0
 [0.93.0]: https://github.com/dork-labs/dorkos/compare/v0.92.0...v0.93.0
@@ -749,4 +782,3 @@ Older releases (v0.1.0 – v0.76.0) are archived in [changelog/archive/CHANGELOG
 [0.87.0]: https://github.com/dork-labs/dorkos/compare/v0.83.0...v0.87.0
 [0.83.0]: https://github.com/dork-labs/dorkos/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/dork-labs/dorkos/compare/v0.81.0...v0.82.0
-[0.81.0]: https://github.com/dork-labs/dorkos/compare/v0.76.0...v0.81.0
