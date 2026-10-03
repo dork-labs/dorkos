@@ -319,7 +319,7 @@ describe('useMcpSigninFlow', () => {
       expect(attempts).toBe(5);
       // …and what a person reads is a sentence, not `Failed to fetch`.
       expect(result.current.state.error).toBe(
-        'We couldn’t check whether the sign-in finished. Try again in a moment.'
+        'Couldn’t check if the sign-in finished. Try again in a moment.'
       );
     } finally {
       vi.useRealTimers();

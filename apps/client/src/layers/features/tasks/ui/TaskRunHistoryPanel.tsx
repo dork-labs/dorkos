@@ -78,7 +78,7 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
       );
     case 'failed':
       return (
-        <span title="Failed" aria-label="Failed">
+        <span title="Didn’t finish" aria-label="Didn’t finish">
           <XCircle className="text-destructive size-3.5" />
         </span>
       );
@@ -416,7 +416,7 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
       <div className="space-y-2">
         <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
         <p className="text-muted-foreground py-4 text-center text-xs">
-          {statusFilter === 'all' ? 'No runs yet' : `No ${statusFilter} runs`}
+          {statusFilter === 'all' ? 'No runs yet' : 'No runs match this filter'}
         </p>
       </div>
     );
@@ -508,7 +508,7 @@ function BlockedToolsLine({ run }: { run: TaskRun }) {
   const named = listRefusedTools((run.refusedTools ?? []).map(readableToolName));
   const line =
     named !== null
-      ? `Could not use ${named.list} — nobody was there to approve ${named.them}.`
+      ? `Couldn’t use ${named.list}. Nobody was there to approve ${named.them}.`
       : (run.error ?? 'Nobody was there to approve the tools this run needed.');
 
   return (
@@ -536,7 +536,7 @@ function StatusFilterSelect({
           <SelectItem value="all">All</SelectItem>
           <SelectItem value="running">Running</SelectItem>
           <SelectItem value="completed">Completed</SelectItem>
-          <SelectItem value="failed">Failed</SelectItem>
+          <SelectItem value="failed">Didn’t finish</SelectItem>
           <SelectItem value="blocked">Blocked</SelectItem>
           <SelectItem value="cancelled">Cancelled</SelectItem>
           <SelectItem value="skipped">Skipped</SelectItem>

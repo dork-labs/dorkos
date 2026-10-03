@@ -191,11 +191,10 @@ describe('ConnectCommunityDialog', () => {
     await user.type(address, 'https://spaces.example.com');
     await user.click(screen.getByRole('button', { name: 'Connect' }));
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('That address has more than one space on it.');
+    expect(alert).toHaveTextContent('That address has several spaces.');
     // The example is on the host the person typed, so it is one they can use as it stands.
-    expect(alert).toHaveTextContent('like https://spaces.example.com/your-space,');
-    expect(alert).toHaveTextContent('/c/');
-    expect(alert).not.toHaveTextContent('Check the community address');
+    expect(alert).toHaveTextContent('like https://spaces.example.com/your-space.');
+    expect(alert).not.toHaveTextContent('Check the space’s address');
     // The address stays, so the person can add the community's part to it.
     expect(address).toHaveValue('https://spaces.example.com');
   });
@@ -219,7 +218,7 @@ describe('ConnectCommunityDialog', () => {
     address.closest('form')?.setAttribute('novalidate', '');
     await user.type(address, 'spaces');
     await user.click(screen.getByRole('button', { name: 'Connect' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('like https://example.com/acme,');
+    expect(await screen.findByRole('alert')).toHaveTextContent('like https://example.com/acme.');
   });
 
   // Purpose: a join link that is not a secure invitation is refused in words
@@ -275,7 +274,7 @@ describe('ConnectCommunityDialog', () => {
   it('says no community uses that short address when the host does not know the name', async () => {
     const alert = await refusedWith(coded(404, 'COMMUNITY_NAME_NOT_FOUND'));
     expect(alert).toHaveTextContent(
-      'No space uses that short address there. Check the spelling, or ask for the space’s full link.'
+      'No space uses that address. Check the spelling, or ask for its full link.'
     );
     expect(screen.getByLabelText('Space address or invitation link')).toHaveValue(
       'https://spaces.example.com/acme'
@@ -290,9 +289,9 @@ describe('ConnectCommunityDialog', () => {
       coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 17 })
     );
     expect(alert).toHaveTextContent(
-      'This DorkOS has tried that space too many times in a short while. Your address may be fine. Wait 17 seconds, then try again.'
+      'Too many tries. Your address may be fine. Wait 17 seconds, then try again.'
     );
-    expect(alert).not.toHaveTextContent('Check the community address');
+    expect(alert).not.toHaveTextContent('Check the space’s address');
   });
 
   it('rounds a long wait up to minutes, and says a minute when the host named none', async () => {
@@ -310,9 +309,9 @@ describe('ConnectCommunityDialog', () => {
   it('says the community’s server needs updating when it is too old to connect', async () => {
     const alert = await refusedWith(coded(426, 'COMMUNITY_UPGRADE_REQUIRED'));
     expect(alert).toHaveTextContent(
-      'This space’s server is too old to connect to this DorkOS. Ask whoever runs the space to update it, then try again.'
+      'This space’s server is too old for this DorkOS. Ask its owner to update it.'
     );
-    expect(alert).not.toHaveTextContent('Check the community address');
+    expect(alert).not.toHaveTextContent('Check the space’s address');
   });
 
   // Purpose: after a refusal, a keyboard or screen-reader user lands back on the address with
@@ -425,7 +424,7 @@ describe('ConnectCommunityDialog', () => {
       invalidateCommunityAuthority();
     });
     await waitFor(() =>
-      expect(screen.getByText(/Approve in the tab you opened for this space/)).toBeInTheDocument()
+      expect(screen.getByText(/Approve in the tab that opened/)).toBeInTheDocument()
     );
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByText('Next, approve this DorkOS on Community A.')).not.toBeInTheDocument();
@@ -488,7 +487,7 @@ describe('ConnectCommunityDialog', () => {
       </QueryClientProvider>
     );
     expect(await screen.findByRole('dialog', { name: 'Approve on Community A' })).toBeVisible();
-    expect(screen.getByText(/Approve in the tab you opened for this space/)).toBeInTheDocument();
+    expect(screen.getByText(/Approve in the tab that opened/)).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
@@ -541,9 +540,7 @@ describe('ConnectCommunityDialog', () => {
     expect(await screen.findByRole('dialog', { name: 'Approve on Community A' })).toBeVisible();
     expect(screen.getByText('https://a.example')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Approve in the tab you opened for this space. If you closed it, cancel and connect again.'
-      )
+      screen.getByText('Approve in the tab that opened. Closed it? Cancel and connect again.')
     ).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });

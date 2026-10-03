@@ -60,7 +60,7 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
         <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
           {connection.status === 'reconnect-required'
             ? 'Reconnect to view channels.'
-            : 'Channel access is unavailable.'}
+            : 'Channels aren’t available.'}
         </p>
       )}
       {access.cacheReadable && !access.verified && (

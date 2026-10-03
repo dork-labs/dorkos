@@ -81,6 +81,6 @@ describe('ProfileRolesField', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Hiring people' }));
     await userEvent.click(screen.getByTestId('confirm-profile'));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save that. Try again.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t save that. Try again.');
   });
 });

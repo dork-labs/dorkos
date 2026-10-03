@@ -239,11 +239,11 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
               }}
             >
               <Check className={cn('size-(--size-icon-sm)', !routerDevtoolsOpen && 'invisible')} />
-              Router Inspector
+              Router inspector
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={handleCopyDebugInfo}>
               <Copy className="size-(--size-icon-sm)" />
-              Copy Debug Info
+              Copy debug info
             </DropdownMenuItem>
           </>
         )}

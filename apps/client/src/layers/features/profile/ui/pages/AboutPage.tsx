@@ -84,7 +84,7 @@ function Capabilities({
               if (event.key === 'Escape') setAdding(false);
             }}
             className="h-6 w-28 text-xs"
-            placeholder="capability name"
+            placeholder="Capability name"
             aria-label="New capability"
           />
         ) : (
@@ -232,7 +232,7 @@ export function AboutPage({ member, roster }: ProfilePageContentProps) {
         // string. It used to swallow the empty commit and leave the field
         // blank, which looked exactly like a rename that worked.
         onCommit={(displayName) => {
-          if (!displayName) return 'An agent needs a name, so this one kept the one it had.';
+          if (!displayName) return 'A name can’t be empty, so the old one was kept.';
           update({ displayName });
         }}
       />
@@ -260,9 +260,7 @@ function ReadOnlyAbout({
   const description = agent?.description?.trim();
   if (!description) {
     return (
-      <p className="text-muted-foreground text-sm">
-        {member.displayName} hasn’t said what it’s for yet.
-      </p>
+      <p className="text-muted-foreground text-sm">{member.displayName} has no description yet.</p>
     );
   }
   return <p className="text-sm leading-relaxed whitespace-pre-wrap">{description}</p>;

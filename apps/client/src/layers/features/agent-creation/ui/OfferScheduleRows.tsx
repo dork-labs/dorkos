@@ -63,8 +63,7 @@ export function OfferScheduleRows({
           <AlertTriangle className="text-status-warning-dot mt-0.5 size-4 shrink-0" />
           <dt className="text-muted-foreground shrink-0">Not checked</dt>
           <dd className="min-w-0">
-            DorkOS could not find out whether this agent brings work on a timer. Anything it does
-            bring still has to be approved before it runs.
+            Couldn’t check for scheduled work. Anything it brings still needs your approval.
           </dd>
         </div>
       )}

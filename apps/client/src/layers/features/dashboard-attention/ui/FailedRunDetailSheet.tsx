@@ -75,7 +75,7 @@ function runVerdict(status: TaskRun['status']): {
       };
     case 'failed':
       return {
-        label: 'Failed',
+        label: 'Didn’t finish',
         badge: 'destructive',
         tone: 'error',
         heading: 'Error',
@@ -194,9 +194,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
           )}
 
           {!isLoading && !isError && !run && (
-            <p className="text-muted-foreground py-8 text-center text-sm">
-              This item has been resolved.
-            </p>
+            <p className="text-muted-foreground py-8 text-center text-sm">Already resolved.</p>
           )}
 
           {run && (
@@ -255,7 +253,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
         <SheetFooter>
           {run?.sessionId && (
             <Button variant="default" onClick={handleViewSession}>
-              View Session
+              View session
             </Button>
           )}
           {run?.status === 'running' && (
@@ -264,7 +262,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
               onClick={handleCancel}
               disabled={cancelMutation.isPending}
             >
-              {cancelMutation.isPending ? 'Cancelling…' : 'Cancel'}
+              {cancelMutation.isPending ? 'Cancelling…' : 'Cancel run'}
             </Button>
           )}
           <Button variant="outline" onClick={onClose}>

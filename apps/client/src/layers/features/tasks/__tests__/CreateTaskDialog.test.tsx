@@ -172,7 +172,7 @@ describe('CreateTaskDialog', () => {
       </Wrapper>
     );
 
-    expect(screen.getByText('New Schedule')).toBeTruthy();
+    expect(screen.getByText('New schedule')).toBeTruthy();
   });
 
   it('shows "Edit Schedule" title when editSchedule is provided', () => {
@@ -186,7 +186,7 @@ describe('CreateTaskDialog', () => {
       </Wrapper>
     );
 
-    expect(screen.getByText('Edit Schedule')).toBeTruthy();
+    expect(screen.getByText('Edit schedule')).toBeTruthy();
   });
 
   it('pre-fills form fields in edit mode', async () => {
@@ -248,7 +248,7 @@ describe('CreateTaskDialog', () => {
       target: { value: '0 0 * * *' },
     });
 
-    fireEvent.click(screen.getByText('Create'));
+    fireEvent.click(screen.getByText('Create task'));
 
     await waitFor(() => {
       expect(transport.createTask).toHaveBeenCalledWith(
@@ -291,7 +291,7 @@ describe('CreateTaskDialog', () => {
     // Flip the sticky toggle on, then create.
     await openAdvanced();
     fireEvent.click(screen.getByRole('switch', { name: /remember the last run/i }));
-    fireEvent.click(screen.getByText('Create'));
+    fireEvent.click(screen.getByText('Create task'));
 
     await waitFor(() => {
       expect(transport.createTask).toHaveBeenCalledWith(
@@ -330,7 +330,7 @@ describe('CreateTaskDialog', () => {
     await openAdvanced();
     expect(screen.queryByRole('switch', { name: /remember the last run/i })).toBeNull();
 
-    fireEvent.click(screen.getByText('Create'));
+    fireEvent.click(screen.getByText('Create task'));
 
     await waitFor(() => {
       expect(transport.createTask).toHaveBeenCalledWith(
@@ -484,8 +484,12 @@ describe('CreateTaskDialog', () => {
       // from a refusal after typing (UX decision on the DOR-2272 review).
       await open(transportWith());
 
-      expect(screen.getByText(/This schedule came with an installed package/)).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Make my own copy' })).toBeTruthy();
+      expect(
+        screen.getByText(
+          'This schedule came with a package. Only the package can change what it does.'
+        )
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Make a copy' })).toBeTruthy();
       expect(screen.getByDisplayValue('nightly-sweep')).toBeDisabled();
       expect(screen.getByDisplayValue('The package sweeps.')).toBeDisabled();
       expect(screen.getByLabelText('Disable schedule')).not.toBeDisabled();
@@ -498,9 +502,11 @@ describe('CreateTaskDialog', () => {
       // and a copy is not the answer.
       await open(transportWith(), packaged('legacy'));
 
-      expect(screen.getByText(/installed by an older version of DorkOS/)).toBeTruthy();
+      expect(
+        screen.getByText('This schedule came with a package from an older DorkOS.')
+      ).toBeTruthy();
       expect(screen.getByText(/Check files/)).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Make my own copy' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Make a copy' })).toBeNull();
       expect(screen.getByDisplayValue('The package sweeps.')).toBeDisabled();
     });
 
@@ -517,7 +523,7 @@ describe('CreateTaskDialog', () => {
       await editAndSave(transportWith({ updateTask: vi.fn().mockRejectedValue(refused()) }));
 
       expect(await screen.findByText(REFUSAL)).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Make my own copy' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Make a copy' })).toBeTruthy();
     });
 
     it('offers no copy when that refusal is a legacy one', async () => {
@@ -526,7 +532,7 @@ describe('CreateTaskDialog', () => {
       );
 
       expect(await screen.findByText(REFUSAL)).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Make my own copy' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Make a copy' })).toBeNull();
     });
 
     it('makes a copy for the same agent and switches the package’s schedule off', async () => {
@@ -539,9 +545,9 @@ describe('CreateTaskDialog', () => {
       });
       await open(transport);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Make my own copy' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Make a copy' }));
 
-      expect(await screen.findByText('New Schedule')).toBeTruthy();
+      expect(await screen.findByText('New schedule')).toBeTruthy();
       expect(screen.getByDisplayValue('nightly-sweep-copy')).toBeTruthy();
       expect(screen.getByDisplayValue('The package sweeps.')).not.toBeDisabled();
       expect(screen.getByLabelText('Switch off the package’s schedule')).toBeChecked();
@@ -549,7 +555,7 @@ describe('CreateTaskDialog', () => {
         target: { value: 'I sweep my way.' },
       });
       expect(transport.createTask).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByText('Create'));
+      fireEvent.click(screen.getByText('Create task'));
 
       await waitFor(() =>
         expect(transport.createTask).toHaveBeenCalledWith(
@@ -572,10 +578,10 @@ describe('CreateTaskDialog', () => {
         createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-mine' })),
       });
       await open(transport);
-      fireEvent.click(screen.getByRole('button', { name: 'Make my own copy' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Make a copy' }));
       fireEvent.click(await screen.findByLabelText('Switch off the package’s schedule'));
 
-      fireEvent.click(screen.getByText('Create'));
+      fireEvent.click(screen.getByText('Create task'));
 
       await waitFor(() => expect(transport.createTask).toHaveBeenCalled());
       expect(transport.updateTask).not.toHaveBeenCalled();
@@ -591,13 +597,13 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       const { rerender } = render(view(true));
-      fireEvent.click(await screen.findByRole('button', { name: 'Make my own copy' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Make a copy' }));
       fireEvent.click(await screen.findByLabelText('Switch off the package’s schedule'));
       expect(screen.getByLabelText('Switch off the package’s schedule')).not.toBeChecked();
 
       rerender(view(false));
       rerender(view(true));
-      fireEvent.click(await screen.findByRole('button', { name: 'Make my own copy' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Make a copy' }));
 
       expect(await screen.findByLabelText('Switch off the package’s schedule')).toBeChecked();
     });
@@ -616,7 +622,7 @@ describe('CreateTaskDialog', () => {
       await open(transport);
       await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
 
-      fireEvent.click(screen.getByRole('button', { name: 'Make my own copy' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Make a copy' }));
 
       expect(await screen.findByDisplayValue('nightly-sweep-copy-2')).toBeTruthy();
     });
@@ -635,7 +641,7 @@ describe('CreateTaskDialog', () => {
       await open(transport);
       await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
 
-      fireEvent.click(screen.getByRole('button', { name: 'Make my own copy' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Make a copy' }));
 
       expect(await screen.findByDisplayValue('nightly-sweep-copy')).toBeTruthy();
     });
@@ -650,13 +656,13 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       const { rerender } = render(view(true));
-      fireEvent.click(await screen.findByRole('button', { name: 'Make my own copy' }));
-      expect(await screen.findByText('New Schedule')).toBeTruthy();
+      fireEvent.click(await screen.findByRole('button', { name: 'Make a copy' }));
+      expect(await screen.findByText('New schedule')).toBeTruthy();
 
       rerender(view(false));
       rerender(view(true));
 
-      expect(await screen.findByText('Edit Schedule')).toBeTruthy();
+      expect(await screen.findByText('Edit schedule')).toBeTruthy();
       expect(screen.getByDisplayValue('The package sweeps.')).toBeTruthy();
     });
 
@@ -685,7 +691,7 @@ describe('CreateTaskDialog', () => {
       vi.spyOn(console, 'error').mockImplementation(() => {});
       renderWithAppClient(transportWith({ updateTask: vi.fn().mockRejectedValue(refused()) }));
       await save();
-      await screen.findByRole('button', { name: 'Make my own copy' });
+      await screen.findByRole('button', { name: 'Make a copy' });
       expect(toast.error).not.toHaveBeenCalled();
 
       cleanup();
@@ -730,7 +736,7 @@ describe('CreateTaskDialog', () => {
       await editAndSave(transport);
 
       await waitFor(() => expect(transport.updateTask).toHaveBeenCalled());
-      expect(screen.queryByRole('button', { name: 'Make my own copy' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Make a copy' })).toBeNull();
     });
   });
 
@@ -765,8 +771,8 @@ describe('CreateTaskDialog', () => {
       );
       fillFormWithCron('invalid');
 
-      expect(screen.getByText('Invalid cron expression')).toBeTruthy();
-      const create = screen.getByRole('button', { name: 'Create' });
+      expect(screen.getByText('Can’t read this timing. Check the format.')).toBeTruthy();
+      const create = screen.getByRole('button', { name: 'Create task' });
       expect(create).toBeDisabled();
 
       // And clicking it anyway sends nothing.
@@ -824,14 +830,14 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fillFormWithCron('invalid');
-      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled();
 
       fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
         target: { value: '0 0 * * *' },
       });
 
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Create' })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Create task' })).not.toBeDisabled()
       );
     });
   });
@@ -1010,10 +1016,10 @@ describe('CreateTaskDialog', () => {
       // no longer waits ten minutes either (spec
       // `unattended-session-permission-prompts`).
       const note = await screen.findByTestId('task-unattended-note');
-      expect(note).toHaveTextContent(/nobody is watching/i);
-      expect(note).toHaveTextContent(/turned down right away/);
+      expect(note).toHaveTextContent(/Nobody watches a scheduled run/);
+      expect(note).toHaveTextContent(/any ask is turned down/);
       expect(note).toHaveTextContent(/carries on/);
-      expect(note).toHaveTextContent(/tells you what it skipped/);
+      expect(note).toHaveTextContent(/without that tool and says so/);
       // A "Run now" is answerable, and the note has to say so or the person
       // reads the whole schedule as one that never asks.
       expect(note).toHaveTextContent(/Run now/);
@@ -1155,7 +1161,7 @@ describe('CreateTaskDialog', () => {
 
       const note = await screen.findByTestId('trust-dial-unavailable');
       expect(note).toHaveTextContent(/Bypass All/);
-      expect(note).toHaveTextContent(/saving keeps it as it is/i);
+      expect(note).toHaveTextContent(/Saving keeps it\./);
       expect(screen.queryByRole('radiogroup', { name: /how much/i })).toBeNull();
       expect(screen.queryByText(/This covers what an agent does in a session/)).toBeNull();
     });
@@ -1306,7 +1312,7 @@ describe('CreateTaskDialog', () => {
       const note = await screen.findByTestId('trust-dial-stranded');
       // The runtime's own word ("Plan"), not the id table's ("Plan Mode").
       expect(note).toHaveTextContent(/“Plan”/);
-      expect(note).toHaveTextContent('Saving keeps it as it is');
+      expect(note).toHaveTextContent('Saving keeps it.');
       const dial = screen.getByRole('radiogroup', { name: /how much/i });
       expect(within(dial).queryAllByRole('radio', { checked: true })).toHaveLength(0);
     });
@@ -1488,7 +1494,7 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       expect(screen.queryByText('Start from scratch')).toBeNull();
-      expect(screen.getByText('Edit Schedule')).toBeTruthy();
+      expect(screen.getByText('Edit schedule')).toBeTruthy();
     });
 
     it('advances to form step when a preset card is clicked', async () => {

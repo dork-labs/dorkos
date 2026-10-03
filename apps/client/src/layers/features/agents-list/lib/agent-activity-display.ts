@@ -170,7 +170,7 @@ export function agentActivityDisplay(input: AgentActivityInput): AgentActivityDi
 
   if (healthStatus === 'unreachable') {
     return {
-      primary: 'Cannot be reached',
+      primary: 'Can’t be reached',
       secondary: joinSecondary([didWhat, seenAgo ?? 'never seen']),
       toneClass: 'text-destructive',
     };

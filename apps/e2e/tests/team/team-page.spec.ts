@@ -352,11 +352,7 @@ test.describe('Team — the roster @smoke', () => {
     await basePage.waitForAppReady();
 
     await expect(page.getByText('No blocked paths')).toBeVisible();
-    await expect(
-      page.getByText(
-        'When you deny agent paths during discovery, they appear here. This is a healthy state.'
-      )
-    ).toBeVisible();
+    await expect(page.getByText('Folders you block from scans show up here.')).toBeVisible();
   });
 
   test('the Access view renders the cross-project access surface', async ({ page, basePage }) => {

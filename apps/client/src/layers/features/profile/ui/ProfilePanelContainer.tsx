@@ -30,11 +30,10 @@ export function ProfilePanelContainer() {
   if (roster.isPending) return <Notice>Loading your profile…</Notice>;
 
   if (roster.isError) {
-    return <Notice>DorkOS could not read your profile just now. Try reopening this tab.</Notice>;
+    return <Notice>Couldn’t load your profile. Reopen this tab to try again.</Notice>;
   }
 
-  if (!self)
-    return <Notice>DorkOS could not find your profile just now. Try reopening this tab.</Notice>;
+  if (!self) return <Notice>Couldn’t find your profile. Reopen this tab to try again.</Notice>;
 
   return <ProfilePanel member={self} />;
 }

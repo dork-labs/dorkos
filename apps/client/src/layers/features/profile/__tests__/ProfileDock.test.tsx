@@ -448,7 +448,7 @@ describe('closing the panel over unsaved text', () => {
     useAppStore.getState().setRightPanelOpen(false);
     await screen.findByText('Discard your changes?');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
 
     await waitFor(() =>
       expect(useProfileStore.getState().dockedEntries[WARDEN_PATH] ?? []).toEqual([])

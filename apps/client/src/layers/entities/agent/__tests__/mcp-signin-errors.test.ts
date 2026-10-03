@@ -64,7 +64,9 @@ describe('describeSigninError', () => {
   });
 
   it('has a sentence for nothing at all', () => {
-    expect(describeSigninError({ message: null }).message).toBe('The sign-in did not complete.');
+    expect(describeSigninError({ message: null }).message).toBe(
+      'Sign-in didn’t finish. Try again.'
+    );
   });
 });
 

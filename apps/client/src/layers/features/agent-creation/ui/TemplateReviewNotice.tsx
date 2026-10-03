@@ -74,9 +74,9 @@ function filesOf(finding: string, settings: readonly TemplateSettingsFile[]) {
 
 /** Why a settings file is not written out, in plain words. */
 function omittedText(file: TemplateSettingsFile): string {
-  if (file.omitted === 'link') return 'A link, which is not copied into the new agent.';
+  if (file.omitted === 'link') return 'A link. It isn’t copied into the agent.';
   if (file.omitted === 'not-text') return `Not text (${file.bytes} bytes).`;
-  return `Too long to show here (${file.bytes} bytes). Read it in the template before you create the agent.`;
+  return `Too long to show (${file.bytes} bytes). Read it in the template first.`;
 }
 
 /**
@@ -99,7 +99,7 @@ function linesOf(template: TemplateBrings): ReviewLine[] {
     ...template.findings.map((f) => ({
       key: `finding:${f.path}`,
       label: f.path,
-      detail: 'Settings the new agent’s sessions load (hooks, permission rules or servers).',
+      detail: 'Settings the agent loads: hooks, permission rules or servers.',
       files: filesOf(f.path, template.settings ?? []),
     })),
     ...disclosed.hooks.map((h, i) => ({
@@ -112,18 +112,18 @@ function linesOf(template: TemplateBrings): ReviewLine[] {
       key: `command:${c.source}:${i}`,
       label: shown(c.command),
       detail:
-        `Runs when the skill "${shown(c.skill)}" is used (${shown(c.source)})` +
-        (c.usesArguments ? '. It uses the text typed after the command.' : '.'),
+        `Runs when skill “${shown(c.skill)}” is used (${shown(c.source)})` +
+        (c.usesArguments ? '. Reads the text typed after it.' : '.'),
     })),
     ...disclosed.mcpServers.map((s) => ({
       key: `mcp:${s.name}`,
       label: s.command ? describeProgramLine(s.command, s.args) : shown(s.url ?? s.name),
-      detail: `Starts the MCP server "${shown(s.name)}".`,
+      detail: `Starts the MCP server “${shown(s.name)}”.`,
     })),
     ...disclosed.skillTools.map((t) => ({
       key: `tools:${t.source}`,
       label: t.tools.map(shown).join(', '),
-      detail: `Skill "${shown(t.skill)}" may use these without asking you.`,
+      detail: `Skill “${shown(t.skill)}” may use these without asking you.`,
     })),
   ];
 }
@@ -158,10 +158,10 @@ export function TemplateReviewNotice({
     >
       <p className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
         <ShieldAlert className="size-4 shrink-0" aria-hidden />
-        This template brings things that run in the new agent’s sessions
+        This template brings things that run in your agent’s chats
       </p>
       <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">
-        From {template.source}. Check each one before you create the agent.
+        From {template.source}. Check each before you create the agent.
       </p>
       <ul className="space-y-2">
         {linesOf(template).map((line) => (

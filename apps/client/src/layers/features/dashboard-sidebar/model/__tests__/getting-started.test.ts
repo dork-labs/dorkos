@@ -26,13 +26,13 @@ function withRetired(retired: string[]): SidebarState {
 describe('BC-12 — the suggestion table', () => {
   it('offers "meet the agents we found" when discovery found some', () => {
     const rows = buildGettingStarted(firstRunFixture);
-    expect(rows[0]?.primary).toBe('Meet the 4 agents we found');
+    expect(rows[0]?.primary).toBe('Meet the 4 agents DorkOS found');
     expect(rows[0]?.reason).toBe('suggestion:agents-found');
   });
 
   it('counts in the singular for one found agent', () => {
     const rows = buildGettingStarted(withJourney({ discoveredUnregisteredPaths: ['/one'] }));
-    expect(rows[0]?.primary).toBe('Meet the agent we found');
+    expect(rows[0]?.primary).toBe('Meet the agent DorkOS found');
   });
 
   it('falls back to "add your first agent" only when discovery found none', () => {
