@@ -107,9 +107,7 @@ describe('describeAgentExecution', () => {
       runtimeSupportsEffort: false,
     });
     expect(report.breakages.map((b) => b.kind)).toEqual(['effort-unsupported-runtime']);
-    expect(report.breakages[0].message).toBe(
-      'OpenCode has no effort setting, so this one does nothing.'
-    );
+    expect(report.breakages[0].message).toBe('OpenCode has no effort setting. It’s ignored.');
   });
 
   it('says nothing about a runtime that declares it does take an effort', () => {
@@ -247,7 +245,7 @@ describe('describeAgentExecution — the billing account', () => {
       {
         kind: 'account-unregistered',
         message:
-          'The account “retired-client” isn’t registered on this machine, so this agent runs on the default.',
+          '“retired-client” isn’t on this computer. This agent runs on your default account.',
       },
     ]);
     // The row a person has to fix must still name the thing to fix.

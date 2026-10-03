@@ -71,7 +71,7 @@ export interface ContinueOnAccountDialogProps {
 function messageOf(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
-    : "Couldn't continue on that account. Try again.";
+    : 'Couldn’t continue on that account. Try again.';
 }
 
 /** One account the person can pick: dot, name, the recommended pill, and its state. */

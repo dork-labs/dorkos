@@ -62,7 +62,7 @@ export function describeDecisionRefusal(error: unknown, askedForAlways: boolean)
 
   return {
     message: askedForAlways
-      ? 'DorkOS could not answer that. Nothing was allowed and nothing was changed.'
-      : 'DorkOS could not record your answer. Nothing was allowed.',
+      ? 'DorkOS couldn’t save that. Nothing was allowed or changed.'
+      : 'DorkOS couldn’t save your answer. Nothing was allowed.',
   };
 }

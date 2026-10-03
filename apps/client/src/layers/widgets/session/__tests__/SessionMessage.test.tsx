@@ -196,7 +196,7 @@ describe('SessionMessage', () => {
         {...authorProps(msg)}
       />
     );
-    expect(screen.getByText('Read ...')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeDefined();
   });
 
   it('renders parts in correct interleaved order (text -> tool -> text)', () => {
@@ -641,7 +641,7 @@ describe('Auto-hide tool calls', () => {
     render(
       <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
-    expect(screen.queryByText('Read ...')).toBeNull();
+    expect(screen.queryByText('Read …')).toBeNull();
   });
 
   it('shows tool calls during streaming, hides 5s after completion', () => {
@@ -650,7 +650,7 @@ describe('Auto-hide tool calls', () => {
     const { rerender } = render(
       <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
-    expect(screen.getByText('Read ...')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeDefined();
 
     // Transition to complete
     const completedMsg = makeMsg('complete');
@@ -663,13 +663,13 @@ describe('Auto-hide tool calls', () => {
       />
     );
     // Still visible immediately after completion
-    expect(screen.getByText('Read ...')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeDefined();
 
     // Advance past 5s timer
     act(() => {
       vi.advanceTimersByTime(5_000);
     });
-    expect(screen.queryByText('Read ...')).toBeNull();
+    expect(screen.queryByText('Read …')).toBeNull();
   });
 
   it('never hides tool calls with error status', () => {
@@ -681,7 +681,7 @@ describe('Auto-hide tool calls', () => {
     act(() => {
       vi.advanceTimersByTime(10_000);
     });
-    expect(screen.getByText('Read ...')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeDefined();
   });
 
   it('shows all tool calls when autoHide is OFF', () => {
@@ -690,6 +690,6 @@ describe('Auto-hide tool calls', () => {
     render(
       <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
-    expect(screen.getByText('Read ...')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeDefined();
   });
 });

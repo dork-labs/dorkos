@@ -202,8 +202,6 @@ describe('the panel', () => {
     await waitFor(() => expect(screen.getByText('Reconnecting…')).toBeInTheDocument());
     expect(screen.queryByTestId('remote-access-qr')).not.toBeInTheDocument();
     expect(screen.queryByTestId('remote-access-link')).not.toBeInTheDocument();
-    expect(
-      screen.getByText('Opening a secure tunnel. Your link appears here as soon as it is ready.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Your link appears here when it’s ready.')).toBeInTheDocument();
   });
 });

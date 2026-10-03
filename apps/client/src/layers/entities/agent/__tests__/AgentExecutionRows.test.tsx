@@ -199,20 +199,20 @@ describe('AgentExecutionRows', () => {
   it('wears the server default when the agent has no opinion', async () => {
     renderRows(manifest());
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default · opus')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default · opus')
     );
     expect(screen.getByTestId('agent-model-row')).toHaveTextContent('Opus');
     expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent(
-      'server default · Medium'
+      'Server default · Medium'
     );
   });
 
   it('says "set here" when the agent names its own', async () => {
     renderRows(manifest({ model: 'sonnet', effort: 'high' }));
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('set here')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Set here')
     );
-    expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent('set here');
+    expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent('Set here');
   });
 
   // The design's whole point: the chip IS the reset, and its one action clears
@@ -220,12 +220,12 @@ describe('AgentExecutionRows', () => {
   it('offers exactly one action from a "set here" chip, and it clears the field', async () => {
     const { onUpdate } = renderRows(manifest({ model: 'sonnet' }));
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('set here')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Set here')
     );
     await userEvent.click(screen.getByRole('button', { name: /set here/i }));
     const reset = await screen.findByTestId('agent-model-row-chip-reset');
     expect(reset).toHaveTextContent('Use server default');
-    expect(reset).toHaveTextContent('currently opus');
+    expect(reset).toHaveTextContent('Currently opus');
     await userEvent.click(reset);
     expect(onUpdate).toHaveBeenCalledWith({ model: null });
   });
@@ -233,7 +233,7 @@ describe('AgentExecutionRows', () => {
   it('does not offer a reset on an inherited chip — there is nothing to undo', async () => {
     renderRows(manifest());
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
     );
     expect(screen.queryByRole('button', { name: /set here/i })).toBeNull();
   });
@@ -309,10 +309,10 @@ describe('AgentExecutionRows', () => {
     // changes nothing on screen, so there is no positive thing to wait for, and
     // asserting before it lands would pass no matter what the rule says.
     await waitFor(() =>
-      expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent('server default')
+      expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent('Server default')
     );
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('set here')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Set here')
     );
     await new Promise((r) => setTimeout(r, 50));
     // The row falls back to the raw id and says nothing about availability. The
@@ -332,11 +332,11 @@ describe('AgentExecutionRows', () => {
     // why nothing caught the bug at compile time.
     renderRows(manifest({ model: null, effort: null } as unknown as Partial<AgentManifest>));
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default · opus')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default · opus')
     );
-    expect(screen.getByTestId('agent-model-row-chip')).not.toHaveTextContent('set here');
+    expect(screen.getByTestId('agent-model-row-chip')).not.toHaveTextContent('Set here');
     expect(screen.getByTestId('agent-effort-row-chip')).toHaveTextContent(
-      'server default · Medium'
+      'Server default · Medium'
     );
     expect(screen.queryByRole('button', { name: /no longer offers null/i })).toBeNull();
   });
@@ -445,7 +445,7 @@ describe('AgentExecutionRows — the Account row', () => {
     // Wait for something the same config DOES draw, so the absence below is a
     // rendered absence rather than a not-yet.
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
     );
     expect(screen.queryByTestId('agent-account-row')).toBeNull();
   });
@@ -453,7 +453,7 @@ describe('AgentExecutionRows — the Account row', () => {
   it('is absent when this machine knows only one account — there is nothing to pick', async () => {
     renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), ONE_ACCOUNT);
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
     );
     expect(screen.queryByTestId('agent-account-row')).toBeNull();
   });
@@ -474,7 +474,7 @@ describe('AgentExecutionRows — the Account row', () => {
   it('is absent until the config answers, rather than offering an empty picker', async () => {
     renderRows(manifest());
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
     );
     expect(screen.queryByTestId('agent-account-row')).toBeNull();
   });
@@ -497,7 +497,7 @@ describe('AgentExecutionRows — the Account row', () => {
       [createMockAccountUsage({ accountId: 'default', path: '/Users/dev/.claude', label: MAIN })]
     );
     expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent(
-      `server default · ${MAIN}`
+      `Server default · ${MAIN}`
     );
     expect(screen.queryByText(/\.claude$/)).toBeNull();
   });
@@ -505,14 +505,14 @@ describe('AgentExecutionRows — the Account row', () => {
   it('wears the resolved server default when the agent has no opinion', async () => {
     renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), TWO_ACCOUNTS);
     expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent(
-      'server default · .claude'
+      'Server default · .claude'
     );
     expect(screen.getByTestId('agent-account-row')).toHaveTextContent('.claude');
   });
 
   it('says "set here" and names the account by its label, not its id', async () => {
     renderRows(manifest({ account: 'work' }), DEFAULTS, MODELS, capabilityMap(false), TWO_ACCOUNTS);
-    expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent('set here');
+    expect(await screen.findByTestId('agent-account-row-chip')).toHaveTextContent('Set here');
     expect(screen.getByTestId('agent-account-row')).toHaveTextContent('Acme Corp');
   });
 
@@ -823,7 +823,7 @@ describe('AgentExecutionRows — the Account row', () => {
       ],
     });
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
     );
     expect(screen.queryByTestId('agent-account-row')).toBeNull();
   });
@@ -837,10 +837,10 @@ describe('AgentExecutionRows — the Account row', () => {
       TWO_ACCOUNTS
     );
     const chip = await screen.findByTestId('agent-account-row-chip');
-    expect(chip).toHaveTextContent('set here');
+    expect(chip).toHaveTextContent('Set here');
     // The warning is appended to the chip's accessible name, so it is never
     // only a color.
-    expect(screen.getByRole('button', { name: /isn’t registered/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /isn’t on this computer/i })).toBeInTheDocument();
     expect(screen.getByTestId('agent-account-row')).toHaveTextContent('retired-client');
   });
 
@@ -853,9 +853,9 @@ describe('AgentExecutionRows — the Account row', () => {
       TWO_ACCOUNTS
     );
     await waitFor(() =>
-      expect(screen.getByTestId('agent-account-row-chip')).toHaveTextContent('server default')
+      expect(screen.getByTestId('agent-account-row-chip')).toHaveTextContent('Server default')
     );
-    expect(screen.queryByRole('button', { name: /isn’t registered/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /isn’t on this computer/i })).toBeNull();
   });
 });
 
@@ -873,13 +873,13 @@ describe('AgentExecutionRows — a registry the server could not read', () => {
     // The value stays visible — it is what a person came to see, and clearing
     // it is still possible — but nothing on screen claims it is wrong.
     expect(await screen.findByTestId('agent-account-row')).toHaveTextContent('work');
-    expect(screen.queryByRole('button', { name: /isn’t registered/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /isn’t on this computer/i })).toBeNull();
   });
 
   it('offers no picker to an agent with nothing set — there is nothing to offer', async () => {
     renderRows(manifest(), DEFAULTS, MODELS, capabilityMap(false), UNAVAILABLE);
     await waitFor(() =>
-      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('server default')
+      expect(screen.getByTestId('agent-model-row-chip')).toHaveTextContent('Server default')
     );
     expect(screen.queryByTestId('agent-account-row')).toBeNull();
   });

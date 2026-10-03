@@ -225,7 +225,7 @@ function InlineAnswer({
       />
       {failed && (
         <p role="alert" className="text-status-error-fg text-[11px]">
-          That didn’t go through. Your text is still here; try again.
+          Couldn’t send. Try again.
         </p>
       )}
       <div className="flex items-center justify-end gap-1.5">
@@ -568,7 +568,7 @@ export function InboxDecisionRow({
               responsive={false}
               onClick={followUp.onAccept}
             >
-              Yes
+              Always do this
             </Button>
             <Button
               type="button"

@@ -45,7 +45,7 @@ export function useCreateApiKey() {
       });
       setIsPending(false);
       if (err || !data) {
-        setError(err ?? { message: 'Couldn’t make a new API key. Try again.', status: 0 });
+        setError(err ?? { message: 'Couldn’t create the key. Try again.', status: 0 });
         return null;
       }
       await queryClient.invalidateQueries({ queryKey: apiKeysKey });

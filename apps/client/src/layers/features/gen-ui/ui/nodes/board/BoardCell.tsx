@@ -121,7 +121,7 @@ function ActionBoardCell({
     if (cell.action.kind !== 'agent') return;
     dispatched.catch(() => {
       toast.error('Couldn’t send the move', {
-        description: 'The agent may be busy right now. Try again in a moment.',
+        description: 'Your agent may be busy. Try again.',
       });
     });
   };

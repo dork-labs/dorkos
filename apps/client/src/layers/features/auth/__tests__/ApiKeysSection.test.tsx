@@ -72,7 +72,7 @@ describe('ApiKeysSection', () => {
 
     await user.click(await screen.findByRole('button', { name: /revoke laptop/i }));
     // Confirmation dialog → confirm.
-    await user.click(await screen.findByRole('button', { name: /^revoke$/i }));
+    await user.click(await screen.findByRole('button', { name: /^revoke key$/i }));
 
     await waitFor(() => {
       expect(apiKeyDelete).toHaveBeenCalledWith({ keyId: 'k1' });

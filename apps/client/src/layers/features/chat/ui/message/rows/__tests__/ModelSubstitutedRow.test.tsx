@@ -8,7 +8,7 @@ describe('ModelSubstitutedRow', () => {
   it('names both models by their display names and where to change it (DOR-2636)', () => {
     render(<ModelSubstitutedRow fromName="Opus" toName="Suggested" />);
     expect(screen.getByTestId('model-substituted-row')).toHaveTextContent(
-      'DorkOS credits don’t cover Opus, so this ran on Suggested. You can pick another model from the model menu.'
+      'DorkOS credits don’t cover Opus, so this ran on Suggested. Switch in the model menu.'
     );
   });
 });

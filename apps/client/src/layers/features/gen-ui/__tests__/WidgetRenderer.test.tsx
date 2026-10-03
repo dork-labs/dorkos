@@ -567,7 +567,7 @@ describe('WidgetFence (fence detection)', () => {
 
   it('renders the error card for invalid JSON', () => {
     render(<WidgetFence code={'{ not json'} isIncomplete={false} />);
-    expect(screen.getByText('This widget couldn’t be rendered')).toBeInTheDocument();
+    expect(screen.getByText('Couldn’t show this widget')).toBeInTheDocument();
   });
 });
 

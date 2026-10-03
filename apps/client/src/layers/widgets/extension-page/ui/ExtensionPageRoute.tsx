@@ -101,7 +101,7 @@ function PageFailed({ name }: { name: string }) {
         tone="destructive"
         headingLevel={2}
         headline={`${name} ran into a problem`}
-        description="Something in this page broke while it was drawing. Reloading may fix it."
+        description="Reloading the page may fix it."
         action={{ label: 'Reload', variant: 'outline', onClick: () => window.location.reload() }}
       />
     </PageContainer>
@@ -121,8 +121,8 @@ function UnavailablePage({
         <EmptyState
           icon={PackageX}
           headingLevel={2}
-          headline="This page isn't available"
-          description={`${state.name} isn't installed.`}
+          headline="This page isn’t available"
+          description={`${state.name} isn’t installed.`}
         />
       );
     case 'not-allowed':
@@ -130,8 +130,8 @@ function UnavailablePage({
         <EmptyState
           icon={Puzzle}
           headingLevel={2}
-          headline="This page isn't available yet"
-          description={`${state.name} isn't allowed to run yet.`}
+          headline="This page isn’t available yet"
+          description={`${state.name} isn’t allowed to run yet.`}
           action={{ label: 'Allow it', ...openExtensions }}
         />
       );
@@ -140,7 +140,7 @@ function UnavailablePage({
         <EmptyState
           icon={Puzzle}
           headingLevel={2}
-          headline="This page isn't available"
+          headline="This page isn’t available"
           description={`${state.name} is turned off.`}
           action={{ label: 'Turn it on', ...openExtensions }}
         />
@@ -151,8 +151,8 @@ function UnavailablePage({
           icon={AlertTriangle}
           tone="destructive"
           headingLevel={2}
-          headline="This page isn't available"
-          description={`${state.name} couldn't start. Settings says why.`}
+          headline="This page isn’t available"
+          description={`${state.name} couldn’t start. Settings says why.`}
           action={{ label: 'Open Settings', variant: 'outline', ...openExtensions }}
         />
       );
@@ -161,8 +161,8 @@ function UnavailablePage({
         <EmptyState
           icon={PackageX}
           headingLevel={2}
-          headline="This page isn't available"
-          description={`${state.name} doesn't have this page.`}
+          headline="This page isn’t available"
+          description={`${state.name} doesn’t have this page.`}
         />
       );
   }

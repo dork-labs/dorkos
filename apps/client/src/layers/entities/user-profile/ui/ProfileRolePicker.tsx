@@ -147,7 +147,7 @@ export function ProfileRolePicker({
 
       {atCap && (
         <p className="text-muted-foreground text-xs" data-testid="profile-role-cap-hint">
-          Ten roles is the limit. Remove one to add another.
+          Ten at most. Remove a role to add another.
         </p>
       )}
 

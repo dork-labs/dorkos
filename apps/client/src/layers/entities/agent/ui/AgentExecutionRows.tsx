@@ -601,8 +601,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           data-testid="agent-credits-not-allowed"
         >
           <span>
-            This agent’s settings ask to run on DorkOS credits. It uses your default until you allow
-            it.
+            This agent’s settings name DorkOS credits. It uses your default until you allow it.
           </span>
           <Button
             size="sm"

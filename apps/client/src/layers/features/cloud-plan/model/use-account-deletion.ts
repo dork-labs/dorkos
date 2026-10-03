@@ -143,8 +143,7 @@ function useWatchForDeletion(armed: boolean): void {
       // is gone.
       void queryClient.invalidateQueries({ queryKey: cloudPlanKeys.all });
       toast.success('This computer is unlinked', {
-        description:
-          'Your DorkOS account no longer accepts it, which is what happens once a deletion is confirmed. Everything on this computer stays.',
+        description: 'The deletion is confirmed. Everything on this computer stays.',
       });
     };
     const onFocus = () => void check();

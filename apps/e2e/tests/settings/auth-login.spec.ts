@@ -144,7 +144,7 @@ test.describe('Auth — local login lifecycle @auth', () => {
     // flag left live credentials nobody could see or revoke (DOR-1885).
     await expect(authPage.apiKeyRow(API_KEY_NAME)).toBeVisible();
     await expect(
-      authPage.settingsDialog.getByText(/keep working while login is off/i)
+      authPage.settingsDialog.getByText(/keys still work with login off/i)
     ).toBeVisible();
   });
 });

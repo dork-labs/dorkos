@@ -241,7 +241,7 @@ describe('SystemRequirementsStep', () => {
     });
 
     await screen.findByTestId('onboarding-get-started');
-    expect(screen.queryByText(/more runtime/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/more to set up/)).not.toBeInTheDocument();
   });
 
   it('ready with others available: reveals the count and setup cards on expand', async () => {
@@ -250,12 +250,12 @@ describe('SystemRequirementsStep', () => {
     });
 
     await screen.findByTestId('onboarding-get-started');
-    const disclosure = screen.getByText('1 more runtime available');
+    const disclosure = screen.getByText('1 more to set up');
     expect(disclosure).toBeInTheDocument();
 
     await userEvent.click(disclosure);
     expect(await screen.findByTestId('runtime-setup-panel')).toBeInTheDocument();
-    expect(screen.getByText('You can add these anytime from the status bar.')).toBeInTheDocument();
+    expect(screen.getByText('Add these anytime from the status bar.')).toBeInTheDocument();
   });
 
   it('Enter inside a connect form field does not eject the user out of the step', async () => {
@@ -266,7 +266,7 @@ describe('SystemRequirementsStep', () => {
     });
 
     await screen.findByTestId('onboarding-get-started');
-    await userEvent.click(screen.getByText('1 more runtime available'));
+    await userEvent.click(screen.getByText('1 more to set up'));
 
     const keyField = await screen.findByLabelText('stub-key-codex');
     await userEvent.click(keyField);
@@ -368,8 +368,7 @@ describe('SystemRequirementsStep — the default runtime (spec execution-default
 
     expect(
       await screen.findByText(
-        'Codex is connected. New chats will start with Claude Code once it’s connected. ' +
-          'Until then they’ll use Codex.'
+        'Codex is connected. New chats use Codex until Claude Code is connected.'
       )
     ).toBeInTheDocument();
     // Give the effect every chance to misfire before asserting it did not.
@@ -434,7 +433,7 @@ describe('SystemRequirementsStep — the default runtime (spec execution-default
     // The next settle tries again on its own — this is the ref release, not the
     // picker: a recheck re-answers readiness and the decision gets another go.
     vi.mocked(transport.updateConfig).mockResolvedValue(undefined);
-    await userEvent.click(screen.getByText('1 more runtime available'));
+    await userEvent.click(screen.getByText('1 more to set up'));
     await userEvent.click(await screen.findByRole('button', { name: /Check again/ }));
 
     await waitFor(() =>
@@ -502,8 +501,7 @@ describe('SystemRequirementsStep — the default runtime (spec execution-default
     await userEvent.click(option);
     expect(
       await screen.findByText(
-        'Claude Code is connected. New chats will start with OpenCode once it’s connected. ' +
-          'Until then they’ll use Claude Code.'
+        'Claude Code is connected. New chats use Claude Code until OpenCode is connected.'
       )
     ).toBeInTheDocument();
   });

@@ -30,10 +30,9 @@ export function deadlineLine(
   const due = Date.parse(decideBy);
   if (Number.isNaN(due)) return null;
   // Never a deadline in the past: the agent is about to go ahead.
-  if (due <= now.getTime())
-    return `The agent picks “${pickLabel}” any moment now, unless you answer.`;
+  if (due <= now.getTime()) return `Your agent picks “${pickLabel}” soon, unless you answer.`;
   const when = formatResetTime(decideBy, now);
-  return when ? `If you don’t answer by ${when}, the agent picks “${pickLabel}”.` : null;
+  return when ? `If you don’t answer by ${when}, your agent picks “${pickLabel}”.` : null;
 }
 
 /**

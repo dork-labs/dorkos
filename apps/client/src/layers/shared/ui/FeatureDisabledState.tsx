@@ -39,7 +39,7 @@ export function FeatureDisabledState({
   name,
   description,
   command,
-  commandHint = 'Quit DorkOS, then start it again in your terminal with:',
+  commandHint = 'Restart DorkOS from your terminal with:',
   className,
   ...props
 }: FeatureDisabledStateProps) {
@@ -57,7 +57,7 @@ export function FeatureDisabledState({
       <p className="text-muted-foreground mt-1 text-xs">{commandHint}</p>
       <div className="flex max-w-full items-center gap-1.5">
         <InlineCode className="min-w-0 px-3 py-1.5 text-sm break-all">{command}</InlineCode>
-        <CopyButton value={command} label={`Copy the command that turns ${name} on`} />
+        <CopyButton value={command} label={`Copy the command for ${name}`} />
       </div>
     </div>
   );

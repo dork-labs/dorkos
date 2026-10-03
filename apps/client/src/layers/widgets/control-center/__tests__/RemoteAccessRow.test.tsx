@@ -190,7 +190,9 @@ describe('a start that failed', () => {
 
     // The same sentence the dialog shows, from the same map — not the raw
     // ngrok string.
-    expect(description()).toHaveTextContent('Check your auth token at dashboard.ngrok.com');
+    expect(description()).toHaveTextContent(
+      'Couldn’t sign in to ngrok. Check your token at dashboard.ngrok.com.'
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Fix…' }));
 

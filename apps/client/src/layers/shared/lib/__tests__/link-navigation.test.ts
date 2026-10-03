@@ -633,8 +633,7 @@ describe('link dispatch', () => {
         // phone links".
         expect(toast.error).toHaveBeenCalledWith('The desktop app can’t open mailto: links', {
           id: 'dorkos-link-refused',
-          description:
-            'mailto: links open in a browser, but not in the desktop app, so nothing would happen.',
+          description: 'They open from DorkOS in a browser.',
         });
       } finally {
         delete window.electronAPI;
@@ -669,7 +668,7 @@ describe('link dispatch', () => {
         await Promise.resolve();
         expect(toast.error).toHaveBeenCalledWith('The desktop app couldn’t open that link', {
           id: 'dorkos-link-refused',
-          description: 'The desktop app would not hand this one to your browser.',
+          description: 'It didn’t reach your browser.',
         });
       } finally {
         delete window.electronAPI;
@@ -713,7 +712,7 @@ describe('link dispatch', () => {
 
       expect(toast.error).toHaveBeenCalledWith('DorkOS doesn’t open irc: links', {
         id: 'dorkos-link-refused',
-        description: 'irc: links don’t open from DorkOS, so nothing would happen.',
+        description: 'Only web, email and phone links open.',
       });
     });
 
@@ -722,7 +721,7 @@ describe('link dispatch', () => {
 
       expect(toast.error).toHaveBeenCalledWith('DorkOS couldn’t open that link', {
         id: 'dorkos-link-refused',
-        description: 'That address is incomplete, so there is nowhere to send you.',
+        description: 'The address is incomplete.',
       });
     });
 

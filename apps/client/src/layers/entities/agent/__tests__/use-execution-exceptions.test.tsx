@@ -124,7 +124,7 @@ describe('useExecutionExceptions — runtime-declared effort support', () => {
     expect(path).toBe('/p/alpha');
     expect(report.isBroken).toBe(true);
     expect(report.breakages.map((b) => b.message)).toEqual([
-      'OpenCode has no effort setting, so this one does nothing.',
+      'OpenCode has no effort setting. It’s ignored.',
     ]);
     expect(result.current.brokenPaths).toEqual(['/p/alpha']);
   });

@@ -29,7 +29,7 @@ export const RESULT_GROUP_LABEL: Record<SearchableItem['type'], string> = {
   session: 'Conversations',
   agent: 'Agents',
   room: 'Channels',
-  dm: 'Direct Messages',
+  dm: 'Direct messages',
   command: 'Commands',
   feature: 'Actions',
   'quick-action': 'Actions',

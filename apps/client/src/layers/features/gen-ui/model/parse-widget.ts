@@ -29,7 +29,9 @@ export function validateWidgetDocument(value: unknown, raw?: string): ParseWidge
   if (!result.success) {
     const first = result.error.issues[0];
     const path = first?.path.join('.') ?? '';
-    const message = first ? `${path ? `${path}: ` : ''}${first.message}` : 'Invalid widget';
+    const message = first
+      ? `${path ? `${path}: ` : ''}${first.message}`
+      : 'The widget isn’t in a shape DorkOS knows';
     return { ok: false, error: message, raw: raw ?? safeStringify(value) };
   }
   return { ok: true, document: result.data };
@@ -49,7 +51,11 @@ export function parseWidget(raw: string): ParseWidgetResult {
   try {
     json = JSON.parse(raw);
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Invalid JSON', raw };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'The widget isn’t readable JSON',
+      raw,
+    };
   }
   return validateWidgetDocument(json, raw);
 }

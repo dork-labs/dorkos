@@ -41,9 +41,7 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
             <Lock className="size-5" />
           </div>
           <h1 className="text-lg font-semibold">Sign in to DorkOS</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            This instance requires a login to continue.
-          </p>
+          <p className="text-muted-foreground mt-1 text-sm">Login is on for this computer.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

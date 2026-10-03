@@ -126,7 +126,7 @@ export function EntryRunWithMenu({
             ref={triggerRef}
             type="button"
             data-entry-action="run-with"
-            aria-label="Run this prompt with another runtime"
+            aria-label="Run this prompt elsewhere"
             onKeyDown={onTriggerKeyDown}
             className="text-muted-foreground/60 hover:text-foreground hover:bg-muted inline-flex size-6 items-center justify-center rounded transition-colors duration-150"
           >

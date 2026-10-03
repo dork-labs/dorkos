@@ -47,13 +47,13 @@ describe('ComposerToolbar — the image picker', () => {
   it('describes the picker, on the element that takes focus, in the words of its tooltip', () => {
     renderToolbar();
     expect(screen.getByLabelText('Add an image')).toHaveAccessibleDescription(
-      'Add an image from your files. You can also paste or drop one anywhere on this form.'
+      'Add an image from your files, or paste or drop one here.'
     );
     expect(screen.getByRole('button', { name: 'Capture app' })).toHaveAccessibleDescription(
       'Take a picture of this app. Never the rest of your screen.'
     );
     expect(screen.getByRole('button', { name: 'Point at it' })).toHaveAccessibleDescription(
-      'Click the part that looks wrong. We’ll crop the picture to it.'
+      'Click the part that looks wrong. DorkOS crops the picture to it.'
     );
   });
 

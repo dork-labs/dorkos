@@ -106,7 +106,7 @@ describe('the Control Center row and the top-bar beacon', () => {
     expect(rowSwitch()).toBeChecked();
     expect(beacon()).toHaveAttribute(
       'aria-label',
-      'Remote access is on at calm-otter.ngrok.app — show link and QR'
+      'Remote access is on at calm-otter.ngrok.app. Show link and QR code'
     );
   });
 

@@ -104,7 +104,7 @@ describe('ConversationDiscoveryBeat registration failures', () => {
       </TooltipProvider>
     );
 
-    await user.click(screen.getByRole('button', { name: 'Add All' }));
+    await user.click(screen.getByRole('button', { name: 'Add all' }));
 
     await waitFor(() => expect(screen.queryByText('Scout')).not.toBeInTheDocument());
     expect(screen.getByText('Writer')).toBeInTheDocument();
@@ -141,7 +141,7 @@ describe('ConversationDiscoveryBeat registration failures', () => {
     );
 
     const firstAdd = screen.getAllByRole('button', { name: 'Add' })[0];
-    const addAll = screen.getByRole('button', { name: 'Add All' });
+    const addAll = screen.getByRole('button', { name: 'Add all' });
     act(() => {
       firstAdd.click();
       firstAdd.click();
@@ -154,7 +154,7 @@ describe('ConversationDiscoveryBeat registration failures', () => {
       second.path,
     ]);
     expect(screen.getAllByRole('button', { name: 'Adding…' })).toHaveLength(2);
-    expect(screen.getByRole('button', { name: 'Add All' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add all' })).toBeDisabled();
 
     await act(async () => {
       for (const resolve of resolveRegistrations) resolve();

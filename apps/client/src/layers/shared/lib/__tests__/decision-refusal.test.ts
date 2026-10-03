@@ -44,18 +44,18 @@ describe('describeDecisionRefusal', () => {
     // text, and the fallback still answers the question the person has: did any of
     // it go through?
     const refusal = describeDecisionRefusal(serverError('ECONNRESET', 'SOME_NEW_CODE'), true);
-    expect(refusal.message).toBe(
-      'DorkOS could not answer that. Nothing was allowed and nothing was changed.'
-    );
+    expect(refusal.message).toBe('DorkOS couldn’t save that. Nothing was allowed or changed.');
   });
 
   it('does not mention a change when only a one-time answer was sent', () => {
     const refusal = describeDecisionRefusal(serverError('boom'), false);
-    expect(refusal.message).toBe('DorkOS could not record your answer. Nothing was allowed.');
+    expect(refusal.message).toBe('DorkOS couldn’t save your answer. Nothing was allowed.');
   });
 
   it('survives a rejection that is not an Error at all', () => {
     expect(describeDecisionRefusal(undefined, false).message).toContain('Nothing was allowed');
-    expect(describeDecisionRefusal('nope', true).message).toContain('nothing was changed');
+    expect(describeDecisionRefusal('nope', true).message).toContain(
+      'Nothing was allowed or changed'
+    );
   });
 });

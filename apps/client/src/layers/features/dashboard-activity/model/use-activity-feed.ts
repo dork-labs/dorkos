@@ -20,7 +20,7 @@ export interface DashboardActivityGroup {
 }
 
 /** Canonical display order for time buckets. */
-const GROUP_ORDER = ['Today', 'Yesterday', 'This Week', 'Earlier'] as const;
+const GROUP_ORDER = ['Today', 'Yesterday', 'This week', 'Earlier'] as const;
 
 /** Group activity items into time buckets relative to now. */
 function groupByTime(items: ActivityItem[]): DashboardActivityGroup[] {
@@ -39,7 +39,7 @@ function groupByTime(items: ActivityItem[]): DashboardActivityGroup[] {
     let label: string;
     if (d >= today) label = 'Today';
     else if (d >= yesterday) label = 'Yesterday';
-    else if (d >= weekStart) label = 'This Week';
+    else if (d >= weekStart) label = 'This week';
     else label = 'Earlier';
 
     const group = buckets.get(label) ?? [];

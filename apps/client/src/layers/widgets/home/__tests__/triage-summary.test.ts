@@ -67,8 +67,8 @@ describe('triageSummary', () => {
     // The failure that must never look like silence, in the register a
     // condensed bar can carry.
     expect(triageSummary(counts({ approvalsUnavailable: true }))).toEqual({
-      spoken: 'Approvals could not be read.',
-      compact: 'Approvals unreadable',
+      spoken: 'Couldn’t read approvals.',
+      compact: 'Couldn’t read approvals',
     });
   });
 

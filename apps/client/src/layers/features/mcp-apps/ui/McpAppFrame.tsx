@@ -9,7 +9,7 @@
  * @module features/mcp-apps/ui/McpAppFrame
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { LinkSafetyModal } from '@/layers/shared/ui';
+import { LinkSafetyModal, MoreDetails } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import { cn, openExternalLink } from '@/layers/shared/lib';
 import { useMcpAppResource } from '../model/use-mcp-app-resource';
@@ -120,9 +120,15 @@ export function McpAppFrame({
   if (isError || !srcDoc) {
     return (
       <div className={cn('text-muted-foreground p-4 text-sm', className)}>
-        {isError
-          ? `Couldn’t load app from ${serverName}: ${error instanceof Error ? error.message : 'unknown error'}`
-          : `This app returned no renderable content.`}
+        <p>
+          {isError ? `Couldn’t load the app from ${serverName}.` : 'This app has nothing to show.'}
+        </p>
+        {/* The server's own words, kept for anyone debugging, behind a toggle. */}
+        {isError && error instanceof Error && error.message && (
+          <MoreDetails label="Details" openLabel="Hide details" className="mt-1">
+            <p className="font-mono text-xs break-words">{error.message}</p>
+          </MoreDetails>
+        )}
       </div>
     );
   }
@@ -131,7 +137,7 @@ export function McpAppFrame({
     <div className={cn('relative h-full w-full', className)}>
       <iframe
         ref={iframeRef}
-        title={title ?? `MCP App from ${serverName}`}
+        title={title ?? `App from ${serverName}`}
         sandbox={MCP_APP_SANDBOX}
         // `allow` is omitted entirely unless the App declared permissions.
         {...(allow ? { allow } : {})}

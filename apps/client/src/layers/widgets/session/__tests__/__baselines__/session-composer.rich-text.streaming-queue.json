@@ -674,9 +674,9 @@
                           "attrs": {
                             "aria-autocomplete": "list",
                             "aria-expanded": "false",
-                            "aria-label": "Compose another — 2 queued",
+                            "aria-label": "Compose another (2 queued)",
                             "aria-multiline": "true",
-                            "aria-placeholder": "Compose another — 2 queued",
+                            "aria-placeholder": "Compose another (2 queued)",
                             "contenteditable": "true",
                             "data-lexical-editor": "true",
                             "role": "combobox",
@@ -730,7 +730,7 @@
                               "children": [
                                 {
                                   "kind": "text",
-                                  "text": "Compose another — 2 queued"
+                                  "text": "Compose another (2 queued)"
                                 }
                               ]
                             }

@@ -193,7 +193,7 @@ function WelcomeStepShowcase() {
   return (
     <PlaygroundSection
       title="WelcomeStep"
-      description="Initial welcome screen with word-by-word heading animation, preview items, and Get Started / Skip all setup actions."
+      description="Initial welcome screen with word-by-word heading animation, preview items, and Get started / Skip all setup actions."
     >
       <ShowcaseDemo responsive>
         <div className="flex min-h-[400px] items-center justify-center">

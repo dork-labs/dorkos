@@ -467,7 +467,7 @@ describe('SessionTranscript', () => {
       },
     ];
     render(<SessionTranscript sessionId="test-session" messages={messages} />);
-    expect(screen.getByText('Read ...')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeDefined();
   });
 
   it('has scroll container with overflow', () => {

@@ -35,7 +35,7 @@ function waitForOpen(ws: WebSocket): Promise<void> {
   if (ws.readyState === WebSocket.OPEN) return Promise.resolve();
   return new Promise((resolve, reject) => {
     ws.addEventListener('open', () => resolve(), { once: true });
-    ws.addEventListener('error', () => reject(new Error('terminal socket failed to open')), {
+    ws.addEventListener('error', () => reject(new Error('Couldn’t connect to the terminal')), {
       once: true,
     });
   });
@@ -217,7 +217,7 @@ export function createTerminalMethods(baseUrl: string) {
         // Carry the server's machine-readable code (e.g. TERMINAL_LIMIT → 429)
         // so callers can map known failures to friendlier copy.
         throw Object.assign(
-          new Error(body.error || `Failed to open terminal (HTTP ${res.status})`),
+          new Error(body.error || `Couldn’t open the terminal (HTTP ${res.status})`),
           typeof body.code === 'string' ? { code: body.code } : {}
         );
       }

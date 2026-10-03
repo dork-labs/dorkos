@@ -62,7 +62,7 @@ describe('TrustRow — what the stop does not cover (DOR-2102)', () => {
   it('carries the note on a card that chose Full autonomy itself', () => {
     renderRow({ stop: 'autonomy' });
     expect(scopeNote()).toBeInTheDocument();
-    expect(scopeNote()).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
+    expect(scopeNote()).toHaveTextContent(/DorkOS still asks before deleting a schedule/);
   });
 
   it('says nothing at a stop that still asks', () => {

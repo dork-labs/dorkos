@@ -18,7 +18,7 @@ const DOT_STYLES: Record<SystemHealthState, string> = {
 /** Human-readable tooltip message for each system health state. */
 const TOOLTIP_MESSAGES: Record<SystemHealthState, string> = {
   healthy: 'All systems operational',
-  degraded: 'Some adapters disconnected',
+  degraded: 'Some connections are down',
   error: 'Something needs you. Check Needs attention on Home.',
 } as const;
 

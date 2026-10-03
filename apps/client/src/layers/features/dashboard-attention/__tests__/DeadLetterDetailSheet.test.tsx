@@ -177,7 +177,7 @@ describe('DeadLetterDetailSheet', () => {
 
   it('renders the group reason as a human-readable badge, not the raw wire code', () => {
     renderSheet({ deadLetters: [makeDeadLetterGroup({ reason: 'hop_limit' })] });
-    expect(screen.getByText('Hop limit')).toBeInTheDocument();
+    expect(screen.getByText('Passed on too many times')).toBeInTheDocument();
     expect(screen.queryByText('hop_limit')).not.toBeInTheDocument();
   });
 

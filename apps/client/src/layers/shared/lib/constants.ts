@@ -210,7 +210,7 @@ export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
   // The local half of what was the Access tab (DOR-2628).
   { id: 'security', label: 'Login & security', group: 'This computer' },
   { id: 'remote-access', label: 'Remote access', group: 'This computer' },
-  { id: 'privacy', label: 'Privacy & Data', group: 'This computer' },
+  { id: 'privacy', label: 'Privacy & data', group: 'This computer' },
   { id: 'server', label: 'Server', group: SETTINGS_ADVANCED_GROUP },
   { id: 'tools', label: 'Tools', group: SETTINGS_ADVANCED_GROUP },
   // Only the DEFAULTS every room follows: each room keeps its own limits in

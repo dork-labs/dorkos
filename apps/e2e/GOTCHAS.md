@@ -112,7 +112,7 @@ it can flag a comment like "three times:"; use the marker for those.
   becomes "send" once there is text — so a readiness wait on it _before_ filling
   can never pass.
 - **`ChatPage.input` does not match the composer while a turn is running.** The
-  field renames itself "Compose next — will send when ready" mid-turn, and the
+  field renames itself "Compose next. It sends when ready" mid-turn, and the
   page object's locator only names the idle spellings — so typing into a live
   turn (a steer, an Add context, a queued message) times out on a composer that
   is plainly on screen, and the error names a missing combobox rather than a

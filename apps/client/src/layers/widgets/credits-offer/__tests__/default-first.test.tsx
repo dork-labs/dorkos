@@ -649,7 +649,7 @@ describe('where the offer sits', () => {
     expect(screen.getByTestId('remote-signin-notice')).toBeInTheDocument();
     // "This computer" would be the phone: the line names the right one.
     expect(screen.getByTestId('keep-it-local-note')).toHaveTextContent(
-      'Prefer to keep everything on the computer DorkOS runs on? Use your own sign-in there.'
+      'Prefer everything on the computer DorkOS runs on? Use your own sign-in there.'
     );
     expect(screen.queryByRole('button', { name: /Sign in with Claude/ })).not.toBeInTheDocument();
   });

@@ -310,7 +310,7 @@ describe('ExecutionExceptionsStrip', () => {
     renderStrip({ '/a': agent('alpha', { runtime: 'opencode', effort: 'high' }) });
     const row = await screen.findByTestId('execution-exception-broken');
     expect(row).toHaveTextContent('OpenCode is not connected on this machine.');
-    expect(row).not.toHaveTextContent('so this one does nothing.');
+    expect(row).not.toHaveTextContent('has no effort setting');
   });
 
   // ── I4: a joined multi-breakage sentence must not be cut off mid-word ──────
@@ -341,7 +341,9 @@ describe('ExecutionExceptionsStrip', () => {
       'title',
       expect.stringContaining('OpenCode no longer offers haiku.')
     );
-    expect(reason?.getAttribute('title')).toContain('so this one does nothing.');
+    expect(reason?.getAttribute('title')).toContain(
+      'OpenCode has no effort setting. It’s ignored.'
+    );
     // Clamped to two lines rather than one, so the pair fits without a tooltip
     // at every width the strip is drawn at.
     expect(reason).toHaveClass('line-clamp-2');
@@ -366,7 +368,7 @@ describe('ExecutionExceptionsStrip — billing overrides', () => {
       { claudeCode: ACCOUNTS }
     );
     const broken = await screen.findByTestId('execution-exception-broken');
-    expect(broken).toHaveTextContent('isn’t registered');
+    expect(broken).toHaveTextContent('isn’t on this computer');
     // Broken first, however the fleet came back and whatever the names sort to:
     // "zeta" would follow "alpha" on name alone.
     const rows = screen.getAllByRole('button');

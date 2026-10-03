@@ -342,7 +342,7 @@ describe('InboxBell', () => {
     renderIndicator({ listPendingApprovals: vi.fn().mockRejectedValue(new Error('offline')) });
 
     const marker = await screen.findByTestId('inbox-bell');
-    expect(marker).toHaveAccessibleName('DorkOS could not check for approvals. Open for details.');
+    expect(marker).toHaveAccessibleName('DorkOS couldn’t check approvals. Open for details.');
 
     await userEvent.click(marker);
     expect(await screen.findByText(/Couldn’t check for approvals/i)).toBeInTheDocument();
@@ -505,7 +505,7 @@ describe('InboxBell', () => {
     });
     // Still saying what happened, inside a section that has not collapsed.
     expect(document.querySelector('[data-slot="schedule-receipt"]')).toHaveTextContent('Approved');
-    expect(screen.getByRole('heading', { name: 'Needs You' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Needs you' })).toBeInTheDocument();
   });
 
   it('keeps the answered approval on screen once the server stops listing it', async () => {
@@ -538,7 +538,7 @@ describe('InboxBell', () => {
 
     // Still saying what happened, inside a section that has not collapsed.
     expect(screen.getByText('Allowed once')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Needs You' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Needs you' })).toBeInTheDocument();
 
     // And it does let go: a hold that never released would pin a decided card
     // to the panel forever.
@@ -762,7 +762,7 @@ describe('InboxBell — history and read state', () => {
     });
     // The panel closes behind you: a popover left open over the page you just
     // asked for is a second thing to dismiss.
-    await waitFor(() => expect(screen.queryByText('Needs You')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Needs you')).not.toBeInTheDocument());
   });
 
   it('takes a live notification without being reopened', async () => {
@@ -877,7 +877,7 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
     const bell = await screen.findByTestId('inbox-bell');
     // Neutral, and no number: "0 unread" is a sentence about nothing.
     expect(bell).toHaveAttribute('data-tone', 'neutral');
-    expect(bell).toHaveAccessibleName('Your Inbox. Nothing is waiting and nothing is unread.');
+    expect(bell).toHaveAccessibleName('Inbox. Nothing waiting, nothing unread.');
     expect(bell).not.toHaveTextContent(/\d/);
     expect(await screen.findByText('Activity · this session')).toBeInTheDocument();
   });
@@ -1173,7 +1173,7 @@ describe('InboxBell — what the panel says', () => {
 
     await userEvent.click(await screen.findByTestId('inbox-bell'));
 
-    for (const name of ['Needs You', 'Scheduled Runs', 'Activity']) {
+    for (const name of ['Needs you', 'Scheduled runs', 'Activity']) {
       const heading = await screen.findByRole('heading', { name });
       expect(heading).toBeInTheDocument();
       expect(heading.className).toContain('sr-only');

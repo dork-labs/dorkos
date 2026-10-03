@@ -180,14 +180,14 @@ describe('BindingAdvancedSection permissions', () => {
       renderSection({ permissionMode: 'bypassPermissions' }, transport);
 
       const note = await screen.findByTestId('trust-dial-unavailable');
-      expect(note).toHaveTextContent(/Bypass All/);
+      expect(note).toHaveTextContent(/Bypass all/);
       expect(note).toHaveTextContent(/No other levels to choose yet/);
       expect(note).toHaveTextContent(/saving keeps it/i);
       expect(screen.queryByRole('radiogroup', { name: /how much/i })).not.toBeInTheDocument();
       // The scope note is about a bypass mode a person just CHOSE. With no dial
       // to choose on, it is a clarification about nothing.
       expect(
-        screen.queryByText(/This covers what an agent does in a session/)
+        screen.queryByText(/This covers editing files, running commands/)
       ).not.toBeInTheDocument();
     });
   });
@@ -329,7 +329,7 @@ describe('BindingAdvancedSection permissions', () => {
       expect(description?.textContent).toMatch(/pause to ask\.\sThis stop never pauses/);
       expect(alert).toHaveTextContent(/can’t pause to ask/);
       // The correction the strongest sentence has to arrive with (DOR-816).
-      expect(alert).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
+      expect(alert).toHaveTextContent(/DorkOS still asks before deleting a schedule/);
     });
 
     it('applies it only once the person confirms', async () => {

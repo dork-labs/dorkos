@@ -33,7 +33,7 @@ function qualified<T extends { community: string; roomId?: string }>(
   roomId?: string
 ): T {
   if (value.community !== ref || (roomId !== undefined && value.roomId !== roomId)) {
-    throw new Error('The space returned data for a different room.');
+    throw new Error('The space sent messages for a different room.');
   }
   return value;
 }
@@ -175,7 +175,7 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
     },
     async retryRemoteCommunityDelivery(ref, roomId, idempotencyKey) {
       if (!idempotencyKey || idempotencyKey.length > 128)
-        throw new Error('The message retry key is invalid.');
+        throw new Error('DorkOS couldn’t retry this message.');
       return qualified(
         CommunityDeliverySnapshotSchema.parse(
           await fetchJSON(
@@ -191,7 +191,7 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
     async uploadRemoteCommunityAttachment(ref, roomId, file, idempotencyKey) {
       if (file.size > MAX_FILE_BYTES) throw new Error('Files must be 25 MB or smaller.');
       if (!idempotencyKey || idempotencyKey.length > 128)
-        throw new Error('The file retry key is invalid.');
+        throw new Error('DorkOS couldn’t retry this file.');
       return RemoteCommunityAttachmentResponseSchema.parse(
         await fetchJSON(baseUrl, `${roomPath(ref, roomId)}/attachments`, {
           method: 'POST',
@@ -221,7 +221,7 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
 
 /** Enforce the hard ceiling on actual bytes, even when Content-Length is absent or false. */
 async function boundedBlob(response: Response): Promise<Blob> {
-  if (!response.body) throw new Error('The space returned an empty file response.');
+  if (!response.body) throw new Error('The space sent an empty file.');
   const reader = response.body.getReader();
   const chunks: ArrayBuffer[] = [];
   let total = 0;

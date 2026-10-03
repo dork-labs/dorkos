@@ -329,7 +329,7 @@ describe('What’s on your account', () => {
 
   it('says one plain line when nothing is on the account yet', async () => {
     renderWith(<AccountContents />, createMockTransport());
-    expect(await screen.findByText(/^Nothing yet\./)).toBeInTheDocument();
+    expect(await screen.findByText(/^Nothing uses this account yet\./)).toBeInTheDocument();
   });
 });
 

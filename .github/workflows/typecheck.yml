@@ -252,8 +252,8 @@ jobs:
       # In-app copy length (the writing-app-copy skill, 2026-10-02): every block
       # of copy in apps/client/src at 15 words or fewer. Rides this job for the
       # vocab gate's reason above, and reuses that gate's copy classifier. It
-      # lands as --report-only (see the check:copy-length script) and becomes a
-      # gate when the app-wide copy sweep drops that flag. Ledger 261002-185940.
+      # landed report-only and became a gate once the app-wide copy sweep
+      # brought every block under the cap. Ledger 261002-185940.
       - name: In-app copy length (writing-app-copy)
         if: ${{ !cancelled() }}
         run: pnpm run check:copy-length

@@ -42,7 +42,7 @@ export function createRemoteCommunityStream(
         !response.body
       ) {
         await response.body?.cancel();
-        throw new Error('The space stream returned an invalid response.');
+        throw new Error('The space sent a reply DorkOS couldn’t read.');
       }
       body = response.body;
       reader = body.getReader();
@@ -59,10 +59,10 @@ export function createRemoteCommunityStream(
               ? event.entry
               : event;
         if (address.community !== ref || address.roomId !== roomId || frame.type !== event.type) {
-          throw new Error('The space stream returned data for a different room.');
+          throw new Error('The space sent messages for a different room.');
         }
         if (event.type !== 'closed' && !snapshotReceived && event.type !== 'snapshot') {
-          throw new Error('The space stream did not begin with a snapshot.');
+          throw new Error('The space sent messages before the room loaded.');
         }
         if (event.type === 'snapshot') snapshotReceived = true;
         onEvent(event);

@@ -43,18 +43,18 @@ describe('groupSessionsByTime', () => {
     expect(groups[0].label).toBe('Yesterday');
   });
 
-  it('groups sessions into "Previous 7 Days"', () => {
+  it('groups sessions into "Previous 7 days"', () => {
     const sessions = [makeSession({ updatedAt: '2026-02-03T10:00:00Z' })];
     const groups = groupSessionsByTime(sessions);
     expect(groups).toHaveLength(1);
-    expect(groups[0].label).toBe('Previous 7 Days');
+    expect(groups[0].label).toBe('Previous 7 days');
   });
 
-  it('groups sessions into "Previous 30 Days"', () => {
+  it('groups sessions into "Previous 30 days"', () => {
     const sessions = [makeSession({ updatedAt: '2026-01-15T10:00:00Z' })];
     const groups = groupSessionsByTime(sessions);
     expect(groups).toHaveLength(1);
-    expect(groups[0].label).toBe('Previous 30 Days');
+    expect(groups[0].label).toBe('Previous 30 days');
   });
 
   it('groups old sessions into "Older"', () => {

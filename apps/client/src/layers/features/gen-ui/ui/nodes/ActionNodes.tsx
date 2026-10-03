@@ -66,7 +66,7 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
     if (action.kind !== 'agent') return;
     dispatched.catch(() => {
       toast.error('Couldn’t send the action', {
-        description: 'The agent may be busy right now. Try again in a moment.',
+        description: 'Your agent may be busy. Try again.',
       });
     });
   };

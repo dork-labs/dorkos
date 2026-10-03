@@ -70,7 +70,7 @@ export function DispositionMenu({ onSteer, onStage }: DispositionMenuProps) {
         {onStage && (
           <ResponsiveDropdownMenuItem
             icon={Plus}
-            description="Add it for later, without cutting in"
+            description="Use it next, without interrupting"
             onSelect={onStage}
           >
             Add context

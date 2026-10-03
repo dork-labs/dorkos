@@ -64,11 +64,11 @@ export class StreamRefusedError extends Error {
    */
   constructor(status: number, reason?: string) {
     super(
-      `The server refused this stream with ${status}` +
+      `The server turned this stream down (${status})` +
         (reason ? `: ${reason}` : '') +
         (status === 403
-          ? ' — this usually means the address you are reaching DorkOS on is not trusted. ' +
-            'List it in DORKOS_TRUSTED_HOSTS (or DORKOS_CORS_ORIGIN) and restart.'
+          ? '. This address isn’t trusted yet. ' +
+            'Add it to DORKOS_TRUSTED_HOSTS (or DORKOS_CORS_ORIGIN) and restart.'
           : '')
     );
     this.name = 'StreamRefusedError';

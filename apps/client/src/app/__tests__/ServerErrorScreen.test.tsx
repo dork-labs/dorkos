@@ -70,7 +70,7 @@ describe('ServerErrorScreen', () => {
     renderScreen({ status: 500, message: 'Internal Server Error' });
 
     expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
-    expect(screen.getByText(/got an error back \(HTTP 500\)/)).toBeInTheDocument();
+    expect(screen.getByText(/didn’t load \(HTTP 500\)/)).toBeInTheDocument();
     // Not the other screen's claim: something replied, so nothing here may say
     // the server is absent or still starting.
     expect(screen.queryByText(UNREACHABLE_HEADLINE)).not.toBeInTheDocument();
@@ -84,7 +84,7 @@ describe('ServerErrorScreen', () => {
     renderScreen({ status: 502 });
     await screen.findByText(HEADLINE);
 
-    expect(screen.getByText(/got an error back \(HTTP 502\)/)).toBeInTheDocument();
+    expect(screen.getByText(/didn’t load \(HTTP 502\)/)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/DorkOS is running/i);
   });
 
@@ -119,7 +119,7 @@ describe('ServerErrorScreen', () => {
       message: 'Access denied by CorpProxy. Sign in at portal.example.com to continue.',
     });
 
-    expect(await screen.findByText(/got an error back \(HTTP 403\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/didn’t load \(HTTP 403\)/)).toBeInTheDocument();
     expect(screen.queryByText(/CorpProxy/)).not.toBeInTheDocument();
   });
 

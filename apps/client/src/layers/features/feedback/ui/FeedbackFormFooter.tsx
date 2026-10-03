@@ -35,7 +35,7 @@ export function FeedbackFormFooter({
             aria-live="polite"
             className="text-status-warning min-w-0 flex-1 text-xs"
           >
-            Add a few words so we know what to look for.
+            Add a few words about what to look for.
           </p>
         ) : (
           <p className="text-muted-foreground flex min-w-0 flex-1 items-center gap-1.5 text-xs">

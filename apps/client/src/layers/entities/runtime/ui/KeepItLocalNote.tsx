@@ -33,7 +33,7 @@ export function KeepItLocalNote({
   return (
     <p className={cn('text-muted-foreground text-xs', className)} data-testid="keep-it-local-note">
       {remote
-        ? 'Prefer to keep everything on the computer DorkOS runs on? Use your own sign-in there'
+        ? 'Prefer everything on the computer DorkOS runs on? Use your own sign-in there'
         : 'Prefer to keep everything on this computer? Use your own sign-in'}
       {ollama ? ', or Ollama' : ''}.
     </p>

@@ -467,7 +467,7 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
     act(() => panelProps.onEdit(panelProps.queue[1]!.id));
 
     expect(lastChatInputProps().placeholder).toBe(
-      'Edit queued message 2 of 2 — press Enter to save'
+      'Edit queued message 2 of 2. Press Enter to save'
     );
     expect(lastChatInputProps().editingPosition).toBe(2);
   });
@@ -533,7 +533,7 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
 
     const props = lastChatInputProps();
     expect(props.canSubmit).toBe(false);
-    expect(props.canSubmitReason).toBe('Checking this directory before starting the session…');
+    expect(props.canSubmitReason).toBe('Checking this folder…');
   });
 
   it('waits with the banner words while the account is out (spec claude-account-ui §6.7)', () => {

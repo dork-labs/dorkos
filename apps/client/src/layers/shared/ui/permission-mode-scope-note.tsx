@@ -23,7 +23,7 @@ export interface PermissionModeScopeNoteProps {
    * mode DOES; without one it falls back to the mode's name.
    */
   descriptor?: PermissionModeDescriptor;
-  /** Extra classes for the surrounding paragraph. */
+  /** Extra classes for the wrapper around the three paragraphs. */
   className?: string;
 }
 
@@ -90,8 +90,8 @@ export interface PermissionModeScopeNoteProps {
  * governs DorkOS-level approvals, whatever its reach — so the narrower condition
  * was not protecting accuracy, it was rationing a correction. What made that
  * untenable is that the consent dialog now carries an unqualified promise for
- * the middle stop too ("This stop never pauses to ask. Whatever it decides to
- * do, it does."), and the strongest sentence on screen is exactly the one that
+ * the middle stop too ("This stop never pauses to ask. It acts without checking
+ * with you."), and the strongest sentence on screen is exactly the one that
  * must arrive with its own correction. Matching the door means every dialog the
  * door opens gets it.
  *
@@ -116,15 +116,17 @@ export function PermissionModeScopeNote({
 }: PermissionModeScopeNoteProps) {
   const covers = descriptor ? needsConsentRitual(descriptor) : isBypassPermissionMode(mode);
   if (!covers) return null;
+  // Three short paragraphs, not one: each fact is one block under the copy
+  // cap, and all three stay visible because the middle one is what keeps a
+  // person from assuming nothing will ever ask again.
   return (
-    <p
+    <div
       data-slot="permission-mode-scope-note"
-      className={cn('text-muted-foreground text-xs', className)}
+      className={cn('text-muted-foreground space-y-1 text-xs', className)}
     >
-      This covers what an agent does in a session: editing files, running commands, and working
-      outside this project. DorkOS’s own risky actions still stop for you, like deleting a schedule
-      or removing an agent. To stop being asked about one, choose Always allow on its card, or
-      change it in Settings under Permissions.
-    </p>
+      <p>This covers editing files, running commands and working outside this project.</p>
+      <p>DorkOS still asks before deleting a schedule or removing an agent, for example.</p>
+      <p>To stop an ask, choose Always allow on its card, or in Settings under Permissions.</p>
+    </div>
   );
 }

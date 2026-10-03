@@ -74,14 +74,14 @@ export function ScanRootInput({ roots, onChange }: ScanRootInputProps) {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={roots.length === 0 ? 'Add paths to scan (Enter to add)' : 'Add more…'}
+          placeholder={roots.length === 0 ? 'Type a folder, then press Enter' : 'Add more…'}
           className="placeholder:text-muted-foreground min-w-[120px] flex-1 bg-transparent text-sm focus-visible:outline-none"
         />
         <button
           type="button"
           onClick={() => setPickerOpen(true)}
           className="text-muted-foreground hover:bg-accent hover:text-foreground shrink-0 rounded p-1"
-          aria-label="Browse for directory"
+          aria-label="Browse for a folder"
         >
           <FolderOpen className="size-4" />
         </button>

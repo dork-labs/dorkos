@@ -87,7 +87,7 @@ describe('the plan-aware surfaces', () => {
   it('says so plainly when the linked account has no plan to describe', async () => {
     const transport = createMockTransport();
     renderPanel(transport);
-    expect(await screen.findByText(/has no plan details to show yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no plan details to show yet/i)).toBeInTheDocument();
     // No card, no gauge, no seat list — nothing to hide, because nothing rendered.
     expect(screen.queryByText(/your plan/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Included')).not.toBeInTheDocument();

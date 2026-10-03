@@ -28,7 +28,7 @@ describe('describeAuthError', () => {
    */
   it('explains a refused origin, and names the address to allow', () => {
     const copy = describeAuthError(invalidOrigin, 'http://localhost:5174');
-    expect(copy?.message).toContain('disagree about where this request came from');
+    expect(copy?.message).toContain('doesn’t trust');
     expect(copy?.message).toContain('http://localhost:5174');
     expect(copy?.message).toContain('DORKOS_CORS_ORIGIN');
     // The raw string survives — the sentence is for the person, the detail is
@@ -42,7 +42,7 @@ describe('describeAuthError', () => {
       status: 403,
       code: 'INVALID_ORIGIN',
     };
-    expect(describeAuthError(renamed)?.message).toContain('disagree about where this request');
+    expect(describeAuthError(renamed)?.message).toContain('doesn’t trust');
     expect(describeAuthError(renamed)?.detail).toBe('Origin not allowed');
   });
 
@@ -58,7 +58,7 @@ describe('describeAuthError', () => {
       status: 403,
       code: 'MISSING_OR_NULL_ORIGIN',
     });
-    expect(copy?.message).toContain('did not tell the server where this request came from');
+    expect(copy?.message).toContain('this page has no address');
     expect(copy?.detail).toBe('Missing or null Origin');
   });
 
@@ -110,9 +110,7 @@ describe('OwnerSetupScreen — a refused origin', () => {
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     const alert = await screen.findByRole('alert');
-    await waitFor(() =>
-      expect(alert).toHaveTextContent(/disagree about where this request came from/)
-    );
+    await waitFor(() => expect(alert).toHaveTextContent(/doesn’t trust/));
     // Named, so the person knows which address to allow.
     expect(alert).toHaveTextContent(window.location.origin);
     // And the auth layer's own words are still on screen.

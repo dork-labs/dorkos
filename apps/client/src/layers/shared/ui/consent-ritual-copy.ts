@@ -63,7 +63,7 @@ export function consentActionLabel(descriptor: PermissionModeDescriptor): string
  */
 export function consentAsksNote(descriptor: PermissionModeDescriptor): string | null {
   if (!needsConsentRitual(descriptor) || isAutonomyStop(descriptor)) return null;
-  return 'This stop never pauses to ask. Whatever it decides to do, it does.';
+  return 'This stop never pauses to ask. It acts without checking with you.';
 }
 
 /**
@@ -78,6 +78,14 @@ export function consentAsksNote(descriptor: PermissionModeDescriptor): string | 
  * sentence and stays with its own caller.
  */
 export const SCHEDULED_RUN_CONSENT_CONSEQUENCE =
-  'A scheduled run has nobody to ask, so nothing is asked: no approval card, no message, no ' +
-  'record of a decision anybody made. At a stop that asks, an action it cannot take is refused ' +
-  'and the run works around it. Here it simply happens.';
+  'A scheduled run has nobody to ask. Nothing is asked, and nothing is recorded.';
+
+/**
+ * The contrast behind {@link SCHEDULED_RUN_CONSENT_CONSEQUENCE}: what the same
+ * blocked action does at a stop that asks. Each line is its own short paragraph,
+ * shown behind "More details" by {@link ScheduledRunConsequence}.
+ */
+export const SCHEDULED_RUN_CONSENT_CONTRAST = [
+  'At a stop that asks, an action it can’t take is refused.',
+  'The run works around it. Here, every action just happens.',
+] as const;

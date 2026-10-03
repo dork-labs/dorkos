@@ -58,8 +58,7 @@ export function ReplyToField({
         </div>
         {anonymous && (
           <p className="text-muted-foreground text-xs">
-            Your report won’t include your name or email, so we can’t write back. You can still
-            follow it under Your reports.
+            Without your name or email, the team can’t reply. Track it in Your reports.
           </p>
         )}
       </div>
@@ -92,8 +91,8 @@ export function ReplyToField({
       />
       <p id={emailHintId} className="text-muted-foreground text-xs">
         {looksWrong
-          ? 'That doesn’t look like an email yet, so we couldn’t write back.'
-          : 'So we can tell you when it’s fixed. We remember it for next time.'}
+          ? 'Not an email yet, so no reply can reach you.'
+          : 'Get a note when it’s fixed. DorkOS remembers it.'}
       </p>
     </div>
   );

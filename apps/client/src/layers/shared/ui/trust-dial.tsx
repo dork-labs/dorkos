@@ -326,7 +326,7 @@ export function TrustDial({
     <div data-slot="trust-dial" className={cn('flex flex-col gap-2', className)}>
       {stops.length > 0 && (
         <SegmentedControl
-          aria-label="How much this agent may do before it checks with you"
+          aria-label="How much this agent does before asking"
           aria-describedby={captionId}
           value={selected?.stop ?? ''}
           disabled={locked}
@@ -387,8 +387,8 @@ export function TrustDial({
               {/* The runtime's own word for the mode wherever it declared one —
                   a stranded WAY OF WORKING has a descriptor in hand, and the id
                   table is only ever the answer for a mode nobody declared. */}
-              This session is set to “{current?.label ?? permissionModeLabel(mode)}”, which is not
-              one of these. Pick a stop to change it.
+              This session uses “{current?.label ?? permissionModeLabel(mode)}”, which isn’t one of
+              these stops. Pick one to change it.
             </>
           )}
         </p>

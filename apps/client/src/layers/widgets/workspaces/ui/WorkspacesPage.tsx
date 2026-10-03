@@ -58,7 +58,7 @@ function WorktreeRow({ worktree }: { worktree: WorktreeScanEntry }) {
 
       <TableCell className="max-w-0">
         {!worktree.readable ? (
-          <Badge variant="outline" title="DorkOS could not read this folder with git.">
+          <Badge variant="outline" title="DorkOS couldn’t read this folder with git.">
             Can’t read
           </Badge>
         ) : worktree.branch ? (
@@ -168,8 +168,7 @@ export function WorkspacesPage() {
         <div className="mb-6 rounded-lg border border-amber-600/40 bg-amber-500/10 p-4">
           <p className="text-sm font-medium">Some folders couldn’t be read</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Anything inside them is missing from this list, so it may be incomplete. The same
-            happens when a shortcut points at something that’s gone.
+            This list may be missing what’s inside them.
           </p>
           <ul className="text-muted-foreground mt-2 space-y-0.5 text-xs">
             {warnings.map((warning) => (
@@ -190,8 +189,7 @@ export function WorkspacesPage() {
           <TriangleAlert className="text-muted-foreground/60 mx-auto size-8" />
           <p className="mt-3 font-medium">Couldn’t check your worktrees</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            The scan didn’t finish, so this list would be wrong. This usually means the DorkOS
-            server isn’t reachable. It will try again on its own.
+            The scan didn’t finish. DorkOS tries again on its own.
           </p>
         </div>
       ) : byProject.length === 0 ? (
@@ -199,8 +197,7 @@ export function WorkspacesPage() {
           <FolderGit2 className="text-muted-foreground/60 mx-auto size-8" />
           <p className="mt-3 font-medium">No worktrees yet</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            A worktree is a second copy of your project, on its own branch, so one agent’s edits
-            can’t collide with another’s. They show up here once they exist.
+            A worktree is a copy of your project, so agents’ edits never collide.
           </p>
           {/* The folder, on its own line and styled as code, never spliced into
               the sentence. A path has no spaces, so the browser has no wrap

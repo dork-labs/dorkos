@@ -112,7 +112,9 @@ describe('FullPowerDoor', () => {
     expect(screen.getByText(/scheduled runs use your power level/i)).toBeInTheDocument();
     // The scope note is reused, not rewritten — the same sentence every mode
     // picker shows about DorkOS-level approvals.
-    expect(screen.getByText(/what an agent does in a session/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/editing files, running commands and working outside this project/i)
+    ).toBeInTheDocument();
     // A host that provides `onCustomize` gets the "Pick the pieces yourself" link.
     expect(screen.getByRole('button', { name: CUSTOMIZE })).toBeInTheDocument();
   });

@@ -22,7 +22,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
   PermissionModeScopeNote,
-  SCHEDULED_RUN_CONSENT_CONSEQUENCE,
+  ScheduledRunConsequence,
   stopLabel,
   UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
@@ -701,7 +701,7 @@ export function ScheduleApprovalCard({
           schedule reads the same warning wherever its level is chosen. */}
       <UnattendedAutonomyDialog
         descriptor={pendingRaise?.descriptor ?? null}
-        consequence={SCHEDULED_RUN_CONSENT_CONSEQUENCE}
+        consequence={<ScheduledRunConsequence />}
         onCancel={() => setPendingRaise(null)}
         onConfirm={confirmRaise}
       />

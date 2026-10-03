@@ -72,9 +72,9 @@ export function MemoryProviderBenchedBanner({
 }: MemoryProviderBenchedBannerProps) {
   return (
     <Banner variant="warning">
-      The <span className="font-medium">{configuredId}</span> memory backend{' '}
-      {benched ? 'stopped answering' : 'isn’t installed or didn’t register'}. DorkOS switched to its
-      own local memory until you restart.
+      The <span className="font-medium">{configuredId}</span> memory{' '}
+      {benched ? 'stopped answering' : 'isn’t set up'}. DorkOS uses its own memory until you
+      restart.
     </Banner>
   );
 }

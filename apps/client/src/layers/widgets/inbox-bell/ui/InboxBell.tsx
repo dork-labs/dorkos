@@ -405,7 +405,7 @@ export function InboxBell() {
                     tabIndex={-1}
                     className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase outline-none md:not-sr-only"
                   >
-                    Needs You
+                    Needs you
                   </h2>
                   {/* While only a receipt is left the count is zero, and
                       `waitingSummary(0, 0, 0)` has nothing to report. It says
@@ -593,7 +593,7 @@ function resolvePill(counts: {
       tone: 'waiting',
       glyph: 'waiting',
       text: 'can’t check approvals',
-      label: 'DorkOS could not check for approvals. Open for details.',
+      label: 'DorkOS couldn’t check approvals. Open for details.',
     };
   }
   if (counts.unreadCount > 0) {
@@ -611,6 +611,6 @@ function resolvePill(counts: {
     tone: 'neutral',
     glyph: 'unread',
     text: 'Inbox',
-    label: 'Your Inbox. Nothing is waiting and nothing is unread.',
+    label: 'Inbox. Nothing waiting, nothing unread.',
   };
 }

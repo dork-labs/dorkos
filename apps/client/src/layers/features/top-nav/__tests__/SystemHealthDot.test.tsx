@@ -57,7 +57,7 @@ describe('SystemHealthDot', () => {
   it('has aria-label for degraded state', () => {
     const { container } = renderDot('degraded');
     const dot = container.querySelector('span');
-    expect(dot).toHaveAttribute('aria-label', 'Some adapters disconnected');
+    expect(dot).toHaveAttribute('aria-label', 'Some connections are down');
   });
 
   it('has aria-label for error state', () => {

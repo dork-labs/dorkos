@@ -75,7 +75,7 @@ export function ServerErrorScreen({ status, message, code }: ServerErrorScreenPr
   const refusal = code === HOST_NOT_ALLOWED_CODE && message ? message : undefined;
   const detail =
     refusal === undefined
-      ? `DorkOS asked for your settings and got an error back (HTTP ${status}). It keeps trying, and this screen clears as soon as your settings load.`
+      ? `Your settings didn’t load (HTTP ${status}). DorkOS keeps trying.`
       : refusal.length > MAX_DETAIL_CHARS
         ? `${refusal.slice(0, MAX_DETAIL_CHARS).trimEnd()}…`
         : refusal;

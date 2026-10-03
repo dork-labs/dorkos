@@ -106,8 +106,8 @@ export function useOnboarding() {
         fields: Object.keys(patch),
         error: err,
       });
-      toast.error('DorkOS couldn’t save where you got to in setup.', {
-        description: 'You can keep going. It will try again.',
+      toast.error('Couldn’t save your setup progress', {
+        description: 'Keep going. DorkOS tries again.',
       });
     },
     // The shared mutation toast would name the mutation, not the moment; this

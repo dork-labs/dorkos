@@ -812,8 +812,8 @@ export function ChatPanel({
         {needsFirstTurnProvenance && isComposerAgentError && (
           <div className="mx-4 mb-2">
             <ErrorMessageBlock
-              heading="Couldn’t check this directory"
-              message="DorkOS couldn’t confirm whether this directory belongs to a registered agent. Try again before starting the session."
+              heading="Couldn’t check this folder"
+              message="DorkOS couldn’t tell if an agent owns this folder. Try again."
               onRetry={() => void retryComposerAgent()}
             />
           </div>

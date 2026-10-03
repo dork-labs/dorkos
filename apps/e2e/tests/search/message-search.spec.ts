@@ -122,7 +122,7 @@ test.describe('Message search', () => {
     const dialog = page.getByTestId('message-search-dialog');
     await expect(dialog).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-    const scopeLine = dialog.getByRole('button', { name: /Searches what was said/ });
+    const scopeLine = dialog.getByRole('button', { name: /Searches channels/ });
     await expect(scopeLine).toBeVisible();
     // Radix `CollapsibleContent` unmounts its children when closed, so a
     // `toBeHidden()` on the text itself would pass just as well if the whole
@@ -134,7 +134,7 @@ test.describe('Message search', () => {
     await scopeLine.click();
     // A fragment the one-line summary does not also carry, so this can only be
     // the revealed detail.
-    await expect(dialog.getByText(/take up to five minutes/)).toBeVisible();
+    await expect(dialog.getByText(/lag five minutes/)).toBeVisible();
     await expect(dialog.getByText(/Tool output is never searched/)).toBeVisible();
   });
 });

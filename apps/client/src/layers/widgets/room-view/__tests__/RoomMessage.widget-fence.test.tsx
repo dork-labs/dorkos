@@ -257,7 +257,7 @@ describe('RoomMessage — dorkos-ui fences in a room body', () => {
   it('falls back to the error card for a fence it cannot parse, and keeps the message', async () => {
     renderRow(entry(bodyWithFence('{ "version": 1, "root": { "type"')));
 
-    expect(await screen.findByText('This widget couldn’t be rendered')).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t show this widget')).toBeInTheDocument();
     // The rest of the message is worth keeping — a broken widget costs the room
     // its widget, never the words around it or the row itself.
     expect(content()).toHaveTextContent('Here you go:');

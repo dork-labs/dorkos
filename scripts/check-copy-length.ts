@@ -41,10 +41,11 @@
  * position, so it is not measured. Read a file with helper-built copy as well
  * as scanning it.
  *
- * MODES. With `--report-only` it prints the report and always exits 0; this
- * is how it lands, before the copy sweep that brings every block under the
- * cap. Without the flag it exits 1 when any block reaches
- * {@link ERROR_AT} words. `--warnings` also lists every flagged 7-15 block.
+ * MODES. By default it exits 1 when any block reaches {@link ERROR_AT}
+ * words; this is what `pnpm check:copy-length` and CI run. `--report-only`
+ * prints the same report and always exits 0, which is how the check landed
+ * before the app-wide copy sweep brought every block under the cap.
+ * `--warnings` also lists every flagged 7-15 block.
  *
  * Usage:
  *   pnpm exec tsx scripts/check-copy-length.ts [--report-only] [--warnings] [repoRoot]

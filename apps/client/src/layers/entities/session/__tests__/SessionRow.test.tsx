@@ -243,9 +243,9 @@ describe('SessionRow variant="full"', () => {
   // mark on the row face above it — one register for one fact (DOR-1499).
   it.each([
     ['bypassPermissions', 'Full power'],
-    ['plan', 'Plan Mode'],
-    ['acceptEdits', 'Accept Edits'],
-    ['dontAsk', 'Don’t Ask'],
+    ['plan', 'Plan mode'],
+    ['acceptEdits', 'Accept edits'],
+    ['dontAsk', 'Don’t ask'],
     ['auto', 'Auto'],
     ['default', 'Default'],
   ] as const)('names %s as "%s" in the details panel', (mode, label) => {

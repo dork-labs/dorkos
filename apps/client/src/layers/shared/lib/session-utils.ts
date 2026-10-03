@@ -2,7 +2,7 @@ import type { Session } from '@dorkos/shared/types';
 import { bucketElapsedMs } from './bucket-elapsed-ms';
 import { TIME_UNITS } from './constants';
 
-export type TimeGroup = 'Today' | 'Yesterday' | 'Previous 7 Days' | 'Previous 30 Days' | 'Older';
+export type TimeGroup = 'Today' | 'Yesterday' | 'Previous 7 days' | 'Previous 30 days' | 'Older';
 
 export interface GroupedSessions {
   label: TimeGroup;
@@ -12,8 +12,8 @@ export interface GroupedSessions {
 const GROUP_ORDER: TimeGroup[] = [
   'Today',
   'Yesterday',
-  'Previous 7 Days',
-  'Previous 30 Days',
+  'Previous 7 days',
+  'Previous 30 days',
   'Older',
 ];
 
@@ -35,8 +35,8 @@ export function groupSessionsByTime(sessions: Session[]): GroupedSessions[] {
   const groups: Record<TimeGroup, Session[]> = {
     Today: [],
     Yesterday: [],
-    'Previous 7 Days': [],
-    'Previous 30 Days': [],
+    'Previous 7 days': [],
+    'Previous 30 days': [],
     Older: [],
   };
 
@@ -44,8 +44,8 @@ export function groupSessionsByTime(sessions: Session[]): GroupedSessions[] {
     const date = new Date(session.updatedAt);
     if (date >= todayStart) groups['Today'].push(session);
     else if (date >= yesterdayStart) groups['Yesterday'].push(session);
-    else if (date >= sevenDaysAgo) groups['Previous 7 Days'].push(session);
-    else if (date >= thirtyDaysAgo) groups['Previous 30 Days'].push(session);
+    else if (date >= sevenDaysAgo) groups['Previous 7 days'].push(session);
+    else if (date >= thirtyDaysAgo) groups['Previous 30 days'].push(session);
     else groups['Older'].push(session);
   }
 

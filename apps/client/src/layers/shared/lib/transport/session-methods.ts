@@ -492,7 +492,7 @@ export function createSessionMethods(
         credentials: 'include',
         body,
       });
-      if (!res.ok) throw new Error(`Recording upload failed (${res.status})`);
+      if (!res.ok) throw new Error(`Couldn’t upload the recording (HTTP ${res.status})`);
     },
 
     // ── MCP Apps (SEP-1865) ────────────────────────────────────────────────

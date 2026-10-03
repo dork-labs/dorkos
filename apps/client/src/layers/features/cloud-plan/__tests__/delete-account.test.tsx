@@ -102,7 +102,9 @@ describe('deleting the DorkOS account', () => {
     renderDelete(linkedTransport());
     const dialog = await openDialog();
     expect(within(dialog).getByText('Delete your DorkOS account?')).toBeInTheDocument();
-    expect(within(dialog).getByText(/nothing is deleted until you follow it/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/Nothing is deleted until you follow the emailed link/)
+    ).toBeInTheDocument();
     for (const goes of [/your plan/i, /credits/i, /seats/i]) {
       expect(within(dialog).getByText(goes)).toBeInTheDocument();
     }

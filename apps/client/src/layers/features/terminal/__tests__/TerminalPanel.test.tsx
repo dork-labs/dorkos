@@ -190,7 +190,7 @@ describe('TerminalPanel', () => {
   it('shows the empty state when no working directory is selected', () => {
     useAppStore.setState({ selectedCwd: null });
     renderTerminal();
-    expect(screen.getByText('Select a working directory to open a terminal.')).toBeInTheDocument();
+    expect(screen.getByText('Pick a folder to open a terminal.')).toBeInTheDocument();
   });
 
   it('seeds one terminal on first open so the panel is never empty', async () => {

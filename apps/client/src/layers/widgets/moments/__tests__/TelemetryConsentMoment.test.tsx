@@ -56,11 +56,11 @@ describe('TelemetryConsentMoment', () => {
   it('renders the invitation and consent buttons, with the payload collapsed by default', () => {
     renderMoment();
 
-    expect(screen.getByText(/sends us nothing unless you say so/i)).toBeInTheDocument();
+    expect(screen.getByText(/never your prompts, code or files/i)).toBeInTheDocument();
     // Progressive disclosure: the payload stays hidden until asked for.
     expect(screen.queryByText(/runtimesConfigured/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /see what.s sent/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /no thanks/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /don’t share/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /share anonymously/i })).toBeInTheDocument();
   });
 
@@ -91,7 +91,7 @@ describe('TelemetryConsentMoment', () => {
     const user = userEvent.setup();
     renderMoment();
 
-    await user.click(screen.getByRole('button', { name: /no thanks/i }));
+    await user.click(screen.getByRole('button', { name: /don’t share/i }));
 
     expect(updateMutate).toHaveBeenCalledTimes(1);
     expect(updateMutate).toHaveBeenCalledWith({
@@ -125,7 +125,7 @@ describe('TelemetryConsentMoment', () => {
 
     renderMoment();
 
-    expect(screen.getByRole('button', { name: /no thanks/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /don’t share/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /share anonymously/i })).toBeDisabled();
   });
 
@@ -138,9 +138,9 @@ describe('TelemetryConsentMoment', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent(/couldn.t save your choice/i);
     // Still answerable — the failure is a prompt to retry, not a dead end.
-    expect(screen.getByRole('button', { name: /no thanks/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /don’t share/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /share anonymously/i })).toBeEnabled();
-    expect(screen.getByText(/sends us nothing unless you say so/i)).toBeInTheDocument();
+    expect(screen.getByText(/never your prompts, code or files/i)).toBeInTheDocument();
   });
 
   it('clears the error when the retry is in flight, and writes on success', async () => {

@@ -74,10 +74,17 @@ describe('PermissionModeScopeNote', () => {
     // promise the product does not keep.
     expect(
       screen.getByText(
-        'This covers what an agent does in a session: editing files, running commands, and working ' +
-          'outside this project. DorkOS’s own risky actions still stop for you, like deleting a ' +
-          'schedule or removing an agent. To stop being asked about one, choose Always allow on ' +
-          'its card, or change it in Settings under Permissions.'
+        'This covers editing files, running commands and working outside this project.'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'DorkOS still asks before deleting a schedule or removing an agent, for example.'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'To stop an ask, choose Always allow on its card, or in Settings under Permissions.'
       )
     ).toBeInTheDocument();
   });
@@ -108,14 +115,14 @@ describe('PermissionModeScopeNote', () => {
     // `always-allow` is the test-mode runtime's name for "run everything". A note
     // that only knew one spelling would be silent on a session that bypasses.
     render(<PermissionModeScopeNote mode="always-allow" />);
-    expect(screen.getByText(/This covers what an agent does in a session/)).toBeInTheDocument();
+    expect(screen.getByText(/This covers editing files, running commands/)).toBeInTheDocument();
   });
 
   it('says nothing for a mode that still asks', () => {
     for (const mode of ['default', 'plan', 'acceptEdits', 'dontAsk', 'auto', null, undefined]) {
       const { unmount } = render(<PermissionModeScopeNote mode={mode} />);
       expect(
-        screen.queryByText(/This covers what an agent does in a session/)
+        screen.queryByText(/This covers editing files, running commands/)
       ).not.toBeInTheDocument();
       unmount();
     }
@@ -138,7 +145,7 @@ describe('PermissionModeScopeNote', () => {
         }}
       />
     );
-    expect(screen.getByText(/This covers what an agent does in a session/)).toBeInTheDocument();
+    expect(screen.getByText(/This covers editing files, running commands/)).toBeInTheDocument();
   });
 
   it('appears for a mode that never asks but cannot leave the workspace (DOR-816)', () => {
@@ -165,7 +172,7 @@ describe('PermissionModeScopeNote', () => {
         }}
       />
     );
-    expect(screen.getByText(/This covers what an agent does in a session/)).toBeInTheDocument();
+    expect(screen.getByText(/This covers editing files, running commands/)).toBeInTheDocument();
   });
 
   it('stays quiet for a read-only mode, though it never asks either', () => {
@@ -188,7 +195,7 @@ describe('PermissionModeScopeNote', () => {
       />
     );
     expect(
-      screen.queryByText(/This covers what an agent does in a session/)
+      screen.queryByText(/This covers editing files, running commands/)
     ).not.toBeInTheDocument();
   });
 
@@ -207,7 +214,7 @@ describe('PermissionModeScopeNote', () => {
       />
     );
     expect(
-      screen.queryByText(/This covers what an agent does in a session/)
+      screen.queryByText(/This covers editing files, running commands/)
     ).not.toBeInTheDocument();
   });
 });
@@ -220,7 +227,7 @@ describe('every place a permission mode or a trust stop is chosen carries the no
         source.includes('<PermissionModeScopeNote'),
         `${file} lets a person choose a permission mode or a trust stop and does not ` +
           `render PermissionModeScopeNote. Somebody turning one on there would not be told ` +
-          `that DorkOS's own risky actions still stop for them, nor where to change that — ` +
+          `that DorkOS still asks before its own risky actions, nor where to change that — ` +
           `which is the surprise the note exists to prevent.`
       ).toBe(true);
     });

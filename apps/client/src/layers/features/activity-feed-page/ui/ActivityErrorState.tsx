@@ -28,7 +28,7 @@ export function ActivityErrorState({ onRetry, className }: ActivityErrorStatePro
       <div className="space-y-1">
         <p className="text-foreground text-sm font-medium">Couldn’t load your activity</p>
         <p className="text-muted-foreground max-w-xs text-xs">
-          The DorkOS server did not answer. Check that it is still running.
+          The DorkOS server didn’t answer. Check that it’s running.
         </p>
       </div>
       <Button variant="outline" size="sm" onClick={onRetry}>

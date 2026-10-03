@@ -113,7 +113,9 @@ export function UnattendedAutonomyDialog({
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <p className="text-muted-foreground text-sm">{consequence}</p>
+        {/* A `div`, not a `p`: a consequence may carry its own paragraphs and a
+            "More details" toggle (`ScheduledRunConsequence`). */}
+        <div className="text-muted-foreground space-y-2 text-sm">{consequence}</div>
         {descriptor && <PermissionModeScopeNote mode={descriptor.id} descriptor={descriptor} />}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
