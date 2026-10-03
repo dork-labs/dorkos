@@ -4,7 +4,12 @@ import { open, rename } from 'node:fs/promises';
 import { type Db, type DbTransaction } from '@dorkos/db';
 import { CanvasChannelCheckboxRequestSchema } from '@dorkos/shared/canvas-channel-schemas';
 import type { DocChannelActor } from '../authorization.js';
-import { DocChannelStore, DocChannelCorruptionError, type DocWriteIntentRow } from '../store.js';
+import {
+  DocChannelStore,
+  DocChannelCorruptionError,
+  requireDocChannelStoreDatabase,
+  type DocWriteIntentRow,
+} from '../store.js';
 import { findCheckboxIntent, quarantineCheckboxIntent } from './write-recovery.js';
 import {
   CanonicalFileWriteCoordinator,
@@ -59,6 +64,7 @@ export class DocCheckboxWriteService {
     delivery: { policyLimits: DocIngestLimits; notifyCommitted: (documentId: string) => undefined },
     private readonly options: CheckboxServiceOptions = {}
   ) {
+    requireDocChannelStoreDatabase(store, db);
     this.completion = createOriginalCheckboxCompletion({ authority, store, ...delivery });
     this.writeFence = new CheckboxWriteFence(db, store);
   }

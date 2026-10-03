@@ -8,6 +8,7 @@ import { canvasDocWriteIntents, user } from '@dorkos/db';
 import { rawByteHash, prepareCheckboxBytes } from '../checkbox-bytes.js';
 import { observedCheckboxIntent } from '../checkbox-evidence.js';
 import { CheckboxWriteFencedError } from '../checkbox-fence.js';
+import { DocCheckboxWriteService } from '../checkbox-service.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import { fixture } from './checkbox-fixture.js';
 import { quarantineCheckboxIntent } from '../write-recovery.js';
@@ -626,4 +627,75 @@ it('uses the actual SQL receipt rather than a valid forged public store DTO', as
   } finally {
     h.store.getWriteIntent = getter;
   }
+});
+
+it('requires the service constructor database to own its genuine store before any operation', async () => {
+  const owning = await setup(),
+    foreign = await setup();
+  expect(owning.db.$client.prepare('PRAGMA database_list').all()).not.toEqual(
+    foreign.db.$client.prepare('PRAGMA database_list').all()
+  );
+  const request = await owning.request();
+  const before = await readFile(owning.path),
+    inode = (await stat(owning.path)).ino;
+  const grant = owning.store.getGrant(owning.grantId);
+  expect(
+    () =>
+      new DocCheckboxWriteService(
+        foreign.db,
+        owning.store,
+        owning.coordinator,
+        owning.authority,
+        owning.delivery
+      )
+  ).toThrow('Checkbox authority requires its genuine store transaction database.');
+  expect(owning.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  expect(foreign.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  expect(owning.db.select().from(canvasDocWriteIntents).all()).toEqual([]);
+  expect(foreign.db.select().from(canvasDocWriteIntents).all()).toEqual([]);
+  expect(owning.store.getGrant(owning.grantId)).toEqual(grant);
+  expect(await readFile(owning.path)).toEqual(before);
+  expect((await stat(owning.path)).ino).toBe(inode);
+  expect(owning.notices).toEqual([]);
+  const receipt = await owning.service.toggle(request, owning.actor);
+  expect(receipt).toMatchObject({ status: 'changed', receipt: { id: request.eventId } });
+  expect(await owning.service.toggle(request, owning.actor)).toEqual(receipt);
+  expect(owning.counts()).toEqual({ events: { n: 2 }, batches: { n: 1 } });
+  expect(owning.row()).toMatchObject({ eventId: request.eventId, status: 'committed' });
+});
+
+it('checks service constructor database provenance before reading delivery configuration', async () => {
+  const owning = await setup(),
+    foreign = await setup();
+  let reads = 0;
+  const delivery = {
+    get policyLimits() {
+      reads++;
+      return owning.delivery.policyLimits;
+    },
+    get notifyCommitted() {
+      reads++;
+      return owning.delivery.notifyCommitted;
+    },
+  };
+  let failure: unknown;
+  try {
+    new DocCheckboxWriteService(
+      foreign.db,
+      owning.store,
+      owning.coordinator,
+      owning.authority,
+      delivery
+    );
+  } catch (error) {
+    failure = error;
+  }
+  expect(reads).toBe(0);
+  expect(failure).toBeInstanceOf(Error);
+  expect(failure).toMatchObject({
+    message: 'Checkbox authority requires its genuine store transaction database.',
+  });
+  expect(owning.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  expect(owning.db.select().from(canvasDocWriteIntents).all()).toEqual([]);
+  expect(owning.notices).toEqual([]);
 });

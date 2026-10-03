@@ -2,6 +2,7 @@
 import { asc, gt, sql, canvasDocWriteIntents, type Db } from '@dorkos/db';
 import {
   DocChannelCorruptionError,
+  requireDocChannelStoreDatabase,
   type DocChannelStore,
   type DocWriteIntentRow,
 } from '../store.js';
@@ -28,7 +29,9 @@ export class CheckboxWriteFence {
   constructor(
     private readonly db: Db,
     private readonly store: DocChannelStore
-  ) {}
+  ) {
+    requireDocChannelStoreDatabase(store, db);
+  }
 
   readiness(): { ready: true } | { ready: false; reason: CheckboxFenceUnavailableError['reason'] } {
     try {

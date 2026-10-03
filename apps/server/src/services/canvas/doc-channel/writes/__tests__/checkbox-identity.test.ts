@@ -2,12 +2,17 @@ import { mkdtemp, realpath, stat, link, readFile, writeFile, rename, rm } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { afterEach, expect, it, vi } from 'vitest';
 import { canvasDocWriteIntents, eq } from '@dorkos/db';
 import { fixture } from './checkbox-fixture.js';
 import { randomUUID } from 'node:crypto';
 import { rawByteHash } from '../checkbox-bytes.js';
-import { CheckboxFenceUnavailableError, CheckboxWriteFencedError } from '../checkbox-fence.js';
+import {
+  CheckboxWriteFence,
+  CheckboxFenceUnavailableError,
+  CheckboxWriteFencedError,
+} from '../checkbox-fence.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -316,4 +321,68 @@ it('refuses a genuinely separately approved original hardlink source through the
   ).rejects.toThrow(CheckboxWriteFencedError);
   expect(await readFile(alias)).toEqual(bytes);
   expect(h.counts()).toEqual(counts);
+});
+
+it('requires a standalone fence to scan its genuine store database, preserving unresolved aliases on reopen', async () => {
+  const owning = await uncertain(),
+    foreign = await setup();
+  const row = owning.row(),
+    bytes = await readFile(owning.path),
+    inode = (await stat(owning.path)).ino;
+  const originalGrant = owning.store.getGrant(owning.grantId);
+  const alias = join(owning.dir, 'constructor-alias.md');
+  await link(owning.path, alias);
+  const fence = new CheckboxWriteFence(owning.db, owning.store);
+  for (const path of [owning.path, alias]) {
+    const actual = await identity(path);
+    expect(() => fence.assertAdmission(actual)).toThrow(CheckboxWriteFencedError);
+  }
+  expect(() => new CheckboxWriteFence(foreign.db, owning.store)).toThrow(
+    'Checkbox authority requires its genuine store transaction database.'
+  );
+  expect(owning.row()).toEqual(row);
+  expect(foreign.db.select().from(canvasDocWriteIntents).all()).toEqual([]);
+  expect(await readFile(owning.path)).toEqual(bytes);
+  expect((await stat(owning.path)).ino).toBe(inode);
+  await owning.service.stop();
+  owning.db.$client.close();
+  cleanups.splice(cleanups.indexOf(owning.cleanup), 1);
+  const reopened = await fixture(
+    {},
+    { dir: owning.dir, documentId: owning.documentId, grantId: owning.grantId }
+  );
+  cleanups.push(reopened.cleanup);
+  expect(() => new CheckboxWriteFence(reopened.db, owning.store)).toThrow(
+    'Checkbox authority requires its genuine store transaction database.'
+  );
+  expect(reopened.store.getGrant(reopened.grantId)).toEqual(originalGrant);
+  expect(reopened.row()).toEqual(row);
+  const current = new CheckboxWriteFence(reopened.db, reopened.store);
+  for (const path of [reopened.path, alias]) {
+    const actual = await identity(path);
+    expect(() => current.assertAdmission(actual)).toThrow(CheckboxWriteFencedError);
+  }
+  reopened.failCompletion(false);
+  const receipt = await reopened.service.recover(row.intentId);
+  expect(receipt).toMatchObject({ status: 'changed', receipt: { id: row.eventId } });
+  expect(await reopened.service.recover(row.intentId)).toEqual(receipt);
+  expect(reopened.counts()).toEqual({ events: { n: 2 }, batches: { n: 1 } });
+  expect(await readFile(reopened.path)).toEqual(bytes);
+  expect((await stat(reopened.path)).ino).toBe(inode);
+});
+
+it('refuses a standalone fence database wrapper even over the same native connection', async () => {
+  const owning = await setup();
+  const schema = owning.db._.fullSchema;
+  if (!schema) throw new Error('The genuine fixture schema is unavailable.');
+  const wrapper = drizzle(owning.db.$client, { schema });
+  expect(() => new CheckboxWriteFence(wrapper, owning.store)).toThrow(
+    'Checkbox authority requires its genuine store transaction database.'
+  );
+  const actual = await identity(owning.path);
+  expect(() =>
+    new CheckboxWriteFence(owning.db, owning.store).assertAdmission(actual)
+  ).not.toThrow();
+  expect(owning.db.select().from(canvasDocWriteIntents).all()).toEqual([]);
+  expect(owning.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
 });
