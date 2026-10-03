@@ -465,7 +465,7 @@ describe('ShapeSwitcherDialog', () => {
 
     expect(input).toHaveValue('flow-board-fork');
     // The hint says truthfully what rides along.
-    expect(screen.getByText(/extensions you have turned on/i)).toBeInTheDocument();
+    expect(screen.getByText(/keeps your current extensions and panel layout/i)).toBeInTheDocument();
   });
 
   it('rejects a name the server would refuse, before any request', async () => {
@@ -510,7 +510,7 @@ describe('ShapeSwitcherDialog', () => {
         liveLayout: { sidebarOpen: true, openPanels: ['tasks'] },
       })
     );
-    // The list is refreshed so the copy appears with its "forked from …" caption…
+    // The list is refreshed so the copy appears with its "Copied from …" caption…
     await waitFor(() => expect(listShapes.mock.calls.length).toBeGreaterThan(1));
     // …and the footer returns to rest.
     await waitFor(() =>

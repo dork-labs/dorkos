@@ -128,7 +128,7 @@ export function ProfileAgentActions({
         const kept = result.blockedFromDiscovery === true;
         toast(
           kept
-            ? `${name} unregistered. Its agent file belongs to a git repo, so it stayed put and the folder is blocked from scans`
+            ? `${name} unregistered. Its file is in a git repo, so it stays, and scans skip it`
             : `${name} unregistered`,
           {
             action: { label: 'Undo', onClick: () => registerAgent.mutate({ path: projectPath }) },
@@ -161,10 +161,15 @@ export function ProfileAgentActions({
               <ResponsiveDialogTitle>
                 {isBlocked ? `Unblock ${name}?` : `Block ${name}?`}
               </ResponsiveDialogTitle>
-              <ResponsiveDialogDescription>
-                {isBlocked
-                  ? 'This agent’s folder becomes eligible for discovery again the next time DorkOS scans.'
-                  : 'This agent’s folder will be hidden from future scans. If you unregister it later, it won’t come back automatically. You can unblock it at any time.'}
+              <ResponsiveDialogDescription asChild>
+                {isBlocked ? (
+                  <p>The next scan can find its folder again.</p>
+                ) : (
+                  <div className="space-y-2">
+                    <p>Scans will skip its folder.</p>
+                    <p>You can unblock it any time.</p>
+                  </div>
+                )}
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
             <ResponsiveDialogFooter>
@@ -172,7 +177,7 @@ export function ProfileAgentActions({
                 <Button variant="outline">Cancel</Button>
               </ResponsiveDialogClose>
               <Button variant={isBlocked ? 'default' : 'destructive'} onClick={block}>
-                {isBlocked ? 'Unblock' : 'Block'}
+                {isBlocked ? 'Unblock agent' : 'Block agent'}
               </Button>
             </ResponsiveDialogFooter>
           </>
@@ -182,17 +187,19 @@ export function ProfileAgentActions({
           <>
             <ResponsiveDialogHeader>
               <ResponsiveDialogTitle>Unregister {name}?</ResponsiveDialogTitle>
-              <ResponsiveDialogDescription>
-                It leaves your team and every channel it was in, and any schedules it has are
-                paused. Its messages stay. Your own project files are not touched. You can add the
-                folder as an agent again later, but you may need to add it back to its channels.
+              <ResponsiveDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>It leaves your team and channels. Its schedules pause.</p>
+                  <p>Its messages and your project files are kept.</p>
+                  <p>You can add it back later. It may need re-adding to channels.</p>
+                </div>
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
             <ResponsiveDialogFooter>
               <ResponsiveDialogClose asChild>
                 <Button variant="outline">Cancel</Button>
               </ResponsiveDialogClose>
-              <Button onClick={unregister}>Unregister</Button>
+              <Button onClick={unregister}>Unregister agent</Button>
             </ResponsiveDialogFooter>
           </>
         )}
@@ -201,9 +208,11 @@ export function ProfileAgentActions({
           <>
             <ResponsiveDialogHeader>
               <ResponsiveDialogTitle>Delete {name}?</ResponsiveDialogTitle>
-              <ResponsiveDialogDescription>
-                This permanently erases {name}’s personality, custom rules and settings. Your
-                project files at {projectPath} are not touched. This cannot be undone.
+              <ResponsiveDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>Erases its personality, rules and settings. This can’t be undone.</p>
+                  <p>Your project files at {projectPath} are kept.</p>
+                </div>
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
             <ResponsiveDialogBody>

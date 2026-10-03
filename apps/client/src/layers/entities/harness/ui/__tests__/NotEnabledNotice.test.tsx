@@ -16,7 +16,7 @@ describe('NotEnabledNotice', () => {
     render(<NotEnabledNotice notEnabled={HARNESS_STATUS_READY.notEnabled} />);
 
     expect(
-      screen.getByText('Gemini CLI files are in this folder, but DorkOS isn’t sharing to it.')
+      screen.getByText('Gemini CLI files are here, but DorkOS isn’t sharing to it.')
     ).toBeInTheDocument();
     // The command is one token per non-breaking span, so `getByText` — which
     // reads an element's DIRECT text nodes — sees only the spaces between them.
@@ -37,10 +37,10 @@ describe('NotEnabledNotice', () => {
     const { container } = render(<NotEnabledNotice notEnabled={HARNESS_STATUS_READY.notEnabled} />);
 
     expect(
-      screen.getByText('DorkOS runs Claude Code here, but this folder isn’t sharing to it.')
+      screen.getByText('DorkOS runs Claude Code here, but isn’t sharing to it.')
     ).toBeInTheDocument();
     expect(
-      screen.queryByText('Claude Code files are in this folder, but DorkOS isn’t sharing to it.')
+      screen.queryByText('Claude Code files are here, but DorkOS isn’t sharing to it.')
     ).not.toBeInTheDocument();
     // Read off the code element rather than with `getByText`, which sees an
     // element's DIRECT text nodes only: the command is rendered one token per

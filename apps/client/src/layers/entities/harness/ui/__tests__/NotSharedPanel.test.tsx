@@ -57,7 +57,7 @@ describe('NotSharedPanel', () => {
     await user.click(screen.getByRole('button', { name: /^Not shared with Codex/ }));
 
     expect(
-      screen.getByText('Every agent file Codex cannot see — skills, rules, commands and more.')
+      screen.getByText('Agent files Codex can’t see: skills, rules, commands and more.')
     ).toBeInTheDocument();
   });
 
@@ -134,7 +134,7 @@ describe('ProjectLevelNoticesPanel', () => {
       screen.getAllByRole('listitem').map((entry) => entry.firstElementChild?.textContent)
     ).toEqual([
       'Not shared · plugin @dork-labs/relay-kit',
-      'Could not read · mcp .mcp.json',
+      'Couldn’t read · mcp .mcp.json',
       'Will be written · skill .agents/skills',
       'Notice · manifest hookPolicy.gemini',
     ]);

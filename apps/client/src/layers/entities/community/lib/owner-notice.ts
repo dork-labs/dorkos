@@ -44,18 +44,19 @@ function formatDate(iso: string, format: OwnerNoticeDateFormat = {}): string {
 
 /**
  * When the new owner could take over, as the rest of a sentence: "on or after <date>", "at any
- * time now", or, while the owner's notice is still being sent and no date is set, "after a
- * waiting period of at least 7 days" (the shortest wait a Community allows).
+ * time now", or, while the owner's notice is still being sent and no date is set, "in 7 days
+ * or more" (the shortest wait a Community allows).
  */
 function when(notice: OpenOwnerNotice, format?: OwnerNoticeDateFormat): string {
   if (notice.requestState === 'claimable') return 'at any time now';
   if (notice.claimableAfter) return `on or after ${formatDate(notice.claimableAfter, format)}`;
-  return 'after a waiting period of at least 7 days';
+  return 'in 7 days or more';
 }
 
 /**
- * The banner's sentences, in order: what is happening and when, what this owner can do about
- * it, and, when the host sent the new owner's link again, when it did.
+ * The banner's lines, in order: the headline, when the change can happen, what this owner can
+ * do about it (one short line each), and, when the host sent the new owner's link again, when
+ * it did.
  *
  * @param notice - The open request.
  * @param lifecycle - The community's lifecycle as last confirmed, which decides whether handing
@@ -69,23 +70,22 @@ export function ownerNoticeBanner(
 ): string[] {
   const { options } = notice;
   const lines = [
-    `The host has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen ${when(notice, format)}.`,
+    'Someone asked to replace you as owner',
+    `That can happen ${when(notice, format)}, unless you keep ownership.`,
+    'Open the space to keep ownership.',
   ];
-  const can = ['Open the space to keep ownership.'];
-  if (options.transfer && options.delete)
-    can.push('You can also hand it to someone yourself, or delete it.');
-  else if (options.transfer) can.push('You can also hand it to someone yourself.');
-  else if (options.delete) can.push('You can also delete it.');
+  if (options.transfer && options.delete) lines.push('You can also hand it over, or delete it.');
+  else if (options.transfer) lines.push('You can also hand it over yourself.');
+  else if (options.delete) lines.push('You can also delete it.');
   if (options.needsPassword)
-    can.push(
+    lines.push(
       lifecycle === 'active'
-        ? 'To hand it to someone or delete it, add a password to your account first.'
-        : 'To delete it, add a password to your account first.'
+        ? 'To hand it over or delete it, add a password to your account.'
+        : 'To delete it, add a password to your account.'
     );
-  lines.push(can.join(' '));
   if (notice.claimReissuedAt)
     lines.push(
-      `The link for the new owner was sent again on ${formatDate(notice.claimReissuedAt, format)}.`
+      `The new owner’s link was sent again on ${formatDate(notice.claimReissuedAt, format)}.`
     );
   return lines;
 }

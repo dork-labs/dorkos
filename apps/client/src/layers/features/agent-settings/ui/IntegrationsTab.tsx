@@ -183,9 +183,13 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
       // only place that reports it.
       const result = await testBinding.mutateAsync(bindingId);
       if (result.ok) {
-        toast.success(`Test OK: routed in ${result.latencyMs}ms`);
+        toast.success(`Test message delivered in ${result.latencyMs}ms`);
       } else {
-        toast.error(`Test failed: ${result.reason ?? 'unknown error'}`);
+        toast.error(
+          result.reason
+            ? `Test message didn’t arrive: ${result.reason}`
+            : 'Test message didn’t arrive. Try again.'
+        );
       }
       return result;
     },
@@ -278,8 +282,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
           <div className="space-y-1 text-center">
             <p className="text-sm font-medium">Chat apps are off</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              Chat apps let people reach this agent from Telegram, Slack or a webhook. They are
-              turned off on this computer; the Connections page says how to turn them on.
+              Turn them on in Connections to reach this agent from chat.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => openConnections()}>
@@ -300,8 +303,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
           <div className="space-y-1 text-center">
             <p className="text-sm font-medium">No connections available</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              To connect this agent to Telegram, Slack, or a webhook, add a connection first. It
-              will appear here as soon as it’s ready.
+              Add Telegram, Slack or a webhook, then connect it here.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => openConnections()}>
@@ -320,10 +322,9 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
           <Radio className="text-muted-foreground/40 size-8" />
           <div className="space-y-1 text-center">
-            <p className="text-sm font-medium">Let this agent reach the outside world</p>
+            <p className="text-sm font-medium">Message this agent from anywhere</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              Connect Telegram, Slack, or a webhook so this agent can send and receive messages
-              while you are away.
+              Connect a chat app to message it while you’re away.
             </p>
           </div>
           <IntegrationPicker

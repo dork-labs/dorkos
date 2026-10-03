@@ -98,7 +98,7 @@ export function PackageGrid() {
       return (
         <PackageEmptyState
           title={label ? `No packages in ${label} yet` : 'No packages in these categories yet'}
-          description="No packages match the selected categories. Try another category or clear the filter."
+          description="Try another category."
           resetLabel={categories.length === 1 ? 'Clear category' : 'Clear categories'}
           onResetFilters={clearCategories}
         />
@@ -110,7 +110,7 @@ export function PackageGrid() {
       return (
         <PackageEmptyState
           title={only ? `No packages from ${only} yet` : 'No packages from these sources yet'}
-          description="Nothing in the selected marketplaces matches. Try another source or clear the filter."
+          description="Try another source."
           resetLabel={sources.length === 1 ? 'Clear source' : 'Clear sources'}
           onResetFilters={clearSources}
         />
@@ -121,7 +121,7 @@ export function PackageGrid() {
       return (
         <PackageEmptyState
           title="No packages match these filters"
-          description="Nothing matches this mix of source and category. Reset the filters to see the whole catalog again."
+          description="Reset the filters to see everything."
           onResetFilters={resetFilters}
         />
       );
@@ -135,7 +135,7 @@ export function PackageGrid() {
       {/* Section header with count (sort lives in the page header now) */}
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-base font-semibold">
-          All Packages
+          All packages
           <span className="text-muted-foreground ml-2 text-sm font-normal">({visible.length})</span>
         </h2>
       </div>

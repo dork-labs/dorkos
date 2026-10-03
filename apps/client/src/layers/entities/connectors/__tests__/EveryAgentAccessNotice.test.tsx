@@ -64,7 +64,7 @@ describe('EveryAgentAccessNotice', () => {
     vi.mocked(transport.getEveryAgentConnectorGrants).mockReturnValue(new Promise(() => {}));
     renderNotice(transport);
     expect(screen.getByTestId('every-agent-access-checking')).toHaveTextContent(
-      'Checking which apps every agent can use…'
+      'Checking apps every agent can use…'
     );
   });
 
@@ -80,7 +80,7 @@ describe('EveryAgentAccessNotice', () => {
     vi.mocked(transport.getEveryAgentConnectorGrants).mockRejectedValue(new Error('offline'));
     renderNotice(transport, '  ');
     expect(await screen.findByTestId('every-agent-access-unknown')).toHaveTextContent(
-      'Couldn’t check which apps every agent can use. This agent gets whatever you gave every agent.'
+      'Couldn’t check apps shared with every agent. This agent gets them too.'
     );
   });
 });

@@ -40,7 +40,7 @@ function WorkingLine({ children }: { children: React.ReactNode }) {
  * @param toolCount - Tools the server exposes, or `null` when unreported.
  */
 function connectedCopy(toolCount: number | null): string {
-  if (toolCount === null) return 'Signed in. The server’s tools are available on the next turn.';
+  if (toolCount === null) return 'Signed in. Its tools are available on the next turn.';
   return `Connected · ${toolCount} tool${toolCount === 1 ? '' : 's'}.`;
 }
 
@@ -49,14 +49,17 @@ function connectedCopy(toolCount: number | null): string {
  *
  * The server always composes one today, so this is the type's tail rather than a
  * path a person is expected to reach — but a custody panel with a blank second
- * line would be worse than any wording, so it carries the founder-approved
- * sentence. It promises only what ships: removing the server is the undo, because
- * there is no sign-out route yet.
+ * line would be worse than any wording, so it carries the custody facts of the
+ * founder-approved sentence, cut to the app-copy cap: DorkOS keeps the key on
+ * this machine, the agent never sees it, and removing the server deletes it.
+ * Approving on the provider's site is left to the button below it. It promises
+ * only what ships: removing the server is the undo, because there is no
+ * sign-out route yet.
  *
- * @param serverName - The provider whose site the person will approve on.
+ * @param serverName - The provider the key comes from.
  */
 function fallbackCustody(serverName: string): string {
-  return `You approve access on ${serverName}'s own site. DorkOS keeps the resulting key here. The agent never sees it, and removing the server removes the key.`;
+  return `DorkOS keeps the key from ${serverName} here, never your agent. Removing the server deletes it.`;
 }
 
 /**
@@ -73,9 +76,7 @@ function politeCopy(flow: McpSigninFlow): React.ReactNode {
   if (state.step === 'waiting') {
     return (
       <div className="space-y-1">
-        <WorkingLine>
-          Waiting for you to finish signing in… You can close the tab when done.
-        </WorkingLine>
+        <WorkingLine>Waiting for you to sign in… Close the tab when done.</WorkingLine>
         {state.retryNotice && <p className="text-muted-foreground text-xs">{state.retryNotice}</p>}
       </div>
     );
@@ -212,7 +213,7 @@ export function McpSigninBody({
       {state.step === 'failed' && (
         <div className={cn('mt-1 space-y-2', className)}>
           <p role="alert" className="text-destructive text-xs leading-relaxed">
-            {state.error ?? 'The sign-in did not complete.'}
+            {state.error ?? 'Sign-in didn’t finish. Try again.'}
           </p>
           {state.errorDetail && (
             <details className="text-muted-foreground text-xs">

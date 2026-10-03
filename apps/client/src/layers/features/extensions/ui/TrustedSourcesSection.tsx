@@ -3,7 +3,7 @@
  *
  * @module features/extensions/ui/TrustedSourcesSection
  */
-import { Button } from '@/layers/shared/ui';
+import { Button, MoreDetails } from '@/layers/shared/ui';
 import { useTrustedSourceActions, useTrustedSources } from '@/layers/entities/extension';
 
 /** A date as a person reads it: "Sep 29, 2026". */
@@ -32,10 +32,18 @@ export function TrustedSourcesSection() {
       <div className="space-y-1">
         <h3 className="text-sm font-semibold">Trusted sources</h3>
         <p className="text-muted-foreground text-sm">
-          Extensions DorkOS installs from these places turn on without asking. If you stop trusting
-          one, the extensions from it that are on now keep running exactly as they are. Newer
-          versions and anything new from it won’t run until you say yes.
+          Extensions from these sources turn on without asking.
         </p>
+        <p className="text-muted-foreground text-sm">
+          Stop trusting one, and extensions already on keep running.
+        </p>
+        <MoreDetails
+          className="text-muted-foreground text-sm"
+          label="If you stop trusting one"
+          openLabel="If you stop trusting one"
+        >
+          <p>Newer versions and new extensions from it wait for your yes.</p>
+        </MoreDetails>
       </div>
       <ul className="divide-y rounded-xl border">
         {sources.map(({ source, trustedAt }) => (

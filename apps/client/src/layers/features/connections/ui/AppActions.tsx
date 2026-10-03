@@ -88,11 +88,7 @@ export function AppActions({ toolkit, appName, providerInstanceId, grant }: AppA
         />
       );
   } else if (!providerInstanceId || notSetUp(actions.error)) {
-    body = (
-      <p className="text-muted-foreground text-sm">
-        You’ll see what {appName} offers agents once DorkOS can reach it.
-      </p>
-    );
+    body = <p className="text-muted-foreground text-sm">Shows once DorkOS can reach {appName}.</p>;
   } else if (actions.isPending) {
     body = <Loading />;
   } else if (actions.isError) {
@@ -119,7 +115,7 @@ export function AppActions({ toolkit, appName, providerInstanceId, grant }: AppA
   } else if (!listed) {
     body = (
       <p className="text-muted-foreground text-sm">
-        DorkOS can’t list {appName}’s actions, so everything agents do in it counts as a change.
+        DorkOS can’t list {appName}’s actions. Everything agents do in {appName} counts as a change.
       </p>
     );
   } else {
@@ -177,9 +173,7 @@ function ListedActions({
   level: CardAccessLevel | null;
 }) {
   if (actions.length === 0) {
-    return (
-      <p className="text-muted-foreground text-sm">{appName} has no actions agents can use.</p>
-    );
+    return <p className="text-muted-foreground text-sm">{appName} offers no actions.</p>;
   }
   const buckets = actionBuckets(actions, level);
   const outside = buckets.outsideLevels;
@@ -201,9 +195,7 @@ function ListedActions({
     );
   }
   if (completeness === 'too_large') {
-    notes.push(
-      `Showing the first ${actions.length}. ${appName} has more actions than DorkOS lists.`
-    );
+    notes.push(`Showing the first ${actions.length}. ${appName} has more.`);
   } else if (completeness === 'interrupted') {
     notes.push(`Showing the first ${actions.length}. The rest didn’t load this time.`);
   }

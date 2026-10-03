@@ -131,7 +131,7 @@ describe('QuickBindingPopover', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('No agents registered')).toBeInTheDocument();
+      expect(screen.getByText('No agents to add')).toBeInTheDocument();
     });
   });
 
@@ -222,7 +222,7 @@ describe('QuickBindingPopover', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('No agents registered')).toBeInTheDocument();
+      expect(screen.getByText('No agents to add')).toBeInTheDocument();
     });
   });
 });

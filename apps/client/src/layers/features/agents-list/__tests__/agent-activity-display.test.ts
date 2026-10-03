@@ -126,7 +126,7 @@ describe('agentActivityDisplay', () => {
     const display = agentActivityDisplay(
       input({ healthStatus: 'unreachable', lastSeenEvent: 'tool_error' })
     );
-    expect(display.primary).toBe('Cannot be reached');
+    expect(display.primary).toBe('Can’t be reached');
     expect(display.secondary).toBe('Tool error · 5m ago');
     expect(display.toneClass).toBe('text-destructive');
   });
@@ -135,7 +135,7 @@ describe('agentActivityDisplay', () => {
     const display = agentActivityDisplay(
       input({ healthStatus: 'unreachable', lastSeenAt: null, lastSeenEvent: null })
     );
-    expect(display.primary).toBe('Cannot be reached');
+    expect(display.primary).toBe('Can’t be reached');
     expect(display.secondary).toBe('never seen');
   });
 
@@ -152,7 +152,7 @@ describe('agentActivityDisplay', () => {
     const display = agentActivityDisplay(
       input({ healthStatus: 'unreachable', chatState: 'needs-attention' })
     );
-    expect(display.primary).toBe('Cannot be reached');
+    expect(display.primary).toBe('Can’t be reached');
   });
 
   it('reads a brand-new agent as unused, never as broken', () => {

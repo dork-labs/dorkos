@@ -23,9 +23,7 @@ export function ControlCenterDial() {
     <section className="@container flex flex-col gap-2" data-testid="control-center-dial">
       <div>
         <p className="text-sm font-medium">Power</p>
-        <p className="text-muted-foreground text-xs">
-          How much your agents may do without asking you first.
-        </p>
+        <p className="text-muted-foreground text-xs">What agents may do without asking you.</p>
       </div>
       <PresetPicker surface="control-center" />
       {/* After the picker, so the flyout's first focus lands on the choice

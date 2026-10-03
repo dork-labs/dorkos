@@ -97,7 +97,7 @@ describe('ConnectionWays', () => {
     );
     const handlers = renderWays(transport);
 
-    expect(await screen.findByText('Set up when you connect your first app')).toBeInTheDocument();
+    expect(await screen.findByText('Set up with your first app')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Open the Connections page' }));
     expect(handlers.onOpenConnectionsPage).toHaveBeenCalledTimes(1);
 
@@ -166,7 +166,7 @@ describe('ConnectionWays', () => {
     const account = await screen.findByTestId('connection-way-dorkos-account');
     await waitFor(() => expect(account).toHaveTextContent('Can’t reach apps'));
     expect(account).not.toHaveTextContent('Working');
-    expect(account).toHaveTextContent('it can’t reach apps right now');
+    expect(account).toHaveTextContent('can’t reach apps now');
   });
 
   it('says a key that signs in but can’t run actions, and how to fix it', async () => {
@@ -338,10 +338,10 @@ describe('ConnectionWays', () => {
     const row = await screen.findByTestId('connection-way-composio');
     await user.click(within(row).getByRole('button', { name: 'Change key' }));
     const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent('A new key pauses the apps on this one until you review');
+    expect(dialog).toHaveTextContent('A new key pauses these apps until you review');
     expect(dialog).toHaveTextContent('different Composio project can’t reach them at all');
     expect(dialog).toHaveTextContent(
-      'These 2 apps pause until you review their access on the Connections page:'
+      'These 2 apps pause until you review them on the Connections page:'
     );
     expect(within(dialog).getByText('Gmail (work)')).toBeInTheDocument();
     expect(within(dialog).getByText('Notion (team)')).toBeInTheDocument();
@@ -466,7 +466,7 @@ describe('ConnectionWays', () => {
     );
     const row = await screen.findByTestId('connection-way-composio');
     expect(row).toHaveTextContent('Key removed');
-    expect(row).toHaveTextContent('Add the same key again to bring them back.');
+    expect(row).toHaveTextContent('Add it again to restore them.');
     expect(within(row).getByRole('button', { name: 'Add key again' })).toBeInTheDocument();
   });
 
@@ -489,7 +489,7 @@ describe('ConnectionWays', () => {
     // Conditional, never a promise: a different account, or an earlier link
     // removed from the account, brings nothing back.
     expect(account).toHaveTextContent(
-      'Linking this computer again with the same DorkOS account can bring them back, unless its earlier link was removed from that account. Otherwise, connect them again through a way that works.'
+      'Linking the same DorkOS account again can restore them. Otherwise, reconnect them.'
     );
   });
 
@@ -523,7 +523,7 @@ describe('ConnectionWays', () => {
 
     const account = await screen.findByTestId('connection-way-dorkos-account');
     expect(account).toHaveTextContent('Couldn’t check your DorkOS account');
-    expect(screen.queryByText('Set up when you connect your first app')).toBeNull();
+    expect(screen.queryByText('Set up with your first app')).toBeNull();
     await user.click(within(account).getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(account).toHaveTextContent('Working'));
     expect(cloudRead).toHaveBeenCalledTimes(2);
@@ -541,6 +541,6 @@ describe('ConnectionWays', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Remove…' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByText('Set up when you connect your first app')).toBeInTheDocument();
+    expect(await screen.findByText('Set up with your first app')).toBeInTheDocument();
   });
 });

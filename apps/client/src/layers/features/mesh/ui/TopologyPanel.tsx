@@ -14,6 +14,7 @@ import {
 } from '@/layers/shared/ui';
 import { useTopology, useUpdateAccessRule, OpenMeshSwitch } from '@/layers/entities/mesh';
 import { OPEN_MESH_NAMESPACE, type AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { runtimeLabel } from '@/layers/entities/runtime';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 
 // -- Namespace Group --
@@ -46,7 +47,7 @@ function NamespaceGroup({ namespace, agentCount, agents }: NamespaceGroupProps) 
             <div key={agent.id} className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm">{getAgentDisplayName(agent)}</span>
-                <Badge variant="outline">{agent.runtime}</Badge>
+                <Badge variant="outline">{runtimeLabel(agent.runtime)}</Badge>
               </div>
             </div>
           ))}
@@ -208,7 +209,7 @@ function AddRuleForm({ namespaces, onAdd, isPending, inert }: AddRuleFormProps) 
         {...inertProps}
       >
         {isPending ? <Spinner /> : <Plus />}
-        Allow Access
+        Allow access
       </Button>
     </form>
   );
@@ -265,7 +266,7 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
         <EmptyState
           icon={Shield}
           headline="You need agents in more than one project"
-          description="Add agents from a second folder. Then you can let the two projects talk."
+          description="Add agents from a second folder to let two projects talk."
           action={
             onGoToDiscovery ? { label: 'Go to Discovery', onClick: onGoToDiscovery } : undefined
           }
@@ -295,10 +296,10 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
 
       {/* Cross-Project Rules */}
       <div className="space-y-2">
-        <h3 className="text-muted-foreground text-sm font-medium">Cross-Project Access Rules</h3>
+        <h3 className="text-muted-foreground text-sm font-medium">Cross-project access rules</h3>
         {accessRules.length === 0 ? (
           <p className="text-muted-foreground text-xs">
-            No rules yet. Right now agents only talk to others in the same project.
+            No rules yet. Agents only talk within their own project.
           </p>
         ) : (
           <div className="space-y-1">
@@ -331,10 +332,10 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
       {/* Add Rule Form */}
       {namespaceNames.length >= 2 && (
         <div className="space-y-2">
-          <h3 className="text-muted-foreground text-sm font-medium">Allow Cross-Project Access</h3>
+          <h3 className="text-muted-foreground text-sm font-medium">Allow cross-project access</h3>
           {openMesh && (
             <p id={OPEN_MESH_EXPLANATION_ID} className="text-muted-foreground text-xs">
-              Already allowed by the switch above. Turn it off to allow projects one pair at a time.
+              Already allowed by the switch above. Turn it off to pick pairs.
             </p>
           )}
           <AddRuleForm

@@ -44,10 +44,10 @@ export function OpenRouterGatewayPath({
       {
         <div className="space-y-2">
           {oauth.isPending ? (
-            <ConnectProgressRow message="Finish signing in to OpenRouter in the new tab…" />
+            <ConnectProgressRow message="Sign in to OpenRouter in the new tab…" />
           ) : oauth.isError ? (
             <ConnectErrorRow
-              message={oauth.errorMessage ?? 'OpenRouter sign-in failed.'}
+              message={oauth.errorMessage ?? 'Couldn’t sign in to OpenRouter.'}
               onRetry={oauth.begin}
             />
           ) : (
@@ -55,9 +55,7 @@ export function OpenRouterGatewayPath({
               <Button size="sm" className="w-full" onClick={oauth.begin}>
                 Connect OpenRouter
               </Button>
-              <p className="text-muted-foreground text-xs">
-                Creates a scoped key automatically. No copy-paste.
-              </p>
+              <p className="text-muted-foreground text-xs">Makes a limited key for you.</p>
             </>
           )}
         </div>

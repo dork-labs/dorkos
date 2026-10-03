@@ -12,9 +12,9 @@ describe('TunnelError', () => {
     expect(screen.getByTestId('tunnel-error')).toBeInTheDocument();
   });
 
-  it('always shows the "Tunnel failed" heading', () => {
+  it('always shows the "Couldn’t turn on remote access" heading', () => {
     render(<TunnelError error="some error" onRetry={vi.fn()} />);
-    expect(screen.getByText('Tunnel failed')).toBeInTheDocument();
+    expect(screen.getByText('Couldn’t turn on remote access')).toBeInTheDocument();
   });
 
   it('renders the "Try again" button', () => {
@@ -47,7 +47,7 @@ describe('TunnelError', () => {
 
   it('announces itself, because it replaces what the person was looking at', () => {
     render(<TunnelError error="ngrok exploded" onRetry={vi.fn()} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Tunnel failed');
+    expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t turn on remote access');
   });
 
   it('displays a friendly message for tunnel limit errors', () => {

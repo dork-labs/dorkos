@@ -35,7 +35,7 @@ export function moveFailureCopy(code: CommunityMoveFailureCode | Unrecognised): 
   switch (code) {
     case 'not_owner_export':
       return {
-        title: 'This file is a personal export, not an owner export.',
+        title: 'This is a personal export, not an owner export.',
         next: 'Sign in to the old space as its owner, export it from Settings, then try again.',
       };
     case 'archive_invalid':
@@ -60,12 +60,12 @@ export function moveFailureCopy(code: CommunityMoveFailureCode | Unrecognised): 
       };
     case 'storage_limit_reached':
       return {
-        title: 'The files don’t fit in the new space’s file storage.',
+        title: 'The files don’t fit in the new space’s storage.',
         next: 'Delete some files in the old space, export it again, then try again.',
       };
     case 'upload_expired':
       return {
-        title: 'The file didn’t arrive before the upload window closed.',
+        title: 'The file didn’t arrive in time.',
         next: 'Start the move again.',
       };
     case 'storage_unavailable':
@@ -75,7 +75,7 @@ export function moveFailureCopy(code: CommunityMoveFailureCode | Unrecognised): 
       };
     default:
       return {
-        title: 'The move stopped for a reason this version of DorkOS doesn’t know.',
+        title: 'The move stopped for an unknown reason.',
         next: 'Update DorkOS to see more, or start the move again.',
       };
   }
@@ -121,7 +121,7 @@ export function holdReasonCopy(reason: NonNullable<HostedCommunity['hold']>['rea
     case 'host':
       return 'DorkOS put this space on hold. People can still read it.';
     default:
-      return 'This space is on hold for a reason this version of DorkOS doesn’t know.';
+      return 'This space is on hold. Update DorkOS to see why.';
   }
 }
 

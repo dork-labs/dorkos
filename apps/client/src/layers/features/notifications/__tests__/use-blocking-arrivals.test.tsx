@@ -164,7 +164,7 @@ describe('useBlockingArrivals', () => {
       expect.objectContaining({
         id: 'schedule:t1',
         who: 'Nightly digest',
-        summary: 'Wants to run something on a timer.',
+        summary: 'Wants to run on a timer.',
         deepLink: '/tasks',
       }),
     ]);
@@ -204,6 +204,6 @@ describe('useBlockingArrivals', () => {
 
     const [items] = onArrive.mock.calls[0]!;
     expect(items[0].summary).not.toContain('rm -rf');
-    expect(items[0].summary).toBe('Waiting for your OK before it goes on.');
+    expect(items[0].summary).toBe('Needs your approval to go on.');
   });
 });

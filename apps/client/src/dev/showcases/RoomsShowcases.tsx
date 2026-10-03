@@ -415,8 +415,7 @@ function ResponseModeControlShowcase() {
             id="rooms-dormant-reason"
             className="bg-muted/50 text-muted-foreground rounded-lg px-3 py-2.5 text-xs"
           >
-            Nobody is triggered in an archived room, so its members and their settings are on hold.
-            Bring it back to change them.
+            Archived rooms don’t answer. Bring it back to make changes.
           </p>
           <ResponseModeDemo
             roomKind="channel"
@@ -599,7 +598,7 @@ function Picker({
         })}
         onSubmit={() => {}}
         submitLabel={(chosen) => (chosen.length > 1 ? `Add ${chosen.length} agents` : 'Add agent')}
-        emptyRosterMessage={emptyRosterMessage ?? 'You have not added any agents yet.'}
+        emptyRosterMessage={emptyRosterMessage ?? 'You don’t have any agents yet.'}
         emptyRosterAction={emptyRosterAction}
         allChosenMessage="Every agent you have is already in here."
         isSubmitting={isSubmitting}

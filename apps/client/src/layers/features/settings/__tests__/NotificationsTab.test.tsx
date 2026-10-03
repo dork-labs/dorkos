@@ -85,7 +85,7 @@ describe('NotificationsTab', () => {
     const { transport } = renderTab();
 
     await user.click(
-      screen.getByRole('switch', { name: /Tell me when something finishes while I am away/ })
+      screen.getByRole('switch', { name: /Notify when work finishes while you’re away/ })
     );
 
     await waitFor(() =>
@@ -191,7 +191,7 @@ describe('NotificationsTab', () => {
     // fire, and saying nothing about that is how somebody trusts one.
     renderTab();
     expect(
-      await screen.findByText(/Nothing can carry that yet\./, {}, { timeout: 2000 })
+      await screen.findByText(/Nothing can reach you yet\./, {}, { timeout: 2000 })
     ).toBeInTheDocument();
   });
 
@@ -201,6 +201,6 @@ describe('NotificationsTab', () => {
     // The devices row is what proves the section rendered at all, so the absence
     // below is an absence and not an empty screen.
     expect(await screen.findByText(/Devices DorkOS can reach/)).toBeInTheDocument();
-    expect(screen.queryByText(/Nothing can carry that yet\./)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nothing can reach you yet\./)).not.toBeInTheDocument();
   });
 });

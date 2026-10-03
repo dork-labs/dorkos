@@ -60,7 +60,7 @@ describe('CanvasImageContent', () => {
 
   it('shows a security message for a blocked source', () => {
     render(<CanvasImageContent content={{ type: 'image', src: 'javascript:alert(1)' }} />);
-    expect(screen.getByText(/can’t be displayed for security reasons/i)).toBeInTheDocument();
+    expect(screen.getByText(/blocked for safety/i)).toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 

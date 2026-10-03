@@ -132,7 +132,7 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
   /**
    * A dev server for the embedded browser to frame.
    *
-   * The Browser tab's "Web Page" action is the cheapest way to put a real
+   * The Browser tab's "Web page" action is the cheapest way to put a real
    * document tab — and therefore a real close button — in a strip. Both strips
    * are the same component over different documents (ADR 260911-200304), so the
    * reach this measures is the one the Canvas tab ships too. The fixture is the

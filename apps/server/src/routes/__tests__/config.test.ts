@@ -11,6 +11,13 @@ import {
   ROOM_TURN_LIMIT_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 
+/** The account that owns this install, as `readOwnerAccount` answers (DOR-2652). */
+const owner = vi.hoisted(() => ({ account: { id: 'user_cockpit', name: 'Owner' } as unknown }));
+vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: () => owner.account,
+}));
+
 // Mock tunnel-manager and agent-manager to avoid side effects
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -817,6 +824,57 @@ describe('PATCH /api/config', () => {
 
       const { configManager } = await import('../../services/core/config-manager.js');
       expect(configManager.getDot('auth.enabled')).toBe(true);
+    });
+
+    // The DorkOS account's settings are its owner's alone (DOR-2652), the
+    // same bar `/api/cloud/*` runs, so a settings patch is no way around it.
+    it('refuses a signed-in person who does not own this DorkOS the account settings', async () => {
+      await enableLogin();
+      agentHeader = undefined;
+      signedInUser = { userId: 'user_member', credential: 'cookie' };
+
+      for (const patch of [
+        { cloud: { instanceToken: 'dork_inst_other' } },
+        { cloud: { credits: { defaults: { 'claude-code': { runsOn: 'credits' } } } } },
+        { cloud: { credits: { agents: ['agent-1'] } } },
+      ]) {
+        const refused = await request(server).patch('/api/config').send(patch).expect(403);
+        expect(refused.body.code).toBe('owner_only');
+        expect(refused.body.message).toBe(
+          'Only the owner of this DorkOS can change its DorkOS account settings.'
+        );
+      }
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('cloud.instanceToken')).not.toBe('dork_inst_other');
+    });
+
+    it('refuses the account settings when no owner account can be read', async () => {
+      await enableLogin();
+      agentHeader = undefined;
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      owner.account = null;
+      try {
+        const refused = await request(server)
+          .patch('/api/config')
+          .send({ cloud: { credits: { agents: ['agent-1'] } } })
+          .expect(403);
+        expect(refused.body.code).toBe('owner_only');
+      } finally {
+        owner.account = { id: 'user_cockpit', name: 'Owner' };
+      }
+    });
+
+    it('lets the owner signed in to the app change the account settings', async () => {
+      await enableLogin();
+      agentHeader = undefined;
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      await request(server)
+        .patch('/api/config')
+        .send({ cloud: { credits: { agents: ['agent-1'] } } })
+        .expect(200);
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('cloud.credits.agents')).toEqual(['agent-1']);
     });
 
     it('refuses the same key every other operator-only path too, not just the login gate', async () => {

@@ -36,9 +36,9 @@ import { adapterBridge } from '../lib/adapter-bridge';
 /**
  * Format an install error for a sonner toast message.
  */
-function formatInstallError(err: unknown): string {
-  if (err instanceof Error) return `Install failed: ${err.message}`;
-  return 'Install failed: unknown error';
+function formatInstallError(err: unknown, label: string): string {
+  if (err instanceof Error) return `Couldn’t install ${label}: ${err.message}`;
+  return `Couldn’t install ${label}. Try again.`;
 }
 
 /**
@@ -145,7 +145,7 @@ export function useInstallWithToast() {
           );
         },
         onError: (err) => {
-          toast.error(formatInstallError(err), { id: toastId });
+          toast.error(formatInstallError(err, label), { id: toastId });
         },
       });
     },
@@ -161,7 +161,7 @@ export function useInstallWithToast() {
         toast.success(`Installed ${label}`, successToastOptions(result, toastId, openConnections));
         return result;
       } catch (err) {
-        toast.error(formatInstallError(err), { id: toastId });
+        toast.error(formatInstallError(err, label), { id: toastId });
         throw err;
       }
     },

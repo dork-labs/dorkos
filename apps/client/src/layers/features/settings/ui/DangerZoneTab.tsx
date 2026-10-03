@@ -32,9 +32,9 @@ export function DangerZoneTab() {
             <div className="min-w-0">
               <p className="text-sm font-medium">Reset all settings</p>
               <p className="text-muted-foreground text-xs">
-                Put the theme, text, toggles, and panel layouts on this device back to how they
-                shipped. Your projects, agents, and chats stay.
+                Theme, text, toggles and layouts on this device go back to default.
               </p>
+              <p className="text-muted-foreground text-xs">Your projects, agents and chats stay.</p>
             </div>
             {/* Both resets say what they reset: two adjacent buttons reading
                 just "Reset" would leave the destructive one indistinguishable
@@ -53,7 +53,7 @@ export function DangerZoneTab() {
             <div className="min-w-0">
               <p className="text-sm font-medium">Reset all data</p>
               <p className="text-muted-foreground text-xs">
-                Delete everything DorkOS has saved and start it again. You cannot undo this.
+                Deletes everything DorkOS saved, then restarts it. Can’t be undone.
               </p>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setResetDialogOpen(true)}>

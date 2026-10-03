@@ -92,7 +92,7 @@ describe('ProfilePanel — the handle’s three refusals', () => {
 
   it('never falls back to one generic sentence when the code is known', async () => {
     const taken = await messageFor('HANDLE_TAKEN', '');
-    expect(taken).not.toMatch(/could not be saved/i);
+    expect(taken).not.toMatch(/Couldn’t save your handle/);
   });
 });
 

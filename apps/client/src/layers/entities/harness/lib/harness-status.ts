@@ -239,7 +239,7 @@ export function dropCountLabel(count: number): string {
  * @param label - The tool's display name.
  */
 export function dropPanelSummary(label: string): string {
-  return `Every agent file ${label} cannot see — skills, rules, commands and more.`;
+  return `Agent files ${label} can’t see: skills, rules, commands and more.`;
 }
 
 /**
@@ -327,7 +327,7 @@ export function groupDropsByHarness(
  */
 const PROJECT_ENTRY_WORDS = {
   drop: 'Not shared',
-  warning: 'Could not read',
+  warning: 'Couldn’t read',
   write: 'Will be written',
   notice: 'Notice',
 } satisfies Record<HarnessProjectEntry['kind'], string>;

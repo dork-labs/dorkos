@@ -67,7 +67,7 @@ export function AgentRequestEventScopes({
     <fieldset className="space-y-3" data-testid="agent-request-event-scopes">
       <legend className="text-sm font-medium">Notifications</legend>
       <p className="text-muted-foreground text-xs">
-        Choose where this agent receives each requested kind of account activity.
+        Pick where this agent gets each kind of activity.
       </p>
 
       {source.isPending ? (
@@ -75,7 +75,7 @@ export function AgentRequestEventScopes({
       ) : source.isError ? (
         <QueryErrorState
           title="Couldn’t load delivery setup"
-          description="Reload setup before deciding. No access was changed."
+          description="No access changed. Try again."
           onRetry={() => void source.refetch()}
           isRetrying={source.isFetching}
         />
@@ -92,7 +92,7 @@ export function AgentRequestEventScopes({
       ) : definitions.isError ? (
         <QueryErrorState
           title="Couldn’t load notification choices"
-          description="Reload the choices before deciding."
+          description="Nothing changed. Try again."
           onRetry={() => void definitions.refetch()}
           isRetrying={definitions.isFetching}
         />
@@ -116,8 +116,8 @@ export function AgentRequestEventScopes({
                 {choices.length === 0 ? (
                   <p className="text-muted-foreground text-sm">
                     {definitions.hasNextPage
-                      ? 'Load more notification options to finish this request.'
-                      : 'This account does not currently offer this activity.'}
+                      ? 'Load more options to finish.'
+                      : 'This account doesn’t offer this now.'}
                   </p>
                 ) : (
                   <ConnectionEventScopeFields

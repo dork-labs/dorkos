@@ -52,7 +52,7 @@ function loadErrorMessage(error: unknown): string {
     case 'TOO_LARGE':
       return 'This file is too large to open here.';
     case 'BINARY_FILE':
-      return 'This file isn’t text and can’t be shown in the editor.';
+      return 'This file isn’t text, so the editor can’t show it.';
     default:
       return 'This file couldn’t be loaded.';
   }

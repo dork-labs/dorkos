@@ -49,7 +49,7 @@ export function TunnelError({ error, onRetry }: TunnelErrorProps) {
       <div className="flex items-start gap-3">
         <AlertCircle className="text-destructive mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1 space-y-2">
-          <p className="text-destructive text-sm font-medium">Tunnel failed</p>
+          <p className="text-destructive text-sm font-medium">Couldn’t turn on remote access</p>
           <p className="text-destructive/90 text-xs">
             <LinkifiedText text={message} />
           </p>

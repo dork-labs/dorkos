@@ -67,8 +67,12 @@ describe('canTurnOnInPlace', () => {
 
 describe('extensionConsentCopy', () => {
   it('names the reach of a server half only when there is one', () => {
-    expect(extensionConsentCopy(true)).toContain('on this machine');
-    expect(extensionConsentCopy(false)).not.toContain('on this machine');
+    expect(extensionConsentCopy(true)).toContain('anything DorkOS can');
+    expect(extensionConsentCopy(false)).not.toContain('anything DorkOS can');
     expect(extensionConsentCopy(false)).toMatch(/^None of it has run yet\./);
+    // The inbox renders it as one paragraph, so it stays one 15-word block.
+    for (const copy of [extensionConsentCopy(true), extensionConsentCopy(false)]) {
+      expect(copy.split(/\s+/).length).toBeLessThanOrEqual(15);
+    }
   });
 });

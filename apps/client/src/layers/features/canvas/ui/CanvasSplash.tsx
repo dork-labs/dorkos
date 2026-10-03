@@ -33,7 +33,7 @@ interface SplashCopy {
 const SPLASH: Record<CanvasView, SplashCopy> = {
   canvas: {
     heading: 'A blank canvas',
-    blurb: 'Your agent can render documents, data, and files here.',
+    blurb: 'Your agent can show documents, data and files here.',
     actions: [
       {
         icon: FileText,
@@ -52,19 +52,18 @@ const SPLASH: Record<CanvasView, SplashCopy> = {
         action: (): UiCanvasContent => ({
           type: 'json',
           data: { message: 'Your data here' },
-          title: 'JSON Data',
+          title: 'JSON data',
         }),
       },
     ],
   },
   browser: {
     heading: 'No page open',
-    blurb:
-      'This tab shows web pages: a file you are building, a dev server you are running, or a site your agent wants you to see.',
+    blurb: 'This tab shows web pages: your files, dev servers, or sites from your agent.',
     actions: [
       {
         icon: Globe,
-        label: 'Web Page',
+        label: 'Web page',
         description: 'Open a page, then type any address',
         action: (): UiCanvasContent => ({
           type: 'url',

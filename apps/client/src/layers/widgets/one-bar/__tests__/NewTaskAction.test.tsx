@@ -91,13 +91,13 @@ describe('NewTaskAction', () => {
     mockIsMobile = true;
     renderAction();
 
-    const button = screen.getByRole('button', { name: 'New Schedule' });
-    expect(button).not.toHaveTextContent('New Schedule');
+    const button = screen.getByRole('button', { name: 'New schedule' });
+    expect(button).not.toHaveTextContent('New schedule');
   });
 
   it('spells the words out on a desktop', () => {
     renderAction();
 
-    expect(screen.getByRole('button', { name: /new schedule/i })).toHaveTextContent('New Schedule');
+    expect(screen.getByRole('button', { name: /new schedule/i })).toHaveTextContent('New schedule');
   });
 });

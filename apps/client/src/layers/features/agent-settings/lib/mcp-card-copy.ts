@@ -27,52 +27,52 @@ interface McpStatusMeta {
 export const MCP_STATUS_META: Record<McpCardStatus, McpStatusMeta> = {
   'needs-sign-in': {
     label: 'Needs sign-in',
-    tooltip: 'Sign in to let this agent use the server.',
+    tooltip: 'Sign in to use it.',
     tone: 'attention',
   },
   'signing-in': {
     label: 'Signing in…',
-    tooltip: 'A sign-in is in progress. Finish it in the tab that opened.',
+    tooltip: 'Finish in the new tab.',
     tone: 'attention',
   },
   connected: {
     label: 'Connected',
-    tooltip: 'This server answered, and its tools are available to the agent.',
+    tooltip: 'It answered. Its tools are ready.',
     tone: 'calm',
   },
   'signed-in': {
     label: 'Signed in',
-    tooltip: 'DorkOS has a sign-in for this server. Use Test to check it responds.',
+    tooltip: 'Signed in, not tested yet.',
     tone: 'calm',
   },
   'uses-your-key': {
     label: 'Uses your key',
-    tooltip: 'This server is authenticated with a key you supplied, not one DorkOS holds.',
+    tooltip: 'Uses a key you added.',
     tone: 'calm',
   },
   'cant-reach': {
     label: 'Can’t reach',
-    tooltip: 'The server did not answer. Open Details for what it said.',
+    tooltip: 'No answer. See Details.',
     tone: 'error',
   },
   'setup-problem': {
     label: 'Setup problem',
-    tooltip: 'This server’s setup is wrong, so it could not start. Open Details for the reason.',
+    tooltip: 'Couldn’t start. See Details.',
     tone: 'error',
   },
   connecting: {
     label: 'Connecting…',
-    tooltip: 'The agent is connecting to this server.',
+    tooltip: 'Connecting to this server.',
     tone: 'calm',
   },
   'not-checked': {
     label: 'Not checked yet',
-    tooltip: 'Nothing has contacted this server yet, so there is nothing to report.',
+    tooltip: 'Nothing has checked it yet.',
     tone: 'calm',
   },
   off: {
     label: 'Off',
-    tooltip: 'Turned off. Its tools are not given to the agent.',
+    tooltip: 'Hidden from the agent.',
     tone: 'calm',
   },
 };
@@ -140,7 +140,7 @@ function connectedSentence({ toolCount, justSignedIn }: McpSentenceContext): str
 export function cardSentence(status: McpCardStatus, context: McpSentenceContext): string | null {
   switch (status) {
     case 'needs-sign-in':
-      return `Sign in to ${context.displayName} so this agent can use its tools.`;
+      return `Sign in to ${context.displayName} to use its tools.`;
     case 'signing-in':
       return null;
     case 'connected':
@@ -150,8 +150,8 @@ export function cardSentence(status: McpCardStatus, context: McpSentenceContext)
       // it has not earned: holding a token is not the same as having reached the
       // server, and Test is still the thing that would prove it.
       return context.justSignedIn
-        ? 'Signed in just now. Test to check the server responds.'
-        : 'DorkOS has a sign-in for this server. Test to check it responds.';
+        ? 'Signed in just now. Test to check it answers.'
+        : 'Signed in. Test to check it answers.';
     case 'uses-your-key':
       return 'You added an access key when setting this up.';
     case 'cant-reach':
@@ -190,13 +190,13 @@ export function signInRowCopy(args: {
   if (connection.authKind === 'oauth2') {
     if (clientOrigin === 'manual') {
       const held =
-        authStatus === 'connected' ? 'signed in, and it renews automatically' : 'not signed in yet';
-      return `OAuth: using your own app credentials, ${held}. DorkOS holds the key; the agent never sees it.`;
+        authStatus === 'connected' ? 'signed in, renews automatically' : 'not signed in yet';
+      return `Your own app credentials, ${held}. DorkOS holds the key, not the agent.`;
     }
     if (authStatus === 'connected') {
-      return 'OAuth: signed in, and it renews automatically. DorkOS holds the key; the agent never sees it.';
+      return 'Signed in, and it renews automatically. DorkOS holds the key, not the agent.';
     }
-    return 'OAuth: DorkOS will hold the key for you; the agent never sees it.';
+    return 'DorkOS will hold the key, not the agent.';
   }
   const hasOwnHeader = Object.keys(connection.headers).some(
     (header) => header.toLowerCase() === 'authorization'

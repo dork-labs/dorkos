@@ -196,8 +196,8 @@ export function useRoomAttachments(roomId: string) {
     if (failed.length > 0) {
       throw new Error(
         failed.length === 1
-          ? `${failed[0].file.name} did not upload. Retry it or remove it, then send again.`
-          : `${failed.length} attachments did not upload. Retry them or remove them, then send again.`
+          ? `${failed[0].file.name} didn’t upload. Try again or remove it.`
+          : `${failed.length} files didn’t upload. Try again or remove them.`
       );
     }
 

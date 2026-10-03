@@ -92,11 +92,11 @@ export function ApplyToOverridesDialog({
       <ResponsiveDialogContent className="!min-h-0 sm:max-w-md">
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>
-            {title ?? `${subject} will be set to ${nextLabel} for everyone.`}
+            {title ?? `Set ${subject} to ${nextLabel} for everyone?`}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            {count === 1 ? '1 agent is' : `${count} agents are`} set differently. Choose any you
-            want to follow the new setting.
+            {count === 1 ? '1 agent is' : `${count} agents are`} set differently. Pick any that
+            should follow.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-3">

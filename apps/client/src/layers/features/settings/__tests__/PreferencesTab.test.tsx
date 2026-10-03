@@ -207,11 +207,7 @@ describe('PreferencesTab — the rows that came back from Advanced', () => {
     // text editor", no "experimental" in the label. A smart 9th grader who does
     // not code has to understand what turning it on does.
     expect(await screen.findByText('Format text as you type')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'See bold, headings, and lists take shape in the message box while you write.'
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByText('Bold, headings and lists show as you write.')).toBeInTheDocument();
   });
 
   it('the formatting row is on when nobody has turned it off', async () => {
@@ -252,13 +248,9 @@ describe('PreferencesTab — the rows that came back from Advanced', () => {
     const { Wrapper } = setup(DEFAULTS);
     render(<PreferencesTab />, { wrapper: Wrapper });
 
+    expect(await screen.findByText('Watch for work started elsewhere')).toBeInTheDocument();
     expect(
-      await screen.findByText('Watch for agents you started somewhere else')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Turn this on if work you started in a terminal takes a while to show up here.'
-      )
+      screen.getByText('Work started in a terminal shows up here sooner.')
     ).toBeInTheDocument();
   });
 

@@ -164,7 +164,7 @@ describe('the room panel fixture reaches every state', () => {
     // stopped answering `getConfig` would leave the sentence looking finished
     // and quietly wrong about somebody's install.
     expect(
-      await screen.findByText(/keeps answering for 10 more minutes or 5 more messages/)
+      await screen.findByText(/keeps answering for 10 minutes or 5 messages/)
     ).toBeInTheDocument();
   });
 
@@ -194,7 +194,7 @@ describe('the room panel fixture reaches every state', () => {
   it('an archived room says its settings are on hold and keeps them reachable', async () => {
     await openSheet({ label: '#old-thing', read: ARCHIVED_ROOM, holds: ARCHIVED_ROOM });
 
-    expect(await screen.findByText(/Nobody is triggered in an archived room/)).toBeInTheDocument();
+    expect(await screen.findByText(/Archived rooms don’t answer/)).toBeInTheDocument();
     expect(screen.getByText('Archived')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'How loud Mio Clicker PM is here' }));
@@ -217,7 +217,7 @@ describe('the room panel fixture reaches every state', () => {
       focus: 'add',
     });
 
-    expect(await screen.findByText('You have not added any agents yet.')).toBeInTheDocument();
+    expect(await screen.findByText('You don’t have any agents yet.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create agent' })).toBeInTheDocument();
   });
 });

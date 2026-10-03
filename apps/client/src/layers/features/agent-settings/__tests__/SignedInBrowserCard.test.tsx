@@ -74,7 +74,7 @@ describe('SignedInBrowserCard', () => {
     );
     renderCard(transport);
 
-    expect(await screen.findByText(/No sign-ins saved yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/Starts signed out/)).toBeInTheDocument();
     expect(screen.getByText('dorkos browser login <site>')).toBeInTheDocument();
   });
 
@@ -103,7 +103,7 @@ describe('SignedInBrowserCard', () => {
         `npx -y @playwright/mcp@0.0.82 --isolated --headless --storage-state ${STATE_FILE}`
       )
     ).toBeInTheDocument();
-    expect(screen.getByText('Confirm the signed-in browser for Researcher')).toBeInTheDocument();
+    expect(screen.getByText('Give Researcher the signed-in browser?')).toBeInTheDocument();
     expect(transport.addAgentMcpServer).toHaveBeenCalledWith(
       {
         agentId: AGENT_ID,
@@ -113,7 +113,7 @@ describe('SignedInBrowserCard', () => {
       undefined
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm & add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add browser' }));
     await waitFor(() => expect(transport.grantApproval).toHaveBeenCalledWith('appr-1'));
     await waitFor(() =>
       expect(transport.addAgentMcpServer).toHaveBeenLastCalledWith(expect.anything(), {
@@ -142,7 +142,7 @@ describe('SignedInBrowserCard', () => {
     renderCard(transport);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Give it the browser' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm & add' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add browser' }));
     expect(
       await screen.findByText('The browser still needs approval. Try again.')
     ).toBeInTheDocument();
@@ -154,7 +154,7 @@ describe('SignedInBrowserCard', () => {
       preset({ saved: false, sites: [] })
     );
     renderCard(transport);
-    expect(await screen.findByText(/starts signed out/)).toBeInTheDocument();
+    expect(await screen.findByText(/Starts signed out/)).toBeInTheDocument();
     expect(screen.queryByText(/^Signed in to/)).not.toBeInTheDocument();
   });
 });

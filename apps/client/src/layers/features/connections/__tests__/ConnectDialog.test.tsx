@@ -245,7 +245,7 @@ describe('ConnectDialog', () => {
       1
     );
     expect(screen.getByTestId('connect-disclosure')).toHaveTextContent(
-      'A sign-in page opens next, where you let DorkOS use Gmail.'
+      'A Gmail sign-in page opens next.'
     );
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() =>
@@ -309,9 +309,7 @@ describe('ConnectDialog', () => {
     );
 
     expect(
-      screen.getByText(
-        'Enter the account details Linear asks for on dorkos.ai. DorkOS passes them on without saving them.'
-      )
+      screen.getByText('Enter your Linear details on dorkos.ai. DorkOS doesn’t save them.')
     ).toBeInTheDocument();
     expect(screen.queryByLabelText(/API key|token|password/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Enter account details' }));
@@ -335,7 +333,7 @@ describe('ConnectDialog', () => {
       })
     );
 
-    expect(screen.getByText(/No account details are needed/)).toBeInTheDocument();
+    expect(screen.getByText(/No account details needed/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Review and confirm' }));
     expect(transport.startConnectorAuthentication).toHaveBeenCalledTimes(1);
   });
@@ -370,9 +368,7 @@ describe('ConnectDialog', () => {
       })
     );
 
-    expect(
-      screen.getByText('Linear signs in with the sign-in page set up for it.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Linear uses its own sign-in page.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
   });
 
@@ -541,9 +537,9 @@ describe('ConnectDialog', () => {
       expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
       expect(step).not.toHaveTextContent(/\$|plan|price/i);
       // Nango is folded under Other ways until asked for.
-      expect(screen.queryByText(/My own Nango server/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Your own Nango server/)).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Other ways' }));
-      expect(screen.getByText(/My own Nango server/)).toBeVisible();
+      expect(screen.getByText(/Your own Nango server/)).toBeVisible();
 
       vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
         services: [
@@ -567,7 +563,7 @@ describe('ConnectDialog', () => {
 
       // The saved key refreshes the list; the step is gone and sign-in is next.
       expect(await screen.findByTestId('connect-sign-in-line')).toHaveTextContent(
-        'Google will ask you to allow Composio — that’s the service DorkOS uses to connect.'
+        'Google will ask you to allow Composio. DorkOS connects through it.'
       );
       expect(screen.queryByTestId('first-connect-step')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();

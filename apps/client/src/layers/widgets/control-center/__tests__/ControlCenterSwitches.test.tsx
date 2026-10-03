@@ -141,9 +141,7 @@ describe('ControlCenterSwitches', () => {
     const limits = await screen.findByRole('switch', { name: 'Limit automatic replies' });
     await waitFor(() => expect(limits).not.toBeChecked());
     expect(
-      screen.getByText(
-        'Agents can reply to each other without limit. The Stop button is the only brake.'
-      )
+      screen.getByText('Agents reply to each other without limit until you press Stop.')
     ).toBeInTheDocument();
   });
 

@@ -198,6 +198,29 @@ describe('POST /:id/messages — the billing-account launch hint', () => {
     expect(res.status).toBe(202);
   });
 
+  // Naming DorkOS credits spends the DorkOS account's money, so it is the
+  // install owner's call alone (DOR-2652). Login is off in this file, so the
+  // person bar is what decides here; `cloud-owner-bar.test.ts` covers the
+  // login-on postures over the same bar.
+  it('refuses an agent that names DorkOS credits, and starts nothing', async () => {
+    const res = await request(server)
+      .post(`/api/sessions/${S1}/messages`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ content: 'hi', account: 'dorkos-credits' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({
+      error: 'Only you can run a chat on your DorkOS credits, from the DorkOS app.',
+      code: 'person_only',
+    });
+    expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('carries DorkOS credits for the person at this computer', async () => {
+    const opts = await sendAndCapture({ account: 'dorkos-credits' });
+    expect(opts?.accountHint).toBe('dorkos-credits');
+  });
+
   it('refuses an EMPTY account, which names nothing at all', async () => {
     const res = await request(server)
       .post(`/api/sessions/${S1}/messages`)

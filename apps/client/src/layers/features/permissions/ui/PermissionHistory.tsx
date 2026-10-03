@@ -73,7 +73,7 @@ export function partialUndoNote(result: UndoPermissionChangeResponse): string | 
   // Undoing a "Not now" changes no setting; the line reading "Undone" says it.
   if (result.suggestionRestored) return null;
   if (result.changes.length === 0 && result.skipped.length === 0) {
-    return 'Nothing to undo. It was already back the way it was.';
+    return 'Nothing to undo. It was already back.';
   }
   if (result.skipped.length === 0) return null;
   const done = result.changes.length;
@@ -89,13 +89,19 @@ export function partialUndoNote(result: UndoPermissionChangeResponse): string | 
   }
   if (locked > 0) {
     parts.push(
-      `${locked} would have set something that always asks to Allowed, so ${locked === 1 ? 'it was' : 'they were'} left alone.`
+      `${locked} can’t be set to Allowed and ${locked === 1 ? 'was' : 'were'} left alone.`
     );
   }
   if (gone > 0) {
     parts.push(
       `${gone} ${gone === 1 ? 'was about an agent' : 'were about agents'} no longer here.`
     );
+  }
+  // One reason fits in a line; several would make a paragraph, so they collapse
+  // to a count (the history list itself still shows each row as it stands).
+  if (parts.length > 1) {
+    const skipped = result.skipped.length;
+    return `${head} ${skipped} ${skipped === 1 ? 'was' : 'were'} left alone.`;
   }
   return [head, ...parts].join(' ');
 }
@@ -230,7 +236,7 @@ export function PermissionHistory({ agentId }: PermissionHistoryProps) {
       <AutonomyConfirmDialog
         descriptor={consent.descriptor}
         canRemember={false}
-        consentNote="Undoing this puts Files & commands back on Full autonomy, and DorkOS will remember that you have read this."
+        consentNote="Undo puts Files & commands back on Full autonomy. DorkOS remembers you’ve read this."
         onCancel={consent.cancel}
         onConfirm={consent.confirm}
       />

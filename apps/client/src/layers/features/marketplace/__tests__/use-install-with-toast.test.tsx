@@ -171,7 +171,7 @@ describe('useInstallWithToast', () => {
       });
 
       expect(mockError).toHaveBeenCalledTimes(1);
-      expect(mockError).toHaveBeenCalledWith('Install failed: network down', {
+      expect(mockError).toHaveBeenCalledWith('Couldn’t install Code Reviewer: network down', {
         id: 'toast-id-abc',
       });
       expect(mockSuccess).not.toHaveBeenCalled();
@@ -192,7 +192,7 @@ describe('useInstallWithToast', () => {
         perCall.onError('something bad');
       });
 
-      expect(mockError).toHaveBeenCalledWith('Install failed: unknown error', {
+      expect(mockError).toHaveBeenCalledWith('Couldn’t install Code Reviewer. Try again.', {
         id: 'toast-id-abc',
       });
     });
@@ -372,7 +372,7 @@ describe('useInstallWithToast', () => {
         }
       });
 
-      expect(mockError).toHaveBeenCalledWith('Install failed: permission denied', {
+      expect(mockError).toHaveBeenCalledWith('Couldn’t install Code Reviewer: permission denied', {
         id: 'toast-id-abc',
       });
       expect(caught).toBeInstanceOf(Error);

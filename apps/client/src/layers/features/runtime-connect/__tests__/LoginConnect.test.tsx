@@ -355,7 +355,7 @@ describe('LoginConnect — the key form checks, tests, and remembers', () => {
 
     expect(await screen.findByLabelText('Anthropic API key')).toHaveAttribute(
       'placeholder',
-      'Saved · ends in cho1 — paste a new key to replace it'
+      'Saved key ends in cho1. Paste to replace.'
     );
   });
 

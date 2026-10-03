@@ -159,7 +159,7 @@ describe('BindingEdge', () => {
 
     it('falls back to sessionStrategy when no label and selected', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ sessionStrategy: 'per-user' }} />);
-      expect(screen.getByText('Per User')).toBeInTheDocument();
+      expect(screen.getByText('One per person')).toBeInTheDocument();
     });
 
     it('falls back to "Binding" when neither label nor sessionStrategy and selected', () => {
@@ -247,7 +247,7 @@ describe('BindingEdge', () => {
     it('does not render filter badges when neither chatId nor channelType present', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ sessionStrategy: 'per-chat' }} />);
       // Only the session strategy label should be shown, no filter badges
-      expect(screen.getByText('Per Chat')).toBeInTheDocument();
+      expect(screen.getByText('One per chat')).toBeInTheDocument();
       expect(screen.queryByText('12345')).not.toBeInTheDocument();
     });
 

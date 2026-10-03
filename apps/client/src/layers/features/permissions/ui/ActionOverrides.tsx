@@ -86,7 +86,7 @@ function ActionRow({
   const hint = here
     ? 'Set on its own'
     : action.alwaysAsks
-      ? 'Always asks, so you see what it would change'
+      ? 'Always asks, so you see the change first'
       : action.resolved.destructiveAsk
         ? 'Always asks unless you set it here'
         : `Follows ${area.label}`;

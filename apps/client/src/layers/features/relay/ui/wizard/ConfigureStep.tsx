@@ -81,7 +81,7 @@ export function ConfigureStep({
           {hasSetupGuide && (
             <Button type="button" variant="outline" size="sm" onClick={onOpenGuide}>
               <BookOpen className="mr-1.5 size-3.5" />
-              Setup Guide
+              Setup guide
             </Button>
           )}
           {manifest.actionButton && (
@@ -113,9 +113,7 @@ export function ConfigureStep({
           value={label}
           onChange={(e) => onLabelChange(e.target.value)}
         />
-        <p className="text-muted-foreground text-xs">
-          A friendly name so you can tell this connection from the others.
-        </p>
+        <p className="text-muted-foreground text-xs">Helps you tell this connection apart.</p>
       </div>
 
       <Subscribe selector={(s) => s.values}>

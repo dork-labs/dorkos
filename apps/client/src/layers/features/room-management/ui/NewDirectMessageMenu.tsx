@@ -172,13 +172,13 @@ export function NewDirectMessageMenu({
             onStart(chosen);
           }}
           submitLabel={oneDoorSubmitLabel}
-          emptyRosterMessage="You have not added any agents yet."
+          emptyRosterMessage="You don’t have any agents yet."
           emptyRosterAction={
             <Button type="button" size="sm" variant="outline" onClick={startAgentCreation}>
               Create agent
             </Button>
           }
-          allChosenMessage="Everyone you have added is already in this conversation."
+          allChosenMessage="Everyone is already in this conversation."
         />
 
         {/* The rule, said before the button changes its words rather than

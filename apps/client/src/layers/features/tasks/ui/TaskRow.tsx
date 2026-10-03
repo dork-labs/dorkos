@@ -197,14 +197,14 @@ export function TaskRow({
     // so this is a neutral "it started" note, same voice as Schedule approved
     // below.
     triggerTask.mutate(task.id, {
-      onSuccess: () => toast('Run triggered'),
+      onSuccess: () => toast('Run started'),
     });
   };
 
   const handleApprove = (e: React.MouseEvent) => {
     e.stopPropagation();
     // No local onError: the shared mutation toast (`useUpdateTask`'s
-    // `meta.errorLabel`) reports a failure. Bare, matching Run triggered above.
+    // `meta.errorLabel`) reports a failure. Bare, matching Run started above.
     updateTask.mutate(
       { id: task.id, status: 'active', enabled: true },
       { onSuccess: () => toast('Schedule approved') }
@@ -445,7 +445,7 @@ export function TaskRow({
                     disabled={!task.enabled || task.status === 'paused'}
                   >
                     <Play className="mr-2 size-3.5" />
-                    Run Now
+                    Run now
                   </DropdownMenuItem>
                   {task.timingOverridden && (
                     <DropdownMenuItem onClick={handleResetTiming}>
@@ -517,10 +517,9 @@ export function TaskRow({
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete scheduled task</DialogTitle>
+              <DialogTitle>Delete “{task.name}”?</DialogTitle>
               <DialogDescription>
-                Delete “{task.name}”? This will also remove all run history. This action cannot be
-                undone.
+                Its run history is deleted too. This can’t be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -534,7 +533,7 @@ export function TaskRow({
                 onClick={confirmDelete}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60 inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
               >
-                Delete
+                Delete task
               </button>
             </DialogFooter>
           </DialogContent>

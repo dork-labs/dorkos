@@ -207,7 +207,7 @@ export function BindingDialog({
             {isEdit ? 'Edit connection' : 'Add connection'}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
-            {isEdit ? 'Edit this connection’s settings' : 'Add a new connection for this agent'}
+            {isEdit ? 'Edit this connection’s settings' : 'Connect this agent to a chat'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -319,7 +319,7 @@ export function BindingDialog({
                         <Label htmlFor="binding-agent">Agent</Label>
                         {agentOptions.length === 0 ? (
                           <p className="text-muted-foreground border-input rounded-md border px-3 py-2 text-sm opacity-50">
-                            No agents registered
+                            No agents yet
                           </p>
                         ) : (
                           <form.AppField name="agentId">
@@ -355,7 +355,7 @@ export function BindingDialog({
                           onBlur={field.handleBlur}
                           onChange={(e) => field.handleChange(e.target.value)}
                         />
-                        <FieldDescription>A display name for this binding</FieldDescription>
+                        <FieldDescription>A name to tell this connection apart</FieldDescription>
                       </div>
                     )}
                   </form.AppField>
@@ -364,7 +364,7 @@ export function BindingDialog({
                   <CollapsibleFieldCard
                     open={chatFilterOpen}
                     onOpenChange={setChatFilterOpen}
-                    trigger="Chat Filter"
+                    trigger="Chat filter"
                     badge={hasChatFilter ? <Badge variant="secondary">Active</Badge> : undefined}
                   >
                     {/* ChatId picker */}
@@ -374,10 +374,10 @@ export function BindingDialog({
                           <Label htmlFor="binding-chat-id">Chat ID</Label>
                           <Select value={field.state.value} onValueChange={field.handleChange}>
                             <SelectTrigger id="binding-chat-id" className="w-full">
-                              <SelectValue placeholder="Any chat (wildcard)" />
+                              <SelectValue placeholder="Any chat" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value={SELECT_ANY}>Any chat (wildcard)</SelectItem>
+                              <SelectItem value={SELECT_ANY}>Any chat</SelectItem>
                               {observedChats.map((chat) => (
                                 <SelectItem key={chat.chatId} value={chat.chatId}>
                                   <span>{chat.displayName ?? chat.chatId}</span>
@@ -385,7 +385,7 @@ export function BindingDialog({
                                     <span className="text-muted-foreground ml-2 text-xs">
                                       {[
                                         chat.channelType ? chatTypeLabel(chat.channelType) : null,
-                                        `${chat.messageCount} msgs`,
+                                        `${chat.messageCount} messages`,
                                       ]
                                         .filter(Boolean)
                                         .join(' · ')}
@@ -395,9 +395,7 @@ export function BindingDialog({
                               ))}
                             </SelectContent>
                           </Select>
-                          <FieldDescription>
-                            Route only messages from a specific chat
-                          </FieldDescription>
+                          <FieldDescription>Only take messages from this chat</FieldDescription>
                         </div>
                       )}
                     </form.AppField>
@@ -409,10 +407,10 @@ export function BindingDialog({
                           <Label htmlFor="binding-channel-type">Chat type</Label>
                           <Select value={field.state.value} onValueChange={field.handleChange}>
                             <SelectTrigger id="binding-channel-type" className="w-full">
-                              <SelectValue placeholder="Any type (wildcard)" />
+                              <SelectValue placeholder="Any type" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value={SELECT_ANY}>Any type (wildcard)</SelectItem>
+                              <SelectItem value={SELECT_ANY}>Any type</SelectItem>
                               {CHAT_TYPE_OPTIONS.map((opt) => (
                                 <SelectItem key={opt.value} value={opt.value}>
                                   {opt.label}
@@ -481,10 +479,9 @@ export function BindingDialog({
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Remove connection</AlertDialogTitle>
+                          <AlertDialogTitle>Remove this connection?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Remove this connection? The agent will no longer receive messages from
-                            it.
+                            This agent stops getting messages from it.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -493,7 +490,7 @@ export function BindingDialog({
                             onClick={() => onDelete(bindingId)}
                             className={buttonVariants({ variant: 'destructive' })}
                           >
-                            Remove
+                            Remove connection
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>

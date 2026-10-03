@@ -12,7 +12,7 @@
  *
  * @module entities/extension
  */
-export { extensionConsentCopy } from './lib/consent-copy';
+export { EXTENSION_TRUST_COPY, extensionConsentCopy } from './lib/consent-copy';
 export {
   parseExtensionApprovalSubject,
   canTurnOnInPlace,

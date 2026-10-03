@@ -153,7 +153,7 @@ export function AgentFilesAndCommandsRow({
       <AutonomyConfirmDialog
         descriptor={consent.descriptor}
         canRemember={false}
-        consentNote="This agent’s new sessions will start here, and DorkOS will remember that you have read this."
+        consentNote="This agent’s new sessions start here. DorkOS remembers you’ve read this."
         onCancel={consent.cancel}
         onConfirm={consent.confirm}
       />
@@ -211,9 +211,7 @@ export function DefaultFilesAndCommandsRow({
       <div className="flex flex-col gap-3 py-3 @lg:flex-row @lg:items-start @lg:justify-between @lg:gap-6">
         <div className="min-w-0 space-y-1">
           <span className="text-sm font-medium">Files &amp; commands</span>
-          <p className="text-muted-foreground text-sm">
-            Editing files and running commands in a session
-          </p>
+          <p className="text-muted-foreground text-sm">Editing files and running commands</p>
           <p className="text-muted-foreground text-xs">
             <span>
               {[source, affected !== undefined ? describeAffectedAgents(affected) : '']

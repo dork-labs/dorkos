@@ -135,7 +135,7 @@ describe('MarketplaceSourcesView', () => {
       render(<MarketplaceSourcesView />);
 
       expect(screen.getByText(/no marketplaces added yet/i)).toBeInTheDocument();
-      expect(screen.getByText(/add a git registry/i)).toBeInTheDocument();
+      expect(screen.getByText(/add a source to browse its packages/i)).toBeInTheDocument();
     });
 
     it('holds the skeleton, not the empty state, while the boot cache is restoring', () => {

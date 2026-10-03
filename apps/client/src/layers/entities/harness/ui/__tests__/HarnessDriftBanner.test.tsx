@@ -116,7 +116,7 @@ describe('HarnessDriftBanner — one condition, one message, one action', () => 
 
     const banner = await screen.findByRole('status');
     expect(
-      within(banner).getByText('DorkOS can’t update some files. Something else is in the way.')
+      within(banner).getByText('DorkOS can’t update some files. Something blocks them.')
     ).toBeInTheDocument();
     expect(within(banner).queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument();
   });
@@ -128,7 +128,7 @@ describe('HarnessDriftBanner — one condition, one message, one action', () => 
 
     const banner = await screen.findByRole('status');
     expect(
-      within(banner).getByText('Some skills live where only a few of your agents look.')
+      within(banner).getByText('Some skills only reach a few of your agents.')
     ).toBeInTheDocument();
     expect(within(banner).queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument();
   });
@@ -288,7 +288,7 @@ describe('HarnessDriftBanner — the sync', () => {
     await user.click(await screen.findByRole('button', { name: 'Dismiss what changed' }));
 
     expect(
-      await screen.findByText('DorkOS can’t update some files. Something else is in the way.')
+      await screen.findByText('DorkOS can’t update some files. Something blocks them.')
     ).toBeInTheDocument();
     expect(screen.queryByText('Some agent files are out of date.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument();

@@ -141,7 +141,7 @@ export function ChatAppAnswerers({
       {answers.length === 0 ? (
         <div className="space-y-2">
           <p className="text-muted-foreground text-sm">
-            No agent answers yet. Messages to the bot wait until you pick one.
+            No agent answers yet. Messages wait until you pick one.
           </p>
           {picker('Pick who answers', emphasizePick ? 'default' : 'outline')}
         </div>

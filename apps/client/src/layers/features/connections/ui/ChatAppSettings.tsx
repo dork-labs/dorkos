@@ -89,7 +89,7 @@ function DeliverySettings() {
   if (!delivery) {
     return (
       <p className="text-muted-foreground text-sm">
-        This server has no way to start agents from chat messages, so there is nothing to set here.
+        Nothing to set. Chat messages can’t start agents here.
       </p>
     );
   }
@@ -102,7 +102,7 @@ function DeliverySettings() {
       <FieldCardContent>
         <SwitchSettingRow
           label="Start working right away"
-          description="A new message puts the agent to work straight away."
+          description="New messages start the agent at once."
           checked={delivery.enabled}
           onCheckedChange={(enabled) => toggle({ id: delivery.id, enabled })}
         />
@@ -117,7 +117,7 @@ function DeliverySettings() {
         </SettingRow>
         <SettingRow
           label="Give up after"
-          description="Seconds a new message waits for a free chat before it's turned away."
+          description="Seconds a message waits before it’s turned away."
         >
           <BoundedNumberInput
             aria-label="Give up after, in seconds"

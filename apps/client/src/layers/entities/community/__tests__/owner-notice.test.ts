@@ -35,8 +35,10 @@ const completed: CommunityConnectionOwnerNotice = {
 describe('what the owner reads', () => {
   it('names the date and offers every option this owner has', () => {
     expect(ownerNoticeBanner(open, 'active', UTC)).toEqual([
-      'The host has been asked to make someone else the owner of this space. Unless you keep ownership, that can happen on or after Sunday, October 4, 2026.',
-      'Open the space to keep ownership. You can also hand it to someone yourself, or delete it.',
+      'Someone asked to replace you as owner',
+      'That can happen on or after Sunday, October 4, 2026, unless you keep ownership.',
+      'Open the space to keep ownership.',
+      'You can also hand it over, or delete it.',
     ]);
   });
 
@@ -48,7 +50,10 @@ describe('what the owner reads', () => {
       'archived',
       UTC
     );
-    expect(lines[1]).toBe('Open the space to keep ownership. You can also delete it.');
+    expect(lines.slice(2)).toEqual([
+      'Open the space to keep ownership.',
+      'You can also delete it.',
+    ]);
   });
 
   it('tells an owner without a password what adding one would allow', () => {
@@ -56,24 +61,28 @@ describe('what the owner reads', () => {
       ...open,
       options: { keep: true as const, transfer: false, delete: false, needsPassword: true },
     };
-    expect(ownerNoticeBanner(noPassword, 'active', UTC)[1]).toBe(
-      'Open the space to keep ownership. To hand it to someone or delete it, add a password to your account first.'
-    );
-    expect(ownerNoticeBanner(noPassword, 'archived', UTC)[1]).toBe(
-      'Open the space to keep ownership. To delete it, add a password to your account first.'
-    );
+    expect(ownerNoticeBanner(noPassword, 'active', UTC).slice(2)).toEqual([
+      'Open the space to keep ownership.',
+      'To hand it over or delete it, add a password to your account.',
+    ]);
+    expect(ownerNoticeBanner(noPassword, 'archived', UTC).slice(2)).toEqual([
+      'Open the space to keep ownership.',
+      'To delete it, add a password to your account.',
+    ]);
   });
 
   it('says when the date is not set yet, when it has passed, and when the link was resent', () => {
-    expect(ownerNoticeBanner({ ...open, claimableAfter: null }, 'active', UTC)[0]).toMatch(
-      /that can happen after a waiting period of at least 7 days\.$/
+    expect(ownerNoticeBanner({ ...open, claimableAfter: null }, 'active', UTC)[1]).toBe(
+      'That can happen in 7 days or more, unless you keep ownership.'
     );
-    expect(ownerNoticeBanner({ ...open, requestState: 'claimable' }, 'active', UTC)[0]).toMatch(
-      /that can happen at any time now\.$/
+    expect(ownerNoticeBanner({ ...open, requestState: 'claimable' }, 'active', UTC)[1]).toBe(
+      'That can happen at any time now, unless you keep ownership.'
     );
     expect(
-      ownerNoticeBanner({ ...open, claimReissuedAt: '2026-09-25T08:00:00.000Z' }, 'active', UTC)[2]
-    ).toBe('The link for the new owner was sent again on Friday, September 25, 2026.');
+      ownerNoticeBanner({ ...open, claimReissuedAt: '2026-09-25T08:00:00.000Z' }, 'active', UTC).at(
+        -1
+      )
+    ).toBe('The new owner’s link was sent again on Friday, September 25, 2026.');
   });
 
   it('opens the community at its own address on its own host', () => {

@@ -134,7 +134,7 @@ export function useOpenRouterOAuth(): UseOpenRouterOAuth {
   const isPending = start.isPending || (flowState !== null && status === 'pending');
   const isError = !!startError || status === 'error';
   const errorMessage = isError
-    ? (startError ?? statusQuery.data?.error ?? 'OpenRouter sign-in failed. Please try again.')
+    ? (startError ?? statusQuery.data?.error ?? 'Couldn’t sign in to OpenRouter. Try again.')
     : null;
 
   return {

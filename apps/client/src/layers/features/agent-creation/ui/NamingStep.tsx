@@ -77,7 +77,7 @@ export interface NamingStepProps {
  * The naming step (M3): the birth. Left column names and dresses the agent
  * (big name field, themed suggestions with a reroll, a face picker, and a
  * folded Details row for directory + runtime + folder name); the right column
- * previews the agent taking shape and holds the "Bring {name} to life" button.
+ * previews the agent taking shape and holds the "Create {name}" button.
  *
  * Validation (slug derivation, live conflict states, Import-instead hand-off)
  * carries over from the form hook unchanged.
@@ -118,8 +118,8 @@ export function NamingStep({
 
   const previewName = form.displayName.trim();
   const createLabel = isCreating
-    ? `Bringing ${previewName || 'your agent'} to life…`
-    : `Bring ${previewName || 'your agent'} to life`;
+    ? `Creating ${previewName || 'your agent'}…`
+    : `Create ${previewName || 'agent'}`;
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
@@ -158,7 +158,7 @@ export function NamingStep({
           {form.conflictStatus === 'exists-has-dork' && (
             <div data-testid="conflict-status">
               <p className="text-status-warning-fg text-xs font-medium">
-                Existing project detected
+                This folder has a project
               </p>
               <button
                 type="button"
@@ -166,7 +166,7 @@ export function NamingStep({
                 onClick={onImportInstead}
                 data-testid="import-instead-link"
               >
-                Import instead?
+                Import it instead
               </button>
             </div>
           )}
@@ -208,7 +208,7 @@ export function NamingStep({
           <div className="flex items-baseline gap-2">
             <Label className="text-sm">Face</Label>
             {!form.icon && (
-              <span className="text-muted-foreground text-xs">Picked for you if you skip this</span>
+              <span className="text-muted-foreground text-xs">Picked for you if skipped</span>
             )}
           </div>
           <FacePicker value={form.icon} onChange={form.setIcon} />
@@ -228,7 +228,7 @@ export function NamingStep({
               Details
               {form.directoryOverride && (
                 <span className="bg-primary/10 text-primary ml-1 rounded px-1.5 py-0.5 text-xs">
-                  custom
+                  Custom
                 </span>
               )}
             </button>
@@ -236,7 +236,7 @@ export function NamingStep({
           <CollapsibleContent>
             <div className="space-y-4 pt-3">
               <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs">Runtime</Label>
+                <Label className="text-muted-foreground text-xs">Runs on</Label>
                 <RuntimePicker value={form.runtime} onChange={form.setRuntime} />
               </div>
 
@@ -245,8 +245,7 @@ export function NamingStep({
                   <Label className="text-muted-foreground text-xs">Directory</Label>
                   <p className="font-mono text-xs [overflow-wrap:anywhere]">{packageDirectory}</p>
                   <p className="text-muted-foreground text-xs">
-                    Agents from the marketplace live in their package’s folder, so updates find
-                    them.
+                    Kept in its package’s folder so updates reach it.
                   </p>
                 </div>
               ) : (
@@ -268,7 +267,7 @@ export function NamingStep({
                   />
                   {form.conflictStatus === 'no-path' && (
                     <p className="text-muted-foreground text-xs" data-testid="conflict-status">
-                      Will create new directory
+                      Creates a new folder
                     </p>
                   )}
                   {form.conflictStatus === 'exists-no-dork' && (
@@ -278,7 +277,7 @@ export function NamingStep({
                   )}
                   {form.conflictStatus === 'error' && (
                     <p className="text-destructive text-xs" data-testid="conflict-status">
-                      Cannot access this path
+                      Can’t open this folder. Pick another.
                     </p>
                   )}
                 </div>
@@ -324,8 +323,7 @@ export function NamingStep({
             className="text-muted-foreground text-center text-xs"
             data-testid="naming-checking-offer"
           >
-            Checking what this agent runs on its own. The first check downloads the package, so it
-            can take a moment.
+            Checking for scheduled work…
           </p>
         )}
         {inheritance}

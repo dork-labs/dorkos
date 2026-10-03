@@ -111,20 +111,20 @@ export function CommunityGonePanel({ connection, onRemoved }: CommunityGonePanel
         : 'This space seems to be gone';
   const body =
     state === 'taken-down'
-      ? `Whoever runs ${label} took it down, so DorkOS removed the copy it kept on this computer. If they put it back, you can connect again.`
+      ? `DorkOS removed its copy here. If ${label} returns, you can connect again.`
       : state === 'deleted'
-        ? `${label} no longer exists, so DorkOS removed the copy it kept on this computer.`
-        : `Since ${since}, ${label} has said this space doesn’t exist. It may have been deleted. This computer still has a copy of its channels, messages and files.`;
+        ? 'DorkOS removed its copy from this computer.'
+        : `Since ${since}, ${label} says it doesn’t exist. Its channels, messages and files are still here.`;
   const unsent = unsentSummary(
     deleted ? (connection.undeliveredAgentMessages ?? 0) : 0,
     drafts.length
   );
   const draftsCleared =
     drafts.length === 0
-      ? ''
+      ? null
       : drafts.length === 1
-        ? ' Your unsent draft is cleared too.'
-        : ` Your ${drafts.length} unsent drafts are cleared too.`;
+        ? 'Your unsent draft is cleared too.'
+        : `Your ${drafts.length} unsent drafts are cleared too.`;
   return (
     <div
       className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center text-sm"
@@ -170,10 +170,20 @@ export function CommunityGonePanel({ connection, onRemoved }: CommunityGonePanel
             <AlertDialogTitle>
               {deleted ? `Remove ${label} from DorkOS?` : `Remove your copy of ${label}?`}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleted
-                ? `${label} leaves this app. There’s nothing left of it to remove from this computer.${draftsCleared}`
-                : `This removes ${label} from DorkOS, and everything DorkOS kept from it on this computer: its channels, messages and files. Your agents stop answering there. If ${label} is still around, you can connect again later.${draftsCleared}`}
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {deleted
+                    ? `${label} leaves this app. Nothing else is stored here.`
+                    : 'This deletes its channels, messages and files from this computer.'}
+                </p>
+                {!deleted && (
+                  <p>
+                    Your agents stop answering there. If it’s still around, you can connect again.
+                  </p>
+                )}
+                {draftsCleared && <p>{draftsCleared}</p>}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           {end.isError && (
@@ -182,7 +192,7 @@ export function CommunityGonePanel({ connection, onRemoved }: CommunityGonePanel
             </p>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={end.isPending}>Keep it</AlertDialogCancel>
+            <AlertDialogCancel disabled={end.isPending}>Cancel</AlertDialogCancel>
             <Button variant="destructive" disabled={end.isPending} onClick={remove}>
               {end.isPending ? 'Removing…' : deleted ? 'Remove from DorkOS' : 'Remove local copy'}
             </Button>

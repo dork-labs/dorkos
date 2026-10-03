@@ -25,9 +25,7 @@ export function NotificationsPage({ member }: ProfilePageContentProps) {
   if (agentId === null) {
     return (
       <div className="min-h-0 flex-1 px-4 py-3" data-slot="profile-notifications">
-        <p className="text-muted-foreground text-xs">
-          Notifications are kept per agent, and this profile is not one.
-        </p>
+        <p className="text-muted-foreground text-xs">Notifications are set per agent.</p>
       </div>
     );
   }

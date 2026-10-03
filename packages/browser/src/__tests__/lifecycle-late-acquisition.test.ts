@@ -82,25 +82,17 @@ it.each(['verified', 'unknown', 'replaced-reservation'] as const)(
         browserId: original.browserId,
         browserGeneration: original.browserGeneration,
       });
-      expect(late.cleanup).toBe(mode === 'verified' ? 'observed' : 'unverified');
-      if (mode === 'verified')
-        await expect
-          .poll(async () => {
-            try {
-              await access(profileDir);
-              return true;
-            } catch {
-              return false;
-            }
-          })
-          .toBe(false);
-      else {
-        await access(profileDir);
-        if (mode === 'replaced-reservation')
-          expect(JSON.parse(await readFile(ownerFile, 'utf8')).nonce).toBe(
-            '11111111-1111-4111-8111-111111111111'
-          );
-      }
+      // Late cooperative closure cannot replace the first uncertain parent outcome.
+      expect(late.cleanup).toBe('unverified');
+      if (late.cleanup === 'observed' || original.cleanup === 'observed')
+        throw Error('Opening timeout cannot become observed cleanup');
+      expect(late.reason).toBe(original.reason);
+      expect(closeCalls).toBe(1);
+      await access(profileDir); // Retain quarantined ownership even after an observed child exit.
+      if (mode === 'replaced-reservation')
+        expect(JSON.parse(await readFile(ownerFile, 'utf8')).nonce).toBe(
+          '11111111-1111-4111-8111-111111111111'
+        );
       expect(owned.reports).toHaveLength(0);
       expect((await engine.shutdown())[0]).toMatchObject({ cleanup: 'unverified' }); // No retrospective invented success.
     } finally {

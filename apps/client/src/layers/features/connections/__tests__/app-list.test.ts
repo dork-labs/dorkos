@@ -337,7 +337,7 @@ describe('buildYourApps', () => {
       id: 'flow-1',
       kind: 'connecting',
       action: 'cancel',
-      detail: 'Waiting for you to finish signing in on Google…',
+      detail: 'Finish signing in on Google…',
     });
   });
 });

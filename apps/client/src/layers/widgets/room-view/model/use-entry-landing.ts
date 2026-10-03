@@ -142,9 +142,8 @@ export function useEntryLanding(input: EntryLandingInput): EntryLanding {
     // stale address can name a `seq` this room has not reached yet, and telling
     // somebody a message is in the past when it is in the future is a confident
     // wrong answer where a plain one costs nothing.
-    toast.info('DorkOS can’t find that message in what’s open here', {
-      description:
-        'This conversation has its most recent messages open, and that one is not among them. Everything said here is still here.',
+    toast.info('That message isn’t in the loaded history', {
+      description: 'Only recent messages are open. Nothing was lost.',
     });
   }, [request, historyLoaded, resolved]);
 

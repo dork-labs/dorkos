@@ -50,6 +50,12 @@ vi.mock('../../services/core/auth/cloud-link.js', () => ({
   getCloudLinkGeneration: () => 0,
 }));
 
+// The account that owns this install: the person the deletion bar lets through.
+vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: () => ({ id: 'user_cockpit', name: 'Owner' }),
+}));
+
 import cloudRouter from '../cloud.js';
 
 /** Who `sessionGate` resolved, as a test sets it; nobody by default (login off). */

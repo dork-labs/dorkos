@@ -56,6 +56,7 @@ const mockCreditsRuntimes = vi.hoisted(() => ({
 vi.mock('../../services/core/cloud/credits-runtimes.js', () => mockCreditsRuntimes);
 
 const mockCreditsDefaults = vi.hoisted(() => ({
+  creditsIsDefaultFor: vi.fn(() => false),
   setCreditsDefault: vi.fn(),
   undoFilledDefaults: vi.fn(() => []),
   dismissCreditsNotice: vi.fn(),
@@ -379,7 +380,11 @@ describe('cloud routes', () => {
         },
       ];
       try {
-        for (const useCredits of [true, false]) {
+        for (const [useCredits, current] of [
+          [true, false],
+          [false, true],
+        ] as const) {
+          mockCreditsDefaults.creditsIsDefaultFor.mockReturnValue(current);
           const res = await request(server)
             .put('/api/cloud/credits/default')
             .send({ runtime: 'opencode', useCredits })
@@ -389,6 +394,12 @@ describe('cloud routes', () => {
           );
         }
         expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
+        // A change that changes nothing is never refused.
+        mockCreditsDefaults.creditsIsDefaultFor.mockReturnValue(false);
+        await request(server)
+          .put('/api/cloud/credits/default')
+          .send({ runtime: 'opencode', useCredits: false })
+          .expect(200);
       } finally {
         liveRuntimes.list = [];
       }

@@ -56,5 +56,5 @@ export const STEP_HEADERS: {
 } = {
   gallery: { title: 'New agent', description: 'What will your agent do?' },
   naming: { title: 'Name your agent', description: 'Give it a name and a face.' },
-  arrival: { description: 'Bring a ready-made agent to life.' },
+  arrival: { description: 'Add a ready-made agent.' },
 };

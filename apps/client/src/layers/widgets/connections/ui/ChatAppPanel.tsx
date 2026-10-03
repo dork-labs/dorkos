@@ -50,7 +50,7 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
     <div className="space-y-7">
       {!instance.enabled ? (
         <PanelFix
-          message={`Paused. No messages go in or out of ${manifest.displayName}.`}
+          message="Paused. No messages go in or out."
           action="Resume"
           pending={toggle.isPending}
           onAction={() => setEnabled(true)}
@@ -60,7 +60,7 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
           // The bot's own error text (`status.lastError`) is written for
           // developers: the person reads one plain line and the one fix, and
           // the raw text waits under a collapsed "Details".
-          message={`Stopped working. Messages aren’t getting through ${manifest.displayName}.`}
+          message="Stopped working. Messages aren’t getting through."
           technicalDetail={instance.status.lastError}
           action="Check its settings"
           onAction={() => setWizard('edit')}
@@ -135,11 +135,15 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {manifest.displayName}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              It stops working and its settings are deleted. So are its recent deliveries and its
-              list of people who messaged it with no agent to answer, ignored and blocked ones
-              included, with their names. Messages sent to it after that reach nobody. If you set it
-              up again, anyone you blocked there will need blocking again.
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>It stops working and its settings are deleted.</p>
+                <p>So are its recent deliveries.</p>
+                <p>Its list of people who messaged it is deleted, names included.</p>
+                <p>That includes anyone ignored or blocked.</p>
+                <p>Messages sent to it after that reach nobody.</p>
+                <p>If you set it up again, block anyone you blocked again.</p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -160,7 +164,7 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
                 });
               }}
             >
-              Remove
+              Remove {manifest.displayName}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

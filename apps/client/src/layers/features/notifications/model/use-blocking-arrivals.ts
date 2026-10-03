@@ -68,9 +68,9 @@ const BLOCKING_KINDS: ReadonlySet<AttentionSignal['kind']> = new Set([
  * which is where `describeInteraction`'s transcript-derived phrasing lives.
  */
 const BLOCKING_SUMMARIES: Record<'permission-prompt' | 'question' | 'schedule-approval', string> = {
-  'permission-prompt': 'Waiting for your OK before it goes on.',
+  'permission-prompt': 'Needs your approval to go on.',
   question: 'Has a question for you.',
-  'schedule-approval': 'Wants to run something on a timer.',
+  'schedule-approval': 'Wants to run on a timer.',
 };
 
 /** What a caller is told about arrivals and departures. */

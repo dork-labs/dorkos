@@ -175,6 +175,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       'true'
     );
     expect(within(row).getByText(/None of it has run yet/)).toBeInTheDocument();
+    expect(within(row).getByText('Turn it on only if you trust its source.')).toBeInTheDocument();
     await user.click(within(row).getByRole('button', { name: 'See it in Settings → Extensions' }));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/', search: { settings: 'extensions' } });
   });

@@ -5,7 +5,12 @@ import {
   OpenCodeLogo,
   DefaultAdapterIcon,
 } from '@dorkos/icons/adapter-logos';
-import { RUNTIME_DESCRIPTORS, getRuntimeDescriptor } from '../config/runtime-descriptors';
+import { AgentRuntimeSchema } from '@dorkos/shared/mesh-schemas';
+import {
+  RUNTIME_DESCRIPTORS,
+  getRuntimeDescriptor,
+  runtimeLabel,
+} from '../config/runtime-descriptors';
 
 describe('RUNTIME_DESCRIPTORS', () => {
   it('registers all four known runtime types', () => {
@@ -100,5 +105,26 @@ describe('getRuntimeDescriptor', () => {
     // case above depends on.
     expect(getRuntimeDescriptor('claude-code')).toBe(RUNTIME_DESCRIPTORS['claude-code']);
     expect(getRuntimeDescriptor('codex')).toBe(RUNTIME_DESCRIPTORS.codex);
+  });
+});
+
+describe('runtimeLabel', () => {
+  it('names a known runtime and a discovered tool the way a person says them', () => {
+    expect(runtimeLabel('claude-code')).toBe('Claude Code');
+    expect(runtimeLabel('roo-code')).toBe('Roo Code');
+  });
+
+  it('gives every discovered-tool id a name, never the raw id', () => {
+    for (const id of AgentRuntimeSchema.options) {
+      expect(runtimeLabel(id)).not.toBe(id);
+    }
+  });
+
+  it('turns an id nobody has named into words', () => {
+    expect(runtimeLabel('new-tool')).toBe('New tool');
+  });
+
+  it('never answers with an inherited member', () => {
+    expect(runtimeLabel('constructor')).toBe('Constructor');
   });
 });

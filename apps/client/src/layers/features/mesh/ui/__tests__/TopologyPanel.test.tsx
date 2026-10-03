@@ -97,7 +97,7 @@ describe('TopologyPanel — default vs explicit access rule affordances (DOR-336
     });
 
     // Wait for the access rules section to render.
-    expect(await screen.findByText('Cross-Project Access Rules')).toBeInTheDocument();
+    expect(await screen.findByText('Cross-project access rules')).toBeInTheDocument();
 
     // The default rule (ns-a -> ns-a) must not have a remove button — removing
     // it wouldn't stick (re-asserted on the next agent registration) and would
@@ -141,7 +141,7 @@ describe('TopologyPanel — the mesh-wide switch (DOR-1338)', () => {
     expect(meshSwitch).not.toBeChecked();
 
     // Off: the pair-grant form is live and says nothing about the switch.
-    expect(screen.getByRole('button', { name: /Allow Access/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Allow access/ })).toBeInTheDocument();
     expect(screen.queryByText(/Already allowed by the switch above/)).not.toBeInTheDocument();
   });
 
@@ -201,7 +201,7 @@ describe('TopologyPanel — the mesh-wide switch (DOR-1338)', () => {
     // hide the very affordance the copy is explaining.
     const source = screen.getByRole('combobox', { name: 'Source' });
     const target = screen.getByRole('combobox', { name: 'Target' });
-    for (const control of [source, target, screen.getByRole('button', { name: /Allow Access/ })]) {
+    for (const control of [source, target, screen.getByRole('button', { name: /Allow access/ })]) {
       expect(control).toHaveAttribute('aria-disabled', 'true');
       expect(control).not.toBeDisabled();
       expect(control).toHaveAttribute('aria-describedby', explanation.id);
@@ -232,7 +232,7 @@ describe('TopologyPanel — the mesh-wide switch (DOR-1338)', () => {
     });
 
     await screen.findByRole('switch', { name: OPEN_MESH_LABEL });
-    await userEvent.click(screen.getByRole('button', { name: /Allow Access/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Allow access/ }));
 
     expect(updateMeshAccessRule).not.toHaveBeenCalled();
   });

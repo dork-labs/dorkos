@@ -193,7 +193,7 @@ export function useRemoteCommunityDrafts({
     try {
       for (let i = job.attachmentIds.length; i < job.files.length; i++) {
         if (!allowed.current || !alive.current || job.address !== authority.current)
-          throw new Error('Reconnect to this channel before retrying.');
+          throw new Error('Reconnect to this channel, then try again.');
         const attachment = await transport.uploadRemoteCommunityAttachment(
           job.ref,
           job.roomId,
@@ -203,7 +203,7 @@ export function useRemoteCommunityDrafts({
         job.attachmentIds.push(attachment.id);
       }
       if (!allowed.current || !alive.current || job.address !== authority.current)
-        throw new Error('Reconnect to this channel before retrying.');
+        throw new Error('Reconnect to this channel, then try again.');
       const entry = await transport.postRemoteCommunityEntry(job.ref, job.roomId, {
         text: job.text,
         parentEntryId: job.parentEntryId,
@@ -219,8 +219,7 @@ export function useRemoteCommunityDrafts({
         return;
       }
       job.status = 'failed';
-      job.error =
-        cause instanceof Error ? cause.message : 'Delivery was not confirmed. Retry this message.';
+      job.error = cause instanceof Error ? cause.message : 'Not confirmed. Try this message again.';
     } finally {
       running.current.delete(job.key);
       publish();
@@ -267,7 +266,7 @@ export function useRemoteCommunityDrafts({
     const waiting = store.drafts[communityDraftKey(target)];
     if (!waiting || (!waiting.text.trim() && waiting.files.length === 0)) return;
     if (jobs.current.size >= 30) {
-      setError('Wait for pending messages or retry failed messages before sending more.');
+      setError('Too many messages waiting. Let them send, or retry them first.');
       return;
     }
     // Taken from the store, not the render: the second of two quick Enters

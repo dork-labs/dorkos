@@ -325,9 +325,7 @@ describe('ChannelsPage members-panel entry points', () => {
       listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
     });
 
-    expect(
-      await screen.findByText(/no agents in here, so nothing will answer/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing answers until you add an agent/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Add agents' }));
 
     // Since phase R2 the button opens the right panel's Room tab with its
@@ -1088,7 +1086,7 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
     expect(await landedOn()).toBe('end');
     await waitFor(() =>
       expect(toastInfo).toHaveBeenCalledWith(
-        'DorkOS can’t find that message in what’s open here',
+        'That message isn’t in the loaded history',
         expect.anything()
       )
     );

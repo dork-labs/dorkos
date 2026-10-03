@@ -186,7 +186,7 @@ describe('the Skills page', () => {
     const page = await openSkillsPage();
 
     const notice = within(page).getByText(
-      'Gemini CLI files are in this folder, but DorkOS isn’t sharing to it.'
+      'Gemini CLI files are here, but DorkOS isn’t sharing to it.'
     );
     const firstSkill = within(page).getAllByRole('group')[0]!;
     const notShared = within(page).getByText('Not shared with Codex');
@@ -228,9 +228,7 @@ describe('the Skills page', () => {
     const page = await openSkillsPage();
 
     expect(
-      await within(page).findByText(
-        'Gemini CLI files are in this folder, but DorkOS isn’t sharing to it.'
-      )
+      await within(page).findByText('Gemini CLI files are here, but DorkOS isn’t sharing to it.')
     ).toBeInTheDocument();
     // Each token is its own non-breaking span (so a wrap never splits a flag),
     // which is why this reads the code element rather than matching its text.

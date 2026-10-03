@@ -583,7 +583,7 @@ describe('AgentExecutionRows — the Account row', () => {
     );
     await userEvent.click(await screen.findByTestId('agent-account-row'));
     const inherit = await screen.findByTestId('agent-account-row-inherit');
-    expect(inherit).toHaveTextContent('Using server default: .claude. Tap to restore');
+    expect(inherit).toHaveTextContent('Use server default: .claude');
     await userEvent.click(inherit);
     // `null`, not `undefined`: omitting the key would leave the override in
     // place on the manifest. The mesh route turns it back into a deletion.

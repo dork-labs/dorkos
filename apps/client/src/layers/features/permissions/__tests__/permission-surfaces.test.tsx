@@ -125,7 +125,7 @@ describe('ApplyToOverridesDialog', () => {
         onUpdate={onUpdate}
       />
     );
-    expect(screen.getByText('Rooms will be set to Allowed for everyone.')).toBeInTheDocument();
+    expect(screen.getByText('Set Rooms to Allowed for everyone?')).toBeInTheDocument();
     expect(screen.getByText('This affects 33 agents now.')).toBeInTheDocument();
     const boxes = screen.getAllByRole('checkbox');
     expect(boxes).toHaveLength(2);
@@ -257,7 +257,7 @@ describe('PermissionList (default scope)', () => {
     await userEvent.click(within(roomsRow).getByRole('radio', { name: 'Ask' }));
 
     // One agent differs, so the question comes first and nothing is written yet.
-    expect(await screen.findByText('Rooms will be set to Ask for everyone.')).toBeInTheDocument();
+    expect(await screen.findByText('Set Rooms to Ask for everyone?')).toBeInTheDocument();
     expect(screen.getByText('This affects 33 agents now.')).toBeInTheDocument();
     expect(transport.patchPermissionDefaults).not.toHaveBeenCalled();
 

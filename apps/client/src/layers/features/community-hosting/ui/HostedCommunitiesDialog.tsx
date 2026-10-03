@@ -87,9 +87,7 @@ function HostedCommunityRow({ community, names, actions, onFinishSetup, onOpenMo
         </Badge>
       </div>
       {community.state === 'unrecognised' && (
-        <p className="text-muted-foreground text-sm">
-          This space is in a state this version of DorkOS doesn’t know. Update DorkOS to see more.
-        </p>
+        <p className="text-muted-foreground text-sm">Update DorkOS to see this space’s state.</p>
       )}
       {community.hold && (
         <div className="space-y-1 text-sm">
@@ -134,7 +132,7 @@ function HostedCommunityRow({ community, names, actions, onFinishSetup, onOpenMo
           </p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={actions.cancelKeep}>
-              Not now
+              Cancel
             </Button>
             <Button size="sm" disabled={busy} onClick={() => void actions.keep(community)}>
               Keep it open
@@ -189,7 +187,7 @@ function moveLine(move: CloudCommunityMove): { text: string; next?: string } {
     case 'importing':
       return { text: 'Moving the history' };
     case 'ready':
-      return { text: 'Ready for you to make it yours' };
+      return { text: 'Ready to make yours' };
     case 'claimed':
       return { text: 'Moved' };
     case 'cancelled':
@@ -199,7 +197,7 @@ function moveLine(move: CloudCommunityMove): { text: string; next?: string } {
       return { text: copy.title, next: copy.next };
     }
     default:
-      return { text: 'In a state this version of DorkOS doesn’t know' };
+      return { text: 'Unknown state. Update DorkOS to see more.' };
   }
 }
 
@@ -235,7 +233,7 @@ export function HostedCommunityList(props: HostedCommunityListProps) {
           ))}
         </ul>
       ) : (
-        <p className="text-muted-foreground text-sm">You don’t have any spaces on DorkOS yet.</p>
+        <p className="text-muted-foreground text-sm">No spaces yet.</p>
       )}
       {props.moves.length > 0 && (
         <section aria-labelledby="hosted-moves" className="space-y-2">
@@ -331,7 +329,7 @@ function HostedCommunitiesFlow({
     const data = list.data?.available === true ? list.data : null;
     step = {
       title: 'Your spaces',
-      description: 'The spaces that run on DorkOS under your account.',
+      description: 'Spaces hosted under your DorkOS account.',
       body: list.isPending ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
       ) : data ? (

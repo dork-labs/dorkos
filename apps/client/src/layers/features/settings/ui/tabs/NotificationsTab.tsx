@@ -46,7 +46,7 @@ export function NotificationsTab() {
         <FieldCardContent>
           <SwitchSettingRow
             label="Knock when an agent needs you"
-            description="A soft double-knock when something waits on you."
+            description="Plays when something waits on you."
             checked={prefs.sounds.knock}
             onCheckedChange={(on) => setPrefs({ sounds: { knock: on } })}
             disabled={isPending}
@@ -54,7 +54,7 @@ export function NotificationsTab() {
 
           <SwitchSettingRow
             label="Chime when everything is answered"
-            description="A gentle sound when nothing is waiting any more."
+            description="Plays when nothing is waiting."
             checked={prefs.sounds.allClear}
             onCheckedChange={(on) => setPrefs({ sounds: { allClear: on } })}
             disabled={isPending}
@@ -62,7 +62,7 @@ export function NotificationsTab() {
 
           <SwitchSettingRow
             label="Chime every time a turn finishes"
-            description="Every reply, in every session. Noisy with several agents."
+            description="Every reply. Noisy with many agents."
             checked={prefs.sounds.turnEnd}
             onCheckedChange={(on) => setPrefs({ sounds: { turnEnd: on } })}
             disabled={isPending}
@@ -84,7 +84,7 @@ export function NotificationsTab() {
           </SettingRow>
 
           <SwitchSettingRow
-            label="Tell me when something finishes while I am away"
+            label="Notify when work finishes while you’re away"
             description="Anything waiting on you always gets through."
             checked={prefs.notifyOnTurnCompleteWhileAway}
             onCheckedChange={(on) => setPrefs({ notifyOnTurnCompleteWhileAway: on })}
@@ -110,10 +110,7 @@ export function NotificationsTab() {
       >
         <ol className="text-muted-foreground list-decimal space-y-1.5 pl-4 text-xs">
           <li>Open DorkOS on your phone, at your Remote access address.</li>
-          <li>
-            Choose “Add to Home Screen”. On iPhone this step is required before notifications work
-            at all.
-          </li>
+          <li>Choose “Add to Home Screen”. iPhone needs this for notifications.</li>
           <li>Open Settings there and add it as a device above.</li>
         </ol>
       </CollapsibleFieldCard>

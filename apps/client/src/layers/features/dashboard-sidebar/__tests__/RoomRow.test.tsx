@@ -509,7 +509,7 @@ describe('RoomRow leave', () => {
     expect(dialog).toHaveTextContent('Leave #general?');
     // The confirm copy no longer claims "someone" adds you back — on this
     // single-operator install there is nobody else who could.
-    expect(dialog).toHaveTextContent('You can join it again from this menu');
+    expect(dialog).toHaveTextContent('Rejoin from this menu any time.');
     expect(transport.removeRoomMember).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Leave' }));

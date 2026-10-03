@@ -62,7 +62,7 @@ describe('ClaimCard', () => {
     expect(screen.getByText('Miguel messaged your bot')).toBeInTheDocument();
     // The whole point: the card is built from identity metadata, so there is
     // no path by which a stranger's words could appear on this surface.
-    expect(screen.getByText(/nothing has been read/i)).toBeInTheDocument();
+    expect(screen.getByText(/not read or answered yet/i)).toBeInTheDocument();
   });
 
   it('says who added the bot, and to what, for a group', () => {
