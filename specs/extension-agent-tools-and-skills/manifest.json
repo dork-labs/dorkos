@@ -1,0 +1,15 @@
+{
+  "id": "261003-200014",
+  "slug": "extension-agent-tools-and-skills",
+  "title": "Extensions give agents tools and skills, registered at extension load",
+  "created": "2026-10-03",
+  "status": "specified",
+  "project": "extensibility-platform",
+  "linearIssue": "DOR-2685",
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md",
+    "designDecisions": "design-decisions.md",
+    "tasks": "03-tasks.json"
+  }
+}
