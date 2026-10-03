@@ -234,6 +234,23 @@ export const OPERATOR_ONLY_TRIGGER_REFUSAL =
   'DorkOS and run it there.';
 
 /**
+ * The refusal an agent reads when it names DorkOS credits for a scheduled task,
+ * or switches one that runs on them back on (DOR-2678).
+ *
+ * Every run of such a schedule spends the DorkOS account's money, so it is the
+ * owner of this DorkOS's call alone, through every door: `PATCH /api/tasks/:id`
+ * and `POST /api/tasks` refuse the same thing in their own words.
+ */
+export const CREDITS_SCHEDULE_AGENT_REFUSAL = {
+  error: 'DorkOS changed nothing. A scheduled task on DorkOS credits is the owner’s to choose.',
+  code: 'person_only',
+  message:
+    'Running a scheduled task on DorkOS credits spends the owner’s money, so only the owner ' +
+    'of this DorkOS can put one on credits or switch one back on. Ask them to do it in DorkOS. ' +
+    'Anything else you meant to change, send again without it.',
+} as const;
+
+/**
  * Find the operator-only fields a task write body reaches for.
  *
  * Presence is what counts, not the value. A caller that sends

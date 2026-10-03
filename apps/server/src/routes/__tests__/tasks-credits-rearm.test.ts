@@ -156,6 +156,41 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
     expect(store.getTask(task.id)?.enabled).toBe(false);
   });
 
+  it('refuses an agent switching it back on', async () => {
+    const task = await approvedOnCredits();
+    await patch(task.id, { enabled: false }).expect(200);
+    const res = await request(target.server)
+      .patch(`/api/tasks/${task.id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ enabled: true })
+      .expect(403);
+    expect(res.body.code).toBe('person_only');
+    expect(store.getTask(task.id)?.enabled).toBe(false);
+  });
+
+  it('lets the owner switch it back on', async () => {
+    const task = await approvedOnCredits();
+    await patch(task.id, { enabled: false }).expect(200);
+    const res = await patch(task.id, { enabled: true }).expect(200);
+    expect(res.body.enabled).toBe(true);
+  });
+
+  it('still lets an agent switch an ordinary schedule back on', async () => {
+    const found = await resync();
+    posture.loginOn = true;
+    signedInAs = 'user_owner';
+    await patch(found.id, { status: 'active', enabled: true }).expect(200);
+    await patch(found.id, { enabled: false }).expect(200);
+    signedInAs = undefined;
+    posture.loginOn = false;
+    const res = await request(target.server)
+      .patch(`/api/tasks/${found.id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ enabled: true })
+      .expect(200);
+    expect(res.body.enabled).toBe(true);
+  });
+
   it('keeps it approved when the owner edits it', async () => {
     const task = await approvedOnCredits();
     const res = await patch(task.id, { prompt: 'Drain everything.' });
