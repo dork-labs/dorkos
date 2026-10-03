@@ -93,6 +93,21 @@ function projectorFor(id: string) {
   return getOrCreateProjector(id);
 }
 
+/** What DorkOS knows about a bound chat, with the parts a case does not care about filled in. */
+function chat(facts: Partial<SessionFacts> = {}): SessionFacts {
+  return {
+    bound: true,
+    launchOrigin: 'interactive',
+    agentPath: null,
+    startedByExtension: null,
+    roomBound: false,
+    ...facts,
+  };
+}
+
+/** The canonical id the next dispatch reports, when a case wants one that differs. */
+let canonicalFor: ((sessionId: string) => string) | undefined;
+
 /** The launch path, reduced to the dispatcher, with the cap as a switch. */
 async function fakeDispatch(
   opts: DispatchSessionMessageOpts
@@ -101,7 +116,14 @@ async function fakeDispatch(
   if (opts.countsTowardLaunchCap && capFull) {
     return { refused: 'LAUNCH_CAP_FULL', message: 'Too many agent-started sessions are running.' };
   }
-  return dispatchMessage({
+  // A new chat is bound by its first dispatch, as the real launch path does.
+  if (!sessions.has(opts.sessionId)) {
+    sessions.set(
+      opts.sessionId,
+      chat({ launchOrigin: opts.origin.kind, agentPath: opts.request.agentPath ?? null })
+    );
+  }
+  const result = await dispatchMessage({
     sessionId: opts.sessionId,
     clientId: opts.clientId,
     content: opts.request.content,
@@ -110,6 +132,7 @@ async function fakeDispatch(
     runtime,
     ...(opts.onSettled ? { onSettled: opts.onSettled } : {}),
   });
+  return canonicalFor ? { ...result, canonicalId: canonicalFor(opts.sessionId) } : result;
 }
 
 /** A person's own turn, holding the chat until `hold` opens. */
@@ -135,7 +158,7 @@ function build(overrides: Partial<ConstructorParameters<typeof AgentSendService>
       getProjectPath: (id: string) => agents.get(id),
     }),
     describeSession: async (id) =>
-      sessions.get(id) ?? { bound: false, launchOrigin: null, agentPath: null },
+      sessions.get(id) ?? chat({ bound: false, launchOrigin: null }),
     sessionCwd: async () => '/work/project',
     isBusy: async (id) => isTurnInFlight(id, runtime),
     dispatch: fakeDispatch,
@@ -166,7 +189,8 @@ beforeEach(async () => {
   reserved = [];
   capFull = false;
   agents = new Map();
-  sessions = new Map([[session, { bound: true, launchOrigin: 'interactive', agentPath: null }]]);
+  canonicalFor = undefined;
+  sessions = new Map([[session, chat()]]);
   db = createTestDb();
   queue = new MessageQueueStore(db);
   setMessageQueueStore(queue);
@@ -326,6 +350,22 @@ describe('ctx.agent.send — a busy chat holds the message', () => {
 });
 
 describe('ctx.agent.send — idempotency', () => {
+  it('answers a resend after the message failed with `failed`, not a stale `queued`', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    const receipt = await service.send(EXT, { to: session, text: 'maybe', idempotencyKey: 'k' });
+    cancelQueuedMessage(session, receipt.messageId);
+
+    const again = await service.send(EXT, { to: session, text: 'maybe', idempotencyKey: 'k' });
+
+    expect(again).toEqual({
+      messageId: receipt.messageId,
+      status: 'failed',
+      failure: 'removed',
+      sessionId: session,
+    });
+  });
+
   it('answers a resend with the same key with the first receipt, and sends nothing', async () => {
     const first = gate();
     await personTurn(first.wait);
@@ -484,7 +524,7 @@ describe('ctx.agent.send — capacity', () => {
   it('fails a held message whose chat stopped taking messages, never silently', async () => {
     capFull = true;
     const receipt = await service.send(EXT, { to: session, text: 'soon', idempotencyKey: 'k' });
-    sessions.set(session, { bound: true, launchOrigin: 'room', agentPath: null });
+    sessions.set(session, chat({ launchOrigin: 'room' }));
 
     capFull = false;
     await service.drainHeld();
@@ -501,8 +541,8 @@ describe('ctx.agent.send — capacity', () => {
 
 describe('ctx.agent.send — who it is for', () => {
   it('refuses a chat it may not write into, and an id nobody knows', async () => {
-    sessions.set('room-chat', { bound: true, launchOrigin: 'room', agentPath: null });
-    sessions.set('bridged', { bound: true, launchOrigin: 'relay-binding', agentPath: null });
+    sessions.set('room-chat', chat({ launchOrigin: 'room' }));
+    sessions.set('bridged', chat({ launchOrigin: 'relay-binding' }));
 
     await expect(
       service.send(EXT, { to: 'room-chat', text: 'x', idempotencyKey: 'a' })
@@ -528,12 +568,6 @@ describe('ctx.agent.send — who it is for', () => {
 
     const first = await service.send(EXT, { to: '01AGENT', text: 'one', idempotencyKey: 'a' });
     await settle();
-    // The chat now exists and is the agent's.
-    sessions.set(first.sessionId!, {
-      bound: true,
-      launchOrigin: 'extension-message',
-      agentPath: '/agents/reviewer',
-    });
     const second = await service.send(EXT, { to: '01AGENT', text: 'two', idempotencyKey: 'b' });
     await settle();
 
@@ -543,6 +577,148 @@ describe('ctx.agent.send — who it is for', () => {
     expect(dispatched[0]!.request.seedContext).toContain('Flow Dashboard');
     expect(dispatched[1]!.request).not.toHaveProperty('seedContext');
     projectors.push(first.sessionId!);
+  });
+
+  it('opens ONE chat when two first messages to an agent race each other', async () => {
+    agents.set('01AGENT', '/agents/reviewer');
+    runtime.withScenarios([quickTurn(), quickTurn()]);
+
+    const [one, two] = await Promise.all([
+      service.send(EXT, { to: '01AGENT', text: 'one', idempotencyKey: 'a' }),
+      service.send(EXT, { to: '01AGENT', text: 'two', idempotencyKey: 'b' }),
+    ]);
+    await settle();
+
+    expect(reserved).toHaveLength(1);
+    expect(two.sessionId).toBe(one.sessionId);
+    projectors.push(one.sessionId!);
+  });
+
+  it('refuses an older chat DorkOS cannot place (no launch origin)', async () => {
+    // A chat bound before migration 0119 has no origin: it may as well be a
+    // room's or a bridged chat, so it is not taken for a person's.
+    sessions.set('legacy', chat({ launchOrigin: null }));
+
+    await expect(
+      service.send(EXT, { to: 'legacy', text: 'x', idempotencyKey: 'a' })
+    ).rejects.toMatchObject({ code: 'not_allowed' });
+    expect(dispatched).toEqual([]);
+  });
+
+  it('refuses a person’s chat a room has taken over', async () => {
+    sessions.set('in-a-room', chat({ launchOrigin: 'interactive', roomBound: true }));
+
+    await expect(
+      service.send(EXT, { to: 'in-a-room', text: 'x', idempotencyKey: 'a' })
+    ).rejects.toMatchObject({ code: 'not_allowed' });
+  });
+
+  it('hands the launch the real room port, so its own room guard can fire', async () => {
+    const port = { roomFor: () => null, placeTurn: vi.fn() };
+    service.stop();
+    service = build({ roomSessionPlace: () => port as never });
+    runtime.withScenarios([quickTurn()]);
+
+    await service.send(EXT, { to: session, text: 'x', idempotencyKey: 'a' });
+
+    expect(dispatched[0]!.roomSessionPlace).toBe(port);
+  });
+
+  it('writes only into its own extension chats, never another extension’s', async () => {
+    sessions.set('theirs-started', chat({ launchOrigin: 'extension-start', startedByExtension: 'other-app' }));
+    sessions.set('theirs-agent-chat', chat({ launchOrigin: 'agent-launch', startedByExtension: 'other-app' }));
+    sessions.set('mine-started', chat({ launchOrigin: 'extension-start', startedByExtension: EXT }));
+    sessions.set('unowned-ext-chat', chat({ launchOrigin: 'extension-message' }));
+    runtime.withScenarios([quickTurn()]);
+
+    for (const to of ['theirs-started', 'theirs-agent-chat', 'unowned-ext-chat']) {
+      await expect(service.send(EXT, { to, text: 'x', idempotencyKey: to })).rejects.toMatchObject({
+        code: 'not_allowed',
+      });
+    }
+    await expect(
+      service.send(EXT, { to: 'mine-started', text: 'x', idempotencyKey: 'mine' })
+    ).resolves.toMatchObject({ status: 'started' });
+    projectors.push('mine-started');
+  });
+
+  it('reports ONE chat id for a new chat, even when the runtime settles on another', async () => {
+    agents.set('01AGENT', '/agents/reviewer');
+    canonicalFor = () => 'canonical-chat';
+    runtime.withScenarios([quickTurn()]);
+
+    const receipt = await service.send(EXT, { to: '01AGENT', text: 'one', idempotencyKey: 'a' });
+    await settle();
+
+    expect(receipt.sessionId).toBe('canonical-chat');
+    expect(events.map((e) => e.sessionId)).toEqual(['canonical-chat', 'canonical-chat']);
+    projectors.push(reserved[0]!);
+  });
+});
+
+describe('ctx.agent.send — the extension stops', () => {
+  it('fails its held messages with `stopped`, and keeps them out of any chat', async () => {
+    capFull = true;
+    const receipt = await service.send(EXT, { to: session, text: 'soon', idempotencyKey: 'k' });
+    const other = await service.send('other-app', { to: session, text: 'soon', idempotencyKey: 'k' });
+
+    service.extensionStopped(EXT);
+    capFull = false;
+    await service.drainHeld();
+    await settle();
+
+    expect(events).toEqual([
+      expect.objectContaining({ kind: 'turn.failed', messageId: receipt.messageId, reason: 'stopped' }),
+    ]);
+    // Only the other extension's message was sent.
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(store.get(other.messageId)?.status).not.toBe('failed');
+  });
+
+  it('leaves held messages alone when the whole server shuts down', async () => {
+    capFull = true;
+    const receipt = await service.send(EXT, { to: session, text: 'soon', idempotencyKey: 'k' });
+
+    service.stop();
+    service.extensionStopped(EXT);
+
+    expect(store.get(receipt.messageId)?.status).toBe('held');
+  });
+});
+
+describe('ctx.agent.send — before start()', () => {
+  it('hears a message sent before start, and does not call it interrupted', async () => {
+    service.stop();
+    events = [];
+    service = build();
+    service.subscribe(EXT, (event) => events.push(event));
+    runtime.withScenarios([quickTurn()]);
+
+    const receipt = await service.send(EXT, { to: session, text: 'early', idempotencyKey: 'k' });
+    await settle();
+    await service.start();
+
+    expect(events).toEqual([
+      { kind: 'turn.started', messageId: receipt.messageId, sessionId: session },
+      { kind: 'turn.done', messageId: receipt.messageId, sessionId: session, outcome: 'ok' },
+    ]);
+  });
+
+  it('judges only rows a previous process wrote, never one it sent itself', async () => {
+    service.stop();
+    events = [];
+    // A check that would call ANY queued row interrupted, if it were judged.
+    service = build({ isQueued: () => false });
+    service.subscribe(EXT, (event) => events.push(event));
+    const first = gate();
+    await personTurn(first.wait);
+    const receipt = await service.send(EXT, { to: session, text: 'early', idempotencyKey: 'k' });
+
+    await service.start();
+
+    expect(receipt.status).toBe('queued');
+    expect(events).toEqual([]);
+    expect(store.get(receipt.messageId)?.status).toBe('queued');
   });
 });
 

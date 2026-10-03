@@ -184,6 +184,21 @@ export class AgentSendStore {
   }
 
   /**
+   * The extension that keeps a chat with an agent, or null when no extension
+   * keeps it.
+   *
+   * @param sessionId - The chat's id.
+   */
+  keptChatOwner(sessionId: string): string | null {
+    const row = this.db
+      .select({ extensionId: extensionAgentChats.extensionId })
+      .from(extensionAgentChats)
+      .where(eq(extensionAgentChats.sessionId, sessionId))
+      .get();
+    return row?.extensionId ?? null;
+  }
+
+  /**
    * Remember the chat an extension keeps with an agent, replacing an older one.
    *
    * @param extensionId - The extension.

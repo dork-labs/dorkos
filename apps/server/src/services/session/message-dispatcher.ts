@@ -233,6 +233,13 @@ interface PendingDispatch {
    * comes, the wait bound) tries again.
    */
   waitingOnLock: boolean;
+  /**
+   * Tell the message's caller it will never run: its `onSettled('failed')`, so
+   * whatever it holds until the turn settles (a launch-cap slot, a start
+   * reservation, a dispatch buffer entry) is handed back. Called when the
+   * message is taken off the queue while it waits.
+   */
+  abandon: () => void;
   /** A protected document's durable budget wait, independent of lock waiting. */
   notBefore?: number;
 }
@@ -1580,6 +1587,7 @@ function parkDispatch(
     entry.timer.unref?.();
   };
   const entry: PendingDispatch = {
+    abandon: () => plan.turn.onSettled?.('failed'),
     ...(plan.turn.privateDispatchSignal
       ? { privateDispatchSignal: plan.turn.privateDispatchSignal }
       : {}),
@@ -2659,10 +2667,14 @@ export function sweepOrphanedMessageQueues(opts?: {
     const gone = chunk.flatMap((id) => store?.list(id) ?? []);
     removed += store?.deleteForSessions(chunk) ?? 0;
     for (const row of gone) {
+      if (launching.has(row.id)) continue;
       const entry = pending.get(row.id);
-      if (entry) clearTimeout(entry.timer);
       pending.delete(row.id);
       emitLifecycle({ phase: 'dropped', messageId: row.id, reason: 'session_gone' });
+      if (entry) {
+        clearTimeout(entry.timer);
+        entry.abandon();
+      }
     }
     // Held staged words go with the queue: same reason, same beat. A session
     // nobody can open again will never dispatch, so its hold can only sit there
@@ -2715,6 +2727,11 @@ export async function suspendPrivateDispatches(signal: AbortSignal): Promise<voi
  * @returns True when a dispatch was armed and is now cancelled
  */
 export function cancelPendingDispatch(messageId: string): boolean {
+  // A launch already under way is NOT dropped here: its turn may still start,
+  // and if it does not, `returnToQueue` finds no row and reports the drop and
+  // settles the caller itself. Saying "removed" now could be followed by the
+  // same message's `started`.
+  if (launching.has(messageId)) return false;
   // Reported whether or not an entry was armed: a row adopted by nobody yet
   // (after a restart) is removed just as surely, and its sender is owed the
   // same answer.
@@ -2723,6 +2740,7 @@ export function cancelPendingDispatch(messageId: string): boolean {
   if (!entry) return false;
   clearTimeout(entry.timer);
   pending.delete(messageId);
+  entry.abandon();
   return true;
 }
 

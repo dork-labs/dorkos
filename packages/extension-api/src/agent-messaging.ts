@@ -15,7 +15,9 @@ export interface AgentSendInput {
    * Who the message is for: a Mesh agent id or a chat (session) id. An agent
    * id is tried first. It goes to the one chat this extension keeps with that
    * agent: the first message opens it in the agent's home, and every later one
-   * lands in the same chat.
+   * lands in the same chat. A chat id must be a person's own chat, or one this
+   * extension started or keeps; another extension's chat, a room's, a bridged
+   * chat and a scheduled run are refused.
    */
   to: string;
   /** The message, 1-20,000 characters. The agent reads it as app data, not as instructions. */
@@ -46,16 +48,27 @@ export type AgentSendWaitReason = 'busy' | 'at_capacity';
  *
  * `messageId` is the handle for everything after: the delivery events
  * ({@link AgentDeliveryEvent}) carry it, and a resend with the same
- * `idempotencyKey` answers with this same receipt.
+ * `idempotencyKey` answers with this same receipt — or, once the message has
+ * failed, with `status: 'failed'` and why, so a resend never reads a stale
+ * "queued" for a message that will never run.
  */
 export interface AgentSendReceipt {
   /** The message's id. Delivery events carry it. */
   messageId: string;
-  /** `started`: the agent is working on it now. `queued`: it is waiting; see `reason`. */
-  status: 'started' | 'queued';
+  /**
+   * `started`: the agent is working on it now. `queued`: it is waiting; see
+   * `reason`. `failed`: only on a resend, for a message that will never run;
+   * see `failure`.
+   */
+  status: 'started' | 'queued' | 'failed';
   /** Why it is waiting. Present only when `status` is `queued`. */
   reason?: AgentSendWaitReason;
-  /** The chat it went to, or `null` while the agent's chat has not been opened yet. */
+  /** Why it will never run. Present only when `status` is `failed`. */
+  failure?: AgentDeliveryFailureReason;
+  /**
+   * The chat it went to, or `null` while the agent's chat has not been opened
+   * yet. The same id every delivery event for this message carries.
+   */
   sessionId: string | null;
 }
 
@@ -69,9 +82,11 @@ export interface AgentSendReceipt {
  *   it could tell whether it ran. Read the chat to see how far it got.
  * - `undeliverable`: it was waiting for room, and by the time there was room
  *   the agent or chat could no longer take it (removed, or not allowed there).
+ * - `stopped`: it was waiting for room when the extension was stopped,
+ *   reloaded, turned off or removed, so it was never sent.
  */
 export type AgentDeliveryFailureReason =
-  'removed' | 'session_gone' | 'interrupted' | 'undeliverable';
+  'removed' | 'session_gone' | 'interrupted' | 'undeliverable' | 'stopped';
 
 /**
  * What happened to a message this extension sent: the acknowledgement for a
@@ -98,7 +113,9 @@ export interface AgentApi {
   /**
    * Send one of the person's agents a message. Answers at once with a
    * receipt; a busy agent holds the message until its current turn ends, with
-   * no time limit, and the message survives a restart while it waits.
+   * no time limit, and the message survives a restart while it waits. A
+   * message held for room (`at_capacity`) is failed with `stopped` if the
+   * extension stops before it is sent.
    *
    * @throws AgentSendError when the input breaks a rule (`invalid_input`), no
    *   agent or chat has that id (`not_found`), the chat is one an extension may

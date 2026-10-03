@@ -92,6 +92,8 @@ import { getMessageQueueStore } from '../session/message-queue-store.js';
 import { persistenceModeFor } from '../session/projector-persistence.js';
 import { getOrCreateProjector, peekProjector } from '../session/session-state-projector.js';
 import { fenceUntrustedBlock, mintFenceNonce } from '../runtimes/shared/untrusted-fence.js';
+import type { RoomSessionPlacePort } from '../workspace/room-session-place.js';
+import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
 import type { AgentSendRecord, AgentSendStore } from './agent-send-store.js';
 import { getStartWorkService, type StartReservation } from './start-work.js';
 
@@ -110,17 +112,21 @@ export const UNHEARD_EVENTS_MAX = 200;
 /**
  * The launch origins (`TurnOrigin.kind`, as `session_metadata.launch_origin`
  * records it) of chats an extension may write into: a person's own chat, one
- * an agent or an extension started, and a carry-over or resume of one. A chat
- * bound before the column existed (`null`) is a person's chat from before then.
+ * an agent or an extension started, and a carry-over or resume of one. The two
+ * extension kinds are further limited to the extension's OWN chats
+ * ({@link AgentSendService} `resolveTarget`).
  *
  * Deny by default. Left out on purpose: a room's conversation (an extension
  * would be talking in a room by the back door), a chat bridged from Telegram
  * or Slack (its replies go to people off this machine), an agent-to-agent relay
  * thread, a connector event's chat, a schedule's run, and the test harness. A
  * kind added later is not in this list until someone decides.
+ *
+ * **`null` is not in it.** A chat bound before the column existed (migration
+ * 0119) could be any of the kinds above, a room's or a bridged chat included,
+ * and nothing left on the row can prove it was a person's. So it is refused.
  */
-export const MESSAGEABLE_ORIGINS: ReadonlySet<string | null> = new Set([
-  null,
+export const MESSAGEABLE_ORIGINS: ReadonlySet<string> = new Set([
   'interactive',
   'agent-launch',
   'extension-start',
@@ -152,6 +158,10 @@ export interface SessionFacts {
   launchOrigin: string | null;
   /** `session_metadata.agent_path`, or null. */
   agentPath: string | null;
+  /** The extension at the root of the chat's chain of starters (`session_started_by`), or null. */
+  startedByExtension: string | null;
+  /** Whether a room answers for this chat (its room binding). */
+  roomBound: boolean;
 }
 
 /** What the agent-send seam needs. Everything after `store` has a production default. */
@@ -162,6 +172,11 @@ export interface AgentSendDeps {
   extensionName: (extensionId: string) => string;
   /** Mesh, when it is running: resolves an agent id to its home. */
   meshCore: () => Pick<MeshCore, 'get' | 'getProjectPath'> | undefined;
+  /**
+   * The room binding port, read at call time: which chats a room answers for,
+   * and the launch's own room guard (`ROOM_SESSION_MOVED`).
+   */
+  roomSessionPlace?: () => RoomSessionPlacePort | undefined;
   /** What DorkOS knows about a chat. */
   describeSession?: (sessionId: string) => Promise<SessionFacts>;
   /** The folder a chat runs in, when a live projector or its runtime knows. */
@@ -208,6 +223,7 @@ const FAILURE_MESSAGE: Record<AgentDeliveryFailureReason, string> = {
   interrupted:
     'DorkOS restarted before the message finished. Check the chat to see how far it got.',
   undeliverable: 'The message waited for room, and then the agent or chat could no longer take it.',
+  stopped: 'The message was waiting for room when the extension stopped, so it was never sent.',
 };
 
 /**
@@ -275,8 +291,18 @@ function describeInputProblem(input: unknown): string {
   return 'Send { to, text, idempotencyKey } and an optional context.';
 }
 
-/** The receipt a stored message answers with. */
+/** The receipt a stored message answers with: the first one, or `failed` once it has. */
 function receiptOf(row: AgentSendRecord): AgentSendReceipt {
+  if (row.status === 'failed') {
+    return {
+      messageId: row.id,
+      status: 'failed',
+      ...(row.failureReason
+        ? { failure: row.failureReason as AgentDeliveryFailureReason }
+        : {}),
+      sessionId: row.sessionId,
+    };
+  }
   return {
     messageId: row.id,
     status: row.receiptStatus,
@@ -302,12 +328,22 @@ export class AgentSendService {
   private readonly isQueued: (messageId: string) => boolean;
   private readonly resumeQueue: NonNullable<AgentSendDeps['resumeQueue']>;
   private readonly onLifecycle: NonNullable<AgentSendDeps['onLifecycle']>;
+  /** Chat-opening sends, chained per (extension, agent), so two firsts open one chat. */
+  private readonly agentLocks = new Map<string, Promise<unknown>>();
+  /** Events for messages mid-dispatch, held until the chat's final id is known. */
+  private readonly attempting = new Map<string, AgentDeliveryEvent[]>();
+  /** Messages this process wrote: never "left behind by a restart". */
+  private readonly createdHere = new Set<string>();
   private unsubscribeLifecycle: (() => void) | null = null;
+  private started = false;
+  private stopped = false;
   private retryTimer: ReturnType<typeof setInterval> | null = null;
   private draining: Promise<void> | null = null;
 
   /**
-   * Build the seam. Call {@link AgentSendService.start} once runtimes are
+   * Build the seam, already listening to the dispatcher: an extension may send
+   * the moment it starts, which is before {@link AgentSendService.start}, and
+   * those messages' turns must be heard. Call `start` once runtimes are
    * registered.
    *
    * @param deps - What it needs.
@@ -320,6 +356,9 @@ export class AgentSendService {
         bound: (await runtimeRegistry.resolveSessionRuntime(sessionId)).bound,
         launchOrigin: runtimeRegistry.getSessionLaunchOrigin(sessionId),
         agentPath: await runtimeRegistry.getSessionAgentPath(sessionId),
+        startedByExtension:
+          getSessionStartedByStore()?.get(sessionId)?.originExtensionId ?? null,
+        roomBound: (deps.roomSessionPlace?.()?.roomFor(sessionId) ?? null) !== null,
       }));
     this.sessionCwd =
       deps.sessionCwd ??
@@ -368,23 +407,26 @@ export class AgentSendService {
         adoptQueuedMessages({ sessionId, projector, runtime, ...(cwd ? { cwd } : {}) });
       });
     this.onLifecycle = deps.onLifecycle ?? onDispatchLifecycle;
+    this.unsubscribeLifecycle = this.onLifecycle((event) => this.onDispatch(event));
   }
 
   /**
-   * Start listening to the dispatcher, settle what a previous process left
-   * unfinished, and start retrying held messages.
+   * Settle what a previous process left unfinished, and start retrying held
+   * messages.
    *
    * Left behind by a restart: a `started` message's turn died with the old
    * process, and a `queued` one whose queue row is gone can no longer be told
    * apart from one that ran, so both are reported `interrupted`. A `queued`
    * message whose row survived is re-armed now, rather than waiting for the
-   * next message to that chat to adopt it.
+   * next message to that chat to adopt it. Only rows a PREVIOUS process wrote
+   * are judged: a message this process sent before `start` ran is live.
    */
   async start(): Promise<void> {
-    if (this.unsubscribeLifecycle) return;
-    this.unsubscribeLifecycle = this.onLifecycle((event) => this.onDispatch(event));
+    if (this.started) return;
+    this.started = true;
     const resumed = new Set<string>();
     for (const row of this.deps.store.listByStatus(['queued', 'started'])) {
+      if (this.createdHere.has(row.id)) continue;
       if (row.status === 'started' || !this.isQueued(row.id)) {
         this.fail(row, 'interrupted');
         continue;
@@ -403,8 +445,12 @@ export class AgentSendService {
     this.retryTimer.unref?.();
   }
 
-  /** Stop listening and stop retrying. Held messages stay held for the next start. */
+  /**
+   * Stop listening and stop retrying, for a server shutting down. Held
+   * messages stay held for the next process.
+   */
   stop(): void {
+    this.stopped = true;
     this.unsubscribeLifecycle?.();
     this.unsubscribeLifecycle = null;
     if (this.retryTimer) clearInterval(this.retryTimer);
@@ -461,8 +507,54 @@ export class AgentSendService {
     };
   }
 
+  /**
+   * An extension stopped, reloaded, was turned off or removed: its held
+   * messages (waiting for room, never handed to a chat) are failed with
+   * `stopped`, so nothing it sent goes out after it is gone. Messages already
+   * in a chat's queue are the person's to see and remove, and stay. A server
+   * shutting down is not an extension stopping: after {@link stop}, this does
+   * nothing, so held messages survive a restart.
+   *
+   * @param extensionId - The extension that stopped.
+   */
+  extensionStopped(extensionId: string): void {
+    if (this.stopped) return;
+    for (const row of this.deps.store.listByStatus(['held'])) {
+      if (row.extensionId === extensionId) this.fail(row, 'stopped');
+    }
+  }
+
+  /**
+   * Run `fn` after every earlier chat-opening send to the same agent from the
+   * same extension, so two first messages racing each other open ONE chat (and
+   * spend one start slot): the second finds the chat the first kept.
+   */
+  private withAgentLock<T>(key: string | null, fn: () => Promise<T>): Promise<T> {
+    if (key === null) return fn();
+    const previous = this.agentLocks.get(key) ?? Promise.resolve();
+    const run = previous.then(fn, fn);
+    const tail = run.catch(() => undefined);
+    this.agentLocks.set(key, tail);
+    void tail.then(() => {
+      if (this.agentLocks.get(key) === tail) this.agentLocks.delete(key);
+    });
+    return run;
+  }
+
+  /** The lock key for messages to an agent, or null for a chat id. */
+  private agentLockKey(extensionId: string, to: string): string | null {
+    const mesh = this.deps.meshCore();
+    return mesh?.get(to) && mesh.getProjectPath(to) ? `${extensionId}\u0000${to}` : null;
+  }
+
   /** Validate the target, record the message, and make the first attempt. */
-  private async sendOnce(
+  private sendOnce(extensionId: string, request: AgentSendRequest): Promise<AgentSendReceipt> {
+    return this.withAgentLock(this.agentLockKey(extensionId, request.to), () =>
+      this.sendLocked(extensionId, request)
+    );
+  }
+
+  private async sendLocked(
     extensionId: string,
     request: AgentSendRequest
   ): Promise<AgentSendReceipt> {
@@ -484,6 +576,7 @@ export class AgentSendService {
       failureReason: null,
       content: renderAppMessage(name, extensionId, request.text, request.context, this.nonce()),
     });
+    this.createdHere.add(row.id);
     let attempt: Attempt;
     try {
       attempt = await this.attempt(row, target);
@@ -543,11 +636,24 @@ export class AgentSendService {
         throw new AgentSendError('unavailable', 'Agents aren’t loaded yet. Try again in a moment.');
       throw new AgentSendError('not_found', 'There is no agent or chat with that id here.');
     }
-    if (!MESSAGEABLE_ORIGINS.has(facts.launchOrigin)) {
+    if (
+      facts.roomBound ||
+      facts.launchOrigin === null ||
+      !MESSAGEABLE_ORIGINS.has(facts.launchOrigin)
+    ) {
       throw new AgentSendError(
         'not_allowed',
-        'Extensions can’t write into a room’s conversation, a chat bridged from Telegram or Slack, or a scheduled run.'
+        'Extensions can only write into your own chats. Not a room’s, a bridged chat, a scheduled run, or an older chat DorkOS can’t place.'
       );
+    }
+    // Whose chat it is: a chat an extension keeps with an agent, or one in a
+    // chain an extension started, belongs to that extension. Another
+    // extension's is refused; the extension kinds must prove they are ours.
+    const owner = this.deps.store.keptChatOwner(to) ?? facts.startedByExtension;
+    const extensionKind =
+      facts.launchOrigin === 'extension-start' || facts.launchOrigin === 'extension-message';
+    if ((owner !== null && owner !== extensionId) || (extensionKind && owner !== extensionId)) {
+      throw new AgentSendError('not_allowed', 'That chat belongs to another extension.');
     }
     return { sessionId: to };
   }
@@ -557,6 +663,25 @@ export class AgentSendService {
    * Opens the agent's kept chat first when it has none.
    */
   private async attempt(row: AgentSendRecord, target: ResolvedTarget): Promise<Attempt> {
+    // Events for this message wait until the dispatch answers, so every one of
+    // them, and the receipt, carries the one id the chat settles on.
+    this.attempting.set(row.id, []);
+    try {
+      return await this.attemptBuffered(row, target);
+    } finally {
+      const held = this.attempting.get(row.id) ?? [];
+      this.attempting.delete(row.id);
+      const sessionId = this.deps.store.get(row.id)?.sessionId ?? null;
+      for (const event of held) {
+        this.deliver(row.extensionId, {
+          ...event,
+          ...(sessionId !== null ? { sessionId } : {}),
+        } as AgentDeliveryEvent);
+      }
+    }
+  }
+
+  private async attemptBuffered(row: AgentSendRecord, target: ResolvedTarget): Promise<Attempt> {
     let sessionId = target.sessionId;
     let reservation: StartReservation | undefined;
     if (sessionId === null) {
@@ -565,6 +690,9 @@ export class AgentSendService {
       if (claimed && !claimed.ok) return { kind: 'held' };
       reservation = claimed?.reservation;
     }
+    // On the row before the dispatch, so nothing that happens inside it can
+    // report a chat id this message never had.
+    this.deps.store.update(row.id, { sessionId });
     const busy = target.sessionId !== null && (await this.isBusy(sessionId).catch(() => false));
     const name = sanitizeIdentity(this.deps.extensionName(row.extensionId)) ?? row.extensionId;
     let result: DispatchSessionMessageResult;
@@ -585,19 +713,21 @@ export class AgentSendService {
         },
         clientId: `extension:${row.extensionId}`,
         meshCore: this.deps.meshCore() as MeshCore | undefined,
-        // An extension never writes into a room's conversation
-        // (MESSAGEABLE_ORIGINS), so there is no room binding to resume.
-        roomSessionPlace: undefined,
+        // The real port, so the launch's own room guard still fires for a chat
+        // a room took over after the target was checked (ROOM_SESSION_MOVED).
+        roomSessionPlace: this.deps.roomSessionPlace?.(),
         // A message into a busy chat adds no turn beside the running one.
         countsTowardLaunchCap: !busy,
         ...(reservation ? { onSettled: () => reservation.settle() } : {}),
       });
     } catch (err) {
       reservation?.cancel();
+      this.deps.store.update(row.id, { sessionId: target.sessionId });
       throw err;
     }
     if (isSessionLaunchRefusal(result)) {
       reservation?.cancel();
+      this.deps.store.update(row.id, { sessionId: target.sessionId });
       if (result.refused === 'LAUNCH_CAP_FULL') return { kind: 'held' };
       if (result.refused === 'ROOM_SESSION_MOVED' || result.refused === 'DESK_NOT_OWN') {
         return { kind: 'refused', code: 'not_allowed', message: result.message };
@@ -609,6 +739,7 @@ export class AgentSendService {
     }
     if (!result.accepted) {
       reservation?.cancel();
+      this.deps.store.update(row.id, { sessionId: target.sessionId });
       return {
         kind: 'refused',
         code: 'unavailable',
@@ -644,8 +775,18 @@ export class AgentSendService {
     return this.draining;
   }
 
+  /** One held message's retry, in its agent's chat-opening line. */
+  private retry(row: AgentSendRecord): Promise<void> {
+    return this.withAgentLock(
+      row.agentId ? `${row.extensionId}\u0000${row.agentId}` : null,
+      () => this.retryLocked(row)
+    );
+  }
+
   /** One held message's retry: sent, still held, or failed for good. */
-  private async retry(row: AgentSendRecord): Promise<void> {
+  private async retryLocked(row: AgentSendRecord): Promise<void> {
+    // Failed meanwhile (its extension stopped): nothing to send.
+    if (this.deps.store.get(row.id)?.status !== 'held') return;
     // An agent's message waits for Mesh rather than failing before it starts.
     if (row.agentId && !this.deps.meshCore()) return;
     let target: ResolvedTarget;
@@ -677,11 +818,10 @@ export class AgentSendService {
     if (!row) return;
     if (event.phase === 'started') {
       if (row.status !== 'queued') return;
-      // The chat id the extension was given, when it has one; any id a chat
-      // has held addresses it, so the turn's filing id is an honest fallback
-      // for the first message into a chat being opened right now.
+      // The row's id, written before the dispatch; the turn's filing id only
+      // for a row from before that rule.
       const sessionId = row.sessionId ?? event.sessionId;
-      this.deps.store.update(row.id, { status: 'started', sessionId });
+      this.deps.store.update(row.id, { status: 'started' });
       this.deliver(row.extensionId, { kind: 'turn.started', messageId: row.id, sessionId });
       return;
     }
@@ -713,6 +853,11 @@ export class AgentSendService {
 
   /** Hand an event to the extension's listeners, or keep it for the first one. */
   private deliver(extensionId: string, event: AgentDeliveryEvent): void {
+    const buffered = this.attempting.get(event.messageId);
+    if (buffered) {
+      buffered.push(event);
+      return;
+    }
     const set = this.listeners.get(extensionId);
     if (set && set.size > 0) {
       for (const listener of [...set]) this.call(extensionId, listener, event);

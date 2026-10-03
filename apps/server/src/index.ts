@@ -702,6 +702,8 @@ let remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
 let remoteCommunitySubscriptions: RemoteRoomSubscriptionRuntime | undefined;
 let remoteRedactionSync: RemoteRedactionSync | undefined;
 let extensionManager: ExtensionManager | undefined;
+/** Where room conversations run (DOR-1624); set once rooms are wired. */
+let roomSessionPlacePort: RoomSessionPlacePort | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
 let testComposioFixture:
   | Awaited<
@@ -1279,6 +1281,8 @@ async function start() {
       store: new AgentSendStore(db),
       extensionName: (id) => extensionManager?.get(id)?.manifest.name ?? id,
       meshCore: () => meshCore,
+      // Wired later in boot; read at call time, like Mesh.
+      roomSessionPlace: () => roomSessionPlacePort,
     })
   );
   // Sharing with every agent that ends as a side effect (a disconnect, a move
@@ -4544,12 +4548,13 @@ async function start() {
   // port doctrine as the line above — the session route asks a room question
   // without importing a room type — and the same three reads the room-turn path
   // makes, so both answer the one worktree.
-  app.locals.roomSessionPlace = roomSessionPlace({
+  roomSessionPlacePort = roomSessionPlace({
     bindings: roomStore.sessionLedger,
     authors: roomAuthors,
     worktrees: () => roomWorktrees,
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
+  app.locals.roomSessionPlace = roomSessionPlacePort;
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
