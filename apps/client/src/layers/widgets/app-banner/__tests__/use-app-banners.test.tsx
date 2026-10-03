@@ -103,9 +103,7 @@ describe('memory-provider-benched descriptor', () => {
     await waitFor(() => expect(findMemoryDescriptor(result.current)).toBeDefined());
 
     render(findMemoryDescriptor(result.current)!.render());
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'The acme-memory memory backend isn’t installed or didn’t register.'
-    );
+    expect(screen.getByRole('status')).toHaveTextContent('The acme-memory memory isn’t set up.');
   });
 
   it('fires for a benched backend and never leaks the raw bench reason', async () => {
@@ -124,7 +122,7 @@ describe('memory-provider-benched descriptor', () => {
 
     render(findMemoryDescriptor(result.current)!.render());
     const banner = screen.getByRole('status');
-    expect(banner).toHaveTextContent('The acme-memory memory backend stopped answering.');
+    expect(banner).toHaveTextContent('The acme-memory memory stopped answering.');
     expect(banner).not.toHaveTextContent('hunter2');
     expect(banner).not.toHaveTextContent('ECONNREFUSED');
     expect(banner).not.toHaveTextContent('10.0.0.5');

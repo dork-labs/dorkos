@@ -244,7 +244,8 @@ describe('describeAgentExecution — the billing account', () => {
     expect(report.breakages).toEqual([
       {
         kind: 'account-unregistered',
-        message: '“retired-client” isn’t on this computer. This agent runs on your default account.',
+        message:
+          '“retired-client” isn’t on this computer. This agent runs on your default account.',
       },
     ]);
     // The row a person has to fix must still name the thing to fix.

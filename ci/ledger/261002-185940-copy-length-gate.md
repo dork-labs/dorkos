@@ -5,7 +5,7 @@ kind: hygiene
 status: proposed
 actor: agent
 gates: [wf.typecheck.typecheck]
-prs: []
+prs: [2479, 2491]
 ratchet-release: []
 field-changes: []
 ---
