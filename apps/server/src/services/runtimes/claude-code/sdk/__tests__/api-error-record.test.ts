@@ -71,7 +71,7 @@ describe('buildApiErrorPart', () => {
 
     expect(part).toEqual({
       type: 'error',
-      message: 'Your Claude sign-in stopped working. Sign in again to keep going.',
+      message: 'Your Claude Code sign-in stopped working. Sign in again to keep going.',
       category: 'auth_error',
       details: 'Failed to authenticate: OAuth session expired and could not be refreshed',
     });

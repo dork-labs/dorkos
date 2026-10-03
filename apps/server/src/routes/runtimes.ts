@@ -38,6 +38,7 @@ import {
   storeOpenRouterKeyReference,
   OpenRouterError,
 } from '../services/runtimes/opencode/providers/openrouter.js';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { OLLAMA_TAG_PATTERN } from '@dorkos/shared/runtime-connect';
 import { detectOllama, pullOllamaModel } from '../services/runtimes/opencode/providers/ollama.js';
 import {
@@ -723,7 +724,9 @@ router.post('/:type/login', async (req, res) => {
   if (rejectNonLoopback(req, res)) return;
   const { type } = req.params;
   if (!(LOGIN_RUNTIME_TYPES as readonly string[]).includes(type)) {
-    return res.status(400).json({ ok: false, error: `"${type}" does not support sign-in.` });
+    return res
+      .status(400)
+      .json({ ok: false, error: `${runtimeDisplayName(type)} does not support sign-in.` });
   }
   const parsed = LoginBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {

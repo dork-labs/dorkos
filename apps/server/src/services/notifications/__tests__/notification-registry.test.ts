@@ -310,8 +310,8 @@ describe('notification registry', () => {
     const raised = { runtime: 'claude-code', since: '2026-08-20T03:00:00.000Z' };
     const cleared = { ...raised, clearedAt: '2026-08-20T08:00:00.000Z' };
 
-    expect(entry.title(raised)).toBe('Your Claude sign-in stopped working');
-    expect(entry.title(cleared)).toBe('Your Claude sign-in is working again');
+    expect(entry.title(raised)).toBe('Your Claude Code sign-in stopped working');
+    expect(entry.title(cleared)).toBe('Your Claude Code sign-in is working again');
     expect(entry.title(raised)).not.toBe(entry.title(cleared));
     // One episode, so one key — the ladder arms and disarms on this string.
     expect(entry.dedupeKey(raised)).toBe(entry.dedupeKey(cleared));

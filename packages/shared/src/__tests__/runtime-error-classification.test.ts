@@ -194,7 +194,7 @@ describe('describeAuthError', () => {
 
   it('tells a login runtime to sign in again', () => {
     expect(describeAuthError('claude-code')).toBe(
-      'Your Claude sign-in stopped working. Sign in again to keep going.'
+      'Your Claude Code sign-in stopped working. Sign in again to keep going.'
     );
     expect(describeAuthError('codex')).toBe(
       'Your Codex sign-in stopped working. Sign in again to keep going.'

@@ -123,7 +123,7 @@ describe('deadSigninRuntimes', () => {
     // claiming an all-clear. Its title differs from the recovery row's — the
     // predicate must key on `outcome`, which both carry, and never on words.
     const bootClosed = signinRow('claude-code', '2026-09-01T11:00:00.000Z', {
-      title: 'DorkOS restarted while your Claude sign-in was broken',
+      title: 'DorkOS restarted while your Claude Code sign-in was broken',
       resolvedAt: '2026-09-01T11:00:00.000Z',
       outcome: 'cleared',
       readAt: '2026-09-01T11:00:00.000Z',
@@ -236,7 +236,7 @@ describe('runtime-signin descriptor', () => {
 
     render(descriptor.render());
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Your Claude sign-in stopped working. Agents and scheduled tasks stay stuck until you sign in again.'
+      'Your Claude Code sign-in stopped working. Agents and scheduled tasks stay stuck until you sign in again.'
     );
   });
 
@@ -261,7 +261,7 @@ describe('runtime-signin descriptor', () => {
 
     render(findSigninDescriptor(result.current)!.render());
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Your Codex and Claude sign-ins stopped working.'
+      'Your Codex and Claude Code sign-ins stopped working.'
     );
   });
 
@@ -272,7 +272,7 @@ describe('runtime-signin descriptor', () => {
       <RuntimeSigninBanner runtimes={['claude-code', 'codex', 'opencode', 'a-future-runtime']} />
     );
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Your Claude, Codex and OpenCode sign-ins stopped working, and 1 more.'
+      'Your Claude Code, Codex and OpenCode sign-ins stopped working, and 1 more.'
     );
   });
 

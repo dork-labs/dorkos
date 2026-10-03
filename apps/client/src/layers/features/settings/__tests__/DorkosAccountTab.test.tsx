@@ -56,6 +56,19 @@ describe('DorkosAccountTab', () => {
     expect(benefit).not.toHaveTextContent(/Codex|OpenCode/);
   });
 
+  it('signed out: the credits line follows the server’s wired set, by name, never by id', async () => {
+    const getCloudCredits = vi.fn().mockResolvedValue({
+      ...NOT_LINKED,
+      runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'wired' },
+    });
+    renderTab(createMockTransport({ getCloudCredits }));
+    const benefit = await screen.findByText(/Use one account for/);
+    expect(benefit).toHaveTextContent(
+      'Use one account for Claude Code and Codex: run them on your DorkOS credits.'
+    );
+    expect(benefit).not.toHaveTextContent(/claude-code|opencode|OpenCode/);
+  });
+
   it('signed out with credits switched off on this computer: no credits line', async () => {
     const getCloudCredits = vi.fn().mockResolvedValue({ ...NOT_LINKED, killed: true });
     renderTab(createMockTransport({ getCloudCredits }));

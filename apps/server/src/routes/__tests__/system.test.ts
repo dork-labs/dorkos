@@ -143,7 +143,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
     expect(res.body.runtimes['claude-code'].state).toBe('connect');
     expect(res.body.runtimes['claude-code'].connect).toEqual({
       kind: 'login',
-      label: 'Connect Claude',
+      label: 'Connect Claude Code',
     });
   });
 
