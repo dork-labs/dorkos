@@ -482,7 +482,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 112 -> 113 for `session_start` (spec `claude-account-fleet` D5): no prompt
     // block names it, so it stays deferred and unprefixed.
     // Document-channel verbs remain deferred; they do not add prompt instructions.
-    expect(advertised.size).toBe(118);
+    // 118 -> 119 for `marketplace_link` (DOR-2696): no prompt block names it
+    // (the `<marketplace_tools>` block teaches the confirmation-token protocol,
+    // which it does not use), so it stays deferred and unprefixed.
+    expect(advertised.size).toBe(119);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

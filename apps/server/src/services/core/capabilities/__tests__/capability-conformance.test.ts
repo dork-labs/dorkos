@@ -547,6 +547,10 @@ capabilityConformance(registry, {
     'marketplace.recommend': { context: 'observability for a next.js app' },
     'marketplace.install': { name: 'nonexistent-conformance-pkg' },
     'marketplace.uninstall': { name: 'nonexistent-conformance-pkg' },
+    // Destructive with a required `path`: parseable, so the gate (not a
+    // ZodError) answers. The bundle here carries no dev-link service, so a
+    // call that gets past the gate meets the structured `dev_links_unavailable`.
+    'marketplace.link': { path: '/nonexistent-conformance-folder' },
     'marketplace.create_package': {
       name: 'conformance-pkg',
       type: 'plugin',

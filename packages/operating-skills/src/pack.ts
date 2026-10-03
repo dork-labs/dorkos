@@ -318,8 +318,12 @@ export interface OperatingSkill {
  *   progress is left alone with a list of what moved (spec `agent-home-desk` §6,
  *   DOR-2411). An agent seeded at 34 would read a refreshed copy as somebody
  *   else's edit, or not know why its copy was held.
+ * - 36: `using-the-marketplace` teaches `marketplace_link` (DOR-2696), a
+ *   destructive action that runs a package from a folder, and that install,
+ *   update and uninstall refuse a dev-linked package. An agent seeded at 35
+ *   would read `package_is_dev_linked` as a fault to retry around.
  */
-export const OPERATING_SKILLS_VERSION = 35;
+export const OPERATING_SKILLS_VERSION = 36;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

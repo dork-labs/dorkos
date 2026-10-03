@@ -418,7 +418,7 @@ apps/server/src/
 │   │   ├── transaction.ts            # Atomic transaction engine (backup/rollback)
 │   │   ├── sources/, preview/, consent/, telemetry/, recovery/, lib/ # Per-concern subfolders
 │   │   └── flows/                    # Per-kind install flows, update, and uninstall/
-│   ├── marketplace-mcp/           # The 9 marketplace MCP tools + personal-marketplace recommend engine
+│   ├── marketplace-mcp/           # The 10 marketplace MCP tools + personal-marketplace recommend engine
 │   ├── tasks/                    # Task scheduler services
 │   │   ├── task-scheduler-service.ts # Cron engine (croner) with overrun protection
 │   │   ├── task-store.ts             # SQLite + JSON schedule/run state

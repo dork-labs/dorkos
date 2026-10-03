@@ -171,9 +171,10 @@ describe('createExternalMcpServer', () => {
     // 59 → 61 for canvas_send and canvas_patch_state, the two declared
     // document-channel operations; browser driving remains session-only.
     //
-    // These deps carry no `marketplaceDeps`, so the 9 marketplace capabilities are
-    // absent here. `docs/integrations/mcp-server.mdx` states the total for a fully
-    // wired server (these 61 + 9 marketplace), and that number is pinned by no
+    // These deps carry no `marketplaceDeps`, so the 10 marketplace capabilities are
+    // absent here (`marketplace_link` made it 10, DOR-2696).
+    // `docs/integrations/mcp-server.mdx` states the total for a fully
+    // wired server (these 61 + 10 marketplace), and that number is pinned by no
     // test, so update both together when this one moves.
     createExternalMcpServer(createMinimalDeps());
     expect(registeredTools).toHaveLength(61);

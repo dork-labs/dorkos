@@ -66,6 +66,7 @@ const EXPECTED_TOOL_NAMES = [
   'marketplace_update',
   'marketplace_uninstall',
   'marketplace_create_package',
+  'marketplace_link',
 ].sort();
 
 /**
@@ -211,6 +212,14 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
     idempotentHint: false,
     openWorldHint: false,
   },
+  // Destructive, local (DOR-2696): a second link of the same folder is
+  // refused, so it is not idempotent.
+  marketplace_link: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: false,
+  },
 };
 
 /** The five marketplace + five operator read-only lookups in the carve-out. */
@@ -228,14 +237,14 @@ const EXPECTED_CARVE_OUT = [
 ].sort();
 
 describe('operator + marketplace MCP projection', () => {
-  it('advertises the same 20 tools on the in-session server', () => {
+  it('advertises the same 21 tools on the in-session server', () => {
     const names = capabilitiesForMcpServer(registry, 'in-session')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();
     expect(names).toEqual(EXPECTED_TOOL_NAMES);
   });
 
-  it('advertises the same 20 tools on the external server', () => {
+  it('advertises the same 21 tools on the external server', () => {
     const names = capabilitiesForMcpServer(registry, 'external')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();
