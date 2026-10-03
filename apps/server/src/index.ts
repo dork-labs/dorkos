@@ -600,6 +600,12 @@ import {
   setStartWorkService,
 } from './services/extensions/start-work.js';
 import {
+  AgentSendService,
+  getAgentSendService,
+  setAgentSendService,
+} from './services/extensions/agent-send/agent-send.js';
+import { AgentSendStore } from './services/extensions/agent-send/agent-send-store.js';
+import {
   SessionStartedByStore,
   getSessionStartedByStore,
   setSessionStartedByStore,
@@ -696,6 +702,8 @@ let remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
 let remoteCommunitySubscriptions: RemoteRoomSubscriptionRuntime | undefined;
 let remoteRedactionSync: RemoteRedactionSync | undefined;
 let extensionManager: ExtensionManager | undefined;
+/** Where room conversations run (DOR-1624); set once rooms are wired. */
+let roomSessionPlacePort: RoomSessionPlacePort | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
 let testComposioFixture:
   | Awaited<
@@ -1264,6 +1272,19 @@ async function start() {
       activity: activityService,
     })
   );
+  // The seam behind `ctx.agent.send` (DOR-2683): an extension sending one of
+  // the person's agents a message. Built before extensions start, beside the
+  // start-work seam it opens kept chats through; Mesh is read at call time,
+  // since it starts later. Started once the runtimes are registered.
+  setAgentSendService(
+    new AgentSendService({
+      store: new AgentSendStore(db),
+      extensionName: (id) => extensionManager?.get(id)?.manifest.name ?? id,
+      meshCore: () => meshCore,
+      // Wired later in boot; read at call time, like Mesh.
+      roomSessionPlace: () => roomSessionPlacePort,
+    })
+  );
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -1816,6 +1837,14 @@ async function start() {
     });
     initCloudLinkManager(); // real fetch, real defaults — behavior-preserving
   }
+
+  // Every runtime is registered, so the messages extensions sent before a
+  // restart can be settled and re-armed, and held ones retried.
+  await getAgentSendService()
+    ?.start()
+    .catch((err: unknown) =>
+      logger.warn('[DorkOS] could not resume extension messages', { err: String(err) })
+    );
 
   // Workspace subsystem (DOR-84) — server-managed isolated workspaces. Sessions
   // bind via cwd; the manager allocates collision-free port blocks and owns the
@@ -4519,12 +4548,13 @@ async function start() {
   // port doctrine as the line above — the session route asks a room question
   // without importing a room type — and the same three reads the room-turn path
   // makes, so both answer the one worktree.
-  app.locals.roomSessionPlace = roomSessionPlace({
+  roomSessionPlacePort = roomSessionPlace({
     bindings: roomStore.sessionLedger,
     authors: roomAuthors,
     worktrees: () => roomWorktrees,
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
+  app.locals.roomSessionPlace = roomSessionPlacePort;
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
@@ -6122,6 +6152,7 @@ async function shutdownServices() {
   }
   stopConnectorFreshness?.();
   stopConnectorFreshness = undefined;
+  getAgentSendService()?.stop();
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
   // Give back every port an open dev-server preview is holding.

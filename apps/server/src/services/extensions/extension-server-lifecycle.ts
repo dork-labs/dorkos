@@ -23,6 +23,7 @@ import {
 } from './extension-load-policy.js';
 import { configManager } from '../core/config-manager.js';
 import { getExtensionInbox } from './inbox/extension-inbox.js';
+import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
 
 const require = createRequire(import.meta.url);
@@ -239,6 +240,8 @@ export class ExtensionServerLifecycle {
       }
 
       const router = Router();
+      // Starting again lifts the stop on its messages (DOR-2683).
+      getAgentSendService()?.extensionStarted(id);
       const { ctx, getScheduledCleanups, releaseListeners, dispose } = createDataProviderContext({
         extensionId: id,
         // A copy that runs by origin runs from its verified snapshot, so what
@@ -327,6 +330,9 @@ export class ExtensionServerLifecycle {
     // Nobody can answer its decisions while it is down: hide them and stop
     // their clocks before its handler goes away.
     getExtensionInbox()?.markStopped(id);
+    // Nor can it be told what became of a message still waiting for room:
+    // fail those now, so nothing it sent goes out after it is gone (DOR-2683).
+    getAgentSendService()?.extensionStopped(id);
 
     for (const cancel of active.scheduledCleanups) {
       try {

@@ -58,6 +58,9 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // An extension started work in a brand-new chat in the person's project:
   // the new-session default a person's own chat gets, on the row it inserts.
   [{ kind: 'extension-start' }, 'configured-stop-on-insert'],
+  // An extension sent an agent a message: app data, not a person's request,
+  // so the chat it opens seeds no operator stop.
+  [{ kind: 'extension-message' }, 'none'],
   // A limited session's work carried over to another account: the settings
   // row copied from the source session is its power, and the origin adds none.
   [{ kind: 'account-handoff' }, 'none'],

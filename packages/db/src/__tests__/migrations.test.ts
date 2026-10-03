@@ -210,6 +210,10 @@ describe('Database Migrations', () => {
       'connector_runtime_bindings',
       'connector_usage_attempts',
       'connector_usage_terminal_receipts',
+      // The chat an extension keeps with each agent it messages, and every
+      // message it sent with ctx.agent.send (DOR-2683).
+      'extension_agent_chats',
+      'extension_agent_sends',
       // Decisions an extension raised in the inbox (spec flow-multiproject
       // §7.2, migration 0131).
       'extension_decisions',

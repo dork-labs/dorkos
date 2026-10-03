@@ -10,10 +10,12 @@
  * @module services/extensions/extension-server-api-factory
  */
 import { z } from 'zod';
-import type {
-  AccountSummary,
-  AccountsApi,
-  DataProviderContext,
+import {
+  AgentSendError,
+  type AccountSummary,
+  type AccountsApi,
+  type AgentApi,
+  type DataProviderContext,
 } from '@dorkos/extension-api/server';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
@@ -25,6 +27,7 @@ import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
 import { recordContinuation } from '../core/usage/session-continuation.js';
 import { createProjectsApi } from '../projects/extension-projects-api.js';
 import { getStartWorkService } from './start-work.js';
+import { getAgentSendService } from './agent-send/agent-send.js';
 import { projectRegistry } from '../projects/project-registry.js';
 import {
   createInboxApi,
@@ -150,6 +153,74 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
   };
 }
 
+/**
+ * Build one extension's {@link AgentApi}: `send` through the agent-send seam,
+ * and `subscribe` with every listener tracked, so `release` removes them when
+ * the extension shuts down or reloads, whether or not its own cleanup did.
+ * After `release`, `subscribe` throws and registers nothing, for the same
+ * reason {@link createAccountsApi}'s listeners do.
+ *
+ * No manifest capability gates it, on the same terms as `ctx.sessions.start`:
+ * the server half is code the person already chose to run, and a declaration
+ * it writes about itself would hold nothing back.
+ */
+function createAgentApi(extensionId: string): { agent: AgentApi; release: () => void } {
+  const releases = new Set<() => void>();
+  let released = false;
+  const agent: AgentApi = {
+    async send(input) {
+      // A shut-down instance sends nothing: the message would run after the
+      // extension that sent it was stopped.
+      if (released) {
+        throw new AgentSendError(
+          'stopped',
+          'This extension was stopped, so it cannot send messages. Reload it to try again.'
+        );
+      }
+      const service = getAgentSendService();
+      if (!service) {
+        throw new AgentSendError(
+          'unavailable',
+          'DorkOS cannot send messages yet. Try again in a moment.'
+        );
+      }
+      return service.send(extensionId, input);
+    },
+    subscribe(listener) {
+      if (released) {
+        throw new Error(
+          `agent.subscribe was called after the extension "${extensionId}" shut down or reloaded.`
+        );
+      }
+      if (typeof listener !== 'function') {
+        throw new TypeError('agent.subscribe needs a listener function.');
+      }
+      const service = getAgentSendService();
+      if (!service) {
+        logger.debug(`[ext:${extensionId}] agent messaging is not available; subscribe is inert`);
+        return () => {};
+      }
+      const remove = service.subscribe(extensionId, listener);
+      let removed = false;
+      const once = () => {
+        if (removed) return;
+        removed = true;
+        releases.delete(once);
+        remove();
+      };
+      releases.add(once);
+      return once;
+    },
+  };
+  return {
+    agent,
+    release: () => {
+      released = true;
+      for (const remove of [...releases]) remove();
+    },
+  };
+}
+
 /** Dependencies required to build a {@link DataProviderContext}. */
 interface CreateContextDeps {
   extensionId: string;
@@ -174,6 +245,8 @@ interface CreateContextDeps {
  * - `requirePerson`: the person bar for the extension's own routes
  * - `projectSettings`: per-project settings only a person writes, read-only here
  * - `sessions`: start work in a new chat by the extension's own rules (§7.7)
+ * - `agent`: send one of the person's agents a message, held while it is busy,
+ *   and hear what became of it (DOR-2683)
  *
  * @param deps - Extension identity and directory info
  * @returns The context, a function to retrieve scheduled cleanup functions, and
@@ -247,6 +320,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     extensionId,
     dorkHome
   );
+  const { agent, release: releaseAgent } = createAgentApi(extensionId);
 
   // Every way this instance can start something that outlives the call.
   const guardedAccounts = accounts && {
@@ -265,6 +339,21 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     ...inbox,
     onAction: (handler: Parameters<typeof inbox.onAction>[0]) =>
       disposed ? inert('inbox.onAction') : inbox.onAction(handler),
+  };
+  const guardedAgent: AgentApi = {
+    // A given-up instance sends nothing: the message would run after the
+    // extension that sent it was stopped.
+    send: async (input) => {
+      if (disposed) {
+        inert('agent.send');
+        throw new AgentSendError(
+          'stopped',
+          'This extension was stopped before it finished starting, so it cannot send messages. Reload it to try again.'
+        );
+      }
+      return agent.send(input);
+    },
+    subscribe: (listener) => (disposed ? inert('agent.subscribe') : agent.subscribe(listener)),
   };
   const guardedProjectSettings = {
     ...projectSettings,
@@ -301,6 +390,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         return service.start(extensionId, input, 'ctx');
       },
     },
+    agent: guardedAgent,
   };
 
   const releaseListeners = () => {
@@ -308,6 +398,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     releaseProjects();
     releaseInbox();
     releaseProjectSettings();
+    releaseAgent();
   };
 
   return {

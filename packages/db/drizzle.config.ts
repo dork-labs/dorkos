@@ -42,6 +42,7 @@ export default defineConfig({
     './src/schema/notifications.ts',
     './src/schema/projects.ts',
     './src/schema/extensions/extension-decisions.ts',
+    './src/schema/extensions/extension-agent-sends.ts',
   ],
   out: './drizzle',
   // Snapshot baselines are sorted by filename; keep future names after the timestamp migration.
