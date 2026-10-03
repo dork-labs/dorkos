@@ -259,6 +259,11 @@ export async function* executeSdkQuery(
   // subagent still running, or a settled notification still owed its delivery.
   // One tracker per PROCESS, which on this path is one per turn (DOR-1238).
   const liveness = createTurnLiveness();
+  // The stall watchdog asks this before it calls a silent turn stalled: a
+  // background helper sends nothing for the length of one step (DOR-2681).
+  // Cleared in the `finally` only if still ours, for the reason `activeQuery` is.
+  const liveHelperCount = (): number => liveness.liveAgentCount();
+  session.liveHelperCount = liveHelperCount;
   // The bound on the ONE hold nothing else bounds — an owed delivery that never
   // arrives. A hold for a live agent is deliberately never given one.
   const deferredClose = createDeferredClose();
@@ -632,6 +637,7 @@ export async function* executeSdkQuery(
       session.lastQuery = agentQuery;
       session.activeQuery = undefined;
     }
+    if (session.liveHelperCount === liveHelperCount) session.liveHelperCount = undefined;
     // Commit this turn's resume anchor for the next turn: the last main-thread
     // assistant uuid, or undefined when the turn produced none (empty/error) so
     // the next resume stays plain and keeps this turn's user message in context.

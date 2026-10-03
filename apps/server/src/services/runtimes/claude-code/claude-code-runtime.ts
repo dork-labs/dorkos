@@ -86,6 +86,7 @@ import {
 } from './messaging/credits-launch.js';
 import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
+import { SESSIONS } from '../../../config/constants.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
 import type { TranscriptImageRef } from './sessions/transcript-parser.js';
@@ -1328,6 +1329,20 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  isHelperWorking(sessionId: string): boolean {
+    if (this.persistent.isHelperWorking(sessionId)) return true;
+    // The resume path: the running turn's own tracker. Its ceiling is measured
+    // from the turn's start, the one moment this path records; the pump's is
+    // measured from its busy spell.
+    const session = this.sessionStore.findSession(sessionId);
+    if (session?.liveHelperCount === undefined) return false;
+    return (
+      session.liveHelperCount() > 0 &&
+      Date.now() - session.lastActivity < SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
+    );
+  }
+
+  /** @inheritdoc */
   getSessionWarmth(sessionId: string): SessionWarmth {
     return this.pumps.warmth(sessionId);
   }
@@ -1916,7 +1931,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // and evicts exactly as it did before.
     const evictedIds = this.sessionStore.checkSessionHealth(
       this.lockManager,
-      (sessionId) => this.pumps.peek(sessionId)?.isHoldingBackgroundWork() === true
+      (sessionId) => this.pumps.peek(sessionId)?.isHoldingWork() === true
     );
     for (const sessionId of evictedIds) {
       // No subprocess may outlive the session record it belongs to. Eviction

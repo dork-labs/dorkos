@@ -190,6 +190,13 @@ export class FakeAgentRuntime implements AgentRuntime {
    */
   isSegmentPending = vi.fn<(sessionId: string) => boolean>(() => false);
 
+  /**
+   * Whether a helper is still working in this session. Answers `false` — this
+   * fake launches no helpers — and is spied so a test can make a silent turn's
+   * quiet legitimate by making it answer `true`.
+   */
+  isHelperWorking = vi.fn<(sessionId: string) => boolean>(() => false);
+
   /** The listener {@link onDispatchGateChange} registered, if anything is listening. */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;
 

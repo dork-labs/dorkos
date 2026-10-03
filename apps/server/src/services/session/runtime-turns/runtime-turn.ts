@@ -192,10 +192,14 @@ async function projectRuntimeTurn(
     const projector = getOrCreateProjector(sessionId, undefined, {
       persist: persistenceModeFor(runtime.getCapabilities()),
     });
-    const waitingOnPerson = (): boolean => projector.hasPendingInteractions();
+    // A person-wait and a working helper are both legitimate silence; the same
+    // probe as a person's turn (DOR-2681). The helper case matters most HERE:
+    // a helper's report is what most often opens a turn like this one.
+    const quietIsExpected = (): boolean =>
+      projector.hasPendingInteractions() || runtime.isHelperWorking?.(sessionId) === true;
     // Bound to a `const` as well, so the closures below need no non-null
     // assertion to reach it.
-    const turnLifecycle = new DetachedTurnLifecycle(waitingOnPerson);
+    const turnLifecycle = new DetachedTurnLifecycle(quietIsExpected);
     lifecycle = turnLifecycle;
     if (!(await acquireWhenFree(runtime, turnKey, turnLifecycle, lockToken))) {
       // Somebody held this session for longer than a lock may be held. The turn
@@ -223,7 +227,7 @@ async function projectRuntimeTurn(
         // holding the session is exactly what the watchdog is for.
         timeoutMs: SESSIONS.TURN_STALL_TIMEOUT_MS,
         firstEventTimeoutMs: SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS,
-        isPaused: waitingOnPerson,
+        isPaused: quietIsExpected,
         onStall: () => runtime.interruptQuery(sessionId),
       }),
       (err) => {

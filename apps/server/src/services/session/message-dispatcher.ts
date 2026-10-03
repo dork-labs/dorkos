@@ -704,6 +704,11 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
       ? { settleOpenTurn: (sid: string) => runtime.settleOpenTurn!(sid) }
       : {}),
     interruptQuery: (sid) => runtime.interruptQuery(sid),
+    // Omitted for the same reason as `settleOpenTurn`: a runtime with no
+    // helpers has no answer to give.
+    ...(runtime.isHelperWorking !== undefined
+      ? { isHelperWorking: (sid: string) => runtime.isHelperWorking!(sid) }
+      : {}),
     getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
     rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
     getCapabilities: () => runtime.getCapabilities(),

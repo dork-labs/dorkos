@@ -1040,12 +1040,26 @@ export class SessionStore {
    */
   checkSessionHealth(
     lockManager: SessionLockManager,
-    isHoldingBackgroundWork?: (sessionId: string) => boolean
+    isHoldingWork?: (sessionId: string) => boolean
   ): string[] {
     const now = Date.now();
     const expiredIds: string[] = [];
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity <= this.SESSION_TIMEOUT_MS) continue;
+      // A turn still running is not idle. `lastActivity` is stamped when a turn
+      // STARTS, so without this a turn that ran past thirty minutes was evicted
+      // out from under itself: the warm process was torn down mid-work and the
+      // turn sat dark until the stall watchdog ended it with nothing left to
+      // interrupt (DOR-2681). Both paths mean the same thing by `activeQuery`.
+      // Bounded by the background-work ceiling, so a turn whose `finally` never
+      // ran cannot make a record immortal; one that went dark is ended by the
+      // stall watchdog long before.
+      if (
+        session.activeQuery !== undefined &&
+        now - session.lastActivity < SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
+      ) {
+        continue;
+      }
       // A session whose agent is still working is not idle either, and eviction
       // is the harsher of the two sweeps: it tears the process down
       // unconditionally, so a helper agent, a Monitor or an undelivered
@@ -1053,7 +1067,7 @@ export class SessionStore {
       // (spec `warm-process-lifecycle` D1, DOR-2065). Bounded by the same
       // four-hour ceiling the pump applies to every other hold, so work that
       // never finishes cannot make a record immortal.
-      if (isHoldingBackgroundWork?.(id) === true) continue;
+      if (isHoldingWork?.(id) === true) continue;
       // A session parked on a person is not idle, it is waiting, and evicting
       // it throws away the very tool call the person is coming back to answer.
       // `lastActivity` is stamped at creation and at each turn, never during a

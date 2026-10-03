@@ -74,6 +74,7 @@ vi.mock('fs', async (importOriginal) => {
 });
 
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
+import { SESSIONS } from '../../../../config/constants.js';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 
@@ -272,8 +273,10 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       // resume after afterEach restores the mock and hit an undefined query.
       await vi.advanceTimersByTimeAsync(0);
 
-      // Advance past session timeout
-      vi.advanceTimersByTime(31 * 60 * 1000);
+      // Advance past the in-flight bound. The turn above never finishes, and a
+      // running turn is not idle at thirty-one minutes (DOR-2681); it is
+      // evicted only once it has outrun the background-work ceiling.
+      vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 1000);
       manager.checkSessionHealth();
 
       expect(manager.hasSession('sess-1')).toBe(false);

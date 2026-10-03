@@ -410,6 +410,16 @@ export class PersistentDispatch {
   }
 
   /**
+   * Is a helper agent still working on this session's held process, inside the
+   * four-hour ceiling (DOR-2681)? False for a session holding no process.
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  isHelperWorking(sessionId: string): boolean {
+    return this.registry.peek(this.sessionKeyOf(sessionId))?.isHelperWorking() === true;
+  }
+
+  /**
    * Should this message run on a held process?
    *
    * The flag is read HERE, immediately before the pump is acquired, which is
@@ -1151,6 +1161,12 @@ export class PersistentDispatch {
           session.lastQuery = session.activeQuery;
           session.activeQuery = undefined;
         }
+        // A process DorkOS ends on purpose never reaches `onCrash`, so a turn
+        // still open on it is closed here, at the edge, rather than left dark
+        // for the stall watchdog (DOR-2681). Read through the bundle, not
+        // through `this.bundles`: eviction forgets the bundle before it tears
+        // the process down.
+        if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
         bundle.recovery.noteStateChange(change);
       },
       // The map's raw SIZE was the wrong answer, for the same reason it is
