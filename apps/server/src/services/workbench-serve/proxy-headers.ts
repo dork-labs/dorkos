@@ -48,19 +48,45 @@ export const STRIPPED_REQUEST_HEADERS: ReadonlySet<string> = new Set([
   'upgrade',
 ]);
 
+/** Capture original fields before Node's joined header view or framing cleanup. */
+export function readContentSecurityPolicyHeaders(
+  rawHeaders: readonly string[],
+  name: 'content-security-policy' | 'content-security-policy-report-only'
+): string[] {
+  const values: string[] = [];
+  for (let i = 0; i + 1 < rawHeaders.length; i += 2) {
+    if (rawHeaders[i].toLowerCase() === name) values.push(rawHeaders[i + 1]);
+  }
+  return values;
+}
+
 /**
- * Drop any `frame-ancestors` directive from a CSP header value so the proxied
- * page can be framed, leaving every other directive intact.
- *
- * @param csp - The upstream `Content-Security-Policy` value.
- * @returns The CSP with `frame-ancestors` removed, or `null` when nothing remains.
+ * Remove only framing directives, retaining each comma-delimited policy's other
+ * directives. Uncertain syntax retains the entire value, including its framing
+ * guard. This cleanup never decides whether inline scripts are permitted.
  */
 export function stripFrameAncestors(csp: string): string | null {
-  const kept = csp
-    .split(';')
-    .map((d) => d.trim())
-    .filter((d) => d.length > 0 && !/^frame-ancestors\b/i.test(d));
-  return kept.length > 0 ? kept.join('; ') : null;
+  // Commas delimit serialized policies, not source expressions. Unsupported
+  // quoted/escaped/non-ASCII forms remain untouched rather than being guessed.
+  for (const character of csp) {
+    const code = character.codePointAt(0)!;
+    if ((code < 32 && code !== 9) || code > 126 || character === '"' || character === '\\')
+      return csp;
+  }
+  const policies = csp.split(',');
+  if (policies.some((policy) => policy.split("'").length % 2 === 0)) return csp;
+  const kept = policies
+    .map((policy) =>
+      policy
+        .split(';')
+        .map((directive) => directive.trim())
+        .filter(
+          (directive) => directive.length > 0 && !/^frame-ancestors(?:[ \t]|$)/i.test(directive)
+        )
+        .join('; ')
+    )
+    .filter((policy) => policy.length > 0);
+  return kept.length > 0 ? kept.join(', ') : null;
 }
 
 /**
