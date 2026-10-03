@@ -50,6 +50,19 @@ export function readDevLinksSync(dorkHome: string | undefined): DevLinkRecord[] 
   return parsed === 'unreadable' ? [] : parsed.links;
 }
 
+/**
+ * Whether the path itself is a symlink or junction. A slot that cannot even be
+ * looked at (`EACCES` on its folder, `ELOOP`, …) is not one: it is skipped like
+ * any other link the scan may not follow, and never stops the scan.
+ */
+function isLinkAt(target: string): boolean {
+  try {
+    return lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink() === true;
+  } catch {
+    return false;
+  }
+}
+
 /** A path's real path as the operating system spells it, or `null` when it cannot be resolved. */
 function realPathOf(target: string): string | null {
   try {
@@ -85,7 +98,7 @@ export function devLinkForSlot(
 ): DevLinkRecord | null {
   if (records.length === 0) return null;
   const slot = join(pluginsRoot, entryName);
-  if (lstatSync(slot, { throwIfNoEntry: false })?.isSymbolicLink() !== true) return null;
+  if (!isLinkAt(slot)) return null;
   const realRoot = realPathOf(pluginsRoot);
   if (realRoot === null) return null;
   const canonicalSlot = join(realRoot, entryName);

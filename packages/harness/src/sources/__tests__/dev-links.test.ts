@@ -8,6 +8,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -230,6 +231,26 @@ describe('scanInstalledPlugins: which symlinked slots are followed', () => {
     writeRegistry(dorkHome, [recordFor(slot, folder, 'project', repo)]);
     expect(scanInstalledPlugins({ projectRoot: repo })).toEqual([]);
   });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'skips a slot it may not look at, rather than stopping the scan',
+    () => {
+      // Purpose: a plugins root that lists but refuses a stat (EACCES) must not
+      // throw out of the scan; the slot is simply not a dev link.
+      const folder = writeWorkingFolder();
+      const repo = writeRepo();
+      const dorkHome = tempDir('devlink-home-');
+      const root = join(repo, '.dork', 'plugins');
+      const slot = linkSlot(root, 'flow', folder);
+      writeRegistry(dorkHome, [recordFor(slot, folder, 'project', repo)]);
+      chmodSync(root, 0o444);
+      try {
+        expect(scanInstalledPlugins({ projectRoot: repo, dorkHome })).toEqual([]);
+      } finally {
+        chmodSync(root, 0o755);
+      }
+    }
+  );
 
   it('takes pinned records over the registry file', () => {
     // Purpose: `devLinks` is the injection point; an empty list follows nothing.

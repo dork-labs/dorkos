@@ -2,6 +2,8 @@
 covers:
   - 'feat(harness): project registered dev links and label them (DOR-2696)'
   - "feat(marketplace): record the dev-link card's yes for hooks and global activation (DOR-2696)"
+  - 'fix(marketplace): write a hook matcher out whole on every card (DOR-2696)'
+  - "fix(harness): follow dev links in an agent's folder, and skip a slot it cannot stat (DOR-2696)"
 ---
 
 ### Added
