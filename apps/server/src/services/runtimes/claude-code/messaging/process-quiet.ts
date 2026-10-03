@@ -206,6 +206,22 @@ export class ProcessQuiet {
   }
 
   /**
+   * Is a helper agent still working on this process (DOR-2681)?
+   *
+   * What the stall watchdog asks before it calls a silent turn stalled: a
+   * background helper sends nothing for the length of one of its steps. Helpers
+   * only — a Monitor or an unknown task type holds the process, but it is not
+   * the turn's own work going quiet. Bounded by the same four-hour ceiling the
+   * reaper honours, so a helper that never finishes cannot keep a turn open
+   * forever.
+   */
+  isHelperWorking(): boolean {
+    const quietness = this.quietness();
+    if (quietness.quiet) return false;
+    return quietness.holding.agents > 0 && !this.isPastCeiling(Date.now());
+  }
+
+  /**
    * Has the current busy spell run past the four-hour ceiling?
    *
    * @param now - Server epoch ms

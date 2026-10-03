@@ -2326,6 +2326,30 @@ describe('the dispatcher asks the runtime to settle an open turn first (DOR-1295
   });
 });
 
+// The wiring for DOR-2681, for the reason the block above gives: `turnDeps`
+// reaches the runtime's helper answer through one spread, and the stall
+// watchdog only honours it if that spread is there.
+describe('the dispatcher lets a working helper excuse a silent turn (DOR-2681)', () => {
+  it('holds the stall watchdog off while the runtime says a helper is working', async () => {
+    let helperWorking = true;
+    runtime.isHelperWorking.mockImplementation(() => helperWorking);
+    runtime.sendMessage.mockImplementation(async function* () {
+      yield { type: 'text_delta', data: { text: 'Starting a helper.' } } as StreamEvent;
+      await new Promise<void>(() => {});
+    });
+
+    await send('build it', { stallTimeoutMs: 50 });
+    // A bounded window for a NEGATIVE assertion — nothing to wait on — several
+    // times the 50 ms bound, so a guard that ignored the helper would have fired.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(runtime.isHelperWorking).toHaveBeenCalledWith(session);
+    expect(runtime.interruptQuery).not.toHaveBeenCalled();
+
+    helperWorking = false;
+    await vi.waitFor(() => expect(runtime.interruptQuery).toHaveBeenCalledTimes(1));
+  });
+});
+
 describe('systemPromptAppend reaches the runtime, or is absent entirely', () => {
   // Both layers in one path, deliberately: `dispatchMessage` picks the field
   // onto its plan and `triggerTurn` forwards it to `sendMessage`, and either one

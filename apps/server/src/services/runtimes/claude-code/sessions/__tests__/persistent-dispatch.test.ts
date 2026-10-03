@@ -450,6 +450,44 @@ describe('warmth is answered honestly', () => {
   });
 });
 
+// DOR-2681. The stall watchdog asks this before it calls a silent turn stalled,
+// and both paths have to answer it: a background helper is silent for the
+// length of each of its steps whichever path launched it.
+describe('a helper still working is reported on both paths', () => {
+  it('answers from the running turn on the resume path, and stops once the turn ends', async () => {
+    const sessionId = nextSession();
+    cli.deferNextInit = true;
+    const running = turn(sessionId, 'launch a helper');
+    await vi.waitFor(() => expect(cli.processes).toHaveLength(1));
+    const process = cli.processes[0]!;
+    expect(runtime.isHelperWorking(sessionId)).toBe(false);
+
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
+    process.reportReady();
+    await running;
+    expect(runtime.isHelperWorking(sessionId)).toBe(false);
+  });
+
+  it('answers from the held process on the warm path, for helpers and nothing else', async () => {
+    optIn.persistentSession = true;
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    // A Monitor holds the process, but it is not the turn's own work going
+    // quiet, so it does not excuse a silent turn.
+    process.reportTasks([{ task_id: 'monitor-1', task_type: 'monitor' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
+  });
+});
+
 describe('Stop reaches a turn, never a process that is merely warm', () => {
   beforeEach(() => {
     optIn.persistentSession = true;

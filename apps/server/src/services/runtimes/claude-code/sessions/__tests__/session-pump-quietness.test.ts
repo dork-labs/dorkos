@@ -192,6 +192,19 @@ describe('isHoldingWork, the question record eviction asks', () => {
   });
 });
 
+// DOR-2681. What the stall watchdog asks, and the ceiling that keeps a helper
+// that never finishes from excusing a silent turn forever.
+describe('isHelperWorking, the question the stall watchdog asks', () => {
+  it('answers yes while a helper runs, until its spell passes the ceiling', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_agent');
+    expect(harness.pump.isHelperWorking()).toBe(true);
+
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+    expect(harness.pump.isHelperWorking()).toBe(false);
+  });
+});
+
 // T6. The ceiling is what stops "declines while working" from becoming
 // "declines forever", and the reset is what stops two helpers running back to
 // back from being read as two separate spells.

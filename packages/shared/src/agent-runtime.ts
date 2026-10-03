@@ -1624,6 +1624,26 @@ export interface AgentRuntime {
    */
   onDispatchGateChange?(listener: (sessionId: string) => void): () => void;
 
+  /**
+   * Whether a helper the agent launched is still working in this session
+   * (DOR-2681).
+   *
+   * A helper can be silent for as long as one of its steps takes — a background
+   * helper running a twelve-minute build sends nothing for twelve minutes — and
+   * that silence is not the turn stalling. The stall watchdog and the session
+   * lock treat a `true` here the way they treat a turn parked on a person.
+   *
+   * **Synchronous, and it must not be true forever.** Both readers ask it from a
+   * timer, and a hold with no bound turns a helper that never finishes into a
+   * turn nobody can end — so a runtime that implements this owes a ceiling,
+   * past which it answers `false` whatever the helper is doing.
+   *
+   * Optional: a runtime with no helpers omits it, which reads as "no".
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  isHelperWorking?(sessionId: string): boolean;
+
   // --- Session queries (storage) ---
 
   /** List all sessions for a project directory. */

@@ -132,11 +132,11 @@ type RawOf<T extends SessionEvent['type']> = Omit<Extract<SessionEvent, { type: 
  * acquisition it also expired locks held by turns that were plainly alive: a
  * room turn legally runs an hour, so it spent 55 minutes stealable while
  * streaming. This reports the turn as alive when either is true — it emitted an
- * event recently, or it is parked on a person — and reports nothing once the
- * turn goes genuinely dark, so a vanished holder is still reclaimed one TTL
- * later. That silence is separately bounded by the stall watchdog, which shares
- * the same "parked on a person" probe, so a renewed lock cannot outlive a turn
- * the watchdog would have killed.
+ * event recently, or its quiet is expected (parked on a person, or waiting on a
+ * helper that is still working) — and reports nothing once the turn goes
+ * genuinely dark, so a vanished holder is still reclaimed one TTL later. That
+ * silence is separately bounded by the stall watchdog, which shares the same
+ * probe, so a renewed lock cannot outlive a turn the watchdog would have killed.
  */
 export class DetachedTurnLifecycle implements SseResponse, LockActivity {
   private readonly closeCallbacks: Array<() => void> = [];
@@ -146,12 +146,14 @@ export class DetachedTurnLifecycle implements SseResponse, LockActivity {
   /**
    * Build a lifecycle for one detached turn.
    *
-   * @param waitingOnPerson - Probe answering "is this turn parked on an approval,
-   *   question, or elicitation only a person can resolve?" Such a turn emits
-   *   nothing for as long as the person takes, and must not be treated as dead.
-   *   Defaults to "never", for callers that construct a lifecycle without one.
+   * @param quietIsExpected - Probe answering "is this turn's silence
+   *   legitimate?": parked on an approval, question or elicitation only a
+   *   person can resolve, or waiting on a helper that is still working
+   *   (DOR-2681). Such a turn emits nothing for as long as that takes, and must
+   *   not be treated as dead. Defaults to "never", for callers that construct a
+   *   lifecycle without one.
    */
-  constructor(private readonly waitingOnPerson: () => boolean = () => false) {}
+  constructor(private readonly quietIsExpected: () => boolean = () => false) {}
 
   /** Record proof of life; called for every event the turn yields. */
   touch(): void {
@@ -160,7 +162,7 @@ export class DetachedTurnLifecycle implements SseResponse, LockActivity {
 
   /** Epoch ms of the turn's most recent proof of life ({@link LockActivity}). */
   lastActivityAt(): number {
-    return this.waitingOnPerson() ? Date.now() : this.activityAt;
+    return this.quietIsExpected() ? Date.now() : this.activityAt;
   }
 
   /** Register a close handler (the lock manager registers its cleanup here). */
@@ -386,6 +388,12 @@ export interface TriggerTurnDeps {
    * {@link InterruptReceipt} vocabulary — `not-running` when there was none.
    */
   interruptQuery(sessionId: string): Promise<InterruptReceipt>;
+  /**
+   * Whether a helper the agent launched is still working in this session
+   * (`AgentRuntime.isHelperWorking`). Absent for a runtime with no helpers,
+   * which reads as "no".
+   */
+  isHelperWorking?(sessionId: string): boolean;
   /** Resolve the backend-internal (canonical) id once the adapter assigns it. */
   getInternalSessionId(sessionId: string): string | undefined;
   /**
@@ -725,8 +733,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // projector's pending-interaction set rather than `lifecycle === 'blocked'` —
   // the set IS the pending state, while the lifecycle is a projection a later
   // status_change can overwrite.
-  const waitingOnPerson = (): boolean => projector.hasPendingInteractions();
-  const lifecycle = new DetachedTurnLifecycle(waitingOnPerson);
+  //
+  // A helper still working is the same kind of legitimate silence (DOR-2681):
+  // a background helper sends nothing for the length of one of its steps.
+  const quietIsExpected = (): boolean =>
+    projector.hasPendingInteractions() || deps.isHelperWorking?.(sessionId) === true;
+  const lifecycle = new DetachedTurnLifecycle(quietIsExpected);
   const lockToken = Symbol('detached-turn-lock');
   if (!deps.acquireLock(turnKey, clientId, lifecycle, lockToken)) {
     slot.release();
@@ -933,7 +945,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       // caller has a reason to want a launch that never starts to sit longer,
       // and the guard already takes the shorter of this and `timeoutMs`.
       firstEventTimeoutMs: SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS,
-      isPaused: waitingOnPerson,
+      isPaused: quietIsExpected,
       onStall: () => deps.interruptQuery(sessionId),
       onError: (err) => opts.onError?.(err),
     });

@@ -410,6 +410,16 @@ export class PersistentDispatch {
   }
 
   /**
+   * Is a helper agent still working on this session's held process, inside the
+   * four-hour ceiling (DOR-2681)? False for a session holding no process.
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  isHelperWorking(sessionId: string): boolean {
+    return this.registry.peek(this.sessionKeyOf(sessionId))?.isHelperWorking() === true;
+  }
+
+  /**
    * Should this message run on a held process?
    *
    * The flag is read HERE, immediately before the pump is acquired, which is

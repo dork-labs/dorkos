@@ -494,6 +494,15 @@ export class SessionPump {
   }
 
   /**
+   * Is a helper agent still working on this process, inside the four-hour
+   * ceiling (DOR-2681)? What the stall watchdog asks before calling a silent
+   * turn stalled.
+   */
+  isHelperWorking(): boolean {
+    return this.quiet.isHelperWorking();
+  }
+
+  /**
    * The windower saw a `result` naming a prompt DorkOS never sent — the shape a
    * FOLDED delivery takes (spec `warm-process-lifecycle` D1).
    *
