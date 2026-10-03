@@ -79,6 +79,8 @@ import {
 } from '@dorkos/shared/schemas';
 import {
   RelayEnvelopeSchema,
+  RelayDeliveryReceiptSchema,
+  RelayMessageIdSchema,
   SendMessageRequestSchema as RelaySendMessageRequestSchema,
   MessageListQuerySchema,
   InboxQuerySchema,
@@ -1959,6 +1961,57 @@ registry.registerPath({
 
 // --- Relay ---
 
+/** Receipt availability errors are safe and distinguish acceptance from response loss. */
+const RelayReceiptAvailabilityErrorSchema = z.object({
+  error: z.string(),
+  code: z.enum([
+    'RELAY_RECEIPT_TRANSACTION_ACTIVE',
+    'RELAY_RECEIPT_OBSERVER_BUSY',
+    'RELAY_RECEIPT_STORAGE_UNAVAILABLE',
+  ]),
+});
+const RelayReceiptResponseErrorSchema = z.object({
+  error: z.string(),
+  code: z.literal('RELAY_RECEIPT_RESPONSE_UNAVAILABLE'),
+  messageId: RelayMessageIdSchema,
+  statusUrl: z.string(),
+});
+const RelayPublishResponseSchema = z.object({
+  messageId: z.string(),
+  deliveredTo: z.number(),
+  rejected: z
+    .array(
+      z.object({
+        endpointHash: z.string(),
+        reason: z.enum([
+          'backpressure',
+          'circuit_open',
+          'rate_limited',
+          'budget_exceeded',
+          'initiate_denied',
+          'untrusted_bridge_principal',
+          'turn_ceiling',
+        ]),
+      })
+    )
+    .optional(),
+  mailboxPressure: z.record(z.string(), z.number()).optional(),
+  adapterResult: z
+    .object({
+      success: z.boolean(),
+      durationMs: z.number().optional(),
+      error: z.string().optional(),
+      code: z.enum(['at_capacity', 'chat_unavailable', 'rate_limited']).optional(),
+      skipped: z.boolean().optional(),
+      retryAfterMs: z.number().optional(),
+      deadLettered: z.boolean().optional(),
+      responseMessageId: z.string().optional(),
+    })
+    .optional(),
+  receipt: RelayDeliveryReceiptSchema.optional(),
+  statusUrl: z.string().optional(),
+});
+
 registry.registerPath({
   method: 'post',
   path: '/api/relay/messages',
@@ -1973,16 +2026,68 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'Message sent',
-      content: {
-        'application/json': {
-          schema: z.object({ messageId: z.string(), deliveredTo: z.number() }),
-        },
-      },
+      description:
+        'Publication result. Agent-target scheduling counts do not confirm delivery or turn success; receipt/statusUrl observe target delivery.',
+      content: { 'application/json': { schema: RelayPublishResponseSchema } },
     },
     400: {
       description: 'Validation error',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login requires a verified session or per-user API key',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Reserved sender, destination or reply address',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    422: {
+      description: 'Publication refused before acceptance',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    503: {
+      description:
+        'Receipt storage/observer/caller transaction unavailable before acceptance, or response unavailable after durable acceptance. A retained locator does not permit replay.',
+      content: {
+        'application/json': {
+          schema: z.union([RelayReceiptAvailabilityErrorSchema, RelayReceiptResponseErrorSchema]),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/relay/messages/{messageId}/status',
+  tags: ['Relay'],
+  summary: 'Read a delivery receipt',
+  description:
+    'Authoritative metadata for an HTTP agent-target publication, independent of the derived message index. Delivered confirms target delivery, not agent turn success. With login on, only the verified owner may read it; historical local-trust receipts belong to the verified install owner. With login off, local trust applies. Receipts expire seven days after acceptance. No replay or message content is provided.',
+  request: { params: z.object({ messageId: RelayMessageIdSchema }) },
+  responses: {
+    200: {
+      description: 'Minimized delivery receipt',
+      headers: { 'Cache-Control': { schema: { type: 'string', const: 'no-store' } } },
+      content: { 'application/json': { schema: RelayDeliveryReceiptSchema } },
+    },
+    400: {
+      description: 'INVALID_RELAY_MESSAGE_ID after authentication',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'AUTH_REQUIRED before ID validation',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description:
+        'RELAY_RECEIPT_NOT_FOUND: unknown, expired, untracked and other-owner locators have the same response',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    503: {
+      description: 'Receipt observer/storage/caller transaction unavailable',
+      content: { 'application/json': { schema: RelayReceiptAvailabilityErrorSchema } },
     },
   },
 });

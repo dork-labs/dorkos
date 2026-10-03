@@ -47,6 +47,7 @@ import type {
 } from './types.js';
 import type { Workspace, WorktreeScanResult } from './workspace.js';
 import type {
+  RelayDeliveryReceipt,
   AdapterConfig,
   AdapterStatus,
   TraceSpan,
@@ -1885,7 +1886,14 @@ export interface Transport
     payload: unknown;
     from: string;
     replyTo?: string;
-  }): Promise<{ messageId: string; deliveredTo: number }>;
+  }): Promise<{
+    messageId: string;
+    deliveredTo: number;
+    receipt?: RelayDeliveryReceipt;
+    statusUrl?: string;
+  }>;
+  /** Read the authoritative agent-target observation, using normal request authentication. */
+  getRelayDeliveryReceipt(messageId: string): Promise<RelayDeliveryReceipt>;
   /** List relay endpoints. */
   listRelayEndpoints(): Promise<unknown[]>;
   /** Register a relay endpoint. */

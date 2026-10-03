@@ -144,6 +144,36 @@ describe('export-openapi', () => {
     }
   });
 
+  it('documents additive relay receipts, uniform missing reads and safe availability errors', () => {
+    const paths = generateOpenAPISpec().paths ?? {};
+    const post = paths['/api/relay/messages']?.post;
+    expect(post?.description).toContain('caller-supplied `from`');
+    expect(Object.keys(post?.responses ?? {}).sort()).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '422',
+      '503',
+    ]);
+    const status = paths['/api/relay/messages/{messageId}/status']?.get;
+    expect(Object.keys(status?.responses ?? {}).sort()).toEqual([
+      '200',
+      '400',
+      '401',
+      '404',
+      '503',
+    ]);
+    expect(status?.responses?.['404']?.description).toContain('other-owner');
+    expect(JSON.stringify(post?.responses?.['503'])).toContain(
+      'RELAY_RECEIPT_RESPONSE_UNAVAILABLE'
+    );
+    expect(JSON.stringify(status?.responses?.['503'])).toContain('RELAY_RECEIPT_OBSERVER_BUSY');
+    expect(JSON.stringify(status?.responses?.['200'])).toContain('no-store');
+    const receipt = generateOpenAPISpec().components?.schemas?.RelayDeliveryReceipt;
+    expect(JSON.stringify(receipt)).not.toMatch(/ownerUserId|observerToken|payload|subject/);
+  });
+
   it('produces valid JSON output', () => {
     const spec = generateOpenAPISpec();
     const json = JSON.stringify(spec, null, 2);

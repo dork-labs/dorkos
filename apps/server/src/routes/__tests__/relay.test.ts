@@ -11,6 +11,12 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { SERVER_MANAGED_PREFIXES } from '@dorkos/relay';
 
+// Legacy mocked-Core route fixtures explicitly use the login-off policy.
+// Actual credential and ownership behavior is covered by the integration suites.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => ({ enabled: false })) },
+}));
+
 function createMockRelayCore(): RelayCore {
   return {
     publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),

@@ -254,7 +254,9 @@ describe('Database Migrations', () => {
       // agent-side cursor stays on `room_members.last_read_seq`
       // (ADR 260808-140956, migration 0060).
       'read_cursors',
+      'relay_delivery_receipts',
       'relay_index',
+      'relay_receipt_observer_owner',
       'relay_traces',
       // Files uploaded into a room, bound to the entry that carries them inside
       // that entry's own transaction — nullable `entry_id` is the "uploaded,

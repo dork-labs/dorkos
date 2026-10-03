@@ -164,10 +164,13 @@ export class DeadLetterQueue {
   async reject(
     endpointHash: string,
     envelope: RelayEnvelope,
-    reason: string
+    reason: string,
+    beforeEffect?: () => void
   ): Promise<RejectResult> {
+    beforeEffect?.();
     // Write to Maildir failed/ directory with sidecar
     const failResult = await this.maildirStore.failDirect(endpointHash, envelope, reason);
+    beforeEffect?.();
     if (!failResult.ok) {
       return { ok: false, error: failResult.error };
     }
@@ -185,6 +188,7 @@ export class DeadLetterQueue {
     // Notify the arrival observer (DorkOS SSE fan-out). Isolated: a listener
     // throwing must never turn a successful rejection into a failed one.
     if (this.onDeadLetter) {
+      beforeEffect?.();
       try {
         this.onDeadLetter({
           messageId: envelope.id,

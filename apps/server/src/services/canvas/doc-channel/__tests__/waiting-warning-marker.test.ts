@@ -180,6 +180,7 @@ it('upgrades populated accounting-era batches without changing their existing da
   );
   expect(accountingEra).toBeGreaterThan(-1);
   journal.entries = journal.entries.slice(0, accountingEra + 1);
+  expect(journal.entries.at(-1)?.tag).toBe('0138_canvas_channel_accounting');
   for (const entry of journal.entries)
     copyFileSync(
       join(migrationDirectory, `${entry.tag}.sql`),

@@ -270,3 +270,7 @@ export { mayApprove, toIdList } from './adapters/approver-allowlist.js';
 // embedding this package (e.g. the server's AdapterManager) can log a
 // caught adapter error the same safe way every adapter in this package does.
 export { describeError } from './lib/describe-error.js';
+
+export { isDetachedAgentSubject } from './lib/detached-agent-subject.js';
+export { RelayReceiptUnavailableError } from './delivery-receipt-store.js';
+export type { RelayReceiptReadContext } from './delivery-receipt-store.js';

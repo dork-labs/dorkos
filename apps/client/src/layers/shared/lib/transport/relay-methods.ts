@@ -5,6 +5,7 @@
  */
 import type { AdapterListItem, AdapterEvent, AggregatedDeadLetter } from '@dorkos/shared/transport';
 import type {
+  RelayDeliveryReceipt,
   TraceSpan,
   DeliveryMetrics,
   CatalogEntry,
@@ -52,12 +53,21 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       payload: unknown;
       from: string;
       replyTo?: string;
-    }): Promise<{ messageId: string; deliveredTo: number }> {
+    }): Promise<{
+      messageId: string;
+      deliveredTo: number;
+      receipt?: RelayDeliveryReceipt;
+      statusUrl?: string;
+    }> {
       return fetchJSON(baseUrl, '/relay/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(opts),
       });
+    },
+
+    getRelayDeliveryReceipt(messageId: string): Promise<RelayDeliveryReceipt> {
+      return fetchJSON(baseUrl, `/relay/messages/${encodeURIComponent(messageId)}/status`);
     },
 
     listRelayEndpoints(): Promise<unknown[]> {
