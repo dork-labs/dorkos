@@ -1169,7 +1169,7 @@ describe('AgentMcpServers', () => {
     fireEvent.click(link);
     await waitFor(() =>
       expect(
-        within(container).getByText(/Signed in\. The server’s tools are available/i)
+        within(container).getByText(/Signed in\. Its tools are available/i)
       ).toBeInTheDocument()
     );
     expect(pollMcpSignin).toHaveBeenCalledWith('flow-1');
