@@ -74,9 +74,8 @@ describe('CreditsNotices', () => {
       notices: [{ kind: 'filled', runtimes: ['claude-code'] }],
     });
     const notice = await screen.findByTestId('credits-notice-filled');
-    expect(notice).toHaveTextContent(
-      'Claude Code now runs on your DorkOS credits, because it had no working sign-in when you linked your account.'
-    );
+    expect(notice).toHaveTextContent('Claude Code now runs on your DorkOS credits.');
+    expect(notice).toHaveTextContent('It had no working sign-in when you linked.');
     await user.click(screen.getByRole('button', { name: 'Undo all' }));
     await waitFor(() => expect(transport.undoFilledCloudCredits).toHaveBeenCalledOnce());
   });

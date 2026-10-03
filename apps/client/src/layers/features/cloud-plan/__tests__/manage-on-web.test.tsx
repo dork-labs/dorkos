@@ -261,7 +261,7 @@ describe('manage on the web', () => {
         await screen.findByRole('button', { name: 'Export your account data' })
       );
       expect(await screen.findByRole('status')).toHaveTextContent(
-        'Your export is being prepared. We’ll email you when it’s ready, or try again in a few minutes to get the link.'
+        'Your export is being prepared. You’ll get an email when it’s ready.'
       );
       expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     });

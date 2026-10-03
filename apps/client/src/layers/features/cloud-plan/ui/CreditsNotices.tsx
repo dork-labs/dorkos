@@ -72,11 +72,16 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
     return (
       <Notice className="space-y-2" data-testid="credits-notice-filled">
         <p className="text-sm">
-          {names} now {notice.runtimes.length === 1 ? 'runs' : 'run'} on your DorkOS credits,
-          because {notice.runtimes.length === 1 ? 'it' : 'they'} had no working sign-in when you
-          linked your account.
-          {caveats.map((caveat) => ` ${caveat}`).join('')}
+          {names} now {notice.runtimes.length === 1 ? 'runs' : 'run'} on your DorkOS credits.
         </p>
+        <p className="text-muted-foreground text-sm">
+          {notice.runtimes.length === 1 ? 'It' : 'They'} had no working sign-in when you linked.
+        </p>
+        {caveats.map((caveat) => (
+          <p key={caveat} className="text-muted-foreground text-sm">
+            {caveat}
+          </p>
+        ))}
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -138,7 +143,7 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
   return (
     <Notice className="space-y-2" data-testid="credits-notice-signed-in">
       <p className="text-sm">
-        You’re signed in to {name} now. It still runs on your DorkOS credits until you switch back.
+        You’re signed in to {name} now. It still uses your credits until you switch back.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button

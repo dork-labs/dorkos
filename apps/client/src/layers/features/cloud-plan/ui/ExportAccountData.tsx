@@ -36,11 +36,11 @@ export function ExportAccountData({ heading = 'Your data' }: { heading?: string 
           <div className="space-y-2">
             <p role="status" className="text-sm">
               {state.export.emailRequested
-                ? 'Your export is being prepared. We’ll email you when it’s ready, or try again in a few minutes to get the link.'
-                : 'Your export is being prepared. Try again in a few minutes to get the link.'}
+                ? 'Your export is being prepared. You’ll get an email when it’s ready.'
+                : 'Your export is being prepared. Check back in a few minutes.'}
             </p>
             <Button type="button" size="sm" variant="outline" onClick={request}>
-              Try again
+              Check again
             </Button>
           </div>
         )
