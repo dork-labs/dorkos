@@ -387,7 +387,7 @@ export interface SystemRequirements {
 
 /** Human-facing display names for the known runtime types (identity is honest, never a raw type slug). */
 const RUNTIME_DISPLAY_NAMES: Record<string, string> = {
-  'claude-code': 'Claude',
+  'claude-code': 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
 };
@@ -743,7 +743,9 @@ export interface RuntimeCapabilities {
    * runtime's own sign-in carries no credits token.
    *
    * Static, like the rest of this object: whether credits are AVAILABLE right
-   * now (linked, not switched off) is a live answer on `GET /api/cloud/credits`.
+   * now (linked, not switched off, and the endpoint serving this protocol) is
+   * a live answer on `GET /api/cloud/credits`, and a runtime whose protocol is
+   * not served is reported as not wired even though it declares this.
    */
   credits?: RuntimeCreditsSupport;
 
@@ -761,17 +763,45 @@ export interface RuntimeCapabilities {
 export type RuntimeMediaOutput = 'none' | 'attachments';
 
 /**
- * The wire protocols the DorkOS credits endpoint serves, one per vendor API a
- * runtime already speaks. Each maps to the variables that point a backend at
- * the endpoint (`services/core/cloud/credits-inference.ts`). Codex and OpenCode
- * join with their own protocols when they are wired.
+ * The request formats the DorkOS credits endpoint can serve, one per vendor API
+ * a runtime already speaks, each matching one endpoint on the minted token
+ * (`@dork-labs/cloud-api` `InferenceEndpointsSchema`):
+ *
+ * - `anthropic-messages` — `endpoints.anthropicMessages` (Claude Code).
+ * - `openai-chat-completions` — `endpoints.openaiChat` (OpenCode).
+ * - `openai-responses` — `endpoints.openaiResponses` (Codex, which no longer
+ *   speaks chat completions). That endpoint is optional on the token: until
+ *   the service sends it, the format is not served and a runtime that speaks
+ *   only it is reported as not wired, so nothing offers credits for it.
+ *
+ * Which endpoint serves a format, and whether it is served at all, is answered
+ * in one place (`services/core/cloud/credits-inference.ts`).
  */
-export type RuntimeCreditsProtocol = 'anthropic-messages';
+export const RUNTIME_CREDITS_PROTOCOLS = [
+  'anthropic-messages',
+  'openai-chat-completions',
+  'openai-responses',
+] as const;
+
+/** One of {@link RUNTIME_CREDITS_PROTOCOLS}. */
+export type RuntimeCreditsProtocol = (typeof RUNTIME_CREDITS_PROTOCOLS)[number];
 
 /** See {@link RuntimeCapabilities.credits}. */
 export interface RuntimeCreditsSupport {
   /** The protocol this runtime speaks to the credits endpoint. */
   protocol: RuntimeCreditsProtocol;
+  /**
+   * What a change of the runtime's credits choice reaches, so every surface
+   * that offers the choice can say so truthfully:
+   *
+   * - `conversation` — new conversations follow the choice; one already going
+   *   stays on whatever it started on (Claude Code, Codex: a conversation
+   *   lives in the account folder or home that paid for it).
+   * - `runtime` — the whole runtime moves, conversations already going
+   *   included (OpenCode, whose one sidecar is restarted on the other side),
+   *   so a switch is refused while any of its turns is running.
+   */
+  scope: 'conversation' | 'runtime';
 }
 
 /**

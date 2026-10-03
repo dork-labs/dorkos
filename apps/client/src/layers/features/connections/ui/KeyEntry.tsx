@@ -21,10 +21,14 @@ export function KeyEntry({ status }: { status: ConnectorProviderStatus }) {
         </p>
       )}
       {status.type === 'composio' && (
-        <p className="text-muted-foreground text-xs leading-relaxed">
-          Use the project key from your Composio dashboard. An account key, like the one the
-          composio command-line tool uses, signs in to apps but can’t run their actions.
-        </p>
+        <>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Use the project key from your Composio dashboard.
+          </p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            An account key, like the command-line tool’s, can’t run app actions.
+          </p>
+        </>
       )}
       <ConnectionKeyForm type={status.type} submitLabel="Save key" />
     </div>

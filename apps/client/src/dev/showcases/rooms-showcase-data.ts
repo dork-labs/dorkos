@@ -256,7 +256,7 @@ export const BRIDGED_CHANNEL_ROOM: RoomWithRoster = createRoomWithRoster({
 /**
  * A server config carrying the two engaged-window ceilings.
  *
- * The `Engaged` rung quotes them — "10 more minutes or 5 more messages" — and
+ * The `Engaged` rung quotes them — "10 minutes or 5 messages" — and
  * says less rather than guessing when the config read has not landed, so a
  * showcase without this shows the sentence that has no numbers in it.
  */

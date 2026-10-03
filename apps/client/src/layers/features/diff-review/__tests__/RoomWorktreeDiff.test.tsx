@@ -141,7 +141,7 @@ describe('RoomWorktreeDiff', () => {
     draw();
 
     expect(screen.getByText(/main is 3 commits ahead of your branch/i)).toBeInTheDocument();
-    expect(screen.getByText(/ask Ana to do it/i)).toBeInTheDocument();
+    expect(screen.getByText(/Ask Ana to do this/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /merge into the room/i })).not.toBeInTheDocument();
   });
 
@@ -163,7 +163,7 @@ describe('RoomWorktreeDiff', () => {
     draw();
 
     await user.click(screen.getByRole('button', { name: /merge into the room/i }));
-    const field = screen.getByRole('textbox', { name: /what this work does/i });
+    const field = screen.getByRole('textbox', { name: /one-line summary of this work/i });
     expect(field).toHaveValue('Merge ana');
 
     await user.clear(field);
@@ -182,7 +182,7 @@ describe('RoomWorktreeDiff', () => {
     review.branch = { ...(review.branch as Record<string, unknown>), behind: 1, ahead: 0 };
     draw();
 
-    expect(screen.getByText(/This work is in the room now/i)).toBeInTheDocument();
+    expect(screen.getByText(/Merged into the room/i)).toBeInTheDocument();
     expect(screen.queryByText(/The room has moved on/i)).not.toBeInTheDocument();
   });
 
@@ -195,7 +195,7 @@ describe('RoomWorktreeDiff', () => {
   it('shows the conflict banner when the file moved underneath the diff', () => {
     review.conflict = true;
     draw();
-    expect(screen.getByText(/changed since the diff was computed/i)).toBeInTheDocument();
+    expect(screen.getByText(/This file changed on disk/i)).toBeInTheDocument();
   });
 
   it('routes a rejected hunk to the review’s write', async () => {

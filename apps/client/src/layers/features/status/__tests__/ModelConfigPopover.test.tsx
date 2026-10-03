@@ -439,7 +439,7 @@ describe('ModelConfigPopover', () => {
   });
 
   describe('on DorkOS credits', () => {
-    it('says the menu is the models credits cover, and only for the credits menu', () => {
+    it('says the menu is the models credits cover, whenever the rows are the credits menu', () => {
       mockUseModels.mockImplementation(() => ({
         ...mockUseModelsReturn,
         data: mockModels.map((m) => ({ ...m, paidFromCredits: true })) as unknown[],
@@ -449,8 +449,9 @@ describe('ModelConfigPopover', () => {
         'Models your DorkOS credits cover'
       );
       unmount();
+      // A Codex or OpenCode session on credits: the rows alone say it.
       render(<ModelConfigPopover {...defaultProps()} />);
-      expect(screen.queryByTestId('model-credits-note')).not.toBeInTheDocument();
+      expect(screen.getByTestId('model-credits-note')).toBeInTheDocument();
     });
 
     it('says when the credits list may be out of date', () => {
@@ -887,7 +888,7 @@ describe('ModelConfigPopover', () => {
         render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
 
         expect(screen.getByTestId('model-limitation-model-image')).toHaveTextContent(
-          'Makes images, and DorkOS cannot show them yet.'
+          'Makes images DorkOS can’t show yet.'
         );
         // It CAN call tools, so it keeps its real tier rather than being demoted.
         expect(screen.getByTestId('model-group-solid-coders')).toBeInTheDocument();
@@ -984,7 +985,7 @@ describe('ModelConfigPopover', () => {
           target: { value: 'a-model-that-was-cut' },
         });
         expect(screen.getByTestId('model-search-empty')).toHaveTextContent(
-          'No match in this shortened list. Connect a provider to search everything you can run.'
+          'No match in this short list. Connect a provider to see more.'
         );
       });
 
@@ -1100,7 +1101,7 @@ describe('ModelConfigPopover', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'gpt-6-astra' })} />);
 
       expect(screen.getByTestId('model-catalog-unavailable')).toHaveTextContent(
-        'Model choices couldn’t be loaded. Check the runtime in Settings, then try again.'
+        'Couldn’t load models. Check Settings, then try again.'
       );
       expect(screen.queryByTestId('model-unavailable-saved')).not.toBeInTheDocument();
       expect(screen.queryByRole('radiogroup', { name: 'Model selection' })).not.toBeInTheDocument();
@@ -1323,7 +1324,7 @@ describe('ModelConfigPopover', () => {
         <ModelConfigPopover {...defaultProps({ model: 'openrouter/google/gemini-3-pro-image' })} />
       );
       const warning = screen.getByTestId('model-limitation-openrouter/google/gemini-3-pro-image');
-      expect(warning).toHaveTextContent('Makes images, and DorkOS cannot show them yet.');
+      expect(warning).toHaveTextContent('Makes images DorkOS can’t show yet.');
       // Half a warning is worse than none, so it wraps and keeps every word.
       for (const clipped of ['truncate', 'line-clamp-2', 'whitespace-nowrap']) {
         expect(warning).not.toHaveClass(clipped);

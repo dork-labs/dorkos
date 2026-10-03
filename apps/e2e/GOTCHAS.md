@@ -133,20 +133,20 @@ Learned while writing the DOR-1214 suites (`tests/chat/interactive-prompts.ts`,
 `tests/chat/live-turn-visibility.ts`). All of these produced a green-looking
 locator that was pointing at the wrong thing.
 
-- **Button accessible names carry their keyboard hint.** Approve's name is
-  `"Approve Enter"` and Deny's is `"Deny Esc"` — a `<Kbd>` child folds into the
+- **Button accessible names carry their keyboard hint.** Allow's name is
+  `"Allow Enter"` and Don’t allow's is `"Don’t allow Esc"` — a `<Kbd>` child folds into the
   name, and it only renders while the card is ACTIVE, so the name is not stable
-  either. `{ name: 'Approve', exact: true }` never matches.
-- **Always Allow is the exception, and its name states the GRANT.** It carries
-  an explicit `aria-label`: `"Always Allow, this session"` / `", this project"` /
-  `", all your Claude sessions"`, or plain `"Always Allow"` when the runtime
+  either. `{ name: 'Allow', exact: true }` never matches.
+- **Always allow is the exception, and its name states the GRANT.** It carries
+  an explicit `aria-label`: `"Always allow, this session"` / `", this project"` /
+  `", all your Claude sessions"`, or plain `"Always allow"` when the runtime
   named no scope (DOR-1462). No keyboard hint in it, and it does not change when
   the card goes active. Its visible text differs from its name — a middot sits
   where the comma is — so match on the name, not on `textContent`.
-- **`/^Approve\b/` does NOT exclude "Approve All".** The word boundary sits
-  between `Approve` and the space, so it is satisfied by the exact string it
-  looks like it rules out — same for `/^Deny\b/` and "Deny All". Use a negative
-  lookahead: `/^Approve(?!\s+All)/`. Scoping the locator to the card hides this
+- **`/^Allow\b/` does NOT exclude "Allow all".** The word boundary sits
+  between `Allow` and the space, so it is satisfied by the exact string it
+  looks like it rules out — same for `/^Don’t allow\b/` and "Don’t allow any".
+  Use a negative lookahead: `/^Allow(?!\s+all)/`. Scoping the locator to the card hides this
   today (the batch bar lives in the composer, not the transcript), which is
   exactly why the comment claiming the guard outlived the guard.
 - **`tool-approval-decided` and `question-prompt-submitted` are TRANSIENT.** Both

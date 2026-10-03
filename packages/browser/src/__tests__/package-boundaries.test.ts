@@ -18,13 +18,8 @@ function sourceFiles(root: string): string[] {
   });
 }
 
-function imports(file: string): string[] {
-  const source = ts.createSourceFile(
-    file,
-    readFileSync(file, 'utf8'),
-    ts.ScriptTarget.Latest,
-    true
-  );
+function importsFromText(file: string, text: string, parentNodes = false): string[] {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, parentNodes);
   const found: string[] = [];
   function visit(node: ts.Node): void {
     if (
@@ -41,11 +36,61 @@ function imports(file: string): string[] {
       const argument = node.arguments[0];
       if (argument && ts.isStringLiteral(argument)) found.push(argument.text);
     }
+    if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteral(node.argument.literal)
+    )
+      found.push(node.argument.literal.text);
     ts.forEachChild(node, visit);
   }
   visit(source);
   return found;
 }
+
+function imports(file: string): string[] {
+  return importsFromText(file, readFileSync(file, 'utf8'));
+}
+
+type ImportTuple = { file: string; specifier: string };
+const frontendRoots = ['apps/client', 'packages/ui'] as const;
+const frontendFiles = frontendRoots.map((root) => ({
+  root,
+  files: sourceFiles(path.join(repoRoot, root, 'src')).sort(),
+}));
+function batches(files: readonly string[]): string[][] {
+  const result: string[][] = [];
+  for (let offset = 0; offset < files.length; offset += 64)
+    result.push(files.slice(offset, offset + 64));
+  return result;
+}
+function completePartition(
+  files: readonly string[],
+  parts: readonly (readonly string[])[]
+): boolean {
+  const flat = parts.flat();
+  const expected = [...files].sort();
+  return (
+    files.length > 0 &&
+    new Set(files).size === files.length &&
+    flat.length === files.length &&
+    new Set(flat).size === flat.length &&
+    [...flat].sort().every((file, index) => file === expected[index])
+  );
+}
+function frontendViolations(tuples: readonly ImportTuple[]): ImportTuple[] {
+  return tuples.filter(
+    ({ file, specifier }) =>
+      /^(?:@dorkos\/browser|playwright-core)(?:\/|$)/.test(specifier) ||
+      (specifier.startsWith('.') &&
+        path.resolve(path.dirname(file), specifier).startsWith(packageRoot + path.sep))
+  );
+}
+const frontendBatches = frontendFiles.flatMap(({ root, files }) =>
+  batches(files).map((files, index) => ({ root, index, files }))
+);
+const importCounts = new Map<string, number>();
+const byteCounts = new Map<string, number>();
 
 describe('private browser package boundaries', () => {
   it('keeps real acquisition outside default tests and includes all three explicit fixture files', () => {
@@ -147,6 +192,7 @@ describe('private browser package boundaries', () => {
             'counters.ts',
             'validation.ts',
             'profiles/reservation.ts',
+            'runtime/inspection/records.ts',
           ],
           'node:path': [
             'runtime-descriptor.ts',
@@ -159,6 +205,7 @@ describe('private browser package boundaries', () => {
           'node:crypto': [
             'engine.ts',
             'runtime/public-library.ts',
+            'runtime/inspection/inspector.ts',
             'profiles/reservation.ts',
             'tabs/registry.ts',
           ],
@@ -178,10 +225,16 @@ describe('private browser package boundaries', () => {
           'node:os': ['runtime/host-identity.ts'],
           'node:module': ['runtime/public-library.ts'],
           'node:http': ['network/fixture-proxy.ts'],
+          // Only pinned public types/library imports in these reviewed internal modules.
+          // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [
             'runtime/public-library.ts',
             'lifecycle/records.ts',
+            'lifecycle/ownership.ts',
+            'lifecycle/acquisition.ts',
             'tabs/registry.ts',
+            'input/page-transport.ts',
+            'input/engine-input.ts',
           ],
         };
         expect(allowed[specifier], `${module}: ${specifier}`).toContain(module);
@@ -189,28 +242,125 @@ describe('private browser package boundaries', () => {
     }
   });
 
-  it('keeps the engine and its browser library outside all existing frontend imports', () => {
-    const roots = ['apps/client', 'packages/ui'];
-    let examined = 0;
-    for (const root of roots) {
-      const dir = path.join(repoRoot, root);
-      const manifest = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
-      for (const name of Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })) {
-        expect(name).not.toMatch(/^(?:@dorkos\/browser|playwright-core)$/);
-      }
-      const files = sourceFiles(path.join(dir, 'src'));
-      expect(files.length).toBeGreaterThan(0);
-      examined += files.length;
+  it('partitions every discovered frontend file exactly once across both roots', () => {
+    for (const { root, files } of frontendFiles)
+      expect(
+        completePartition(
+          files,
+          frontendBatches.filter((batch) => batch.root === root).map((batch) => batch.files)
+        )
+      ).toBe(true);
+    expect(frontendFiles.map(({ root }) => root)).toEqual([...frontendRoots]);
+  });
+  it.each(frontendRoots)('keeps %s dependencies outside the browser package', (root) => {
+    const manifest = JSON.parse(readFileSync(path.join(repoRoot, root, 'package.json'), 'utf8'));
+    const tuples = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies }).map(
+      (specifier) => ({ file: path.join(repoRoot, root, 'package.json'), specifier })
+    );
+    expect(frontendViolations(tuples)).toEqual([]);
+  });
+  it.each(frontendBatches)(
+    'checks all frontend imports in $root batch $index',
+    ({ root, files }) => {
+      const tuples: ImportTuple[] = [];
+      const oldTuples: ImportTuple[] = [];
       for (const file of files) {
-        for (const specifier of imports(file)) {
-          expect(specifier).not.toMatch(/^(?:@dorkos\/browser|playwright-core)(?:\/|$)/);
-          if (specifier.startsWith('.'))
-            expect(
-              path.resolve(path.dirname(file), specifier).startsWith(packageRoot + path.sep)
-            ).toBe(false);
-        }
+        const text = readFileSync(file, 'utf8');
+        byteCounts.set(root, (byteCounts.get(root) ?? 0) + Buffer.byteLength(text));
+        tuples.push(...importsFromText(file, text).map((specifier) => ({ file, specifier })));
+        oldTuples.push(
+          ...importsFromText(file, text, true).map((specifier) => ({ file, specifier }))
+        );
       }
+      expect(tuples).toEqual(oldTuples);
+      expect(frontendViolations(tuples)).toEqual([]);
+      importCounts.set(root, (importCounts.get(root) ?? 0) + tuples.length);
     }
-    expect(examined).toBeGreaterThan(0);
+  );
+  it('observes nonzero complete import subjects in both frontend roots', () => {
+    for (const root of frontendRoots) expect(importCounts.get(root)).toBeGreaterThan(0);
+    console.info(
+      'frontend import census',
+      JSON.stringify(
+        frontendFiles.map(({ root, files }) => ({
+          root,
+          files: files.length,
+          bytes: byteCounts.get(root),
+          imports: importCounts.get(root),
+          batches: frontendBatches.filter((batch) => batch.root === root).length,
+        }))
+      )
+    );
+  });
+  it.each([
+    [
+      'imports.ts',
+      "import 'side'; import x from 'default'; import {x as y} from 'named'; import type {T} from 'type';",
+      ['side', 'default', 'named', 'type'],
+    ],
+    [
+      'exports.ts',
+      "export {x} from 'export'; export * from 'star'; export * as hidden from 'namespace';",
+      ['export', 'star', 'namespace'],
+    ],
+    [
+      'nested.ts',
+      "function f(){ require('nested'); return import('dynamic'); }",
+      ['nested', 'dynamic'],
+    ],
+    [
+      'template.ts',
+      "const x = `${require('playwright-core')}`; const y = require(`ignored`);",
+      ['playwright-core'],
+    ],
+    [
+      'view.tsx',
+      "const x = <div>{require('jsx')}</div>; import 'escaped\\u002dmodule';",
+      ['jsx', 'escaped-module'],
+    ],
+    [
+      'decoys.ts',
+      "// import 'comment';\nconst x = \"require('string')\"; other.require('member'); require(variable); import(variable);",
+      [],
+    ],
+  ] as const)('preserves literal AST grammar for %s', (file, text, expected) => {
+    expect(importsFromText(file, text)).toEqual(expected);
+    expect(importsFromText(file, text, true)).toEqual(expected);
+  });
+  it.each(['first', 'middle', 'last', 'client', 'ui'])(
+    'detects forbidden imports at %s',
+    (position) => {
+      const index =
+        position === 'last'
+          ? frontendBatches.length - 1
+          : position === 'middle'
+            ? Math.floor(frontendBatches.length / 2)
+            : position === 'ui'
+              ? frontendBatches.findIndex(({ root }) => root === 'packages/ui')
+              : 0;
+      const file = frontendBatches[index]!.files[0]!;
+      const tuples = [
+        { file, specifier: 'safe' },
+        { file, specifier: 'playwright-core' },
+        { file, specifier: '@dorkos/browser/private' },
+      ];
+      expect(frontendViolations(tuples)).toEqual(tuples.slice(1));
+      expect(
+        frontendViolations([
+          {
+            file,
+            specifier: path.relative(path.dirname(file), path.join(packageRoot, 'src/index.ts')),
+          },
+        ])
+      ).toHaveLength(1);
+    }
+  );
+  it('rejects omitted and duplicate partition members', () => {
+    const files = ['a', 'b', 'c'];
+    expect(completePartition(files, [['a'], ['b', 'c']])).toBe(true);
+    expect(completePartition(files, [['a'], ['b']])).toBe(false);
+    expect(completePartition(files, [['a'], ['b', 'b', 'c']])).toBe(false);
+    expect(completePartition(files, [['a'], ['b', 'b']])).toBe(false);
+    expect(completePartition([], [])).toBe(false);
   });
 });

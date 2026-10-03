@@ -167,7 +167,7 @@ afterEach(() => {
  * to it keep pinning something real when the copy moves — the previous string
  * survived a rename and quietly became unconditionally true.
  */
-const AGENT_UNNAMED_COPY = 'An agent asked — DorkOS can’t say which';
+const AGENT_UNNAMED_COPY = 'An agent asked. DorkOS can’t tell which.';
 
 describe('ScheduleApprovalCard — what it says', () => {
   it('names the schedule, its proposer, and how long it has waited', async () => {
@@ -815,7 +815,7 @@ describe('ScheduleApprovalCard — running it once', () => {
 
     await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'failed'));
     expect(slot('schedule-test-run')).toHaveTextContent(
-      'Test run failed: Command not found: sweep'
+      'Test run didn’t work: Command not found: sweep'
     );
     // And it offers no "view what it did" over a failure with no session.
     expect(screen.queryByRole('button', { name: /view what it did/ })).not.toBeInTheDocument();
@@ -830,7 +830,7 @@ describe('ScheduleApprovalCard — running it once', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Run Nightly sweep once' }));
 
     await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'stopped'));
-    expect(slot('schedule-test-run')).toHaveTextContent('Test run was stopped before it finished.');
+    expect(slot('schedule-test-run')).toHaveTextContent('Test run stopped early.');
   });
 
   it('reports a refused trigger rather than sitting there looking idle', async () => {
@@ -1029,9 +1029,7 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
 
     const choice = await findSlot('schedule-power-choice');
     expect(choice).toHaveTextContent('Approve runs it as Accept edits');
-    expect(choice).toHaveTextContent(
-      '“Approve at Full autonomy” runs it at the level you normally'
-    );
+    expect(choice).toHaveTextContent('“Approve at Full autonomy” uses your usual level.');
     // The runtime's own promise for that mode, quoted rather than reinvented —
     // read from the profile so this pins the QUOTING, not one spelling of it.
     const bypass = await declared(transport, 'claude-code', 'bypassPermissions');
@@ -1336,8 +1334,8 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     await waitFor(() => expect(slot('schedule-receipt')).toBeNull());
     expect(elevated()).not.toBeNull();
     const refused = await findSlot('schedule-raise-refused');
-    expect(refused).toHaveTextContent('could not give this schedule Full autonomy');
-    expect(refused).toHaveTextContent('Approve still works, and it will run as Accept edits');
+    expect(refused).toHaveTextContent('Couldn’t set this schedule to Full autonomy');
+    expect(refused).toHaveTextContent('Approve still runs it as Accept edits');
   });
 
   it('says nothing about a refused level when the plain approval is the one that failed', async () => {
@@ -1372,7 +1370,7 @@ describe('what changed since the person approved it (DOR-2323)', () => {
 
     const changes = slot('schedule-changes');
     expect(changes).not.toBeNull();
-    expect(changes).toHaveTextContent('Runtime: the agent’s own → codex');
+    expect(changes).toHaveTextContent('Runs on: the agent’s own → codex');
     expect(changes).toHaveTextContent('Model: claude-sonnet-4 → claude-opus-4');
     // Kept whole at any width: a model name broken at a hyphen reads as two.
     expect(changes!.querySelector('[data-slot="schedule-change-value"]')).toHaveClass(

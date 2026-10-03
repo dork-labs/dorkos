@@ -59,7 +59,7 @@ describe('TasksEmptyState', () => {
     render(<TasksEmptyState onCreateWithPreset={vi.fn()} onCreateBlank={vi.fn()} />, {
       wrapper: Wrapper,
     });
-    expect(screen.getByText('No schedules yet.')).toBeTruthy();
+    expect(screen.getByText('No schedules yet')).toBeTruthy();
     expect(screen.getByText(/Put a skill on a timer/i)).toBeTruthy();
   });
 });

@@ -118,8 +118,6 @@ describe('scope copy', () => {
   });
 
   it('claims no origin at all for an unknown scope', () => {
-    expect(scopeSentence(null, null)).toBe(
-      'This agent’s runtime loads this server. Add it to manage it here.'
-    );
+    expect(scopeSentence(null, null)).toBe('Loaded from outside DorkOS. Add it to manage it here.');
   });
 });

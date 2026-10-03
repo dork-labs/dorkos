@@ -204,7 +204,7 @@ describe('BackgroundTaskBar', () => {
 
     // Overflow badge shows +2, pluralized since count > 1
     expect(screen.getByText('+2')).toBeInTheDocument();
-    expect(screen.getByLabelText('2 more subagents running')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 more helpers running')).toBeInTheDocument();
   });
 
   it('singularizes the overflow badge aria-label when exactly 1 agent overflows', () => {
@@ -216,7 +216,7 @@ describe('BackgroundTaskBar', () => {
 
     // Overflow badge shows +1, singular since count === 1
     expect(screen.getByText('+1')).toBeInTheDocument();
-    expect(screen.getByLabelText('1 more subagent running')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 more helper running')).toBeInTheDocument();
   });
 
   // DOR-1753: `:hover` never fires on touch, so the overflow badge's tooltip

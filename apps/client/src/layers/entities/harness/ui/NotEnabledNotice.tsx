@@ -75,8 +75,8 @@ export function NotEnabledNotice({ notEnabled }: NotEnabledNoticeProps) {
         <div key={harness} title={signal} className="flex flex-col gap-0.5">
           <p className="text-xs font-medium">
             {why === 'dorkos-runtime'
-              ? `DorkOS runs ${HARNESS_LABELS[harness]} here, but this folder isn’t sharing to it.`
-              : `${HARNESS_LABELS[harness]} files are in this folder, but DorkOS isn’t sharing to it.`}
+              ? `DorkOS runs ${HARNESS_LABELS[harness]} here, but isn’t sharing to it.`
+              : `${HARNESS_LABELS[harness]} files are here, but DorkOS isn’t sharing to it.`}
           </p>
           <p className="text-muted-foreground text-3xs">
             Run <WrappableCommand command={`dorkos harness sync --fix --enable ${harness}`} /> in

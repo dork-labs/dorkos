@@ -264,7 +264,7 @@ export function useAdapterWizard({
                 const agentName =
                   agentOptions.find((a) => a.id === bindAgentId)?.name ?? bindAgentId;
                 toast.success(`${manifest.displayName} is connected`, {
-                  description: `Messages that arrive here go to ${agentName}.`,
+                  description: `Messages here go to ${agentName}.`,
                 });
                 onOpenChange(false);
               },
@@ -278,11 +278,11 @@ export function useAdapterWizard({
                 void rollbackAdapter(adapterId).then((undone) => {
                   if (undone) {
                     toast.error('Nothing was set up', {
-                      description: `${manifest.displayName} could not be pointed at an agent, so it was not saved. ${error.message}`,
+                      description: `${manifest.displayName} couldn’t be linked to an agent, so it wasn’t saved. ${error.message}`,
                     });
                   } else {
                     toast.error('Couldn’t finish undoing', {
-                      description: `${manifest.displayName} was added but has no agent to answer it, and it could not be removed automatically. Remove it from Messaging by hand. ${error.message}`,
+                      description: `${manifest.displayName} was added with no agent to answer it. Remove it from Messaging. ${error.message}`,
                     });
                   }
                 });
@@ -292,8 +292,8 @@ export function useAdapterWizard({
         },
         onError: (error) => {
           if (error.message?.includes('timed out')) {
-            toast.error('Request timed out', {
-              description: 'Check your token and network connectivity, then try again.',
+            toast.error(`Couldn’t reach ${manifest.displayName}`, {
+              description: 'Check your token and network, then try again.',
             });
           } else if (error.message?.includes('duplicate') || error.message?.includes('exists')) {
             setStep('configure');

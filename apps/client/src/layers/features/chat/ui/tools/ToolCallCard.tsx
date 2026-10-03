@@ -54,7 +54,7 @@ function HookRow({ hook }: HookRowProps) {
         >
           {hook.hookName}
         </span>
-        {hook.status === 'error' && <span className="text-3xs text-destructive">failed</span>}
+        {hook.status === 'error' && <span className="text-3xs text-destructive">Error</span>}
         {hook.exitCode !== undefined && (
           <span className="text-3xs text-muted-foreground ml-auto">exit {hook.exitCode}</span>
         )}

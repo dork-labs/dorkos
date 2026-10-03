@@ -104,7 +104,7 @@ function SettledAgent({ roster, value }: { roster: TaskAgentRoster; value: strin
   if (roster.unreadable) {
     return (
       <p data-testid="settled-agent" className={`${row} text-muted-foreground`}>
-        DorkOS couldn’t read your list of agents, so it can’t show which one this is.
+        Couldn’t load your agents to show this one.
       </p>
     );
   }
@@ -153,8 +153,7 @@ export function TaskAgentField({ roster, value, locked, pick }: TaskAgentFieldPr
             data-testid="agent-locked-note"
             className="text-muted-foreground text-xs leading-relaxed"
           >
-            You can’t change the agent after a task is created. To run this work as a different
-            agent, create a new task.
+            The agent is set once. For another agent, make a new task.
           </p>
         </>
       ) : (
@@ -178,7 +177,7 @@ export function TaskAgentField({ roster, value, locked, pick }: TaskAgentFieldPr
               className="text-muted-foreground text-xs leading-relaxed"
             >
               {pick.wasDropped
-                ? 'DorkOS couldn’t read what that agent runs on, so the agent hasn’t been changed. Choose it again to retry.'
+                ? 'Couldn’t check that agent, so nothing changed. Choose it again.'
                 : 'Checking what that agent runs on…'}
             </p>
           )}

@@ -384,13 +384,7 @@ function DecisionRowShowcase() {
             title="Turn on Flow?"
             why="You installed the flow plugin. This adds a Flow tab that shows what your agents are working on. It runs as you."
             sourceLine="flow plugin · dork-labs/marketplace"
-            more={
-              <p>
-                None of it has run yet. Turning it on lets its code run inside DorkOS, both on this
-                machine, where it can reach anything DorkOS can, and on this page, signed in as you.
-                Turn it on only if you trust where it came from.
-              </p>
-            }
+            more={<p>None of it has run yet. Once on, it can reach anything DorkOS can.</p>}
             actions={{
               kind: 'yes-no',
               approveLabel: 'Turn it on',

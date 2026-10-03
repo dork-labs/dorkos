@@ -225,12 +225,12 @@ test.describe('Room files — changing them from the Files panel', () => {
     await page.getByRole('menuitem', { name: 'Delete' }).click();
 
     const confirm = page.getByRole('alertdialog');
-    await expect(confirm).toContainText('Delete this folder?');
+    await expect(confirm).toContainText('Delete “old”?');
     await expect(confirm).toContainText('“old” and the 2 files in it leave the room’s files.', {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(confirm).toContainText('The room’s history keeps a copy');
-    await confirm.getByRole('button', { name: 'Delete' }).click();
+    await confirm.getByRole('button', { name: 'Delete folder' }).click();
     await expectFocusInTree(tree);
 
     await expect(tree.getByRole('treeitem', { name: 'old' })).toHaveCount(0, {

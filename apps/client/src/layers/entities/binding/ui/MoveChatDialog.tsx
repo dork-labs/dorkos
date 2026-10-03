@@ -100,7 +100,7 @@ function MoveChatDialogBody({
       <ResponsiveDialogHeader>
         <ResponsiveDialogTitle>This chat already reaches someone</ResponsiveDialogTitle>
         <ResponsiveDialogDescription>
-          A chat goes to one agent, so moving it takes it away from the one that has it now.
+          A chat goes to one agent at a time.
         </ResponsiveDialogDescription>
       </ResponsiveDialogHeader>
       <ResponsiveDialogBody className="pb-2">
@@ -109,8 +109,8 @@ function MoveChatDialogBody({
           it to <span className="font-medium">{conflict.nextAgentName}</span>?
         </p>
         <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
-          The conversation so far stays with {conflict.currentAgentName}. New messages start fresh
-          with {conflict.nextAgentName}.
+          Past messages stay with {conflict.currentAgentName}. {conflict.nextAgentName} starts
+          fresh.
         </p>
       </ResponsiveDialogBody>
       <ResponsiveDialogFooter>

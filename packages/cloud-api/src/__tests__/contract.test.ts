@@ -795,6 +795,67 @@ describe('the seat activity event', () => {
   });
 });
 
+describe('the inference endpoints, one per request format', () => {
+  const both = {
+    anthropicMessages: 'https://example.invalid/a',
+    openaiChat: 'https://example.invalid/c',
+  };
+
+  it('still reads a token from a service that serves only the first two formats', () => {
+    // Additive within `/v1`: a service one release behind sends no
+    // `openaiResponses`, and that token must keep parsing, with the format
+    // reading as not served rather than as an error.
+    const parsed = contract.InferenceEndpointsSchema.safeParse(both);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.openaiResponses).toBeUndefined();
+  });
+
+  it('carries the responses format when the service serves it', () => {
+    const parsed = contract.InferenceEndpointsSchema.safeParse({
+      ...both,
+      openaiResponses: 'https://example.invalid/r',
+    });
+    expect(parsed.success && parsed.data.openaiResponses).toBe('https://example.invalid/r');
+  });
+
+  it('refuses an endpoint that is not a URL, so nothing can be sent to a bare string', () => {
+    expect(
+      contract.InferenceEndpointsSchema.safeParse({ ...both, openaiResponses: 'not a url' }).success
+    ).toBe(false);
+  });
+});
+
+describe('which formats a token is served for', () => {
+  const token = JSON.parse(
+    readFileSync(
+      path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'v1', 'inference', 'token.json'),
+      'utf8'
+    )
+  );
+
+  it('still reads a token minted before the list existed, which lists nothing', () => {
+    // Absent means the first format only: a client reads it that way, so an
+    // old service never starts the other formats by omission.
+    const parsed = contract.InferenceTokenSchema.safeParse(token);
+    expect(parsed.success && parsed.data.served).toBeUndefined();
+  });
+
+  it('carries the formats a service serves, by their endpoint field names', () => {
+    const parsed = contract.InferenceTokenSchema.safeParse({
+      ...token,
+      served: ['anthropicMessages', 'openaiChat'],
+    });
+    expect(parsed.success && parsed.data.served).toEqual(['anthropicMessages', 'openaiChat']);
+    // A format this package does not know yet never rejects the token: a
+    // service a release ahead must not break every client a release behind.
+    const ahead = contract.InferenceTokenSchema.safeParse({
+      ...token,
+      served: ['aWireFromTheFuture', 'openaiChat'],
+    });
+    expect(ahead.success && ahead.data.served).toEqual(['aWireFromTheFuture', 'openaiChat']);
+  });
+});
+
 describe('the inference refusal reasons', () => {
   it('keeps every reason it published before, which is what additive means', () => {
     for (const reason of [
@@ -842,7 +903,7 @@ describe('the inference refusal reasons', () => {
   });
 });
 
-describe('which protocols a routed model is offered on', () => {
+describe('which request formats a routed model is offered in', () => {
   const model = {
     id: 'md_opaque_0001',
     displayName: 'a model',
@@ -851,32 +912,27 @@ describe('which protocols a routed model is offered on', () => {
     supports: { tools: true, promptCaching: true, streaming: true, thinking: false },
   };
 
-  it('still parses a model from a service that says nothing about protocols', () => {
+  it('still parses a model from a service that says nothing about formats', () => {
     // Additive within /v1: the response a previous minor published still parses.
     expect(contract.InferenceModelSchema.safeParse(model).success).toBe(true);
   });
 
-  it('carries the protocols and the recommendation as plain strings', () => {
+  it('carries the formats and the recommendation as plain strings, unknown ones intact', () => {
     const parsed = contract.InferenceModelSchema.parse({
       ...model,
-      protocols: ['anthropic-messages', 'a-protocol-added-later'],
-      recommendedOn: ['anthropic-messages'],
+      protocols: ['anthropicMessages', 'a-format-added-later'],
+      recommendedOn: ['anthropicMessages'],
     });
-    // A value this release does not know arrives intact, so a caller one
-    // release behind skips it instead of failing the whole list.
-    expect(parsed.protocols).toEqual(['anthropic-messages', 'a-protocol-added-later']);
-    expect(parsed.recommendedOn).toEqual(['anthropic-messages']);
+    // A value this release does not know never rejects the list: a caller one
+    // release behind ignores it, the same rule as the token's `served`.
+    expect(parsed.protocols).toEqual(['anthropicMessages', 'a-format-added-later']);
+    expect(parsed.recommendedOn).toEqual(['anthropicMessages']);
   });
 
-  it('names one protocol per published endpoint', () => {
-    expect([...contract.InferenceProtocolSchema.options].sort()).toEqual([
-      'anthropic-messages',
-      'openai-chat',
-    ]);
-    expect(Object.keys(contract.InferenceEndpointsSchema.shape).sort()).toEqual([
-      'anthropicMessages',
-      'openaiChat',
-    ]);
+  it('spells formats with the one vocabulary the token uses', () => {
+    for (const value of ['anthropicMessages', 'openaiChat', 'openaiResponses']) {
+      expect(contract.InferenceFormatSchema.safeParse(value).success).toBe(true);
+    }
   });
 });
 

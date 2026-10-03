@@ -199,6 +199,35 @@ function recordPrompts<T extends { runStreamed: (...args: never[]) => unknown }>
 // checkDependencies() shells out to `codex --version` / `codex login status`
 // for real — mock the probe so conformance never spawns (or requires) the
 // binary. The live smoke restores the real probe.
+/**
+ * What Codex's recorded Runs on default is, as the credits driver sets it: the
+ * way a person chooses credits for Codex (ADR 261001-000811), since Codex has
+ * no per-session account pick. Read by the mocked `creditsIsDefaultFor`.
+ */
+const codexRunsOnCredits = vi.hoisted(() => ({ value: false }));
+
+vi.mock('../../../core/cloud/credits-defaults.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/cloud/credits-defaults.js')>()),
+  creditsIsDefaultFor: (runtime: string) => runtime === 'codex' && codexRunsOnCredits.value,
+}));
+
+// The suite's computer reads as linked. A token is held only through the
+// credits module's test seam, and no cloud context is ever captured, so
+// nothing here can reach a real service.
+vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../core/cloud/v1-client.js')>()),
+  isCloudLinked: () => true,
+  captureCloudV1Context: () => null,
+}));
+
+// The credits home is never created on disk here, and no conformance thread
+// lives in it: every thread this suite starts is new, so the default decides.
+vi.mock('../credits-launch.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../credits-launch.js')>()),
+  ensureCreditsCodexHome: () => {},
+  threadRunsOnCredits: async () => false,
+}));
+
 vi.mock('../check-dependencies.js', async (importOriginal) => {
   if (LIVE) return importOriginal();
   return {
@@ -221,7 +250,10 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 
 import { CodexRuntime } from '../codex-runtime.js';
 import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
-import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
+import { __setCreditsCatalogForTests } from '../../../core/cloud/credits-models.js';
+import { InferenceTokenSchema } from '@dork-labs/cloud-api';
+// The fixture whose token serves every format: Codex speaks only `responses`.
+import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
@@ -439,19 +471,21 @@ runtimeConformance(
             'a live codex binary is a subprocess this suite hands an environment and cannot read back, so whether a credits token reached it is only observable in the mocked run',
         }
       : {
-          // ADR 261001-000811: Codex does not declare credits, so whatever the
-          // host holds and whatever the session asks for, no client, thread or
-          // prompt the adapter builds may carry a credits token.
+          // ADR 261001-000811. Credits are chosen the way a person chooses
+          // them for Codex: its recorded default. Everything the adapter built
+          // (clients, threads, prompts) is searched for the token, so a turn on
+          // the person's own sign-in must carry none of it.
           creditsTurn: async (runtime, { runsOn, heldToken }) => {
+            codexRunsOnCredits.value = runsOn === 'credits';
             __setCreditsStateForTests({
               token:
                 heldToken === null
                   ? null
-                  : {
+                  : InferenceTokenSchema.parse({
                       ...CREDITS_TOKEN_FIXTURE,
                       token: heldToken,
                       expiresAt: '2999-01-01T00:00:00.000Z',
-                    },
+                    }),
             });
             try {
               const clientsBefore = codexClientOptions.length;
@@ -462,7 +496,6 @@ runtimeConformance(
               const events = [];
               for await (const event of runtime.sendMessage(sessionId, 'conformance ping', {
                 cwd: projectDir,
-                ...(runsOn === 'credits' ? { accountHint: 'dorkos-credits' } : {}),
               })) {
                 events.push(event);
               }
@@ -479,6 +512,7 @@ runtimeConformance(
                 events,
               };
             } finally {
+              codexRunsOnCredits.value = false;
               __setCreditsStateForTests({ token: null });
             }
           },
@@ -608,3 +642,83 @@ it.skipIf(LIVE)(
     for (const prompt of sent) expect(prompt.endsWith(DOC_VISIBLE_TRIGGER)).toBe(true);
   }
 );
+
+// DOR-2636: a Codex turn on credits runs a model credits serve in Codex's
+// format, once the service says which formats its models are in; while it
+// says nothing, the session's model stands.
+describe.skipIf(LIVE)('the model a Codex credits turn runs (DOR-2636)', () => {
+  const supports = { tools: true, promptCaching: false, streaming: true, thinking: false };
+  const served = (id: string, formats: string[], recommendedOn: string[] = []) => ({
+    id,
+    displayName: `Name ${id}`,
+    contextWindow: 200_000,
+    maxOutputTokens: 32_000,
+    supports,
+    protocols: formats,
+    recommendedOn,
+  });
+
+  async function creditsTurn(model: string | undefined) {
+    codexRunsOnCredits.value = true;
+    __setCreditsStateForTests({
+      token: InferenceTokenSchema.parse({
+        ...CREDITS_TOKEN_FIXTURE,
+        expiresAt: '2999-01-01T00:00:00.000Z',
+      }),
+    });
+    try {
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/bin/codex',
+      });
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+      if (model !== undefined) await runtime.updateSession(sessionId, { model });
+      const before = threadOptionsSeen.length;
+      const events = [];
+      for await (const event of runtime.sendMessage(sessionId, 'ping', { cwd: projectDir })) {
+        events.push(event);
+      }
+      return { events, threads: threadOptionsSeen.slice(before) };
+    } finally {
+      codexRunsOnCredits.value = false;
+      __setCreditsStateForTests({ token: null });
+    }
+  }
+
+  afterAll(() => __setCreditsCatalogForTests(null));
+
+  it('runs a model credits do not serve in its format on the suggestion, and says so', async () => {
+    __setCreditsCatalogForTests([
+      served('claude-x', ['anthropicMessages']),
+      served('gpt-pick', ['openaiResponses'], ['openaiResponses']),
+    ]);
+    const { events, threads } = await creditsTurn('gpt-not-served');
+    expect(threads[0]).toMatchObject({ model: 'gpt-pick' });
+    expect(events.filter((e) => e.type === 'model_substituted')).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({ from: 'gpt-not-served', to: 'gpt-pick' }),
+      }),
+    ]);
+  });
+
+  it('keeps a model it serves, and starts one with no model on the suggestion', async () => {
+    __setCreditsCatalogForTests([served('gpt-pick', ['openaiResponses'], ['openaiResponses'])]);
+    expect((await creditsTurn('gpt-pick')).threads[0]).toMatchObject({ model: 'gpt-pick' });
+    expect((await creditsTurn(undefined)).threads[0]).toMatchObject({ model: 'gpt-pick' });
+  });
+
+  it('refuses plainly when the service lists formats but none in Codex’s', async () => {
+    __setCreditsCatalogForTests([served('claude-x', ['anthropicMessages'])]);
+    const { events, threads } = await creditsTurn('gpt-anything');
+    expect(threads).toHaveLength(0);
+    expect(events[0]).toMatchObject({ type: 'error', data: { reason: 'no-models' } });
+  });
+
+  it('changes nothing while the service says nothing about formats', async () => {
+    __setCreditsCatalogForTests([{ ...served('m', []), protocols: undefined }]);
+    const { events, threads } = await creditsTurn('gpt-whatever');
+    expect(threads[0]).toMatchObject({ model: 'gpt-whatever' });
+    expect(events.some((e) => e.type === 'model_substituted')).toBe(false);
+  });
+});

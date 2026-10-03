@@ -67,13 +67,13 @@ describe('AgentGhostRows', () => {
     expect(screen.getByText('Bring in existing projects')).toBeInTheDocument();
   });
 
-  it('renders "Search for Projects" button', () => {
+  it('renders "Search for projects" button', () => {
     render(<AgentGhostRows />);
 
     expect(screen.getByRole('button', { name: /search for projects/i })).toBeInTheDocument();
   });
 
-  it('clicking "Search for Projects" opens the standalone import dialog', () => {
+  it('clicking "Search for projects" opens the standalone import dialog', () => {
     render(<AgentGhostRows />);
 
     fireEvent.click(screen.getByRole('button', { name: /search for projects/i }));

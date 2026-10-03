@@ -114,7 +114,7 @@ export function registerAskAnywhereTests(deps: AskAnywhereDeps): void {
       const card = askCard(page).first();
       await expect(card).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
       await expect(card).toContainText(/wants to edit/i);
-      await card.getByRole('button', { name: 'Allow' }).click();
+      await card.getByRole('button', { name: 'Allow', exact: true }).click();
 
       // The receipt, where the answer was given.
       await expect(page.getByText(/You allowed this/)).toBeVisible({

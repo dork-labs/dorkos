@@ -95,8 +95,8 @@ describe('SessionConnectorsGroup', () => {
       ],
     });
     renderGroup(transport);
-    expect(await screen.findByText('Inherited from agent')).toBeInTheDocument();
-    expect(screen.getByText('Allowed only in this session')).toBeInTheDocument();
+    expect(await screen.findByText('From the agent')).toBeInTheDocument();
+    expect(screen.getByText('Only in this chat')).toBeInTheDocument();
     expect(screen.getAllByText('Not available')).toHaveLength(2);
     // Each unusable account says the server's own line for why.
     expect(screen.getByText(CONNECTION_READINESS_COPY.paused.owner)).toBeInTheDocument();
@@ -170,7 +170,9 @@ describe('SessionConnectorsGroup', () => {
 
     await user.click(await screen.findByRole('switch', { name: 'Gmail (work) in this chat' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing changed');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t change access for this chat. Try again.'
+    );
     expect(screen.getByRole('switch', { name: 'Gmail (work) in this chat' })).toBeChecked();
   });
 

@@ -103,14 +103,14 @@ describe('AdapterEventLog', () => {
     it('renders empty state when no events exist', () => {
       mockUseAdapterEvents.mockReturnValue({ data: { events: [] }, isLoading: false });
       render(<AdapterEventLog adapterId="telegram-1" />);
-      expect(screen.getByText('No events recorded')).toBeInTheDocument();
+      expect(screen.getByText('No events yet')).toBeInTheDocument();
     });
 
     it('renders empty state when data has no events array', () => {
       mockUseAdapterEvents.mockReturnValue({ data: undefined, isLoading: false });
       render(<AdapterEventLog adapterId="telegram-1" />);
       // With no data, events defaults to [] which shows empty state
-      expect(screen.getByText('No events recorded')).toBeInTheDocument();
+      expect(screen.getByText('No events yet')).toBeInTheDocument();
     });
   });
 

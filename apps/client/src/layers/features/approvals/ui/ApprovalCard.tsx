@@ -39,8 +39,7 @@ const TIER_LABEL = {
 const ANSWER_BUTTON = 'h-11 w-full px-2.5 text-xs md:h-7 md:w-auto';
 
 /** The line a floor-area card shows in place of Always allow. */
-export const FLOOR_AREA_LINE =
-  "Always allow isn't offered here. Changing this needs your yes every time.";
+export const FLOOR_AREA_LINE = 'Always allow isn’t offered here. This always needs your yes.';
 
 /**
  * The line a card suggesting Always allow shows: the true count, from the
@@ -49,7 +48,7 @@ export const FLOOR_AREA_LINE =
  * @param count - One-time Allows for this agent and action in the last week.
  */
 function suggestionLine(count: number): string {
-  return `You've allowed this ${count} ${count === 1 ? 'time' : 'times'} this week.`;
+  return `You’ve allowed this ${count} ${count === 1 ? 'time' : 'times'} this week.`;
 }
 
 /**
@@ -425,7 +424,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                     )
                   }
                 >
-                  Deny
+                  Don’t allow
                 </Button>
               </AskCard.Actions>
             </>

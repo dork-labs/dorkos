@@ -92,7 +92,7 @@ export function ProfilePhotoField({ member }: ProfileFieldProps) {
       <FieldCardContent className="space-y-3">
         <SettingRow
           label="Photo"
-          description="A PNG, JPEG or WebP, up to 2 MB."
+          description="PNG, JPEG or WebP, up to 2 MB."
           orientation="vertical"
         >
           <div className="flex items-center gap-3">
@@ -180,9 +180,7 @@ export function ProfileNameField({ member }: ProfileFieldProps) {
           // about it, so the note lives in the description rather than as a
           // fourth line under the input.
           description={
-            suggestedName
-              ? `What DorkOS calls you. ${suggestedName}. Save it to make it yours.`
-              : 'What DorkOS calls you.'
+            suggestedName ? `${suggestedName}. Save it to make it yours.` : 'What DorkOS calls you.'
           }
           orientation="vertical"
         >
@@ -226,7 +224,7 @@ export function ProfileHandleField({ member }: ProfileFieldProps) {
       <FieldCardContent className="space-y-3">
         <SettingRow
           label="Handle"
-          description="What people and agents type after an @ to reach you."
+          description="What others type after @ to reach you."
           orientation="vertical"
         >
           <div className="flex gap-2">
@@ -266,8 +264,8 @@ export function ProfileEmailField({ member }: ProfileFieldProps) {
           label="Email"
           description={
             member.person?.email
-              ? 'From the account you signed in with. Change it in Settings › Login & security.'
-              : 'You have no login on this machine. Turn one on in Settings › Login & security if you want one.'
+              ? 'From your sign-in. Change it in Settings › Login & security.'
+              : 'No login on this machine. Turn one on in Settings › Login & security.'
           }
           orientation="vertical"
         >

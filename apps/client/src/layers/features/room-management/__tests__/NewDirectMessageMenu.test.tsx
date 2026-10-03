@@ -82,7 +82,7 @@ describe('NewDirectMessageMenu', () => {
     // somebody to do it themselves.
     renderMenu([]);
 
-    expect(screen.getByText('You have not added any agents yet.')).toBeInTheDocument();
+    expect(screen.getByText('You don’t have any agents yet.')).toBeInTheDocument();
     expect(screen.queryByText(/Add one to start/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create agent' })).toBeInTheDocument();
   });

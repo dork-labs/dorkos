@@ -155,7 +155,7 @@ test.describe('Agent permissions @permissions', () => {
     await expect(rooms).toBeVisible();
     await rooms.getByRole('radio', { name: 'Ask' }).click();
 
-    const dialog = page.getByRole('dialog', { name: /Rooms will be set to Ask/ });
+    const dialog = page.getByRole('dialog', { name: /Set Rooms to Ask/ });
     await expect(dialog).toBeVisible();
     const box = dialog.getByRole('checkbox');
     await expect(box).toHaveCount(1);

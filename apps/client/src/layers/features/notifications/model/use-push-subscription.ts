@@ -164,7 +164,7 @@ export function usePushSubscription(): PushSubscriptionState {
   const subscribe = useCallback(async () => {
     setError(null);
     if (vapidKey === null) {
-      setError('DorkOS could not set up push notifications on this computer.');
+      setError('Couldn’t set up notifications on this computer. Try again later.');
       return;
     }
     try {
@@ -180,7 +180,7 @@ export function usePushSubscription(): PushSubscriptionState {
       try {
         await removeMutation.mutateAsync(id);
       } catch {
-        setError('That device could not be removed. Try again in a moment.');
+        setError('Couldn’t remove that device. Try again.');
       }
     },
     [removeMutation]
@@ -280,10 +280,10 @@ class PushPermissionError extends Error {
 function describeSubscribeFailure(err: unknown): string {
   if (err instanceof PushPermissionError) {
     return err.permission === 'denied'
-      ? 'Your browser is set to refuse notifications from DorkOS, and it will not ask again. You can change that in your browser’s settings for this site.'
-      : 'DorkOS needs permission to show notifications before it can reach this device.';
+      ? 'Your browser blocks notifications from DorkOS. Allow them in this site’s settings.'
+      : 'Allow notifications so DorkOS can reach this device.';
   }
-  return 'This device could not be set up for notifications. Try again in a moment.';
+  return 'Couldn’t set up this device for notifications. Try again.';
 }
 
 /**

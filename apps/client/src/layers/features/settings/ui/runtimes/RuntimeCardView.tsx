@@ -40,11 +40,10 @@ import { TrustRow, type TrustRowProps } from './rows/TrustRow';
 export type { RuntimeCardReconnect } from './RuntimeCardHeader';
 
 /** What a card says instead of a summary when the runtime cannot be used yet. */
-const LOCKED_LINE = 'One sign-in away. Settings unlock once it’s connected.';
+const LOCKED_LINE = 'One sign-in away from its settings.';
 
 /** What a card says when the runtime new conversations start on cannot start one. */
-const BROKEN_DEFAULT_LINE =
-  'Your default runtime isn’t connected. New conversations can’t start here.';
+const BROKEN_DEFAULT_LINE = 'Your default isn’t connected, so new conversations can’t start.';
 
 /**
  * What a card says while a working sign-in is running out of time.
@@ -57,7 +56,7 @@ const BROKEN_DEFAULT_LINE =
  * @param timeLeft - How long is left, already in words (e.g. `'2 days'`).
  */
 const expiringSignInLine = (label: string, timeLeft: string) =>
-  `Your ${label} sign-in runs out in ${timeLeft}. Sign in again before your agents stall.`;
+  `Your ${label} sign-in runs out in ${timeLeft}. Sign in again to keep agents working.`;
 
 /**
  * What a card says in the last stretch: the sign-in cannot renew itself any
@@ -68,7 +67,7 @@ const expiringSignInLine = (label: string, timeLeft: string) =>
  * @param label - The runtime's name, as a person calls it.
  */
 const lapsedSignInLine = (label: string) =>
-  `Your ${label} sign-in is out of time and will stop working shortly. Sign in again to avoid an interruption.`;
+  `Your ${label} sign-in stops working soon. Sign in again now.`;
 
 /**
  * What a card says instead of rows when the runtime has nowhere to keep them.
@@ -76,7 +75,7 @@ const lapsedSignInLine = (label: string) =>
  * @param label - The runtime's name, as a person calls it.
  */
 const noSettingsLine = (label: string) =>
-  `${label} keeps no settings of its own. It uses its own model and follows the shared setting below.`;
+  `${label} keeps no settings here. It uses its own model and the setting below.`;
 
 /**
  * The words that turn the summary's chips into a sentence (design §4).

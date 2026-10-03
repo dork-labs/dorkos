@@ -122,6 +122,32 @@ describe('the out-of-usage routes', () => {
     expect(deps.checkModel).toBe(rejectUnknownModel);
   });
 
+  // Continuing onto DorkOS credits spends the account's money, so it asks the
+  // install-owner bar too (DOR-2652): a caller holding an approval token is not
+  // the person, even with no agent header. Login-on postures over the same
+  // bar are in `cloud-owner-bar.test.ts`.
+  it('refuses a move onto DorkOS credits by anything but the person', async () => {
+    const res = await request(testServer)
+      .post(`${base}/continue`)
+      .set('x-dorkos-approval', 'approval-token-abc')
+      .send({ account: 'dorkos-credits' });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({
+      error: 'Only you can move this session onto your DorkOS credits, from the DorkOS app.',
+      code: 'person_only',
+    });
+    expect(continueSession).not.toHaveBeenCalled();
+  });
+
+  it('lets the person at this computer move onto DorkOS credits', async () => {
+    vi.mocked(continueSession).mockResolvedValue({ sessionId: 'new-2' });
+    const res = await request(testServer)
+      .post(`${base}/continue`)
+      .send({ account: 'dorkos-credits' });
+    expect(res.status).toBe(202);
+    expect(continueSession).toHaveBeenCalled();
+  });
+
   it('answers a claimed session’s continue with 202 and an empty body', async () => {
     vi.mocked(continueSession).mockResolvedValue({});
     const res = await request(testServer).post(`${base}/continue`).send({ account: 'spare' });

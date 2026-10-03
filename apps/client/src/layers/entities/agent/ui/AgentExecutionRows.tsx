@@ -14,7 +14,7 @@ import {
   shortenHomePath,
   type KnownAccount,
 } from '@/layers/shared/lib';
-import { useClaudeAccounts, useIsMobile } from '@/layers/shared/model';
+import { useClaudeAccounts, useCloudCredits, useIsMobile } from '@/layers/shared/model';
 import {
   Button,
   ProvenanceChip,
@@ -184,9 +184,7 @@ function ExecutionRow({
             data-testid={`${testId}-inherit`}
           >
             {inheritText ??
-              (serverDefault
-                ? `Using server default: ${serverDefault}. Tap to restore`
-                : 'Use server default: the runtime picks')}
+              (serverDefault ? `Use server default: ${serverDefault}` : 'Use server default')}
           </button>
         </ResponsivePopoverContent>
       </ResponsivePopover>
@@ -254,10 +252,12 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // An agent on DorkOS credits is offered only what credits serve on its
   // runtime's protocol (DOR-2636), the same menu the server accepts; every
   // other agent gets the runtime's own menu.
+  const { data: creditsReport } = useCloudCredits();
   const onCredits = agentRunsOnCredits(agent, {
     defaultRuntime,
     runtimeDeclaresCredits: (type) => capabilityMap?.capabilities[type]?.credits !== undefined,
     credits: config?.claudeCode?.credits,
+    runtimeDefaultsToCredits: (type) => creditsReport?.defaults?.[type]?.runsOn === 'credits',
   });
   const { data: models, isError: modelsFailed } = useModels({
     runtime,

@@ -267,8 +267,7 @@ export function PersonalityPicker({
             </AnimatePresence>
           ) : (
             <p className="text-muted-foreground text-xs leading-relaxed italic">
-              {activePreset?.sampleResponse ??
-                'This agent uses a custom personality blend. Select a preset to see a sample response.'}
+              {activePreset?.sampleResponse ?? 'Custom blend. Pick a preset to see a sample reply.'}
             </p>
           )}
         </div>

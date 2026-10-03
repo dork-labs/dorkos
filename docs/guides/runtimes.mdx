@@ -119,6 +119,8 @@ This computer's own Claude sign-in (usually the `~/.claude` folder) is your main
 
 ### DorkOS credits
 
+Today, DorkOS credits pay for Claude Code. Codex and OpenCode use their own sign-in.
+
 When this computer is linked to a DorkOS account, **DorkOS credits** is one more choice in the same places you pick an account: the **Default account** list under **Runs on**, an agent's **Runs on**, the account chip before a chat's first message, and **Continue on another account**. A chat set to DorkOS credits runs on them and nothing else. If DorkOS can't reach your credits, the chat stops and says so, with **Retry** and **Use your Claude Code sign-in**. It never quietly runs on your own sign-in instead. When a scheduled task, an agent's reply or a room turn stops this way, you get a notification, so it never fails without anyone knowing.
 
 Some projects have their own Claude Code sign-in in their `.claude/settings.json`. Those can't run on credits, so the chat stops with **Don't use credits in this project** beside **Use your Claude Code sign-in**. That adds a project limit without credits, which you can remove in Settings → Runtimes.
@@ -128,6 +130,20 @@ Anything a chat runs, such as a project's hooks or the commands an agent runs, c
 If you link a DorkOS account while Claude Code has no sign-in at all, DorkOS sets new Claude Code chats to run on credits and tells you once, with **Change** and **Undo all**. If you sign in to Claude Code later, DorkOS offers once to switch back. Turning credits off is remembered, and a sign-in that has expired is never replaced with credits. A computer linked before credits were a choice keeps everything as it was, and gets one offer you can turn down.
 
 An agent runs on credits only when you pick that for it in the app. If an agent's own settings file asks for credits, its row says so and offers **Allow**; until then it uses your default. Project limits can keep credits out of a project, but they never choose credits.
+
+#### Codex and OpenCode on credits
+
+Codex and OpenCode don't have account lists, so each one has a single choice: its own sign-in, or DorkOS credits. The choice shows as **Runs on** on its card in Settings → Runtimes, and as its switch under **Use credits for**, but only once DorkOS credits serve that runtime. Until then neither place shows it. If a runtime is set to credits and credits can't run it for now, its row stays so you can switch it back.
+
+- **Codex**: the choice applies to new conversations. A conversation already going stays on whatever it started on. On credits, Codex doesn't use your own Codex settings in `~/.codex`: its MCP servers, its global `AGENTS.md` and its profiles stay out of credits conversations. The tools DorkOS gives an agent still work.
+- **OpenCode**: the choice moves all of OpenCode, conversations already going included. You can't switch while OpenCode is in the middle of a reply, so nothing it's doing is cut off. On credits, OpenCode offers the models your DorkOS account lists.
+
+On credits, neither one uses your own Codex or OpenCode sign-in or keys, and DorkOS never changes your own Codex or OpenCode settings. If DorkOS can't reach your credits, the chat stops and offers a way back to your own sign-in:
+
+- **Codex**: **Start a new conversation on your Codex sign-in**. A conversation that started on credits can't move, so this switches Codex back and opens a new one.
+- **OpenCode**: **Use your OpenCode sign-in**. This switches all of OpenCode back, not just that chat, then sends the message again.
+
+Anything a credits chat runs, such as an MCP server or a command the agent runs, can read the credits key while it runs, just as it could read your own key. Only use credits in projects you trust.
 
 With two or more accounts, each account has a color, and its dot wears that color everywhere in the app. To change it, click the account's dot in Settings and pick one of 8 colors, or **Default**. Main's dot works the same way.
 

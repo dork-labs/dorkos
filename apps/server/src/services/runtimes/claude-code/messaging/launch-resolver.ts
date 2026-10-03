@@ -54,11 +54,9 @@ import {
   resolveAgentHome,
   turnAgentOf,
 } from '../../../core/agent-identity/index.js';
-import {
-  CreditsUnavailableError,
-  resolveCreditsLaunchEnv,
-} from '../../../core/cloud/credits-inference.js';
-import { resolveCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
+import { resolveCreditsLaunchEnv } from '../../../core/cloud/credits-inference.js';
+import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
+import { creditsRefusalEvent as creditsRefusalEventFor } from '../../../core/cloud/credits-protocols.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
@@ -164,16 +162,6 @@ export function resolveEffectiveCwd(opts: MessageSenderOpts, messageOpts?: Messa
   return messageOpts?.cwd || opts.sessionCwd || opts.cwd;
 }
 
-/** Which sessions were already told their model was replaced on credits. */
-const creditsModelSwapsSaid = new Set<string>();
-/** How many of those {@link creditsModelSwapsSaid} remembers at most. */
-const CREDITS_MODEL_SWAPS_KEPT = 1_000;
-
-/** The key one session-and-model swap is remembered under. */
-function swapKey(sessionId: string, model: string): string {
-  return `${sessionId}\u0000${model}`;
-}
-
 /**
  * Yield a launch's status events, then take the save a credits swap owes
  * (DOR-2636): the swapped model becomes the session's own and the swap is
@@ -188,28 +176,6 @@ export async function* deliverStatusEvents(
 ): AsyncGenerator<StreamEvent> {
   for (const event of resolved.statusEvents) yield event;
   await resolved.substitution?.commit();
-}
-
-/**
- * Whether this session still has to be told that credits run another model
- * than the one it names, recording that it now has been: the notice is said
- * once per session and model, not on every turn (a schedule or room whose
- * every send names the model again would otherwise say it on each one).
- *
- * @param sessionId - The session being launched.
- * @param model - The model it names that credits do not serve.
- */
-function noteCreditsModelSwap(sessionId: string, model: string): boolean {
-  const key = swapKey(sessionId, model);
-  if (creditsModelSwapsSaid.has(key)) return false;
-  creditsModelSwapsSaid.add(key);
-  // Bounded: the oldest is forgotten first. The swap also becomes the session's
-  // own model, so a forgotten key costs at most one repeated notice.
-  if (creditsModelSwapsSaid.size > CREDITS_MODEL_SWAPS_KEPT) {
-    const oldest = creditsModelSwapsSaid.values().next().value;
-    if (oldest !== undefined) creditsModelSwapsSaid.delete(oldest);
-  }
-  return true;
 }
 
 /**
@@ -603,46 +569,33 @@ export async function resolveLaunch(args: {
   let commitSubstitution: ResolvedLaunch['substitution'];
   if (onCredits) {
     const named = opts.lookupModel?.(launchModel);
-    const decided = await resolveCreditsLaunchModel(
-      CLAUDE_CODE_CAPABILITIES,
-      launchModel,
-      named?.resolvedModel
-    );
-    if (decided.kind === 'none-served') {
-      throw new CreditsUnavailableError('no-models', 'Claude Code');
-    }
-    if (decided.kind === 'suggested' || decided.kind === 'replaced') {
+    // Nothing is saved here. The notice and the save are ONE step, taken by
+    // `deliverStatusEvents` only once the notice has gone out on the turn's
+    // stream (and so been recorded): a path that ends the launch before its
+    // status events are delivered (a refused folder, a staged warm-up, a
+    // refused cross-account reuse) saves nothing and marks nothing told, so
+    // the next launch swaps again and says so.
+    const decided = await decideCreditsLaunchModel({
+      capabilities: CLAUDE_CODE_CAPABILITIES,
+      runtimeLabel: 'Claude Code',
+      sessionId,
+      model: launchModel,
+      resolvedModel: named?.resolvedModel,
+      fromName: named?.displayName,
+      remember: async (model) => {
+        await opts.rememberSessionModel?.(model);
+      },
+    });
+    if (decided.model !== launchModel && decided.model !== undefined) {
       launchModel = decided.model;
       const running = opts.lookupModel?.(decided.model);
       swappedTo = { row: running };
       modelCapability = running;
       modelSupportsAutoMode = running ? (running.supportsAutoMode ?? false) : undefined;
     }
-    if (decided.kind === 'replaced') {
-      // Nothing is saved here. The notice and the save are ONE step, taken by
-      // `deliverStatusEvents` only once the notice has gone out on the turn's
-      // stream (and so been recorded): a path that ends the launch before its
-      // status events are delivered (a refused folder, a staged warm-up, a
-      // refused cross-account reuse) saves nothing and marks nothing told, so
-      // the next launch swaps again and says so.
-      const notice: StreamEvent = {
-        type: 'model_substituted',
-        data: {
-          from: decided.from,
-          fromName: named?.displayName ?? decided.from,
-          to: decided.model,
-          toName: decided.toName,
-          reason: 'credits-not-covered',
-        },
-      };
-      const announce = !creditsModelSwapsSaid.has(swapKey(sessionId, decided.from));
-      if (announce) statusEvents.push(notice);
-      commitSubstitution = {
-        commit: async () => {
-          noteCreditsModelSwap(sessionId, decided.from);
-          await opts.rememberSessionModel?.(decided.model);
-        },
-      };
+    if (decided.swap) {
+      if (decided.swap.notice) statusEvents.push(decided.swap.notice);
+      commitSubstitution = { commit: decided.swap.commit };
     }
   }
 
@@ -917,14 +870,5 @@ function forCredits(
  * @param err - Whatever `resolveLaunch` threw.
  */
 export function creditsRefusalEvent(err: unknown): StreamEvent | null {
-  if (!(err instanceof CreditsUnavailableError)) return null;
-  return {
-    type: 'error',
-    data: {
-      message: err.message,
-      code: err.code,
-      category: 'execution_error',
-      reason: err.reason,
-    },
-  };
+  return creditsRefusalEventFor(err);
 }

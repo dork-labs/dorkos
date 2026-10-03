@@ -58,7 +58,7 @@ export function AgentGhostRows() {
         <p className="text-lg font-semibold">Bring in existing projects</p>
         <Button size="sm" className="gap-1.5" onClick={openImport}>
           <ScanSearch className="size-3.5" />
-          Search for Projects
+          Search for projects
         </Button>
       </div>
     </div>

@@ -202,3 +202,8 @@ export function parseBrowserCommand(value: unknown): BrowserCommand {
 export function parseBrowserResult(value: unknown): BrowserResult {
   return parseValidated(ResultSchema, value, 'INVALID_RESULT');
 }
+
+/** Parse only the existing seven-field binding; this trusted seam does not grant controller authority. */
+export function parseBrowserBinding(value: unknown): BrowserBinding {
+  return parseValidated(BindingSchema, value, 'INVALID_COMMAND');
+}

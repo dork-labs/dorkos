@@ -27,7 +27,7 @@ for (const viewport of [
 
     await expect(page.getByText('This space seems to be gone')).toBeVisible();
     await expect(
-      page.getByText(/Since September 1, 2026, Gamma has said this space doesn’t exist/)
+      page.getByText(/Since September 1, 2026, Gamma says it doesn’t exist/)
     ).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`seems-gone-${viewport.name}.png`) });
 
@@ -37,7 +37,7 @@ for (const viewport of [
     await page.screenshot({
       path: test.info().outputPath(`seems-gone-confirm-${viewport.name}.png`),
     });
-    await dialog.getByRole('button', { name: 'Keep it' }).click();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toBeHidden();
   });
 }
@@ -54,7 +54,7 @@ for (const viewport of [
     await page.goto(`/channels?community=${TAKEN_DOWN.ref}&id=${ROOM}`);
 
     await expect(page.getByText('This space was taken down')).toBeVisible();
-    await expect(page.getByText(/Whoever runs Delta took it down/)).toBeVisible();
+    await expect(page.getByText(/If Delta returns, you can connect again/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Remove from DorkOS' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`taken-down-${viewport.name}.png`) });
   });

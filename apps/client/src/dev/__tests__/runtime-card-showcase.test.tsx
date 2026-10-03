@@ -105,7 +105,7 @@ describe('runtime card showcases', () => {
     const card = broken.closest('[data-testid="runtime-card-opencode"]');
     expect(card).not.toBeNull();
     expect(within(card as HTMLElement).getByTestId('runtime-default-pill-opencode')).toBeVisible();
-    expect(broken).toHaveTextContent('Your default runtime isn’t connected');
+    expect(broken).toHaveTextContent('Your default isn’t connected');
   });
 
   it('admits the capped catalog in exactly one demo, and no other grows one', () => {
@@ -130,7 +130,7 @@ describe('runtime card showcases', () => {
     renderShowcases();
 
     expect(screen.getByTestId('runtime-effort-clear-claude-code')).toHaveTextContent(
-      'is saved here and does nothing'
+      'is saved but unused'
     );
   });
 

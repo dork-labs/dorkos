@@ -86,7 +86,7 @@ describe('describeAgentExecution', () => {
     });
     expect(report.isBroken).toBe(true);
     expect(report.breakages[0].kind).toBe('model-unavailable');
-    expect(report.breakages[0].message).toBe('Claude no longer offers opus-3.');
+    expect(report.breakages[0].message).toBe('Claude Code no longer offers opus-3.');
   });
 
   it('names a runtime the way the calling screen names it, when told how', () => {
@@ -362,6 +362,25 @@ describe('agentRunsOnCredits', () => {
     expect(agentRunsOnCredits({ id: 'a', account: null }, asDefault)).toBe(true);
     expect(agentRunsOnCredits({ id: 'a', account: 'work' }, asDefault)).toBe(false);
     expect(agentRunsOnCredits({ id: 'a', account: null }, opts)).toBe(false);
+  });
+
+  it('follows the recorded default for a runtime with no per-agent account (Codex, OpenCode)', () => {
+    const everyDeclares = { ...opts, runtimeDeclaresCredits: () => true };
+    const codexOnCredits = {
+      ...everyDeclares,
+      runtimeDefaultsToCredits: (runtime: string) => runtime === 'codex',
+    };
+    expect(agentRunsOnCredits({ id: 'a', runtime: 'codex' }, codexOnCredits)).toBe(true);
+    expect(agentRunsOnCredits({ id: 'a', runtime: 'opencode' }, codexOnCredits)).toBe(false);
+    // With nothing said about the default, never.
+    expect(agentRunsOnCredits({ id: 'a', runtime: 'codex' }, everyDeclares)).toBe(false);
+    // And never for a runtime that declares no credits, whatever its default.
+    expect(
+      agentRunsOnCredits(
+        { id: 'a', runtime: 'codex' },
+        { ...codexOnCredits, runtimeDeclaresCredits: () => false }
+      )
+    ).toBe(false);
   });
 
   it('is never on credits on a runtime that declares none, or before the server says', () => {

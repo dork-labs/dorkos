@@ -61,7 +61,7 @@ function confirmOrigin(
   if (scope === 'plugin' && pluginName) return `comes with the ${pluginName} plugin`;
   if (scope === 'project') return 'comes from this project’s own config';
   if (scope === 'computer') return 'comes from your computer-wide config';
-  return 'is loaded by this agent’s runtime';
+  return 'is loaded from outside DorkOS';
 }
 
 /** Props for {@link DiscoveredMcpServerCard}. */

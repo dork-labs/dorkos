@@ -76,7 +76,7 @@ export function ConfigFieldInput({
     if (field.pattern && stringValue) {
       const regex = new RegExp(field.pattern);
       if (!regex.test(stringValue)) {
-        setPatternError(field.patternMessage ?? 'Invalid format');
+        setPatternError(field.patternMessage ?? 'Check the format');
         return;
       }
     }
@@ -174,7 +174,7 @@ export function ConfigFieldInput({
               }}
               onFocus={() => onChange(field.key, '')}
               onBlur={handleBlur}
-              placeholder="Saved. Enter a new one to replace"
+              placeholder="Saved · type to replace"
               // Sentinel already holds a saved value, so "required" doesn't apply here —
               // matches the label, which also suppresses the asterisk in this state.
             />

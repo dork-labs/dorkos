@@ -309,7 +309,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Approval failed:', err);
-        setError('Approval request failed. Try again.');
+        setError('Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -331,7 +331,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Always Allow failed:', err);
-        setError('Always Allow request failed. Try again.');
+        setError('Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -355,7 +355,7 @@ export function ApprovalPrompt({
         onDecided?.();
       } else {
         console.error('Deny failed:', err);
-        setError('Deny request failed. Try again.');
+        setError('Couldn’t send your answer. Try again.');
       }
     } finally {
       setResponding(false);
@@ -422,7 +422,7 @@ export function ApprovalPrompt({
                     : 'bg-status-error-bg text-status-error-fg'
                 )}
               >
-                {isApproved ? 'Approved' : 'Denied'}
+                {isApproved ? 'Allowed' : 'Not allowed'}
               </span>
             }
           />
@@ -458,7 +458,7 @@ export function ApprovalPrompt({
             )}
           />
           <AskCard.Headline className="font-semibold">
-            {approvalTitle || 'Tool approval required'}
+            {approvalTitle || 'Your agent wants to use a tool'}
           </AskCard.Headline>
         </div>
 
@@ -540,8 +540,8 @@ export function ApprovalPrompt({
                   handleDeny();
                 }
               }}
-              placeholder="Why not? The agent gets this and can try another way"
-              aria-label="Reason for denying"
+              placeholder="Why not? The agent sees this."
+              aria-label="Reason for not allowing"
               className="text-xs"
             />
           </div>
@@ -553,7 +553,7 @@ export function ApprovalPrompt({
             disabled={responding}
             className="transition-opacity duration-150"
           >
-            <Check className="size-(--size-icon-xs)" /> Approve
+            <Check className="size-(--size-icon-xs)" /> Allow
             {showKeyHints && <Kbd className="ml-1.5">Enter</Kbd>}
           </Button>
           {approvalHasSuggestions && (
@@ -571,10 +571,10 @@ export function ApprovalPrompt({
               // to turn this into "Always Allow· this project". The keyboard
               // hint is left out on purpose: it is a visual affordance, not
               // part of the grant.
-              aria-label={scopeLabel === undefined ? 'Always Allow' : `Always Allow, ${scopeLabel}`}
+              aria-label={scopeLabel === undefined ? 'Always allow' : `Always allow, ${scopeLabel}`}
               className="transition-opacity duration-150"
             >
-              <ShieldCheck className="size-(--size-icon-xs)" /> Always Allow
+              <ShieldCheck className="size-(--size-icon-xs)" /> Always allow
               {/* The reach, ON the button rather than under it: this grant can
                   outlive the conversation, because a settings file the runtime
                   writes is read by every future session (DOR-1462). Absent when
@@ -592,7 +592,7 @@ export function ApprovalPrompt({
             disabled={responding}
             className="transition-opacity duration-150"
           >
-            <X className="size-(--size-icon-xs)" /> Deny
+            <X className="size-(--size-icon-xs)" /> Don’t allow
             {isActive && <Kbd className="ml-1.5">Esc</Kbd>}
           </Button>
           {allowsDenyReason && !reasonOpen && (

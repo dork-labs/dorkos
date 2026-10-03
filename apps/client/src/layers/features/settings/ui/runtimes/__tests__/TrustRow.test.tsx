@@ -160,7 +160,9 @@ describe('TrustRow', () => {
     expect(screen.getByTestId('runtime-trust-global-claude-code')).toHaveTextContent(
       'Global setting'
     );
-    expect(screen.queryByRole('button', { name: 'Use the setting above' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Use the shared setting' })
+    ).not.toBeInTheDocument();
   });
 
   it('shows where the global choice actually lands on this runtime', () => {
@@ -183,7 +185,7 @@ describe('TrustRow', () => {
     const { onChange } = renderRow({ stop: 'autonomy', globalStop: 'ask' });
     expect(screen.queryByTestId('runtime-trust-global-claude-code')).not.toBeInTheDocument();
 
-    const revert = screen.getByRole('button', { name: 'Use the setting above' });
+    const revert = screen.getByRole('button', { name: 'Use the shared setting' });
     await userEvent.click(revert);
     expect(onChange).toHaveBeenCalledWith(null);
   });
@@ -191,7 +193,7 @@ describe('TrustRow', () => {
   it('gives a runtime that has not said what it can do a sentence, not a dial over nothing', () => {
     renderRow({ runtimeType: 'codex', runtimeLabel: 'Codex', descriptors: [] });
     expect(screen.getByTestId('runtime-trust-unavailable-codex')).toHaveTextContent(
-      'Codex hasn’t said what it can do, so there is nothing to choose from yet'
+      'Codex hasn’t listed its options yet'
     );
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });
@@ -206,7 +208,7 @@ describe('TrustRow', () => {
     expect(stop).toBeDisabled();
     await userEvent.click(stop);
 
-    const revert = screen.getByRole('button', { name: 'Use the setting above' });
+    const revert = screen.getByRole('button', { name: 'Use the shared setting' });
     expect(revert).toBeDisabled();
     await userEvent.click(revert);
 

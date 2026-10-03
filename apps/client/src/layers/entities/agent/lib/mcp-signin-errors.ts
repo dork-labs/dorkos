@@ -20,8 +20,7 @@ import type { McpSigninFailureCode } from '@dorkos/shared/transport';
 /** The plain sentence each sign-in failure family gets. */
 const FAMILY_COPY: Record<McpSigninFailureCode, string> = {
   SIGNIN_NO_APP_REGISTRATION:
-    'This server doesn’t let DorkOS register itself. If you have app credentials from the ' +
-    'provider, add them and try again.',
+    'This server doesn’t let DorkOS register itself. Add your own app credentials to try again.',
   SIGNIN_NO_SIGNIN_SUPPORT: 'This server doesn’t offer sign-in the way DorkOS expects.',
   SIGNIN_UNREACHABLE: 'Couldn’t reach the server to start the sign-in.',
 };
@@ -67,7 +66,7 @@ export function describeSigninError(args: {
     };
   }
   return {
-    message: message ?? 'The sign-in did not complete.',
+    message: message ?? 'Sign-in didn’t finish. Try again.',
     detail: detail ?? null,
     canUseOwnCredentials: false,
   };

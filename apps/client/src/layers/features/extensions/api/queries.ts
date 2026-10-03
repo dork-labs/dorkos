@@ -48,7 +48,7 @@ export function useEnableExtension() {
         // throw that away and leave "403" on screen.
         const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
         throw new Error(
-          body.message ?? body.error ?? `Failed to enable extension '${id}': ${res.status}`
+          body.message ?? body.error ?? `Couldn’t turn on ${id}. The server answered ${res.status}.`
         );
       }
       return res.json() as Promise<ExtensionActionResponse>;
@@ -78,7 +78,9 @@ export function useDisableExtension() {
         // throw that away and leave "403" on screen.
         const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
         throw new Error(
-          body.message ?? body.error ?? `Failed to disable extension '${id}': ${res.status}`
+          body.message ??
+            body.error ??
+            `Couldn’t turn off ${id}. The server answered ${res.status}.`
         );
       }
       return res.json() as Promise<ExtensionActionResponse>;
@@ -137,7 +139,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
       );
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Failed to update '${id}': ${res.status}`);
+        throw new Error(body.error ?? `Couldn’t update ${id}. The server answered ${res.status}.`);
       }
       return res.json() as Promise<ExtensionApprovalResponse>;
     },
@@ -158,7 +160,7 @@ export function useReloadExtensions() {
   return useMutation<ExtensionRecordPublic[], Error, void>({
     mutationFn: async () => {
       const res = await fetch(extensionApiUrl('/extensions/reload'), { method: 'POST' });
-      if (!res.ok) throw new Error(`Failed to reload extensions: ${res.status}`);
+      if (!res.ok) throw new Error(`The server answered ${res.status}.`);
       return res.json() as Promise<ExtensionRecordPublic[]>;
     },
     onSuccess: () => {

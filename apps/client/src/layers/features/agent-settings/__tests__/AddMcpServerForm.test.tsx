@@ -222,7 +222,7 @@ describe('AddMcpServerForm', () => {
 
     // Nothing was written yet, so nothing to follow up on.
     await waitFor(() =>
-      expect(screen.getByText(/Confirm this server for Test Agent/i)).toBeInTheDocument()
+      expect(screen.getByText(/Add this server to Test Agent\?/i)).toBeInTheDocument()
     );
     expect(onAdded).not.toHaveBeenCalled();
   });

@@ -37,6 +37,23 @@ interface LaunchAccountAware {
   ): Promise<LaunchAccountResolution>;
 }
 
+/**
+ * A runtime with no account ladder that can still say whether one of its
+ * sessions runs on DorkOS credits. Structural, like {@link LaunchAccountAware}.
+ */
+interface CreditsAware {
+  sessionRunsOnCredits(sessionId: string): Promise<boolean>;
+}
+
+/** Whether this runtime can say whether one of its sessions runs on credits. */
+function isCreditsAware(runtime: unknown): runtime is CreditsAware {
+  return (
+    typeof runtime === 'object' &&
+    runtime !== null &&
+    typeof (runtime as CreditsAware).sessionRunsOnCredits === 'function'
+  );
+}
+
 /** Whether this runtime can say which account a session launches on. */
 function isLaunchAccountAware(runtime: unknown): runtime is LaunchAccountAware {
   return (
@@ -71,8 +88,8 @@ async function sessionProjectDir(sessionId: string, cwd: string | undefined): Pr
  * to; else the person's pick for this session (`accountHint`); else the
  * ladder (the folder's agent, then the machine default). A runtime that
  * declares no credits protocol never runs on credits. One that does but has
- * no account ladder of its own runs on credits only when the session's own
- * pick names them.
+ * no account ladder answers for its own sessions (`sessionRunsOnCredits`),
+ * else by its recorded default.
  *
  * Never throws: a ladder that cannot be read answers `false`, and the model
  * gate then judges against the runtime's own catalog, as it did before
@@ -90,7 +107,19 @@ export async function sessionRunsOnCredits(
   opts: { accountHint?: string | undefined; cwd?: string | undefined } = {}
 ): Promise<boolean> {
   if (runtime.getCapabilities().credits === undefined) return false;
-  if (!isLaunchAccountAware(runtime)) return opts.accountHint === CREDITS_ACCOUNT_ID;
+  if (!isLaunchAccountAware(runtime)) {
+    // A runtime with no account ladder answers for its own sessions (Codex: the
+    // home a thread's rollout lives in, else its recorded default; OpenCode:
+    // its one sidecar's mode); one that cannot, by its recorded default.
+    if (opts.accountHint === CREDITS_ACCOUNT_ID) return true;
+    try {
+      return isCreditsAware(runtime)
+        ? await runtime.sessionRunsOnCredits(sessionId)
+        : creditsIsDefaultFor(runtime.type);
+    } catch {
+      return false;
+    }
+  }
   try {
     const projectDir = await sessionProjectDir(sessionId, opts.cwd);
     const launch = await runtime.checkLaunchAccount(sessionId, projectDir, opts.accountHint);
@@ -199,4 +228,30 @@ export async function creditsAgentModelRefusal(opts: {
     opts.accountNamedNow
   );
   return onCredits ? creditsModelRefusal(runtime, opts.model) : null;
+}
+
+/**
+ * {@link creditsAgentModelRefusal} for one agent PATCH: judged only when the
+ * patch names a model, against the runtime and account the agent will have
+ * after it (the patch's own, else the ones on file).
+ *
+ * @param agentId - The agent being updated.
+ * @param fields - The fields the patch sets.
+ * @param accountNamedNow - Whether the patch names the account itself.
+ * @param existing - The agent as it stands, if registered.
+ */
+export async function creditsAgentPatchRefusal(
+  agentId: string,
+  fields: { model?: string | null; runtime?: string | null; account?: string | null },
+  accountNamedNow: boolean,
+  existing: { runtime?: string | null; account?: string | null } | undefined
+): Promise<string | null> {
+  if (typeof fields.model !== 'string') return null;
+  return creditsAgentModelRefusal({
+    agentId,
+    runtime: fields.runtime ?? existing?.runtime,
+    account: accountNamedNow ? (fields.account ?? null) : existing?.account,
+    model: fields.model,
+    accountNamedNow,
+  });
 }

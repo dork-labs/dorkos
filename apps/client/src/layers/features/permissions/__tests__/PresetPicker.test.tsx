@@ -62,9 +62,7 @@ const scopeNote = () => document.querySelector('[data-slot="permission-mode-scop
 describe('PresetPicker', () => {
   it('reads "Not chosen yet" before anyone has chosen', async () => {
     renderPicker({ ...OVERVIEW, preset: null });
-    expect(
-      await screen.findByText('Not chosen yet. Your agents work as they did before.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Not chosen yet. Agents work as before.')).toBeInTheDocument();
   });
 
   it('counts the changes on top of the preset, and resets them', async () => {
@@ -218,7 +216,7 @@ describe('NewAgentRecordNotice', () => {
   it('says so when DorkOS cannot read its record of new agents', async () => {
     renderNotice({ ...OVERVIEW, newAgentRecordUnreadable: true });
     expect(await screen.findByTestId('permissions-record-unreadable')).toHaveTextContent(
-      /couldn’t read its record/
+      /may do less than their own settings allow/
     );
   });
 

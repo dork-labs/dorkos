@@ -130,7 +130,7 @@ describe('ExperimentsTab', () => {
     // a disabled switch that will not say what to unset is a dead end.
     expect(locked).toBeChecked();
     expect(
-      screen.getByText(/Right now DORKOS_A2A_ENABLED on this machine decides it/)
+      screen.getByText(/DORKOS_A2A_ENABLED on this computer controls this switch/)
     ).toBeInTheDocument();
     // The other row is untouched by its neighbour's lock.
     expect(screen.getByRole('switch', { name: WARM.title })).not.toBeDisabled();
@@ -149,7 +149,7 @@ describe('ExperimentsTab', () => {
     renderTab([]);
 
     expect(await screen.findByTestId('experiments-empty')).toHaveTextContent(
-      /Nothing’s cooking right now/
+      /No experiments right now/
     );
     // "Show dev tools" is not one of the server-sent experiments — it is the
     // one switch this tab draws itself — so it survives an empty list.
@@ -212,6 +212,6 @@ describe('ExperimentsTab', () => {
   it('always states the deal, whether or not there is anything listed', async () => {
     renderTab([WARM]);
 
-    expect(await screen.findByText(/These are off until you turn them on\./)).toBeInTheDocument();
+    expect(await screen.findByText(/These start off\./)).toBeInTheDocument();
   });
 });

@@ -48,7 +48,7 @@ function FilesAndCommandsSetting() {
       <AutonomyConfirmDialog
         descriptor={trust.pendingAutonomy?.descriptor ?? null}
         canRemember={false}
-        consentNote="Every new session will start here, and DorkOS will remember that you have read this."
+        consentNote="Every new session starts here. DorkOS remembers you’ve read this."
         onCancel={trust.cancelAutonomy}
         onConfirm={trust.confirmAutonomy}
       />
@@ -94,7 +94,7 @@ export function PermissionsTab() {
       </section>
 
       <p className="text-muted-foreground text-sm">
-        Your connected accounts have their own permissions. Manage them in{' '}
+        Connected accounts have their own permissions, in{' '}
         <Button
           variant="link"
           size="sm"

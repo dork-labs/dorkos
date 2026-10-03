@@ -444,7 +444,9 @@ describe('sdk-event-mapper context usage capture', () => {
     // The EXACT sentence, not a keyword: it is the same one the result channel
     // now says for the same expiry, and only equality can catch the two drifting
     // apart again (DOR-1656).
-    expect(data?.message).toBe('Your Claude sign-in stopped working. Sign in again to keep going.');
+    expect(data?.message).toBe(
+      'Your Claude Code sign-in stopped working. Sign in again to keep going.'
+    );
   });
 
   it('does not classify assistant content that merely discusses oauth tokens as an error', async () => {
@@ -720,7 +722,9 @@ describe('sdk-event-mapper result messages', () => {
     expect(err.category).toBe('auth_error');
     // The same sentence the assistant channel says for the same expiry
     // (DOR-1656) — the raw CLI line survives in `details`.
-    expect(err.message).toBe('Your Claude sign-in stopped working. Sign in again to keep going.');
+    expect(err.message).toBe(
+      'Your Claude Code sign-in stopped working. Sign in again to keep going.'
+    );
     expect(err.details).toBe(vendorText);
   });
 

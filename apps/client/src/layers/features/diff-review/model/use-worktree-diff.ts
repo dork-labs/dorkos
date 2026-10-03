@@ -189,5 +189,5 @@ export function useWorktreeDiff({ roomId, documentId, authorId }: UseWorktreeDif
  */
 function refusalSentence(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : '';
-  return message.length > 0 ? message : 'That didn’t work. Try again in a moment.';
+  return message.length > 0 ? message : 'Couldn’t merge. Try again in a moment.';
 }

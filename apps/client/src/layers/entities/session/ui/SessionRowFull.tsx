@@ -317,7 +317,7 @@ function FullPowerIcon() {
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4}>
-        This chat runs commands without stopping for approval.
+        This chat runs commands without asking.
       </TooltipContent>
     </Tooltip>
   );

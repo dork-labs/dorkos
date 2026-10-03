@@ -63,14 +63,14 @@ function harnessBannerLine(status: HarnessStatusResponse): BannerLine | null {
   }
   if (counts.conflicts > 0) {
     return {
-      message: 'DorkOS can’t update some files. Something else is in the way.',
+      message: 'DorkOS can’t update some files. Something blocks them.',
       variant: 'warning',
       actionable: false,
     };
   }
   if (counts.adoptable > 0) {
     return {
-      message: 'Some skills live where only a few of your agents look.',
+      message: 'Some skills only reach a few of your agents.',
       variant: 'info',
       actionable: false,
     };

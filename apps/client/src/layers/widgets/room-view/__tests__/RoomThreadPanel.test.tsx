@@ -261,7 +261,7 @@ describe('RoomThreadPanel', () => {
     renderPanel({ entries: [reply(2, 1), reply(3, 1)] });
 
     expect(screen.getByTestId('room-thread-orphan')).toHaveTextContent(
-      'The start of this thread is gone'
+      'This thread’s first message is gone'
     );
     expect(screen.getAllByTestId('room-entry')).toHaveLength(2);
   });

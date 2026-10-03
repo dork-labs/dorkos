@@ -11,6 +11,7 @@ import { DocChannelStore, DocChannelClosedError } from './store.js';
 import { envelopeIdentity } from './envelope.js';
 import { DOC_EVENTS_PROMPT_BYTES, docEventsPromptBytes } from './prompt.js';
 import { queueInput } from './coalescer.js';
+import { appendInitialDocStatuses } from './initial-status.js';
 import { DocIngestRefusal, type DocIngestAuthority } from './ingest-types.js';
 import {
   checkIngestCapacity,
@@ -169,9 +170,11 @@ export class DocChannelIngest {
         );
       else queueInput(this.store, tx, access, decision, saved, now);
     }
+    const deliveries = this.store.listDeliveries(access.documentId, event.id, tx);
+    appendInitialDocStatuses(this.store, tx, saved, deliveries, now);
     return {
       receipt: { id: event.id, status: 'recorded', docSeq: saved.docSeq },
-      deliveries: this.store.listDeliveries(access.documentId, event.id, tx),
+      deliveries,
     };
   }
 }

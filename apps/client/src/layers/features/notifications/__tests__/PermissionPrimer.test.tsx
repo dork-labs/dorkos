@@ -21,7 +21,7 @@ import {
   LONG_TURN_MS,
 } from '../model/primer-trigger';
 
-const CARD = 'Want a nudge when this needs you?';
+const CARD = 'Get notified when this needs you, even in another tab.';
 
 /**
  * The card exactly as its host draws it: the hook decides, the view renders.

@@ -115,10 +115,7 @@ export function RuntimesTab() {
             the product — onboarding names Claude Code, Codex and OpenCode
             directly and never says it. One sentence at the top is what makes
             the rest of the tab readable (DOR-1754). */}
-        <p className="text-muted-foreground text-sm">
-          Runtimes are the AI tools that do the work. Connect the ones you use, and set what each
-          one starts a conversation with.
-        </p>
+        <p className="text-muted-foreground text-sm">Runtimes are the AI tools that do the work.</p>
         {/* A maintenance action, not a primary one (design §1): the labeled
             "Check again" row became this. Icon-only, so it says its name to a
             screen reader rather than nothing — and that name says "runtimes",
@@ -184,7 +181,7 @@ export function RuntimesTab() {
       <AutonomyConfirmDialog
         descriptor={trust.pendingAutonomy?.descriptor ?? null}
         canRemember={false}
-        consentNote="Every new session will start here, and DorkOS will remember that you have read this."
+        consentNote="Every new session starts here. DorkOS remembers you’ve read this."
         onCancel={trust.cancelAutonomy}
         onConfirm={trust.confirmAutonomy}
       />

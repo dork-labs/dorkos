@@ -97,7 +97,7 @@ export function signInLine(
 ): string | null {
   if (!route?.signInThrough || route.authKind !== 'oauth2' || !service) return null;
   const who = service.signInName ?? service.displayName;
-  return `${who} will ask you to allow ${route.signInThrough} — that’s the service DorkOS uses to connect.`;
+  return `${who} will ask you to allow ${route.signInThrough}. DorkOS connects through it.`;
 }
 
 /**
@@ -125,7 +125,7 @@ export function firstConnectReason(
     case 'dorkos_account_unlinked':
       return 'Your DorkOS account isn’t linked anymore.';
     case 'own_key_unavailable':
-      return 'Your saved key didn’t work the last time DorkOS checked it.';
+      return 'Your saved key didn’t work at the last check.';
     case 'nothing_set_up':
       return null;
   }

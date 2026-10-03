@@ -55,7 +55,7 @@ interface SharedCardProps {
 /**
  * The page's planning question: pick which agents can use one account.
  *
- * The agent checklist is the "Only agents I pick" answer. An "Every agent"
+ * The agent checklist is the "Only agents you pick" answer. An "Every agent"
  * answer (DOR-2420) sits beside it as a sibling choice above the checklist;
  * the level switch and the save path below do not change for it.
  */
@@ -278,7 +278,7 @@ function AccessStep(
           <LoadFailedState
             error={access.loadError}
             title="Couldn’t load who can use it"
-            description="Nothing changed. Try loading the current access again."
+            description="Nothing changed. Try again."
             onRetry={access.refresh}
             isRetrying={access.isLoading}
           />
@@ -443,30 +443,26 @@ function AccessEditor({
     const covered = effective === level || (effective === 'read-write' && level === 'read');
     whoView = !agent ? (
       <p role="alert" className="text-destructive text-sm">
-        This agent isn’t registered on this computer, so it can’t be given access.
+        This agent isn’t registered here, so it can’t get access.
       </p>
     ) : held === 'custom' ? (
       <p className="text-muted-foreground text-sm">
-        {agent.displayName} already has exact actions chosen for this account.{' '}
+        {agent.displayName} already has exact actions here.{' '}
         {props.onEditExactActions
           ? 'Choose exact actions to change them.'
-          : 'You can change them on the Connections page.'}
+          : 'Change them on the Connections page.'}
       </p>
     ) : held === level ? (
       <p className="text-muted-foreground text-sm">{agent.displayName} can already do this.</p>
     ) : covered ? (
       <p className="text-muted-foreground text-sm">
-        {agent.displayName} can already do this, because every agent can.
+        {agent.displayName} already can, like every agent.
       </p>
     ) : null;
   } else if (who === 'every') {
     whoView = null;
   } else if (preview.agents.length === 0) {
-    whoView = (
-      <p className="text-muted-foreground text-sm">
-        You don’t have any agents yet. Add one, then choose who can use {props.serviceName}.
-      </p>
-    );
+    whoView = <p className="text-muted-foreground text-sm">No agents yet. Add one first.</p>;
   } else {
     whoView = (
       <AgentChecklist
@@ -511,7 +507,7 @@ function AccessEditor({
       {whoView}
       {nothingToGrant ? (
         <p className="text-muted-foreground text-sm">
-          {props.serviceName} has no actions agents can use yet.
+          {props.serviceName} has no actions for agents yet.
         </p>
       ) : (
         !agentMissing &&
@@ -540,9 +536,9 @@ function AccessEditor({
               <p className="text-muted-foreground text-xs">
                 {who === 'every'
                   ? preview.everyAgent.operationRevisionIds.length > 0
-                    ? 'Every agent has exact actions chosen now. Pick a level to replace them.'
+                    ? 'Every agent has exact actions now. Pick a level to replace them.'
                     : 'Pick what every agent can do.'
-                  : 'Your agents have different access. Pick one to give it to every ticked agent.'}
+                  : 'Your agents have different access. Pick one for every ticked agent.'}
               </p>
             )}
             {props.mode === 'page' && who === 'every' && (
@@ -565,7 +561,7 @@ function AccessEditor({
       {(props.mode === 'page' || exactActionsLink) && (
         <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">
           {props.mode === 'page' && who === 'picked' && (
-            <span>Agents you leave out can still ask you in chat.</span>
+            <span>Others can still ask you in chat.</span>
           )}
           {exactActionsLink}
         </div>

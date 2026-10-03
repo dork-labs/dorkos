@@ -161,7 +161,7 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     await actions.current.handleSaveToken();
 
     expect(machine.setTokenError).toHaveBeenLastCalledWith(
-      'Sign in to DorkOS first. Only a signed-in person can change Remote access settings.'
+      'Sign in to DorkOS to change Remote access.'
     );
   });
 
@@ -172,7 +172,7 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     await actions.current.handleSaveToken();
 
     expect(machine.setTokenError).toHaveBeenLastCalledWith(
-      'Only you can change Remote access settings, not an agent. Nothing changed.'
+      'Nothing changed. Only you can change Remote access, not an agent.'
     );
   });
 
@@ -275,7 +275,7 @@ describe('useTunnelActions — handleSaveDomain no longer swallows failures', ()
     await actions.current.handleSaveDomain();
 
     expect(machine.setDomainError).toHaveBeenLastCalledWith(
-      'Sign in to DorkOS first. Only a signed-in person can change Remote access settings.'
+      'Sign in to DorkOS to change Remote access.'
     );
   });
 

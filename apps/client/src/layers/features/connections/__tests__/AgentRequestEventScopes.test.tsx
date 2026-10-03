@@ -176,9 +176,7 @@ describe('AgentRequestEventScopes', () => {
 
     await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
     await user.click(await screen.findByRole('option', { name: 'New email' }));
-    expect(
-      screen.getByText('This notification needs filter controls this app cannot safely show yet.')
-    ).toBeVisible();
+    expect(screen.getByText('This notification’s filters can’t be shown yet.')).toBeVisible();
     expect(latest()).toBeNull();
   });
 
@@ -220,10 +218,8 @@ describe('AgentRequestEventScopes', () => {
       });
     renderScopes(transport, ['gmail.message_received']);
 
-    expect(
-      await screen.findByText('Load more notification options to finish this request.')
-    ).toBeVisible();
-    expect(screen.queryByText('This account does not currently offer this activity.')).toBeNull();
+    expect(await screen.findByText('Load more options to finish.')).toBeVisible();
+    expect(screen.queryByText('This account doesn’t offer this now.')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Load more notification options' }));
     expect(await screen.findByRole('combobox', { name: 'Account activity' })).toBeVisible();
     expect(transport.listConnectionEventDefinitions).toHaveBeenNthCalledWith(

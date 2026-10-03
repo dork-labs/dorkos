@@ -367,8 +367,8 @@ export function RuntimeCard({
   ) : descriptor.setup ? (
     <>
       <p className="text-muted-foreground text-xs">
-        Not registered with this server. Install it, then enable{' '}
-        <InlineCode>runtimes.{type}</InlineCode> in your DorkOS config.
+        Not set up here. Install it, then turn on <InlineCode>runtimes.{type}</InlineCode> in your
+        DorkOS config.
       </p>
       <DependencyInstallHint
         command={descriptor.setup.installCommand}
@@ -458,7 +458,7 @@ export function RuntimeCard({
           className="text-muted-foreground px-4 text-xs"
           data-testid={`runtime-card-timing-${type}`}
         >
-          Applies to new conversations. Running ones keep their settings.
+          Applies to new conversations only.
         </p>
       )}
 

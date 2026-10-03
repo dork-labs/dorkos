@@ -95,7 +95,7 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
     } catch (err) {
       toast.error('Couldn’t reset your data.', {
         description:
-          err instanceof Error ? err.message : 'We’re not sure what got through. Try again.',
+          err instanceof Error ? err.message : 'Some of it may already be gone. Try again.',
       });
     } finally {
       setIsSubmitting(false);
@@ -114,27 +114,25 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Reset all data</AlertDialogTitle>
+          <AlertDialogTitle>Reset all data?</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-3">
-              <p>This will permanently delete all DorkOS data, including:</p>
+              <p>This deletes all DorkOS data for good, including:</p>
               <ul className="list-inside list-disc space-y-1 text-sm">
-                <li>All scheduled tasks and their run history</li>
-                <li>All Relay configuration and messages</li>
-                <li>All Mesh agent registry data</li>
+                <li>Scheduled tasks and their run history</li>
+                <li>Agent messaging setup and messages</li>
+                <li>DorkOS’s list of your agents</li>
                 <li>Your config file and preferences</li>
-                <li>All server logs</li>
+                <li>Server logs</li>
               </ul>
-              <p>
-                The server will restart automatically. Your UI preferences will also be cleared.
-              </p>
-              <p className="font-semibold">This action cannot be undone.</p>
+              <p>DorkOS restarts on its own. This device’s preferences are cleared too.</p>
+              <p className="font-semibold">This can’t be undone.</p>
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="py-2">
           <Input
-            placeholder='Type "reset" to confirm'
+            placeholder="Type “reset” to continue"
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
             data-testid="reset-confirm-input"

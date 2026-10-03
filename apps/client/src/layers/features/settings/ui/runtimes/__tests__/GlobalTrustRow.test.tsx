@@ -87,9 +87,7 @@ describe('GlobalTrustRow', () => {
     // Not "Where agents stop for you": DOR-853 reserves the bare word "agent"
     // for a named fleet teammate, and this row governs new conversations.
     expect(screen.getByText('Where new conversations stop for you')).toBeInTheDocument();
-    expect(
-      screen.getByText('Every card above follows this unless it says otherwise.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Cards above use this unless set otherwise.')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Asks before acting' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Pauses at big steps' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeInTheDocument();
@@ -134,7 +132,7 @@ describe('GlobalTrustRow', () => {
     const note = screen.getByTestId('default-trust-stop-standing-note');
     expect(note).toHaveTextContent('New sessions run at full power');
 
-    await userEvent.click(screen.getByRole('button', { name: 'change' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }));
     expect(onChange).toHaveBeenCalledWith('ask');
     expect(onChangeRuntime).not.toHaveBeenCalled();
   });
@@ -154,7 +152,7 @@ describe('GlobalTrustRow', () => {
     expect(note).toHaveTextContent('New sessions on Codex run at full power');
 
     // Undo exactly what is set: the override, never the shared choice.
-    await userEvent.click(screen.getByRole('button', { name: 'change' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }));
     expect(onChangeRuntime).toHaveBeenCalledExactlyOnceWith('codex', null);
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -181,7 +179,7 @@ describe('GlobalTrustRow', () => {
         { runtime: 'codex', label: 'Codex', stop: 'autonomy' },
       ],
     });
-    await userEvent.click(screen.getByRole('button', { name: 'change' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }));
     expect(onChange).toHaveBeenCalledWith('ask');
     expect(onChangeRuntime).toHaveBeenCalledExactlyOnceWith('codex', null);
   });

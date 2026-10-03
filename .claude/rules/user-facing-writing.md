@@ -18,4 +18,6 @@ Run these five self-checks before you save:
 
 Honesty gate (`AGENTS.md`): never claim an unverified surface or feature works. No hype words: show the outcome.
 
+In-app copy (strings the app renders) has its own, stricter standard: `app-copy.md` and the `writing-app-copy` skill.
+
 Not covered here: ADRs (`writing-adrs`), `contributing/` guides and API reference (`writing-developer-guides`), and code comments (`conventions.md`) stay precise and technical.

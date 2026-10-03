@@ -307,7 +307,7 @@ export function RemoteCommunitySurface({
           ? 'This channel is archived.'
           : !room?.joined
             ? 'Join this channel to send messages.'
-            : 'Reconnecting. Saved messages are read-only until the connection returns.',
+            : 'Reconnecting. You can send once the space is back.',
     attachments: drafts.attachments,
     async send() {
       drafts.send(threadId);
@@ -329,7 +329,7 @@ export function RemoteCommunitySurface({
         setActionState({
           address,
           name,
-          error: cause instanceof Error ? cause.message : 'The action could not be completed.',
+          error: cause instanceof Error ? cause.message : 'Couldn’t finish that. Try again.',
         });
     } finally {
       if (isCommunityContentAuthorityCurrent(captured))
@@ -443,12 +443,12 @@ export function RemoteCommunitySurface({
             )}
             {roomQuery.isError && (
               <p role="alert" className="px-4 py-2 text-sm">
-                This channel could not be loaded.
+                Couldn’t load this channel.
               </p>
             )}
             {showMembers && (
               <div className="max-h-48 overflow-auto border-b p-3" aria-label="Channel members">
-                {roster.isError && <p role="alert">Members could not be loaded.</p>}
+                {roster.isError && <p role="alert">Couldn’t load members.</p>}
                 {roster.data?.stale && (
                   <p className="text-muted-foreground text-sm">Saved member list</p>
                 )}
@@ -559,10 +559,10 @@ export function RemoteCommunitySurface({
                   ))}
                   <p className="text-muted-foreground">
                     {delivery.state === 'pending'
-                      ? 'Waiting for space confirmation…'
+                      ? 'Waiting for the space to confirm…'
                       : delivery.failure === 'expired'
-                        ? 'Delivery not confirmed. The retry window has ended.'
-                        : 'Delivery not confirmed. Check that the space is reachable and the agent can access this channel before asking it to try again.'}
+                        ? 'Not confirmed. Too late to try again.'
+                        : 'Not confirmed. Check the space and the agent’s channel access.'}
                   </p>
                   {delivery.state === 'pending' && delivery.retryable && (
                     <Button

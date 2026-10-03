@@ -17,13 +17,15 @@
  * **A person is the gate.** Each route refuses a caller presenting an agent
  * identity, as the session canvas routes do: these decisions spend another
  * account or hold a session, and an agent's path to an account is the
- * `session_start` tool, which the account advisor gates.
+ * `session_start` tool, which the account advisor gates. Continuing onto DorkOS
+ * credits asks one bar more: the person must own this install, because it
+ * spends the DorkOS account's money (`routes/cloud-owner-bar.ts`).
  *
  * @module routes/session-continue
  */
 import type { Request, Response } from 'express';
 import type { MeshCore } from '@dorkos/mesh';
-import type { LimitHistoryResponse } from '@dorkos/shared/account-usage';
+import { CREDITS_ACCOUNT_ID, type LimitHistoryResponse } from '@dorkos/shared/account-usage';
 import { ContinueSessionRequestSchema, WaitForResetRequestSchema } from '@dorkos/shared/schemas';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
@@ -43,6 +45,7 @@ import type { RoomSessionPlacePort } from '../services/workspace/room-session-pl
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
 import { rejectUnknownModel } from './session-model-gate.js';
+import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
 
 /**
  * The session id, once the caller is known to be a person; `null` after
@@ -101,6 +104,12 @@ export async function continueOptionsHandler(req: Request, res: Response): Promi
   }
 }
 
+/** What continuing on DorkOS credits says to a caller that is not the owner. */
+const CONTINUE_ON_CREDITS = {
+  personOnly: 'Only you can move this session onto your DorkOS credits, from the DorkOS app.',
+  action: 'move a session onto DorkOS credits',
+};
+
 /**
  * `POST /api/sessions/:id/continue` — continue a limited session on another
  * account or another model.
@@ -113,6 +122,14 @@ export async function continueSessionHandler(req: Request, res: Response): Promi
   if (!sessionId) return;
   const parsed = ContinueSessionRequestSchema.safeParse(req.body ?? {});
   if (!parsed.success) return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  // Moving onto DorkOS credits spends the account's money, so it is the
+  // owner's call alone, like every other credits choice (DOR-2652).
+  if (
+    parsed.data.account === CREDITS_ACCOUNT_ID &&
+    refuseErrorUnlessOwner(req, res, CONTINUE_ON_CREDITS)
+  ) {
+    return;
+  }
   try {
     const result = await continueSession(sessionId, parsed.data, {
       meshCore: req.app.locals.meshCore as MeshCore | undefined,

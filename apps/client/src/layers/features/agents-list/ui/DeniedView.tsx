@@ -20,7 +20,7 @@ export function DeniedView() {
       <EmptyState
         icon={ShieldCheck}
         headline="No blocked paths"
-        description="When you deny agent paths during discovery, they appear here. This is a healthy state."
+        description="Folders you block from scans show up here."
       />
     );
   }

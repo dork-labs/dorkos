@@ -116,7 +116,7 @@ describe('ModelRow', () => {
 
   it('names the runtime in its own description', () => {
     renderRow({ runtimeType: 'opencode', runtimeLabel: 'OpenCode' });
-    expect(screen.getByText(/Which OpenCode model a new conversation starts on/)).toBeVisible();
+    expect(screen.getByText(/Which OpenCode model new conversations start on/)).toBeVisible();
   });
 
   it('admits a capped, unconfirmed catalog instead of presenting it as the real list', () => {

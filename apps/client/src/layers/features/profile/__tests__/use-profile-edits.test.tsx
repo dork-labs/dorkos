@@ -153,9 +153,7 @@ describe('why a claim was refused (DOR-1778)', () => {
     expect(identityLinkErrorMessage({ code: 'IDENTITY_NOT_EXTERNAL' }, true)).toContain(
       'another chat platform'
     );
-    expect(identityLinkErrorMessage({ code: 'OPERATOR_ONLY' }, true)).toContain(
-      'owns this install'
-    );
+    expect(identityLinkErrorMessage({ code: 'OPERATOR_ONLY' }, true)).toContain('install’s owner');
   });
 
   it('passes an unrecognised refusal’s own sentence through', () => {
@@ -165,7 +163,7 @@ describe('why a claim was refused (DOR-1778)', () => {
   });
 
   it('falls back per direction, so the sentence matches what was attempted', () => {
-    expect(identityLinkErrorMessage({}, true)).toContain('could not be linked');
-    expect(identityLinkErrorMessage({}, false)).toContain('could not be removed');
+    expect(identityLinkErrorMessage({}, true)).toContain('Couldn’t link that account');
+    expect(identityLinkErrorMessage({}, false)).toContain('Couldn’t remove that link');
   });
 });

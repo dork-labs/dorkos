@@ -35,7 +35,7 @@ export function DiscardChangesDialog({ open, onKeep, onDiscard }: DiscardChanges
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Discard your changes?</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            You haven’t saved what you wrote here. Leaving now loses it.
+            Your unsaved changes will be lost.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogFooter>
@@ -46,7 +46,7 @@ export function DiscardChangesDialog({ open, onKeep, onDiscard }: DiscardChanges
             Keep editing
           </Button>
           <Button variant="destructive" onClick={onDiscard}>
-            Discard
+            Discard changes
           </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>

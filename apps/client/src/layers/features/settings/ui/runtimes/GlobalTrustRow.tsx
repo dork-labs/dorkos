@@ -136,7 +136,7 @@ export function GlobalTrustRow({
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className="text-sm font-medium">Where new conversations stop for you</p>
           <p className="text-muted-foreground text-xs">
-            Every card above follows this unless it says otherwise.
+            Cards above use this unless set otherwise.
           </p>
         </div>
 
@@ -186,7 +186,7 @@ export function GlobalTrustRow({
                 for (const entry of overriddenToAutonomy) onChangeRuntime(entry.runtime, null);
               }}
             >
-              change
+              Change
             </button>
           </span>
         </p>

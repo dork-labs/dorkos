@@ -434,8 +434,8 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   },
   {
     key: 'runtime',
-    label: 'Runtime',
-    description: 'Which runtime runs this session',
+    label: 'Runs on',
+    description: 'What runs this session',
     cluster: 'right',
     group: 'session',
     icon: Cpu,
@@ -445,7 +445,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'account',
     label: 'Account',
-    description: 'Which Claude account this session spends, and how much is left.',
+    description: 'Which Claude account this uses, and what’s left',
     cluster: 'right',
     // No popover row, so it cannot be pinned: a new pin value would make an
     // older build discard the whole config file (`widened-leaves.ts`), and the
@@ -463,7 +463,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'extensions',
     label: 'Add-ons',
-    description: 'What your extensions show for this chat',
+    description: 'What your extensions show here',
     cluster: 'right',
     // No popover row, so it cannot be pinned, for the reason `account` gives: a
     // new pin value would make an older build discard the whole config file.
@@ -490,7 +490,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'cache',
     label: 'Cache',
-    description: 'How much of the prompt came from cache',
+    description: 'How much came from cache',
     cluster: 'right',
     group: 'session',
     icon: Zap,
@@ -520,7 +520,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'usage',
     label: 'Usage & cost',
-    description: 'Subscription limits or what this session has cost',
+    description: 'Plan limits or session cost',
     cluster: 'right',
     group: 'session',
     icon: Gauge,
@@ -540,7 +540,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'permission',
     label: 'Permissions',
-    description: 'How much the agent may do before it checks with you',
+    description: 'How freely the agent acts',
     cluster: 'right',
     group: 'session',
     icon: Shield,
@@ -574,7 +574,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'plan',
     label: 'Plan',
-    description: 'Work out a plan first, and change nothing until you approve it',
+    description: 'Plan first, change nothing until approved',
     cluster: 'right',
     group: 'session',
     icon: ClipboardList,
@@ -613,7 +613,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   // They are set together in Settings → Notifications, which is also where the
   // browser-notification and escalation settings live.
   //
-  // `polling` ("Watch for agents you started somewhere else") is gone for the same reason
+  // `polling` ("Watch for work started elsewhere") is gone for the same reason
   // (DOR-1758): it read the global `enableMessagePolling` store field, so a
   // person flipping it inside one session's panel changed every window on the
   // machine. Settings → Preferences is its one home now.

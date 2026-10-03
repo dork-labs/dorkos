@@ -41,7 +41,7 @@ export function AutonomyAcknowledgementRow() {
       <FieldCardContent>
         <SettingRow
           label="Full autonomy"
-          description={`You acknowledged what this means on ${formatAcknowledgedAt(acknowledgedAt)}, and asked not to be shown it again. Resetting also turns off any Full-autonomy default for new sessions.`}
+          description={`Hidden since ${formatAcknowledgedAt(acknowledgedAt)}. Reset also removes it as the default.`}
         >
           <Button
             variant="outline"

@@ -104,7 +104,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
     // wrong, and it is the reassurance — nothing is lost — that decides whether
     // anyone clicks it.
     return (
-      <div role="group" aria-label="Update install failed" className="flex flex-col gap-1.5 px-0.5">
+      <div role="group" aria-label="Update didn’t install" className="flex flex-col gap-1.5 px-0.5">
         <p className="text-sidebar-foreground/70 text-2xs leading-snug">{INSTALL_FAILED_COPY}</p>
         <button
           type="button"
@@ -124,7 +124,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
       <button
         type="button"
         onClick={handleCopy}
-        aria-label={`Copy the command that updates DorkOS to v${update.latestVersion}`}
+        aria-label={`Copy the update command for v${update.latestVersion}`}
         className={PILL_CLASSES}
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}

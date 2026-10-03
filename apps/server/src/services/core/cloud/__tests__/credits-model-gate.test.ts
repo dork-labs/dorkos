@@ -27,6 +27,7 @@ vi.mock('../../runtime-registry.js', () => ({
 }));
 
 import {
+  sessionRunsOnCredits,
   agentRunsOnCredits,
   creditsAgentModelRefusal,
   creditsModelRefusal,
@@ -35,7 +36,7 @@ import {
 
 const claude = {
   type: 'claude-code',
-  getCapabilities: () => ({ credits: { protocol: 'anthropic-messages' } }),
+  getCapabilities: () => ({ credits: { protocol: 'anthropic-messages', scope: 'conversation' } }),
   getSupportedModels: async () => [
     { value: 'sonnet', displayName: 'Sonnet', description: '', resolvedModel: 'md_served' },
     { value: 'opus', displayName: 'Opus', description: '', resolvedModel: 'claude-opus-wire' },
@@ -96,5 +97,28 @@ describe('judging a model on credits', () => {
     expect(
       await creditsAgentModelRefusal({ ...base, runtime: 'not-installed', account: null })
     ).toBeNull();
+  });
+});
+
+describe('sessionRunsOnCredits for a runtime with no account ladder', () => {
+  const declares = { credits: { protocol: 'openai-responses', scope: 'conversation' } };
+  it('asks the runtime about its own session when it can answer', async () => {
+    const answers = (onCredits: boolean) =>
+      ({
+        type: 'codex',
+        getCapabilities: () => declares,
+        sessionRunsOnCredits: async () => onCredits,
+      }) as unknown as AgentRuntime;
+    expect(await sessionRunsOnCredits(answers(true), 's')).toBe(true);
+    expect(await sessionRunsOnCredits(answers(false), 's')).toBe(false);
+  });
+
+  it('falls back to its recorded default, and to a pick of credits', async () => {
+    const plain = { type: 'codex', getCapabilities: () => declares } as unknown as AgentRuntime;
+    expect(await sessionRunsOnCredits(plain, 's')).toBe(false);
+    expect(await sessionRunsOnCredits(plain, 's', { accountHint: 'dorkos-credits' })).toBe(true);
+    state.isDefault = true;
+    expect(await sessionRunsOnCredits(plain, 's')).toBe(true);
+    expect(await sessionRunsOnCredits(codex, 's')).toBe(false);
   });
 });

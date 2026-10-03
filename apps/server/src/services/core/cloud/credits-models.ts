@@ -40,10 +40,11 @@ import {
 } from '@dork-labs/cloud-api';
 import { CloudApiResponseError } from '@dork-labs/cloud-api/client';
 import type { RuntimeCapabilities, RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
-import type { ModelOption } from '@dorkos/shared/types';
+import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
 import { creditsKilled } from './credits-availability.js';
+import { CreditsUnavailableError, creditsFormatOf } from './credits-protocols.js';
 import {
   captureCloudV1Context,
   problemOf,
@@ -112,6 +113,19 @@ export function __resetCreditsModelsForTests(
     const where = opts.storePath;
     storePath = () => where;
   }
+}
+
+/**
+ * Hold a list as though the service had just answered it, under a link that
+ * stays current. Test seam only, for a runtime's own suite (OpenCode's
+ * conformance run) that needs a credits model list without a service.
+ *
+ * @param models - The list to hold, or `null` to forget it.
+ * @internal
+ */
+export function __setCreditsCatalogForTests(models: InferenceModel[] | null): void {
+  cached = models === null ? null : { models, readAt: now(), isCurrent: () => true };
+  inflight = null;
 }
 
 /** Whether a list says which protocols any of its models are on. */
@@ -185,10 +199,11 @@ export async function readCreditsCatalogWithContext(
   context: CloudV1Context | null,
   linkKey: string | null
 ): Promise<CreditsCatalogRead | null> {
-  if (killed || context === null || linkKey === null) return null;
+  if (killed) return null;
   if (cached && cached.isCurrent() && now() - cached.readAt < CATALOG_TTL_MS) {
     return { models: cached.models, fresh: true };
   }
+  if (context === null || linkKey === null) return null;
   if (inflight) return inflight;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CATALOG_WAIT_MS);
@@ -234,7 +249,13 @@ export async function readCreditsCatalogWithContext(
  * cannot be read, or `null` when there is neither. Never throws.
  */
 export function readCreditsCatalog(): Promise<CreditsCatalogRead | null> {
-  const token = readCloudInstanceToken();
+  let token: string | null;
+  try {
+    token = readCloudInstanceToken();
+  } catch {
+    // A config that cannot be read is no link, never a thrown read.
+    token = null;
+  }
   return readCreditsCatalogWithContext(
     creditsKilled(),
     captureCloudV1Context(),
@@ -263,8 +284,9 @@ export function creditsModelOptions(
   protocol: RuntimeCreditsProtocol,
   opts: { outOfDate?: boolean } = {}
 ): ModelOption[] {
-  const offered = models.filter((model) => model.protocols?.includes(protocol) ?? false);
-  const recommended = offered.find((model) => model.recommendedOn?.includes(protocol) ?? false);
+  const format = creditsFormatOf(protocol);
+  const offered = models.filter((model) => model.protocols?.includes(format) ?? false);
+  const recommended = offered.find((model) => model.recommendedOn?.includes(format) ?? false);
   const ordered = recommended
     ? [recommended, ...offered.filter((model) => model !== recommended)]
     : offered;
@@ -316,6 +338,26 @@ export async function creditsMenuFor(
     models: creditsModelOptions(read.models, protocol, { outOfDate }),
     outOfDate,
   };
+}
+
+/**
+ * The models a runtime that must be told its models up front (OpenCode, whose
+ * sidecar is booted with its credits provider's model list) may run on
+ * credits: the ones the service lists in the runtime's format once it says
+ * which formats its models are in, else every model it lists (as before the
+ * service said). Empty when there is no list at all, which a credits turn
+ * refuses on. Never throws.
+ *
+ * @param protocol - The protocol the runtime speaks to the credits endpoint.
+ */
+export async function creditsModelsFor(
+  protocol: RuntimeCreditsProtocol
+): Promise<InferenceModel[]> {
+  const read = await readCreditsCatalog();
+  if (read === null) return [];
+  if (!saysProtocols(read.models)) return read.models;
+  const format = creditsFormatOf(protocol);
+  return read.models.filter((model) => model.protocols?.includes(format) ?? false);
 }
 
 /** Whether a menu serves a model, by its id or by any id it is also known as. */
@@ -379,6 +421,117 @@ export async function resolveCreditsLaunchModel(
   const pick = menu.models.find((option) => option.isDefault) ?? menu.models[0]!;
   if (model === undefined) return { kind: 'suggested', model: pick.value };
   return { kind: 'replaced', model: pick.value, from: model, toName: pick.displayName };
+}
+
+/** Which sessions were already told their model was replaced on credits. */
+const creditsModelSwapsSaid = new Set<string>();
+/** How many of those {@link creditsModelSwapsSaid} remembers at most. */
+const CREDITS_MODEL_SWAPS_KEPT = 1_000;
+
+/** The key one session-and-model swap is remembered under. */
+function swapKey(sessionId: string, model: string): string {
+  return `${sessionId}\u0000${model}`;
+}
+
+/**
+ * Remember that a session was told credits ran another model than `model`,
+ * bounded: the oldest is forgotten first. The swap also becomes the session's
+ * own model, so a forgotten key costs at most one repeated notice.
+ */
+function markCreditsSwapTold(sessionId: string, model: string): void {
+  creditsModelSwapsSaid.add(swapKey(sessionId, model));
+  if (creditsModelSwapsSaid.size > CREDITS_MODEL_SWAPS_KEPT) {
+    const oldest = creditsModelSwapsSaid.values().next().value;
+    if (oldest !== undefined) creditsModelSwapsSaid.delete(oldest);
+  }
+}
+
+/** What a launch on credits runs, and what it owes once it says so. */
+export interface CreditsModelDecision {
+  /** The model to launch with (`undefined`: the runtime's own default). */
+  model: string | undefined;
+  /** Set when the model is not the one the session names. */
+  swap?: {
+    /** The model the session named, as stored. */
+    from: string;
+    /** The `model_substituted` event to send, or `undefined` when this session was already told. */
+    notice: StreamEvent | undefined;
+    /**
+     * The save the swap owes, taken only AFTER the notice has gone out on the
+     * turn's stream (and so been recorded): the model becomes the session's
+     * own, and the swap is marked told. A launch that ends before that saves
+     * nothing, so the next one swaps again and says so.
+     */
+    commit: () => Promise<void>;
+  };
+}
+
+/**
+ * The model one launch on credits runs (DOR-2636), the same decision for every
+ * runtime that declares credits: the session's model when credits serve it
+ * (by its id or the id it expands to, context marker aside), the service's
+ * suggestion when it names none, the suggestion in place of one credits do not
+ * serve (with a notice naming both), and a plain refusal when the service
+ * lists formats but none for this runtime. While the service says nothing
+ * about formats, the session's model stands, exactly as before.
+ *
+ * @param opts - What the launch knows.
+ * @param opts.capabilities - The launching runtime's declared capabilities.
+ * @param opts.runtimeLabel - The runtime's display name, for the refusal.
+ * @param opts.sessionId - The session, for the told-once memory.
+ * @param opts.model - The model the session names, if any.
+ * @param opts.resolvedModel - The id that model expands to, when the runtime knows.
+ * @param opts.fromName - That model's display name, when the runtime knows.
+ * @param opts.remember - Make a model the session's own (taken by the commit).
+ * @throws {CreditsUnavailableError} `no-models` when the service lists formats but none for this runtime.
+ */
+export async function decideCreditsLaunchModel(opts: {
+  capabilities: Pick<RuntimeCapabilities, 'credits'>;
+  runtimeLabel: string;
+  sessionId: string;
+  model: string | undefined;
+  resolvedModel?: string | undefined;
+  fromName?: string | undefined;
+  remember: (model: string) => Promise<void>;
+}): Promise<CreditsModelDecision> {
+  const decided = await resolveCreditsLaunchModel(
+    opts.capabilities,
+    opts.model,
+    opts.resolvedModel
+  );
+  switch (decided.kind) {
+    case 'none-served':
+      throw new CreditsUnavailableError('no-models', opts.runtimeLabel);
+    case 'as-named':
+      return { model: decided.model };
+    case 'suggested':
+      return { model: decided.model };
+    case 'replaced': {
+      const told = creditsModelSwapsSaid.has(swapKey(opts.sessionId, decided.from));
+      return {
+        model: decided.model,
+        swap: {
+          from: decided.from,
+          notice: told
+            ? undefined
+            : {
+                type: 'model_substituted',
+                data: {
+                  from: decided.from,
+                  fromName: opts.fromName ?? decided.from,
+                  to: decided.model,
+                  toName: decided.toName,
+                  reason: 'credits-not-covered',
+                },
+              },
+          commit: async () => {
+            markCreditsSwapTold(opts.sessionId, decided.from);
+            await opts.remember(decided.model);
+          },
+        },
+      };
+    }
+  }
 }
 
 /** How the credits list judged a model; see {@link judgeCreditsModel}. */

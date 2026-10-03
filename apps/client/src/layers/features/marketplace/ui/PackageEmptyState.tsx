@@ -39,7 +39,7 @@ export function PackageEmptyState({
   onResetFilters,
   resetLabel = 'Reset filters',
   title = 'No packages match your filters',
-  description = 'Try adjusting your search or category filters.',
+  description = 'Try another search or filter.',
 }: PackageEmptyStateProps) {
   return (
     <EmptyState

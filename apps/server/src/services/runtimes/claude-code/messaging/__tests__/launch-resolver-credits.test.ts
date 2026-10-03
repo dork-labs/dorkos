@@ -304,8 +304,8 @@ describe('who pays for a Claude Code turn', () => {
           contextWindow: 200000,
           maxOutputTokens: 64000,
           supports,
-          protocols: ['anthropic-messages'],
-          recommendedOn: ['anthropic-messages'],
+          protocols: ['anthropicMessages'],
+          recommendedOn: ['anthropicMessages'],
         },
         {
           id: 'claude-sonnet-wire',
@@ -313,7 +313,7 @@ describe('who pays for a Claude Code turn', () => {
           contextWindow: 200000,
           maxOutputTokens: 64000,
           supports,
-          protocols: ['anthropic-messages'],
+          protocols: ['anthropicMessages'],
         },
       ],
     };
@@ -477,7 +477,7 @@ describe('who pays for a Claude Code turn', () => {
     it('refuses plainly when the service names protocols but none for Claude Code', async () => {
       service.list = {
         catalogVersion: 'cv',
-        models: [{ ...SAYS_PROTOCOLS.models[0], protocols: ['openai-chat'], recommendedOn: [] }],
+        models: [{ ...SAYS_PROTOCOLS.models[0], protocols: ['openaiChat'], recommendedOn: [] }],
       };
       const { events } = await launch(makeSession(creditsClaudeRoot()), undefined, withCatalog());
       expect(query).not.toHaveBeenCalled();

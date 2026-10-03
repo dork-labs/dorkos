@@ -155,9 +155,12 @@ describe('useUninstallWithToast', () => {
         perCall.onError(new Error('permission denied'));
       });
 
-      expect(mockError).toHaveBeenCalledWith('Uninstall failed: permission denied', {
-        id: 'toast-id-abc',
-      });
+      expect(mockError).toHaveBeenCalledWith(
+        'Couldn’t uninstall Code Reviewer: permission denied',
+        {
+          id: 'toast-id-abc',
+        }
+      );
       expect(mockSuccess).not.toHaveBeenCalled();
     });
 
@@ -176,7 +179,7 @@ describe('useUninstallWithToast', () => {
         perCall.onError('boom');
       });
 
-      expect(mockError).toHaveBeenCalledWith('Uninstall failed: unknown error', {
+      expect(mockError).toHaveBeenCalledWith('Couldn’t uninstall Code Reviewer. Try again.', {
         id: 'toast-id-abc',
       });
     });
@@ -232,7 +235,7 @@ describe('useUninstallWithToast', () => {
         }
       });
 
-      expect(mockError).toHaveBeenCalledWith('Uninstall failed: disk locked', {
+      expect(mockError).toHaveBeenCalledWith('Couldn’t uninstall Code Reviewer: disk locked', {
         id: 'toast-id-abc',
       });
       expect((caught as Error).message).toBe('disk locked');

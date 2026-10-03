@@ -158,10 +158,7 @@ export function SmartGroupRuleDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{mode === 'create' ? 'New smart group' : 'Edit rules'}</DialogTitle>
-          <DialogDescription>
-            Membership is derived from these rules and updates on its own. No dragging agents in or
-            out.
-          </DialogDescription>
+          <DialogDescription>Agents that match these rules join on their own.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -180,7 +177,7 @@ export function SmartGroupRuleDialog({
 
           {runtimeOptions.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Runtime</Label>
+              <Label>Runs on</Label>
               <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                 {runtimeOptions.map((opt) => (
                   <label key={opt.value} className="flex items-center gap-1.5 text-sm">
@@ -263,7 +260,7 @@ export function SmartGroupRuleDialog({
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit}>
-            {mode === 'create' ? 'Create' : 'Save'}
+            {mode === 'create' ? 'Create group' : 'Save'}
           </Button>
         </DialogFooter>
       </DialogContent>

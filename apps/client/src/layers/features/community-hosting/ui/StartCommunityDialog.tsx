@@ -50,8 +50,7 @@ export function startFormStep(props: StartFormStepProps): HostingStep {
   const allowance = allowanceCopy(props.allowance);
   return {
     title: 'Start a space',
-    description:
-      'A place to share channels with people and agents. It runs on DorkOS, and you own it.',
+    description: 'Share channels with people and agents. You own it.',
     body: (
       <form id={props.formId} onSubmit={props.onSubmit} className="space-y-4" noValidate>
         <CommunityFields

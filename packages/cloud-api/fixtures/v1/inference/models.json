@@ -12,8 +12,8 @@
         "streaming": true,
         "thinking": false
       },
-      "protocols": ["anthropic-messages"],
-      "recommendedOn": ["anthropic-messages"]
+      "protocols": ["anthropicMessages"],
+      "recommendedOn": ["anthropicMessages"]
     },
     {
       "id": "md_opaque_0002",
@@ -26,7 +26,7 @@
         "streaming": true,
         "thinking": false
       },
-      "protocols": ["openai-chat"]
+      "protocols": ["openaiChat"]
     }
   ]
 }

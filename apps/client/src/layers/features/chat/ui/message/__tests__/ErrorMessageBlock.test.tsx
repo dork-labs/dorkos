@@ -35,6 +35,16 @@ vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOrigi
   useSessions: () => ({ sessions: sessionRows.current, isLoading: sessionsLoading.current }),
 }));
 
+// "Start a new conversation" opens one through the router, which this file
+// does not mount; the spy is what it would have been asked.
+const { startNewSession } = vi.hoisted(() => ({ startNewSession: vi.fn() }));
+vi.mock('@/layers/entities/session/model/navigation/use-session-id', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/layers/entities/session/model/navigation/use-session-id')
+  >()),
+  useStartNewSession: () => startNewSession,
+}));
+
 const SESSION_ID = 'session-1';
 
 /** A session-list row carrying only what the auth card reads off it. */
@@ -92,13 +102,13 @@ describe('ErrorMessageBlock', () => {
 
     expect(screen.getByText('Agent stopped unexpectedly')).toBeInTheDocument();
     expect(screen.getByText('API error')).toBeInTheDocument();
-    expect(screen.queryByText('An error occurred during execution.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong before it finished.')).not.toBeInTheDocument();
   });
 
   it('falls back to the generic execution_error copy when there is no message', () => {
     render(<ErrorMessageBlock message="   " category="execution_error" />);
 
-    expect(screen.getByText('An error occurred during execution.')).toBeInTheDocument();
+    expect(screen.getByText('Something went wrong before it finished.')).toBeInTheDocument();
   });
 
   it('keeps the category copy and does not paraphrase it with the runtime message', () => {
@@ -121,7 +131,7 @@ describe('ErrorMessageBlock', () => {
       />
     );
 
-    expect(screen.getByText('This session exceeded its budget.')).toBeInTheDocument();
+    expect(screen.getByText('This session hit its spending limit.')).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'https://dorkos.ai/settings/budget' })
     ).toBeInTheDocument();
@@ -275,9 +285,7 @@ describe('ErrorMessageBlock', () => {
 
       expect(screen.getByText('Sign in to Claude again')).toBeInTheDocument();
       expect(
-        screen.getByText(
-          'Your Claude login stopped working. Sign in again to pick up where you left off.'
-        )
+        screen.getByText('Your Claude login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
     });
 
@@ -286,9 +294,7 @@ describe('ErrorMessageBlock', () => {
 
       expect(screen.getByText('Sign in to your agent again')).toBeInTheDocument();
       expect(
-        screen.getByText(
-          'Your agent login stopped working. Sign in again to pick up where you left off.'
-        )
+        screen.getByText('Your agent login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
     });
 
@@ -316,9 +322,7 @@ describe('ErrorMessageBlock', () => {
       );
 
       expect(
-        screen.getByText(
-          'Your OpenCode login stopped working. Sign in again to pick up where you left off.'
-        )
+        screen.getByText('Your OpenCode login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
       expect(
         screen.getByRole('link', { name: 'https://openrouter.ai/settings/credits' })
@@ -341,9 +345,7 @@ describe('ErrorMessageBlock', () => {
       );
 
       expect(
-        screen.getByText(
-          'Your Claude login stopped working. Sign in again to pick up where you left off.'
-        )
+        screen.getByText('Your Claude login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
       expect(
         screen.queryByText('Your sign-in stopped working. Sign in again to keep going.')
@@ -1186,6 +1188,15 @@ describe('ErrorMessageBlock rate_limit (spec claude-account-ui §6.7)', () => {
   });
 });
 
+/** A credits report as the default route answers it. */
+const CREDITS_STATUS = {
+  enabled: true,
+  killed: false,
+  linked: true,
+  ready: true,
+  runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'wired' },
+};
+
 describe('ErrorMessageBlock — a turn refused because DorkOS credits could not pay (ADR 261001-000811)', () => {
   afterEach(() => {
     cleanup();
@@ -1216,7 +1227,7 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
     expect(useAppStore.getState().retryAccount).toBeNull();
   });
 
-  it('sends the retried message on this computer’s own sign-in when the person asks', () => {
+  it('sends the retried message on this computer’s own sign-in when the person asks', async () => {
     const onRetry = vi.fn();
     renderBlock(
       <ErrorMessageBlock
@@ -1228,9 +1239,72 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
         runtimeLabel="Claude Code"
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Use your Claude Code sign-in' }));
+    const button = screen.getByRole('button', { name: 'Use your Claude Code sign-in' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
     expect(useAppStore.getState().retryAccount).toEqual({ id: 'default', sessionId: SESSION_ID });
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  // Codex and OpenCode have no account to pick per send: the way back to the
+  // person's own sign-in is their recorded "no", then the retry.
+  // Codex has no account to pick per send, and a conversation that started on
+  // credits lives where credits keep it: the way back is the person's "no",
+  // then a new conversation on their own sign-in, never a retry refused again.
+  it('starts a new Codex conversation on the person’s own sign-in, never a retry refused again', async () => {
+    sessionRows.current = [sessionRow('codex')];
+    startNewSession.mockClear();
+    const onRetry = vi.fn();
+    const setCloudCreditsDefault = vi.fn().mockResolvedValue(CREDITS_STATUS);
+    renderBlock(
+      <ErrorMessageBlock
+        message="Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your Codex sign-in."
+        category="execution_error"
+        code="credits_unavailable"
+        onRetry={onRetry}
+        sessionId={SESSION_ID}
+        runtimeLabel="Codex"
+      />,
+      { setCloudCreditsDefault }
+    );
+    const button = await screen.findByRole('button', {
+      name: 'Start a new conversation on your Codex sign-in',
+    });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(startNewSession).toHaveBeenCalledWith(undefined, { runtime: 'codex' })
+    );
+    expect(setCloudCreditsDefault).toHaveBeenCalledWith('codex', false);
+    expect(onRetry).not.toHaveBeenCalled();
+    sessionRows.current = [];
+  });
+
+  // OpenCode's choice moves the whole runtime: the card says so, then retries.
+  it('puts all of OpenCode back on its own sign-in, says so, then retries', async () => {
+    sessionRows.current = [sessionRow('opencode')];
+    const onRetry = vi.fn();
+    const setCloudCreditsDefault = vi.fn().mockResolvedValue(CREDITS_STATUS);
+    renderBlock(
+      <ErrorMessageBlock
+        message="Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your OpenCode sign-in."
+        category="execution_error"
+        code="credits_unavailable"
+        onRetry={onRetry}
+        sessionId={SESSION_ID}
+        runtimeLabel="OpenCode"
+      />,
+      { setCloudCreditsDefault }
+    );
+    expect(await screen.findByTestId('credits-own-sign-in-reach')).toHaveTextContent(
+      'This moves all OpenCode conversations to your OpenCode sign-in, not just this one.'
+    );
+    const button = screen.getByRole('button', { name: 'Use your OpenCode sign-in' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(onRetry).toHaveBeenCalledTimes(1));
+    expect(setCloudCreditsDefault).toHaveBeenCalledWith('opencode', false);
+    sessionRows.current = [];
   });
 
   // A folder with its own sign-in can never run on credits: the card's way on

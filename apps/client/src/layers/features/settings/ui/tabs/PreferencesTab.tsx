@@ -99,28 +99,28 @@ export function PreferencesTab() {
           <FieldCardContent>
             <SwitchSettingRow
               label="Show timestamps"
-              description="Display message timestamps in chat"
+              description="Shows the time on each message."
               checked={showTimestamps}
               onCheckedChange={setShowTimestamps}
             />
 
             <SwitchSettingRow
               label="Expand tool calls"
-              description="Auto-expand tool call details in messages"
+              description="Opens tool call details in messages."
               checked={expandToolCalls}
               onCheckedChange={setExpandToolCalls}
             />
 
             <SwitchSettingRow
               label="Auto-hide tool calls"
-              description="Fade out completed tool calls after a few seconds"
+              description="Finished tool calls fade after a moment."
               checked={autoHideToolCalls}
               onCheckedChange={setAutoHideToolCalls}
             />
 
             <SwitchSettingRow
               label="To-do celebrations"
-              description="Show animations when to-dos complete"
+              description="Animates finished to-dos."
               checked={showTaskCelebrations}
               onCheckedChange={setShowTaskCelebrations}
             />
@@ -145,14 +145,14 @@ export function PreferencesTab() {
              */}
             <SwitchSettingRow
               label="Format text as you type"
-              description="See bold, headings, and lists take shape in the message box while you write."
+              description="Bold, headings and lists show as you write."
               checked={richText}
               onCheckedChange={setRichText}
             />
 
             <SwitchSettingRow
-              label="Watch for agents you started somewhere else"
-              description="Turn this on if work you started in a terminal takes a while to show up here."
+              label="Watch for work started elsewhere"
+              description="Work started in a terminal shows up here sooner."
               checked={enableMessagePolling}
               onCheckedChange={setEnableMessagePolling}
             />
@@ -182,15 +182,12 @@ export function PreferencesTab() {
           <FieldCardContent>
             <SwitchSettingRow
               label="Feature suggestions"
-              description="Show feature discovery cards on the dashboard and sidebar"
+              description="Feature tips on the dashboard and sidebar."
               checked={promoEnabled}
               onCheckedChange={setPromoEnabled}
             />
 
-            <SettingRow
-              label="Replay setup"
-              description="Walk through the first-run setup again from the beginning"
-            >
+            <SettingRow label="Replay setup" description="Go through first-run setup again.">
               <Button
                 variant="outline"
                 size="sm"

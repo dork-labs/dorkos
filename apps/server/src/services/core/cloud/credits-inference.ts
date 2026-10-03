@@ -21,9 +21,10 @@
  * - **Fail closed.** A launch that chose credits with no live token is REFUSED
  *   ({@link CreditsUnavailableError}); it never quietly runs on the runtime's
  *   own sign-in, which would bill somebody who chose not to be billed.
- * - **Nothing to a runtime that did not ask.** {@link resolveCreditsLaunchEnv}
- *   refuses a runtime that does not declare `capabilities.credits`, so a token
- *   can never reach a launch that would mishandle it.
+ * - **Nothing to a runtime that did not ask.** {@link resolveCreditsLaunch}
+ *   refuses a runtime that does not declare `capabilities.credits`, or whose
+ *   protocol the live token does not serve, so a token can never reach a
+ *   launch that would mishandle it.
  * - **Nothing to a launch on its own sign-in.** No function here is called for
  *   such a launch, and the launch sites strip both credit variables from it.
  *
@@ -53,10 +54,18 @@ import {
 } from '@dork-labs/cloud-api';
 import { CloudApiResponseError } from '@dork-labs/cloud-api/client';
 import type { CloudCreditsRuntimeState, CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
-import type { RuntimeCapabilities, RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 import { creditsKilled } from './credits-availability.js';
+import {
+  CREDITS_REFRESH_MARGIN_MS,
+  CreditsUnavailableError,
+  creditsEndpointFor,
+  creditsEnvFor,
+  creditsProtocolServed,
+  type CreditsLaunch,
+} from './credits-protocols.js';
 import { noteCreditsAccount } from './credits-defaults.js';
 import {
   captureCloudV1Context,
@@ -67,8 +76,6 @@ import {
   type CloudV1Context,
 } from './v1-client.js';
 
-/** Mint this long before a token expires. */
-const REFRESH_MARGIN_MS = 5 * 60_000;
 /** Never schedule a refresh sooner than this, so a short token cannot spin. */
 const MIN_REFRESH_DELAY_MS = 30_000;
 /** After a failed refresh, try again this much later. */
@@ -125,12 +132,14 @@ function live(): InferenceToken | null {
 function handoutable(): InferenceToken | null {
   const token = live();
   if (token === null) return null;
-  return Date.parse(token.expiresAt) - now() > REFRESH_MARGIN_MS ? token : null;
+  return Date.parse(token.expiresAt) - now() > CREDITS_REFRESH_MARGIN_MS ? token : null;
 }
 
 /**
- * The held token while it is live, else `null`. Never mints.
- * @internal Exported for tests; production reads it through {@link ensureCreditsToken}.
+ * The held token while it is live, else `null`. Never mints and never waits,
+ * so it is for a caller that must not block (OpenCode planning a sidecar that
+ * nobody is sending a turn through yet). A launch reads the token through
+ * {@link resolveCreditsLaunch}, which also refuses one about to expire.
  */
 export function heldCreditsToken(): InferenceToken | null {
   return live();
@@ -230,7 +239,7 @@ function mintOnce(): Promise<boolean> {
 function scheduleRefresh(token: InferenceToken, delayOverride?: number): void {
   if (!lifecycleRunning) return;
   if (refreshTimer) clearTimeout(refreshTimer);
-  const due = Date.parse(token.expiresAt) - REFRESH_MARGIN_MS - now();
+  const due = Date.parse(token.expiresAt) - CREDITS_REFRESH_MARGIN_MS - now();
   const delay = delayOverride ?? Math.max(MIN_REFRESH_DELAY_MS, due);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
@@ -322,6 +331,20 @@ async function ensureCreditsToken(
   return handoutable();
 }
 
+/**
+ * Wait (bounded) for a live token, minting one if none is held. For a step
+ * that must see which formats the service serves before it decides anything,
+ * such as filling the gaps on a new link.
+ *
+ * @param timeoutMs - How long to wait for the mint.
+ * @returns Whether a live token is held now.
+ */
+export async function awaitCreditsToken(
+  timeoutMs: number = CREDITS_LAUNCH_WAIT_MS
+): Promise<boolean> {
+  return (await ensureCreditsToken(timeoutMs)) !== null;
+}
+
 /** How long an unlink waits for the held token's revoke before it moves on. */
 const REVOKE_WAIT_MS = 3_000;
 
@@ -361,91 +384,47 @@ export async function revokeHeldCreditsToken(): Promise<void> {
   }
 }
 
-/** Why a launch that chose credits cannot have them. */
-export type CreditsUnavailableReason =
-  | 'off'
-  | 'not-linked'
-  | 'unreachable'
-  | 'not-supported'
-  | 'folder-sign-in'
-  | 'stopped'
-  | 'no-models';
-
 /**
- * A launch chose DorkOS credits and cannot have them, so it is refused rather
- * than run on anything else. The message is the sentence a person reads; the
- * runtime's chat turns `code` into the Retry and Use-your-own-sign-in actions.
- */
-export class CreditsUnavailableError extends Error {
-  /** Stable code the client keys the actions on. */
-  readonly code = 'credits_unavailable';
-
-  /**
-   * Build the refusal for one launch.
-   *
-   * @param reason - Why credits are unavailable.
-   * @param runtimeLabel - The runtime's display name, for the sentence.
-   */
-  constructor(
-    readonly reason: CreditsUnavailableReason,
-    readonly runtimeLabel: string
-  ) {
-    super(creditsRefusalSentence(reason, runtimeLabel));
-    this.name = 'CreditsUnavailableError';
-  }
-}
-
-/**
- * The plain sentence for a refused credits launch.
- *
- * @param reason - Why credits are unavailable.
- * @param runtimeLabel - The runtime's display name.
- */
-function creditsRefusalSentence(reason: CreditsUnavailableReason, runtimeLabel: string): string {
-  switch (reason) {
-    case 'off':
-      return `DorkOS credits are turned off on this computer, so nothing was sent. Use your ${runtimeLabel} sign-in instead, or turn credits back on.`;
-    case 'not-linked':
-      return `Couldn't reach DorkOS credits: this computer isn't signed in to a DorkOS account, so nothing was sent. Sign in again, or use your ${runtimeLabel} sign-in.`;
-    case 'not-supported':
-      return `${runtimeLabel} can't run on DorkOS credits yet, so nothing was sent. Use your ${runtimeLabel} sign-in.`;
-    case 'unreachable':
-      return `Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your ${runtimeLabel} sign-in.`;
-    case 'folder-sign-in':
-      return `This folder's ${runtimeLabel} settings name their own sign-in, so it can't run on DorkOS credits and nothing was sent. Use your ${runtimeLabel} sign-in here, or stop using credits in this project.`;
-    case 'no-models':
-      return `DorkOS credits don’t cover a ${runtimeLabel} model yet, so nothing was sent. Use your ${runtimeLabel} sign-in instead.`;
-    case 'stopped':
-      return `DorkOS credits stopped working partway through this turn. Try again, or use your ${runtimeLabel} sign-in.`;
-  }
-}
-
-/**
- * The environment one protocol needs to run on a held token. Pure, so the
- * shape is testable without minting.
- *
- * @param token - The live inference token.
- * @param protocol - The protocol the runtime speaks.
- */
-export function creditsEnvFor(
-  token: InferenceToken,
-  protocol: RuntimeCreditsProtocol
-): Record<string, string> {
-  switch (protocol) {
-    case 'anthropic-messages':
-      return {
-        ANTHROPIC_BASE_URL: token.endpoints.anthropicMessages,
-        ANTHROPIC_AUTH_TOKEN: token.token,
-      };
-  }
-}
-
-/**
- * The environment a launch that CHOSE credits runs with, or the refusal.
+ * The endpoint and token a launch that CHOSE credits runs with, or the refusal.
  *
  * Call this only for a launch whose Runs on choice is credits. It refuses,
- * never returns an empty object, so a caller cannot mistake "no credits" for
- * "run on whatever else is there".
+ * never returns an empty answer, so a caller cannot mistake "no credits" for
+ * "run on whatever else is there". A runtime whose protocol the live token
+ * does not serve is refused as `not-supported`, the same as one that never
+ * declared credits.
+ *
+ * @param capabilities - The launching runtime's declared capabilities.
+ * @param runtimeLabel - The runtime's display name, for the refusal sentence.
+ * @param waitMs - How long to wait for a mint when no token is held.
+ * @throws {CreditsUnavailableError} When credits cannot pay for this launch.
+ */
+export async function resolveCreditsLaunch(
+  capabilities: Pick<RuntimeCapabilities, 'credits'>,
+  runtimeLabel: string,
+  waitMs: number = CREDITS_LAUNCH_WAIT_MS
+): Promise<CreditsLaunch> {
+  const protocol = capabilities.credits?.protocol;
+  if (protocol === undefined) throw new CreditsUnavailableError('not-supported', runtimeLabel);
+  if (creditsKilled()) throw new CreditsUnavailableError('off', runtimeLabel);
+  if (!isCloudLinked()) throw new CreditsUnavailableError('not-linked', runtimeLabel);
+  const token = await ensureCreditsToken(waitMs);
+  if (token === null) throw new CreditsUnavailableError('unreachable', runtimeLabel);
+  const baseUrl = creditsEndpointFor(token.endpoints, protocol);
+  if (baseUrl === null || !creditsProtocolServed(protocol, token)) {
+    throw new CreditsUnavailableError('not-supported', runtimeLabel);
+  }
+  return {
+    protocol,
+    baseUrl,
+    token: token.token,
+    tokenId: token.tokenId,
+    expiresAt: token.expiresAt,
+  };
+}
+
+/**
+ * The environment a launch that CHOSE credits runs with, or the refusal: the
+ * {@link creditsEnvFor} of {@link resolveCreditsLaunch}.
  *
  * @param capabilities - The launching runtime's declared capabilities.
  * @param runtimeLabel - The runtime's display name, for the refusal sentence.
@@ -457,26 +436,44 @@ export async function resolveCreditsLaunchEnv(
   runtimeLabel: string,
   waitMs: number = CREDITS_LAUNCH_WAIT_MS
 ): Promise<Record<string, string>> {
+  return creditsEnvFor(await resolveCreditsLaunch(capabilities, runtimeLabel, waitMs));
+}
+
+/** Whether a runtime declares credits in a protocol the given token's service serves. */
+function wiredWith(
+  capabilities: Pick<RuntimeCapabilities, 'credits'>,
+  token: InferenceToken | null
+): boolean {
   const protocol = capabilities.credits?.protocol;
-  if (protocol === undefined) throw new CreditsUnavailableError('not-supported', runtimeLabel);
-  if (creditsKilled()) throw new CreditsUnavailableError('off', runtimeLabel);
-  if (!isCloudLinked()) throw new CreditsUnavailableError('not-linked', runtimeLabel);
-  const token = await ensureCreditsToken(waitMs);
-  if (token === null) throw new CreditsUnavailableError('unreachable', runtimeLabel);
-  return creditsEnvFor(token, protocol);
+  return protocol !== undefined && creditsProtocolServed(protocol, token);
 }
 
 /**
- * The runtimes credits reach, derived from what each one DECLARES, so a status
- * line can never say a runtime runs on credits that does not.
+ * Whether credits reach a runtime right now: it declares them, and the
+ * endpoint serves the protocol it declares. Every place that offers or
+ * chooses credits for a runtime asks this, never the declaration alone.
+ *
+ * @param capabilities - The runtime's declared capabilities.
+ */
+export function creditsRuntimeWired(capabilities: Pick<RuntimeCapabilities, 'credits'>): boolean {
+  return wiredWith(capabilities, live());
+}
+
+/**
+ * The runtimes credits reach, derived from what each one DECLARES and from
+ * what the endpoint SERVES, so a status line can never say a runtime runs on
+ * credits that does not: a runtime whose protocol the service does not serve
+ * (see {@link creditsProtocolServed}) is `follow-up`, and nothing offers
+ * credits for it.
  *
  * @param runtimes - Every registered runtime's capabilities.
  */
 export function creditsWiringReport(
   runtimes: ReadonlyArray<Pick<RuntimeCapabilities, 'type' | 'credits'>>
 ): CloudCreditsStatus {
+  const token = live();
   const state = (type: string): CloudCreditsRuntimeState =>
-    runtimes.some((runtime) => runtime.type === type && runtime.credits !== undefined)
+    runtimes.some((runtime) => runtime.type === type && wiredWith(runtime, token))
       ? 'wired'
       : 'follow-up';
   const linked = isCloudLinked();
@@ -484,7 +481,7 @@ export function creditsWiringReport(
     enabled: !creditsKilled() && linked,
     killed: creditsKilled(),
     linked,
-    ready: live() !== null,
+    ready: token !== null,
     runtimes: {
       'claude-code': state('claude-code'),
       opencode: state('opencode'),

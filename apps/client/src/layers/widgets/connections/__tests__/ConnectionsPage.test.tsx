@@ -141,7 +141,7 @@ describe('ConnectionsPage', () => {
     await user.click(within(row!).getByRole('button', { name: 'Sign in again: Notion' }));
 
     expect(await screen.findByTestId('row-action-error')).toHaveTextContent(
-      'Sign-in isn’t available for this app right now.'
+      'Sign-in isn’t available for this app.'
     );
     // The row keeps its one fix, so pressing it again is the way on.
     expect(within(row!).getByRole('button', { name: 'Sign in again: Notion' })).toBeEnabled();

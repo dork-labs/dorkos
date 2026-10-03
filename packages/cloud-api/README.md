@@ -359,19 +359,25 @@ grouped the way `en-US` groups them. The module imports nothing.
 No host, origin or URL literal appears in this package. Inference endpoints are runtime values
 the mint call returns, and the client takes its `baseUrl` from the caller.
 
-No supplier is named anywhere. The two exceptions are the field names
-`endpoints.anthropicMessages` and `endpoints.openaiChat`, and they are a deliberate carve-out
-rather than an oversight: they name a **request format** a caller encodes in — both are de-facto
-public standards — not a supplier a request is routed to. Which provider actually serves a
-request is not part of this contract and is published nowhere.
+No supplier is named anywhere. The three exceptions are the field names
+`endpoints.anthropicMessages`, `endpoints.openaiChat` and `endpoints.openaiResponses`, and they
+are a deliberate carve-out rather than an oversight: they name a **request format** a caller
+encodes in — all three are de-facto public standards — not a supplier a request is routed to.
+Which provider actually serves a request is not part of this contract and is published nowhere.
 
-The same two formats are the values of `InferenceProtocolSchema` (`anthropic-messages`,
-`openai-chat`). Each model in `GET /v1/inference/models` may say which of them a caller should
-offer it on (`protocols`) and on which it is the service's suggested first pick
-(`recommendedOn`). Both are optional, and both carry plain strings rather than the enum, so a
-protocol added later is a value an older caller skips rather than a response it cannot parse. A
-caller offers a model only on a protocol the model lists: a model with no `protocols` is offered
-on none.
+Each endpoint is a base a client appends its format's own path to. The first two are always
+present; `openaiResponses` is optional. Which formats a token may be used for is its `served`
+list (`InferenceFormatSchema` names, the endpoint fields), not the endpoints: an endpoint
+being present is not enough. The list is typed as strings so a format this package does not know
+yet never rejects a token; a caller reads the names it knows and ignores the rest. **An absent `served` means `anthropicMessages` only**, which is what
+every service before the field served, so an old service never starts another format by
+omission. A client one release behind ignores both fields and loses nothing.
+
+Each model in `GET /v1/inference/models` may say, with the same `InferenceFormatSchema` names,
+which formats a caller should offer it in (`protocols`) and in which it is the service's suggested
+first pick (`recommendedOn`). Both are optional and both are plain strings, read the way `served`
+is: a caller uses the names it knows and ignores the rest, never an error. A caller that finds a
+list naming formats offers a model only in a format the model lists.
 
 ### Where amounts appear, and where they do not
 

@@ -21,13 +21,13 @@ export function RelayAdaptersDialog({ onClose }: PromoDialogProps) {
       highlights={[
         {
           icon: Bell,
-          title: 'Real-time notifications',
-          description: 'Know when agents finish, fail, or need input',
+          title: 'Notifications',
+          description: 'Hear when agents finish or need you',
         },
         {
           icon: Zap,
-          title: 'Two-way communication',
-          description: 'Reply to agents directly from your messaging app',
+          title: 'Reply from chat',
+          description: 'Answer agents from Telegram or Slack',
         },
       ]}
       primaryAction={{ label: 'Connect Telegram & Slack', onClick: handleSetUp }}

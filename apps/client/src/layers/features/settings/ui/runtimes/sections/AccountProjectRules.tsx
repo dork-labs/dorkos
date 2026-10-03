@@ -18,6 +18,7 @@ import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   Button,
   Checkbox,
+  InfoTip,
   Label,
   RadioGroup,
   RadioGroupItem,
@@ -157,8 +158,7 @@ export function LimitToProjectsDialog({
             Where can {accountName} work?
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="text-muted-foreground text-xs">
-            DorkOS never uses it anywhere else, whether you, a schedule or an agent picks it. An
-            account kept to projects is not used in folders outside a project.
+            Nobody can use it anywhere else, even in folders outside a project.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-3">
@@ -190,7 +190,7 @@ export function LimitToProjectsDialog({
               )}
               {!projects.isPending && all.length === 0 && (
                 <p className="text-muted-foreground text-xs">
-                  DorkOS hasn’t seen a project yet. Start a chat in one first.
+                  No projects yet. Start a chat in one first.
                 </p>
               )}
               {all.map((project) => {
@@ -213,7 +213,7 @@ export function LimitToProjectsDialog({
           {emptyChoice && (
             <p role="alert" className="text-destructive flex items-start gap-1.5 text-xs">
               <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
-              <span>Tick at least one project, or choose Any project.</span>
+              <span>Pick a project, or choose Any project.</span>
             </p>
           )}
           {save.isError && (
@@ -265,14 +265,19 @@ export function ProjectLimitsList({ limits, nameForId }: ProjectLimitsListProps)
       className="rounded-md border px-3 py-1.5"
       data-testid="project-limits"
     >
-      <p id={captionId} className="text-muted-foreground pt-1 text-xs">
-        Project limits
-      </p>
+      <div className="flex items-center gap-1.5 pt-1">
+        <p id={captionId} className="text-muted-foreground text-xs">
+          Project limits
+        </p>
+        <InfoTip label="About project limits">
+          <p>The Flow extension or a script sets each project’s list.</p>
+          <p>Remove a limit to let that project use every account.</p>
+        </InfoTip>
+      </div>
       {/* Said plainly: core shows and removes a project's list; choosing one
           is the Flow extension's (spec §8.5, V6) or a script's. */}
       <p className="text-muted-foreground pb-1 text-xs" data-testid="project-limits-note">
-        Each project here uses only the accounts listed. A project’s list is set by the Flow
-        extension or a script; remove it here to let the project use every account.
+        These projects use only the accounts listed.
       </p>
       <ul className="divide-y">
         {limits.map(({ project, allow }) => (

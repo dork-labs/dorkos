@@ -22,7 +22,7 @@ import {
   useSessionPermissionPicker,
 } from '@/layers/features/status';
 import { GlobalTrustRow, TrustRow, type GlobalTrustRowRuntime } from '@/layers/features/settings';
-import { Button, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
+import { Button, InfoTip, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
 import { needsConsentRitual } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -269,11 +269,12 @@ function PickerAvailability({ available, children }: { available: boolean; child
 /** What a binding gives up at a stop that never asks. */
 const BINDING_CONSEQUENCE = (
   <>
-    At a stop that asks, an action this agent needs permission for waits for an answer: where your
-    connection can show buttons, it arrives in the chat as Approve and Deny, and only the people on
-    the approver list may answer. Either way an ask nobody answers is refused after 10 minutes and
-    the agent carries on without it. Here nothing is asked at all — anyone who can send a message
-    through this connection sets off whatever the agent decides to do.
+    Anyone who can message this connection can make the agent act, with no one asked.{' '}
+    <InfoTip label="About asking in the chat" title="At a stop that asks">
+      <p>Where your connection can show buttons, the agent waits for Approve or Deny.</p>
+      <p>Only people on the approver list can answer.</p>
+      <p>An ask nobody answers is refused after 10 minutes, and the agent carries on.</p>
+    </InfoTip>
   </>
 );
 

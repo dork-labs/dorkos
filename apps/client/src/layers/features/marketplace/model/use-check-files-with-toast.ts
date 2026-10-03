@@ -39,7 +39,7 @@ export function useCheckFilesWithToast() {
           (done ? toast.success : toast.warning)(result.message, { id: toastId });
         },
         onError: (err) => {
-          toast.error(`Couldn't check the files of ${subject}: ${err.message}`, { id: toastId });
+          toast.error(`Couldn’t check the files of ${subject}: ${err.message}`, { id: toastId });
         },
       });
     },

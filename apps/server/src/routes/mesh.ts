@@ -49,9 +49,9 @@ import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
-import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaults.js';
-import { creditsAgentModelRefusal } from '../services/core/cloud/credits-model-gate.js';
+import { creditsAgentPatchRefusal } from '../services/core/cloud/credits-model-gate.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { writeAgentManifest } from '../services/core/agent-observation/agent-execution-writes.js';
 
@@ -620,18 +620,14 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     ) as Partial<AgentManifest>;
     // An agent on DorkOS credits may be set only to a model credits serve on
     // its runtime's protocol, the same menu its Model row offers (DOR-2636).
-    if (typeof explicitFields.model === 'string') {
-      const accountNamedNow = Object.hasOwn(req.body as object, 'account');
-      const existing = meshCore.get(req.params.id);
-      const refusal = await creditsAgentModelRefusal({
-        agentId: req.params.id,
-        runtime: explicitFields.runtime ?? existing?.runtime,
-        account: accountNamedNow ? (explicitFields.account ?? null) : existing?.account,
-        model: explicitFields.model,
-        accountNamedNow,
-      });
-      if (refusal) return res.status(400).json({ error: refusal, code: 'UNSUPPORTED_MODEL' });
-    }
+    const modelRefusal = await creditsAgentPatchRefusal(
+      req.params.id,
+      explicitFields,
+      Object.hasOwn(req.body as object, 'account'),
+      meshCore.get(req.params.id)
+    );
+    if (modelRefusal)
+      return res.status(400).json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' });
     // ADR-0043: update() is async — writes to disk first, then DB.
     //
     // It REFUSES when the manifest is present but unreadable, rather than
@@ -660,11 +656,15 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     if (!updated) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    // Only a person can put an agent on DorkOS credits (ADR 261001-000811).
-    // The file now says what was asked; the consent lives in DorkOS config,
-    // recorded only for a caller that clears the agent bar, so an agent (or a
-    // cloned file) naming credits on its own spends nothing.
-    if (Object.hasOwn(req.body as object, 'account') && clearsTheAgentBar(req, res)) {
+    // Only the owner of this DorkOS can put an agent on DorkOS credits
+    // (ADR 261001-000811, DOR-2652). The file now says what was asked; the
+    // consent lives in DorkOS config, recorded only for the owner, so an agent,
+    // another signed-in account, or a cloned file naming credits on its own
+    // spends nothing.
+    if (
+      Object.hasOwn(req.body as object, 'account') &&
+      refuseUnlessAccountOwner(req, res) === undefined
+    ) {
       setCreditsAllowedForAgent(
         req.params.id,
         (req.body as { account?: unknown }).account === CREDITS_ACCOUNT_ID

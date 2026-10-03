@@ -288,7 +288,7 @@ export function useSessionStatus(
           // the dial cannot show: the reply already running did not get the
           // message, so it is still working under the looser setting.
           toast.warning('Saved · starts on your next message', {
-            description: 'The reply already running keeps the permission setting it started with.',
+            description: 'The current reply keeps its old setting.',
           });
         }
         queryClient.setQueryData(

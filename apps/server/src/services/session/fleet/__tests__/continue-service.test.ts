@@ -1653,7 +1653,7 @@ describe('continuing on DorkOS credits', () => {
     const capabilities = runtime.getCapabilities();
     runtime.getCapabilities.mockReturnValue({
       ...capabilities,
-      credits: { protocol: 'anthropic-messages' },
+      credits: { protocol: 'anthropic-messages', scope: 'conversation' },
     });
   }
 

@@ -82,7 +82,7 @@ describe('buildPaletteCommands', () => {
       });
       const compact = rows.find((r) => r.fullCommand === '/compact');
       expect(compact?.disabled).toBe(true);
-      expect(compact?.disabledReason).toBe('Not supported by Codex');
+      expect(compact?.disabledReason).toBe('Not available on Codex');
     });
 
     it('leaves the compact row enabled when the runtime supports compact', () => {

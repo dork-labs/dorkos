@@ -76,7 +76,7 @@ export function AccountPanel(props: AccountPanelProps) {
       <LoadFailedState
         error={detail.error}
         title="Couldn’t load this app"
-        description="Try again. Nothing about it was changed."
+        description="Nothing changed. Try again."
         onRetry={() => void detail.refetch()}
         isRetrying={detail.isFetching}
       />
@@ -307,17 +307,20 @@ function ReadinessFix({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove {appName} from your apps?</AlertDialogTitle>
-              <AlertDialogDescription>
-                It leaves this list. What agents did with it stays on record. If you connect it
-                again, you choose who can use it again.
-                {readiness.reason === 'disconnect_finishing' &&
-                  ' DorkOS still finishes removing its access at the service.'}
+              <AlertDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>It leaves this list. Its activity history is kept.</p>
+                  <p>Connect it again later and you choose who can use it.</p>
+                  {readiness.reason === 'disconnect_finishing' && (
+                    <p>DorkOS still finishes removing its access at the service.</p>
+                  )}
+                </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Keep it</AlertDialogCancel>
               <AlertDialogAction disabled={removing} onClick={onRemove}>
-                Remove
+                Remove app
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -344,9 +347,7 @@ function Recently({ detail }: { detail: ConnectorConnectionDetail }) {
 
   let body: ReactNode;
   if (connection.usage.status === 'unavailable') {
-    body = (
-      <p className="text-muted-foreground text-sm">What agents did isn’t available right now.</p>
-    );
+    body = <p className="text-muted-foreground text-sm">Activity isn’t available right now.</p>;
   } else if (usage.isPending) {
     body = <Skeleton className="h-16 rounded-lg" />;
   } else if (usage.isError) {
@@ -429,7 +430,7 @@ function TryIt({ detail }: { detail: ConnectorConnectionDetail }) {
   return (
     <PanelSection
       title="Try it"
-      description={agentName ? `Opens a chat with ${agentName}, message already typed.` : undefined}
+      description={agentName ? `Opens a chat with ${agentName}, ready to send.` : undefined}
     >
       <div className="flex flex-wrap gap-2">
         {prompts.map((prompt) => (

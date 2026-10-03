@@ -705,9 +705,9 @@ export function RuntimeSetupDialog({
               ? 'Connected.'
               : descriptor
                 ? isScopedReady
-                  ? 'This runtime is ready to use.'
+                  ? 'Ready to use.'
                   : 'Connect it to start a session.'
-                : 'Connect any runtime to start a session with it.'}
+                : 'Connect one to start a session.'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody>

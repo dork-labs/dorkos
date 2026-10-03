@@ -9726,6 +9726,53 @@
           "deniedAt"
         ]
       },
+      "CloudOwnerOnlyError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "One plain sentence saying who may do this."
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "person_only",
+              "owner_only"
+            ]
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "CloudOwnerOnlyRefusal": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "person_only",
+              "owner_only"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "One plain sentence saying who may do this."
+          }
+        },
+        "required": [
+          "ok",
+          "code",
+          "message"
+        ]
+      },
       "CloudOffersResponse": {
         "anyOf": [
           {
@@ -17779,7 +17826,7 @@
             }
           },
           "403": {
-            "description": "Only a person can move or hold a session; an agent identity is refused.",
+            "description": "Only a person can move or hold a session; an agent identity is refused. Moving onto DorkOS credits is for the owner of this DorkOS alone (`person_only`, `owner_only`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -18865,6 +18912,16 @@
           },
           "400": {
             "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The message names DorkOS credits (`account: \"dorkos-credits\"`) and the caller is not the owner of this DorkOS (`person_only`, `owner_only`); nothing started",
             "content": {
               "application/json": {
                 "schema": {
@@ -21465,14 +21522,25 @@
                               "protocol": {
                                 "type": "string",
                                 "enum": [
-                                  "anthropic-messages"
+                                  "anthropic-messages",
+                                  "openai-chat-completions",
+                                  "openai-responses"
                                 ]
+                              },
+                              "scope": {
+                                "type": "string",
+                                "enum": [
+                                  "conversation",
+                                  "runtime"
+                                ],
+                                "description": "What a change of the credits choice reaches: `conversation` — new conversations follow it and one already going stays on what it started on; `runtime` — the whole runtime moves, so a switch is refused while it is in the middle of a reply."
                               }
                             },
                             "required": [
-                              "protocol"
+                              "protocol",
+                              "scope"
                             ],
-                            "description": "Whether this runtime can run a turn on DorkOS credits, and the protocol it speaks to the credits endpoint (ADR 261001-000811). Absent means no: the server hands a credits token only to a runtime that declares this."
+                            "description": "Whether this runtime can run a turn on DorkOS credits, the request format it speaks to the credits endpoint, and what a change of the choice reaches (ADRs 261001-000811, 261002-221210). Absent means no: the server hands a credits token only to a runtime that declares this, and offers it only while the endpoint serves its format."
                           },
                           "permissionModes": {
                             "type": "object",
@@ -30821,6 +30889,16 @@
               }
             }
           },
+          "403": {
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudOwnerOnlyError"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Could not reach the DorkOS cloud",
             "content": {
@@ -30933,6 +31011,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudOwnerOnlyError"
+                }
+              }
+            }
           }
         }
       }
@@ -30958,6 +31046,16 @@
                   "required": [
                     "ok"
                   ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudOwnerOnlyError"
                 }
               }
             }
@@ -31053,6 +31151,16 @@
                     "accountLabel",
                     "lastHeartbeatAt"
                   ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudOwnerOnlyRefusal"
                 }
               }
             }
@@ -31164,6 +31272,16 @@
               }
             }
           },
+          "403": {
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudOwnerOnlyRefusal"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not a billing page this server opens",
             "content": {
@@ -31209,6 +31327,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudOwnerOnlyRefusal"
+                }
+              }
+            }
           }
         }
       }
@@ -31227,6 +31355,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CloudAccountDeletionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudOwnerOnlyRefusal"
                 }
               }
             }

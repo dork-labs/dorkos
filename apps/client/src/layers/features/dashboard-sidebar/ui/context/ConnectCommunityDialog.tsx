@@ -430,8 +430,7 @@ function ConnectCommunityBody({
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Join a space</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            Bring a space’s channels into this app, so you and your agents can talk there. You
-            approve it on the space’s own site.
+            Bring a space’s channels here. You approve it on the space’s site.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-4 py-4">
@@ -462,9 +461,9 @@ function ConnectCommunityBody({
             <p id={`${id}-url-hint`} aria-live="polite" className="text-muted-foreground text-xs">
               {joiningOn
                 ? joiningOn.withAccount
-                  ? `Join on ${joiningOn.host} with your DorkOS account in the tab that opened, then come back and connect.`
-                  : `Finish joining on ${joiningOn.host} in the tab that opened, then come back and connect.`
-                : 'Its full link, its short address, or an invitation link you were sent.'}
+                  ? `Join on ${joiningOn.host} with your DorkOS account in the new tab, then connect.`
+                  : `Finish joining on ${joiningOn.host} in the new tab, then connect.`
+                : 'Its link, short address or an invitation link.'}
             </p>
           </div>
           <div className="space-y-1.5">
@@ -524,8 +523,7 @@ function ConnectCommunityBody({
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Reconnect {connection.label}</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            This DorkOS can no longer reach {connection.label}’s channels. Disconnect here, then
-            connect again.
+            DorkOS can’t reach {connection.label}’s channels. Disconnect, then connect again.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-3 py-4">
@@ -546,7 +544,7 @@ function ConnectCommunityBody({
           )}
           {end.isError && (
             <p role="alert" className="text-destructive text-sm">
-              Couldn’t disconnect. Check that DorkOS is running, then try again.
+              Couldn’t disconnect. Check DorkOS is running and try again.
             </p>
           )}
         </ResponsiveDialogBody>
@@ -567,12 +565,14 @@ function ConnectCommunityBody({
     <>
       <ResponsiveDialogHeader>
         <ResponsiveDialogTitle>Approve on {connection.label}</ResponsiveDialogTitle>
-        <ResponsiveDialogDescription>
-          {connection.label} asks you to approve this DorkOS on its own site.{' '}
-          {approvalUrl && accountSignIn.signsInWithAccount(approvalUrl)
-            ? 'Sign in there with your DorkOS account. '
-            : ''}
-          This moves on by itself once you do.
+        <ResponsiveDialogDescription asChild>
+          <div className="space-y-1">
+            <p>Approve this DorkOS on {connection.label}’s site.</p>
+            {approvalUrl && accountSignIn.signsInWithAccount(approvalUrl) && (
+              <p>Sign in there with your DorkOS account.</p>
+            )}
+            <p>This screen moves on once you do.</p>
+          </div>
         </ResponsiveDialogDescription>
       </ResponsiveDialogHeader>
       <ResponsiveDialogBody className="space-y-3 py-4">
@@ -595,15 +595,14 @@ function ConnectCommunityBody({
           </Button>
         ) : (
           <p className="text-muted-foreground text-sm">
-            Approve in the tab you opened for this space. If you closed it, cancel and connect
-            again.
+            Approve in the tab that opened. Closed it? Cancel and connect again.
           </p>
         )}
         {(end.isError || Boolean(check.error)) && (
           <div role="alert" className="space-y-2 text-sm">
             <p>
               {end.isError
-                ? 'Couldn’t confirm cancellation. Refresh to check where it stands.'
+                ? 'Couldn’t confirm it was cancelled. Refresh to check.'
                 : 'Couldn’t check approval. Try again.'}
             </p>
             {!end.isError && (

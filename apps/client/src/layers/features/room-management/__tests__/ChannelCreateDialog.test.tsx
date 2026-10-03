@@ -159,8 +159,8 @@ describe('ChannelCreateDialog', () => {
     const retry = vi.fn();
     renderDialog({ agents: { candidates: [], isLoading: false, isError: true, retry } });
 
-    expect(screen.queryByText(/You have not added any agents yet/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent(/Couldn’t read your agents/i);
+    expect(screen.queryByText(/You don’t have any agents yet/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Couldn’t load your agents/i);
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(retry).toHaveBeenCalledTimes(1);
   });
@@ -262,7 +262,7 @@ describe('ChannelCreateDialog', () => {
     renderDialog({ agents: settled([]) });
 
     nameIt('Backend');
-    expect(screen.getByText(/You have not added any agents yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/You don’t have any agents yet/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create it without agents' })).toBeEnabled();
   });
 

@@ -238,7 +238,7 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
           <div className="space-y-1.5">
             <p className="text-muted-foreground flex items-center gap-1 text-xs">
               <FolderSearch className="size-3" />
-              Detection strategies
+              What it looks for
             </p>
             <ul className="space-y-1 pl-4">
               {DETECTION_STRATEGIES.map((s) => (
@@ -264,8 +264,7 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
             <div className="text-center">
               <p className="text-foreground text-sm font-medium">Find your existing projects</p>
               <p className="text-muted-foreground mx-auto mt-1 max-w-[300px] text-xs leading-relaxed">
-                Scan your filesystem for Claude Code, Cursor, Codex, and other AI projects to manage
-                in one place.
+                Find Claude Code, Cursor, Codex and other AI projects on this computer.
               </p>
             </div>
 
@@ -277,7 +276,7 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
 
             <Button onClick={handleScan} disabled={displayRoots.length === 0} className="w-full">
               <Search className="size-4" />
-              Search for Projects
+              Search for projects
             </Button>
 
             <p className="text-muted-foreground/60 text-center text-xs">
@@ -303,7 +302,7 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
 
             <Button onClick={handleScan} disabled={isPending || displayRoots.length === 0}>
               {isPending ? <Spinner /> : <Search className="size-4" />}
-              Search for Projects
+              Search for projects
             </Button>
           </div>
 
@@ -338,10 +337,8 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
             {/* No-results messaging — only after a scan has completed */}
             {scanComplete && !hasCandidates && hasExisting && (
               <div className="rounded-xl border border-dashed p-8 text-center">
-                <p className="text-sm font-medium">All projects already imported</p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  All found projects are already imported. Check the Agents tab to see them.
-                </p>
+                <p className="text-sm font-medium">All projects already added</p>
+                <p className="text-muted-foreground mt-1 text-xs">See them on the Agents tab.</p>
               </div>
             )}
 
@@ -352,8 +349,8 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
                 </p>
                 <p className="text-muted-foreground mt-1 text-xs">
                   {hasRegistered
-                    ? 'All found projects are already imported. Check the Agents tab to see them.'
-                    : 'Try scanning deeper directories or adding different paths.'}
+                    ? 'They’re already added. See the Agents tab.'
+                    : 'Try a deeper scan or other folders.'}
                 </p>
               </div>
             )}

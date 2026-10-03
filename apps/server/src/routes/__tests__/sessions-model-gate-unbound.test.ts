@@ -75,8 +75,8 @@ vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
         contextWindow: 200000,
         maxOutputTokens: 64000,
         supports,
-        protocols: ['anthropic-messages'],
-        recommendedOn: ['anthropic-messages'],
+        protocols: ['anthropicMessages'],
+        recommendedOn: ['anthropicMessages'],
       },
       {
         id: 'md_gpt_like',
@@ -84,7 +84,7 @@ vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
         contextWindow: 128000,
         maxOutputTokens: 16000,
         supports,
-        protocols: ['openai-chat'],
+        protocols: ['openaiChat'],
       },
     ],
   };
@@ -620,7 +620,7 @@ describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
     const base = claude.getCapabilities();
     claude.getCapabilities.mockReturnValue({
       ...base,
-      credits: { protocol: 'anthropic-messages' },
+      credits: { protocol: 'anthropic-messages', scope: 'conversation' },
     });
     Object.assign(claude, {
       checkLaunchAccount: vi.fn(async (_id: string, _dir: string, hintId?: string) => ({

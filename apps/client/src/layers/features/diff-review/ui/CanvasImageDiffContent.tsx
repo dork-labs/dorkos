@@ -50,8 +50,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
   if (baselineBase === null || currentBase === null) {
     return (
       <DiffMessage>
-        Comparing image versions isn’t available here. Open this session in the DorkOS web app to
-        review image changes.
+        Image comparison isn’t available here. Open this session in the DorkOS web app.
       </DiffMessage>
     );
   }
@@ -108,7 +107,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
               label="Restore previous"
               confirmLabel="Really restore?"
               ariaLabel="Restore the previous version of this image"
-              confirmAriaLabel="Confirm: restore the previous version"
+              confirmAriaLabel="Press again to restore the previous version"
               icon={<Undo2 className="mr-1 size-3.5" />}
               requireConfirm
               disabled={review.writing}
@@ -130,9 +129,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
         {noBaseline && (
           <div className="text-muted-foreground flex items-start gap-1.5 px-3 pb-2 text-xs">
             <Info className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              No previous version of this image from this session. There’s nothing to restore.
-            </span>
+            <span>No earlier version from this session, so there’s nothing to restore.</span>
           </div>
         )}
       </div>
@@ -140,9 +137,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
       <AnimatePresence>
         {review.writeFailed && (
           <Banner key="write-failed" tone="error" reduceMotion={reduceMotion}>
-            <span className="flex-1">
-              That change couldn’t be written to disk. Nothing was lost. Try again.
-            </span>
+            <span className="flex-1">Couldn’t save that change. Nothing was lost. Try again.</span>
             <Button
               type="button"
               variant="ghost"
@@ -414,7 +409,7 @@ function Overlaid({
             value={Math.round(value)}
             onChange={(e) => setValue(Number(e.target.value))}
             className="accent-primary h-1 flex-1"
-            aria-label="Blend between the previous and current version"
+            aria-label="Blend old and new versions"
           />
           <span aria-hidden>After</span>
         </label>

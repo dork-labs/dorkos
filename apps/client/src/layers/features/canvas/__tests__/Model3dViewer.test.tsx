@@ -51,7 +51,7 @@ describe('Model3dViewer — WebGL guard', () => {
       render(<Model3dViewer url="blob:model.stl" format="stl" label="Test model" />)
     ).not.toThrow();
 
-    expect(screen.getByText(/can.t be shown here/i)).toBeInTheDocument();
+    expect(screen.getByText(/can.t show 3D models/i)).toBeInTheDocument();
     // The 3D canvas surface is not mounted once WebGL failed.
     expect(screen.queryByRole('img', { name: 'Test model' })).not.toBeInTheDocument();
   });

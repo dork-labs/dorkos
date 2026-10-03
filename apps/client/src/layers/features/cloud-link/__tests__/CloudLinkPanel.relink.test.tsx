@@ -63,9 +63,7 @@ describe('CloudLinkPanel — linking again while linked', () => {
     // Still linked while the new code shows, so no "what an account adds" page,
     // and one plain line says the link is not gone.
     expect(screen.queryByText('What an account adds here')).not.toBeInTheDocument();
-    expect(
-      screen.getByText('This computer stays linked until you approve the new code.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Stays linked until you approve the new code.')).toBeInTheDocument();
   });
 
   it('starts the new link by itself when it was opened to link again, once', async () => {
@@ -151,7 +149,7 @@ describe('CloudLinkPanel — a relink that did not finish', () => {
 
   it.each([
     ['denied', 'The new link was turned down on dorkos.ai.'],
-    ['expired', 'The code for the new link timed out.'],
+    ['expired', 'The new link’s code expired.'],
     ['failed', 'The new link couldn’t finish.'],
   ] as const)(
     'keeps showing Signed in after a %s relink, with a note that can be dismissed',
@@ -179,6 +177,27 @@ describe('CloudLinkPanel — a relink that did not finish', () => {
       await waitFor(() => expect(screen.queryByText(new RegExp(line))).not.toBeInTheDocument());
     }
   );
+
+  it('says why a refused dismiss changed nothing', async () => {
+    const user = userEvent.setup();
+    const transport = linkedTransport();
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
+      state: 'linked',
+      accountLabel: 'kai@dork.dev',
+      relinkOutcome: 'failed',
+    });
+    // What the transport throws for the owner bar's 403 (DOR-2652).
+    const sentence =
+      'Only the owner of this DorkOS can stop linking this computer to a DorkOS account.';
+    vi.mocked(transport.cancelCloudLink).mockRejectedValue(
+      Object.assign(new Error(sentence), { status: 403, code: 'owner_only' })
+    );
+    renderPanel(transport);
+    await screen.findByText(/The new link couldn’t finish\./);
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(sentence);
+  });
 
   it('cancels a relink while its code is showing and goes back to Signed in', async () => {
     const user = userEvent.setup();

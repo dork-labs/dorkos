@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import tokenFixture from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
+import everyFormatFixture from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
 import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 
 const link = vi.hoisted(() => ({ linked: true }));
@@ -23,18 +24,39 @@ import {
   isCreditsKillSwitchOn,
 } from '../credits-availability.js';
 import {
-  CreditsUnavailableError,
-  creditsEnvFor,
+  creditsRuntimeWired,
   creditsWiringReport,
   primeCreditsInferenceGated,
+  resolveCreditsLaunch,
   resolveCreditsLaunchEnv,
   __setCreditsStateForTests,
 } from '../credits-inference.js';
+import {
+  CreditsUnavailableError,
+  asCreditsStopped,
+  creditsEndpointFor,
+  creditsEnvFor,
+  creditsFormatOf,
+  isCreditsTokenVar,
+  mintCreditsTokenVar,
+  creditsProtocolServed,
+  creditsRefusalEvent,
+} from '../credits-protocols.js';
 
 const token = InferenceTokenSchema.parse(tokenFixture);
 /** A clock an hour before the token expires: well outside the refresh margin. */
 const live = () => Date.parse(token.expiresAt) - 60 * 60_000;
-const DECLARES = { credits: { protocol: 'anthropic-messages' as const } };
+const DECLARES = {
+  credits: { protocol: 'anthropic-messages' as const, scope: 'conversation' as const },
+};
+/** A token from a service that also serves the responses format. */
+const everyFormat = InferenceTokenSchema.parse(everyFormatFixture);
+const SPEAKS_CHAT = {
+  credits: { protocol: 'openai-chat-completions' as const, scope: 'runtime' as const },
+};
+const SPEAKS_RESPONSES = {
+  credits: { protocol: 'openai-responses' as const, scope: 'conversation' as const },
+};
 
 describe('the credits kill switch', () => {
   it('names itself, so it stays findable', () => {
@@ -117,6 +139,62 @@ describe('a launch that chose credits', () => {
     });
   });
 
+  it('gets the chat endpoint and the token in its own variable once the token serves chat', async () => {
+    __setCreditsStateForTests({
+      token: { ...token, served: ['anthropicMessages', 'openaiChat'] },
+      now: live,
+    });
+    const launch = await resolveCreditsLaunch(SPEAKS_CHAT, 'OpenCode', 0);
+    expect(launch).toEqual({
+      protocol: 'openai-chat-completions',
+      baseUrl: token.endpoints.openaiChat,
+      token: token.token,
+      tokenId: token.tokenId,
+      expiresAt: token.expiresAt,
+    });
+    // Its token variable is the launch's own to name, never a fixed one.
+    expect(() => creditsEnvFor(launch)).toThrow();
+  });
+
+  it('is refused for a format the held token does not serve, never sent to another endpoint', async () => {
+    // The fixture token predates the `served` list: Anthropic only.
+    __setCreditsStateForTests({ token, now: live });
+    for (const [declares, label] of [
+      [SPEAKS_RESPONSES, 'Codex'],
+      [SPEAKS_CHAT, 'OpenCode'],
+    ] as const) {
+      await expect(resolveCreditsLaunch(declares, label, 0)).rejects.toMatchObject({
+        reason: 'not-supported',
+        code: 'credits_unavailable',
+      });
+    }
+    // An endpoint being present is not enough: the format must be listed.
+    __setCreditsStateForTests({
+      token: { ...everyFormat, served: ['anthropicMessages'] },
+      now: () => Date.parse(everyFormat.expiresAt) - 3_600_000,
+    });
+    await expect(resolveCreditsLaunch(SPEAKS_RESPONSES, 'Codex', 0)).rejects.toMatchObject({
+      reason: 'not-supported',
+    });
+  });
+
+  it('keeps Claude Code working on a token that lists nothing, as every token did before', async () => {
+    __setCreditsStateForTests({ token, now: live });
+    expect((await resolveCreditsLaunch(DECLARES, 'Claude Code', 0)).baseUrl).toBe(
+      token.endpoints.anthropicMessages
+    );
+  });
+
+  it('gets the responses endpoint once the service serves that format', async () => {
+    __setCreditsStateForTests({
+      token: everyFormat,
+      now: () => Date.parse(everyFormat.expiresAt) - 3_600_000,
+    });
+    const launch = await resolveCreditsLaunch(SPEAKS_RESPONSES, 'Codex', 0);
+    expect(launch.baseUrl).toBe(everyFormat.endpoints.openaiResponses);
+    expect(launch.token).toBe(everyFormat.token);
+  });
+
   it('names the runtime in the sentence, and offers its own sign-in', () => {
     const err = new CreditsUnavailableError('unreachable', 'Claude Code');
     expect(err.message).toBe(
@@ -156,9 +234,127 @@ describe('the wiring report', () => {
   });
 
   it('reports a runtime as wired only where its protocol really contributes an environment', () => {
-    expect(Object.keys(creditsEnvFor(token, 'anthropic-messages'))).toEqual([
+    const launch = {
+      protocol: 'anthropic-messages' as const,
+      baseUrl: token.endpoints.anthropicMessages,
+      token: token.token,
+      tokenId: token.tokenId,
+      expiresAt: token.expiresAt,
+    };
+    expect(Object.keys(creditsEnvFor(launch))).toEqual([
       'ANTHROPIC_BASE_URL',
       'ANTHROPIC_AUTH_TOKEN',
     ]);
+  });
+
+  it('reports a runtime whose format is not served as not wired, though it declares credits', () => {
+    // No live token: the optional format is not known to be served.
+    expect(
+      creditsWiringReport([
+        { type: 'claude-code', ...DECLARES },
+        { type: 'opencode', ...SPEAKS_CHAT },
+        { type: 'codex', ...SPEAKS_RESPONSES },
+      ]).runtimes
+    ).toEqual({ 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' });
+    // A token that lists nothing (every token before the list): Claude Code
+    // only, and nothing offered for OpenCode or Codex.
+    __setCreditsStateForTests({ token, now: live });
+    expect(
+      creditsWiringReport([
+        { type: 'claude-code', ...DECLARES },
+        { type: 'opencode', ...SPEAKS_CHAT },
+        { type: 'codex', ...SPEAKS_RESPONSES },
+      ]).runtimes
+    ).toEqual({ 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' });
+    expect(creditsRuntimeWired(SPEAKS_RESPONSES)).toBe(false);
+    expect(creditsRuntimeWired(SPEAKS_CHAT)).toBe(false);
+  });
+
+  it('reports it as wired once the held token carries its endpoint', () => {
+    __setCreditsStateForTests({
+      token: everyFormat,
+      now: () => Date.parse(everyFormat.expiresAt) - 3_600_000,
+    });
+    expect(creditsWiringReport([{ type: 'codex', ...SPEAKS_RESPONSES }]).runtimes.codex).toBe(
+      'wired'
+    );
+    expect(creditsRuntimeWired(SPEAKS_RESPONSES)).toBe(true);
+    expect(creditsRuntimeWired({})).toBe(false);
+  });
+});
+
+describe('the variable a Codex or OpenCode token rides in', () => {
+  it('is drawn fresh per launch, so no project config can name it', () => {
+    const first = mintCreditsTokenVar();
+    const second = mintCreditsTokenVar();
+    expect(first).toMatch(/^DORKOS_CREDITS_TOKEN_[0-9A-F]{32}$/);
+    expect(second).not.toBe(first);
+    expect(isCreditsTokenVar(first)).toBe(true);
+    expect(isCreditsTokenVar('DORKOS_CREDITS_TOKEN')).toBe(true);
+    expect(isCreditsTokenVar('DORKOS_AGENT_TOKEN')).toBe(false);
+  });
+});
+
+describe('the one mapping from a runtime protocol to its wire format', () => {
+  it('names each protocol by its endpoint field, and these names are stable', () => {
+    expect(creditsFormatOf('anthropic-messages')).toBe('anthropicMessages');
+    expect(creditsFormatOf('openai-chat-completions')).toBe('openaiChat');
+    expect(creditsFormatOf('openai-responses')).toBe('openaiResponses');
+  });
+});
+
+describe('which endpoint serves which format', () => {
+  it('serves a format only when the token lists it and carries its endpoint; unlisted is Anthropic only', () => {
+    expect(creditsEndpointFor(token.endpoints, 'anthropic-messages')).toBe(
+      token.endpoints.anthropicMessages
+    );
+    expect(creditsEndpointFor(token.endpoints, 'openai-chat-completions')).toBe(
+      token.endpoints.openaiChat
+    );
+    expect(creditsEndpointFor(token.endpoints, 'openai-responses')).toBeNull();
+    expect(creditsProtocolServed('anthropic-messages', null)).toBe(true);
+    expect(creditsProtocolServed('anthropic-messages', token)).toBe(true);
+    expect(creditsProtocolServed('openai-chat-completions', null)).toBe(false);
+    expect(creditsProtocolServed('openai-chat-completions', token)).toBe(false);
+    expect(creditsProtocolServed('openai-responses', null)).toBe(false);
+    expect(creditsProtocolServed('openai-responses', everyFormat)).toBe(true);
+    expect(creditsProtocolServed('openai-chat-completions', everyFormat)).toBe(true);
+    // A format this server does not know is ignored, never a reason to doubt
+    // the ones it does.
+    const ahead = InferenceTokenSchema.parse({
+      ...everyFormatFixture,
+      served: ['aWireFromTheFuture', 'openaiChat'],
+    });
+    expect(creditsProtocolServed('openai-chat-completions', ahead)).toBe(true);
+    expect(creditsProtocolServed('openai-responses', ahead)).toBe(false);
+    expect(creditsProtocolServed('anthropic-messages', ahead)).toBe(false);
+    // Listed but with no endpoint to send it to: not served.
+    expect(
+      creditsProtocolServed('openai-responses', { ...token, served: ['openaiResponses'] })
+    ).toBe(false);
+  });
+});
+
+describe('what a refused or stopped credits turn says', () => {
+  it('turns a refusal into the credits card, and anything else into nothing', () => {
+    expect(creditsRefusalEvent(new CreditsUnavailableError('off', 'Codex'))).toMatchObject({
+      type: 'error',
+      data: { code: 'credits_unavailable', reason: 'off' },
+    });
+    expect(creditsRefusalEvent(new Error('other'))).toBeNull();
+  });
+
+  it('says a refused token mid-turn as credits, never as the runtime’s own sign-in', () => {
+    const stopped = asCreditsStopped(
+      { type: 'error', data: { message: '401', category: 'auth_error' } },
+      'Codex'
+    );
+    expect(stopped).toMatchObject({
+      type: 'error',
+      data: { code: 'credits_unavailable', reason: 'stopped', details: '401' },
+    });
+    expect((stopped.data as { message: string }).message).toContain('Codex');
+    const other = { type: 'error' as const, data: { message: 'x', category: 'execution_error' } };
+    expect(asCreditsStopped(other, 'Codex')).toBe(other);
   });
 });

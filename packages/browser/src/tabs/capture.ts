@@ -63,14 +63,22 @@ async function acquire(
   command: CaptureCommand
 ): Promise<BrowserCapture> {
   const valid = (): boolean =>
-    record.status === 'running' && !tab.stopped && matches(tab.binding, command.binding);
+    record.status === 'running' &&
+    !record.lifetime.gate.stopped &&
+    record.tabs.get(command.binding.tabId) === tab &&
+    !tab.stopped &&
+    matches(tab.binding, command.binding);
   if (!valid()) throw new BrowserLifecycleError('STALE_BINDING');
   await approved(config, command.binding);
   if (!valid()) throw new BrowserLifecycleError('STALE_BINDING');
   let bytes: Uint8Array;
   try {
+    const screenshot = tab.page.screenshot;
+    if (!valid()) throw new BrowserLifecycleError('STALE_BINDING');
     bytes = await deadline(
-      tab.page.screenshot({ type: 'jpeg', quality: 70, caret: 'initial', timeout: 1500 }),
+      Reflect.apply(screenshot, tab.page, [
+        { type: 'jpeg', quality: 70, caret: 'initial', timeout: 1500 },
+      ]),
       2000,
       'CAPTURE_TIMEOUT'
     );
@@ -79,21 +87,32 @@ async function acquire(
     throw new BrowserLifecycleError('CAPTURE_FAILED');
   }
   if (!valid()) throw new BrowserLifecycleError('STALE_BINDING');
-  const dimensions = tab.page.viewportSize();
+  const viewportSize = tab.page.viewportSize;
+  if (!valid()) throw new BrowserLifecycleError('STALE_BINDING');
+  const dimensions = Reflect.apply(viewportSize, tab.page, []) as ReturnType<typeof viewportSize>;
+  if (!valid()) throw new BrowserLifecycleError('STALE_BINDING');
   if (!dimensions || bytes.length > 2 * 1024 * 1024)
     throw new BrowserLifecycleError('CAPTURE_LIMIT');
+  const width = dimensions.width;
+  const height = dimensions.height;
+  if (!valid()) throw new BrowserLifecycleError('STALE_BINDING');
   try {
     tab.captureSequence = advanceCounter(tab.captureSequence);
   } catch {
     tab.stopped = true;
-    void tab.page.close().catch(() => {});
+    try {
+      void tab.page.close().catch(() => {});
+    } catch {
+      // Cleanup observation/invocation cannot replace the terminal cause or suppress retirement.
+    }
     throw new BrowserLifecycleError('COUNTER_EXHAUSTED');
   }
   const receipt = parseBrowserResult({
     kind: 'frame',
     binding: command.binding,
     captureSequence: tab.captureSequence,
-    ...dimensions,
+    width,
+    height,
     byteLength: bytes.length,
     format: 'jpeg',
   }) as BrowserCapture['receipt'];

@@ -50,8 +50,8 @@ const service = vi.hoisted(() => ({
         contextWindow: 200000,
         maxOutputTokens: 64000,
         supports: { tools: true, promptCaching: true, streaming: true, thinking: true },
-        protocols: ['anthropic-messages'],
-        recommendedOn: ['anthropic-messages'],
+        protocols: ['anthropicMessages'],
+        recommendedOn: ['anthropicMessages'],
       },
       {
         id: 'md_gpt_like',
@@ -59,7 +59,7 @@ const service = vi.hoisted(() => ({
         contextWindow: 128000,
         maxOutputTokens: 16000,
         supports: { tools: true, promptCaching: false, streaming: true, thinking: false },
-        protocols: ['openai-chat'],
+        protocols: ['openaiChat'],
       },
     ],
   } as unknown,
@@ -89,7 +89,7 @@ vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
 const claudeRuntime = {
   type: 'claude-code',
   getSupportedModels: vi.fn(async () => claudeModels),
-  getCapabilities: () => ({ credits: { protocol: 'anthropic-messages' } }),
+  getCapabilities: () => ({ credits: { protocol: 'anthropic-messages', scope: 'conversation' } }),
   checkLaunchAccount: vi.fn(async (_sessionId: string, _dir: string, hintId?: string) => ({
     ok: true,
     root: '/accounts/x',

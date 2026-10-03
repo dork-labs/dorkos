@@ -279,10 +279,12 @@ export function ModelConfigPopover({
         data-testid="model-config-popover"
       >
         <ResponsivePopoverTitle>Model</ResponsivePopoverTitle>
-        {onCredits && modelList.some((m) => m.paidFromCredits) && (
+        {modelList.some((m) => m.paidFromCredits) && (
           // Who pays decides the menu: on credits, once the service says which
-          // protocols its models are on, it is the service's list (DOR-2636).
-          // Until then the runtime's own menu shows, and says nothing new.
+          // formats its models are in, it is the service's list (DOR-2636),
+          // whatever the runtime. Until then the runtime's own menu shows, and
+          // says nothing new. The rows say so themselves, so a Codex or
+          // OpenCode session on credits reads the same as a Claude Code one.
           <p className="text-muted-foreground text-2xs mb-2" data-testid="model-credits-note">
             {modelList.some((m) => m.creditsListOutOfDate)
               ? 'Models your DorkOS credits cover. This list may be out of date.'

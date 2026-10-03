@@ -43,7 +43,7 @@ export function RoomsPage({ member }: ProfilePageContentProps) {
   if (list.length === 0) {
     return (
       <p className="text-muted-foreground text-sm">
-        {member.isSelf ? 'You are' : `${member.displayName} is`} not in any rooms yet.
+        {member.isSelf ? 'You aren’t' : `${member.displayName} isn’t`} in any rooms yet.
       </p>
     );
   }

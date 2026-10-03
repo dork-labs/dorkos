@@ -114,7 +114,7 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
       </ul>
       {failed.length > 0 && (
         <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 px-2.5 pb-1.5 text-xs">
-          Couldn’t check for requests waiting on you.
+          Couldn’t check for waiting requests.
           <Button
             variant="link"
             size="xs"

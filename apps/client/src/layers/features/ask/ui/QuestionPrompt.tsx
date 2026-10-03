@@ -464,7 +464,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     className="h-7 px-2 text-xs transition-opacity duration-150"
                   >
                     <Check className="size-(--size-icon-xs)" />
-                    {submitting ? 'Submitting…' : 'Submit'}
+                    {submitting ? 'Sending…' : 'Send answers'}
                     {isActive && <Kbd className="ml-1">Enter</Kbd>}
                   </Button>
                 )}
@@ -511,10 +511,10 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             className="mt-2 transition-opacity duration-150"
           >
             {submitting ? (
-              'Submitting…'
+              'Sending…'
             ) : (
               <>
-                <Check className="size-(--size-icon-xs)" /> Submit
+                <Check className="size-(--size-icon-xs)" /> Send answer
                 {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
               </>
             )}

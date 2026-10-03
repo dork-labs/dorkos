@@ -85,10 +85,8 @@ export function DisconnectCommunityDialog({
           <AlertDialogTitle>Disconnect this DorkOS from {label}?</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2">
-              <p>
-                Its channels leave this app. You stay a member of {label}, and you can connect again
-                later.
-              </p>
+              <p>Its channels leave this app. You stay a member of {label}.</p>
+              <p>You can connect again later.</p>
               {agentsLine && <p className="text-foreground">{agentsLine}</p>}
               {checking && <p>Checking for agents you added from here…</p>}
             </div>
@@ -107,7 +105,7 @@ export function DisconnectCommunityDialog({
         )}
         {end.isError && (
           <p role="alert" className="text-destructive text-sm">
-            Couldn’t disconnect. Check that DorkOS is running, then try again.
+            Couldn’t disconnect. Check DorkOS is running and try again.
           </p>
         )}
         <AlertDialogFooter>

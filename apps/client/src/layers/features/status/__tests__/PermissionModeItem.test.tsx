@@ -582,7 +582,7 @@ describe('PermissionModeItem', () => {
       expect(screen.queryByRole('switch')).not.toBeInTheDocument();
       expect(screen.getByTestId('auto-unsupported-hint')).toBeInTheDocument();
       expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
-        'Auto mode requires Opus 4.6+ or Sonnet 4.6'
+        'Auto mode needs Opus 4.6+ or Sonnet 4.6'
       );
     });
 

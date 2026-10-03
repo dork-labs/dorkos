@@ -373,8 +373,7 @@ export function ModelSelectionList({
         className="border-border text-muted-foreground text-2xs rounded-xl border border-dashed p-3 leading-snug"
         data-testid="model-catalog-unavailable"
       >
-        {emptyMessage ??
-          'Model choices couldn’t be loaded. Check the runtime in Settings, then try again.'}
+        {emptyMessage ?? 'Couldn’t load models. Check Settings, then try again.'}
       </div>
     );
   }
@@ -421,7 +420,7 @@ export function ModelSelectionList({
           data-testid="model-search-empty"
         >
           {isShortened
-            ? 'No match in this shortened list. Connect a provider to search everything you can run.'
+            ? 'No match in this short list. Connect a provider to see more.'
             : 'No models match'}
         </p>
       ) : (

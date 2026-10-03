@@ -51,7 +51,7 @@ import {
   type AgentExecutionReport,
   type KnownAccount,
 } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { useCloudCredits, useTransport } from '@/layers/shared/model';
 import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
@@ -183,14 +183,16 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
   // which is its runtime's own menu until the service says which protocols its
   // models are on (DOR-2636). Its catalog is keyed apart for that reason.
   const creditsInput = config?.claudeCode?.credits;
+  const creditsDefaults = useCloudCredits().data?.defaults;
   const creditsKey = useCallback(
     (agent: { id: string; runtime?: string | null; account?: string | null }) =>
       agentRunsOnCredits(agent, {
         defaultRuntime,
         runtimeDeclaresCredits: (type) => capabilityMap?.capabilities[type]?.credits !== undefined,
         credits: creditsInput,
+        runtimeDefaultsToCredits: (type) => creditsDefaults?.[type]?.runsOn === 'credits',
       }),
-    [defaultRuntime, capabilityMap, creditsInput]
+    [defaultRuntime, capabilityMap, creditsInput, creditsDefaults]
   );
   const runtimesToCheck = useMemo(() => {
     if (!checkModels || !agents) return [];

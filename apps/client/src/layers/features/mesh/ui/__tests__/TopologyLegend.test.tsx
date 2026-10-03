@@ -62,7 +62,7 @@ describe('TopologyLegend', () => {
 
     it('renders allow rule entry', () => {
       render(<TopologyLegend namespaces={SINGLE_NAMESPACE} />);
-      expect(screen.getByText('Allow rule (data flow)')).toBeInTheDocument();
+      expect(screen.getByText('Allow rule')).toBeInTheDocument();
     });
 
     it('renders deny rule entry', () => {

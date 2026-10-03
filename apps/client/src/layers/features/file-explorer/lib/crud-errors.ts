@@ -56,7 +56,7 @@ export const ROOM_REPO_CONFIG_UNSAFE_CODE = 'ROOM_REPO_CONFIG_UNSAFE';
  * sent no sentence of its own. Exported so the save table says the same thing.
  */
 export const ROOM_REPO_CONFIG_UNSAFE_FALLBACK =
-  'This room’s git settings could make git run a program, so DorkOS has stopped working on its files until they are removed. DorkOS’s log names each setting and how to remove it.';
+  'Room files are locked: their git settings could run a program. See the DorkOS log.';
 
 /** User-facing, boundary-safe message for each coded failure. */
 const MESSAGES: Record<CrudErrorCode, string> = {
@@ -64,8 +64,8 @@ const MESSAGES: Record<CrudErrorCode, string> = {
   COPY_INTO_SELF: COPY_INTO_SELF_MESSAGE,
   DIR_NOT_EMPTY: 'This folder isn’t empty',
   NOT_FOUND: 'That item no longer exists',
-  REFUSE_ROOT: 'Can’t modify the working directory root',
-  OUTSIDE_BOUNDARY: 'That path is outside the working directory',
+  REFUSE_ROOT: 'Can’t change the top folder',
+  OUTSIDE_BOUNDARY: 'That’s outside the folders DorkOS can use',
 };
 
 /**
@@ -96,42 +96,30 @@ export function toastCrudError(err: unknown, fallback: string): void {
 const ROOM_CHANGE_REFUSAL_COPY = new Map<string, string>([
   [
     'ROOM_UPLOAD_TOO_MANY_FILES',
-    `One upload can carry up to ${ROOM_UPLOAD_MAX_FILES} files, so nothing was uploaded. Try again with fewer.`,
+    `Nothing was uploaded. One upload takes up to ${ROOM_UPLOAD_MAX_FILES} files.`,
   ],
-  ['FILE_TOO_LARGE', 'A file is bigger than this room allows, so nothing was changed.'],
-  [
-    'REPO_CAP_EXCEEDED',
-    'This room’s files are already as large as they are allowed to get, so nothing was changed. Delete something first.',
-  ],
+  ['FILE_TOO_LARGE', 'A file is bigger than this room allows, so nothing changed.'],
+  ['REPO_CAP_EXCEEDED', 'This room’s files are full, so nothing changed. Delete something first.'],
   [
     'MAIN_CHECKOUT_DIRTY',
-    'Somebody changed this room’s files outside DorkOS, so changes are paused until that is sorted out. The warning above the files says how.',
+    'Changes are paused. Somebody changed these files outside DorkOS. See the warning above.',
   ],
   [
     'MERGE_IN_FLIGHT',
-    'Somebody else is changing this room’s files right now, so nothing was changed. Try again in a moment.',
+    'Somebody else is changing these files. Nothing changed. Try again in a moment.',
   ],
-  [
-    'PEOPLE_ONLY',
-    'Only a person can change a room’s files this way. An agent brings its work in by merging.',
-  ],
-  ['ROOM_FILE_PATH_INVALID', 'That name can’t be used in a room’s files, so nothing was changed.'],
-  ['ROOM_FILE_NOT_READABLE', 'That isn’t something that can be changed here.'],
+  ['PEOPLE_ONLY', 'Only a person can change files here. Agents bring work in by merging.'],
+  ['ROOM_FILE_PATH_INVALID', 'That name can’t be used in room files, so nothing changed.'],
+  ['ROOM_FILE_NOT_READABLE', 'That can’t be changed here.'],
   [
     'ROOM_FILE_NOT_FOUND',
-    'That isn’t in the room’s files any more, so nothing was changed. The list has been refreshed.',
+    'That’s gone from the room’s files, so nothing changed. The list is refreshed.',
   ],
-  ['ATTACHMENT_NOT_FOUND', 'That file isn’t in this room’s chat any more.'],
-  ['ROOM_HAS_NO_REPO', 'This room doesn’t have files of its own any more.'],
-  [
-    'ROOM_REPOS_DISABLED',
-    'Rooms can’t have files of their own on this install right now, so nothing was changed.',
-  ],
-  [
-    'ROOM_REPO_GIT_UNAVAILABLE',
-    'This computer doesn’t have git installed, and a room’s files are a git repository.',
-  ],
-  ['ROOM_NOT_FOUND', 'This room isn’t there any more.'],
+  ['ATTACHMENT_NOT_FOUND', 'That file is no longer in this room’s chat.'],
+  ['ROOM_HAS_NO_REPO', 'This room no longer has its own files.'],
+  ['ROOM_REPOS_DISABLED', 'Room files are turned off on this install, so nothing changed.'],
+  ['ROOM_REPO_GIT_UNAVAILABLE', 'Room files need git, and git isn’t installed on this computer.'],
+  ['ROOM_NOT_FOUND', 'This room no longer exists.'],
   ['ROOM_ARCHIVED', 'This room is archived, so its files can’t be changed.'],
   [ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK],
 ]);
@@ -204,7 +192,7 @@ export function serverSentenceFirst(err: unknown): string | undefined {
  * @param name - The name that is taken.
  */
 export function nameTakenMessage(name: string): string {
-  return `There’s already something called “${name}” there, so nothing was changed. Pick another name.`;
+  return `“${name}” already exists there, so nothing changed. Pick another name.`;
 }
 
 /**

@@ -124,12 +124,22 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   settings: {
     configSection: 'opencode',
     supportsEffort: false,
-    sections: [{ kind: 'opencode-power-source' }, { kind: 'runtime-usage' }],
+    // `credits-runs-on` draws only while the server reports OpenCode as wired
+    // for credits.
+    sections: [
+      { kind: 'credits-runs-on' },
+      { kind: 'opencode-power-source' },
+      { kind: 'runtime-usage' },
+    ],
   },
   // OpenCode fulfills `compact` via its native sidecar compaction
   // (`client.session.summarize`; DOR-109 task 2.2, ADR-0273) —
   // `executeCommandIntent` carries that body.
   commandIntents: { compact: { supported: true } },
+  // DorkOS credits (ADR 261001-000811): a mode of the sidecar, with a
+  // `dorkos-credits` provider DorkOS supplies at boot as the only one enabled
+  // (`credits-mode.ts`). It speaks the chat-completions format.
+  credits: { protocol: 'openai-chat-completions', scope: 'runtime' },
   features: {},
 };
 

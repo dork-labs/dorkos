@@ -96,17 +96,21 @@ export function knownModelsFrom(
 
 /**
  * Whether an agent's sessions run on DorkOS credits, as far as its settings
- * go: its file names credits and a person allowed it, or it names no account
- * while credits are the machine default. The same rule the server applies
- * when it judges the agent's model (`agentRunsOnCredits`), so the Model row
- * offers exactly the menu the server will accept (DOR-2636).
+ * go, by the rule the server applies when it judges the agent's model
+ * (`agentRunsOnCredits`), so the Model row offers exactly the menu the server
+ * will accept (DOR-2636). Only a runtime that declares a credits protocol can
+ * be on credits:
  *
- * Accounts are a Claude Code ladder, so only an agent on Claude Code, and only
- * while that runtime declares a credits protocol, can be on credits.
+ * - Claude Code, through its account ladder: the agent's file names credits
+ *   and a person allowed it, or it names no account while credits are the
+ *   machine default.
+ * - Any other runtime (Codex, OpenCode), which has no per-agent account: its
+ *   recorded default (`GET /api/cloud/credits` `defaults`).
  *
  * @param agent - The agent's id, runtime (absent: the default) and account.
- * @param opts - The default runtime, whether it declares credits, and what
- *   the server says about credits (`config.claudeCode.credits`).
+ * @param opts - The default runtime, whether a runtime declares credits, what
+ *   the server says about Claude Code's credits (`config.claudeCode.credits`),
+ *   and each other runtime's recorded default.
  */
 export function agentRunsOnCredits(
   agent: { id: string; runtime?: string | null; account?: string | null },
@@ -114,12 +118,13 @@ export function agentRunsOnCredits(
     defaultRuntime: string;
     runtimeDeclaresCredits: (runtime: string) => boolean;
     credits: { isDefault: boolean; allowedAgents: readonly string[] } | null | undefined;
+    runtimeDefaultsToCredits?: (runtime: string) => boolean;
   }
 ): boolean {
   const runtime = agent.runtime ?? opts.defaultRuntime;
-  if (runtime !== ACCOUNT_RUNTIME || !opts.runtimeDeclaresCredits(runtime) || !opts.credits) {
-    return false;
-  }
+  if (!opts.runtimeDeclaresCredits(runtime)) return false;
+  if (runtime !== ACCOUNT_RUNTIME) return opts.runtimeDefaultsToCredits?.(runtime) ?? false;
+  if (!opts.credits) return false;
   const account = agent.account ?? null;
   if (account === CREDITS_ACCOUNT_ID) return opts.credits.allowedAgents.includes(agent.id);
   return account === null && opts.credits.isDefault;

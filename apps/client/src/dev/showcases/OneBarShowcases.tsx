@@ -241,7 +241,7 @@ export function OneBarShowcases() {
               actions={
                 <Button variant="outline" size="xs">
                   <Plus />
-                  New Schedule
+                  New schedule
                 </Button>
               }
             />
@@ -292,7 +292,7 @@ export function OneBarShowcases() {
               actions={
                 <Button variant="outline" size="xs">
                   <Plus />
-                  New Schedule
+                  New schedule
                 </Button>
               }
             />
@@ -321,7 +321,7 @@ export function OneBarShowcases() {
                   <Button
                     variant="outline"
                     size="xs"
-                    aria-label="New Schedule"
+                    aria-label="New schedule"
                     className="h-[35px] w-[35px] p-0"
                   >
                     <Plus />

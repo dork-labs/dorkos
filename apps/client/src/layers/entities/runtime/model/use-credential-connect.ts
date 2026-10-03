@@ -370,6 +370,6 @@ export function useDelegateRuntimeLogin(
     isPending: pending,
     isSuccess,
     isError: failed,
-    errorMessage: failed ? (rawError ?? 'Sign-in failed. Please try again.') : null,
+    errorMessage: failed ? (rawError ?? 'Couldn’t sign in. Try again.') : null,
   };
 }

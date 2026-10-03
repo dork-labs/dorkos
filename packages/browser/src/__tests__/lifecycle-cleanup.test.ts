@@ -1,3 +1,4 @@
+import { createBrowserLifetime } from '../lifecycle/ownership.js';
 import { it, expect } from 'vitest';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -97,6 +98,7 @@ function ledger(
   context: BrowserContext
 ): BrowserRecord {
   return {
+    lifetime: createBrowserLifetime('browser_0123456789abcdef0123456789ab', 0),
     browserId: parseBrowserId('browser_0123456789abcdef0123456789ab'),
     browserGeneration: 0,
     mode: 'ephemeral',
@@ -194,7 +196,22 @@ it('drops acquired Page and context references only after fresh complete disappe
       close: () => child.stop(),
     } as unknown as BrowserContext);
     const tabId = parseTabId('tab_0123456789abcdef0123456789abcdef');
-    record.tabs.set(tabId, { page: {}, stopped: false } as TabRecord);
+    record.tabs.set(tabId, {
+      page: {} as TabRecord['page'],
+      binding: {
+        browserId: record.browserId,
+        browserGeneration: record.browserGeneration,
+        tabId,
+        navigationGeneration: 0,
+        viewportVersion: 0,
+        epoch: 0,
+        inputGeneration: 0,
+      },
+      stopped: false,
+      captureSequence: 0,
+      pending: 0,
+      tail: Promise.resolve(),
+    });
     expect(await closeRecord(config, record)).toEqual({ cleanup: 'observed' });
     expect(record.context).toBeUndefined();
     expect(record.tabs.size).toBe(0);

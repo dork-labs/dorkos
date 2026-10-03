@@ -57,8 +57,10 @@ function OllamaExplainer() {
     <div className="space-y-1.5" data-testid="ollama-explainer">
       <p className="text-sm font-medium">Run AI models on {noun}</p>
       <p className="text-muted-foreground text-xs leading-relaxed">
-        Ollama is a free, open-source app that runs AI models directly on {noun}. DorkOS uses it for
-        local models. That is what keeps everything private: nothing you type leaves {noun}.
+        Ollama is a free app that runs AI models on {noun}.
+      </p>
+      <p className="text-muted-foreground text-xs leading-relaxed">
+        Nothing you type leaves {noun}.
       </p>
     </div>
   );
@@ -81,7 +83,7 @@ function OllamaOneClickInstall({ provision }: { provision: UseProvisionOllama })
       <ConnectProgressRow message="Ollama is ready…" />
     ) : (
       <p className="text-xs" data-testid="ollama-installed-not-running">
-        Ollama is installed but not running yet. Open the Ollama app to start it, then check again.
+        Ollama isn’t running. Open the Ollama app to start it.
       </p>
     );
   }
@@ -105,8 +107,7 @@ function OllamaManualInstall() {
   return (
     <div className="space-y-2" data-testid="ollama-manual-install">
       <p className="text-muted-foreground text-xs leading-relaxed">
-        Installing Ollama needs administrator access, so it runs in your terminal, not here. Copy
-        this command, paste it into a terminal, and run it:
+        Installing Ollama needs administrator access. Run this in a terminal:
       </p>
       <DependencyInstallHint
         command={OLLAMA_MANUAL_INSTALL_COMMAND}

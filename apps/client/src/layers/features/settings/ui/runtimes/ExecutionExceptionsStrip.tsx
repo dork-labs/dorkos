@@ -22,14 +22,15 @@ import { useProfileStore } from '@/layers/features/profile';
 /**
  * How one deviation is worded in a row's summary.
  *
- * Most fields read as themselves — "runtime Codex", "model Sonnet 4.5". Effort
- * and account get the article-free forms a person would say out loud: "effort
- * Low", and "runs on Work", because "account Work" reads as a name rather than
- * as where the money goes.
+ * Model reads as itself: "model Sonnet 4.5". The rest get the forms a person
+ * would say out loud: "effort Low", and "runs on Codex" or "runs on Work" for
+ * the runtime and the account, the same "Runs on" words the picker uses (the
+ * copy standard keeps the word "runtime" out of sentences, and "account Work"
+ * reads as a name rather than as where the work runs).
  */
 function deviationText(field: ExecutionDeviation['field'], label: string): string {
   if (field === 'effort') return `effort ${label}`;
-  if (field === 'account') return `runs on ${label}`;
+  if (field === 'account' || field === 'runtime') return `runs on ${label}`;
   return `${field} ${label}`;
 }
 

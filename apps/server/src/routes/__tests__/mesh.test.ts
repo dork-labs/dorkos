@@ -19,6 +19,12 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined), set: vi.fn(), getAll: vi.fn() },
 }));
 
+// The account that owns this install, for the credits-consent owner bar (DOR-2652).
+vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+  readOwnerAccount: () => ({ id: 'user_owner', name: 'Owner' }),
+}));
+
 vi.mock('../../services/core/cloud/credits-defaults.js', () => ({
   setCreditsAllowedForAgent: vi.fn(),
   creditsAllowedForAgent: vi.fn(() => false),
@@ -991,6 +997,45 @@ describe('Mesh routes', () => {
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
         expect(unallowed.status).toBe(200);
+      });
+    });
+
+    describe('with login on', () => {
+      /** Serve the mesh router as `user` signed in with a browser session. */
+      async function patchAs(userId: string) {
+        const { configManager } = await import('../../services/core/config-manager.js');
+        vi.mocked(configManager.get).mockImplementation(((key: string) =>
+          key === 'auth' ? { enabled: true } : undefined) as typeof configManager.get);
+        const signedIn = express();
+        signedIn.use(express.json());
+        signedIn.use((_req, res, next) => {
+          res.locals.user = { userId, credential: 'cookie' };
+          next();
+        });
+        signedIn.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
+        fixtureTarget.mount(signedIn);
+        meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
+        vi.mocked(setCreditsAllowedForAgent).mockClear();
+        return request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ account: 'dorkos-credits' });
+      }
+
+      afterEach(async () => {
+        const { configManager } = await import('../../services/core/config-manager.js');
+        vi.mocked(configManager.get).mockImplementation(
+          (() => undefined) as unknown as typeof configManager.get
+        );
+      });
+
+      it('records no consent for a signed-in person who does not own this DorkOS', async () => {
+        await patchAs('user_member');
+        expect(setCreditsAllowedForAgent).not.toHaveBeenCalled();
+      });
+
+      it('records the owner’s consent', async () => {
+        await patchAs('user_owner');
+        expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', true);
       });
     });
 

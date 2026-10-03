@@ -157,7 +157,7 @@ describe('ConnectionAccessCard — page mode', () => {
       })
     );
     // The server answered with different grants than were sent: never success.
-    expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t confirm access was saved/i)).toBeInTheDocument();
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
   });
 
@@ -214,7 +214,7 @@ describe('ConnectionAccessCard — page mode', () => {
       'Access update pending'
     );
     await user.click(screen.getByRole('button', { name: 'Check if it’s done' }));
-    expect(await screen.findByText(/DorkOS didn’t send it again/)).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing was sent twice/)).toBeInTheDocument();
     expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
   });
@@ -308,7 +308,7 @@ describe('ConnectionAccessCard — one agent', () => {
       serviceName: 'Gmail',
     });
 
-    expect(await screen.findByText(/already has exact actions chosen/)).toBeInTheDocument();
+    expect(await screen.findByText(/already has exact actions here/)).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();
   });
@@ -322,7 +322,7 @@ describe('ConnectionAccessCard — one agent', () => {
       toolkit: 'gmail',
       serviceName: 'Gmail',
     });
-    expect(await screen.findByText('No Gmail account is ready to use yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No Gmail account is ready yet.')).toBeInTheDocument();
   });
 });
 

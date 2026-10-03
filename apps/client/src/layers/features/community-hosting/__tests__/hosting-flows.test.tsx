@@ -193,9 +193,7 @@ describe('Start a space', () => {
     fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     expect(
-      await screen.findByText(
-        'Finish in your browser by signing in with your DorkOS account, then come back.'
-      )
+      await screen.findByText('Sign in with your DorkOS account in your browser, then come back.')
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Open in your browser/ }));
@@ -252,9 +250,7 @@ describe('Start a space', () => {
 
     fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
-    await screen.findByText(
-      'Finish in your browser. Sign in or create your account there, then come back.'
-    );
+    await screen.findByText('Sign in or create an account in your browser, then come back.');
     fireEvent.click(screen.getByRole('button', { name: /Open in your browser/ }));
     await waitFor(() => expect(mockWindowGo).toHaveBeenCalledWith(CLAIM_URL));
   });
@@ -279,9 +275,7 @@ describe('Start a space', () => {
     fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     fireEvent.click(await screen.findByRole('button', { name: /Open in your browser/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Your browser blocked the new window.'
-    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your browser blocked the window.');
     expect(transport.getHostedCommunityClaimLink).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: /Open in your browser/ })).toBeInTheDocument();
   });
@@ -329,7 +323,7 @@ describe('Start a space', () => {
     fireEvent.change(screen.getByLabelText('Space name'), { target: { value: 'Night shift' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start space' }));
     fireEvent.click(await screen.findByRole('button', { name: 'I’ve finished' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your sign-in isn’t finished yet.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Finish signing in in your browser');
     expect(transport.startCommunityConnection).not.toHaveBeenCalled();
   });
 
@@ -581,7 +575,7 @@ describe('Move a space here', () => {
     renderDialogs(transport, { kind: 'move', moveId: importing.moveId });
     expect(
       await screen.findByRole('heading', {
-        name: 'This file is a personal export, not an owner export.',
+        name: 'This is a personal export, not an owner export.',
       })
     ).toBeInTheDocument();
     expect(transport.getHostedCommunityMove).toHaveBeenCalledWith(importing.moveId);

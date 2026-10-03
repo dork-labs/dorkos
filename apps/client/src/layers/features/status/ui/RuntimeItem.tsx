@@ -157,9 +157,7 @@ export function RuntimeItem({
       <Tooltip>
         <TooltipTrigger asChild>{chip}</TooltipTrigger>
         <TooltipContent side="top">
-          <span className="block">
-            {'The runtime is set when a session starts and can’t be changed afterward.'}
-          </span>
+          <span className="block">{'Set when the session starts. It can’t change after.'}</span>
           {accountLine && <span className="block">{accountLine}</span>}
         </TooltipContent>
       </Tooltip>
@@ -193,7 +191,7 @@ export function RuntimeItem({
           </button>
         </ResponsiveDropdownMenuTrigger>
         <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
-          <ResponsiveDropdownMenuLabel>Runtime</ResponsiveDropdownMenuLabel>
+          <ResponsiveDropdownMenuLabel>Runs on</ResponsiveDropdownMenuLabel>
           <ResponsiveDropdownMenuRadioGroup
             value={runtime}
             onValueChange={(v) => onChangeRuntime?.(v)}

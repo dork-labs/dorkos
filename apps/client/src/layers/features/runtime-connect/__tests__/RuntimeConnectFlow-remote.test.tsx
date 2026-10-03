@@ -76,7 +76,7 @@ describe('Settings connect flow on a browser that is not on this machine', () =>
     renderFlow({ isLocalCaller: false });
 
     expect(await screen.findByTestId('remote-signin-notice')).toHaveTextContent(
-      'Open DorkOS there and sign in.'
+      'Sign in to DorkOS there.'
     );
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
   });

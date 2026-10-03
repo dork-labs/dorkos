@@ -61,12 +61,15 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('BindingBridgeSection — bridge action (§3.1, A12.2)', () => {
-  it('shows the three §9.4 warnings and a live bridge action for a bridgeable chat', () => {
+  it('shows the four §9.4 warning lines and a live bridge action for a bridgeable chat', () => {
     renderSection(makeBinding());
     expect(
-      screen.getByText(/lets people you may not know put text in front of your agent/i)
+      screen.getByText(/people you may not know can put text in front of your agent/i)
     ).toBeInTheDocument();
-    expect(screen.getByText(/permission mode is the real bound/i)).toBeInTheDocument();
+    expect(screen.getByText(/Permissions are the real limit/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Raise that only if you trust everyone in the chat.')
+    ).toBeInTheDocument();
     expect(screen.getByText(/keeps the whole record/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Bridge to a channel$/i })).toBeEnabled();
   });
@@ -111,7 +114,7 @@ describe('BindingBridgeSection — refusals render their reason, not a dead butt
   it('an old group binding with no platform type shows the conservative reason and offers no bridge button', () => {
     renderSection(makeBinding({ channelType: 'group', platformChatType: undefined }));
     expect(screen.getByText(/Can’t bridge this chat/i)).toBeInTheDocument();
-    expect(screen.getByText(/before we started noting/i)).toBeInTheDocument();
+    expect(screen.getByText(/doesn’t know what kind of chat this is/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
 });
@@ -120,7 +123,7 @@ describe('BindingBridgeSection — a known group is now bridgeable (DOR-907)', (
   it('a group binding (platformChatType: group) shows the warnings and a live bridge action', () => {
     renderSection(makeBinding({ platformChatType: 'group', channelType: 'group' }));
     expect(
-      screen.getByText(/lets people you may not know put text in front of your agent/i)
+      screen.getByText(/people you may not know can put text in front of your agent/i)
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Bridge to a channel$/i })).toBeEnabled();
   });
@@ -158,7 +161,8 @@ describe('BindingBridgeSection — bridged state', () => {
 
     // Consequences shown BEFORE the mutation fires.
     expect(await screen.findByText(/goes back to a private, one-to-one line/i)).toBeInTheDocument();
-    expect(screen.getByText(/For a clean start with no old messages/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'More details' }));
+    expect(await screen.findByText(/For a clean start with no old messages/i)).toBeInTheDocument();
     expect(transport.updateBinding).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /^Un-bridge$/i }));
@@ -171,7 +175,7 @@ describe('BindingBridgeSection — bridged state', () => {
     renderSection(makeBinding({ bridge: 'room', roomId: 'room-9' }));
 
     const toggle = await screen.findByRole('switch', {
-      name: /tell this chat when a turn fails or is stopped/i,
+      name: /tell this chat when your agent stops early/i,
     });
     // Disabled until the room resolves, so it never flashes a wrong state
     // (Fix 3). Once loaded it reads its value from the room, not a guess.

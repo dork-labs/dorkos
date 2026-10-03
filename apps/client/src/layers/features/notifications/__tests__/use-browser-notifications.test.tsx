@@ -167,7 +167,7 @@ describe('useBrowserNotifications', () => {
     const banner = shown[0]!;
     expect(banner.title).not.toContain('rm -rf');
     expect(banner.body).not.toContain('rm -rf');
-    expect(banner.body).toBe('Waiting for your OK before it goes on.');
+    expect(banner.body).toBe('Needs your approval to go on.');
   });
 
   it('says nothing while the person is looking at the tab', () => {

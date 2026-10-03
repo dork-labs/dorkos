@@ -12,7 +12,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -326,7 +326,12 @@ describe('the popovers', () => {
 
     // Three settings, one question — "what does this run on?" — so they are one
     // panel rather than the Config tab's three separate fields.
-    expect(await screen.findByText('Runtime')).toBeInTheDocument();
+    const panel = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-slot="profile-runs-on"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(within(panel).getByText('Runs on')).toBeInTheDocument();
     expect(screen.getByText('Model')).toBeInTheDocument();
     expect(screen.getByText('Effort')).toBeInTheDocument();
   });
@@ -458,7 +463,7 @@ describe('About, where an agent is named', () => {
     // Not silently blank: the field goes back to what the agent is called, and
     // the reason sits under it.
     expect(name).toHaveValue('Warden');
-    expect(screen.getByText(/An agent needs a name/)).toBeInTheDocument();
+    expect(screen.getByText(/A name can’t be empty/)).toBeInTheDocument();
   });
 
   it('never becomes an editor on DorkBot', async () => {
@@ -597,7 +602,7 @@ describe('Instructions and Boundaries', () => {
     // Still on the page, with the text intact.
     expect(screen.getByPlaceholderText('Write markdown here…')).toHaveValue('Be careful. More.');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Warden' })).toBeInTheDocument();
   });
@@ -615,7 +620,7 @@ describe('Instructions and Boundaries', () => {
   it('keeps the NOPE disclaimer wherever boundaries are edited', async () => {
     await renderProfile(MANAGED, { start: 'boundaries' });
 
-    expect(await screen.findByText(/not enforced at the tool level/)).toBeInTheDocument();
+    expect(await screen.findByText(/aren’t enforced/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Write markdown here…')).toHaveValue('Never force-push.');
   });
 
@@ -827,14 +832,27 @@ describe('Memory, where an agent’s notes can be read and corrected', () => {
   });
 
   it('says who else can end up reading this, before you type into it', async () => {
-    // The one fact about this file a person cannot get by looking at it: what is
-    // here can surface in a room with other people in it.
+    // The two facts about this file a person cannot get by looking at it: what is
+    // here can come up in any chat, and the agent writes here itself. Both stay
+    // visible, not behind the details toggle.
     await renderProfile(MANAGED, { start: 'memory' });
 
     expect(
-      await screen.findByText(/rooms shared with other people/, { exact: false })
-    ).toBeInTheDocument();
-    expect(screen.getByText(/never keep secrets/i)).toBeInTheDocument();
+      await screen.findByText(
+        'Anything here can come up in any chat. Never keep secrets, passwords or keys here.'
+      )
+    ).toBeVisible();
+    expect(screen.getByText('Your agent writes notes here as it works.')).toBeVisible();
+  });
+
+  it('keeps the rest of the memory advisory behind More details', async () => {
+    await renderProfile(MANAGED, { start: 'memory' });
+
+    expect(screen.queryByText('Each note says where it was written.')).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'More details' }));
+
+    expect(screen.getByText('Each note says where it was written.')).toBeVisible();
+    expect(screen.getByText('Deleting a line makes your agent forget it.')).toBeVisible();
   });
 
   it('refuses to save a file somebody made too big on disk, and says by how much', async () => {
@@ -1027,11 +1045,11 @@ describe('the kebab', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Unregister' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Unregister' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unregister agent' }));
 
     await waitFor(() =>
       expect(toasts.message).toHaveBeenCalledWith(
-        expect.stringContaining('blocked from scans'),
+        expect.stringContaining('scans skip it'),
         expect.anything()
       )
     );
@@ -1044,7 +1062,7 @@ describe('the kebab', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Actions for Warden' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Unregister' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Unregister' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unregister agent' }));
 
     await waitFor(() =>
       expect(toasts.message).toHaveBeenCalledWith('Warden unregistered', expect.anything())

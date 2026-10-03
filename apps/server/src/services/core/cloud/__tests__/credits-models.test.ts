@@ -37,7 +37,9 @@ import {
   resolveCreditsLaunchModel,
 } from '../credits-models.js';
 
-const CLAUDE = { credits: { protocol: 'anthropic-messages' as const } };
+const CLAUDE = {
+  credits: { protocol: 'anthropic-messages' as const, scope: 'conversation' as const },
+};
 
 function model(id: string, extra: Partial<InferenceModel> = {}): InferenceModel {
   return {
@@ -80,11 +82,11 @@ function answer(body: unknown, status = 200): Response {
 const LIST = {
   catalogVersion: 'cv_1',
   models: [
-    model('md_gpt_like', { protocols: ['openai-chat'], recommendedOn: ['openai-chat'] }),
-    model('md_both', { protocols: ['openai-chat', 'anthropic-messages'] }),
+    model('md_gpt_like', { protocols: ['openaiChat'], recommendedOn: ['openaiChat'] }),
+    model('md_both', { protocols: ['openaiChat', 'anthropicMessages'] }),
     model('md_claude_pick', {
-      protocols: ['anthropic-messages'],
-      recommendedOn: ['anthropic-messages'],
+      protocols: ['anthropicMessages'],
+      recommendedOn: ['anthropicMessages'],
       displayName: 'The service’s own name',
     }),
     model('md_unsaid'),
@@ -124,7 +126,7 @@ describe('the menu a runtime on credits offers', () => {
 
   it('marks nothing as the default when the service suggests nothing for the protocol', () => {
     const options = creditsModelOptions(
-      [model('md_a', { protocols: ['anthropic-messages'], recommendedOn: ['openai-chat'] })],
+      [model('md_a', { protocols: ['anthropicMessages'], recommendedOn: ['openaiChat'] })],
       'anthropic-messages'
     );
     expect(options).toHaveLength(1);
@@ -135,7 +137,7 @@ describe('the menu a runtime on credits offers', () => {
     const options = creditsModelOptions(
       [
         model('md_chat_only', {
-          protocols: ['anthropic-messages'],
+          protocols: ['anthropicMessages'],
           supports: { tools: false, promptCaching: false, streaming: true, thinking: false },
         }),
       ],
@@ -281,8 +283,8 @@ describe('a runtime on credits, end to end against the fake service', () => {
         catalogVersion: 'cv',
         models: [
           model('claude-opus-5-5', {
-            protocols: ['anthropic-messages'],
-            recommendedOn: ['anthropic-messages'],
+            protocols: ['anthropicMessages'],
+            recommendedOn: ['anthropicMessages'],
           }),
         ],
       })
@@ -365,7 +367,7 @@ describe('a runtime on credits, end to end against the fake service', () => {
 
   it('says none is served when the service names protocols but none for this runtime', async () => {
     cloud.context = fakeCloud(() =>
-      answer({ catalogVersion: 'cv', models: [model('md_gpt', { protocols: ['openai-chat'] })] })
+      answer({ catalogVersion: 'cv', models: [model('md_gpt', { protocols: ['openaiChat'] })] })
     ).context;
     expect(await resolveCreditsLaunchModel(CLAUDE, 'opus')).toEqual({ kind: 'none-served' });
   });

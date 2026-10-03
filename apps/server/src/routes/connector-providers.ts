@@ -10,6 +10,10 @@
  * - `DELETE /api/connectors/providers/:provider/credential` — remove the key
  *   (idempotent), reload, return the fresh status.
  *
+ * Saving or removing a key is the owner's alone: never an agent, and with
+ * login on never another signed-in account (DOR-2678). Reading the statuses
+ * stays open; they carry no secret.
+ *
  * SECURITY: mirrors `storeRuntimeCredential` (`services/runtimes/connect/
  * credentials.ts`, DOR-280): the secret goes straight into the encrypted
  * {@link CredentialStore} and only reference-free status DTOs come back — the
@@ -19,10 +23,11 @@
  *
  * @module routes/connector-providers
  */
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { parseBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import type { ConnectorProviderBootstrapper } from '../services/connectors/bootstrap.js';
 import type { CredentialStore } from '../services/core/credential-provider.js';
 
@@ -32,6 +37,32 @@ export interface ConnectorProvidersRouterDeps {
   bootstrapper: ConnectorProviderBootstrapper;
   /** The encrypted write-only secret store the vendor keys land in. */
   credentialStore: CredentialStore;
+}
+
+/** What a refused key change says, by why it was refused (DOR-2678). */
+const KEY_CHANGE_REFUSAL = {
+  'not-a-person': {
+    code: 'person_only',
+    error: 'Only you can change the keys DorkOS uses to reach your apps, from the DorkOS app.',
+  },
+  'not-the-owner': {
+    code: 'owner_only',
+    error: 'Only the owner of this DorkOS can change the keys it uses to reach apps.',
+  },
+} as const;
+
+/**
+ * Answer 403 unless the person who owns this install is asking. A saved key
+ * decides which account every connection's calls go out on, so an agent never
+ * writes one, and with login on neither does another signed-in account.
+ *
+ * @returns `true` when the request was answered, so the caller must return.
+ */
+function refusedKeyChange(req: Request, res: Response): boolean {
+  const refusal = refuseUnlessAccountOwner(req, res);
+  if (refusal === undefined) return false;
+  res.status(403).json(KEY_CHANGE_REFUSAL[refusal]);
+  return true;
 }
 
 /** Body for `PUT /:provider/credential`. */
@@ -65,6 +96,7 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
   });
 
   router.put('/:provider/credential', async (req, res) => {
+    if (refusedKeyChange(req, res)) return;
     const provider = req.params.provider;
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
@@ -92,6 +124,7 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
   });
 
   router.delete('/:provider/credential', async (req, res) => {
+    if (refusedKeyChange(req, res)) return;
     const provider = req.params.provider;
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {

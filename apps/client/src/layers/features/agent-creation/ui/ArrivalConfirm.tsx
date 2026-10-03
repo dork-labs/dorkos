@@ -111,9 +111,7 @@ export function ArrivalConfirm({
   // Show the seeded emoji face (the same one M3's picker and AgentPreviewCard
   // use) when the offer carries a real emoji; fall back to the name's initial.
   const face = icon && isSingleEmoji(icon) ? icon : initial;
-  const sourceLine = seed.sourceLabel
-    ? `Offered by ${seed.sourceLabel}.`
-    : 'A ready-made agent, ready when you are.';
+  const sourceLine = seed.sourceLabel ? `Offered by ${seed.sourceLabel}.` : 'A ready-made agent.';
 
   return (
     <div className="mx-auto max-w-md space-y-6" data-testid="arrival-confirm">
@@ -194,7 +192,7 @@ export function ArrivalConfirm({
             className="text-status-warning-fg text-center text-xs"
             data-testid="arrival-needs-name"
           >
-            This agent still needs a name. Choose “Customize first” to give it one.
+            Needs a name. Choose “Customize first” to add one.
           </p>
         )}
         {isCheckingOffer && (
@@ -202,8 +200,7 @@ export function ArrivalConfirm({
             className="text-muted-foreground text-center text-xs"
             data-testid="arrival-checking-offer"
           >
-            Checking what this agent runs on its own. The first check downloads the package, so it
-            can take a moment.
+            Checking for scheduled work…
           </p>
         )}
         {inheritance}

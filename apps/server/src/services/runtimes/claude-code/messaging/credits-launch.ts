@@ -41,7 +41,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BASELINE_ENV_NAMES } from '../../shared/runtime-environment-catalog.js';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { CreditsUnavailableError } from '../../../core/cloud/credits-inference.js';
+import {
+  CreditsUnavailableError,
+  asCreditsStopped as asCreditsStoppedFor,
+  creditsStoppedEvent as creditsStoppedEventFor,
+} from '../../../core/cloud/credits-protocols.js';
 import type { AgentSession } from '../agent-types.js';
 import { isCreditsClaudeRoot } from '../credits-root.js';
 
@@ -63,6 +67,9 @@ const CREDITS_OWN_NAMES = [
 const GIT_CONFIG_NAME = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/;
 
 const ALLOWED = new Set<string>([...BASELINE_ENV_NAMES, ...CREDITS_OWN_NAMES]);
+
+/** This runtime's name, as a refusal sentence says it. */
+const CLAUDE_CODE_LABEL = 'Claude Code';
 
 /**
  * Every routing switch, alternative endpoint and credential Claude Code reads
@@ -97,6 +104,13 @@ export const CREDITS_BLANKED_SETTINGS_NAMES = [
   'ANTHROPIC_FOUNDRY_API_KEY',
   'ANTHROPIC_FOUNDRY_AUTH_TOKEN',
   'ANTHROPIC_AWS_API_KEY',
+  // Names a host program uses to hand Claude Code its own endpoint or sign-in
+  // (read off the bundled binary). None is in a family below, so each is named.
+  'CLAUDE_CODE_API_BASE_URL',
+  'CLAUDE_CODE_HOST_AUTH_ENV_VAR',
+  'CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST',
+  'CLAUDE_CODE_SESSION_ACCESS_TOKEN',
+  'CLAUDE_CODE_GATEWAY_TOKEN',
 ] as const;
 
 const BLANKED = new Set<string>(CREDITS_BLANKED_SETTINGS_NAMES);
@@ -260,7 +274,7 @@ export function creditsSettingsEnv(
     const helper = settings.apiKeyHelper;
     const ownToken = settings.env.ANTHROPIC_AUTH_TOKEN;
     if ((typeof helper === 'string' && helper.trim() !== '') || typeof ownToken === 'string') {
-      throw new CreditsUnavailableError('folder-sign-in', 'Claude Code');
+      throw new CreditsUnavailableError('folder-sign-in', CLAUDE_CODE_LABEL);
     }
     for (const name of Object.keys(settings.env)) {
       if (REASSERTED.has(name)) reasserted.add(name);
@@ -295,35 +309,21 @@ export function onCreditsSession(
 }
 
 /**
- * The event a credits turn ends with when its token was refused partway
- * through: the credits card's code and sentence, the vendor's own words kept
- * in `details`.
+ * The event a Claude Code credits turn ends with when its token was refused
+ * partway through ({@link creditsStoppedEventFor}, named for this runtime).
  *
  * @param details - What the backend said, if anything.
  */
 export function creditsStoppedEvent(details?: string): StreamEvent {
-  const refusal = new CreditsUnavailableError('stopped', 'Claude Code');
-  return {
-    type: 'error',
-    data: {
-      message: refusal.message,
-      code: refusal.code,
-      category: 'execution_error',
-      reason: refusal.reason,
-      ...(details ? { details } : {}),
-    },
-  };
+  return creditsStoppedEventFor(CLAUDE_CODE_LABEL, details);
 }
 
 /**
- * A credits turn's sign-in failure, said as what it is. Every other event is
- * passed through untouched.
+ * A Claude Code credits turn's sign-in failure, said as what it is. Every
+ * other event is passed through untouched.
  *
  * @param event - One event of a credits turn.
  */
 export function asCreditsStopped(event: StreamEvent): StreamEvent {
-  if (event.type !== 'error') return event;
-  const data = event.data as { category?: string; message?: string; details?: string };
-  if (data.category !== 'auth_error') return event;
-  return creditsStoppedEvent(data.details ?? data.message);
+  return asCreditsStoppedFor(event, CLAUDE_CODE_LABEL);
 }
