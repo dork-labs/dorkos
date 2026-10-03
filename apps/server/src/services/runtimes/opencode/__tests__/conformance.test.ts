@@ -172,6 +172,7 @@ import {
 } from '../../../core/cloud/credits-inference.js';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { planOpenCodeTurn } from '../credits-mode.js';
+import { startCreditsRelay, type CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 // The fixture whose token serves every format, chat completions included.
 import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
@@ -503,11 +504,50 @@ function makeMockedProvider(
     // recorded as the exact environment the manager would spawn it with.
     prepareTurn: async () => {
       const plan = await planOpenCodeTurn();
-      sidecarSpawns.push(buildSidecarSpawnEnv(plan, 'conformance-password', {}));
+      // A credits boot is handed a relay key, exactly as the manager hands one.
+      const grant =
+        plan.mode === 'credits' && plan.models.length > 0
+          ? (await conformanceRelay()).issue('openai-chat-completions', 'OpenCode')
+          : null;
+      const env = buildSidecarSpawnEnv(plan, 'conformance-password', {}, grant);
+      sidecarSpawns.push(env);
+      // What OpenCode would do with that config: send its request to the
+      // relay with the key it was given. What the relay then sends upstream
+      // is what the backend's inference was handed.
+      if (grant) {
+        const options = JSON.parse(env.OPENCODE_CONFIG_CONTENT!).provider['dorkos-credits'].options;
+        await fetch(`${options.baseURL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${options.apiKey}`,
+            'content-type': 'application/json',
+          },
+          body: '{}',
+        });
+      }
       return plan;
     },
   };
 }
+
+/** Every request the conformance relay sent upstream, with its headers. */
+const relayedUpstream: { url: string; headers: unknown }[] = [];
+
+/** The real credits relay, its upstream captured rather than reached. */
+let relayInstance: Promise<CreditsRelay> | null = null;
+function conformanceRelay(): Promise<CreditsRelay> {
+  relayInstance ??= startCreditsRelay({
+    fetchImpl: (async (url: string, init: { headers: unknown }) => {
+      relayedUpstream.push({ url, headers: init.headers });
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as never,
+  });
+  return relayInstance;
+}
+
+afterAll(async () => {
+  await (await relayInstance)?.close();
+});
 
 /** Every sidecar environment a mocked provider was asked to boot with, in order. */
 const sidecarSpawns: Record<string, string>[] = [];
@@ -659,6 +699,7 @@ runtimeConformance(
               runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
               const events: StreamEvent[] = [];
               const spawnsBefore = sidecarSpawns.length;
+              const upstreamBefore = relayedUpstream.length;
               for await (const event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
                 cwd: PROJECT_DIR,
               })) {
@@ -669,6 +710,9 @@ runtimeConformance(
                 launched: sent.length > 0,
                 handed: {
                   sidecar: sidecarSpawns.slice(spawnsBefore),
+                  // The sidecar never holds the token: on credits it reaches
+                  // inference only through the relay, which is where to look.
+                  upstream: relayedUpstream.slice(upstreamBefore),
                   prompts: sent,
                   created: vi.mocked(client.session.create).mock.calls,
                 },

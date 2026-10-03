@@ -54,6 +54,7 @@ import {
 } from './services/core/cloud/credits-inference.js';
 import { readCloudAccountKey } from './services/core/cloud/v1-client.js';
 import { fillCreditsGapsOnNewLink } from './services/core/cloud/credits-runtimes.js';
+import { startCreditsRelay, type CreditsRelay } from './services/core/cloud/credits-relay.js';
 import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
 import {
   initConfigManager,
@@ -649,6 +650,8 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
+/** The loopback credits relay, while OpenCode is enabled. */
+let creditsRelay: CreditsRelay | null = null;
 let accountUsageStore: AccountUsageStore | undefined;
 /** Stops the out-of-usage planner and the continue service (spec claude-account-fleet D9). */
 let stopSessionContinuation: (() => void) | undefined;
@@ -1758,6 +1761,14 @@ async function start() {
     // lazily on first use; its shutdown is wired into shutdownServices().
     const openCodeConfig = configManager.get('runtimes').opencode;
     if (openCodeConfig.enabled) {
+      // The loopback relay OpenCode's credits provider is pointed at, so the
+      // credits token never enters OpenCode's process (ADR 261002-221210).
+      // Started only where OpenCode runs; if it cannot start, OpenCode on
+      // credits can pay for nothing and refuses, never falls back.
+      creditsRelay = await startCreditsRelay().catch((err: unknown) => {
+        logger.warn('[Cloud] Could not start the credits relay', logError(err));
+        return null;
+      });
       // Same construct-can-throw exposure as Codex above — the sidecar's
       // binary discovery can throw synchronously if it isn't installed.
       // registerOptionalRuntime isolates the failure so it can't take the
@@ -1771,6 +1782,7 @@ async function start() {
           openCodeServerManager.usePlanners({
             planSidecar: planOpenCodeSidecar,
             planTurn: planOpenCodeTurn,
+            relay: creditsRelay ?? undefined,
           });
           const openCodeRuntime = new OpenCodeRuntime({
             provider: openCodeServerManager,
@@ -6027,6 +6039,7 @@ async function start() {
     await revokeHeldCreditsToken();
     await claudeRuntime?.stopCreditsSessions();
     stopCodexCreditsTurns();
+    creditsRelay?.abortAll();
     await openCodeServerManager.recycleIfOnCredits();
   });
   // OpenCode's credits are a mode of its one sidecar: a change of its Runs on
@@ -6161,6 +6174,8 @@ async function shutdownServices() {
   // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
   // window) so shutdown never leaves an orphan. No-op when it never booted.
   await openCodeServerManager.shutdown();
+  await creditsRelay?.close();
+  creditsRelay = null;
   // Same for any warm claude-code process: close stdin so it drains, then close
   // the query so the CLI child actually dies. No-op when none was ever warmed,
   // which is every server until the persistent path is opted into.

@@ -1,8 +1,8 @@
 /**
- * What an OpenCode sidecar on DorkOS credits is handed (ADR 261001-000811): the
- * credits provider as the only one enabled, its endpoint, the token only by
- * variable name in config and by value in the environment, and none of the
- * person's own provider keys. The installed binary's behaviour with this
+ * What an OpenCode sidecar on DorkOS credits is handed (ADR 261002-221210): the
+ * credits provider as the only one enabled, pointed at the loopback relay with
+ * the boot's key, no credits token anywhere, and none of the person's own
+ * provider keys. The installed binary's behaviour with this
  * config is proved in `credits-mode.binary.test.ts`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -25,8 +25,6 @@ import {
   __setCreditsModelsForTests,
   __setCreditsStateForTests,
 } from '../../../core/cloud/credits-inference.js';
-/** The token variable these cases name, so the expected shapes can say it. */
-const TOKEN_VAR = 'DORKOS_CREDITS_TOKEN_TEST';
 import { planOpenCodeSidecar, planOpenCodeTurn } from '../credits-mode.js';
 import {
   OPENCODE_CREDITS_PROVIDER_ID,
@@ -43,13 +41,8 @@ const TOKEN: InferenceToken = {
   served: ['anthropicMessages', 'openaiChat'],
   expiresAt: '2999-01-01T00:00:00.000Z',
 };
-const LAUNCH = {
-  protocol: 'openai-chat-completions' as const,
-  baseUrl: TOKEN.endpoints.openaiChat,
-  token: TOKEN.token,
-  tokenId: TOKEN.tokenId,
-  expiresAt: TOKEN.expiresAt,
-};
+/** A relay grant, as the sidecar manager hands one to a boot. */
+const RELAY = { baseUrl: 'http://127.0.0.1:9/relay/openai-chat-completions', key: 'relay-key' };
 const model = (id: string, tools: boolean): InferenceModel => ({
   id,
   displayName: id,
@@ -66,41 +59,23 @@ afterEach(() => {
 });
 
 describe('the credits sidecar’s environment', () => {
-  it('drops the person’s provider keys and endpoint, and carries the token', () => {
-    const env = openCodeCreditsEnv(
-      {
-        PATH: '/bin',
-        OPENROUTER_API_KEY: 'person',
-        OPENAI_API_KEY: 'person',
-        ANTHROPIC_API_KEY: 'person',
-        OPENAI_BASE_URL: 'https://elsewhere.invalid',
-        GITHUB_TOKEN: 'gh',
-        DORKOS_CREDITS_TOKEN_OLD: 'an older boot’s token',
-      },
-      LAUNCH,
-      TOKEN_VAR
-    );
-    expect(env).toEqual({
+  it('drops the person’s provider keys and endpoint, and carries no credits token at all', () => {
+    const env = openCodeCreditsEnv({
       PATH: '/bin',
+      OPENROUTER_API_KEY: 'person',
+      OPENAI_API_KEY: 'person',
+      ANTHROPIC_API_KEY: 'person',
+      OPENAI_BASE_URL: 'https://elsewhere.invalid',
       GITHUB_TOKEN: 'gh',
-      [TOKEN_VAR]: LAUNCH.token,
+      DORKOS_CREDITS_TOKEN_OLD: 'a token that must not ride along',
     });
-  });
-
-  it('carries no token at all when none is held, so nothing on it can pay', () => {
-    expect(openCodeCreditsEnv({ PATH: '/bin', [TOKEN_VAR]: 'stale' }, null, TOKEN_VAR)).toEqual({
-      PATH: '/bin',
-    });
+    expect(env).toEqual({ PATH: '/bin', GITHUB_TOKEN: 'gh' });
   });
 });
 
 describe('the credits sidecar’s config', () => {
-  it('enables the credits provider alone, names the token’s variable, and lists the models', () => {
-    const config = openCodeCreditsConfig(
-      LAUNCH,
-      [model('m-chat', false), model('m-tools', true)],
-      TOKEN_VAR
-    );
+  it('enables the credits provider alone, points it at the relay with the boot’s key, and lists the models', () => {
+    const config = openCodeCreditsConfig(RELAY, [model('m-chat', false), model('m-tools', true)]);
     expect(config).toEqual({
       enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
       model: `${OPENCODE_CREDITS_PROVIDER_ID}/m-tools`,
@@ -109,11 +84,7 @@ describe('the credits sidecar’s config', () => {
         [OPENCODE_CREDITS_PROVIDER_ID]: {
           name: 'DorkOS credits',
           npm: '@ai-sdk/openai-compatible',
-          options: {
-            baseURL: LAUNCH.baseUrl,
-            apiKey: `{env:${TOKEN_VAR}}`,
-            includeUsage: true,
-          },
+          options: { baseURL: RELAY.baseUrl, apiKey: RELAY.key, includeUsage: true },
           models: {
             'm-chat': {
               name: 'm-chat',
@@ -131,14 +102,14 @@ describe('the credits sidecar’s config', () => {
         },
       },
     });
-    expect(JSON.stringify(config)).not.toContain(LAUNCH.token);
+    expect(JSON.stringify(config)).not.toContain(TOKEN.token);
   });
 
-  it('is the allow list alone with no token or no models, so no provider can run', () => {
-    expect(openCodeCreditsConfig(null, [model('m', true)], TOKEN_VAR)).toEqual({
+  it('is the allow list alone with no relay grant or no models, so no provider can run', () => {
+    expect(openCodeCreditsConfig(null, [model('m', true)])).toEqual({
       enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
     });
-    expect(openCodeCreditsConfig(LAUNCH, [], TOKEN_VAR)).toEqual({
+    expect(openCodeCreditsConfig(RELAY, [])).toEqual({
       enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID],
     });
   });
@@ -167,7 +138,7 @@ describe('planning the sidecar', () => {
   it('plans a sidecar that can pay for nothing on credits with no token, never the person’s own', async () => {
     choice.credits = true;
     const plan = await planOpenCodeSidecar();
-    expect(plan).toMatchObject({ mode: 'credits', launch: null });
+    expect(plan).toEqual({ mode: 'credits', fingerprint: 'credits:none', models: [] });
   });
 
   it('refuses a credits turn with no live token, and one with no models', async () => {
@@ -186,21 +157,21 @@ describe('planning the sidecar', () => {
     choice.credits = true;
     __setCreditsStateForTests({ token: { ...TOKEN, served: undefined } });
     __setCreditsModelsForTests({ catalogVersion: 'cv', models: [model('m', true)] });
-    expect(await planOpenCodeSidecar()).toMatchObject({ mode: 'credits', launch: null });
+    expect(await planOpenCodeSidecar()).toEqual({
+      mode: 'credits',
+      fingerprint: 'credits:none',
+      models: [],
+    });
     await expect(planOpenCodeTurn()).rejects.toMatchObject({ reason: 'not-supported' });
   });
 
-  it('plans a credits turn on the chat endpoint, the token and the models', async () => {
+  it('plans a credits turn on the models when credits can pay, and the plan holds no credential', async () => {
     choice.credits = true;
     __setCreditsStateForTests({ token: TOKEN });
     __setCreditsModelsForTests({ catalogVersion: 'cv', models: [model('m', true)] });
     const plan = await planOpenCodeTurn();
-    expect(plan.mode).toBe('credits');
-    expect(plan.launch).toEqual(LAUNCH);
-    expect(plan.models.map((m) => m.id)).toEqual(['m']);
-    // The fingerprint tells plans apart without ever holding the token.
-    expect(plan.fingerprint).not.toContain(LAUNCH.token);
-    expect(plan.fingerprint).toContain(LAUNCH.tokenId);
+    expect(plan).toEqual({ mode: 'credits', fingerprint: 'credits:m', models: [model('m', true)] });
+    expect(JSON.stringify(plan)).not.toContain(TOKEN.token);
   });
 });
 
@@ -209,7 +180,11 @@ describe('planning with nothing that can reach the cloud', () => {
     expect(await planSidecarWithoutCloud()).toEqual(OPENCODE_OWN_PLAN);
     expect(await planTurnWithoutCloud()).toEqual(OPENCODE_OWN_PLAN);
     choice.credits = true;
-    expect(await planSidecarWithoutCloud()).toMatchObject({ mode: 'credits', launch: null });
+    expect(await planSidecarWithoutCloud()).toEqual({
+      mode: 'credits',
+      fingerprint: 'credits:none',
+      models: [],
+    });
     await expect(planTurnWithoutCloud()).rejects.toMatchObject({ reason: 'not-supported' });
   });
 });

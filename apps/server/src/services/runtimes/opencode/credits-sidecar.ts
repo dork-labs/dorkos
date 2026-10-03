@@ -6,10 +6,7 @@
  * ## One choice for the whole runtime
  *
  * OpenCode runs every session through ONE managed `opencode serve` sidecar
- * (ADR-0308), and anything in that process (a project's plugin, say) can read
- * its environment. A credits token in the sidecar that also serves the
- * person's own providers would be readable by every project opened there,
- * including ones never set to credits. So credits are a MODE of the sidecar,
+ * (ADR-0308). So credits are a MODE of the sidecar,
  * chosen by OpenCode's recorded Runs on default (the same record "Use credits
  * for" switches): on credits, the sidecar is booted with the credits provider
  * and nothing else; on the person's own sign-in, with their own provider and
@@ -30,18 +27,19 @@
  *   provider package, the default models and the provider allow list all
  *   outrank a project's `opencode.json` (proved against the installed binary,
  *   `credits-mode.binary.test.ts`).
- * - The token is never in the config, only referenced (`{env:…}`) under a
- *   variable name drawn fresh for every boot, and rides the sidecar's
- *   environment, where the person's own provider keys are not. OpenCode
- *   substitutes `{env:NAME}` and `{file:PATH}` in a project's config too, so
- *   a fixed name would let a project's remote MCP header carry the token
- *   away; a project cannot name a variable it never sees. (Reading the boot's
- *   config with `{env:OPENCODE_CONFIG_CONTENT}` yields the name, not the
- *   token: substitution is one pass.)
+ * - **The token never enters the sidecar at all.** The credits provider points
+ *   at the DorkOS credits relay (`core/cloud/credits-relay.ts`, loopback only)
+ *   with a key drawn fresh for every boot, and the relay adds the real token
+ *   on the way out. OpenCode substitutes `{env:…}` and `{file:…}` in a
+ *   project's own `opencode.json` and can send the result to a remote MCP
+ *   server, so anything secret in this process could leave the machine with
+ *   no code run (on Linux, `{file:/proc/self/environ}` is the whole
+ *   environment). What a project can reach this way is the relay key, which
+ *   opens nothing off this machine and dies with the boot.
  *
  * What it does not protect against: code the sidecar runs for a project on
- * credits (its plugins, its tools) can read the token, as it could the person's
- * own key on their own sign-in.
+ * credits (its plugins, its tools) can use the relay key from this machine
+ * while the boot lasts, as it could the person's own key on their own sign-in.
  *
  * Models are not known to OpenCode for a custom provider, so the credits
  * provider is given the list the service publishes for this link
@@ -50,17 +48,13 @@
  *
  * This module is the pure half (the plan, the config, the environment), so the
  * sidecar manager can build a boot from it without loading the cloud client;
- * `credits-mode.ts` is the half that asks for the token and the models.
+ * `credits-mode.ts` is the half that asks the cloud whether credits can pay
+ * and for the models.
  *
  * @module services/runtimes/opencode/credits-sidecar
  */
 import type { InferenceModel } from '@dork-labs/cloud-api';
-import {
-  CreditsUnavailableError,
-  creditsTokenEnv,
-  isCreditsTokenVar,
-  type CreditsLaunch,
-} from '../../core/cloud/credits-protocols.js';
+import { CreditsUnavailableError, isCreditsTokenVar } from '../../core/cloud/credits-protocols.js';
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
 
 /** The provider id the credits provider is registered under. */
@@ -95,26 +89,27 @@ const PERSON_PROVIDER_NAMES = new Set([
 
 /**
  * The sidecar environment on credits: the projected environment minus the
- * person's provider keys and endpoint, plus the credits token when there is
- * one. A credits sidecar with no token runs, so sessions can still be listed
- * and read, but has nothing it can pay with: every turn on it is refused
- * before it is sent.
+ * person's provider keys and endpoint and any credits token. Nothing in it
+ * can pay: the relay key rides the config, and the token stays in DorkOS.
  *
  * @param projected - The environment `runtimeEnvironment` built for the sidecar.
- * @param launch - The credits launch, or `null` when no token is held.
- * @param tokenVar - This boot's token variable, drawn fresh per boot so a
- *   project's `opencode.json` cannot name it in an `{env:…}`.
  */
 export function openCodeCreditsEnv(
-  projected: Readonly<Record<string, string>>,
-  launch: CreditsLaunch | null,
-  tokenVar: string
+  projected: Readonly<Record<string, string>>
 ): Record<string, string> {
   const kept: Record<string, string> = {};
   for (const [name, value] of Object.entries(projected)) {
     if (!PERSON_PROVIDER_NAMES.has(name) && !isCreditsTokenVar(name)) kept[name] = value;
   }
-  return launch ? { ...kept, ...creditsTokenEnv(launch, tokenVar) } : kept;
+  return kept;
+}
+
+/** Where a credits sidecar's provider points, and the key it presents there. */
+export interface OpenCodeRelayGrant {
+  /** The relay's base URL for the chat-completions format. */
+  baseUrl: string;
+  /** This boot's relay key. Opens nothing off this machine. */
+  key: string;
 }
 
 /**
@@ -139,21 +134,20 @@ export function creditsModelFor(
 
 /**
  * The config a credits sidecar merges last: the credits provider as the only
- * one enabled, its endpoint, the token's variable by name, its models and the
- * default ones. With no launch, the allow list alone, so nothing can run.
+ * one enabled, pointed at the relay with this boot's key, its models and the
+ * default ones. With no relay grant or no models, the allow list alone, so
+ * nothing can run.
  *
- * @param launch - The credits launch, or `null` when no token is held.
+ * @param relay - This boot's relay grant, or `null` when credits cannot pay.
  * @param available - The credits models.
- * @param tokenVar - This boot's token variable, named here and set only in the env.
  */
 export function openCodeCreditsConfig(
-  launch: CreditsLaunch | null,
-  available: readonly InferenceModel[],
-  tokenVar: string
+  relay: OpenCodeRelayGrant | null,
+  available: readonly InferenceModel[]
 ): Record<string, unknown> {
   const pinned = { enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID] };
   const fallback = creditsModelFor(undefined, available);
-  if (launch === null || fallback === null) return pinned;
+  if (relay === null || fallback === null) return pinned;
   const modelRef = `${OPENCODE_CREDITS_PROVIDER_ID}/${fallback}`;
   return {
     ...pinned,
@@ -166,8 +160,8 @@ export function openCodeCreditsConfig(
         // `includeUsage` asks for usage on streamed answers, so every turn is
         // metered from what the endpoint itself reports.
         options: {
-          baseURL: launch.baseUrl,
-          apiKey: `{env:${tokenVar}}`,
+          baseURL: relay.baseUrl,
+          apiKey: relay.key,
           includeUsage: true,
         },
         models: Object.fromEntries(
@@ -186,41 +180,33 @@ export function openCodeCreditsConfig(
   };
 }
 
-/** What one sidecar boot runs on. Carries the token in `env` only. */
+/** What one sidecar boot runs on. Carries no credential: the token stays in DorkOS. */
 export interface OpenCodeSidecarPlan {
   /** Which side. */
   mode: OpenCodeSidecarMode;
-  /**
-   * What identifies this plan without the token: two plans with the same
-   * fingerprint boot the same sidecar. Never contains a credential.
-   */
+  /** What identifies this plan: two plans with the same fingerprint boot the same sidecar. */
   fingerprint: string;
-  /** The credits launch, on credits with a token; else `null`. */
-  launch: CreditsLaunch | null;
-  /** The credits models, on credits; else empty. */
+  /** The credits models, on credits when credits can pay; else empty. */
   models: InferenceModel[];
 }
 
 /**
- * The fingerprint of a credits plan: its token id, endpoint and model list.
- * Never the token.
+ * The fingerprint of a credits plan: its model list. The token is not part of
+ * it, because the sidecar never holds one: a new token reaches every request
+ * through the relay without a restart.
  *
- * @param launch - The credits launch, or `null`.
  * @param available - The credits models.
  */
-export function openCodeCreditsFingerprint(
-  launch: CreditsLaunch | null,
-  available: readonly InferenceModel[]
-): string {
-  if (launch === null) return 'credits:none';
-  return `credits:${launch.tokenId}:${launch.baseUrl}:${available.map((model) => model.id).join(',')}`;
+export function openCodeCreditsFingerprint(available: readonly InferenceModel[]): string {
+  return available.length === 0
+    ? 'credits:none'
+    : `credits:${available.map((model) => model.id).join(',')}`;
 }
 
 /** The plan for the person's own sign-in: no credits variable, no credits provider. */
 export const OPENCODE_OWN_PLAN: OpenCodeSidecarPlan = {
   mode: 'own',
   fingerprint: 'own',
-  launch: null,
   models: [],
 };
 
@@ -236,12 +222,7 @@ export async function planSidecarWithoutCloud(
   runsOnCredits: () => boolean = openCodeRunsOnCredits
 ): Promise<OpenCodeSidecarPlan> {
   return runsOnCredits()
-    ? {
-        mode: 'credits',
-        fingerprint: openCodeCreditsFingerprint(null, []),
-        launch: null,
-        models: [],
-      }
+    ? { mode: 'credits', fingerprint: openCodeCreditsFingerprint([]), models: [] }
     : OPENCODE_OWN_PLAN;
 }
 
@@ -266,10 +247,9 @@ const SIDE_NAME: Record<OpenCodeSidecarMode, string> = {
 };
 
 /**
- * A turn needs OpenCode restarted while another OpenCode turn is still
- * running: either it asked for the other side of OpenCode's Runs on choice, or
- * the running sidecar's credits token is too close to expiry to start another
- * turn on. Restarting would end the running turn, so it waits, and this turn is
+ * A turn asked for the other side of OpenCode's Runs on choice while another
+ * OpenCode turn is still running on the side it is leaving. Switching restarts
+ * OpenCode, which would end that turn, so the switch waits and this turn is
  * refused with nothing sent. The message is the sentence a person reads.
  */
 export class OpenCodeSwitchPendingError extends Error {
@@ -287,9 +267,7 @@ export class OpenCodeSwitchPendingError extends Error {
     readonly to: OpenCodeSidecarMode
   ) {
     super(
-      from === to
-        ? 'OpenCode is still finishing a reply, and its DorkOS credits key has to be renewed before it can start another, so nothing was sent. Send this again once that reply is done.'
-        : `OpenCode is still finishing a reply on ${SIDE_NAME[from]}, so it can't move to ${SIDE_NAME[to]} yet and nothing was sent. Send this again once that reply is done.`
+      `OpenCode is still finishing a reply on ${SIDE_NAME[from]}, so it can't move to ${SIDE_NAME[to]} yet and nothing was sent. Send this again once that reply is done.`
     );
     this.name = 'OpenCodeSwitchPendingError';
   }

@@ -117,12 +117,6 @@ function spawnEnv(index = 0): Record<string, string | undefined> {
   return options.env;
 }
 
-/** The credits token a spawn env carries, under whatever variable this boot drew. */
-function creditsTokenOf(env: Record<string, string | undefined>): string | undefined {
-  const name = Object.keys(env).find((key) => key.startsWith('DORKOS_CREDITS_TOKEN'));
-  return name === undefined ? undefined : env[name];
-}
-
 /** Boot the manager to the ready state and return the resolved client. */
 async function bootReady(
   manager: OpenCodeServerManager,
@@ -680,7 +674,7 @@ describe('OpenCodeServerManager', () => {
     });
   });
 
-  describe('DorkOS credits (ADR 261001-000811)', () => {
+  describe('DorkOS credits (ADR 261002-221210)', () => {
     const MODEL = {
       id: 'md_1',
       displayName: 'Model one',
@@ -688,19 +682,28 @@ describe('OpenCodeServerManager', () => {
       maxOutputTokens: 100,
       supports: { tools: true, promptCaching: false, streaming: true, thinking: false },
     };
-    const creditsPlan = (tokenId = 'it_1') => ({
+    const creditsPlan = (models = [MODEL]) => ({
       mode: 'credits' as const,
-      fingerprint: `credits:${tokenId}`,
-      launch: {
-        protocol: 'openai-chat-completions' as const,
-        baseUrl: 'https://credits.invalid/openai/v1',
-        token: `tok-${tokenId}`,
-        tokenId,
-        expiresAt: '2999-01-01T00:00:00.000Z',
-      },
-      models: [MODEL],
+      fingerprint: `credits:${models.map((m) => m.id).join(',')}`,
+      models,
     });
-    const OWN = { mode: 'own' as const, fingerprint: 'own', launch: null, models: [] };
+    const OWN = { mode: 'own' as const, fingerprint: 'own', models: [] };
+
+    /** A relay stand-in that records the keys it issued and revoked. */
+    function fakeRelay() {
+      let next = 0;
+      const live = new Set<string>();
+      return {
+        live,
+        issue: vi.fn(() => {
+          next += 1;
+          const key = `relay-key-${next}`;
+          live.add(key);
+          return { baseUrl: 'http://127.0.0.1:9/relay/openai-chat-completions', key };
+        }),
+        revoke: vi.fn((key: string) => live.delete(key)),
+      };
+    }
 
     /** Make every fake child exit as soon as it is told to stop, so a recycle settles. */
     function exitOnKill(child: FakeChild): void {
@@ -710,57 +713,77 @@ describe('OpenCodeServerManager', () => {
       });
     }
 
-    it('boots a credits sidecar with the token and the credits provider, and none of the person’s keys', async () => {
+    /** A manager on credits with a fake relay installed. */
+    function creditsManager(
+      over: {
+        planSidecar?: () => Promise<unknown>;
+        planTurn?: () => Promise<unknown>;
+        runsOnCredits?: () => boolean;
+      } = {}
+    ) {
+      const relay = fakeRelay();
+      const manager = new OpenCodeServerManager({
+        runsOnCredits: over.runsOnCredits ?? (() => true),
+      });
+      manager.usePlanners({
+        planSidecar: (over.planSidecar ?? (async () => creditsPlan())) as never,
+        planTurn: (over.planTurn ?? (async () => creditsPlan())) as never,
+        relay,
+      });
+      return { manager, relay };
+    }
+
+    it('boots a credits sidecar pointed at the relay, with no credits token and none of the person’s keys', async () => {
       vi.mocked(resolveOpenCodeProviderEnv).mockResolvedValue({
         OPENROUTER_API_KEY: 'sk-or-person',
       });
       vi.stubEnv('OPENAI_API_KEY', 'person-openai-key');
-      const manager = new OpenCodeServerManager({
-        planSidecar: async () => creditsPlan(),
-        runsOnCredits: () => true,
-      });
+      const { manager, relay } = creditsManager();
       await bootReady(manager);
       const env = spawnEnv();
       expect(resolveOpenCodeProviderEnv).not.toHaveBeenCalled();
       expect(env.OPENROUTER_API_KEY).toBeUndefined();
       expect(env.OPENAI_API_KEY).toBeUndefined();
-      // The token rides a variable named fresh for this boot, and the config
-      // names that variable and nothing else of it.
-      const tokenVars = Object.keys(env).filter((name) => name.startsWith('DORKOS_CREDITS_TOKEN'));
-      expect(tokenVars).toHaveLength(1);
-      expect(tokenVars[0]).toMatch(/^DORKOS_CREDITS_TOKEN_[0-9A-F]{32}$/);
-      expect(env[tokenVars[0]!]).toBe('tok-it_1');
+      expect(Object.keys(env).filter((name) => name.startsWith('DORKOS_CREDITS_TOKEN'))).toEqual(
+        []
+      );
       const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!);
       expect(config.permission).toEqual(OPENCODE_SIDECAR_CONFIG.permission);
       expect(config.enabled_providers).toEqual(['dorkos-credits']);
       expect(config.provider['dorkos-credits'].options).toEqual({
-        baseURL: 'https://credits.invalid/openai/v1',
-        apiKey: `{env:${tokenVars[0]}}`,
+        baseURL: 'http://127.0.0.1:9/relay/openai-chat-completions',
+        apiKey: 'relay-key-1',
         includeUsage: true,
       });
-      expect(env.OPENCODE_CONFIG_CONTENT).not.toContain('tok-it_1');
+      expect(relay.live).toEqual(new Set(['relay-key-1']));
     });
 
-    it('fails closed with no planners installed: a person on credits gets a sidecar that pays for nothing', async () => {
+    it('fails closed with no relay or planners installed: a person on credits gets a sidecar that pays for nothing', async () => {
       vi.mocked(resolveOpenCodeProviderEnv).mockResolvedValue({ OPENROUTER_API_KEY: 'sk-or' });
       const manager = new OpenCodeServerManager({ runsOnCredits: () => true });
       await bootReady(manager);
       const env = spawnEnv();
       expect(env.OPENROUTER_API_KEY).toBeUndefined();
-      expect(Object.keys(env).filter((name) => name.startsWith('DORKOS_CREDITS_TOKEN'))).toEqual(
-        []
-      );
-      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).enabled_providers).toEqual([
-        'dorkos-credits',
-      ]);
+      const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!);
+      expect(config).toEqual({ ...OPENCODE_SIDECAR_CONFIG, enabled_providers: ['dorkos-credits'] });
       await expect(manager.prepareTurn(false)).rejects.toMatchObject({
         code: 'credits_unavailable',
       });
     });
 
+    it('revokes a boot’s relay key when that sidecar stops, and issues a fresh one to the next', async () => {
+      const { manager, relay } = creditsManager();
+      const { child } = await bootReady(manager);
+      exitOnKill(child);
+      await manager.recycle();
+      expect(relay.revoke).toHaveBeenCalledWith('relay-key-1');
+      await bootReady(manager);
+      expect(relay.live).toEqual(new Set(['relay-key-2']));
+    });
+
     it('never hands out a sidecar on the other side of the person’s choice', async () => {
       const choice = { credits: false };
-      const manager = new OpenCodeServerManager({
+      const { manager } = creditsManager({
         planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
         planTurn: async () => (choice.credits ? creditsPlan() : OWN),
         runsOnCredits: () => choice.credits,
@@ -773,7 +796,9 @@ describe('OpenCodeServerManager', () => {
       children[1]!.emitReady();
       await pending;
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
-      expect(creditsTokenOf(spawnEnv(1))).toBe('tok-it_1');
+      expect(JSON.parse(spawnEnv(1).OPENCODE_CONFIG_CONTENT!).enabled_providers).toEqual([
+        'dorkos-credits',
+      ]);
     });
 
     it('boots a turn on the plan it asked for, and refuses with nothing spawned when credits cannot pay', async () => {
@@ -787,64 +812,37 @@ describe('OpenCodeServerManager', () => {
       });
       expect(spawn).not.toHaveBeenCalled();
 
-      const manager = new OpenCodeServerManager({
-        planSidecar: async () => OWN,
-        planTurn: async () => creditsPlan(),
-        runsOnCredits: () => true,
-      });
+      const { manager } = creditsManager({ planSidecar: async () => OWN });
       await manager.prepareTurn(false);
       await bootReady(manager);
-      expect(creditsTokenOf(spawnEnv())).toBe('tok-it_1');
+      expect(
+        JSON.parse(spawnEnv().OPENCODE_CONFIG_CONTENT!).provider['dorkos-credits']
+      ).toBeDefined();
     });
 
-    it('moves to a new token when idle, and keeps a paying sidecar while other turns run on it', async () => {
-      let tokenId = 'it_1';
-      const manager = new OpenCodeServerManager({
-        planSidecar: async () => creditsPlan(tokenId),
-        planTurn: async () => creditsPlan(tokenId),
-        runsOnCredits: () => true,
+    it('never restarts for a new token, and keeps a busy sidecar when only the model list moved', async () => {
+      let models = [MODEL];
+      const { manager } = creditsManager({
+        planSidecar: async () => creditsPlan(models),
+        planTurn: async () => creditsPlan(models),
       });
       const { child } = await bootReady(manager);
       exitOnKill(child);
-      tokenId = 'it_2';
-      // Another turn is running: the old token bills the same link and is
-      // still good, so the sidecar is kept rather than ending that turn.
-      expect((await manager.prepareTurn(true)).fingerprint).toBe('credits:it_1');
+      // Same plan (a new token changes nothing the sidecar holds): kept.
+      await manager.prepareTurn(false);
       expect(child.kill).not.toHaveBeenCalled();
-      // Idle: recycled, and the next boot carries the new token.
-      expect((await manager.prepareTurn(false)).fingerprint).toBe('credits:it_2');
+      // A new model list while another turn runs: kept, not restarted under it.
+      models = [MODEL, { ...MODEL, id: 'md_2' }];
+      expect((await manager.prepareTurn(true)).fingerprint).toBe('credits:md_1');
+      expect(child.kill).not.toHaveBeenCalled();
+      // Idle: recycled onto the new list.
+      expect((await manager.prepareTurn(false)).fingerprint).toBe('credits:md_1,md_2');
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
-      await bootReady(manager);
-      expect(creditsTokenOf(spawnEnv(1))).toBe('tok-it_2');
-    });
-
-    it('never keeps a busy sidecar on a token too close to expiry: the turn waits, and says so', async () => {
-      let tokenId = 'it_1';
-      let expiresAt = new Date(Date.now() + 60_000).toISOString();
-      const plan = () => ({
-        ...creditsPlan(tokenId),
-        launch: { ...creditsPlan(tokenId).launch, expiresAt },
-      });
-      const manager = new OpenCodeServerManager({
-        planSidecar: async () => plan(),
-        planTurn: async () => plan(),
-        runsOnCredits: () => true,
-      });
-      const { child } = await bootReady(manager);
-      exitOnKill(child);
-      tokenId = 'it_2';
-      expiresAt = '2999-01-01T00:00:00.000Z';
-      // Another turn runs on the old sidecar, whose token has a minute left.
-      await expect(manager.prepareTurn(true)).rejects.toMatchObject({
-        code: 'runtime_switch_pending',
-        message: expect.stringContaining('credits key has to be renewed'),
-      });
-      expect(child.kill).not.toHaveBeenCalled();
     });
 
     it('recycles at once across sides when nothing else is running', async () => {
       const choice = { credits: true };
-      const manager = new OpenCodeServerManager({
+      const { manager } = creditsManager({
         planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
         planTurn: async () => (choice.credits ? creditsPlan() : OWN),
         runsOnCredits: () => choice.credits,
@@ -859,7 +857,7 @@ describe('OpenCodeServerManager', () => {
     it('never ends or re-bills a running turn: a switch across sides waits for it, and says so', async () => {
       const choice = { credits: false };
       let running = 1;
-      const manager = new OpenCodeServerManager({
+      const { manager } = creditsManager({
         planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
         planTurn: async () => (choice.credits ? creditsPlan() : OWN),
         runsOnCredits: () => choice.credits,
@@ -869,31 +867,28 @@ describe('OpenCodeServerManager', () => {
       exitOnKill(child);
       choice.credits = true;
 
-      // The choice changed while a turn runs on the person's own sign-in.
       await manager.syncToChoice();
       expect(await manager.getClient('/repo')).toBe(client);
       await expect(manager.prepareTurn(true)).rejects.toMatchObject({
         code: 'runtime_switch_pending',
         message: expect.stringContaining(
-          'still finishing a reply on your own sign-in, so it can’t move to DorkOS credits yet'.replace(
-            '’',
-            "'"
-          )
+          "still finishing a reply on your own sign-in, so it can't move to DorkOS credits yet"
         ),
       });
       expect(child.kill).not.toHaveBeenCalled();
 
-      // The turn ends: the waiting switch happens, and the next boot is credits.
       running = 0;
       await manager.turnSettled();
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
       await bootReady(manager);
-      expect(creditsTokenOf(spawnEnv(1))).toBe('tok-it_1');
+      expect(JSON.parse(spawnEnv(1).OPENCODE_CONFIG_CONTENT!).enabled_providers).toEqual([
+        'dorkos-credits',
+      ]);
     });
 
     it('drops a credits sidecar on unlink or a new link, and follows a changed choice', async () => {
       const choice = { credits: true };
-      const manager = new OpenCodeServerManager({
+      const { manager } = creditsManager({
         planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
         runsOnCredits: () => choice.credits,
       });
@@ -911,7 +906,6 @@ describe('OpenCodeServerManager', () => {
       await manager.syncToChoice();
       expect(second.child.kill).toHaveBeenCalledWith('SIGTERM');
 
-      // On the person's own sign-in there is nothing of credits to drop.
       const third = await bootReady(manager);
       await manager.recycleIfOnCredits();
       expect(third.child.kill).not.toHaveBeenCalled();

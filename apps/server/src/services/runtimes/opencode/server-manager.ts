@@ -23,22 +23,21 @@ import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
-import {
-  CREDITS_REFRESH_MARGIN_MS,
-  mintCreditsTokenVar,
-} from '../../core/cloud/credits-protocols.js';
+import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
 import { configManager } from '../../core/config-manager.js';
 import { resolveOpenCodeProviderEnv } from '../../core/credential-env.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { resolveOpenCodeBinaryPath } from './providers/check-dependencies.js';
 import type { OpenCodeClientProvider } from './sessions/session-mapper.js';
 import {
+  OPENCODE_LABEL,
   OpenCodeSwitchPendingError,
   openCodeCreditsConfig,
   openCodeCreditsEnv,
   openCodeRunsOnCredits,
   planSidecarWithoutCloud,
   planTurnWithoutCloud,
+  type OpenCodeRelayGrant,
   type OpenCodeSidecarPlan,
 } from './credits-sidecar.js';
 
@@ -90,19 +89,20 @@ type SidecarPhase = 'idle' | 'starting' | 'ready' | 'stopped';
  *
  * - On the person's own sign-in: their provider's key and endpoint
  *   (`providerEnv`, ADR-0315) and the safety ruleset. No credits variable.
- * - On credits: none of the person's provider keys or endpoint, the credits
- *   provider merged last into the config, and the token (when one is held).
+ * - On credits: none of the person's provider keys or endpoint, and the
+ *   credits provider merged last into the config, pointed at the credits
+ *   relay with this boot's key. No credits token: it never enters the sidecar.
  *
  * @param plan - What the sidecar boots on.
  * @param password - The per-boot basic-auth secret.
  * @param providerEnv - The person's own provider environment; ignored on credits.
- * @param tokenVar - The credits token's variable; a fresh one per boot unless a test names it.
+ * @param relay - This boot's relay grant, or `null` when credits cannot pay.
  */
 export function buildSidecarSpawnEnv(
   plan: OpenCodeSidecarPlan,
   password: string,
   providerEnv: Record<string, string>,
-  tokenVar: string = mintCreditsTokenVar()
+  relay: OpenCodeRelayGrant | null = null
 ): Record<string, string> {
   if (plan.mode === 'own') {
     return runtimeEnvironment('opencode', 'turn', {
@@ -111,17 +111,12 @@ export function buildSidecarSpawnEnv(
       OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_SIDECAR_CONFIG),
     });
   }
-  const config = {
-    ...OPENCODE_SIDECAR_CONFIG,
-    ...openCodeCreditsConfig(plan.launch, plan.models, tokenVar),
-  };
+  const config = { ...OPENCODE_SIDECAR_CONFIG, ...openCodeCreditsConfig(relay, plan.models) };
   return openCodeCreditsEnv(
     runtimeEnvironment('opencode', 'turn', {
       OPENCODE_SERVER_PASSWORD: password,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
-    }),
-    plan.launch,
-    tokenVar
+    })
   );
 }
 
@@ -131,6 +126,11 @@ export interface OpenCodeSidecarPlanners {
   planSidecar: () => Promise<OpenCodeSidecarPlan>;
   /** What a turn about to be sent needs the sidecar to run on; throws a credits refusal. */
   planTurn: () => Promise<OpenCodeSidecarPlan>;
+  /**
+   * The credits relay a credits boot is pointed at. Without one, a credits
+   * sidecar can pay for nothing.
+   */
+  relay?: Pick<CreditsRelay, 'issue' | 'revoke'>;
 }
 
 /** Constructor seams for {@link OpenCodeServerManager}. */
@@ -186,6 +186,19 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
   usePlanners(planners: OpenCodeSidecarPlanners): void {
     this.planSidecar = planners.planSidecar;
     this.planTurn = planners.planTurn;
+    this.relay = planners.relay ?? null;
+  }
+
+  /** The credits relay, once installed. */
+  private relay: Pick<CreditsRelay, 'issue' | 'revoke'> | null = null;
+  /** The relay key the running (or booting) sidecar holds, revoked when it stops. */
+  private grantKey: string | null = null;
+
+  /** Forget the running sidecar's plan, and close the relay to its key. */
+  private clearRunning(): void {
+    this.running = null;
+    if (this.grantKey !== null) this.relay?.revoke(this.grantKey);
+    this.grantKey = null;
   }
 
   /**
@@ -250,9 +263,10 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    * list first, and REFUSES (throws `CreditsUnavailableError`) when credits
    * cannot pay, before anything is sent. A sidecar booted on another plan is
    * recycled: when it is on the other side and nothing else is running on it
-   * (otherwise the turn is refused with `OpenCodeSwitchPendingError`), and on a new token or
-   * model list only when no other turn is running on it (the token it holds
-   * bills the same link and is still good, and recycling would end those turns).
+   * (otherwise the turn is refused with `OpenCodeSwitchPendingError`), and on
+   * a new model list only when no other turn is running on it. A new token
+   * never needs a restart: the sidecar holds none, and the relay always sends
+   * the current one.
    *
    * @param othersActive - Whether another turn is running on the sidecar now.
    * @returns The plan the turn runs on.
@@ -270,14 +284,9 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     }
     if (running && running.fingerprint !== plan.fingerprint) {
       // A sidecar on the same side with other turns running is not restarted
-      // under them. It is kept only while its own token can still pay for a
-      // whole turn (more than the refresh margin left); otherwise this turn
-      // waits for those to finish, refused with nothing sent.
-      if (running.mode === plan.mode && othersActive) {
-        const fresh =
-          running.launch !== null &&
-          Date.parse(running.launch.expiresAt) - Date.now() > CREDITS_REFRESH_MARGIN_MS;
-        if (!fresh) throw new OpenCodeSwitchPendingError(running.mode, plan.mode);
+      // under them: only its model list differs, and the token is the relay's
+      // to keep current. (One with no models cannot have a credits turn on it.)
+      if (running.mode === plan.mode && othersActive && running.models.length > 0) {
         return running;
       }
       await this.recycle();
@@ -329,7 +338,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     }
     this.client = null;
     this.starting = null;
-    this.running = null;
+    this.clearRunning();
     const child = this.child;
     this.child = null;
     if (child) {
@@ -366,7 +375,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     this.client = null;
     this.child = null;
     this.starting = null;
-    this.running = null;
+    this.clearRunning();
     this.restartAttempts = 0;
     this.phase = 'idle';
     if (child) {
@@ -425,8 +434,15 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     const plan = this.nextPlan ?? (await this.planSidecar());
     this.nextPlan = null;
     const providerEnv = plan.mode === 'own' ? await resolveOpenCodeProviderEnv() : {};
+    // A credits boot that can pay gets a relay key of its own, revoked when
+    // this sidecar stops; the token itself stays in DorkOS.
+    const grant =
+      plan.mode === 'credits' && plan.models.length > 0 && this.relay
+        ? this.relay.issue('openai-chat-completions', OPENCODE_LABEL)
+        : null;
+    this.grantKey = grant?.key ?? null;
     const child = spawn(binary, ['serve', `--hostname=${SIDECAR_HOSTNAME}`, `--port=${port}`], {
-      env: buildSidecarSpawnEnv(plan, password, providerEnv),
+      env: buildSidecarSpawnEnv(plan, password, providerEnv, grant),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.child = child;
@@ -466,7 +482,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
       if (weOwnLiveChild) await this.killChild(child);
       if (this.child === child) {
         this.child = null;
-        this.running = null;
+        this.clearRunning();
       }
       // shutdown() may have flipped the phase to 'stopped' while we awaited
       // readiness — never resurrect to 'idle' then. (The method call also
@@ -564,7 +580,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
   private handleUnexpectedExit(code: number | null, signal: NodeJS.Signals | null): void {
     this.client = null;
     this.child = null;
-    this.running = null;
+    this.clearRunning();
     this.phase = 'idle';
     // A long healthy run means this crash is fresh, not part of a loop.
     if (Date.now() - this.readyAt >= SIDECAR_TIMING.backoffResetUptimeMs) {
