@@ -600,6 +600,12 @@ import {
   setStartWorkService,
 } from './services/extensions/start-work.js';
 import {
+  AgentSendService,
+  getAgentSendService,
+  setAgentSendService,
+} from './services/extensions/agent-send.js';
+import { AgentSendStore } from './services/extensions/agent-send-store.js';
+import {
   SessionStartedByStore,
   getSessionStartedByStore,
   setSessionStartedByStore,
@@ -1264,6 +1270,17 @@ async function start() {
       activity: activityService,
     })
   );
+  // The seam behind `ctx.agent.send` (DOR-2683): an extension sending one of
+  // the person's agents a message. Built before extensions start, beside the
+  // start-work seam it opens kept chats through; Mesh is read at call time,
+  // since it starts later. Started once the runtimes are registered.
+  setAgentSendService(
+    new AgentSendService({
+      store: new AgentSendStore(db),
+      extensionName: (id) => extensionManager?.get(id)?.manifest.name ?? id,
+      meshCore: () => meshCore,
+    })
+  );
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -1816,6 +1833,14 @@ async function start() {
     });
     initCloudLinkManager(); // real fetch, real defaults — behavior-preserving
   }
+
+  // Every runtime is registered, so the messages extensions sent before a
+  // restart can be settled and re-armed, and held ones retried.
+  await getAgentSendService()
+    ?.start()
+    .catch((err: unknown) =>
+      logger.warn('[DorkOS] could not resume extension messages', { err: String(err) })
+    );
 
   // Workspace subsystem (DOR-84) — server-managed isolated workspaces. Sessions
   // bind via cwd; the manager allocates collision-free port blocks and owns the
@@ -6122,6 +6147,7 @@ async function shutdownServices() {
   }
   stopConnectorFreshness?.();
   stopConnectorFreshness = undefined;
+  getAgentSendService()?.stop();
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
   // Give back every port an open dev-server preview is holding.
