@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(cli): say plainly when a Neon key cannot read the org, every time (DOR-2700)'
+  - 'fix(cli): let a Neon organization key pass setup (DOR-2700)'
 ---
 
 ### Fixed
