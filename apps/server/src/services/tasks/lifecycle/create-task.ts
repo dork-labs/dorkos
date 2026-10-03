@@ -56,6 +56,7 @@ import { raiseStanding } from '../../notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../../notifications/emitters/schedule-park.js';
 import type { NotificationPayload } from '../../notifications/notification-registry.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
+import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 
 /** The collaborators a create needs. Every one of them is required to get a task right. */
 export interface TaskLifecycleDeps {
@@ -327,6 +328,17 @@ export async function createScheduledTask(
   });
   if (accountRefusal) {
     return { ok: false, status: 409, error: accountRefusal.message, code: accountRefusal.code };
+  }
+  // A schedule whose runs go on DorkOS credits names a model credits serve
+  // (DOR-2636), the same rule the session and agent model menus apply.
+  const modelRefusal = await scheduleCreditsModelRefusal({
+    model: data.model,
+    account: data.account,
+    runtime: data.runtime,
+    folder: scheduleRunFolder(home.projectPath),
+  });
+  if (modelRefusal) {
+    return { ok: false, status: 400, error: modelRefusal, code: 'UNSUPPORTED_MODEL' };
   }
 
   // The create door asks the update door's question about the file it is about

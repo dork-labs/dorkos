@@ -11,7 +11,22 @@
         "promptCaching": true,
         "streaming": true,
         "thinking": false
-      }
+      },
+      "protocols": ["anthropicMessages"],
+      "recommendedOn": ["anthropicMessages"]
+    },
+    {
+      "id": "md_opaque_0002",
+      "displayName": "another model shown in your usage page",
+      "contextWindow": 128000,
+      "maxOutputTokens": 16000,
+      "supports": {
+        "tools": true,
+        "promptCaching": false,
+        "streaming": true,
+        "thinking": false
+      },
+      "protocols": ["openaiChat"]
     }
   ]
 }

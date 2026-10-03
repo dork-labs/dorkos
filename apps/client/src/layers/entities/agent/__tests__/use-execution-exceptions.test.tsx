@@ -15,6 +15,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Transport } from '@dorkos/shared/transport';
+import type { ModelOption } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { useExecutionExceptions } from '../model/use-execution-exceptions';
@@ -340,5 +341,116 @@ describe('useExecutionExceptions — a billing account nobody registered', () =>
       accounts: [],
     });
     await waitFor(() => expect(result.current.brokenPaths).toEqual(['/p/alpha']));
+  });
+});
+
+describe('useExecutionExceptions — the model of an agent on DorkOS credits (DOR-2636)', () => {
+  const CREDITS = {
+    id: 'dorkos-credits',
+    path: '/Users/dev/.dork/runtimes/claude-code/credits',
+    available: true,
+    isDefault: false,
+    allowedAgents: ['a'],
+  };
+  const RUNTIME_MENU: ModelOption[] = [{ value: 'opus', displayName: 'Opus', description: '' }];
+
+  function renderCreditsAgent(model: string, creditsMenu: ModelOption[]) {
+    const getModels = vi.fn(async (opts?: { account?: string }): Promise<ModelOption[]> =>
+      opts?.account === 'dorkos-credits' ? creditsMenu : RUNTIME_MENU
+    );
+    const transport: Transport = createMockTransport({
+      getConfig: vi.fn().mockResolvedValue({
+        version: '1.0.0',
+        port: 4242,
+        uptime: 0,
+        workingDirectory: '/test',
+        nodeVersion: 'v20.0.0',
+        platform: 'linux-x64',
+        runtimes: ['claude-code'],
+        claudeCliPath: null,
+        claudeCode: {
+          resolvedAccount: '/Users/dev/.claude',
+          inherited: true,
+          accounts: [],
+          credits: CREDITS,
+        },
+        executionDefaults: {
+          runtime: 'claude-code',
+          trustStop: null,
+          perRuntime: [
+            {
+              runtime: 'claude-code',
+              model: null,
+              effort: null,
+              supportsEffort: true,
+              trustStop: null,
+            },
+          ],
+        },
+        tunnel: {
+          enabled: false,
+          connected: false,
+          url: null,
+          authEnabled: false,
+          tokenConfigured: false,
+        },
+      }),
+      getCapabilities: vi.fn().mockResolvedValue({
+        capabilities: {
+          'claude-code': {
+            ...runtimeEntry('claude-code', true),
+            credits: { protocol: 'anthropic-messages' },
+          },
+        },
+        defaultRuntime: 'claude-code',
+      }),
+      getModels,
+      listMeshAgentPaths: vi
+        .fn()
+        .mockResolvedValue({ agents: [{ id: 'a', name: 'alpha', projectPath: '/p/alpha' }] }),
+      resolveAgents: vi.fn().mockResolvedValue({
+        '/p/alpha': {
+          id: 'a',
+          name: 'alpha',
+          description: '',
+          runtime: 'claude-code',
+          account: 'dorkos-credits',
+          model,
+          capabilities: [],
+        },
+      }),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const hook = renderHook(() => useExecutionExceptions({ checkModels: true }), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      ),
+    });
+    return { ...hook, getModels };
+  }
+
+  const breaksModel = (exceptions: { report: { breakages: { kind: string }[] } }[]) =>
+    exceptions.some((e) => e.report.breakages.some((b) => b.kind === 'model-unavailable'));
+
+  it('judges the agent’s model against the menu credits offer it, never the runtime’s own', async () => {
+    const { result, getModels } = renderCreditsAgent('md_pick', [
+      { value: 'md_pick', displayName: 'Pick', description: '', paidFromCredits: true },
+    ]);
+    await waitFor(() => expect(result.current.exceptions).toHaveLength(1));
+    await waitFor(() =>
+      expect(getModels).toHaveBeenCalledWith(expect.objectContaining({ account: 'dorkos-credits' }))
+    );
+    expect(breaksModel(result.current.exceptions)).toBe(false);
+  });
+
+  it('calls a model credits do not cover broken', async () => {
+    const { result } = renderCreditsAgent('opus', [
+      { value: 'md_pick', displayName: 'Pick', description: '', paidFromCredits: true },
+    ]);
+    await waitFor(() => expect(breaksModel(result.current.exceptions)).toBe(true));
   });
 });

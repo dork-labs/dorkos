@@ -159,6 +159,8 @@ export type {
   ElicitationCompleteEvent,
   PermissionDeniedEvent,
   PermissionDeniedPart,
+  ModelSubstitutedEvent,
+  ModelSubstitutedPart,
   ElicitationPart,
   MemoryRecallPart,
   CompactBoundaryPart,

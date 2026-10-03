@@ -155,6 +155,9 @@ const SESSION_EVENT_TYPES = [
   // work never happened, so a frame dropped here is indistinguishable from the
   // silence this event exists to break.
   'permission_denied',
+  // A turn that ran on another model than its session names (DOR-2636). Never
+  // a silent switch, so a frame dropped here would be exactly one.
+  'model_substituted',
   'system_status',
   'operation_progress',
   'error',

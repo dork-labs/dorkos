@@ -46,12 +46,10 @@
  * @module services/core/cloud/credits-inference
  */
 import {
-  InferenceModelsResponseSchema,
   InferenceTokenRevokeResponseSchema,
   InferenceTokenSchema,
   V1_ROUTES,
   v1Path,
-  type InferenceModel,
   type InferenceToken,
 } from '@dork-labs/cloud-api';
 import { CloudApiResponseError } from '@dork-labs/cloud-api/client';
@@ -384,81 +382,6 @@ export async function revokeHeldCreditsToken(): Promise<void> {
   } finally {
     clearTimeout(timer);
   }
-}
-
-/** How long a fetched credits model list is reused before it is asked for again. */
-const MODELS_TTL_MS = 10 * 60_000;
-/** How long one model-list request may take before it counts as unreachable. */
-const MODELS_WAIT_MS = 8_000;
-
-/** The last model list the service gave this link, and when. Not a credential. */
-let models: {
-  catalogVersion: string;
-  models: InferenceModel[];
-  at: number;
-  isCurrent: () => boolean;
-} | null = null;
-
-/**
- * The models this link may run on DorkOS credits (`GET /v1/inference/models`),
- * for a runtime that must be told its models up front (OpenCode). Reused for a
- * few minutes; asked again after that, after a link change, or when the last
- * answer was empty.
- *
- * Never throws and never invents a model: an unlinked computer, an outage or a
- * slow answer is an empty list, which a credits turn refuses on.
- *
- * @returns The catalog version and its models, or `null` when there are none to be had.
- */
-export async function creditsModels(): Promise<{
-  catalogVersion: string;
-  models: InferenceModel[];
-} | null> {
-  if (
-    models !== null &&
-    models.isCurrent() &&
-    models.models.length > 0 &&
-    now() - models.at < MODELS_TTL_MS
-  ) {
-    return { catalogVersion: models.catalogVersion, models: models.models };
-  }
-  if (creditsKilled()) return null;
-  const context = captureCloudV1Context();
-  if (context === null) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MODELS_WAIT_MS);
-  try {
-    const answer = await context.client.get(
-      V1_ROUTES.inferenceModels,
-      InferenceModelsResponseSchema,
-      {
-        signal: controller.signal,
-      }
-    );
-    if (!context.isCurrent()) return null;
-    models = { ...answer, at: now(), isCurrent: context.isCurrent };
-    return answer.models.length > 0 ? answer : null;
-  } catch (error) {
-    logger.warn('[Cloud] Could not read the credits model list', {
-      status:
-        problemOf(error)?.status ?? (error instanceof CloudApiResponseError ? error.status : null),
-    });
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/**
- * Replace the held model list. Test seam only.
- *
- * @param state - The list to hold, or `null` to clear it.
- * @internal
- */
-export function __setCreditsModelsForTests(
-  state: { catalogVersion: string; models: InferenceModel[] } | null
-): void {
-  models = state === null ? null : { ...state, at: now(), isCurrent: () => true };
 }
 
 /**

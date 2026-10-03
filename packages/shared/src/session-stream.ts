@@ -39,6 +39,7 @@ import {
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
   PermissionDeniedEventSchema,
+  ModelSubstitutedEventSchema,
   SessionImageEventSchema,
   SystemStatusEventSchema,
   OperationProgressEventShapeSchema,
@@ -593,6 +594,16 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('permission_denied'),
       ...PermissionDeniedEventSchema.shape,
+    }),
+    // A turn that ran on another model than its session names, because who
+    // pays for it does not serve that model (DOR-2636). NOT a fidelity member:
+    // the runtime's transcript does not say a model was swapped, so it is
+    // recorded durably (`RECORDED_EVENT_TYPES`) and overlaid back onto a
+    // reopened conversation as a lasting notice.
+    z.object({
+      ...seqShape,
+      type: z.literal('model_substituted'),
+      ...ModelSubstitutedEventSchema.shape,
     }),
     // A transient operational status (SDK status messages — hook progress, a raw
     // `status` token). Drives the client's transient status strip — NOT the

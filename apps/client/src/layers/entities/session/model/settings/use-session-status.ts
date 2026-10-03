@@ -17,6 +17,7 @@ import { resolvePermissionMode } from '../../lib/permission-mode';
 import { isQuerySettled } from '../../lib/query-settled';
 import { useSessions } from '../query/use-sessions';
 import { useSessionStartMode } from './use-session-start-mode';
+import { useSessionModelSubstitution } from '../stream/session-stream-store';
 import type {
   Session,
   SessionStatusEvent,
@@ -107,6 +108,7 @@ export function useSessionStatus(
   const transport = useTransport();
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const pendingAccount = useAppStore((s) => s.pendingAccount);
   const { data: models } = useModels({
     sessionId: sessionId ?? undefined,
     runtime: runtime ?? undefined,
@@ -140,11 +142,14 @@ export function useSessionStatus(
   // streamingStatus is never cleared after streaming ends, so streamingStatus?.model retains its
   // last value and would permanently shadow session?.model (the PATCH-confirmed value). Gate it
   // behind isStreaming so model changes via the dropdown are reflected immediately post-stream.
+  // A turn on DorkOS credits that ran another model than the session named
+  // (DOR-2636) makes that model the session's own on the server; until the
+  // record is read again, the substitution the stream carried says so here.
+  const substitution = useSessionModelSubstitution(sessionId ?? '');
+  const storedModel =
+    substitution && session?.model === substitution.from ? substitution.to : session?.model;
   const model =
-    overrides.model ??
-    (isStreaming ? streamingStatus?.model : null) ??
-    session?.model ??
-    defaultModel;
+    overrides.model ?? (isStreaming ? streamingStatus?.model : null) ?? storedModel ?? defaultModel;
 
   // Context: derive from ModelOption.contextWindow (no hardcoded map)
   const selectedModel = models?.find((m: ModelOption) => m.value === model);
@@ -245,7 +250,17 @@ export function useSessionStatus(
       // carries it. The server treats it as a hint on an unbound session and
       // ignores it entirely on a bound one — it cannot bind or re-bind anything
       // (ADR-0255). An explicit `opts.runtime` from a caller still wins.
-      const request: UpdateSessionRequest = { ...(runtime ? { runtime } : {}), ...opts };
+      //
+      // The account is the same kind of hint for the same moment: the person's
+      // pick for a session that has not started decides whether a model is
+      // judged against what DorkOS credits serve or against the runtime's own
+      // menu (DOR-2636), exactly as it decides the menu `useModels` reads.
+      const accountHint = pendingAccount?.sessionId === sessionId ? pendingAccount.id : undefined;
+      const request: UpdateSessionRequest = {
+        ...(runtime ? { runtime } : {}),
+        ...(accountHint ? { account: accountHint } : {}),
+        ...opts,
+      };
 
       try {
         // Both flags are facts about THIS write, not about the session, so both
@@ -305,7 +320,16 @@ export function useSessionStatus(
         handlers?.onError?.(err);
       }
     },
-    [transport, sessionId, runtime, selectedCwd, queryClient, applyOverrides, clearOverrides]
+    [
+      transport,
+      sessionId,
+      runtime,
+      selectedCwd,
+      pendingAccount,
+      queryClient,
+      applyOverrides,
+      clearOverrides,
+    ]
   );
 
   // Convergence effect: drop each optimistic override once server data confirms

@@ -1332,9 +1332,26 @@ registry.registerPath({
   method: 'get',
   path: '/api/models',
   tags: ['Models'],
-  summary: 'List available Claude models',
+  summary: 'List the models a runtime offers',
   description:
-    'Returns models available to the user. Serves SDK-reported models if cached, otherwise returns defaults.',
+    "Returns the models the resolved runtime offers. A session on DorkOS credits (or `account=dorkos-credits` with no session) gets only the models credits serve on the runtime's protocol, the recommended one first, once the service says which protocols its models are on. When the service cannot be read, the last list it answered stands, marked out of date.",
+  request: {
+    query: z.object({
+      runtime: z.string().optional().openapi({ description: 'The runtime whose models to list' }),
+      sessionId: z
+        .string()
+        .optional()
+        .openapi({ description: 'The session whose runtime and account decide the menu' }),
+      account: z.string().optional().openapi({
+        description:
+          'The account the person picked for a session that has not started, or `dorkos-credits` with no session to ask about credits directly',
+      }),
+      cwd: z
+        .string()
+        .optional()
+        .openapi({ description: 'The folder a session that has not started runs in' }),
+    }),
+  },
   responses: {
     200: {
       description: 'List of available models',
@@ -1343,6 +1360,10 @@ registry.registerPath({
           schema: z.object({ models: z.array(ModelOptionSchema) }),
         },
       },
+    },
+    400: {
+      description: 'Unknown runtime',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

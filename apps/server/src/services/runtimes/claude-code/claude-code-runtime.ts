@@ -111,6 +111,7 @@ import {
   disposeProjector,
   getOrCreateProjector,
   overlayApprovalReceipts,
+  overlayModelSubstitutions,
   overlayPermissionDenials,
   peekProjector,
   streamGenerationOf,
@@ -540,6 +541,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       modelSupportsAutoMode: modelCapability
         ? (modelCapability.supportsAutoMode ?? false)
         : undefined,
+      lookupModel: (value) => this.cache.resolveModelCapability(value),
+      rememberSessionModel: (model) => this.sessionStore.rememberModel(session, sessionId, model),
       plugins: this.activatedPlugins,
       getKnownCommands: async () => {
         // Cold SDK cache → null: built-ins are unknowable before the first
@@ -1476,7 +1479,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // BACKGROUNDED subagent's denied tool call is written into the child's
     // transcript, not this one, so without this the conversation comes back
     // showing an agent that stopped making progress for no stated reason.
-    return overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages));
+    // And the fourth, for turns that ran on another model than the session
+    // names because DorkOS credits do not cover it (DOR-2636): the transcript
+    // names the model that ran and never the one it replaced.
+    return overlayModelSubstitutions(
+      sessionId,
+      overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages))
+    );
   }
 
   /**

@@ -72,6 +72,7 @@ function onAccount(n: number, overrides: Partial<SessionAccount> = {}): SessionA
     chipState: 'ok',
     trackerItems: [],
     lifecycle: 'idle',
+    onCredits: false,
     pending: false,
     ...overrides,
   };

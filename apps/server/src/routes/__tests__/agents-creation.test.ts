@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
+// What DorkOS credits cover for an agent on them (DOR-2636): `opus` is not.
+vi.mock('../../services/core/cloud/credits-model-gate.js', () => ({
+  creditsAgentModelRefusal: vi.fn(async (opts: { model: string }) =>
+    opts.model === 'opus'
+      ? 'DorkOS credits don’t cover that model. Pick one from the model menu.'
+      : null
+  ),
+}));
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
@@ -165,6 +173,16 @@ describe('POST /api/agents/create', () => {
       memory: true,
       dorkosKnowledge: true,
     });
+  });
+
+  it('refuses a new agent a model DorkOS credits do not cover when it will run on them (DOR-2636)', async () => {
+    const res = await request(testServer)
+      .post('/api/agents/create')
+      .send({ name: 'my-agent', model: 'opus' });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: 'UNSUPPORTED_MODEL' });
+    expect(mockWriteManifest).not.toHaveBeenCalled();
   });
 
   it('creates directory structure: parent (recursive) + agent dir + .dork/', async () => {
