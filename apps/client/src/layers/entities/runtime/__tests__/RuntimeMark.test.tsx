@@ -39,7 +39,7 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 describe('RuntimeMark', () => {
   it('renders the runtime label as an accessible name', () => {
     render(<RuntimeMark type="codex" />, { wrapper: Wrapper });
-    expect(screen.getByLabelText('Runtime: Codex')).toBeDefined();
+    expect(screen.getByLabelText('Runs on Codex')).toBeDefined();
   });
 
   it('renders an svg icon for known runtimes', () => {
@@ -49,16 +49,16 @@ describe('RuntimeMark', () => {
 
   it('falls back to the raw type for unknown runtimes', () => {
     render(<RuntimeMark type="made-up" />, { wrapper: Wrapper });
-    expect(screen.getByLabelText('Runtime: made-up')).toBeDefined();
+    expect(screen.getByLabelText('Runs on made-up')).toBeDefined();
   });
 
   it('folds the model into the identity as runtime · model', () => {
     render(<RuntimeMark type="opencode" model="ollama/qwen2.5-coder" />, { wrapper: Wrapper });
-    expect(screen.getByLabelText('Runtime: OpenCode · qwen2.5-coder')).toBeDefined();
+    expect(screen.getByLabelText('Runs on OpenCode · qwen2.5-coder')).toBeDefined();
   });
 
   it('degrades to the runtime alone when no model is resolved', () => {
     render(<RuntimeMark type="opencode" model={null} />, { wrapper: Wrapper });
-    expect(screen.getByLabelText('Runtime: OpenCode')).toBeDefined();
+    expect(screen.getByLabelText('Runs on OpenCode')).toBeDefined();
   });
 });

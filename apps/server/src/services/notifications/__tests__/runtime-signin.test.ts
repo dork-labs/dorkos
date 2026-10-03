@@ -278,7 +278,7 @@ describe('a runtime turn that fails on its sign-in', () => {
     // Past tense, because a stored row outlives the condition it describes. It
     // is still in the inbox tomorrow, and telling somebody to sign in when they
     // already did is exactly the staleness that argued against storing at all.
-    expect(row.title).toBe('Your Claude sign-in stopped working');
+    expect(row.title).toBe('Your Claude Code sign-in stopped working');
     expect(row.body).toBe('Scheduled tasks and agent replies cannot run until you sign in.');
     // `blocking` because it IS a condition a person can end — the difference
     // that puts it on the escalation ladder.
@@ -329,7 +329,7 @@ describe('a runtime turn that fails on its sign-in', () => {
 
     const titles = raisedRows().map((c) => c.title);
     expect(titles).toHaveLength(2);
-    expect(titles).toContain('Your Claude sign-in stopped working');
+    expect(titles).toContain('Your Claude Code sign-in stopped working');
     expect(titles).toContain('Your Codex sign-in stopped working');
   });
 
@@ -396,7 +396,7 @@ describe('nobody signs in', () => {
     expect(sendToAll).toHaveBeenCalledTimes(1);
     expect(sendToAll).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'Your Claude sign-in stopped working',
+        title: 'Your Claude Code sign-in stopped working',
         body: 'Scheduled tasks and agent replies cannot run until you sign in.',
         deepLink: '/?settings=runtimes',
         tier: 'blocking',
@@ -422,7 +422,7 @@ describe('the next clean turn on that runtime', () => {
     // than the same sentence twice.
     const cleared = clearedRows();
     expect(cleared).toHaveLength(1);
-    expect(cleared[0].title).toBe('Your Claude sign-in is working again');
+    expect(cleared[0].title).toBe('Your Claude Code sign-in is working again');
     expect(cleared[0].outcome).toBe('cleared');
     // Already read: nobody needs a bell for a thing they just fixed themselves.
     expect(cleared[0].readAt).toBeTruthy();
@@ -615,7 +615,7 @@ describe('a machine with more than one account on one runtime', () => {
 
     expect(sendToAll).toHaveBeenCalledTimes(1);
     expect(sendToAll).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Your Claude sign-in stopped working' })
+      expect.objectContaining({ title: 'Your Claude Code sign-in stopped working' })
     );
   });
 
@@ -630,7 +630,9 @@ describe('a machine with more than one account on one runtime', () => {
     await drain(registry, 'claude-code', 'sess-fixed');
 
     expect(retired()).toHaveLength(1);
-    expect(clearedRows().map((row) => row.title)).toEqual(['Your Claude sign-in is working again']);
+    expect(clearedRows().map((row) => row.title)).toEqual([
+      'Your Claude Code sign-in is working again',
+    ]);
   });
 
   it('says it once for two dead accounts, and waits for both to be fixed', async () => {
@@ -857,7 +859,9 @@ describe('signing back in', () => {
     await flush();
 
     expect(retired()).toHaveLength(1);
-    expect(clearedRows().map((row) => row.title)).toEqual(['Your Claude sign-in is working again']);
+    expect(clearedRows().map((row) => row.title)).toEqual([
+      'Your Claude Code sign-in is working again',
+    ]);
   });
 
   it('does not cancel the phone leg for an account nobody signed in', async () => {
@@ -1023,7 +1027,7 @@ describe('a server restart that stranded an episode', () => {
     await flush();
 
     const [closed] = clearedRows();
-    expect(closed.title).toBe('DorkOS restarted while your Claude sign-in was broken');
+    expect(closed.title).toBe('DorkOS restarted while your Claude Code sign-in was broken');
     expect(closed.title).not.toContain('working again');
     expect(closed.body).toContain('the next task or reply will say so');
   });
@@ -1284,7 +1288,7 @@ describe('a relay-delivered turn on an expired claude-code sign-in', () => {
     );
 
     expect(raisedRows()).toHaveLength(1);
-    expect(raisedRows()[0].title).toBe('Your Claude sign-in stopped working');
+    expect(raisedRows()[0].title).toBe('Your Claude Code sign-in stopped working');
   });
 
   it('is silent when the map holds the raw runtime — the regression this covers', async () => {

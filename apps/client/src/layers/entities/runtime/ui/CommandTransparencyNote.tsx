@@ -29,7 +29,7 @@ export function CommandTransparencyNote({ command, runtimeLabel }: CommandTransp
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
       <p className="text-muted-foreground text-xs">
-        We’ll install {runtimeLabel} for you.{' '}
+        DorkOS installs {runtimeLabel} for you.{' '}
         <CollapsibleTrigger className="hover:text-foreground underline decoration-dotted underline-offset-2 transition-colors">
           {open ? 'Hide command' : 'What runs?'}
         </CollapsibleTrigger>

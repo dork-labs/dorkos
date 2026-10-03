@@ -81,7 +81,7 @@ describe('describeAgentExecution', () => {
     });
     expect(report.isBroken).toBe(true);
     expect(report.breakages[0].kind).toBe('model-unavailable');
-    expect(report.breakages[0].message).toBe('Claude no longer offers opus-3.');
+    expect(report.breakages[0].message).toBe('Claude Code no longer offers opus-3.');
   });
 
   it('names a runtime the way the calling screen names it, when told how', () => {

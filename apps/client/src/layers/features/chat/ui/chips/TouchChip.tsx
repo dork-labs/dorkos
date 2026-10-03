@@ -76,7 +76,7 @@ function accessibleNameFor(chip: TouchChipData): string {
   if (chip.hits !== undefined) parts.push(hitsLabel(chip.hits));
   if (chip.additions !== undefined) parts.push(`${chip.additions} added`);
   if (chip.deletions !== undefined) parts.push(`${chip.deletions} removed`);
-  if (chip.error) parts.push('failed');
+  if (chip.error) parts.push('didn’t work');
   return parts.join(', ');
 }
 

@@ -458,9 +458,9 @@ describe('limitSubject', () => {
   it('names the runtime with one account, or an unnamed one', () => {
     expect(
       limitSubject({ runtime: 'claude-code', accountLabel: 'Acct 4', identityGate: false })
-    ).toBe('Claude');
+    ).toBe('Claude Code');
     expect(limitSubject({ runtime: 'claude-code', accountLabel: null, identityGate: true })).toBe(
-      'Claude'
+      'Claude Code'
     );
     expect(limitSubject({ runtime: 'codex', accountLabel: null, identityGate: false })).toBe(
       'Codex'

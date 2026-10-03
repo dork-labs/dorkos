@@ -20,7 +20,7 @@
 export function revealActionLabel(platform: string | undefined): string {
   if (platform?.startsWith('darwin')) return 'Reveal in Finder';
   if (platform?.startsWith('win32')) return 'Reveal in File Explorer';
-  return 'Show in File Manager';
+  return 'Show in file manager';
 }
 
 /**

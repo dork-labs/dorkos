@@ -43,8 +43,7 @@ export function ProfilePanel({ member }: ProfilePanelProps) {
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
-        How you appear across DorkOS: on your team page, in every room, and beside everything you
-        write.
+        How you appear on your team page, in rooms and beside your messages.
       </p>
       <ProfilePhotoField member={member} />
       <ProfileNameField member={member} />

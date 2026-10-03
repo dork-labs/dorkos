@@ -21,7 +21,7 @@ vi.mock('../ui/CreateTaskDialog', () => ({
     if (!props.open) return null;
     return (
       <div data-testid="create-schedule-dialog">
-        {props.editTask ? 'Edit Schedule' : 'New Schedule'}
+        {props.editTask ? 'Edit schedule' : 'New schedule'}
       </div>
     );
   },
@@ -171,7 +171,7 @@ describe('TasksPanel', () => {
     expect(screen.getByTestId('create-schedule-dialog')).toBeTruthy();
     // Dialog should be in create mode (no editSchedule)
     expect(
-      screen.getByText('New Schedule', { selector: '[data-testid="create-schedule-dialog"]' })
+      screen.getByText('New schedule', { selector: '[data-testid="create-schedule-dialog"]' })
     ).toBeTruthy();
   });
 
@@ -190,7 +190,7 @@ describe('TasksPanel', () => {
     fireEvent.click(screen.getByLabelText('Edit My Job'));
 
     expect(screen.getByTestId('create-schedule-dialog')).toBeTruthy();
-    expect(screen.getByText('Edit Schedule')).toBeTruthy();
+    expect(screen.getByText('Edit schedule')).toBeTruthy();
   });
 
   it('passes correct props to TaskRow', async () => {

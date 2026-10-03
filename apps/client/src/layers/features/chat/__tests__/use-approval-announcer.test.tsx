@@ -80,13 +80,13 @@ describe('useApprovalAnnouncer', () => {
   it('names a denial as a denial', () => {
     const { rerender } = render(<Announcer parts={[pending]} />);
     rerender(<Announcer parts={[answered('tc-1', 'denied')]} />);
-    expect(spoken()).toContain('Denied Run "npm test"');
+    expect(spoken()).toContain('Didn’t allow Run "npm test"');
   });
 
   it('says an expired request was denied without an answer', () => {
     const { rerender } = render(<Announcer parts={[pending]} />);
     rerender(<Announcer parts={[answered('tc-1', 'expired')]} />);
-    expect(spoken()).toContain('expired without an answer and was denied');
+    expect(spoken()).toContain('wasn’t answered in time, so it didn’t run');
   });
 
   it('stays silent about answers that were already there when it mounted', () => {
@@ -161,6 +161,6 @@ describe('useApprovalAnnouncer', () => {
         sessionId="session-2"
       />
     );
-    expect(spoken()).toContain('Denied Run "ls"');
+    expect(spoken()).toContain('Didn’t allow Run "ls"');
   });
 });

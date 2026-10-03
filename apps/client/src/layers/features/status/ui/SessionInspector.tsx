@@ -52,7 +52,7 @@ export function SessionInspector() {
   if (!sessionId) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-xs">
-        Open a session to see what it is doing.
+        Open a session to inspect it.
       </div>
     );
   }
@@ -160,7 +160,7 @@ function ResolvedGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) 
         {d.cwd ?? '—'}
       </DetailRow>
       <DetailRow label="Git">{gitLabel(d.git)}</DetailRow>
-      <DetailRow label="Runtime">{d.runtime ?? '—'}</DetailRow>
+      <DetailRow label="Runs on">{d.runtime ?? '—'}</DetailRow>
       <DetailRow label="Model" wrap>
         {d.model ?? '—'}
       </DetailRow>
@@ -173,7 +173,7 @@ function ResolvedGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) 
       <DetailRow label="Effort">{d.effort ?? '—'}</DetailRow>
       <DetailRow label="Fast mode">{d.fastMode ? 'on' : 'off'}</DetailRow>
       <DetailRow label="Permissions">{d.permissionMode}</DetailRow>
-      <DetailRow label="Session id" wrap>
+      <DetailRow label="Session ID" wrap>
         {d.sessionId}
       </DetailRow>
       <DetailRow label="DorkOS version">{d.clientVersion ?? '—'}</DetailRow>

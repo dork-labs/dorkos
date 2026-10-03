@@ -64,8 +64,8 @@ describe('byRuntimePresets', () => {
       candidate({ projectPath: '/f', runtime: 'claude-code' }), // solo — excluded
     ];
     expect(byRuntimePresets(candidates)).toEqual([
-      { label: 'By runtime · Codex', rules: { runtimes: ['codex'] } },
-      { label: 'By runtime · OpenCode', rules: { runtimes: ['opencode'] } },
+      { label: 'Runs on Codex', rules: { runtimes: ['codex'] } },
+      { label: 'Runs on OpenCode', rules: { runtimes: ['opencode'] } },
     ]);
   });
 
@@ -85,8 +85,8 @@ describe('byRuntimePresets', () => {
       candidate({ projectPath: '/d', runtime: 'codex' }),
     ];
     expect(byRuntimePresets(candidates).map((p) => p.label)).toEqual([
-      'By runtime · Codex',
-      'By runtime · OpenCode',
+      'Runs on Codex',
+      'Runs on OpenCode',
     ]);
   });
 });

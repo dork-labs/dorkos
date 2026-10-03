@@ -81,11 +81,11 @@ describe('OneBar — a route bar cannot reach past the cluster (I1)', () => {
         <OneBar
           identity={<BarTitle>#general</BarTitle>}
           chips={<button aria-label="3 members">3</button>}
-          actions={<Button size="xs">New Schedule</Button>}
+          actions={<Button size="xs">New schedule</Button>}
         />
       </BarHarness>
     );
-    expect(buttonLabels()).toEqual(['3 members', 'New Schedule']);
+    expect(buttonLabels()).toEqual(['3 members', 'New schedule']);
   });
 
   it('places the cluster after everything a bar renders', () => {
@@ -96,13 +96,13 @@ describe('OneBar — a route bar cannot reach past the cluster (I1)', () => {
       <BarHarness>
         <OneBar
           identity={<BarTitle>Scheduled</BarTitle>}
-          actions={<Button size="xs">New Schedule</Button>}
+          actions={<Button size="xs">New schedule</Button>}
         />
         <BarFixedCluster />
       </BarHarness>
     );
     expect(buttonLabels()).toEqual([
-      'New Schedule',
+      'New schedule',
       'Open command palette',
       'Inbox',
       'Toggle right panel',

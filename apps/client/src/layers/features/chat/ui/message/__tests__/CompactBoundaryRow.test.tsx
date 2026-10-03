@@ -33,7 +33,7 @@ describe('CompactBoundaryRow', () => {
     render(<CompactBoundaryRow failed error="summarization failed" />);
     const row = screen.getByTestId('compact-boundary-row');
     expect(row).toHaveAttribute('data-failed', 'true');
-    expect(screen.getByText('Compaction failed')).toBeInTheDocument();
+    expect(screen.getByText('Couldn’t compact')).toBeInTheDocument();
     expect(screen.getByText('summarization failed')).toBeInTheDocument();
   });
 });

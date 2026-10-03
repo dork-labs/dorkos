@@ -281,7 +281,7 @@ describe('OfflineAgentDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('claude-code')).toBeInTheDocument();
+    expect(screen.getByText('Claude Code')).toBeInTheDocument();
   });
 
   it('flattens agents across multiple namespaces', () => {

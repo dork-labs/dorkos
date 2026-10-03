@@ -133,7 +133,7 @@ describe('File explorer context-menu actions', () => {
 
     await screen.findByText('Add to chat');
     expect(screen.queryByText('Reveal in Finder')).not.toBeInTheDocument();
-    expect(screen.queryByText('Show in File Manager')).not.toBeInTheDocument();
+    expect(screen.queryByText('Show in file manager')).not.toBeInTheDocument();
   });
 
   it('asks the server to reveal the clicked entry', async () => {
@@ -152,7 +152,7 @@ describe('File explorer context-menu actions', () => {
         }),
       })
     );
-    fireEvent.click(await screen.findByText('Show in File Manager'));
+    fireEvent.click(await screen.findByText('Show in file manager'));
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith('Couldn’t open the file manager'));
   });
@@ -224,9 +224,7 @@ describe('File explorer context-menu actions', () => {
 
     fireEvent.click(await screen.findByText('Add to chat'));
 
-    await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith('Open a chat first to add a file to it')
-    );
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Open a chat to add this file'));
     // Nothing took the caret, so the row keeps it — a keyboard user is not
     // dropped on the floor by an action that could not do anything.
     await settleClose();

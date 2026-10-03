@@ -78,7 +78,7 @@ describe('TaskTemplateGallery', () => {
   it('shows error message on error', () => {
     mockUseTaskTemplates.mockReturnValue({ isLoading: false, isError: true, data: undefined });
     render(<TaskTemplateGallery />, { wrapper: Wrapper });
-    expect(screen.getByText(/Couldn’t load the ready-made tasks/i)).toBeTruthy();
+    expect(screen.getByText(/Couldn’t load ready-made tasks/)).toBeTruthy();
   });
 
   it('renders a card for each preset', () => {
@@ -106,6 +106,6 @@ describe('TaskTemplateGallery', () => {
   it('handles empty preset list gracefully', () => {
     mockUseTaskTemplates.mockReturnValue({ isLoading: false, isError: false, data: [] });
     render(<TaskTemplateGallery />, { wrapper: Wrapper });
-    expect(screen.getByText(/No presets available/i)).toBeTruthy();
+    expect(screen.getByText(/No ready-made tasks yet/)).toBeTruthy();
   });
 });

@@ -350,10 +350,12 @@ describe('cloud routes', () => {
     });
 
     it('refuses to set credits on a runtime that does not declare them', async () => {
-      await request(server)
+      const res = await request(server)
         .put('/api/cloud/credits/default')
         .send({ runtime: 'codex', useCredits: true })
         .expect(400);
+      // The runtime's name, never its id: the sentence reaches the person.
+      expect(res.body.error).toBe("Codex can't run on DorkOS credits yet.");
       expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
     });
 

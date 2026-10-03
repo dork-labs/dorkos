@@ -92,9 +92,11 @@ describe('UnregisterAgentDialog', () => {
     );
 
     expect(
-      screen.getByText(
-        'It leaves your team and every channel it was in, and any schedules it has are paused. Its messages stay. Your own project files are not touched. You can add the folder as an agent again later, but you may need to add it back to its channels.'
-      )
+      screen.getByText('It leaves your team and channels. Its schedules pause.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Its messages and your project files are kept.')).toBeInTheDocument();
+    expect(
+      screen.getByText('You can add it back later. It may need re-adding to channels.')
     ).toBeInTheDocument();
   });
 

@@ -23,7 +23,7 @@ import {
 } from '@/layers/shared/ui';
 
 /** Copy shown in the tooltip when a refinement is hidden because the model can't run it. */
-const AUTO_UNSUPPORTED_TOOLTIP = 'Auto mode requires Opus 4.6+ or Sonnet 4.6';
+const AUTO_UNSUPPORTED_TOOLTIP = 'Auto mode needs Opus 4.6+ or Sonnet 4.6';
 
 interface PermissionModeItemProps {
   /**

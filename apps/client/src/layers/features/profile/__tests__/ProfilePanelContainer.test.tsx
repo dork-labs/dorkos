@@ -39,7 +39,7 @@ describe('ProfilePanelContainer', () => {
 
   it('invites a retry when the read FAILED', async () => {
     renderContainer(vi.fn().mockRejectedValue(new Error('roster unreachable')));
-    expect(await screen.findByText(/could not read your profile/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t load your profile/)).toBeInTheDocument();
   });
 
   it('keeps the form closed when the account row could not be loaded', async () => {
@@ -50,7 +50,7 @@ describe('ProfilePanelContainer', () => {
       })
     );
 
-    expect(await screen.findByText(/could not find your profile/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t find your profile/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Handle')).not.toBeInTheDocument();
   });
 

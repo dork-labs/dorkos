@@ -186,7 +186,7 @@ test.describe('Space membership in the DorkOS app is accessible (task 3.2)', () 
     await page.getByTestId('sidebar-header-block').click();
     await page.getByRole('menuitemradio', { name: /Delta/ }).click();
     const reconnect = page.getByRole('dialog', { name: 'Reconnect Delta' });
-    await expect(reconnect).toContainText('Disconnect here, then connect again.');
+    await expect(reconnect).toContainText('Disconnect, then connect again.');
     await expect(page).not.toHaveURL(/\/connections/);
     await axeBothSchemes(page, '[role="dialog"]', 'reconnect-desktop', testInfo);
     await reconnect.getByRole('button', { name: 'Disconnect', exact: true }).click();
@@ -289,7 +289,7 @@ test.describe('Space membership in the DorkOS app is accessible (task 3.2)', () 
       expect((await opened).url()).toBe(link);
       await expect(field).toHaveValue('https://alpha.example.test/c/remote-alpha');
       await expect(field).toHaveAccessibleDescription(
-        /Finish joining on alpha\.example\.test in the tab that opened/
+        /Finish joining on alpha\.example\.test in the new tab/
       );
       await expect(dialog.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
       await axeBothSchemes(page, '[role="dialog"]', `join-filled-${viewport.name}`, testInfo);

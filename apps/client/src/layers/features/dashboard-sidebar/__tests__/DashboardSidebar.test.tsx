@@ -2124,7 +2124,7 @@ describe('Getting started — Heads up’s first life stage (BC-4, BC-12 → BC-
     await waitFor(() => expect(zone()).not.toBeNull());
     // `agents-found` and `add-agent` are mutually exclusive: telling somebody to
     // add their first agent when the product just found two is nonsense.
-    expect(zoneRows(zone())).toEqual(['Meet the 2 agents we found', 'Ask DorkBot anything']);
+    expect(zoneRows(zone())).toEqual(['Meet the 2 agents DorkOS found', 'Ask DorkBot anything']);
   });
 
   it('gives Heads up the slot the moment something real needs you (BC-4)', async () => {

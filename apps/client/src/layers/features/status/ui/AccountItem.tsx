@@ -186,7 +186,7 @@ function AccountPicker({
           className="text-muted-foreground text-2xs px-2 pb-1 leading-snug"
           data-testid="account-scope-note"
         >
-          This session only. Locked once the first message sends.
+          This session only. Locked after the first message.
         </p>
         <ResponsiveDropdownMenuRadioGroup
           value={accountSwitch.selectedValue}
@@ -225,9 +225,7 @@ function AccountPicker({
                 // is how the first session gets there.
                 description={
                   notAllowed ??
-                  (entry.isAccountRoot === false
-                    ? 'Does not look like an account folder yet'
-                    : undefined)
+                  (entry.isAccountRoot === false ? 'Not an account folder yet' : undefined)
                 }
               >
                 <AccountMenuRow

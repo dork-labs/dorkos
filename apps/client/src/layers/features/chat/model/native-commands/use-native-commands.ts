@@ -175,7 +175,7 @@ export function useNativeCommands(
       if (slash && intent?.fulfillment === 'runtime' && compact) {
         if (!compact.supported) {
           // Honest refusal — never send an unsupported intent to the model as text.
-          toast.error(`Compact isn’t supported by ${compact.runtimeLabel || 'this runtime'}`);
+          toast.error(`Compact isn’t available on ${compact.runtimeLabel || 'this agent'}`);
           return { handled: true, ran: false };
         }
         if (!sessionId) {
@@ -223,7 +223,7 @@ export function useNativeCommands(
           // an optimistic success toast would double-toast a failed rename.
           confirmed = renameMutate({ sessionId, title }).then(
             () => {
-              toast.success(`Renamed session to "${title}"`);
+              toast.success(`Renamed session to “${title}”`);
               return true;
             },
             () => false

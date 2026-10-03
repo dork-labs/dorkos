@@ -46,7 +46,7 @@ async function driveTaskRuntimePicker(page: Page): Promise<void> {
   await page.getByRole('menuitem', { name: 'Edit' }).click({ timeout: WAIT_MS });
 
   const dialog = page.getByRole('dialog');
-  await dialog.getByText('Edit Schedule', { exact: true }).waitFor({ timeout: WAIT_MS });
+  await dialog.getByText('Edit schedule', { exact: true }).waitFor({ timeout: WAIT_MS });
 
   await dialog.getByText('Advanced settings', { exact: true }).click({ timeout: WAIT_MS });
   const runtimeSelect = dialog.getByTestId('task-runtime-select');

@@ -94,7 +94,7 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
           variant="design"
           face={<Sparkles className="text-primary size-7" />}
           title="Design your own"
-          subtitle="Describe the job in your own words. Your agent takes shape as you talk to it."
+          subtitle="Describe the job in your own words."
           tabIndex={roving.tabIndexFor(0)}
           onSelect={onDesignYourOwn}
           onKeyDown={(e) => roving.handleKeyDown(e, 0)}
@@ -136,8 +136,8 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
           data-testid="gallery-templates-note"
         >
           {error
-            ? 'Couldn’t load ready-made agents. Check your marketplace sources in Settings. You can still design your own above.'
-            : 'No ready-made agents yet. Design your own above, or add a marketplace source in Settings.'}
+            ? 'Couldn’t load ready-made agents. Check marketplace sources in Settings.'
+            : 'No ready-made agents yet. Add a marketplace source in Settings.'}
         </p>
       )}
 
@@ -193,7 +193,7 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
           data-testid="gallery-import-link"
         >
           <FolderInput className="size-4" />
-          Already have a project folder on disk? Bring in an existing project
+          Bring in an existing project folder
           <span aria-hidden>→</span>
         </button>
       </div>

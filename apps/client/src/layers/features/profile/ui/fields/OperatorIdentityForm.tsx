@@ -107,7 +107,7 @@ export function OperatorIdentityForm({
           />
         </div>
         <p id={handleHintId} className="text-muted-foreground text-xs">
-          What people and agents type after an @ to reach you.
+          What others type after @ to reach you.
         </p>
         {form.handleError && <FieldNote tone="error">{form.handleError}</FieldNote>}
       </div>

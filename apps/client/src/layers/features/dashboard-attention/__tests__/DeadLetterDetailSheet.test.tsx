@@ -169,8 +169,10 @@ describe('DeadLetterDetailSheet', () => {
 
   it('says what these are and what clearing does', () => {
     renderSheet({ deadLetters: [makeDeadLetterGroup()] });
-    expect(screen.getByText(/meant for an agent and never got there/)).toBeInTheDocument();
-    expect(screen.getByText(/Clearing them does not send them/)).toBeInTheDocument();
+    expect(
+      screen.getByText('These never reached an agent. Clearing them doesn’t send them.')
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Clearing them doesn’t send them/)).toBeInTheDocument();
   });
 
   it('renders the group reason as a human-readable badge, not the raw wire code', () => {

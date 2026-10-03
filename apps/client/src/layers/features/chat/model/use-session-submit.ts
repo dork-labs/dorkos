@@ -343,7 +343,7 @@ export function useSessionSubmit({
         if (opts.kickoff) throw err;
         setError({
           heading: 'Couldn’t send message',
-          message: (err as Error).message || 'The attachment did not upload. Please try again.',
+          message: (err as Error).message || 'The attachment didn’t upload. Try again.',
           // The words are still in the composer (or back in the queue row), so
           // the retry is a keystroke away. A Retry button here would re-send the
           // PREVIOUS user message, which is not what anyone asked for.
@@ -541,7 +541,7 @@ export function useSessionSubmit({
 
         setError({
           heading: 'Couldn’t send message',
-          message: (err as Error).message || 'The request failed. Please try again.',
+          message: (err as Error).message || 'Couldn’t reach DorkOS. Try again.',
           retryable: true,
         });
       }
@@ -653,7 +653,7 @@ export function useSessionSubmit({
         } catch (err) {
           setError({
             heading: errorHeading,
-            message: (err as Error).message || 'The attachment did not upload. Please try again.',
+            message: (err as Error).message || 'The attachment didn’t upload. Try again.',
             retryable: false,
           });
           return false;
@@ -686,7 +686,7 @@ export function useSessionSubmit({
         } catch (err) {
           setError({
             heading: errorHeading,
-            message: (err as Error).message || 'The request failed. Please try again.',
+            message: (err as Error).message || 'Couldn’t reach DorkOS. Try again.',
             // The words are still in the composer, so the retry is a keystroke
             // away. A Retry button here would re-send the PREVIOUS user message,
             // which is not what anyone asked for.

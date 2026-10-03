@@ -267,7 +267,7 @@ function OverflowBadge({ count, overflowTasks }: OverflowBadgeProps) {
     <div className="group relative">
       <div
         className="text-muted-foreground bg-muted text-3xs flex size-6 shrink-0 items-center justify-center rounded-full font-semibold"
-        aria-label={`${count} more subagent${count === 1 ? '' : 's'} running`}
+        aria-label={`${count} more helper${count === 1 ? '' : 's'} running`}
       >
         +{count}
       </div>

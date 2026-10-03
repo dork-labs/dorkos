@@ -81,7 +81,7 @@ export function UsageRevealPopover({
   } else if (hasUsage) {
     body = <UsageDetail usage={usage!} />;
   } else {
-    body = <p className="text-muted-foreground text-xs">No usage data for this session yet.</p>;
+    body = <p className="text-muted-foreground text-xs">No usage yet.</p>;
   }
 
   return (

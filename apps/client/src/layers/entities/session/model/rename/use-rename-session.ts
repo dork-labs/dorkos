@@ -78,8 +78,8 @@ export function useRenameSession(cwd: string | null) {
       const name = nameFor(account);
       toast.success(`Renamed on ${name}`, {
         description: resolvedAccount
-          ? 'Your session list shows the new name once you switch to that account.'
-          : `Your session list shows the new name while ${name} is the account in use.`,
+          ? 'Shows once you switch to that account.'
+          : `Shows while ${name} is the active account.`,
       });
     },
 

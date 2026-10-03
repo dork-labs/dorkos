@@ -38,13 +38,13 @@ export function startErrorMessage(error: unknown, address: string | undefined): 
       : {};
   switch (refusal.code) {
     case 'COMMUNITY_SELECTION_REQUIRED':
-      return `That address has more than one space on it. Enter the link for the one you want: its short address, like ${shortAddressExample(address)}, or its full link, which has /c/ in it.`;
+      return `That address has several spaces. Use one space’s own link, like ${shortAddressExample(address)}.`;
     case 'COMMUNITY_NAME_NOT_FOUND':
-      return 'No space uses that short address there. Check the spelling, or ask for the space’s full link.';
+      return 'No space uses that address. Check the spelling, or ask for its full link.';
     case 'COMMUNITY_RATE_LIMITED':
-      return `This DorkOS has tried that space too many times in a short while. Your address may be fine. Wait ${describeCommunityRetryWait(refusal.body?.retryAfterSeconds)}, then try again.`;
+      return `Too many tries. Your address may be fine. Wait ${describeCommunityRetryWait(refusal.body?.retryAfterSeconds)}, then try again.`;
     case 'COMMUNITY_UPGRADE_REQUIRED':
-      return 'This space’s server is too old to connect to this DorkOS. Ask whoever runs the space to update it, then try again.';
+      return 'This space’s server is too old for this DorkOS. Ask its owner to update it.';
     default:
       return 'Couldn’t connect. Check the space’s address and try again.';
   }
@@ -74,7 +74,7 @@ function shortAddressExample(address: string | undefined): string {
 
 /** What the form says when a join link can't be opened as an invitation. */
 export const INCOMPLETE_INVITATION =
-  'That invitation link is incomplete or isn’t secure. Copy the whole link from the invitation you were sent.';
+  'That invitation link is incomplete or isn’t secure. Copy the whole link again.';
 
 /**
  * Whether a value is shaped like an invitation (a space's join page) without

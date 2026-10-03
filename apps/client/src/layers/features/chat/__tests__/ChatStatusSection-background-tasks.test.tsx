@@ -213,9 +213,7 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
 
     expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Still working in the background. The agent picks up again when they finish.'
-      )
+      screen.getByText('Still working. The agent continues when they finish.')
     ).toBeInTheDocument();
   });
 

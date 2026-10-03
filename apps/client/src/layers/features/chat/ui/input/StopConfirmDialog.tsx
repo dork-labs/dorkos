@@ -53,8 +53,7 @@ export function StopConfirmDialog({
             Stop, and put {queuedCount} queued {noun} back?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            The agent stops now, and the {noun} you have waiting {queuedCount === 1 ? 'goes' : 'go'}{' '}
-            back into your composer. Nothing you typed is lost.
+            The agent stops. Your {noun} {queuedCount === 1 ? 'goes' : 'go'} back to the composer.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

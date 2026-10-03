@@ -144,7 +144,7 @@ test.describe('Undo and the Always allow suggestion @permissions', () => {
       if (i === 2) {
         // The third card does not suggest anything yet.
         const third = await openCard(page, approvalId);
-        await expect(third.getByText(/You've allowed this/)).toHaveCount(0);
+        await expect(third.getByText(/You’ve allowed this/)).toHaveCount(0);
       }
       const granted = await request.post(`/api/approvals/${approvalId}/grant`);
       expect(granted.ok()).toBe(true);
@@ -153,13 +153,13 @@ test.describe('Undo and the Always allow suggestion @permissions', () => {
     // The fourth card highlights Always allow, and says why.
     const fourthId = await askForRoom(request, token);
     const fourth = await openCard(page, fourthId);
-    await expect(fourth.getByText("You've allowed this 3 times this week.")).toBeVisible();
+    await expect(fourth.getByText('You’ve allowed this 3 times this week.')).toBeVisible();
     await expect(fourth.locator('[data-slot="approval-always"]')).toHaveAttribute(
       'data-suggested',
       'true'
     );
     await fourth.getByRole('button', { name: /^Not now/ }).click();
-    await expect(fourth.getByText(/You've allowed this/)).toHaveCount(0);
+    await expect(fourth.getByText(/You’ve allowed this/)).toHaveCount(0);
     await fourth.getByRole('button', { name: 'Allow', exact: true }).click();
     await expect(fourth.getByText('Allowed once')).toBeVisible();
 
@@ -167,8 +167,8 @@ test.describe('Undo and the Always allow suggestion @permissions', () => {
     const fifthId = await askForRoom(request, token);
     const fifth = await openCard(page, fifthId);
     await expect(fifth.getByRole('button', { name: 'Always allow' })).toBeVisible();
-    await expect(fifth.getByText(/You've allowed this/)).toHaveCount(0);
-    await fifth.getByRole('button', { name: 'Deny' }).click();
+    await expect(fifth.getByText(/You’ve allowed this/)).toHaveCount(0);
+    await fifth.getByRole('button', { name: 'Don’t allow' }).click();
     await expect(fifth.getByText('Not allowed')).toBeVisible();
   });
 });

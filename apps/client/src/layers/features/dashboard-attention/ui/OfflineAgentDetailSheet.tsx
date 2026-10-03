@@ -12,6 +12,7 @@ import {
 import { useTopology } from '@/layers/entities/mesh';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { formatCompactAge } from '@/layers/shared/lib';
 import { Check } from 'lucide-react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
@@ -39,7 +40,9 @@ function AgentRow({ agent }: AgentRowProps) {
         <p className="text-foreground truncate text-sm font-medium">{getAgentDisplayName(agent)}</p>
         <div className="flex items-center gap-2">
           <Badge variant="destructive">Unreachable</Badge>
-          {agent.runtime && <Badge variant="secondary">{agent.runtime}</Badge>}
+          {agent.runtime && (
+            <Badge variant="secondary">{getRuntimeDescriptor(agent.runtime).label}</Badge>
+          )}
         </div>
       </div>
       {agent.lastSeenAt && (

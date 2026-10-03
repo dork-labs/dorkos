@@ -48,7 +48,7 @@ export function byRuntimePresets(candidates: SmartGroupCandidate[]): SmartGroupP
     .map(([runtime, count]) => ({ runtime, count, label: getRuntimeDescriptor(runtime).label }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
     .map(({ runtime, label }) => ({
-      label: `By runtime · ${label}`,
+      label: `Runs on ${label}`,
       rules: { runtimes: [runtime] },
     }));
 }
