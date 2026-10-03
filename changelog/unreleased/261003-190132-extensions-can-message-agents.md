@@ -3,6 +3,7 @@ covers:
   - 'feat(extensions): let an extension message an agent with ctx.agent.send (DOR-2683)'
   - "fix(session): disarm swept rows' pending entries whether or not anyone listens (DOR-2683)"
   - 'fix(extensions): tighten ctx.agent.send targets, ids, races and stops after review (DOR-2683)'
+  - 'fix(extensions): never send a held message after its extension stops (DOR-2683)'
 ---
 
 ### Added
