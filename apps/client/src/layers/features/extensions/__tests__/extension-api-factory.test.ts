@@ -14,7 +14,8 @@ vi.mock('sonner', () => ({
 }));
 
 // Mock ui-action-dispatcher
-vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
+vi.mock('@/layers/shared/lib/ui-action-dispatcher', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib/ui-action-dispatcher')>()),
   executeUiCommand: vi.fn(),
 }));
 
@@ -94,14 +95,14 @@ describe('createExtensionAPI', () => {
 
   // 1. id field
   it('exposes the extension ID as a readonly property', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], () => {});
     expect(api.id).toBe('my-ext');
   });
 
   // 2. registerComponent
   describe('registerComponent', () => {
     it('calls registry.register with a contribution containing the namespaced ID', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const FakeComponent = () => null;
 
       api.registerComponent('dashboard.sections', 'widget', FakeComponent);
@@ -117,7 +118,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('respects the priority option', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       api.registerComponent('dashboard.sections', 'widget', () => null, { priority: 10 });
 
       const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
@@ -128,7 +129,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('forwards visibleWhen for dashboard.sections so a section can hide itself', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const visibleWhen = () => false;
 
       api.registerComponent('dashboard.sections', 'widget', () => null, { visibleWhen });
@@ -144,7 +145,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('leaves visibleWhen undefined when the extension does not pass one', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerComponent('dashboard.sections', 'widget', () => null);
 
@@ -156,7 +157,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('uses the label option for a labelled slot, defaulting to the namespaced id', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerComponent('sidebar.footer', 'labelled', () => null, { label: 'Labelled' });
       api.registerComponent('sidebar.footer', 'unlabelled', () => null);
@@ -176,7 +177,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('threads an icon option into a right-panel contribution', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const MyIcon = () => null;
 
       api.registerComponent('right-panel', 'inspector', () => null, {
@@ -194,7 +195,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('leaves a right-panel contribution iconless when no icon option is given', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerComponent('right-panel', 'inspector', () => null, { label: 'Inspector' });
 
@@ -209,26 +210,31 @@ describe('createExtensionAPI', () => {
     it('returns the unsubscribe function from registry.register', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       const returned = api.registerComponent('dashboard.sections', 'widget', () => null);
-      expect(returned).toBe(unsub);
+      returned();
+      returned();
+      expect(unsub).toHaveBeenCalledOnce();
     });
 
     it('adds the unsubscribe function to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerComponent('dashboard.sections', 'widget', () => null);
-      expect(cleanups).toContain(unsub);
+      expect(cleanups).toHaveLength(1);
+      cleanups[0]();
+      cleanups[0]();
+      expect(unsub).toHaveBeenCalledOnce();
     });
   });
 
   // 3. registerCommand
   describe('registerCommand', () => {
     it('registers a command palette contribution with namespaced IDs', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerCommand('do-thing', 'Do the thing', vi.fn());
 
@@ -244,7 +250,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('uses the provided icon and shortcut', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerCommand('do-thing', 'Do the thing', vi.fn(), {
         icon: 'zap',
@@ -260,7 +266,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('falls back to "puzzle" icon when none provided', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       api.registerCommand('do-thing', 'Label', vi.fn());
 
       const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
@@ -272,22 +278,27 @@ describe('createExtensionAPI', () => {
 
     it('registers the action handler with the correct action ID', () => {
       const cb = vi.fn();
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerCommand('do-thing', 'Label', cb);
 
-      expect(deps.registerCommandHandler).toHaveBeenCalledWith('ext:my-ext:do-thing', cb);
+      expect(deps.registerCommandHandler).toHaveBeenCalledWith(
+        'ext:my-ext:do-thing',
+        expect.any(Function)
+      );
+      vi.mocked(deps.registerCommandHandler).mock.calls[0][1]();
+      expect(cb).toHaveBeenCalledOnce();
     });
 
     it('adds the registry unsub to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerCommand('do-thing', 'Label', vi.fn());
-      // Cleanup is a wrapper that calls both registry unsub and command handler removal
-      expect(cleanups).toHaveLength(1);
-      cleanups[0]();
+      // The ordered ledger retains both independently attemptable obligations.
+      expect(cleanups).toHaveLength(2);
+      for (const cleanup of cleanups) cleanup();
       expect(unsub).toHaveBeenCalled();
       expect(deps.unregisterCommandHandler).toHaveBeenCalledWith('ext:my-ext:do-thing');
     });
@@ -296,7 +307,7 @@ describe('createExtensionAPI', () => {
   // 4. registerDialog
   describe('registerDialog', () => {
     it('registers a dialog contribution with the dialog slot', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const DialogComponent = () => null;
 
       api.registerDialog('my-dialog', DialogComponent);
@@ -311,7 +322,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('returns open and close controls', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const controls = api.registerDialog('my-dialog', () => null);
 
       expect(typeof controls.open).toBe('function');
@@ -319,7 +330,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('open/close do not throw', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const controls = api.registerDialog('my-dialog', () => null);
 
       expect(() => controls.open()).not.toThrow();
@@ -329,17 +340,20 @@ describe('createExtensionAPI', () => {
     it('adds the registry unsub to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerDialog('my-dialog', () => null);
-      expect(cleanups).toContain(unsub);
+      expect(cleanups).toHaveLength(1);
+      cleanups[0]();
+      cleanups[0]();
+      expect(unsub).toHaveBeenCalledOnce();
     });
   });
 
   // 5. registerSettingsTab
   describe('registerSettingsTab', () => {
     it('registers a settings tab with the namespaced ID and label', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const TabComponent = () => null;
 
       api.registerSettingsTab('prefs', 'Preferences', TabComponent);
@@ -357,26 +371,37 @@ describe('createExtensionAPI', () => {
     it('adds the registry unsub to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerSettingsTab('prefs', 'Prefs', () => null);
-      expect(cleanups).toContain(unsub);
+      expect(cleanups).toHaveLength(1);
+      cleanups[0]();
+      cleanups[0]();
+      expect(unsub).toHaveBeenCalledOnce();
     });
   });
 
   // 6. executeCommand
   it('executeCommand delegates to executeUiCommand with agent origin (programmatic, never persists tab picks)', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], () => {});
     const command = { action: 'open_command_palette' as const };
 
     api.executeCommand(command);
 
-    expect(executeUiCommand).toHaveBeenCalledWith(deps.dispatcherContext, command, 'agent');
+    expect(executeUiCommand).toHaveBeenCalledWith(
+      deps.dispatcherContext,
+      command,
+      'agent',
+      expect.objectContaining({
+        beforeEffect: expect.any(Function),
+        registerCleanup: expect.any(Function),
+      })
+    );
   });
 
   // 7. openCanvas
   it('openCanvas dispatches an open_canvas command with agent origin', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], () => {});
     const content: UiCanvasContent = { type: 'markdown', content: '# Hello' };
 
     api.openCanvas(content);
@@ -387,13 +412,17 @@ describe('createExtensionAPI', () => {
         action: 'open_canvas',
         content,
       },
-      'agent'
+      'agent',
+      expect.objectContaining({
+        beforeEffect: expect.any(Function),
+        registerCleanup: expect.any(Function),
+      })
     );
   });
 
   // 8. navigate
   it('navigate calls deps.navigate with the correct path', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
     api.navigate('/team');
 
@@ -409,7 +438,7 @@ describe('createExtensionAPI', () => {
     'javascript:alert(1)',
     'data:text/html,<script>alert(1)</script>',
   ])('navigate refuses %s rather than handing it to the router', (path) => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
     api.navigate(path);
 
@@ -417,7 +446,7 @@ describe('createExtensionAPI', () => {
   });
 
   it('navigate keeps the search an in-app path carries', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
     api.navigate('/session?dir=%2Ftmp');
 
@@ -431,7 +460,7 @@ describe('createExtensionAPI', () => {
         selectedCwd: '/home/kai/project',
         sessionId: 'sess-xyz',
       });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       const state = api.getState();
 
@@ -446,21 +475,21 @@ describe('createExtensionAPI', () => {
 
     it('says whether Require login is on', () => {
       vi.mocked(deps.appStore.getState).mockReturnValue({ requireLogin: true });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       expect(api.getState().requireLogin).toBe(true);
     });
 
     it('projects currentProject from the app store', () => {
       const project = { root: '/home/kai/project', name: 'project' };
       vi.mocked(deps.appStore.getState).mockReturnValue({ currentProject: project });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       expect(api.getState().currentProject).toBe(project);
     });
 
     it('returns null for missing fields', () => {
       vi.mocked(deps.appStore.getState).mockReturnValue({});
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       const state = api.getState();
 
@@ -476,7 +505,7 @@ describe('createExtensionAPI', () => {
         sessionId: 'sess-xyz',
         currentAgentId: '01HZ0000000000000000000001',
       });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       expect(api.getState().agentId).toBe('01HZ0000000000000000000001');
     });
@@ -487,7 +516,7 @@ describe('createExtensionAPI', () => {
         sessionId: 'sess-xyz',
         currentAgentId: null,
       });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       expect(api.getState().agentId).toBeNull();
     });
@@ -496,7 +525,7 @@ describe('createExtensionAPI', () => {
   // 10. subscribe
   describe('subscribe', () => {
     it('subscribes to the app store via a projected selector', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const selector = vi.fn((s) => s.currentCwd);
       const callback = vi.fn();
 
@@ -508,7 +537,7 @@ describe('createExtensionAPI', () => {
     it('adds the unsubscribe function to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.appStore.subscribe).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.subscribe(() => null, vi.fn());
       expect(cleanups).toContain(unsub);
@@ -517,7 +546,7 @@ describe('createExtensionAPI', () => {
     it('returns the unsubscribe function', () => {
       const unsub = vi.fn();
       vi.mocked(deps.appStore.subscribe).mockReturnValueOnce(unsub);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       const returned = api.subscribe(() => null, vi.fn());
       expect(returned).toBe(unsub);
@@ -530,7 +559,7 @@ describe('createExtensionAPI', () => {
         currentAgentId: 'agent-a',
       });
       deps = makeDeps({ appStore: store as unknown as ExtensionAPIDeps['appStore'] });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const received: unknown[] = [];
 
       api.subscribe(
@@ -550,7 +579,7 @@ describe('createExtensionAPI', () => {
         currentAgentId: 'agent-a',
       });
       deps = makeDeps({ appStore: store as unknown as ExtensionAPIDeps['appStore'] });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const callback = vi.fn();
 
       api.subscribe((s) => s.agentId, callback);
@@ -573,11 +602,11 @@ describe('createExtensionAPI', () => {
           json: vi.fn().mockResolvedValue(payload),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       const result = await api.loadData();
 
-      expect(fetch).toHaveBeenCalledWith('/api/extensions/my-ext/data');
+      expect(fetch).toHaveBeenCalledWith('/api/extensions/my-ext/data', undefined);
       expect(result).toEqual(payload);
 
       vi.unstubAllGlobals();
@@ -591,7 +620,7 @@ describe('createExtensionAPI', () => {
           json: vi.fn(),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       const result = await api.loadData();
 
@@ -603,7 +632,7 @@ describe('createExtensionAPI', () => {
   // 12. saveData
   it('saveData PUTs JSON to /api/extensions/{id}/data', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true }));
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], () => {});
     const data = { count: 42 };
 
     await api.saveData(data);
@@ -654,7 +683,7 @@ describe('createExtensionAPI', () => {
         }),
       });
       vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       const result = await api.answerDecision(decision.id, { action: 'approve' });
 
@@ -687,7 +716,7 @@ describe('createExtensionAPI', () => {
         })
       );
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       await api.answerDecision(decision.id, { action: 'approve' });
       expect(deps.navigate).not.toHaveBeenCalled();
       warn.mockRestore();
@@ -702,7 +731,7 @@ describe('createExtensionAPI', () => {
           json: vi.fn().mockResolvedValue({ value: 1, updatedAt: 42, updatedBy: 'robot' }),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       await expect(api.projectSettings.get('/repos/dorkos')).rejects.toThrow();
     });
 
@@ -717,7 +746,7 @@ describe('createExtensionAPI', () => {
             .mockResolvedValue({ error: 'This was already settled.', code: 'already_resolved' }),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       await expect(api.answerDecision(decision.id, { action: 'approve' })).rejects.toMatchObject({
         message: 'This was already settled.',
         code: 'already_resolved',
@@ -731,7 +760,7 @@ describe('createExtensionAPI', () => {
         json: vi.fn().mockResolvedValue({ decisions: [decision], offers: [] }),
       });
       vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const views = await api.listDecisions();
       expect(fetchMock.mock.calls[0][0]).toBe('/api/extensions/my-ext/decisions');
       expect(views).toEqual([
@@ -765,7 +794,7 @@ describe('createExtensionAPI', () => {
         })
         .mockResolvedValueOnce({ ok: true, status: 204, json: vi.fn() });
       vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       expect(await api.projectSettings.get('/repos/my.app')).toEqual({ autonomy: 'ask-me-first' });
       expect(fetchMock.mock.calls[0][0]).toBe(
@@ -800,7 +829,7 @@ describe('createExtensionAPI', () => {
         json: vi.fn().mockResolvedValue({ sessionId: 'chat-new' }),
       });
       vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
 
       await expect(api.startWork(input)).resolves.toEqual({ sessionId: 'chat-new' });
       expect(fetchMock.mock.calls[0][0]).toBe('/api/extensions/my-ext/start-work');
@@ -821,7 +850,7 @@ describe('createExtensionAPI', () => {
           }),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const err = await api.startWork(input).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(StartWorkError);
       expect(err).toMatchObject({
@@ -843,7 +872,7 @@ describe('createExtensionAPI', () => {
           }),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       const err = await api.startWork(input).catch((e: unknown) => e);
       expect(err).not.toBeInstanceOf(StartWorkError);
       expect(err).toMatchObject({ code: 'start_work_person_required', status: 403 });
@@ -852,28 +881,28 @@ describe('createExtensionAPI', () => {
 
   describe('notify', () => {
     it('calls toast.info by default', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       api.notify('Hello world');
 
       expect(toast.info).toHaveBeenCalledWith('Hello world');
     });
 
     it('calls toast.success when type is "success"', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       api.notify('Done!', { type: 'success' });
 
       expect(toast.success).toHaveBeenCalledWith('Done!');
     });
 
     it('calls toast.error when type is "error"', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       api.notify('Failed', { type: 'error' });
 
       expect(toast.error).toHaveBeenCalledWith('Failed');
     });
 
     it('calls toast.info when type is explicitly "info"', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       api.notify('FYI', { type: 'info' });
 
       expect(toast.info).toHaveBeenCalledWith('FYI');
@@ -883,14 +912,14 @@ describe('createExtensionAPI', () => {
   // 14. isSlotAvailable
   describe('isSlotAvailable', () => {
     it('returns true for slots in the available set', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       expect(api.isSlotAvailable('dashboard.sections')).toBe(true);
       expect(api.isSlotAvailable('command-palette.items')).toBe(true);
     });
 
     it('returns false for slots not in the available set', () => {
       deps = makeDeps({ availableSlots: new Set(['dashboard.sections'] as const) });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       expect(api.isSlotAvailable('right-panel')).toBe(false);
     });
   });
@@ -905,24 +934,27 @@ describe('createExtensionAPI', () => {
         .mockReturnValueOnce(unsub1)
         .mockReturnValueOnce(unsub2)
         .mockReturnValueOnce(unsub3);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], () => {});
 
       api.registerComponent('dashboard.sections', 'w1', () => null);
       api.registerCommand('cmd', 'Label', vi.fn());
       api.registerSettingsTab('prefs', 'Prefs', () => null);
 
-      expect(cleanups).toHaveLength(3);
-      // registerComponent and registerSettingsTab push raw unsubs
-      expect(cleanups[0]).toBe(unsub1);
-      expect(cleanups[2]).toBe(unsub3);
-      // registerCommand pushes a wrapper that also unregisters the handler
+      expect(cleanups).toHaveLength(4);
+      cleanups[0]();
+      expect(unsub1).toHaveBeenCalledOnce();
+      expect(unsub2).not.toHaveBeenCalled();
       cleanups[1]();
-      expect(unsub2).toHaveBeenCalled();
+      expect(unsub2).toHaveBeenCalledOnce();
+      expect(deps.unregisterCommandHandler).not.toHaveBeenCalled();
+      cleanups[2]();
+      cleanups[3]();
+      expect(unsub3).toHaveBeenCalledOnce();
       expect(deps.unregisterCommandHandler).toHaveBeenCalledWith('ext:my-ext:cmd');
     });
 
     it('starts with an empty cleanups array', () => {
-      const { cleanups } = createExtensionAPI('my-ext', deps);
+      const { cleanups } = createExtensionAPI('my-ext', deps, [], () => {});
       expect(cleanups).toHaveLength(0);
     });
   });
@@ -942,7 +974,7 @@ describe('createExtensionAPI', () => {
     it('delegates declared kinds to the event bridge and tracks cleanup', () => {
       const bridgeUnsub = vi.fn();
       vi.mocked(deps.eventBridge.subscribe).mockReturnValue(bridgeUnsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, ['turn.completed']);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, ['turn.completed'], () => {});
       const handler = vi.fn();
 
       const unsub = api.events.subscribe(['turn.completed'], handler);
@@ -954,7 +986,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('authorizes a kind via its declared category', () => {
-      const { api } = createExtensionAPI('my-ext', deps, ['turn']);
+      const { api } = createExtensionAPI('my-ext', deps, ['turn'], () => {});
       const handler = vi.fn();
 
       api.events.subscribe(['turn.started', 'turn.completed'], handler);
@@ -966,7 +998,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('drops undeclared kinds, warns, and only forwards the allowed ones', () => {
-      const { api } = createExtensionAPI('my-ext', deps, ['session']);
+      const { api } = createExtensionAPI('my-ext', deps, ['session'], () => {});
       const handler = vi.fn();
 
       api.events.subscribe(['session.started', 'tool.activity'], handler);
@@ -977,7 +1009,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('returns a no-op and does not touch the bridge when every kind is undeclared', () => {
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, []);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], () => {});
       const handler = vi.fn();
 
       const unsub = api.events.subscribe(['turn.completed'], handler);
@@ -989,7 +1021,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('defaults to no declared events when the argument is omitted', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], () => {});
       api.events.subscribe(['turn.completed'], vi.fn());
       expect(deps.eventBridge.subscribe).not.toHaveBeenCalled();
     });
@@ -997,7 +1029,7 @@ describe('createExtensionAPI', () => {
     it('cleans up the bridge subscription on deactivate (via cleanups)', () => {
       const bridgeUnsub = vi.fn();
       vi.mocked(deps.eventBridge.subscribe).mockReturnValue(bridgeUnsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, ['tool']);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, ['tool'], () => {});
 
       api.events.subscribe(['tool.activity'], vi.fn());
       // The loader runs every cleanup on deactivate.
@@ -1006,4 +1038,103 @@ describe('createExtensionAPI', () => {
       expect(bridgeUnsub).toHaveBeenCalled();
     });
   });
+});
+
+// An already-retired API must never enter an injected host primitive.
+describe('extension lifetime admission', () => {
+  it('refuses navigation after its lifetime retires', () => {
+    const deps = makeDeps();
+    let current = true;
+    const { api } = (
+      createExtensionAPI as unknown as (
+        id: string,
+        deps: ExtensionAPIDeps,
+        events: [],
+        current: () => void
+      ) => ReturnType<typeof createExtensionAPI>
+    )('retired', deps, [], () => {
+      if (!current) throw new Error('EXTENSION_RETIRED');
+    });
+    current = false;
+    expect(() => api.navigate('/activity')).toThrow('EXTENSION_RETIRED');
+    expect(deps.navigate).not.toHaveBeenCalled();
+  });
+  it('still navigates while the exact lifetime is current', () => {
+    const deps = makeDeps();
+    const { api } = (
+      createExtensionAPI as unknown as (
+        id: string,
+        deps: ExtensionAPIDeps,
+        events: [],
+        current: () => void
+      ) => ReturnType<typeof createExtensionAPI>
+    )('current', deps, [], () => {});
+    api.navigate('/activity');
+    expect(deps.navigate).toHaveBeenCalledWith({ to: '/activity' });
+  });
+});
+
+describe('prepared host effects and registered cleanup custody', () => {
+  it.each([false, true])(
+    'saveData serialization retirement=%s precedes final fetch entry',
+    async (retire) => {
+      let current = true;
+      const deps = makeDeps();
+      const fetch = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetch);
+      const { api } = createExtensionAPI('fixture', deps, [], () => {
+        if (!current) throw new Error('EXTENSION_RETIRED');
+      });
+      const data = {
+        toJSON: vi.fn(() => {
+          if (retire) current = false;
+          return { fixture: true };
+        }),
+      };
+      try {
+        const pending = api.saveData(data);
+        if (retire) {
+          await expect(pending).rejects.toThrow('EXTENSION_RETIRED');
+          expect(fetch).not.toHaveBeenCalled();
+        } else {
+          await pending;
+          expect(fetch).toHaveBeenCalledOnce();
+          expect(fetch.mock.calls[0][1].body).toBe('{"fixture":true}');
+        }
+        expect(data.toJSON).toHaveBeenCalledOnce();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    }
+  );
+  it.each([false, true])(
+    'command handler getter retirement=%s retains the earlier registration cleanup',
+    (retire) => {
+      let current = true;
+      const deps = makeDeps();
+      const release = vi.fn();
+      const register = vi.fn();
+      vi.mocked(deps.registry.register).mockReturnValue(release);
+      Object.defineProperty(deps, 'registerCommandHandler', {
+        get: () => {
+          if (retire) current = false;
+          return register;
+        },
+      });
+      const { api, cleanups } = createExtensionAPI('fixture', deps, [], () => {
+        if (!current) throw new Error('EXTENSION_RETIRED');
+      });
+      const invoke = () => api.registerCommand('cmd', 'Fixture', () => {});
+      if (retire) {
+        expect(invoke).toThrow('EXTENSION_RETIRED');
+        expect(register).not.toHaveBeenCalled();
+      } else {
+        invoke();
+        expect(register).toHaveBeenCalledOnce();
+      }
+      expect(deps.registry.register).toHaveBeenCalledOnce();
+      for (const dispose of new Set(cleanups)) dispose();
+      expect(release).toHaveBeenCalledOnce();
+    }
+  );
 });

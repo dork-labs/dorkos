@@ -522,14 +522,26 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     await manager.initialize(null);
 
     expect(manager.getServerRouter('flow')).toBeNull();
-    expect(await manager.readBundle('flow')).toBeNull();
+    expect(
+      await manager.readBundle(
+        'flow',
+        (await manager.readPublic()).find((record) => record.id === 'flow')?.bundleGeneration ??
+          'missing-generation'
+      )
+    ).toBeNull();
 
     const approved = await manager.approveToRun('flow');
 
     expect(stored.value.approvedSources).toEqual({ flow: { path: PLUGIN_COPY, plugin: 'flow' } });
     expect(approved).toMatchObject({ approvedToRun: true, sourcePlugin: 'flow' });
     expect(manager.getServerRouter('flow')).not.toBeNull();
-    expect(await manager.readBundle('flow')).toBe(OBSERVABLE_BUNDLE);
+    expect(
+      await manager.readBundle(
+        'flow',
+        (await manager.readPublic()).find((record) => record.id === 'flow')?.bundleGeneration ??
+          'missing-generation'
+      )
+    ).toBe(OBSERVABLE_BUNDLE);
   });
 
   it('does not run a second plugin carrying an already-approved id until it is approved', async () => {
@@ -550,7 +562,13 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     await manager.initialize(null);
 
     expect(manager.getServerRouter('flow')).toBeNull();
-    expect(await manager.readBundle('flow')).toBeNull();
+    expect(
+      await manager.readBundle(
+        'flow',
+        (await manager.readPublic()).find((record) => record.id === 'flow')?.bundleGeneration ??
+          'missing-generation'
+      )
+    ).toBeNull();
     expect(manager.listPublic().find((e) => e.id === 'flow')?.approvedToRun).toBe(false);
 
     await manager.approveToRun('flow');

@@ -285,6 +285,56 @@ describe('ExtensionManager', () => {
     expect(mockDiscover).toHaveBeenCalledTimes(2);
   });
 
+  describe('generation-bound public bundle publication', () => {
+    it.each(['revoke', 'disable'] as const)(
+      'refuses the previously advertised generation after %s during cache read',
+      async (change) => {
+        const record = makeRecord('held', { status: 'enabled' });
+        mockConfigGet.mockReturnValue({ enabled: ['held'], disabled: [], ...approved(['held']) });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'owned-code', sourceHash: 'exact-source' });
+        await manager.initialize(null);
+        const generation = (await manager.readPublic())[0].bundleGeneration!;
+        expect(generation).toMatch(/^[a-f0-9]{64}$/);
+        const originalRecord = manager.get('held');
+        let release!: (bytes: string) => void;
+        mockReadBundle.mockImplementationOnce(
+          () =>
+            new Promise<string>((resolve) => {
+              release = resolve;
+            })
+        );
+        const pending = manager.readBundle('held', generation);
+        await vi.waitFor(() => expect(mockReadBundle).toHaveBeenCalledWith('held', 'exact-source'));
+        mockConfigGet.mockReturnValue(
+          change === 'revoke'
+            ? { enabled: ['held'], disabled: [], ...approved([]) }
+            : { enabled: [], disabled: ['held'], ...approved(['held']) }
+        );
+        expect(manager.get('held')).toBe(originalRecord);
+        expect(originalRecord?.sourceHash).toBe('exact-source');
+        release('owned-code');
+        expect(await pending).toBeNull();
+        expect(mockReadBundle).toHaveBeenCalledOnce();
+        mockConfigGet.mockReturnValue({ enabled: ['held'], disabled: [], ...approved(['held']) });
+        expect((await manager.readPublic())[0].bundleGeneration).toBe(generation);
+        mockReadBundle.mockResolvedValue('owned-code');
+        expect(await manager.readBundle('held', generation)).toBe('owned-code');
+      }
+    );
+    it('refuses a different generation without entering cache, and serves the exact advertised one', async () => {
+      mockConfigGet.mockReturnValue({ enabled: ['bound'], disabled: [], ...approved(['bound']) });
+      mockDiscover.mockResolvedValue([makeRecord('bound', { status: 'enabled' })]);
+      mockCompile.mockResolvedValue({ code: 'owned-code', sourceHash: 'bound-source' });
+      mockReadBundle.mockResolvedValue('owned-code');
+      await manager.initialize(null);
+      const generation = (await manager.readPublic())[0].bundleGeneration!;
+      expect(await manager.readBundle('bound', '0'.repeat(64))).toBeNull();
+      expect(mockReadBundle).not.toHaveBeenCalled();
+      expect(await manager.readBundle('bound', generation)).toBe('owned-code');
+    });
+  });
+
   // === 8. Read bundle ===
 
   it('reads bundle for compiled extensions', async () => {
@@ -296,7 +346,11 @@ describe('ExtensionManager', () => {
 
     await manager.initialize(null);
 
-    const bundle = await manager.readBundle('ext-d');
+    const bundle = await manager.readBundle(
+      'ext-d',
+      (await manager.readPublic()).find((record) => record.id === 'ext-d')?.bundleGeneration ??
+        undefined
+    );
 
     expect(bundle).toBe('bundle-code');
     expect(mockReadBundle).toHaveBeenCalledWith('ext-d', 'hash456');
@@ -308,7 +362,11 @@ describe('ExtensionManager', () => {
 
     await manager.initialize(null);
 
-    const bundle = await manager.readBundle('ext-e');
+    const bundle = await manager.readBundle(
+      'ext-e',
+      (await manager.readPublic()).find((record) => record.id === 'ext-e')?.bundleGeneration ??
+        undefined
+    );
 
     expect(bundle).toBeNull();
     expect(mockReadBundle).not.toHaveBeenCalled();
@@ -317,7 +375,11 @@ describe('ExtensionManager', () => {
   it('returns null when reading bundle for a non-existent extension', async () => {
     await manager.initialize(null);
 
-    const bundle = await manager.readBundle('no-such-ext');
+    const bundle = await manager.readBundle(
+      'no-such-ext',
+      (await manager.readPublic()).find((record) => record.id === 'no-such-ext')
+        ?.bundleGeneration ?? undefined
+    );
 
     expect(bundle).toBeNull();
   });
@@ -349,7 +411,11 @@ describe('ExtensionManager', () => {
       // It compiled, and it is ready to serve — the two things the old check asked.
       expect(manager.get('unapproved')).toMatchObject({ status: 'compiled', bundleReady: true });
 
-      const bundle = await manager.readBundle('unapproved');
+      const bundle = await manager.readBundle(
+        'unapproved',
+        (await manager.readPublic()).find((record) => record.id === 'unapproved')
+          ?.bundleGeneration ?? undefined
+      );
 
       expect(bundle).toBeNull();
       // Not merely "the caller got null": the compiler was never asked, so there is
@@ -365,7 +431,13 @@ describe('ExtensionManager', () => {
       mockReadBundle.mockResolvedValue('bundle-code');
 
       await manager.initialize(null);
-      expect(await manager.readBundle('waiting')).toBeNull();
+      expect(
+        await manager.readBundle(
+          'waiting',
+          (await manager.readPublic()).find((record) => record.id === 'waiting')
+            ?.bundleGeneration ?? undefined
+        )
+      ).toBeNull();
 
       mockConfigGet.mockReturnValue({
         enabled: ['waiting'],
@@ -373,7 +445,13 @@ describe('ExtensionManager', () => {
         ...approved(['waiting']),
       });
 
-      expect(await manager.readBundle('waiting')).toBe('bundle-code');
+      expect(
+        await manager.readBundle(
+          'waiting',
+          (await manager.readPublic()).find((record) => record.id === 'waiting')
+            ?.bundleGeneration ?? undefined
+        )
+      ).toBe('bundle-code');
       expect(mockReadBundle).toHaveBeenCalledWith('waiting', 'hashabc');
     });
 
@@ -390,7 +468,13 @@ describe('ExtensionManager', () => {
 
       await manager.initialize(null);
 
-      expect(await manager.readBundle('linear-issues')).toBe('core-code');
+      expect(
+        await manager.readBundle(
+          'linear-issues',
+          (await manager.readPublic()).find((record) => record.id === 'linear-issues')
+            ?.bundleGeneration ?? undefined
+        )
+      ).toBe('core-code');
     });
 
     it('reads the approval list, not some other list that happens to hold the id', async () => {
@@ -409,7 +493,13 @@ describe('ExtensionManager', () => {
 
       await manager.initialize(null);
 
-      expect(await manager.readBundle('enabled-not-approved')).toBeNull();
+      expect(
+        await manager.readBundle(
+          'enabled-not-approved',
+          (await manager.readPublic()).find((record) => record.id === 'enabled-not-approved')
+            ?.bundleGeneration ?? undefined
+        )
+      ).toBeNull();
     });
   });
 
@@ -682,7 +772,11 @@ describe('ExtensionManager', () => {
     await manager.initialize(null);
     manager.reportActivated('ext-k');
 
-    const bundle = await manager.readBundle('ext-k');
+    const bundle = await manager.readBundle(
+      'ext-k',
+      (await manager.readPublic()).find((record) => record.id === 'ext-k')?.bundleGeneration ??
+        undefined
+    );
 
     expect(bundle).toBe('active-bundle');
     expect(mockReadBundle).toHaveBeenCalledWith('ext-k', 'activehash');

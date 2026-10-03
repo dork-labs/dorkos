@@ -1,30 +1,14 @@
-import type {
-  ExtensionRecordPublic,
-  ExtensionModule,
-  SecretDeclaration,
-  SettingDeclaration,
-} from '@dorkos/extension-api';
+import type { ExtensionRecordPublic, ExtensionModule } from '@dorkos/extension-api';
+import {
+  createOwnedRegistrationDeps,
+  registerManifestConfigTab,
+} from './extension-api-contributions';
 import { createExtensionAPI } from './extension-api-factory';
 import type { ExtensionAPIDeps, LoadedExtension } from './types';
-import { createElement } from 'react';
-import { ManifestSettingsPanel, ManifestSettingsIcon } from '../ui/ManifestSettingsPanel';
 import { extensionApiUrl } from './extension-api-url';
+import { getExtensionLoadAdmission, type ExtensionLoadAdmission } from '@/layers/shared/lib';
+import type { ExtensionAPI } from '@dorkos/extension-api';
 import { runningCopiesOnly } from '@/layers/entities/extension';
-
-/**
- * Fetch the extension list from the server.
- *
- * Returns an empty array on network or server errors so callers can
- * proceed safely without extensions.
- */
-async function fetchExtensions(): Promise<ExtensionRecordPublic[]> {
-  const res = await fetch(extensionApiUrl('/extensions'));
-  if (!res.ok) {
-    console.error('[extensions] Failed to fetch extension list:', res.status);
-    return [];
-  }
-  return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
-}
 
 /**
  * Fetch the extension list from the server, rejecting on an HTTP error status.
@@ -34,8 +18,11 @@ async function fetchExtensions(): Promise<ExtensionRecordPublic[]> {
  * set — an empty array must mean "this cwd has no extensions", never "the
  * request failed".
  */
-async function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
-  const res = await fetch(extensionApiUrl('/extensions'));
+async function fetchExtensionsOrThrow(current: () => boolean): Promise<ExtensionRecordPublic[]> {
+  const url = extensionApiUrl('/extensions');
+  const method = globalThis.fetch;
+  if (!current()) throw new Error('Extension load was superseded.');
+  const res = await Reflect.apply(method, globalThis, [url]);
   if (!res.ok) {
     throw new Error(`Failed to fetch extension list: ${res.status}`);
   }
@@ -47,11 +34,16 @@ async function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
  *
  * Returns `null` on import failure so the caller can skip and report the error.
  */
-async function importBundle(id: string): Promise<ExtensionModule | null> {
+async function importBundle(
+  rec: ExtensionRecordPublic,
+  current: () => boolean
+): Promise<ExtensionModule | null> {
+  const id = rec.id;
+  if (!rec.bundleGeneration || !/^[a-f0-9]{64}$/.test(rec.bundleGeneration)) return null;
   try {
-    return (await import(
-      /* @vite-ignore */ extensionApiUrl(`/extensions/${id}/bundle`)
-    )) as ExtensionModule;
+    const url = extensionApiUrl(`/extensions/${id}/bundle?generation=${rec.bundleGeneration}`);
+    if (!current()) return null;
+    return (await import(/* @vite-ignore */ url)) as ExtensionModule;
   } catch (err) {
     console.error(`[extensions] Failed to import ${id}:`, err);
     return null;
@@ -64,13 +56,18 @@ async function importBundle(id: string): Promise<ExtensionModule | null> {
  * This is a fire-and-forget coordination signal for dynamic enable/reload
  * scenarios. Failures are logged but never block client-side activation.
  */
-async function initServerExtension(rec: ExtensionRecordPublic): Promise<void> {
+async function initServerExtension(
+  rec: ExtensionRecordPublic,
+  current: () => boolean
+): Promise<void> {
   if (!rec.hasServerEntry && !rec.hasDataProxy) return;
 
   try {
-    const res = await fetch(extensionApiUrl(`/extensions/${rec.id}/init-server`), {
-      method: 'POST',
-    });
+    const url = extensionApiUrl(`/extensions/${rec.id}/init-server`);
+    const request: RequestInit = { method: 'POST' };
+    const method = globalThis.fetch;
+    if (!current()) return;
+    const res = await Reflect.apply(method, globalThis, [url, request]);
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: 'Unknown error' }));
       console.warn(
@@ -83,377 +80,396 @@ async function initServerExtension(rec: ExtensionRecordPublic): Promise<void> {
   }
 }
 
-/** Result of a single bundle load attempt. */
-interface BundleResult {
-  rec: ExtensionRecordPublic;
-  module: ExtensionModule | null;
+interface ActivationOwner {
+  cleanups: Array<() => void>;
+  attempted: Set<() => void>;
+  retired: boolean;
+  published: boolean;
+  deactivate?: () => void;
+  deactivateAttempted: boolean;
 }
-
-/**
- * Handles the client-side extension lifecycle: fetch the extension list,
- * dynamically import compiled bundles, activate extensions with their API
- * objects, and track loaded extensions for cleanup.
- *
- * Each extension receives its own `ExtensionAPI` instance constructed by
- * the factory. Activation errors are isolated — one bad extension cannot
- * prevent others from loading.
- */
+export interface ExtensionLoadOutcome {
+  status: 'completed' | 'partial' | 'failed' | 'stale';
+  failures: ReadonlyArray<{ id: string; stage: 'import' | 'activation' | 'load' }>;
+  extensions: ExtensionRecordPublic[];
+  loaded: Map<string, LoadedExtension>;
+}
+/** Exact loader + admission owner. It cannot resume a retired instance. */
 export class ExtensionLoader {
-  private loaded: Map<string, LoadedExtension> = new Map();
-  private readonly deps: ExtensionAPIDeps;
-  /**
-   * Set by {@link deactivateAll} to prevent a stale loader from completing
-   * async work after React StrictMode unmounts the owning component.
-   */
+  private loaded = new Map<string, LoadedExtension>();
+  private owners = new Set<ActivationOwner>();
   private disposed = false;
-  /**
-   * Monotonic load token. Every load path — {@link initialize},
-   * {@link reloadAll}, and {@link reloadExtensions} — claims the current value
-   * on entry by incrementing it, so starting any load supersedes all older
-   * in-flight loads. A superseded load stops activating instead of registering
-   * contributions that a newer load (e.g. a cwd switch) has made stale.
-   */
+  private retirementFailed = false;
   private generation = 0;
-
-  constructor(deps: ExtensionAPIDeps) {
-    this.deps = deps;
+  private outcomes = new WeakMap<ExtensionLoadOutcome, { generation: number; current: boolean }>();
+  private readonly admission: ExtensionLoadAdmission;
+  constructor(
+    private readonly deps: ExtensionAPIDeps,
+    admission: ExtensionLoadAdmission,
+    private readonly onRetirementFailure: () => void
+  ) {
+    this.admission = admission;
   }
-
-  /**
-   * Fetch the extension list, import compiled bundles in parallel, and activate.
-   *
-   * @returns All discovered extension records and the map of successfully loaded extensions
-   */
-  async initialize(): Promise<{
-    extensions: ExtensionRecordPublic[];
-    loaded: Map<string, LoadedExtension>;
-  }> {
-    // Claim this load; any newer load supersedes it.
+  /** Callback-free local fields follow the shared exact admission observation. */
+  private current(gen: number): boolean {
+    const snapshot = getExtensionLoadAdmission();
+    return (
+      snapshot === this.admission &&
+      !snapshot.suspended &&
+      !snapshot.retirementFailed &&
+      !this.disposed &&
+      !this.retirementFailed &&
+      gen === this.generation
+    );
+  }
+  private requireCurrent(gen: number): void {
+    if (!this.current(gen)) throw new Error('Extension load was superseded.');
+  }
+  private result(
+    gen: number,
+    extensions: ExtensionRecordPublic[],
+    detail: {
+      completed?: boolean;
+      failed?: boolean;
+      failures?: ExtensionLoadOutcome['failures'];
+    } = {}
+  ): ExtensionLoadOutcome {
+    const { completed = false, failed = false, failures = [] } = detail;
+    const current = this.current(gen);
+    const authentic = current && (completed || failed);
+    let status: ExtensionLoadOutcome['status'] = 'stale';
+    if (authentic) {
+      status = 'completed';
+      if (failures.length || failed) status = this.loaded.size ? 'partial' : 'failed';
+    }
+    const value: ExtensionLoadOutcome = Object.freeze({
+      status,
+      extensions: authentic ? extensions : [],
+      loaded: authentic ? new Map(this.loaded) : new Map<string, LoadedExtension>(),
+      failures: Object.freeze(failures.map((failure) => Object.freeze({ ...failure }))),
+    });
+    this.outcomes.set(value, { generation: gen, current: authentic });
+    return value;
+  }
+  /** Only a genuine current completed, partial or failed result of this current load may reach provider state. */
+  isOutcomeCurrent(value: ExtensionLoadOutcome): boolean {
+    const record = this.outcomes.get(value);
+    return !!record?.current && this.current(record.generation);
+  }
+  /** Permanently refuse initiation and drain all registered obligations, including late ones. */
+  deactivateAll(): boolean {
+    this.disposed = true;
+    ++this.generation;
+    this.teardownLoaded();
+    return !this.retirementFailed;
+  }
+  private failRetirement(): void {
+    if (this.retirementFailed) return;
+    this.retirementFailed = true;
+    try {
+      this.onRetirementFailure();
+    } catch {
+      /* Remains permanently failed. */
+    }
+  }
+  private attemptCleanup(callback: () => void): void {
+    try {
+      const result: unknown = callback();
+      if (result && (typeof result === 'object' || typeof result === 'function')) {
+        const then = Reflect.get(result, 'then');
+        if (typeof then === 'function') {
+          // The declared synchronous cleanup contract cannot certify this pending work.
+          this.failRetirement();
+          void Promise.resolve(result).catch(() => {});
+        }
+      }
+    } catch {
+      this.failRetirement();
+    }
+  }
+  private drain(owner: ActivationOwner): void {
+    owner.retired = true;
+    if (owner.deactivate && !owner.deactivateAttempted) {
+      owner.deactivateAttempted = true;
+      this.attemptCleanup(owner.deactivate);
+    }
+    for (const cleanup of owner.cleanups) {
+      if (owner.attempted.has(cleanup)) continue;
+      owner.attempted.add(cleanup);
+      this.attemptCleanup(cleanup);
+    }
+    this.owners.delete(owner);
+  }
+  private teardownLoaded(): void {
+    for (const owner of this.owners) this.drain(owner);
+    this.loaded.clear();
+  }
+  private track(owner: ActivationOwner, cleanup: () => void): () => void {
+    owner.cleanups.push(cleanup);
+    if (owner.retired) this.drain(owner);
+    return cleanup;
+  }
+  private ownerCurrent(gen: number, owner: ActivationOwner): boolean {
+    const snapshot = getExtensionLoadAdmission();
+    return (
+      snapshot === this.admission &&
+      !snapshot.suspended &&
+      !snapshot.retirementFailed &&
+      !this.disposed &&
+      !this.retirementFailed &&
+      !owner.retired &&
+      (owner.published || gen === this.generation)
+    );
+  }
+  private guardedDeps(gen: number, owner: ActivationOwner): ExtensionAPIDeps {
+    return createOwnedRegistrationDeps(this.deps, {
+      requireCurrent: () => {
+        if (!this.ownerCurrent(gen, owner)) {
+          this.drain(owner);
+          throw new Error('Extension owner retired.');
+        }
+      },
+      isCurrent: () => this.ownerCurrent(gen, owner),
+      track: (cleanup) => this.track(owner, cleanup),
+    });
+  }
+  /** Wrap only the genuine API factory result; this is not caller shape authentication. */
+  private guardedAPI(api: ExtensionAPI, gen: number, owner: ActivationOwner): ExtensionAPI {
+    const wrap = (object: object): object =>
+      new Proxy(object, {
+        get: (target, key) => {
+          if (!this.ownerCurrent(gen, owner)) {
+            this.drain(owner);
+            throw new Error('Extension owner retired.');
+          }
+          const value = Reflect.get(target, key, target);
+          if (!this.ownerCurrent(gen, owner)) {
+            this.drain(owner);
+            throw new Error('Extension owner retired.');
+          }
+          if (typeof value === 'function')
+            return (...args: unknown[]) => {
+              if (!this.ownerCurrent(gen, owner)) {
+                this.drain(owner);
+                throw new Error('Extension owner retired.');
+              }
+              const result = Reflect.apply(value, target, args);
+              if (!this.ownerCurrent(gen, owner)) {
+                this.drain(owner);
+                throw new Error('Extension owner retired.');
+              }
+              return result;
+            };
+          return value && typeof value === 'object' ? wrap(value) : value;
+        },
+      });
+    return wrap(api) as ExtensionAPI;
+  }
+  async initialize(): Promise<ExtensionLoadOutcome> {
+    if (!this.current(this.generation)) return this.result(this.generation, []);
     const gen = ++this.generation;
-
-    const extensions = await fetchExtensions();
-    return this.activateFrom(extensions, gen);
+    try {
+      const extensions = await fetchExtensionsOrThrow(() => this.current(gen));
+      if (!this.current(gen)) return this.result(gen, []);
+      return await this.activateFrom(extensions, gen);
+    } catch (error) {
+      console.error('[extensions] Load failed:', error);
+      return this.result(gen, [], {
+        failed: this.current(gen),
+        failures: [{ id: '', stage: 'load' }],
+      });
+    }
   }
-
-  /**
-   * Import and activate every ready extension from a pre-fetched list.
-   *
-   * Shared by {@link initialize} (initial load) and {@link reloadAll} (cwd
-   * switch), which fetch the list themselves so each can apply its own error
-   * policy before any activation happens.
-   *
-   * @param extensions - The extension records to load from
-   * @param gen - The generation this load claimed on entry; activation stops
-   *   if a newer load has claimed a later generation in the meantime
-   * @returns The provided extension list and the map of loaded extensions
-   */
   private async activateFrom(
     extensions: ExtensionRecordPublic[],
     gen: number
-  ): Promise<{
-    extensions: ExtensionRecordPublic[];
-    loaded: Map<string, LoadedExtension>;
-  }> {
-    // Only load extensions that have been compiled, have a ready bundle, and that
-    // the person allowed to run (DOR-516). The server withholds the bundle either
-    // way — that is the actual guarantee, and it lives at
-    // `ExtensionManager.readBundle` so a hand-written request cannot skip it. This
-    // filter is here so the cockpit does not fire a request it knows will be
-    // refused and log a console error for every extension awaiting a decision.
+  ): Promise<ExtensionLoadOutcome> {
+    if (!this.current(gen)) return this.result(gen, []);
+    const failures: Array<{ id: string; stage: 'import' | 'activation' | 'load' }> = [];
     const ready = extensions.filter(
-      (ext) => ext.status === 'compiled' && ext.bundleReady && ext.approvedToRun
+      (rec) =>
+        ['compiled', 'active'].includes(rec.status) &&
+        rec.bundleReady &&
+        rec.approvedToRun &&
+        typeof rec.bundleGeneration === 'string' &&
+        /^[a-f0-9]{64}$/.test(rec.bundleGeneration)
     );
-
-    if (ready.length === 0) {
-      console.log('[extensions] No extensions to load');
-      return { extensions, loaded: this.loaded };
-    }
-
-    // Load all bundles in parallel to minimise startup time.
-    const bundleResults: BundleResult[] = await Promise.all(
-      ready.map(async (rec): Promise<BundleResult> => ({
-        rec,
-        module: await importBundle(rec.id),
-      }))
+    // Each sibling checks immediately before initiating its own import.
+    const bundles = await Promise.all(
+      ready.map(async (rec) => {
+        if (!this.current(gen)) return { rec, module: null };
+        const module = await importBundle(rec, () => this.current(gen));
+        return { rec, module: this.current(gen) ? module : null };
+      })
     );
-
-    const activated: string[] = [];
-
-    const serverInits: Promise<void>[] = [];
-
-    for (const { rec, module } of bundleResults) {
-      // Stop activating if this load was torn down (deactivateAll on a
-      // StrictMode unmount) or superseded by a newer load (reloadAll on a rapid
-      // CWD switch) while the async work was in flight — otherwise we would
-      // register stale contributions from a previous working directory.
-      if (this.disposed || gen !== this.generation) break;
-
+    if (!this.current(gen)) return this.result(gen, []);
+    const published = await fetchExtensionsOrThrow(() => this.current(gen));
+    if (!this.current(gen)) return this.result(gen, []);
+    const byId = new Map(published.map((rec) => [rec.id, rec]));
+    for (const { rec, module } of bundles) {
+      if (!this.current(gen)) return this.result(gen, []);
+      const latest = byId.get(rec.id);
       if (!module) {
-        // importBundle already logged the error; nothing more to do here.
+        failures.push({ id: rec.id, stage: 'import' });
         continue;
       }
-
-      try {
-        const { api, cleanups } = createExtensionAPI(
-          rec.id,
-          this.deps,
-          rec.manifest.capabilities?.events ?? []
-        );
-        const deactivateFn = module.activate(api);
-
-        // Auto-register a secrets settings tab from the manifest if the
-        // extension didn't register one itself. This gives extension authors
-        // a polished settings UI for free — zero code required.
-        this.autoRegisterConfigTab(rec, cleanups);
-
-        const loaded: LoadedExtension = {
-          id: rec.id,
-          manifest: rec.manifest,
-          module,
-          api,
-          cleanups,
-          deactivate: typeof deactivateFn === 'function' ? deactivateFn : undefined,
-        };
-
-        this.loaded.set(rec.id, loaded);
-        activated.push(`${rec.manifest.name} v${rec.manifest.version}`);
-
-        // After client-side activation succeeds, signal the server to
-        // initialize its side. Non-blocking — failures are logged only.
-        serverInits.push(initServerExtension(rec));
-      } catch (err) {
-        console.error(`[extensions] Failed to activate ${rec.id}:`, err);
-      }
+      if (
+        !latest ||
+        !latest.approvedToRun ||
+        !latest.bundleReady ||
+        !['compiled', 'active'].includes(latest.status) ||
+        latest.bundleGeneration !== rec.bundleGeneration
+      )
+        continue;
+      if (!(await this.activateCandidate({ rec, module, gen }, failures)))
+        return this.result(gen, []);
     }
-
-    await Promise.all(serverInits);
-
-    if (activated.length > 0) {
-      console.log(`[extensions] Activated: ${activated.join(', ')}`);
-    }
-
-    // If this load was superseded mid-flight, `extensions` reflects the fetch
-    // this load performed, not necessarily the newest one — the returned list is
-    // best-effort context state; the TanStack extension-list query (invalidated
-    // by every reload caller) is the source of truth for list consumers. The
-    // `loaded` map is the loader's single live instance, so it is always current.
-    return { extensions, loaded: this.loaded };
+    return this.result(gen, extensions, { completed: this.current(gen), failures });
   }
-
-  /**
-   * Permanently dispose the loader: mark it disposed (so any in-flight
-   * {@link initialize} stops activating) and tear down every loaded extension
-   * via {@link teardownLoaded}. Used as the owning component's unmount cleanup.
-   */
-  deactivateAll(): void {
-    this.disposed = true;
-    this.teardownLoaded();
-  }
-
-  /**
-   * Swap the loaded extension set for the server's current one (fetch-then-swap).
-   *
-   * The new working directory's extension list is fetched FIRST; only once it
-   * resolves does the loader tear down the current extensions (running each
-   * cleanup, so all registry contributions and event/state subscriptions are
-   * removed) and import + activate the fresh set. A failed fetch rejects before
-   * any teardown, leaving every current extension live and registered — the
-   * caller reports the error and the UI keeps the previous set instead of
-   * ending up with empty slots. Slot hosts observe the contributions leave the
-   * reactive registry and return, so extension components remount cleanly with
-   * no state carried over from the previous working directory.
-   *
-   * Bundles are imported without cache-busting on purpose: a cwd switch changes
-   * WHICH extensions load, not their compiled content — recompile-driven
-   * cache-busting belongs to the SSE hot-reload path ({@link reloadExtensions}).
-   *
-   * Used by the CWD sync when the working directory changes and its scoped
-   * extension set differs — a live swap that replaces the old page reload.
-   *
-   * @returns The refreshed extension list and the map of re-activated extensions
-   */
-  async reloadAll(): Promise<{
-    extensions: ExtensionRecordPublic[];
-    loaded: Map<string, LoadedExtension>;
-  }> {
-    // Claim this load; any newer load supersedes it.
+  async reloadAll(): Promise<ExtensionLoadOutcome> {
+    if (!this.current(this.generation)) return this.result(this.generation, []);
     const gen = ++this.generation;
-
-    // Fetch-then-swap: resolve the new set before touching the current one.
-    const extensions = await fetchExtensionsOrThrow();
-
-    // Superseded while fetching (rapid cwd switch) — the newer load owns the
-    // teardown and activation now; touch nothing.
-    if (this.disposed || gen !== this.generation) {
-      return { extensions, loaded: this.loaded };
+    try {
+      const extensions = await fetchExtensionsOrThrow(() => this.current(gen));
+      if (!this.current(gen)) return this.result(gen, []);
+      this.teardownLoaded();
+      if (!this.current(gen)) return this.result(gen, []);
+      return await this.activateFrom(extensions, gen);
+    } catch (error) {
+      console.error('[extensions] Load failed:', error);
+      return this.result(gen, [], {
+        failed: this.current(gen),
+        failures: [{ id: '', stage: 'load' }],
+      });
     }
-
-    this.teardownLoaded();
-    return this.activateFrom(extensions, gen);
   }
-
-  /**
-   * Deactivate every loaded extension and empty the loaded map.
-   *
-   * Calls each extension's optional `deactivate()` first, then runs all
-   * registered cleanup functions. Errors in individual teardowns are caught and
-   * logged so they cannot prevent the remaining extensions from being torn down.
-   * Shared by {@link deactivateAll} and {@link reloadAll}; does not touch the
-   * `disposed` flag, so a reload can re-activate afterwards.
-   */
-  private teardownLoaded(): void {
-    for (const [id, ext] of this.loaded) {
-      try {
-        ext.deactivate?.();
-      } catch (err) {
-        console.error(`[extensions] Error calling deactivate for ${id}:`, err);
-      }
-
-      for (const cleanup of ext.cleanups) {
-        try {
-          cleanup();
-        } catch (err) {
-          console.error(`[extensions] Error in cleanup for ${id}:`, err);
-        }
-      }
-    }
-
-    this.loaded.clear();
-  }
-
-  /**
-   * Hot-reload specific extensions: deactivate, re-import, and reactivate.
-   *
-   * Extensions not in the provided list are untouched — their state and
-   * registrations are preserved. Cache busting is achieved by appending
-   * `?t=${Date.now()}` to the bundle URL, which forces fresh ESM evaluation
-   * even when the server sets `Cache-Control: no-store`.
-   *
-   * @param ids - Extension IDs to reload
-   * @returns Updated loaded map and refreshed extension list
-   */
-  async reloadExtensions(ids: string[]): Promise<{
-    extensions: ExtensionRecordPublic[];
-    loaded: Map<string, LoadedExtension>;
-  }> {
-    // Claim this load; any newer load supersedes it. Without this, an
-    // SSE-triggered reload that was awaiting its fetch when a cwd-switch
-    // reloadAll() ran would resurrect the pre-switch extensions into the
-    // fresh set.
+  async reloadExtensions(ids: string[]): Promise<ExtensionLoadOutcome> {
+    if (!this.current(this.generation)) return this.result(this.generation, []);
     const gen = ++this.generation;
-
-    // 1. Deactivate only the specified extensions
-    for (const id of ids) {
-      const ext = this.loaded.get(id);
-      if (ext) {
-        try {
-          ext.deactivate?.();
-        } catch (err) {
-          console.error(`[extensions] Error deactivating ${id}:`, err);
-        }
-
-        for (const cleanup of ext.cleanups) {
-          try {
-            cleanup();
-          } catch (err) {
-            console.error(`[extensions] Error in cleanup for ${id}:`, err);
-          }
-        }
-
+    try {
+      // Preserve unaffected registrations. Targeted owners are retired and cannot register anew.
+      for (const id of ids) {
+        if (!this.current(gen)) return this.result(gen, []);
+        const ext = this.loaded.get(id);
+        if (!ext) continue;
+        for (const owner of this.owners) if (owner.cleanups === ext.cleanups) this.drain(owner);
         this.loaded.delete(id);
       }
+      if (!this.current(gen)) return this.result(gen, []);
+      const extensions = await fetchExtensionsOrThrow(() => this.current(gen));
+      if (!this.current(gen)) return this.result(gen, []);
+      const selected = extensions.filter((rec) => ids.includes(rec.id));
+      const outcome = await this.activateFrom(selected, gen);
+      if (!this.isOutcomeCurrent(outcome)) return this.result(gen, []);
+      return this.result(gen, extensions, {
+        completed: true,
+        failed: outcome.status !== 'completed',
+        failures: outcome.failures,
+      });
+    } catch (error) {
+      console.error('[extensions] Load failed:', error);
+      return this.result(gen, [], {
+        failed: this.current(gen),
+        failures: [{ id: '', stage: 'load' }],
+      });
     }
-
-    // 2. Fetch updated extension list from server
-    const extensions = await fetchExtensions();
-
-    // 3. Re-import and reactivate the specified extensions
-    for (const id of ids) {
-      // Stop reactivating if a newer load (cwd-switch reloadAll, unmount) has
-      // superseded this one — it owns the loaded map now.
-      if (this.disposed || gen !== this.generation) break;
-
-      const rec = extensions.find((e) => e.id === id);
-      if (!rec || rec.status !== 'compiled' || !rec.bundleReady) {
-        continue;
-      }
-
-      try {
-        // Cache-bust: append timestamp to force fresh ESM module evaluation.
-        // The browser's module registry keys by URL, so a new query string
-        // yields a new module instance distinct from the pre-reload one.
-        const module = (await import(
-          /* @vite-ignore */ extensionApiUrl(`/extensions/${id}/bundle?t=${Date.now()}`)
-        )) as ExtensionModule;
-
-        // Re-check after the import await — a newer load may have started
-        // while the bundle was in flight.
-        if (this.disposed || gen !== this.generation) break;
-
-        const { api, cleanups } = createExtensionAPI(id, this.deps);
-        const deactivateFn = module.activate(api);
-
-        this.autoRegisterConfigTab(rec, cleanups);
-
-        this.loaded.set(id, {
-          id,
-          manifest: rec.manifest,
-          module,
-          api,
-          cleanups,
-          deactivate: typeof deactivateFn === 'function' ? deactivateFn : undefined,
-        });
-
-        // Signal server init after successful client-side reactivation.
-        await initServerExtension(rec);
-
-        console.log(`[extensions] Hot-reloaded: ${rec.manifest.name} v${rec.manifest.version}`);
-      } catch (err) {
-        console.error(`[extensions] Failed to hot-reload ${id}:`, err);
-      }
-    }
-
-    return { extensions, loaded: this.loaded };
   }
-
-  /** Return the map of all currently loaded extensions. */
   getLoaded(): Map<string, LoadedExtension> {
-    return this.loaded;
+    return new Map(this.loaded);
   }
 
-  /**
-   * Auto-register a host-generated settings tab for extensions that declare
-   * secrets or settings in their manifest. This gives extension authors a
-   * polished UI using the design system — zero settings code required.
-   *
-   * Called after `module.activate(api)` so the extension can override by
-   * registering its own tab with the same ID (idempotent registry replaces).
-   */
-  private autoRegisterConfigTab(rec: ExtensionRecordPublic, cleanups: Array<() => void>): void {
-    const secrets = rec.manifest.serverCapabilities?.secrets;
-    const settings = rec.manifest.serverCapabilities?.settings;
-    if (!secrets?.length && !settings?.length) return;
-
-    const extensionId = rec.id;
-    const tabId = `${extensionId}:settings`;
-    const frozenSecrets: SecretDeclaration[] = secrets ?? [];
-    const frozenSettings: SettingDeclaration[] = settings ?? [];
-
-    const unsub = this.deps.registry.register('settings.tabs', {
-      id: tabId,
-      label: rec.manifest.name,
-      icon: ManifestSettingsIcon,
-      component: function AutoConfigTab() {
-        return createElement(ManifestSettingsPanel, {
-          extensionId,
-          secrets: frozenSecrets,
-          settings: frozenSettings,
-        });
-      },
-      priority: 90,
-      group: 'Add-ons',
-    });
-
-    cleanups.push(unsub);
+  private createOwnedAPI(rec: ExtensionRecordPublic, gen: number, owner: ActivationOwner) {
+    const guardedDeps = this.guardedDeps(gen, owner);
+    const created = createExtensionAPI(
+      rec.id,
+      guardedDeps,
+      rec.manifest.capabilities?.events ?? [],
+      () => {
+        if (!this.ownerCurrent(gen, owner)) {
+          this.drain(owner);
+          throw new Error('Extension owner retired.');
+        }
+      }
+    );
+    // Keep factory cleanup list itself: a started API call may append after retirement.
+    created.cleanups.push(...owner.cleanups);
+    owner.cleanups = created.cleanups;
+    const api = this.guardedAPI(created.api, gen, owner);
+    return { api, guardedDeps };
+  }
+  private recordDeactivate(owner: ActivationOwner, deactivate: unknown): void {
+    if (typeof deactivate === 'function') owner.deactivate = deactivate as () => void;
+    else if (deactivate !== undefined) {
+      // The author API is synchronous. Do not await or adopt an unsupported
+      // return as successful activation or promise observed cleanup.
+      if (
+        deactivate !== null &&
+        (typeof deactivate === 'object' || typeof deactivate === 'function')
+      ) {
+        // Unsupported object returns have unknown custody even if then lookup throws.
+        this.failRetirement();
+        const then = Reflect.get(deactivate, 'then');
+        if (typeof then === 'function') {
+          this.failRetirement();
+          try {
+            void Promise.resolve(deactivate).catch(() => {});
+          } catch {
+            /* Unknown remains sticky. */
+          }
+        }
+      }
+      throw new Error('Extension activate must return void or a cleanup function.');
+    }
+  }
+  private async activateCandidate(
+    input: { rec: ExtensionRecordPublic; module: ExtensionModule; gen: number },
+    failures: Array<{ id: string; stage: 'import' | 'activation' | 'load' }>
+  ): Promise<boolean> {
+    const { rec, module, gen } = input;
+    const owner: ActivationOwner = {
+      cleanups: [],
+      attempted: new Set(),
+      retired: false,
+      published: false,
+      deactivateAttempted: false,
+    };
+    this.owners.add(owner); // Before factory/activation callbacks.
+    try {
+      const { api, guardedDeps } = this.createOwnedAPI(rec, gen, owner);
+      const activate = module.activate;
+      this.requireCurrent(gen);
+      const deactivate: unknown = Reflect.apply(activate, module, [api]);
+      this.recordDeactivate(owner, deactivate);
+      if (!this.current(gen) || owner.retired) {
+        this.drain(owner);
+        return false;
+      }
+      registerManifestConfigTab(rec, owner.cleanups, guardedDeps);
+      this.requireCurrent(gen);
+      owner.published = true;
+      this.loaded.set(rec.id, {
+        id: rec.id,
+        manifest: rec.manifest,
+        module,
+        api,
+        cleanups: owner.cleanups,
+        deactivate: owner.deactivate,
+      });
+      // Initiate only while still current; the server independently rechecks authority.
+      if (!this.current(gen)) return false;
+      await initServerExtension(rec, () => this.current(gen));
+      if (!this.current(gen)) return false;
+    } catch (error) {
+      failures.push({ id: rec.id, stage: 'activation' });
+      console.error(`[extensions] Activation failed for ${rec.id}:`, error);
+      this.loaded.delete(rec.id);
+      this.drain(owner);
+      if (this.retirementFailed) {
+        this.deactivateAll();
+        return false;
+      }
+      if (!this.current(gen)) return false;
+    }
+    return this.current(gen);
   }
 }

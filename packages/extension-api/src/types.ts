@@ -132,6 +132,8 @@ export interface ExtensionRecordPublic {
    */
   serverError?: { code: string; message: string; details?: string };
   bundleReady: boolean;
+  /** Exact ready copy/manifest/code correspondence; never an approval or owner grant. */
+  bundleGeneration?: string;
   hasServerEntry: boolean;
   hasDataProxy: boolean;
   /**

@@ -767,11 +767,14 @@ describe('executeUiCommand — celebrate', () => {
     const ctx = makeMockCtx();
     ctx.celebrationOrigin = { x: 0.25, y: 0.75 };
     executeUiCommand(ctx, { action: 'celebrate', kind: 'emoji', emoji: '🏆' }, 'user');
-    expect(fireCelebration).toHaveBeenCalledWith({
-      kind: 'emoji',
-      emoji: '🏆',
-      origin: { x: 0.25, y: 0.75 },
-    });
+    expect(fireCelebration).toHaveBeenCalledWith(
+      {
+        kind: 'emoji',
+        emoji: '🏆',
+        origin: { x: 0.25, y: 0.75 },
+      },
+      undefined
+    );
   });
 
   it('falls back to no origin when the context omits one (agent/stream celebrate)', async () => {
@@ -779,11 +782,14 @@ describe('executeUiCommand — celebrate', () => {
     vi.mocked(fireCelebration).mockClear();
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'celebrate', kind: 'fireworks' }, 'agent');
-    expect(fireCelebration).toHaveBeenCalledWith({
-      kind: 'fireworks',
-      emoji: undefined,
-      origin: undefined,
-    });
+    expect(fireCelebration).toHaveBeenCalledWith(
+      {
+        kind: 'fireworks',
+        emoji: undefined,
+        origin: undefined,
+      },
+      undefined
+    );
   });
 });
 
@@ -884,5 +890,73 @@ describe('UI_COMMAND_REACH is true of the real dispatcher (DOR-625)', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, SAMPLES.apply_layout, 'agent');
     expect(ctx.applyShape).toHaveBeenCalledWith('linear-ops');
+  });
+});
+
+describe('exact effect owner follows callback-shaped preparation', () => {
+  it.each(
+    [
+      'constructor',
+      'toString',
+      '__proto__',
+      null,
+      7,
+      { toString: vi.fn(() => 'open_sidebar') },
+    ].map(
+      (action) =>
+        [typeof action === 'object' ? 'non-string object' : String(action), action] as const
+    )
+  )('unknown action %s never dispatches or coerces a property key', (_label, action) => {
+    const ctx = makeMockCtx();
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const owner = { beforeEffect: vi.fn(), registerCleanup: vi.fn() };
+    executeUiCommand(ctx, { action } as unknown as UiCommand, 'agent', owner);
+    expect(ctx.getStore().setSidebarOpen).not.toHaveBeenCalled();
+    expect(warning).toHaveBeenCalledWith('[UiDispatcher] Unknown action:', action);
+    if (typeof action === 'object' && action !== null)
+      expect(action.toString).not.toHaveBeenCalled();
+    warning.mockRestore();
+  });
+  it.each([false, true])(
+    'method getter retirement=%s is fenced after preparation with exact receiver',
+    (retire) => {
+      let current = true;
+      const entered = vi.fn(function (this: DispatcherStore, open: boolean) {
+        expect(this).toBe(store);
+        expect(open).toBe(true);
+      });
+      const store = makeMockStore();
+      const observed = vi.fn(() => {
+        if (retire) current = false;
+        return entered;
+      });
+      Object.defineProperty(store, 'setSidebarOpen', { get: observed });
+      const ctx = { getStore: () => store, setTheme: vi.fn() };
+      const owner = {
+        beforeEffect: () => {
+          if (!current) throw new Error('EXTENSION_RETIRED');
+        },
+        registerCleanup: vi.fn(),
+      };
+      const dispatch = () => executeUiCommand(ctx, { action: 'open_sidebar' }, 'user', owner);
+      if (retire) {
+        expect(dispatch).toThrow('EXTENSION_RETIRED');
+        expect(entered).not.toHaveBeenCalled();
+      } else {
+        dispatch();
+        expect(entered).toHaveBeenCalledOnce();
+      }
+      expect(observed).toHaveBeenCalledOnce();
+    }
+  );
+  it('celebration retains the exact internal owner for delayed effects', async () => {
+    const { fireCelebration } = await import('../celebrations/celebration-effects');
+    vi.mocked(fireCelebration).mockClear();
+    const owner = { beforeEffect: vi.fn(), registerCleanup: vi.fn() };
+    executeUiCommand(makeMockCtx(), { action: 'celebrate' }, 'agent', owner);
+    expect(fireCelebration).toHaveBeenCalledWith(
+      { kind: undefined, emoji: undefined, origin: undefined },
+      owner
+    );
   });
 });

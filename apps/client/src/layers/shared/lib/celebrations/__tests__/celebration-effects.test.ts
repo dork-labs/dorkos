@@ -125,4 +125,80 @@ describe('fireCelebration', () => {
     // No further shells after cleanup.
     expect(confetti.mock.calls.length).toBe(midCalls);
   });
+  it('retirement during the lazy-import await prevents native library entry and retains cleanup', async () => {
+    const confetti = await getConfetti();
+    let current = true;
+    const cleanups: Array<() => void> = [];
+    const owner = {
+      beforeEffect: () => {
+        if (!current) throw new Error('EXTENSION_RETIRED');
+      },
+      registerCleanup: (fn: () => void) => cleanups.push(fn),
+    };
+    const pending = fireCelebration({ kind: 'burst' }, owner);
+    expect(cleanups).toHaveLength(1);
+    current = false;
+    await expect(pending).rejects.toThrow('EXTENSION_RETIRED');
+    expect(confetti).not.toHaveBeenCalled();
+    expect(() => cleanups[0]()).not.toThrow();
+    expect(confetti.reset).not.toHaveBeenCalled();
+  });
+  it('an owned delayed echo checks currentness and never resets foreign particles', async () => {
+    vi.useFakeTimers();
+    const confetti = await getConfetti();
+    let current = true;
+    const cleanups: Array<() => void> = [];
+    const owner = {
+      beforeEffect: () => {
+        if (!current) throw new Error('EXTENSION_RETIRED');
+      },
+      registerCleanup: (fn: () => void) => cleanups.push(fn),
+    };
+    await fireCelebration({ kind: 'burst' }, owner);
+    const started = confetti.mock.calls.length;
+    expect(started).toBeGreaterThanOrEqual(2);
+    expect(cleanups).toHaveLength(1);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    current = false;
+    vi.advanceTimersByTime(500);
+    expect(confetti).toHaveBeenCalledTimes(started);
+    cleanups[0]();
+    expect(confetti.reset).not.toHaveBeenCalled();
+    warning.mockRestore();
+  });
+  it.each([false, true])(
+    'emoji method getter retirement=%s is fenced after shape preparation',
+    async (retire) => {
+      const confetti = await getConfetti();
+      let current = true;
+      const shape = vi.fn(() => ({ shape: 'fixture' }));
+      const old = Object.getOwnPropertyDescriptor(confetti, 'shapeFromText')!;
+      const read = vi.fn(() => {
+        if (retire) current = false;
+        return shape;
+      });
+      Object.defineProperty(confetti, 'shapeFromText', { configurable: true, get: read });
+      const owner = {
+        beforeEffect: () => {
+          if (!current) throw new Error('EXTENSION_RETIRED');
+        },
+        registerCleanup: vi.fn(),
+      };
+      try {
+        const pending = fireCelebration({ kind: 'emoji', emoji: '🏆' }, owner);
+        if (retire) {
+          await expect(pending).rejects.toThrow('EXTENSION_RETIRED');
+          expect(shape).not.toHaveBeenCalled();
+          expect(confetti).not.toHaveBeenCalled();
+        } else {
+          await pending;
+          expect(shape).toHaveBeenCalledOnce();
+          expect(confetti).toHaveBeenCalled();
+        }
+        expect(read).toHaveBeenCalledOnce();
+      } finally {
+        Object.defineProperty(confetti, 'shapeFromText', old);
+      }
+    }
+  );
 });

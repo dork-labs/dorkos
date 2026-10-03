@@ -5,17 +5,24 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { registerExtensionRemount } from '@/layers/shared/lib';
+import {
+  getExtensionLoadAdmission,
+  subscribeExtensionLoadAdmission,
+  registerExtensionLoadOwner,
+  markExtensionRetirementFailed,
+  type ExtensionLoadAdmission,
+} from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { useSyncRequireLogin } from './use-sync-require-login';
 import { useSyncCurrentAgentId, useReconcileExplicitAgentPath } from '@/layers/entities/agent';
 import { useCurrentProjectSync } from '@/layers/entities/project';
 import type { LoadedExtension, ExtensionAPIDeps } from './types.js';
-import { ExtensionLoader } from './extension-loader.js';
+import { ExtensionLoader, type ExtensionLoadOutcome } from './extension-loader.js';
 import { useCwdExtensionSync } from './use-cwd-extension-sync.js';
 import { extensionKeys } from '../api/queries.js';
 
@@ -77,105 +84,183 @@ interface ExtensionProviderProps {
  * @param children - The app subtree to wrap
  */
 export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
-  const [state, setState] = useState<ExtensionContextValue>(defaultContextValue);
-  const loaderRef = useRef<ExtensionLoader | null>(null);
-  const queryClient = useQueryClient();
-
-  // Live-remount every extension slot for the new working directory's set.
-  // reloadAll() is fetch-then-swap: it resolves the new set before tearing the
-  // current one down, so a failed fetch rejects here with the previous
-  // extensions still live — the rejection propagates to the cwd sync hook,
-  // which owns the success/error toasts. Slot hosts watch the reactive
-  // registry, so components remount cleanly without a page reload.
-  const reloadAllExtensions = useCallback(async () => {
-    const loader = loaderRef.current;
-    if (!loader) return;
-
-    setState((prev) => ({ ...prev, settling: true }));
-    try {
-      const { extensions, loaded } = await loader.reloadAll();
-      setState({ extensions, loaded, ready: true, settling: false });
-    } catch (err) {
-      setState((prev) => ({ ...prev, settling: false }));
-      throw err;
-    }
-    // Sync TanStack Query so UI consumers of the extension list reflect the
-    // cwd-scoped set immediately, not on the next poll interval.
-    queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
-  }, [queryClient]);
-
-  // Watch for CWD changes and live-remount the extension slots if the set differs.
-  useCwdExtensionSync(reloadAllExtensions);
-
-  // Expose the same fetch-then-swap remount to non-React callers (the Shape
-  // apply flow enables extensions server-side, then requests a remount so the
-  // newly-activated slots appear without a reload — DOR-355 W1c).
-  useEffect(() => registerExtensionRemount(reloadAllExtensions), [reloadAllExtensions]);
-
-  // Mirror the selected cwd's agent id into the app store so the extension host
-  // can tell extensions which agent they run beside (getState().agentId).
+  const [state, setState] = useState<Publication>({ admission: null, value: defaultContextValue });
+  const admission = useSyncExternalStore(
+    subscribeExtensionLoadAdmission,
+    getExtensionLoadAdmission,
+    getExtensionLoadAdmission
+  );
+  const ownerRef = useRef<ProviderOwner | null>(null);
+  const actions = useOwnerActions(ownerRef, setState);
+  useCwdExtensionSync(actions.reload, actions.isOutcomeCurrent);
   useSyncCurrentAgentId();
-
-  // Mirror Require login, so an extension can say who may change a setting
-  // only a person should (getState().requireLogin, spec flow-multiproject §7.10).
   useSyncRequireLogin();
-  // And the selected cwd's project, for getState().currentProject (spec
-  // `flow-multiproject` §6.4).
   useCurrentProjectSync();
-
-  // Heal the explicitly-opened agent path when that agent is deleted, so its
-  // Profile tab disappears off /session instead of rendering AgentNotFound
-  // on a stale selection.
   useReconcileExplicitAgentPath();
-
-  // Initial load — store the loader in a ref so the SSE effect can access it.
-  useEffect(() => {
-    const loader = new ExtensionLoader(deps);
-    loaderRef.current = loader;
-
-    loader
-      .initialize()
-      .then(({ extensions, loaded }) => {
-        setState({ extensions, loaded, ready: true, settling: false });
-      })
-      .catch((err: unknown) => {
-        console.error('[extensions] Failed to initialize:', err);
-        setState((prev) => ({ ...prev, ready: true }));
-      });
-
-    return () => {
-      loader.deactivateAll();
-      loaderRef.current = null;
-    };
-    // deps is constructed once in main.tsx and is stable across re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // SSE subscription for per-extension hot reload.
-  // The server broadcasts `extension_reloaded` after a successful recompile.
-  // We deactivate the affected extensions, re-import their bundles with a
-  // cache-busted URL, reactivate them, and sync TanStack Query so any
-  // consumers of useExtensions() see the refreshed server state.
+  useOwnerMount({ deps, admission, ownerRef, actions });
   useEventSubscription('extension_reloaded', (raw) => {
-    const loader = loaderRef.current;
-    if (!loader) return;
-
+    const owner = ownerRef.current;
+    if (!owner || !currentOwner(ownerRef, owner)) return;
     const data = raw as { extensionIds: string[]; timestamp: number };
-
-    void (async () => {
-      setState((prev) => ({ ...prev, settling: true }));
-      try {
-        const { extensions, loaded } = await loader.reloadExtensions(data.extensionIds);
-        setState({ extensions, loaded, ready: true, settling: false });
-        // Keep TanStack Query in sync so UI consumers of useExtensions() reflect
-        // the refreshed status without waiting for the next poll interval.
-        queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
-      } catch (err) {
-        setState((prev) => ({ ...prev, settling: false }));
-        console.error('[extensions] Hot reload failed:', err);
-      }
-    })();
+    void reloadOwnedExtensions(ownerRef, owner, data.extensionIds, actions);
   });
-
-  return <ExtensionContext.Provider value={state}>{children}</ExtensionContext.Provider>;
+  const value =
+    state.admission === admission && !admission.suspended && !admission.retirementFailed
+      ? state.value
+      : defaultContextValue;
+  return <ExtensionContext.Provider value={value}>{children}</ExtensionContext.Provider>;
+}
+type ProviderOwner = {
+  identity: object;
+  loader: ExtensionLoader;
+  admission: ExtensionLoadAdmission;
+};
+type Publication = { admission: ExtensionLoadAdmission | null; value: ExtensionContextValue };
+type OwnerRef = { current: ProviderOwner | null };
+type Publish = (update: (previous: Publication) => Publication) => void;
+function currentOwner(ref: OwnerRef, owner: ProviderOwner): boolean {
+  const snapshot = getExtensionLoadAdmission();
+  return (
+    ref.current === owner &&
+    snapshot === owner.admission &&
+    !snapshot.suspended &&
+    !snapshot.retirementFailed
+  );
+}
+function publishOutcome(
+  ref: OwnerRef,
+  owner: ProviderOwner,
+  publish: Publish,
+  outcome: ExtensionLoadOutcome
+): void {
+  if (!currentOwner(ref, owner) || !owner.loader.isOutcomeCurrent(outcome)) return;
+  publish((previous) =>
+    currentOwner(ref, owner) && owner.loader.isOutcomeCurrent(outcome)
+      ? {
+          admission: owner.admission,
+          value: {
+            extensions: outcome.extensions,
+            loaded: outcome.loaded,
+            ready: true,
+            settling: false,
+          },
+        }
+      : previous
+  );
+}
+function publishSettling(ref: OwnerRef, owner: ProviderOwner, publish: Publish): void {
+  publish((previous) =>
+    currentOwner(ref, owner)
+      ? { admission: owner.admission, value: { ...previous.value, settling: true } }
+      : previous
+  );
+}
+function useOwnerActions(ref: OwnerRef, publish: Publish) {
+  const query = useQueryClient();
+  const outcomes = useRef(new WeakMap<ExtensionLoadOutcome, ProviderOwner>());
+  const reload = useCallback(async () => {
+    const owner = ref.current;
+    if (!owner || !currentOwner(ref, owner)) return;
+    publishSettling(ref, owner, publish);
+    try {
+      const outcome = await owner.loader.reloadAll();
+      if (!currentOwner(ref, owner) || !owner.loader.isOutcomeCurrent(outcome)) return;
+      publishOutcome(ref, owner, publish, outcome);
+      outcomes.current.set(outcome, owner);
+      if (outcome.status === 'completed') refreshList(ref, owner, query);
+      return outcome;
+    } catch {
+      return undefined;
+    } // An unbound rejection grants no settling/query publication.
+  }, [ref, publish, query]);
+  const isOutcomeCurrent = useCallback(
+    (outcome: ExtensionLoadOutcome) => {
+      const owner = outcomes.current.get(outcome);
+      return !!owner && currentOwner(ref, owner) && owner.loader.isOutcomeCurrent(outcome);
+    },
+    [ref]
+  );
+  return { reload, isOutcomeCurrent, publish, query };
+}
+type OwnerActions = ReturnType<typeof useOwnerActions>;
+function refreshList(
+  ref: OwnerRef,
+  owner: ProviderOwner,
+  query: ReturnType<typeof useQueryClient>
+): void {
+  const method = query.invalidateQueries;
+  const request = { queryKey: extensionKeys.lists() };
+  if (!currentOwner(ref, owner)) return;
+  void Reflect.apply(method, query, [request]).catch(() => {
+    /* Cache refresh failure grants no new load outcome. */
+  });
+}
+function useOwnerMount(input: {
+  deps: ExtensionAPIDeps;
+  admission: ExtensionLoadAdmission;
+  ownerRef: OwnerRef;
+  actions: OwnerActions;
+}): void {
+  const {
+    deps,
+    admission,
+    ownerRef,
+    actions: { reload, isOutcomeCurrent, publish },
+  } = input;
+  useEffect(() => {
+    if (
+      admission.suspended ||
+      admission.retirementFailed ||
+      getExtensionLoadAdmission() !== admission
+    )
+      return;
+    const identity = {};
+    const owner = {
+      identity,
+      loader: new ExtensionLoader(deps, admission, () => markExtensionRetirementFailed(identity)),
+      admission,
+    };
+    ownerRef.current = owner;
+    const retire = () => {
+      if (ownerRef.current === owner) ownerRef.current = null;
+      return owner.loader.deactivateAll();
+    };
+    const unregister = registerExtensionLoadOwner(identity, admission, retire, async () => {
+      const outcome = await reload();
+      if (outcome && isOutcomeCurrent(outcome) && outcome.status !== 'completed')
+        throw new Error('Extensions could not be refreshed.');
+    });
+    if (!currentOwner(ownerRef, owner)) {
+      unregister();
+      retire();
+      return;
+    }
+    void owner.loader
+      .initialize()
+      .then((outcome) => publishOutcome(ownerRef, owner, publish, outcome))
+      .catch(() => {
+        /* Unexpected unbound rejection publishes no state; ordinary failures are bound outcomes. */
+      });
+    return () => {
+      unregister();
+      if (!retire()) markExtensionRetirementFailed(identity);
+    };
+  }, [deps, admission, ownerRef, reload, isOutcomeCurrent, publish]);
+}
+async function reloadOwnedExtensions(
+  ref: OwnerRef,
+  owner: ProviderOwner,
+  ids: string[],
+  actions: OwnerActions
+): Promise<void> {
+  if (!currentOwner(ref, owner)) return;
+  publishSettling(ref, owner, actions.publish);
+  try {
+    const outcome = await owner.loader.reloadExtensions(ids);
+    if (!currentOwner(ref, owner) || !owner.loader.isOutcomeCurrent(outcome)) return;
+    publishOutcome(ref, owner, actions.publish, outcome);
+    if (outcome.status === 'completed') refreshList(ref, owner, actions.query);
+  } catch {
+    /* Unexpected rejection has no genuine outcome; never erase a newer settling turn. */
+  }
 }

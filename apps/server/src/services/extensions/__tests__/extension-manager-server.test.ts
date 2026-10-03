@@ -203,6 +203,24 @@ describe('ExtensionManager — server lifecycle', () => {
     manager = new ExtensionManager('/fake/dork-home');
   });
 
+  describe('server compilation facade', () => {
+    it.each([false, true])(
+      'delegates the exact current record with server entry=%s',
+      async (hasServerEntry) => {
+        const record = makeRecord('srv-ext', { hasServerEntry });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+        mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'server-hash' });
+        await manager.initialize(null);
+        mockCompileServer.mockClear();
+        const result = await manager.testServerCompilation('srv-ext');
+        expect(result).toBe(hasServerEntry ? 'Server compilation successful' : null);
+        expect(mockCompileServer).toHaveBeenCalledTimes(hasServerEntry ? 1 : 0);
+        if (hasServerEntry) expect(mockCompileServer).toHaveBeenCalledWith(record);
+      }
+    );
+  });
+
   // === initializeServer ===
 
   describe('initializeServer', () => {
@@ -488,7 +506,13 @@ describe('ExtensionManager — server lifecycle', () => {
         expect(manager.listPublic()[0]).toMatchObject({ status: 'compiled', bundleReady: true });
         expect(manager.listPublic()[0].error).toBeUndefined();
         mockReadBundle.mockResolvedValue('the client bundle');
-        expect(await manager.readBundle('stale-srv')).toBe('the client bundle');
+        expect(
+          await manager.readBundle(
+            'stale-srv',
+            (await manager.readPublic()).find((record) => record.id === 'stale-srv')
+              ?.bundleGeneration ?? undefined
+          )
+        ).toBe('the client bundle');
 
         // Asking again re-attempts rather than being turned away, so the fix can
         // land without a full reload.

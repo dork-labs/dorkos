@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 /**
  * Shared types and helpers for the extension manager system.
  *
@@ -125,6 +126,30 @@ export function toPublic(
   record: ExtensionRecord,
   approvals: ExtensionApprovals
 ): ExtensionRecordPublic {
+  const approvedToRun = mayRunExtensionCode(record, approvals);
+  const bundleGeneration =
+    approvedToRun &&
+    record.bundleReady &&
+    record.sourceHash &&
+    ['compiled', 'active'].includes(record.status)
+      ? createHash('sha256')
+          .update(
+            JSON.stringify([
+              record.id,
+              record.sourceHash,
+              record.manifest,
+              record.scope,
+              record.origin,
+              record.path,
+              record.runPath ?? null,
+              record.sourcePlugin ?? null,
+              record.trustedOrigin ?? null,
+              record.pinnedDigest ?? null,
+              record.currentDigest ?? null,
+            ])
+          )
+          .digest('hex')
+      : undefined;
   return {
     id: record.id,
     manifest: record.manifest,
@@ -137,7 +162,8 @@ export function toPublic(
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,
-    approvedToRun: mayRunExtensionCode(record, approvals),
+    approvedToRun,
+    ...(bundleGeneration ? { bundleGeneration } : {}),
     shadowedBy: record.shadowedBy ?? null,
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
   };

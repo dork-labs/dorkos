@@ -47,6 +47,7 @@ let TEST_CWD: string;
 function createMockManager() {
   return {
     listPublic: vi.fn<() => ExtensionRecordPublic[]>().mockReturnValue([]),
+    readPublic: vi.fn<() => Promise<ExtensionRecordPublic[]>>().mockResolvedValue([]),
     listShadowedPublic: vi.fn().mockReturnValue([]),
     requestRefresh: vi.fn(),
     trustOfferFor: vi.fn().mockReturnValue(null),
@@ -163,7 +164,7 @@ describe('Extension Routes', () => {
   describe('GET /api/extensions', () => {
     it('returns array of extension records', async () => {
       const records = [stubPublicRecord(), stubPublicRecord({ id: 'ext-2' })];
-      manager.listPublic.mockReturnValue(records);
+      manager.readPublic.mockResolvedValue(records);
 
       const res = await request(fixtureServer).get('/api/extensions');
 
@@ -262,7 +263,7 @@ describe('Extension Routes', () => {
   describe('POST /api/extensions/reload', () => {
     it('answers with the list as it stands and scans after, off the request path', async () => {
       const records = [stubPublicRecord()];
-      manager.listPublic.mockReturnValue(records);
+      manager.readPublic.mockResolvedValue(records);
 
       const res = await request(fixtureServer).post('/api/extensions/reload');
 
@@ -278,7 +279,9 @@ describe('Extension Routes', () => {
     it('returns JavaScript with correct Content-Type and Cache-Control', async () => {
       manager.readBundle.mockResolvedValue('console.log("hello");');
 
-      const res = await request(fixtureServer).get('/api/extensions/test-ext/bundle');
+      const res = await request(fixtureServer).get(
+        `/api/extensions/test-ext/bundle?generation=${'a'.repeat(64)}`
+      );
 
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain('application/javascript');
@@ -289,7 +292,9 @@ describe('Extension Routes', () => {
     it('returns 404 when bundle not available', async () => {
       manager.readBundle.mockResolvedValue(null);
 
-      const res = await request(fixtureServer).get('/api/extensions/missing/bundle');
+      const res = await request(fixtureServer).get(
+        `/api/extensions/missing/bundle?generation=${'a'.repeat(64)}`
+      );
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');

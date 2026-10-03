@@ -27,9 +27,6 @@ export interface CelebrationOrigin {
   y: number;
 }
 
-/** A no-op cleanup returned when nothing was scheduled (e.g. reduced motion). */
-const NOOP = (): void => {};
-
 /**
  * Where a celebration erupts when the caller supplies no origin — slightly
  * above screen-center so gravity carries particles down through the viewport.
@@ -101,39 +98,153 @@ function randomInRange(min: number, max: number): number {
  * Timeout and interval ids share the numeric handle space in the browser, so a
  * single set plus a clear-both cleanup is safe and simple.
  */
+/** Only a genuine host factory supplies this private per-activation owner. */
+export interface EffectOwner {
+  beforeEffect: () => void;
+  registerCleanup: (cleanup: () => void) => void;
+}
+
+type Fire = ((options: Options) => ReturnType<Confetti>) & {
+  /** The owned emoji style uses only canvas-confetti's object overload. */
+  shapeFromText: (
+    ...args: Parameters<Confetti['shapeFromText']>
+  ) => ReturnType<Confetti['shapeFromText']>;
+};
+
 class TimerBag {
-  private readonly handles = new Set<ReturnType<typeof setTimeout>>();
-
-  /** Run `fn` once after `ms`, tracked so a mid-flight cleanup cancels it. */
-  after(ms: number, fn: () => void): void {
-    const id = setTimeout(() => {
-      this.handles.delete(id);
-      fn();
-    }, ms);
-    this.handles.add(id);
+  private readonly handles = new Map<ReturnType<typeof setTimeout>, 'timeout' | 'interval'>();
+  private cleanupFailed = false;
+  private closed = false;
+  private readonly timeoutClear: typeof globalThis.clearTimeout;
+  private readonly intervalClear: typeof globalThis.clearInterval;
+  constructor(private readonly beforeEffect: () => void) {
+    // Capture platform methods before any handle acquisition. Cleanup never
+    // rereads a callback-shaped method getter after retiring a numeric handle.
+    this.timeoutClear = globalThis.clearTimeout;
+    this.intervalClear = globalThis.clearInterval;
   }
 
-  /** Run `fn` every `stepMs` for `durationMs`, then stop. Tracked for cleanup. */
-  every(stepMs: number, durationMs: number, fn: () => void): void {
-    const start = Date.now();
-    const id = setInterval(() => {
-      if (Date.now() - start >= durationMs) {
-        clearInterval(id);
-        this.handles.delete(id);
-        return;
+  private check(): void {
+    if (this.closed) throw new Error('Celebration schedules retired.');
+    this.beforeEffect();
+    if (this.closed) throw new Error('Celebration schedules retired.');
+  }
+
+  private callback(fn: () => void): void {
+    try {
+      this.check();
+      fn();
+    } catch {
+      // Timer failure never admits a new echo or leaks an uncaught rejection.
+      try {
+        this.clear();
+      } catch {
+        this.cleanupFailed = true;
       }
-      fn();
-    }, stepMs);
-    this.handles.add(id);
+      console.warn('[extensions] Celebration did not complete.');
+    }
   }
 
-  /** Cancel every scheduled timer and interval. */
-  clear(): void {
-    for (const id of this.handles) {
-      clearTimeout(id);
-      clearInterval(id);
+  after(ms: number, fn: () => void): void {
+    const schedule = globalThis.setTimeout;
+    const callback = () => {
+      this.handles.delete(id);
+      this.callback(fn);
+    };
+    this.check();
+    let id: ReturnType<typeof setTimeout>;
+    try {
+      id = Reflect.apply(schedule, globalThis, [callback, ms]);
+    } catch (error) {
+      this.cleanupFailed = true;
+      try {
+        this.clear();
+      } catch {
+        /* Unacknowledged schedule remains uncertain. */
+      }
+      throw error;
     }
-    this.handles.clear();
+    this.handles.set(id, 'timeout');
+    // A reentrant platform mock may retire during schedule entry. The created
+    // handle is registered before the final check, so cleanup can still own it.
+    try {
+      this.check();
+    } catch (error) {
+      if (this.closed) this.clearHandle(id);
+      else {
+        try {
+          this.clear();
+        } catch {
+          /* Sticky uncertainty. */
+        }
+      }
+      throw error;
+    }
+  }
+
+  every(stepMs: number, durationMs: number, fn: () => void): void {
+    const now = Date.now;
+    const start = Reflect.apply(now, Date, []);
+    const schedule = globalThis.setInterval;
+    const callback = () =>
+      this.callback(() => {
+        const current = Reflect.apply(now, Date, []);
+        this.check();
+        if (!Number.isFinite(current) || current - start >= durationMs) {
+          this.clearHandle(id);
+          return;
+        }
+        fn();
+      });
+    this.check();
+    let id: ReturnType<typeof setTimeout>;
+    try {
+      id = Reflect.apply(schedule, globalThis, [callback, stepMs]);
+    } catch (error) {
+      this.cleanupFailed = true;
+      try {
+        this.clear();
+      } catch {
+        /* Unacknowledged schedule remains uncertain. */
+      }
+      throw error;
+    }
+    this.handles.set(id, 'interval');
+    try {
+      this.check();
+    } catch (error) {
+      if (this.closed) this.clearHandle(id);
+      else {
+        try {
+          this.clear();
+        } catch {
+          /* Sticky uncertainty. */
+        }
+      }
+      throw error;
+    }
+  }
+
+  private clearHandle(id: ReturnType<typeof setTimeout>): void {
+    const kind = this.handles.get(id);
+    if (kind === undefined) return;
+    // Retire this exact acquired handle before one external clear entry. Never
+    // retry an old numeric id or clear it again through a second timer API.
+    this.handles.delete(id);
+    try {
+      const clear = kind === 'timeout' ? this.timeoutClear : this.intervalClear;
+      Reflect.apply(clear, globalThis, [id]);
+    } catch {
+      this.cleanupFailed = true;
+    }
+  }
+
+  clear(): void {
+    if (!this.closed) {
+      this.closed = true;
+      for (const id of [...this.handles.keys()]) this.clearHandle(id);
+    }
+    if (this.cleanupFailed) throw new Error('Celebration cleanup could not be confirmed.');
   }
 }
 
@@ -142,12 +253,11 @@ const BASE: Options = { disableForReducedMotion: true, ticks: 200 };
 
 /** A proper multi-stage pop from the origin: a dense core, a wide halo, and a delayed echo. */
 function fireBurst(
-  confetti: Confetti,
+  confetti: Fire,
   origin: CelebrationOrigin,
-  colors: string[],
-  particleCount: number,
-  bag: TimerBag
+  input: { colors: string[]; particleCount: number; bag: TimerBag }
 ): void {
+  const { colors, particleCount, bag } = input;
   const base = { ...BASE, origin, colors, gravity: 1.1 };
   confetti({ ...base, particleCount, spread: 78, startVelocity: 46, scalar: 1.05 });
   confetti({
@@ -171,7 +281,7 @@ function fireBurst(
 
 /** Golden star-shaped burst — the "gold star" moment for a job well done. */
 function fireStars(
-  confetti: Confetti,
+  confetti: Fire,
   origin: CelebrationOrigin,
   colors: string[],
   bag: TimerBag
@@ -184,7 +294,7 @@ function fireStars(
 }
 
 /** ~2.5s of randomized aerial shells bursting across the top half of the screen. */
-function fireFireworks(confetti: Confetti, colors: string[], bag: TimerBag): void {
+function fireFireworks(confetti: Fire, colors: string[], bag: TimerBag): void {
   bag.every(240, 2500, () => {
     confetti({
       ...BASE,
@@ -201,7 +311,7 @@ function fireFireworks(confetti: Confetti, colors: string[], bag: TimerBag): voi
 }
 
 /** Side cannons crossfiring from the screen edges toward center for ~1.2s. */
-function fireCannons(confetti: Confetti, colors: string[], bag: TimerBag): void {
+function fireCannons(confetti: Fire, colors: string[], bag: TimerBag): void {
   const shot = { ...BASE, particleCount: 14, spread: 58, startVelocity: 58, colors, scalar: 1.05 };
   bag.every(180, 1200, () => {
     confetti({ ...shot, angle: 60, origin: { x: 0, y: 0.68 } });
@@ -210,12 +320,7 @@ function fireCannons(confetti: Confetti, colors: string[], bag: TimerBag): void 
 }
 
 /** An emoji-particle burst from the origin using a text-derived shape. */
-function fireEmoji(
-  confetti: Confetti,
-  origin: CelebrationOrigin,
-  emoji: string,
-  bag: TimerBag
-): void {
+function fireEmoji(confetti: Fire, origin: CelebrationOrigin, emoji: string, bag: TimerBag): void {
   // Emoji scalar and shape scalar must agree or the glyph renders at the wrong size.
   const shape = confetti.shapeFromText({ text: emoji, scalar: 2.2 });
   const base = { ...BASE, origin, shapes: [shape], scalar: 2.2, gravity: 1, flat: true } as Options;
@@ -224,7 +329,7 @@ function fireEmoji(
 }
 
 /** A calm ~2s drizzle of confetti sifting down from above the top edge. */
-function fireRain(confetti: Confetti, colors: string[], bag: TimerBag): void {
+function fireRain(confetti: Fire, colors: string[], bag: TimerBag): void {
   bag.every(120, 2000, () => {
     confetti({
       ...BASE,
@@ -258,44 +363,134 @@ function fireRain(confetti: Confetti, colors: string[], bag: TimerBag): void {
  * @param options.colors - Palette override; defaults to the kind's palette.
  * @param options.particleCount - Density override for `burst`'s core stage.
  */
-export async function fireCelebration(options?: {
-  kind?: CelebrationKind;
-  origin?: CelebrationOrigin;
-  emoji?: string;
-  colors?: string[];
-  particleCount?: number;
-}): Promise<() => void> {
-  if (prefersReducedMotion()) return NOOP;
+export async function fireCelebration(
+  options?: {
+    kind?: CelebrationKind;
+    origin?: CelebrationOrigin;
+    emoji?: string;
+    colors?: string[];
+    particleCount?: number;
+  },
+  owner?: EffectOwner
+): Promise<() => void> {
+  const { bag, cancel, requireCurrent } = createCelebrationCustody(owner);
+  try {
+    const reduced = prefersReducedMotion();
+    requireCurrent();
+    if (reduced) return cancel;
+    const loaded = await import('canvas-confetti');
+    const confetti = loaded.default;
+    const kind = options?.kind ?? 'burst';
+    const suppliedOrigin = options?.origin ?? DEFAULT_CELEBRATION_ORIGIN;
+    const origin = { x: suppliedOrigin.x, y: suppliedOrigin.y };
+    const colors = options?.colors ?? PALETTES[kind];
+    const count = options?.particleCount ?? 60;
+    const emoji = options?.emoji || DEFAULT_EMOJI;
+    // No options or origin accessor remains behind the final entry guard.
+    const fire = createOwnedFire(confetti, requireCurrent);
+    requireCurrent();
+    runCelebrationStyle({ kind, fire, origin, colors, count, emoji, bag });
+    if (owner) {
+      // Cancel only this call's schedules. Already-emitted particles may finish
+      // naturally; resetting shared confetti would mutate foreign celebrations.
+      return cancel;
+    }
+    // Preserve the existing nonextension returned-cleanup contract.
+    return () => {
+      cancel();
+      const reset = confetti.reset;
+      Reflect.apply(reset, confetti, []);
+    };
+  } catch (error) {
+    // Preserve the first ordinary failure; installed cleanup remains callable
+    // and will surface any unverified timer-clear observation independently.
+    try {
+      cancel();
+    } catch {
+      /* TimerBag retains cleanup uncertainty. */
+    }
+    throw error;
+  }
+}
 
-  const confetti = (await import('canvas-confetti')).default;
-  const kind = options?.kind ?? 'burst';
-  const origin = options?.origin ?? DEFAULT_CELEBRATION_ORIGIN;
-  const colors = options?.colors ?? PALETTES[kind];
-  const bag = new TimerBag();
+function createCelebrationCustody(owner?: EffectOwner) {
+  let cancelled = false;
+  const before = owner?.beforeEffect;
+  const requireCurrent = () => {
+    if (cancelled) throw new Error('Celebration owner retired.');
+    if (before) Reflect.apply(before, owner, []);
+    if (cancelled) throw new Error('Celebration owner retired.');
+  };
+  const bag = new TimerBag(requireCurrent);
+  const cancel = () => {
+    cancelled = true;
+    bag.clear();
+  };
+  // Publish cleanup custody before platform observation/lazy acquisition.
+  if (owner) {
+    const register = owner.registerCleanup;
+    requireCurrent();
+    Reflect.apply(register, owner, [cancel]);
+    requireCurrent();
+  }
+  return { bag, cancel, requireCurrent };
+}
 
+function createOwnedFire(confetti: Confetti, requireCurrent: () => void): Fire {
+  const invoke = <Args extends unknown[], Result>(
+    receiver: unknown,
+    method: (...args: Args) => Result,
+    args: Args
+  ): Result => {
+    requireCurrent();
+    return Reflect.apply(method, receiver, args);
+  };
+  const fire: Fire = Object.assign(
+    (args: Options) => {
+      // Spread preparation happens here before the final check, including
+      // caller-supplied palette entries passed to the owned library entry.
+      const prepared = { ...args, colors: args.colors?.slice() };
+      const method = confetti;
+      return invoke(undefined, method, [prepared]);
+    },
+    {
+      shapeFromText: (...args: Parameters<Confetti['shapeFromText']>) => {
+        const method = confetti.shapeFromText;
+        return invoke(confetti, method, args);
+      },
+    }
+  );
+  return fire;
+}
+
+function runCelebrationStyle(input: {
+  kind: CelebrationKind;
+  fire: Fire;
+  origin: CelebrationOrigin;
+  colors: string[];
+  count: number;
+  emoji: string;
+  bag: TimerBag;
+}): void {
+  const { kind, fire, origin, colors, count, emoji, bag } = input;
   switch (kind) {
     case 'burst':
-      fireBurst(confetti, origin, colors, options?.particleCount ?? 60, bag);
+      fireBurst(fire, origin, { colors, particleCount: count, bag });
       break;
     case 'stars':
-      fireStars(confetti, origin, colors, bag);
+      fireStars(fire, origin, colors, bag);
       break;
     case 'fireworks':
-      fireFireworks(confetti, colors, bag);
+      fireFireworks(fire, colors, bag);
       break;
     case 'cannons':
-      fireCannons(confetti, colors, bag);
+      fireCannons(fire, colors, bag);
       break;
     case 'emoji':
-      fireEmoji(confetti, origin, options?.emoji || DEFAULT_EMOJI, bag);
+      fireEmoji(fire, origin, emoji, bag);
       break;
     case 'rain':
-      fireRain(confetti, colors, bag);
+      fireRain(fire, colors, bag);
       break;
   }
-
-  return () => {
-    bag.clear();
-    confetti.reset();
-  };
 }

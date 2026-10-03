@@ -313,8 +313,23 @@ export {
   type DispatcherContext,
   type DispatcherStore,
   type UiCommandOrigin,
+  type EffectOwner,
 } from './ui-action-dispatcher';
-export { registerExtensionRemount, requestExtensionRemount } from './extension-remount';
+export {
+  registerExtensionRemount,
+  requestExtensionRemount,
+  getExtensionLoadAdmission,
+  subscribeExtensionLoadAdmission,
+  suspendExtensionLoads,
+  beginExtensionAuthOperation,
+  isExtensionAuthOperationCurrent,
+  authenticateExtensionAuthOperation,
+  resumeExtensionLoads,
+  registerExtensionLoadOwner,
+  markExtensionRetirementFailed,
+  cancelExtensionAuthOperation,
+} from './extension-remount';
+export type { ExtensionLoadAdmission, ExtensionAuthOperation } from './extension-remount';
 export {
   composerFileReference,
   registerComposerInsert,
