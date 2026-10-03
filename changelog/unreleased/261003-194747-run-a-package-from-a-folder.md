@@ -3,6 +3,7 @@ covers:
   - 'feat(marketplace): dev-link registry, parked marker and DevLinkService (DOR-2696)'
   - 'feat(marketplace): no trust crosses between a dev link and an installed copy (DOR-2696)'
   - 'feat(marketplace): the marketplace.link capability, MCP tool and dev-link routes (DOR-2696)'
+  - 'test(marketplace): read the dev-link source pin through the shared lexer (DOR-2696)'
 ---
 
 ### Added

@@ -19,6 +19,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { NotifyPluginsChanged } from '../../types.js';
 import { MARKETPLACE_DEVLINK_PARKED_MARKER } from '@dorkos/shared/marketplace-schemas';
+import { lex } from '../../../../../../../scripts/lib/code-only.mjs';
 import { DevLinkService, type DevLinkApprovals, type DevLinkFs } from '../dev-link-service.js';
 import { DevLinkError } from '../errors.js';
 import { readDevLinks, updateDevLinks } from '../registry.js';
@@ -382,10 +383,9 @@ describe('DevLinkService.unlink', () => {
     // Purpose: the same guarantee as a source pin, because on macOS and Linux a
     // recursive `rm` of a symlink happens to remove only the link and so the
     // behavioural test above cannot catch it; on Windows a junction is followed.
-    const source = readFileSync(
-      path.join(import.meta.dirname, '..', 'dev-link-service.ts'),
-      'utf-8'
-    ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+    const file = path.join(import.meta.dirname, '..', 'dev-link-service.ts');
+    const { code: source, parseErrors } = lex(readFileSync(file, 'utf-8'), file);
+    expect(parseErrors).toBe(0);
     expect(source).not.toMatch(/\brm(Sync)?\s*\(/);
     expect(source).not.toMatch(/\brmdir\([^)]*recursive/);
     expect(source).not.toMatch(/\bfs\.rm\b|\brm,|\{ rm\b/);
