@@ -80,7 +80,8 @@ export interface CloudLinkPanelProps {
  * @param props - The two halves' content. See {@link CloudLinkPanelProps}.
  */
 export function CloudLinkPanel({ signedOut, children }: CloudLinkPanelProps) {
-  const { view, start, unlink, cancel, starting, unlinking, startError } = useCloudLink();
+  const { view, start, unlink, cancel, starting, unlinking, startError, unlinkError } =
+    useCloudLink();
   useRelinkRequest(view, start);
   // A relink keeps this computer linked while its code is showing, so the
   // signed-out page (what an account WOULD add) is not drawn over it.
@@ -99,7 +100,7 @@ export function CloudLinkPanel({ signedOut, children }: CloudLinkPanelProps) {
           dismiss={cancel}
         />
         {children}
-        <UnlinkSection unlink={unlink} unlinking={unlinking} />
+        <UnlinkSection unlink={unlink} unlinking={unlinking} unlinkError={unlinkError} />
       </div>
     );
   }
@@ -460,7 +461,15 @@ function LinkedState({
 }
 
 /** The last thing on the signed-in page: taking this computer off the account. */
-function UnlinkSection({ unlink, unlinking }: { unlink: () => Promise<void>; unlinking: boolean }) {
+function UnlinkSection({
+  unlink,
+  unlinking,
+  unlinkError,
+}: {
+  unlink: () => Promise<void>;
+  unlinking: boolean;
+  unlinkError: string | null;
+}) {
   return (
     <FieldCard>
       <FieldCardContent>
@@ -483,6 +492,11 @@ function UnlinkSection({ unlink, unlinking }: { unlink: () => Promise<void>; unl
             <UnlinkConfirm unlink={unlink} />
           </AlertDialog>
         </SettingRow>
+        {unlinkError && (
+          <p role="alert" className="text-destructive text-sm">
+            {unlinkError}
+          </p>
+        )}
       </FieldCardContent>
     </FieldCard>
   );

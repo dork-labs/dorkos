@@ -18,6 +18,14 @@
  * itself on an install with no cloud account, with no request leaving the
  * machine.
  *
+ * ## Who may write (DOR-2652)
+ *
+ * Every write here acts as the DorkOS account, on the one key this computer
+ * holds, so every write is for the owner of this DorkOS and nobody
+ * else: never an agent, and with login on never an API key or another signed-in
+ * account (`routes/cloud-owner-bar.ts`). The reads stay open to any caller that
+ * passed the session gate; they carry no credential and change nothing.
+ *
  * Nothing here names a plan or prints a price. Plan-shaped strings are the
  * service's `displayName` fields and amounts are its micro-unit decimal
  * strings, both passed through untouched.
@@ -67,17 +75,72 @@ import {
 } from '../services/core/cloud/credits-defaults.js';
 import { creditsKilled } from '../services/core/cloud/credits-availability.js';
 import { creditsRuntimeViews, creditsStatus } from '../services/core/cloud/credits-runtimes.js';
-import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import {
+  refuseEnvelopeUnlessOwner,
+  refuseErrorUnlessOwner,
+  type AccountOwnerWording,
+} from './cloud-owner-bar.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRouter } from './cloud-communities.js';
 
 const router = Router();
 
+/**
+ * What each account write says when it refuses a caller that is not the person
+ * who owns this install (`routes/cloud-owner-bar.ts`). Every write below runs
+ * the bar FIRST, before it reads its body or reaches the account, so a refused
+ * caller learns nothing and changes nothing. Reads stay open: they carry no
+ * credential and change nothing.
+ */
+const OWNER_ONLY = {
+  linkStart: {
+    personOnly: 'Only you can link this computer to a DorkOS account, from the DorkOS app.',
+    action: 'link this computer to a DorkOS account',
+  },
+  linkCancel: {
+    personOnly: 'Only you can stop linking this computer to a DorkOS account, from the DorkOS app.',
+    action: 'stop linking this computer to a DorkOS account',
+  },
+  unlink: {
+    personOnly: 'Only you can unlink this computer from its DorkOS account, from the DorkOS app.',
+    action: 'unlink this computer from its DorkOS account',
+  },
+  linkCheck: {
+    personOnly: 'Only you can check this computer’s DorkOS account link, from the DorkOS app.',
+    action: 'check this computer’s DorkOS account link',
+  },
+  seats: {
+    personOnly: 'Only you can change who holds a seat, from the DorkOS app.',
+    action: 'change who holds a seat',
+  },
+  billing: {
+    personOnly: 'Only you can open billing for your DorkOS account, from the DorkOS app.',
+    action: 'open billing for the DorkOS account',
+  },
+  export: {
+    personOnly: 'Only you can export your DorkOS account’s data, from the DorkOS app.',
+    action: 'export the DorkOS account’s data',
+  },
+  deletion: {
+    personOnly: 'Only you can delete your DorkOS account, from the DorkOS app while signed in.',
+    action: 'delete the DorkOS account',
+  },
+  credits: {
+    personOnly: 'Only you can choose what runs on your DorkOS credits, from the DorkOS app.',
+    action: 'choose what runs on DorkOS credits',
+  },
+  creditsNotice: {
+    personOnly: 'Only you can dismiss a note about your DorkOS credits, from the DorkOS app.',
+    action: 'dismiss a note about DorkOS credits',
+  },
+} as const satisfies Record<string, AccountOwnerWording>;
+
 /** Hosted communities: "Start a community" and "Move a community here". */
 router.use('/communities', createCloudCommunitiesRouter());
 
 /** POST /api/cloud/link/start — begin the device flow; returns codes to display. */
-router.post('/link/start', async (_req, res) => {
+router.post('/link/start', async (req, res) => {
+  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.linkStart)) return;
   try {
     const result = await getCloudLinkManager().startLink();
     return res.json(result);
@@ -100,12 +163,14 @@ router.get('/link/status', (_req, res) => {
  * first and a key it issues is kept. Answers the state it settled in:
  * `linked` while this computer holds a key, else `idle`.
  */
-router.post('/link/cancel', async (_req, res) => {
+router.post('/link/cancel', async (req, res) => {
+  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.linkCancel)) return;
   res.json(await getCloudLinkManager().cancelLink());
 });
 
 /** POST /api/cloud/unlink — withdraw locally before best-effort server-side revoke. */
-router.post('/unlink', async (_req, res) => {
+router.post('/unlink', async (req, res) => {
+  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.unlink)) return;
   try {
     await getCloudLinkManager().unlink();
     return res.json({ ok: true });
@@ -127,9 +192,9 @@ router.get('/status', (_req, res) => {
  * a service that cannot be reached keeps the link. Never an error.
  */
 router.post('/link/check', async (req, res) => {
-  // Person-only, like the deletion it follows: it reaches the service on this
+  // Owner-only, like the deletion it follows: it reaches the service on this
   // computer's key, and nothing an agent does needs it.
-  if (!clearsTheAgentBar(req, res)) return res.status(403).json(PERSON_ONLY_LINK_CHECK);
+  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.linkCheck)) return;
   res.json(await getCloudLinkManager().checkLink());
 });
 
@@ -306,23 +371,6 @@ function cloudWriteFailed(res: Response, error: unknown, wording: WriteFailureWo
   } satisfies CloudWriteRefusal);
 }
 
-/** Refusal code for a DorkOS account action only the person may take. */
-export const PERSON_ONLY_CODE = 'person_only';
-
-/** Said, with 403, when anything but the person asks to delete the account. */
-const PERSON_ONLY_DELETION = {
-  ok: false,
-  code: PERSON_ONLY_CODE,
-  message: 'Only you can delete your DorkOS account, from the DorkOS app while signed in.',
-} as const;
-
-/** Said, with 403, when anything but the person asks for a link check. */
-const PERSON_ONLY_LINK_CHECK = {
-  ok: false,
-  code: PERSON_ONLY_CODE,
-  message: 'Only you can check this computer’s DorkOS account link, from the DorkOS app.',
-} as const;
-
 /** Said, with HTTP 200, by every cloud write while this instance is not linked. */
 const NOT_LINKED: CloudWriteRefusal = {
   ok: false,
@@ -331,6 +379,7 @@ const NOT_LINKED: CloudWriteRefusal = {
 
 /** POST /api/cloud/seats/:seatId/assign — give a seat to a person or an agent. */
 router.post('/seats/:seatId/assign', async (req, res) => {
+  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.seats)) return;
   // 200 with a refusal envelope, for the reason {@link cloudWriteFailed} gives.
   if (!isCloudLinked()) return res.json(NOT_LINKED);
   const parsed = SeatAssignBodySchema.safeParse(req.body);
@@ -345,6 +394,7 @@ router.post('/seats/:seatId/assign', async (req, res) => {
 
 /** POST /api/cloud/seats/:seatId/release — hand a seat back. */
 router.post('/seats/:seatId/release', async (req, res) => {
+  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.seats)) return;
   if (!isCloudLinked()) return res.json(NOT_LINKED);
   try {
     await releaseSeat(req.params.seatId);
@@ -391,6 +441,7 @@ const BILLING_ABSENT: Record<CloudBillingPage, string> = {
  * the reason {@link cloudWriteFailed} gives.
  */
 router.post('/billing/:page', async (req, res) => {
+  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.billing)) return;
   const page = BillingPageSchema.safeParse(req.params.page);
   if (!page.success) return res.status(404).json({ ok: false, message: 'Unknown billing page' });
   let skuId: string | undefined;
@@ -418,8 +469,9 @@ router.post('/billing/:page', async (req, res) => {
  * holds. When the answer already carries a download link, it is here; until
  * then, asking again is how to get it. Sent `no-store`.
  */
-router.post('/account/export', async (_req, res) => {
+router.post('/account/export', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.export)) return;
   if (!isCloudLinked()) return res.json(NOT_LINKED);
   try {
     const job = await requestAccountExport();
@@ -445,10 +497,11 @@ router.post('/account/export', async (_req, res) => {
  */
 router.post('/account/deletion', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  // Only the person may ask to end their own account, never an agent: not one
-  // that names itself, not one holding an approval token, and, with login on,
-  // not one presenting the person's API key instead of a browser session.
-  if (!clearsTheAgentBar(req, res)) return res.status(403).json(PERSON_ONLY_DELETION);
+  // Only the owner of this DorkOS may ask to end the account, never an
+  // agent: not one that names itself, not one holding an approval token, and,
+  // with login on, not one presenting the person's API key instead of a
+  // browser session, nor a person signed in to some other account.
+  if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.deletion)) return;
   if (!isCloudLinked()) return res.json(NOT_LINKED);
   try {
     const deletion = await requestAccountDeletion();
@@ -495,6 +548,7 @@ const CreditsDefaultBodySchema = z.object({
  * so nothing is ever set that would refuse every turn.
  */
 router.put('/credits/default', async (req, res) => {
+  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.credits)) return;
   const parsed = CreditsDefaultBodySchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Name a runtime and whether to use credits.' });
@@ -520,7 +574,8 @@ router.put('/credits/default', async (req, res) => {
  * POST /api/cloud/credits/undo-filled — put back every runtime DorkOS set to
  * credits on a new link, leaving the person's own picks alone ("Undo all").
  */
-router.post('/credits/undo-filled', async (_req, res) => {
+router.post('/credits/undo-filled', async (req, res) => {
+  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.credits)) return;
   undoFilledDefaults();
   return res.json(await creditsStatus());
 });
@@ -532,6 +587,7 @@ const CreditsNoticeDismissBodySchema = z.object({
 
 /** POST /api/cloud/credits/notices/dismiss — settle one notice without changing any choice. */
 router.post('/credits/notices/dismiss', async (req, res) => {
+  if (refuseErrorUnlessOwner(req, res, OWNER_ONLY.creditsNotice)) return;
   const parsed = CreditsNoticeDismissBodySchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Name the notice to dismiss.' });
   dismissCreditsNotice(parsed.data);

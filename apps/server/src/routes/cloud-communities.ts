@@ -20,6 +20,10 @@
  *   person's own browser. It is sent `no-store` and appears in no list, poll or
  *   start answer.
  *
+ * Every write is for the owner of this DorkOS and nobody else
+ * (`routes/cloud-owner-bar.ts`, DOR-2652): it acts as the DorkOS account. The
+ * reads stay open.
+ *
  * Reads answer `{ available: false }` and writes a plain refusal when this
  * instance is not linked, with no request leaving the machine. A refusal the
  * service described answers 200 with its problem envelope, for the reason the
@@ -67,12 +71,38 @@ import {
 } from '../services/core/cloud/community-move-upload.js';
 import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
 import { logger, logError } from '../lib/logger.js';
+import { refuseEnvelopeUnlessOwner, type AccountOwnerWording } from './cloud-owner-bar.js';
 
 /** What a person reads when the hosting service could not be reached. */
 const UNREACHABLE = 'Couldn’t reach your DorkOS account. Try again.';
 
 /** What a person reads when this DorkOS is not linked to an account. */
 const NOT_LINKED = 'This DorkOS is not linked to a DorkOS account.';
+
+/**
+ * What each hosted-space write says when it refuses a caller that is not the
+ * person who owns this install. Each one acts as the DorkOS account (it may
+ * use the account's space allowance, or hand out the link that makes someone a
+ * space's owner), so each runs the owner bar before anything else.
+ */
+const OWNER_ONLY = {
+  start: {
+    personOnly: 'Only you can start a space on your DorkOS account, from the DorkOS app.',
+    action: 'start a space on the DorkOS account',
+  },
+  move: {
+    personOnly: 'Only you can move a space to your DorkOS account, from the DorkOS app.',
+    action: 'move a space to the DorkOS account',
+  },
+  claimLink: {
+    personOnly: 'Only you can open the link that makes you a space’s owner, from the DorkOS app.',
+    action: 'open the link that makes someone a space’s owner',
+  },
+  keep: {
+    personOnly: 'Only you can choose which spaces stay open, from the DorkOS app.',
+    action: 'choose which spaces stay open',
+  },
+} as const satisfies Record<string, AccountOwnerWording>;
 
 /** Move states in which the export can no longer be of use to anyone. */
 const FINISHED_MOVE_STATES: ReadonlySet<string> = new Set([
@@ -346,6 +376,7 @@ export function createCloudCommunitiesRouter(
 
   /** POST / — start a hosted community. The claim link stays on this server. */
   router.post('/', async (req, res) => {
+    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.start)) return;
     if (!isCloudLinked())
       return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     const body = StartBodySchema.safeParse(req.body);
@@ -393,6 +424,11 @@ export function createCloudCommunitiesRouter(
    * upload to the Community server then runs on its own.
    */
   router.post('/moves', async (req: Request, res: Response) => {
+    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.move)) {
+      // Let the export go by unread, so the browser gets this answer.
+      req.resume();
+      return;
+    }
     if (!isCloudLinked()) {
       req.resume();
       return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
@@ -519,6 +555,7 @@ export function createCloudCommunitiesRouter(
 
   /** POST /moves/:moveId/cancel — cancel a move that is not ready yet. */
   router.post('/moves/:moveId/cancel', async (req, res) => {
+    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.move)) return;
     if (!isCloudLinked())
       return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     // Stop sending first: whatever the service answers, this process has no
@@ -534,6 +571,7 @@ export function createCloudCommunitiesRouter(
 
   /** POST /moves/:moveId/upload — send the export again from the copy held here. */
   router.post('/moves/:moveId/upload', async (req, res) => {
+    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.move)) return;
     if (!isCloudLinked())
       return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     if (!uploads.retry(req.params.moveId)) {
@@ -557,6 +595,7 @@ export function createCloudCommunitiesRouter(
    * the person's own browser. The only answer in this family that carries one.
    */
   router.post('/:communityId/claim-link', async (req, res) => {
+    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.claimLink)) return;
     if (!isCloudLinked())
       return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     try {
@@ -573,6 +612,7 @@ export function createCloudCommunitiesRouter(
 
   /** POST /:communityId/keep — keep one community open, confirming what it holds. */
   router.post('/:communityId/keep', async (req, res) => {
+    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.keep)) return;
     if (!isCloudLinked())
       return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     const body = KeepBodySchema.safeParse(req.body);
@@ -591,6 +631,7 @@ export function createCloudCommunitiesRouter(
 
   /** POST /:communityId/restore — reopen a held community. */
   router.post('/:communityId/restore', async (req, res) => {
+    if (refuseEnvelopeUnlessOwner(req, res, OWNER_ONLY.keep)) return;
     if (!isCloudLinked())
       return res.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     try {
