@@ -46,6 +46,7 @@ import {
   createInitialCommunityLaunchJournal,
 } from './resume.js';
 import { runRemoveUncertainCommand } from './provenance/removal-command.js';
+import { tigrisAccessKeyName } from './provenance/tigris-access-key.js';
 import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 
 /** Human-facing help for the guided deployment command. */
@@ -134,6 +135,18 @@ export function formatIncompleteLaunches(journals: readonly LaunchJournal[]): st
     .join('\n')}\n`;
 }
 
+/**
+ * The last line after a Control-C, matching what the journal saved: a clean stop resumes as is,
+ * while a stop in the middle of a create needs the reconciliation steps above first.
+ *
+ * @param journal - The journal as saved after the cancellation.
+ */
+export function describeCancelledLaunch(journal: LaunchJournal): string {
+  return journal.lastSafeError?.code === 'CANCELLED'
+    ? 'Setup stopped when you interrupted it. What it made so far is kept: run the resume command above to carry on.'
+    : 'Setup stopped while a change was still in progress, so it cannot tell yet whether that change happened. Follow the steps above before you resume.';
+}
+
 /** Render resource ownership, possible charges/data, read-only inspection, and exact resume. */
 export function formatCommunityRecovery(journal: LaunchJournal): string {
   const selection = journal.recoveryContext;
@@ -150,7 +163,7 @@ export function formatCommunityRecovery(journal: LaunchJournal): string {
       : null,
     journal.resources.tigrisBucketId
       ? selection
-        ? `  Tigris bucket ${journal.resources.tigrisBucketId} — owner ${selection.flyOrganization}; may incur charges; private files may exist.\n    Inspect: fly storage status ${selection.bucketName} --app ${selection.appName}\n    Console: https://fly.io/apps/${selection.appName}`
+        ? `  Tigris bucket ${selection.bucketName} — owner ${selection.flyOrganization}; may incur charges; private files may exist.\n    Inspect: fly storage status ${selection.bucketName} --app ${selection.appName}\n    Console: https://fly.io/apps/${selection.appName}\n    Access key: usually ${tigrisAccessKeyName(selection.bucketName)} in Tigris. Removing the bucket does not remove this key; it keeps working until you remove it in Tigris.`
         : `  Tigris bucket ${journal.resources.tigrisBucketId} — saved owner unavailable; may incur charges; private files may exist.`
       : null,
   ].filter((row): row is string => row !== null);
@@ -545,6 +558,12 @@ export async function runCommunityDispatcher(
     }
     if (latest) {
       process.stderr.write(`Space setup stopped.\n${formatCommunityRecovery(latest)}\n`);
+      // An interruption is not a failure: say what happened in the words the journal just saved,
+      // instead of the interrupted command's own error code (DOR-2702).
+      if (cancellation.signal.aborted && !latest.pendingRemoval) {
+        process.stderr.write(`${describeCancelledLaunch(latest)}\n`);
+        return 130;
+      }
     }
     throw error;
   } finally {

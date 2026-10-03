@@ -5,6 +5,23 @@
  */
 import { ProviderCommandError, runProviderCommand } from './provider-process.js';
 
+/**
+ * What a person reads for each code. The CLI prints an error's message after `Space setup
+ * failed:`, and a raw code such as `CREATION_OUTCOME_UNCERTAIN` there told a person nothing
+ * (DOR-2702). The code itself stays on the error and in the launch journal.
+ */
+const PLAIN_MESSAGES: Record<ProviderMutationError['code'], string> = {
+  INVALID_INPUT: 'Setup was given a value it cannot use, so it stopped before that change.',
+  INVALID_RESPONSE:
+    'Fly, Neon or Tigris answered in a way setup could not check, so setup stopped to stay safe.',
+  PROVIDER_UNAVAILABLE:
+    'Setup could not reach Fly, Neon or the image registry. Check your connection and that fly and neonctl are installed, then try again.',
+  ACCESS_DENIED:
+    'Fly or Neon refused the signed-in account. Sign in with one that can create these resources.',
+  CREATION_OUTCOME_UNCERTAIN:
+    'A Fly, Neon or Tigris command did not finish, so setup cannot tell whether that change happened. Check what exists before you run setup again.',
+};
+
 /** Stable, secret-free failure from a provider mutation boundary. */
 export class ProviderMutationError extends Error {
   /** Safe classification suitable for the launch journal. */
@@ -17,7 +34,7 @@ export class ProviderMutationError extends Error {
 
   /** Create a mutation error without provider output. */
   constructor(code: ProviderMutationError['code']) {
-    super(`Provider mutation failed (${code})`);
+    super(PLAIN_MESSAGES[code]);
     this.name = 'ProviderMutationError';
     this.code = code;
   }

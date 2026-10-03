@@ -26,6 +26,13 @@ import type { LaunchPlan } from '../plan.js';
 import { ProviderMutationError } from '../provider-mutation.js';
 import { FLY_MACHINE_PLATFORM, resolvePlatformImageDigest } from './image-platform.js';
 import type { CompatibleCommunityRelease } from '../release-resolver.js';
+import {
+  FlyMachineBusyError,
+  cancellableSleep,
+  heldLeaseMinutes,
+  readFlyMachineLease,
+  waitForFlyMachineLeases,
+} from './fly-lease.js';
 
 const COMMUNITY_IMAGE_REPOSITORY = 'ghcr.io/dork-labs/dorkos-community';
 
@@ -71,7 +78,12 @@ export function createDefaultCommunityDeployDependencies(input: {
   now(): string;
   /** Settles the platform digest Fly will report; see {@link resolveCommunityPlatformDigest}. */
   resolvePlatformDigest(): Promise<string>;
+  /** Writes one progress line; standard output by default. */
+  progress?(line: string): void;
 }): CommunityDeployPhaseDependencies {
+  const readLease = (machineId: string) =>
+    readFlyMachineLease(input.options.fly, input.plan.fly.appName, machineId);
+  const progress = input.progress ?? ((line: string) => void process.stdout.write(`${line}\n`));
   return {
     persist: input.persist,
     now: input.now,
@@ -111,6 +123,20 @@ export function createDefaultCommunityDeployDependencies(input: {
           configPath
         );
       }),
+    waitForMachineLeases: (machineIds) =>
+      waitForFlyMachineLeases({
+        appName: input.plan.fly.appName,
+        machineIds,
+        readLease,
+        progress,
+        now: Date.now,
+        sleep: (ms) => cancellableSleep(ms, input.options.fly.signal),
+      }),
+    explainDeployFailure: async (error, machineIds) => {
+      if (machineIds.length === 0 || input.options.fly.signal?.aborted) return error;
+      const minutes = await heldLeaseMinutes({ machineIds, readLease, now: Date.now });
+      return minutes === false ? error : new FlyMachineBusyError(input.plan.fly.appName, minutes);
+    },
     resolvePlatformDigest: input.resolvePlatformDigest,
     verifyNewRuntime: (inventory, previous, platformDigest) =>
       verifyFlyDeployment(inventory, previous, COMMUNITY_IMAGE_REPOSITORY, platformDigest),

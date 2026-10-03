@@ -199,8 +199,8 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
 2. Run the exact resume command step (b) printed.
 3. Expect: the Neon project and the Tigris bucket are created. If Fly asks for Tigris terms, accept them in Fly and type `accept`.
 4. When the launcher prints `Applying private secrets and deploying the pinned Community image…`, press Control-C once while `fly deploy` is running.
-5. Expect: setup stops, saves its state and prints the recovery table and resume command again. Record the journal state and the error code (`CANCELLED` or `CREATION_OUTCOME_UNCERTAIN`).
-6. Run the resume command again. Expect: it finishes the deploy, verifies health, then asks `Open <origin> and copy the one-time setup secret? Type copy:`.
+5. Expect: setup stops, saves its state and prints the recovery table and resume command again, then one plain last line with no error code (DOR-2702). Record the journal state and the journal's `lastSafeError` code (`CANCELLED` or `CREATION_OUTCOME_UNCERTAIN`), and check the last line matches it: `CANCELLED` says you can resume as is; `CREATION_OUTCOME_UNCERTAIN` says to follow the steps above first.
+6. Run the resume command again straight away. Expect: if Fly still holds the Machine for the stopped deploy (up to five minutes after it began), a line says setup is waiting for Fly to let go of it, then it carries on by itself. It finishes the deploy, verifies health, then asks `Open <origin> and copy the one-time setup secret? Type copy:`. Record how long it waited.
 7. Complete owner setup in the browser, press Enter in the terminal, post one message and upload then download one private file, then type `complete`.
 8. Expect the completion screen: "Community setup is complete", deployment health verified, recovery readiness "not verified". Record it.
 

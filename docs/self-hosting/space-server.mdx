@@ -42,6 +42,8 @@ Sometimes setup stops without knowing whether it created something. `--remove-un
 
 If it removes a Tigris bucket, Fly leaves the bucket's access key working in Tigris. DorkOS tells you so and shows you how to delete that key.
 
+If you press Control-C while setup deploys, you can run the resume command it prints right away. Fly keeps the server locked for a few minutes after a stopped deploy, so setup tells you it is waiting and carries on when Fly lets go. If Fly holds it for longer than about six minutes, setup stops and tells you when to try again.
+
 ## Signing in to Fly and Neon
 
 Setup uses your saved `fly` and `neonctl` sign-ins. If you export `FLY_API_TOKEN` (or `FLY_ACCESS_TOKEN`) or `NEON_API_KEY` first, it uses that token instead. It tells you when it does, and it never writes the token down.
