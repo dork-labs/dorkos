@@ -116,6 +116,8 @@ export const MANAGED_HOOK_SENTINEL_KEY = '_dorkosHarness';
 export interface ManagedHookGroup extends HookMatcherGroup {
   /** The owning plugin's package name (the {@link MANAGED_HOOK_SENTINEL_KEY} value). */
   [MANAGED_HOOK_SENTINEL_KEY]: string;
+  /** The dev link's folder, when the owning plugin runs from one ({@link MANAGED_HOOK_DEV_LINK_KEY}). */
+  [MANAGED_HOOK_DEV_LINK_KEY]?: string;
 }
 
 /**
@@ -125,6 +127,67 @@ export interface ManagedHookGroup extends HookMatcherGroup {
  * this sentinel is ever pruned, so a hand-authored command is never deleted.
  */
 export const GENERATED_COMMAND_MARKER = 'dorkos:generated-command';
+
+/**
+ * The marker on every projection of a package that runs from a registered dev
+ * link (DOR-2696): a second comment line in each generated command wrapper,
+ * `<!-- dorkos:dev-link <folder> -->`, beside {@link GENERATED_COMMAND_MARKER}.
+ * A label, never an ownership predicate: the generated marker still decides
+ * what the sweep may prune, so a wrapper keeps its owner when the dev link goes
+ * and its next sync rewrites it without this line.
+ */
+export const DEV_LINK_MARKER = 'dorkos:dev-link';
+
+/**
+ * The key a managed hook group carries beside {@link MANAGED_HOOK_SENTINEL_KEY}
+ * when its package runs from a registered dev link: the folder it runs from.
+ * Like {@link DEV_LINK_MARKER}, a label only; ownership stays with the sentinel.
+ */
+export const MANAGED_HOOK_DEV_LINK_KEY = '_dorkosDevLink';
+
+/**
+ * How every surface labels a projection of a dev-linked package: the plan's
+ * note on each of its actions, the drop list, `dorkos harness sync` and the
+ * harness status page all print this, so they say one thing.
+ *
+ * @param folder - The working folder the dev link points at.
+ * @returns `(dev link: <folder>)`.
+ */
+export function devLinkLabel(folder: string): string {
+  return `(dev link: ${folder})`;
+}
+
+/**
+ * The dev-link marker line for a generated command wrapper. A folder whose name
+ * holds `-->` would otherwise close the comment early and leak the rest of its
+ * name into the command text, so that sequence is escaped.
+ */
+function devLinkMarkerLine(folder: string): string {
+  return `<!-- ${DEV_LINK_MARKER} ${folder.split('-->').join('--&gt;')} -->`;
+}
+
+/**
+ * Label every action planned from a dev-linked package: the folder on
+ * {@link ProjectionAction.devLink}, and {@link devLinkLabel} appended to its
+ * note. Actions of an installed copy pass through untouched.
+ *
+ * @param actions - Actions planned from one package.
+ * @param plugin - That package.
+ * @returns The same actions, labelled when the package runs from a dev link.
+ */
+export function labelDevLinkActions(
+  actions: ProjectionAction[],
+  plugin: Pick<InstalledPlugin, 'devLink'>
+): ProjectionAction[] {
+  const folder = plugin.devLink?.path;
+  if (folder === undefined) return actions;
+  const label = devLinkLabel(folder);
+  for (const action of actions) {
+    action.devLink = folder;
+    action.reason = action.reason === undefined ? label : `${action.reason} ${label}`;
+  }
+  return actions;
+}
 
 /** Per-harness skill projection dir for installed plugins; absent harnesses cannot take skills. */
 const INSTALLED_SKILL_TARGET_DIRS: Partial<Record<HarnessId, string>> = {
@@ -291,9 +354,20 @@ export function pluginEnvPrefix(absInstallDir: string, platform: NodeJS.Platform
 }
 
 /** Build a command wrapper: rewrite the plugin tokens to absolute, mark it generated. */
-function buildCommandWrapper(content: string, absInstallDir: string, relDir: string): string {
+function buildCommandWrapper(
+  content: string,
+  absInstallDir: string,
+  relDir: string,
+  devLink: string | undefined
+): string {
   const rewritten = rewritePluginTokens(content, absInstallDir);
-  return insertAfterFrontmatter(rewritten, generatedCommandMarkerLine(relDir));
+  return insertAfterFrontmatter(rewritten, wrapperMarkerLines(relDir, devLink));
+}
+
+/** The generated marker, plus the dev-link marker for a dev-linked package. */
+function wrapperMarkerLines(relDir: string, devLink: string | undefined): string {
+  const generated = generatedCommandMarkerLine(relDir);
+  return devLink === undefined ? generated : `${generated}\n${devLinkMarkerLine(devLink)}`;
 }
 
 /** Split a markdown file into its leading YAML frontmatter lines and the body after it. */
@@ -333,12 +407,13 @@ export function opencodeWrapperFilename(pkg: string, command: string): string {
 function buildOpencodeCommandWrapper(
   content: string,
   absInstallDir: string,
-  relDir: string
+  relDir: string,
+  devLink: string | undefined
 ): string {
   const rewritten = rewritePluginTokens(content, absInstallDir);
   const { frontmatter, body } = splitFrontmatter(rewritten);
   const description = frontmatterField(frontmatter, 'description');
-  const marker = generatedCommandMarkerLine(relDir);
+  const marker = wrapperMarkerLines(relDir, devLink);
   const reducedFrontmatter =
     description !== undefined ? `---\ndescription: ${description}\n---\n` : '';
   return `${reducedFrontmatter}${marker}\n${body}`;
@@ -506,6 +581,7 @@ function toManagedHooks(
       ...group,
       hooks: group.hooks.map((h) => ({ ...h, command: `${prefix}${h.command}` })),
       [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
+      ...(plugin.devLink !== undefined && { [MANAGED_HOOK_DEV_LINK_KEY]: plugin.devLink.path }),
     }));
   }
   return out;
@@ -766,7 +842,10 @@ function planClaudeInstalledCommands(
       source: cmd.sourcePath,
       target: `${pkgDir}/${cmd.name}.md`,
     };
-    setActionContent(action, buildCommandWrapper(cmd.content, absInstallDir, relDir));
+    setActionContent(
+      action,
+      buildCommandWrapper(cmd.content, absInstallDir, relDir, plugin.devLink?.path)
+    );
     actions.push(action);
   }
   // A self-ignoring `.gitignore` inside the wrapper dir keeps the machine-local
@@ -808,7 +887,10 @@ function planOpencodeInstalledCommands(
       source: cmd.sourcePath,
       target: `${OPENCODE_COMMANDS_DIR}/${opencodeWrapperFilename(plugin.name, cmd.name)}`,
     };
-    setActionContent(action, buildOpencodeCommandWrapper(cmd.content, absInstallDir, relDir));
+    setActionContent(
+      action,
+      buildOpencodeCommandWrapper(cmd.content, absInstallDir, relDir, plugin.devLink?.path)
+    );
     actions.push(action);
   }
   return actions;

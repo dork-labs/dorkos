@@ -40,6 +40,7 @@ import { planGlobalInstallDrops, planGlobalUnreadableHookWarnings } from './glob
 import {
   isProjectScoped,
   type InstalledPlugin,
+  type ProjectInstalledPlugin,
   type UnreadablePackageManifest,
 } from '../sources/installed.js';
 import {
@@ -51,6 +52,7 @@ import {
   planSkillNameCollisions,
   dropNonPortableLayers,
   dropWholePlugin,
+  labelDevLinkActions,
   mergeHookConfigs,
   rewritePluginRootInHooks,
   PROJECTABLE_PLUGIN_TYPES,
@@ -667,9 +669,9 @@ export function buildPlan(input: {
     warnings.push(...inventoried.warnings);
     for (const plugin of projectable) {
       const skillResult = planInstalledSkills(harness, plugin);
-      all.push(...skillResult.actions);
+      all.push(...labelDevLinkActions(skillResult.actions, plugin));
       warnings.push(...skillResult.warnings);
-      all.push(...planInstalledCommands(harness, plugin, repoRoot));
+      all.push(...labelDevLinkActions(planInstalledCommands(harness, plugin, repoRoot), plugin));
     }
   }
 
@@ -710,7 +712,7 @@ export function buildPlan(input: {
     plugins: projectable,
     harnesses: manifest.harnesses,
   });
-  all.push(...canonicalLinks.actions);
+  all.push(...labelCanonicalLinks(canonicalLinks.actions, projectable));
   warnings.push(...canonicalLinks.warnings);
 
   // Account for every `manifest.claudeOnlySkills` entry, including the ones the
@@ -740,7 +742,9 @@ export function buildPlan(input: {
   all.push(...planForeignMcpDrops(inventory));
 
   // Harness-agnostic installed-plugin drops (emitted once, not per harness).
-  for (const plugin of projectable) all.push(...dropNonPortableLayers(plugin));
+  for (const plugin of projectable) {
+    all.push(...labelDevLinkActions(dropNonPortableLayers(plugin), plugin));
+  }
   for (const plugin of unsupportedType) {
     all.push(
       dropWholePlugin(plugin, `package type "${plugin.type}" is not a harness-portable plugin`)
@@ -773,6 +777,31 @@ export function buildPlan(input: {
     notEnabled: notEnabledHarnesses(manifest.harnesses, detectedHarnesses, dorkosHarness),
     ...(unreadableSkillRoots.length > 0 ? { unreadableSkillRoots } : {}),
   };
+}
+
+/**
+ * Label the `.agents/skills` links planned for every package at once
+ * ({@link planCanonicalSkillLinks}) with their package's dev link, when it has
+ * one. Each link's `source` is a path inside its package's install directory,
+ * which is how it is matched back to the package.
+ *
+ * @param actions - The canonical skill links.
+ * @param plugins - The packages they were planned from.
+ * @returns The same actions, labelled where their package runs from a dev link.
+ */
+function labelCanonicalLinks(
+  actions: ProjectionAction[],
+  plugins: readonly ProjectInstalledPlugin[]
+): ProjectionAction[] {
+  for (const plugin of plugins) {
+    if (plugin.devLink === undefined) continue;
+    const prefix = `${plugin.location.relDir}/`;
+    labelDevLinkActions(
+      actions.filter((action) => action.source?.startsWith(prefix) === true),
+      plugin
+    );
+  }
+  return actions;
 }
 
 /**
