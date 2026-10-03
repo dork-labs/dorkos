@@ -325,7 +325,9 @@ export function useCloudLink(): UseCloudLink {
     // Poll while a link waits for approval, whichever tab started it; every
     // terminal state stops it.
     refetchInterval: (query) => (query.state.data?.state === 'pending' ? POLL_INTERVAL_MS : false),
-    refetchIntervalInBackground: true,
+    // A hidden tab keeps polling only for a code it started; any other tab
+    // reads the flow again when it is shown.
+    refetchIntervalInBackground: flow.codes !== null,
   });
   const linkStatus = status.data ?? null;
 

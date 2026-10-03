@@ -3,6 +3,7 @@ covers:
   - 'feat(client): offer DorkOS credits first where nothing works yet (DOR-2630)'
   - 'fix(client): carry a DorkOS link on only where it was started, and ask before spending (DOR-2630)'
   - 'fix(cloud): show every tab the one link code, and carry on only for the code that was approved (DOR-2630)'
+  - 'fix(client): keep only the tab that started a link polling while hidden (DOR-2630)'
 ---
 
 ### Added
