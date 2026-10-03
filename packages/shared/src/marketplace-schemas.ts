@@ -320,14 +320,21 @@ export const HOOK_EVENT_SUMMARY: Record<string, string> = {
 /**
  * Describe when a hook fires, in plain words.
  *
+ * The matcher, and an event with no known phrasing, are package-chosen text
+ * that approval cards bind (a dev link's card is held to its exact text), so
+ * each is written out whole: quoted and escaped, with every hidden or
+ * direction-changing character shown. A matcher holding a line break can then
+ * never fake a line of the card around it.
+ *
  * @param event - The harness event name the package declared.
  * @param matcher - Optional tool/event matcher the hook narrows to.
  * @returns A phrase completing "Runs ...". An event with no known phrasing
- *   falls back to naming it verbatim, which is still true.
+ *   falls back to naming it, quoted, which is still true.
  */
 export function describeHookEvent(event: string, matcher?: string): string {
-  const when = HOOK_EVENT_SUMMARY[event] ?? `on ${event}`;
-  return matcher ? `${when} (${matcher})` : when;
+  const whole = (value: string): string => revealHiddenCharacters(JSON.stringify(value));
+  const when = HOOK_EVENT_SUMMARY[event] ?? `on ${whole(event)}`;
+  return matcher ? `${when} (${whole(matcher)})` : when;
 }
 
 /**
