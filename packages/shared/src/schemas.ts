@@ -210,6 +210,7 @@ export const StreamEventTypeSchema = z
     'elicitation_prompt',
     'elicitation_complete',
     'permission_denied',
+    'model_substituted',
     'interaction_cancelled',
     'capability_approval_required',
     'capability_approval_resolved',
@@ -2655,6 +2656,32 @@ export const PermissionDeniedEventSchema = z
 
 export type PermissionDeniedEvent = z.infer<typeof PermissionDeniedEventSchema>;
 
+/**
+ * Emitted when a turn ran on another model than the one its session names,
+ * because who pays for it does not serve that model (DOR-2636): a session on
+ * DorkOS credits naming a model credits do not cover runs on the service's
+ * suggestion instead. Never a silent switch, so it is recorded durably and
+ * rendered as a lasting notice in the conversation, on every surface that ran
+ * the turn (a chat, a schedule, a room).
+ */
+export const ModelSubstitutedEventSchema = z
+  .object({
+    /** The model id the session named. */
+    from: z.string(),
+    /** That model's display name, as the runtime names it. */
+    fromName: z.string(),
+    /** The model id the turn ran on. */
+    to: z.string(),
+    /** That model's display name, as the service names it. */
+    toName: z.string(),
+    /** Why: the credits list does not cover the named model. */
+    reason: z.enum(['credits-not-covered']),
+  })
+  .openapi('ModelSubstitutedEvent');
+
+/** Inferred type for {@link ModelSubstitutedEventSchema}. */
+export type ModelSubstitutedEvent = z.infer<typeof ModelSubstitutedEventSchema>;
+
 export const PromptSuggestionEventSchema = z
   .object({
     suggestions: z.array(z.string()),
@@ -2929,6 +2956,7 @@ export const StreamEventSchema = z
       ElicitationPromptEventSchema,
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
+      ModelSubstitutedEventSchema,
       InteractionCancelledEventSchema,
       CapabilityApprovalRequiredEventSchema,
       CapabilityApprovalResolvedEventSchema,
@@ -3344,6 +3372,21 @@ export const PermissionDeniedPartSchema = z
 export type PermissionDeniedPart = z.infer<typeof PermissionDeniedPartSchema>;
 
 /**
+ * A lasting notice in the conversation that a turn ran on another model than
+ * the session names (DOR-2636). Sourced from the `model_substituted` session
+ * event, which reaches the live turn and, recorded durably, a reopened one.
+ */
+export const ModelSubstitutedPartSchema = z
+  .object({
+    type: z.literal('model_substituted'),
+    ...ModelSubstitutedEventSchema.shape,
+  })
+  .openapi('ModelSubstitutedPart');
+
+/** Inferred type for {@link ModelSubstitutedPartSchema}. */
+export type ModelSubstitutedPart = z.infer<typeof ModelSubstitutedPartSchema>;
+
+/**
  * An inline row in the message stream marking a context-window compaction.
  * Sourced from the `compact_boundary` session event on success (carrying the
  * SDK `compact_metadata`), or synthesized from an `operation_progress`
@@ -3398,6 +3441,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   McpSigninPartSchema,
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
+  ModelSubstitutedPartSchema,
   CompactBoundaryPartSchema,
 ]);
 
@@ -4817,6 +4861,10 @@ export const ModelOptionSchema = z
     supportsStreaming: z.boolean().optional(),
     supportsCodeExecution: z.boolean().optional(),
     isDeprecated: z.boolean().optional(),
+    creditsListOutOfDate: z.boolean().optional().openapi({
+      description:
+        'True on a credits row when DorkOS could not refresh the list just now and this is the last one the service answered, so it may be out of date.',
+    }),
     paidFromCredits: z.boolean().optional().openapi({
       description:
         "True when this row comes from the models DorkOS credits serve on the runtime's protocol, so the menu is the credits menu rather than the runtime's own.",

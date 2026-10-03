@@ -1,6 +1,6 @@
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { CompactResultRow } from '@/layers/shared/ui';
-import { formatTokenCount } from '../../lib/format-compaction';
+import { formatTokenCount } from '../../../lib/format-compaction';
 
 interface CompactBoundaryRowProps {
   /** What triggered compaction: manual (`/compact`) or auto (context pressure). */

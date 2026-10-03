@@ -43,7 +43,7 @@ import {
 } from '../../shared/runtime-environment-config.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
 import {
@@ -159,11 +159,14 @@ export function resolveEffectiveCwd(opts: MessageSenderOpts, messageOpts?: Messa
 
 /** Which sessions were already told their model was replaced on credits. */
 const creditsModelSwapsSaid = new Set<string>();
+/** How many of those {@link creditsModelSwapsSaid} remembers at most. */
+const CREDITS_MODEL_SWAPS_KEPT = 1_000;
 
 /**
  * Whether this session still has to be told that credits run another model
  * than the one it names, recording that it now has been: the notice is said
- * once per session and model, not on every turn.
+ * once per session and model, not on every turn (a schedule or room whose
+ * every send names the model again would otherwise say it on each one).
  *
  * @param sessionId - The session being launched.
  * @param model - The model it names that credits do not serve.
@@ -172,6 +175,12 @@ function noteCreditsModelSwap(sessionId: string, model: string): boolean {
   const key = `${sessionId}\u0000${model}`;
   if (creditsModelSwapsSaid.has(key)) return false;
   creditsModelSwapsSaid.add(key);
+  // Bounded: the oldest is forgotten first. The swap also becomes the session's
+  // own model, so a forgotten key costs at most one repeated notice.
+  if (creditsModelSwapsSaid.size > CREDITS_MODEL_SWAPS_KEPT) {
+    const oldest = creditsModelSwapsSaid.values().next().value;
+    if (oldest !== undefined) creditsModelSwapsSaid.delete(oldest);
+  }
   return true;
 }
 
@@ -542,6 +551,60 @@ export async function resolveLaunch(args: {
     'session.cwd': opts.sessionCwd || '(empty)',
   });
 
+  // **Which model runs** (DOR-2636). On credits, once the service says which
+  // protocols its models are on, a session runs a model credits serve: with
+  // none chosen it starts on the service's suggestion, and one credits do not
+  // serve (pinned on an agent, a schedule or the runtime's default) runs on the
+  // suggestion instead. Never silently: a `model_substituted` event names both
+  // models, is recorded durably and becomes a lasting notice in the
+  // conversation, and the suggestion becomes the session's own model so the
+  // status line shows what ran. An alias (`sonnet`) is judged on the id it
+  // expands to, so one naming a served model is never replaced. A list naming
+  // no model on this protocol refuses the turn plainly instead of sending a
+  // request that cannot succeed. A service that says nothing about protocols
+  // changes nothing here.
+  //
+  // Resolved BEFORE the permission and thinking settings below, because both
+  // read the capability of the model that will run, not the one it replaced.
+  let launchModel = session.model || undefined;
+  let modelCapability = opts.modelThinkingCapability;
+  let modelSupportsAutoMode = opts.modelSupportsAutoMode;
+  /** The catalog row of a model credits put in place of the named one, if any. */
+  let swappedTo: { row: ModelOption | undefined } | undefined;
+  if (onCredits) {
+    const named = opts.lookupModel?.(launchModel);
+    const decided = await resolveCreditsLaunchModel(
+      CLAUDE_CODE_CAPABILITIES,
+      launchModel,
+      named?.resolvedModel
+    );
+    if (decided.kind === 'none-served') {
+      throw new CreditsUnavailableError('no-models', 'Claude Code');
+    }
+    if (decided.kind === 'suggested' || decided.kind === 'replaced') {
+      launchModel = decided.model;
+      const running = opts.lookupModel?.(decided.model);
+      swappedTo = { row: running };
+      modelCapability = running;
+      modelSupportsAutoMode = running ? (running.supportsAutoMode ?? false) : undefined;
+    }
+    if (decided.kind === 'replaced') {
+      await opts.rememberSessionModel?.(decided.model);
+      if (noteCreditsModelSwap(sessionId, decided.from)) {
+        statusEvents.push({
+          type: 'model_substituted',
+          data: {
+            from: decided.from,
+            fromName: named?.displayName ?? decided.from,
+            to: decided.model,
+            toName: decided.toName,
+            reason: 'credits-not-covered',
+          },
+        });
+      }
+    }
+  }
+
   // Reconcile the permission mode against the active model: `'auto'` only works on
   // models KNOWN to support it, so coerce it to `'default'` here (the runtime is the
   // authoritative chokepoint) rather than letting the SDK 400. This is a per-query
@@ -577,7 +640,7 @@ export async function resolveLaunch(args: {
   const { permissionMode: effectivePermissionMode, autoDowngrade } = resolveEffectivePermissionMode(
     {
       permissionMode: declaredMode,
-      modelSupportsAutoMode: opts.modelSupportsAutoMode,
+      modelSupportsAutoMode,
     }
   );
   if (autoDowngrade) {
@@ -598,26 +661,8 @@ export async function resolveLaunch(args: {
   // launched with it.
   sdkOptions.allowDangerouslySkipPermissions = true;
 
-  // On credits, once the service says which protocols its models are on, a
-  // session runs a model credits serve (DOR-2636): with none chosen it starts on
-  // the service's suggestion (the row the model menu marks as the default), and
-  // one credits do not serve (pinned on an agent, a schedule or the runtime's
-  // default) runs on the suggestion instead, said once in plain words, never a
-  // silent switch and never a failed launch. A service that says nothing about
-  // protocols changes nothing here.
-  const launchModel = onCredits
-    ? await resolveCreditsLaunchModel(CLAUDE_CODE_CAPABILITIES, session.model || undefined)
-    : { model: session.model || undefined };
-  if (launchModel.model) {
-    sdkOptions.model = launchModel.model;
-  }
-  if (launchModel.replaced && noteCreditsModelSwap(sessionId, launchModel.replaced.from)) {
-    statusEvents.push({
-      type: 'system_status',
-      data: {
-        message: `DorkOS credits don't cover ${launchModel.replaced.from}, so this chat runs on ${launchModel.replaced.to}. Pick another model from the model menu.`,
-      },
-    });
+  if (launchModel) {
+    sdkOptions.model = launchModel;
   }
   // Resolve thinking + effort together: adaptive-capable models (Opus 4.8/4.7 default
   // their thinking to omitted) get `display: 'summarized'` so thinking text streams;
@@ -625,7 +670,7 @@ export async function resolveLaunch(args: {
   // (`none`/`minimal`) that the SDK does not accept.
   const { thinking, effort } = resolveThinkingOptions({
     effort: session.effort,
-    capability: opts.modelThinkingCapability,
+    capability: modelCapability,
   });
   if (thinking) {
     sdkOptions.thinking = thinking;
@@ -635,7 +680,8 @@ export async function resolveLaunch(args: {
   }
   // Pass fastMode via SDK settings (not top-level options).
   // The SDK uses Settings.fastMode.
-  if (session.fastMode) {
+  // A fast mode the model that runs cannot take (a credits swap) is left off.
+  if (session.fastMode && (swappedTo === undefined || swappedTo.row?.supportsFastMode)) {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
     sdkOptions.settings = {
       ...base,
@@ -798,7 +844,7 @@ export async function resolveLaunch(args: {
       // real effort change from the capability cache warming up mid-session
       // (DOR-1308).
       effortInput: session.effort,
-      capabilityResolved: opts.modelThinkingCapability !== undefined,
+      capabilityResolved: modelCapability !== undefined,
     },
   };
 }

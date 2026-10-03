@@ -2419,6 +2419,9 @@
                   "$ref": "#/components/schemas/PermissionDeniedPart"
                 },
                 {
+                  "$ref": "#/components/schemas/ModelSubstitutedPart"
+                },
+                {
                   "$ref": "#/components/schemas/CompactBoundaryPart"
                 }
               ],
@@ -2436,6 +2439,7 @@
                   "mcp_signin": "#/components/schemas/McpSigninPart",
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
+                  "model_substituted": "#/components/schemas/ModelSubstitutedPart",
                   "compact_boundary": "#/components/schemas/CompactBoundaryPart"
                 }
               }
@@ -3417,6 +3421,43 @@
           "message"
         ]
       },
+      "ModelSubstitutedPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "model_substituted"
+            ]
+          },
+          "from": {
+            "type": "string"
+          },
+          "fromName": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "toName": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "credits-not-covered"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "from",
+          "fromName",
+          "to",
+          "toName",
+          "reason"
+        ]
+      },
       "CompactBoundaryPart": {
         "type": "object",
         "properties": {
@@ -4269,6 +4310,48 @@
               "toolCallId",
               "toolName",
               "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "model_substituted"
+                ]
+              },
+              "from": {
+                "type": "string"
+              },
+              "fromName": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "toName": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "credits-not-covered"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "from",
+              "fromName",
+              "to",
+              "toName",
+              "reason"
             ]
           },
           {
@@ -7626,6 +7709,10 @@
           },
           "isDeprecated": {
             "type": "boolean"
+          },
+          "creditsListOutOfDate": {
+            "type": "boolean",
+            "description": "True on a credits row when DorkOS could not refresh the list just now and this is the last one the service answered, so it may be out of date."
           },
           "paidFromCredits": {
             "type": "boolean",
@@ -19610,6 +19697,48 @@
                         "type": {
                           "type": "string",
                           "enum": [
+                            "model_substituted"
+                          ]
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "fromName": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "toName": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "credits-not-covered"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "from",
+                        "fromName",
+                        "to",
+                        "toName",
+                        "reason"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
                             "system_status"
                           ]
                         },
@@ -21025,7 +21154,7 @@
           "Models"
         ],
         "summary": "List the models a runtime offers",
-        "description": "Returns the models the resolved runtime offers. A session on DorkOS credits (or `account=dorkos-credits` with no session) gets only the models credits serve on the runtime's protocol, the recommended one first; 503 when that list cannot be read.",
+        "description": "Returns the models the resolved runtime offers. A session on DorkOS credits (or `account=dorkos-credits` with no session) gets only the models credits serve on the runtime's protocol, the recommended one first, once the service says which protocols its models are on. When the service cannot be read, the last list it answered stands, marked out of date.",
         "parameters": [
           {
             "schema": {
@@ -21092,16 +21221,6 @@
           },
           "400": {
             "description": "Unknown runtime",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The models DorkOS credits serve could not be read",
             "content": {
               "application/json": {
                 "schema": {

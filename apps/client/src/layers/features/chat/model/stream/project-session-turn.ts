@@ -956,6 +956,16 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
       case 'permission_denied':
         foldPermissionDenied(parts, event);
         break;
+      case 'model_substituted':
+        parts.push({
+          type: 'model_substituted',
+          from: event.from,
+          fromName: event.fromName,
+          to: event.to,
+          toName: event.toName,
+          reason: event.reason,
+        });
+        break;
       case 'operation_progress':
         foldOperationProgress(parts, event);
         break;

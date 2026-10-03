@@ -639,6 +639,19 @@ describe('AgentExecutionRows — the Account row', () => {
       );
     });
 
+    it('says when the credits list may be out of date', async () => {
+      renderRows(
+        manifest({ account: 'dorkos-credits' }),
+        NO_DEFAULT_MODEL,
+        CREDIT_MODELS.map((m) => ({ ...m, creditsListOutOfDate: true })),
+        withCredits() as never,
+        { ...TWO_ACCOUNTS, credits: CREDITS }
+      );
+      expect(await screen.findByTestId('agent-credits-models-out-of-date')).toHaveTextContent(
+        'The models your DorkOS credits cover may be out of date.'
+      );
+    });
+
     it('follows credits as the machine default for an agent that names no account', async () => {
       const { transport } = renderRows(
         manifest(),

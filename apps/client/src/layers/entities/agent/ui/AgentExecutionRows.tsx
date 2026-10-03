@@ -480,6 +480,14 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           }
         />
         {catalogIsUnverified && <UnverifiedCatalogNotice id={unverifiedNoticeId} />}
+        {creditsMenu && (models ?? []).some((m) => m.creditsListOutOfDate) && (
+          <p
+            className="text-muted-foreground text-xs"
+            data-testid="agent-credits-models-out-of-date"
+          >
+            The models your DorkOS credits cover may be out of date.
+          </p>
+        )}
         {onCredits && modelsFailed && (
           // Fail honest: no menu of models credits may not serve. The agent
           // keeps the model it has until the list can be read.

@@ -33,7 +33,7 @@ vi.mock('../../../core/cloud/credits-models.js', () => ({
 import { judgeCreditsModel } from '../../../core/cloud/credits-models.js';
 import { scheduleCreditsModelRefusal } from '../schedule-credits-model.js';
 
-const NOT_COVERED = "DorkOS credits don't cover that model. Pick one from the model menu.";
+const NOT_COVERED = 'DorkOS credits don’t cover that model. Pick one from the model menu.';
 
 beforeEach(() => {
   vi.clearAllMocks();

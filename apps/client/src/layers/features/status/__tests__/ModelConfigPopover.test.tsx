@@ -453,6 +453,21 @@ describe('ModelConfigPopover', () => {
       expect(screen.queryByTestId('model-credits-note')).not.toBeInTheDocument();
     });
 
+    it('says when the credits list may be out of date', () => {
+      mockUseModels.mockImplementation(() => ({
+        ...mockUseModelsReturn,
+        data: mockModels.map((m) => ({
+          ...m,
+          paidFromCredits: true,
+          creditsListOutOfDate: true,
+        })) as unknown[],
+      }));
+      render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
+      expect(screen.getByTestId('model-credits-note')).toHaveTextContent(
+        'Models your DorkOS credits cover. This list may be out of date.'
+      );
+    });
+
     it('says nothing new while the service says nothing about protocols (the runtime’s own menu)', () => {
       render(<ModelConfigPopover {...defaultProps({ onCredits: true })} />);
       expect(screen.queryByTestId('model-credits-note')).not.toBeInTheDocument();

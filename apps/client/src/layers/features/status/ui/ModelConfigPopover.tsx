@@ -284,7 +284,9 @@ export function ModelConfigPopover({
           // protocols its models are on, it is the service's list (DOR-2636).
           // Until then the runtime's own menu shows, and says nothing new.
           <p className="text-muted-foreground text-2xs mb-2" data-testid="model-credits-note">
-            Models your DorkOS credits cover
+            {modelList.some((m) => m.creditsListOutOfDate)
+              ? 'Models your DorkOS credits cover. This list may be out of date.'
+              : 'Models your DorkOS credits cover'}
           </p>
         )}
 

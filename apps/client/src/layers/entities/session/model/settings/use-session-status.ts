@@ -17,6 +17,7 @@ import { resolvePermissionMode } from '../../lib/permission-mode';
 import { isQuerySettled } from '../../lib/query-settled';
 import { useSessions } from '../query/use-sessions';
 import { useSessionStartMode } from './use-session-start-mode';
+import { useSessionModelSubstitution } from '../stream/session-stream-store';
 import type {
   Session,
   SessionStatusEvent,
@@ -141,11 +142,14 @@ export function useSessionStatus(
   // streamingStatus is never cleared after streaming ends, so streamingStatus?.model retains its
   // last value and would permanently shadow session?.model (the PATCH-confirmed value). Gate it
   // behind isStreaming so model changes via the dropdown are reflected immediately post-stream.
+  // A turn on DorkOS credits that ran another model than the session named
+  // (DOR-2636) makes that model the session's own on the server; until the
+  // record is read again, the substitution the stream carried says so here.
+  const substitution = useSessionModelSubstitution(sessionId ?? '');
+  const storedModel =
+    substitution && session?.model === substitution.from ? substitution.to : session?.model;
   const model =
-    overrides.model ??
-    (isStreaming ? streamingStatus?.model : null) ??
-    session?.model ??
-    defaultModel;
+    overrides.model ?? (isStreaming ? streamingStatus?.model : null) ?? storedModel ?? defaultModel;
 
   // Context: derive from ModelOption.contextWindow (no hardcoded map)
   const selectedModel = models?.find((m: ModelOption) => m.value === model);

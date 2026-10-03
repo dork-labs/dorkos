@@ -14,7 +14,7 @@
  * @module services/tasks/lifecycle/schedule-credits-model
  */
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import { judgeCreditsModel } from '../../core/cloud/credits-models.js';
+import { creditsModelRefusal } from '../../core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { checkClaudeLaunchAccount } from '../../runtimes/claude-code/launch-account-check.js';
 
@@ -38,8 +38,8 @@ export async function scheduleCreditsModelRefusal(opts: {
   if (!opts.model) return null;
   const type = opts.runtime || runtimeRegistry.getDefaultType();
   if (!runtimeRegistry.has(type)) return null;
-  const capabilities = runtimeRegistry.get(type).getCapabilities();
-  if (capabilities.credits === undefined) return null;
+  const runtime = runtimeRegistry.get(type);
+  if (runtime.getCapabilities().credits === undefined) return null;
   // Accounts are Claude Code's ladder; another runtime runs on credits only
   // when the schedule names them.
   const onCredits =
@@ -48,7 +48,5 @@ export async function scheduleCreditsModelRefusal(opts: {
           .then((launch) => launch.ok && launch.accountId === CREDITS_ACCOUNT_ID)
           .catch(() => false)
       : opts.account === CREDITS_ACCOUNT_ID;
-  if (!onCredits) return null;
-  const verdict = await judgeCreditsModel(capabilities, opts.model);
-  return verdict.judged ? verdict.refusal : null;
+  return onCredits ? creditsModelRefusal(runtime, opts.model) : null;
 }

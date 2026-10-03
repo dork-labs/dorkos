@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import tokenFixture from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
 import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { createCloudApiClient } from '@dork-labs/cloud-api/client';
@@ -99,9 +99,10 @@ function makeSession(accountRoot?: string): AgentSession {
 /** Drive one turn; hand back what the SDK was launched with (or nothing) and the events. */
 async function launch(
   session: AgentSession,
-  cwd = '/mock/project'
+  cwd = '/mock/project',
+  extra: Partial<MessageSenderOpts> = {}
 ): Promise<{ options: Options | undefined; events: StreamEvent[] }> {
-  const opts: MessageSenderOpts = { cwd, onSdkSessionRebind: async () => {} };
+  const opts: MessageSenderOpts = { cwd, onSdkSessionRebind: async () => {}, ...extra };
   let options: Options | undefined;
   vi.mocked(query).mockImplementation((args) => {
     options = args.options;
@@ -303,8 +304,8 @@ describe('who pays for a Claude Code turn', () => {
           recommendedOn: ['anthropic-messages'],
         },
         {
-          id: 'md_served',
-          displayName: 'Served',
+          id: 'claude-sonnet-wire',
+          displayName: 'Served Sonnet',
           contextWindow: 200000,
           maxOutputTokens: 64000,
           supports,
@@ -317,69 +318,175 @@ describe('who pays for a Claude Code turn', () => {
       catalogVersion: 'cv_0',
       models: [{ ...SAYS_PROTOCOLS.models[1], protocols: undefined }],
     };
-    const notices = (events: StreamEvent[]) =>
-      events.filter(
-        (event) =>
-          event.type === 'system_status' &&
-          String((event.data as { message?: string }).message).includes(
-            "DorkOS credits don't cover"
-          )
-      );
+    /** Claude Code's own catalog: its aliases and what each expands to. */
+    const CATALOG: Record<string, ModelOption> = {
+      default: {
+        value: 'default',
+        displayName: 'Default (Opus)',
+        description: '',
+        resolvedModel: 'claude-opus-wire',
+        supportsFastMode: true,
+      },
+      opus: {
+        value: 'opus',
+        displayName: 'Opus',
+        description: '',
+        resolvedModel: 'claude-opus-wire',
+        supportsFastMode: true,
+      },
+      sonnet: {
+        value: 'sonnet',
+        displayName: 'Sonnet',
+        description: '',
+        resolvedModel: 'claude-sonnet-wire',
+      },
+      haiku: {
+        value: 'haiku',
+        displayName: 'Haiku',
+        description: '',
+        resolvedModel: 'claude-haiku-wire',
+      },
+      md_suggested: {
+        value: 'md_suggested',
+        displayName: 'Suggested',
+        description: '',
+        supportsEffort: true,
+        supportsAutoMode: false,
+        supportsFastMode: false,
+      },
+    };
+    const lookupModel = (value: string | undefined) => CATALOG[value ?? 'default'];
+    const substitutions = (events: StreamEvent[]) =>
+      events.filter((event) => event.type === 'model_substituted');
+    let remembered: string[];
+    const withCatalog = (): Partial<MessageSenderOpts> => ({
+      lookupModel,
+      rememberSessionModel: async (model) => {
+        remembered.push(model);
+      },
+    });
+    beforeEach(() => {
+      remembered = [];
+    });
 
-    it('starts a session nobody chose a model for on the service’s suggestion', async () => {
+    it('starts a session nobody chose a model for on the suggestion, with its capability', async () => {
       service.list = SAYS_PROTOCOLS;
-      const { options } = await launch(makeSession(creditsClaudeRoot()));
+      const { options } = await launch(makeSession(creditsClaudeRoot()), undefined, withCatalog());
       expect(options?.model).toBe('md_suggested');
+      expect(remembered).toEqual([]);
     });
 
-    it('keeps a model credits serve', async () => {
+    it('keeps an alias whose resolved model credits serve, and a served id', async () => {
       service.list = SAYS_PROTOCOLS;
-      const { options, events } = await launch({
-        ...makeSession(creditsClaudeRoot()),
-        model: 'md_served',
-      });
-      expect(options?.model).toBe('md_served');
-      expect(notices(events)).toHaveLength(0);
+      for (const model of ['sonnet', 'claude-sonnet-wire']) {
+        const { options, events } = await launch(
+          { ...makeSession(creditsClaudeRoot()), model },
+          undefined,
+          withCatalog()
+        );
+        expect(options?.model).toBe(model);
+        expect(substitutions(events)).toHaveLength(0);
+      }
     });
 
-    it('runs a pinned model credits do not serve on the suggestion, and says so once', async () => {
-      service.list = SAYS_PROTOCOLS;
-      const pinned = { ...makeSession(creditsClaudeRoot()), model: 'claude-opus-4-6' };
-      const first = await launch(pinned);
-      expect(first.options?.model).toBe('md_suggested');
-      expect(notices(first.events)).toEqual([
-        {
-          type: 'system_status',
-          data: {
-            message:
-              "DorkOS credits don't cover claude-opus-4-6, so this chat runs on Suggested. Pick another model from the model menu.",
+    it.each(['default', 'opus', 'haiku'])(
+      'runs the alias %s, which credits do not serve, on the suggestion and records it by name',
+      async (alias) => {
+        service.list = SAYS_PROTOCOLS;
+        const session = {
+          ...makeSession(creditsClaudeRoot()),
+          sdkSessionId: `sdk-${alias}`,
+          model: alias,
+        };
+        const { options, events } = await launch(session, undefined, withCatalog());
+        expect(options?.model).toBe('md_suggested');
+        expect(substitutions(events)).toEqual([
+          {
+            type: 'model_substituted',
+            data: {
+              from: alias,
+              fromName: CATALOG[alias]!.displayName,
+              to: 'md_suggested',
+              toName: 'Suggested',
+              reason: 'credits-not-covered',
+            },
           },
+        ]);
+        // The model that ran becomes the session's own, so the status line shows it.
+        expect(remembered).toEqual(['md_suggested']);
+      }
+    );
+
+    it('launches the swap with the capability of the model that runs: no fast mode it cannot take', async () => {
+      service.list = SAYS_PROTOCOLS;
+      const session = { ...makeSession(creditsClaudeRoot()), model: 'opus', fastMode: true };
+      const { options } = await launch(session, undefined, withCatalog());
+      expect(options?.model).toBe('md_suggested');
+      expect((options?.settings as { fastMode?: boolean } | undefined)?.fastMode).toBeUndefined();
+    });
+
+    it('judges auto mode by the model that runs, not the one it replaced', async () => {
+      service.list = SAYS_PROTOCOLS;
+      const session = {
+        ...makeSession(creditsClaudeRoot()),
+        model: 'haiku',
+        permissionMode: 'auto' as const,
+      };
+      // The named model would take auto mode; the one credits run cannot.
+      const { options } = await launch(session, undefined, {
+        ...withCatalog(),
+        modelSupportsAutoMode: true,
+        modelThinkingCapability: { supportsAutoMode: true },
+      });
+      expect(options?.model).toBe('md_suggested');
+      expect(options?.permissionMode).toBe('default');
+    });
+
+    it('records the swap once per session and model', async () => {
+      service.list = SAYS_PROTOCOLS;
+      const session = { ...makeSession(creditsClaudeRoot()), model: 'claude-opus-4-6' };
+      const opts = { ...withCatalog(), rememberSessionModel: async () => {} };
+      expect(substitutions((await launch(session, undefined, opts)).events)).toHaveLength(1);
+      expect(substitutions((await launch(session, undefined, opts)).events)).toHaveLength(0);
+    });
+
+    it('refuses plainly when the service names protocols but none for Claude Code', async () => {
+      service.list = {
+        catalogVersion: 'cv',
+        models: [{ ...SAYS_PROTOCOLS.models[0], protocols: ['openai-chat'], recommendedOn: [] }],
+      };
+      const { events } = await launch(makeSession(creditsClaudeRoot()), undefined, withCatalog());
+      expect(query).not.toHaveBeenCalled();
+      expect(events[0]).toMatchObject({
+        type: 'error',
+        data: {
+          code: 'credits_unavailable',
+          reason: 'no-models',
+          message:
+            'DorkOS credits don’t cover a Claude Code model yet, so nothing was sent. Use your Claude Code sign-in instead.',
         },
-      ]);
-      const second = await launch(pinned);
-      expect(second.options?.model).toBe('md_suggested');
-      expect(notices(second.events)).toHaveLength(0);
+      });
     });
 
     it('changes nothing while the service says nothing about protocols, or cannot be read', async () => {
       service.list = SAYS_NOTHING;
-      const pinned = { ...makeSession(creditsClaudeRoot()), model: 'claude-opus-4-6' };
-      expect((await launch(pinned)).options?.model).toBe('claude-opus-4-6');
-      expect((await launch(makeSession(creditsClaudeRoot()))).options?.model).toBeUndefined();
+      const pinned = { ...makeSession(creditsClaudeRoot()), model: 'opus' };
+      expect((await launch(pinned, undefined, withCatalog())).options?.model).toBe('opus');
+      expect(
+        (await launch(makeSession(creditsClaudeRoot()), undefined, withCatalog())).options?.model
+      ).toBeUndefined();
       __resetCreditsModelsForTests();
       service.list = null;
-      expect((await launch(pinned)).options?.model).toBe('claude-opus-4-6');
+      expect((await launch(pinned, undefined, withCatalog())).options?.model).toBe('opus');
     });
 
     it('never touches the model of a session on its own sign-in', async () => {
       service.list = SAYS_PROTOCOLS;
-      const own = { ...makeSession(path.join(dorkHome, 'own-claude')), model: 'claude-opus-4-6' };
-      const { options, events } = await launch(own);
-      expect(options?.model).toBe('claude-opus-4-6');
-      expect(notices(events)).toHaveLength(0);
-      expect(
-        (await launch(makeSession(path.join(dorkHome, 'own-claude')))).options?.model
-      ).toBeUndefined();
+      const own = { ...makeSession(path.join(dorkHome, 'own-claude')), model: 'opus' };
+      const { options, events } = await launch(own, undefined, withCatalog());
+      expect(options?.model).toBe('opus');
+      expect(substitutions(events)).toHaveLength(0);
+      expect(remembered).toEqual([]);
     });
   });
 

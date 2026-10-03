@@ -1327,7 +1327,7 @@ registry.registerPath({
   tags: ['Models'],
   summary: 'List the models a runtime offers',
   description:
-    "Returns the models the resolved runtime offers. A session on DorkOS credits (or `account=dorkos-credits` with no session) gets only the models credits serve on the runtime's protocol, the recommended one first; 503 when that list cannot be read.",
+    "Returns the models the resolved runtime offers. A session on DorkOS credits (or `account=dorkos-credits` with no session) gets only the models credits serve on the runtime's protocol, the recommended one first, once the service says which protocols its models are on. When the service cannot be read, the last list it answered stands, marked out of date.",
   request: {
     query: z.object({
       runtime: z.string().optional().openapi({ description: 'The runtime whose models to list' }),
@@ -1356,10 +1356,6 @@ registry.registerPath({
     },
     400: {
       description: 'Unknown runtime',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    503: {
-      description: 'The models DorkOS credits serve could not be read',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

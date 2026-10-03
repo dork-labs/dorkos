@@ -51,9 +51,7 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaults.js';
-import { judgeCreditsModel } from '../services/core/cloud/credits-models.js';
-import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { agentRunsOnCredits } from './session-model-gate.js';
+import { creditsAgentModelRefusal } from '../services/core/cloud/credits-model-gate.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { writeAgentManifest } from '../services/core/agent-observation/agent-execution-writes.js';
 
@@ -576,30 +574,6 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     return res.json(agent);
   });
 
-  /**
-   * The sentence to refuse an agent's new model with when the agent runs on
-   * DorkOS credits and credits do not serve it, else `null`.
-   *
-   * @param id - The agent being updated.
-   * @param fields - The fields the request sets (`model` among them).
-   * @param accountNamedNow - Whether the request names the account itself.
-   */
-  async function refuseNonCreditsAgentModel(
-    id: string,
-    fields: Partial<AgentManifest>,
-    accountNamedNow: boolean
-  ): Promise<string | null> {
-    const existing = meshCore.get(id);
-    const runtimeType = fields.runtime ?? existing?.runtime ?? runtimeRegistry.getDefaultType();
-    if (!runtimeRegistry.has(runtimeType)) return null;
-    const runtime = runtimeRegistry.get(runtimeType);
-    const account = accountNamedNow ? (fields.account ?? null) : existing?.account;
-    if (!agentRunsOnCredits(runtime, { id, account }, accountNamedNow)) return null;
-    // A service that says nothing about protocols judges nothing: as before.
-    const verdict = await judgeCreditsModel(runtime.getCapabilities(), fields.model as string);
-    return verdict.judged ? verdict.refusal : null;
-  }
-
   // PATCH /agents/:id — Update agent fields
   // An agent's runtime, model and effort move every schedule that follows it,
   // so an agent changing them is sent to the tool that asks a person (DOR-2328).
@@ -647,11 +621,15 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     // An agent on DorkOS credits may be set only to a model credits serve on
     // its runtime's protocol, the same menu its Model row offers (DOR-2636).
     if (typeof explicitFields.model === 'string') {
-      const refusal = await refuseNonCreditsAgentModel(
-        req.params.id,
-        explicitFields,
-        Object.hasOwn(req.body as object, 'account')
-      );
+      const accountNamedNow = Object.hasOwn(req.body as object, 'account');
+      const existing = meshCore.get(req.params.id);
+      const refusal = await creditsAgentModelRefusal({
+        agentId: req.params.id,
+        runtime: explicitFields.runtime ?? existing?.runtime,
+        account: accountNamedNow ? (explicitFields.account ?? null) : existing?.account,
+        model: explicitFields.model,
+        accountNamedNow,
+      });
       if (refusal) return res.status(400).json({ error: refusal, code: 'UNSUPPORTED_MODEL' });
     }
     // ADR-0043: update() is async — writes to disk first, then DB.

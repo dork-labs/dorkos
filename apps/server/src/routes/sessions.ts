@@ -76,7 +76,8 @@ import sessionCanvasRouter from './session-canvas.js';
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
-import { rejectUnknownModel, sessionRunsOnCredits } from './session-model-gate.js';
+import { sessionRunsOnCredits } from '../services/core/cloud/credits-model-gate.js';
+import { rejectUnknownModel } from './session-model-gate.js';
 import {
   cancelContinueHandler,
   continueOptionsHandler,

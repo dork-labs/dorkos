@@ -68,6 +68,7 @@ vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
   const { createCloudApiClient } = await import('@dork-labs/cloud-api/client');
   return {
     ...(await importOriginal<typeof import('../../services/core/cloud/v1-client.js')>()),
+    readCloudInstanceToken: () => 'ik',
     captureCloudV1Context: () => ({
       client: createCloudApiClient({
         baseUrl: 'https://cloud.example.invalid',
@@ -156,6 +157,15 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { __resetCreditsModelsForTests } from '../../services/core/cloud/credits-models.js';
+import fs from 'node:fs';
+import nodeOs from 'node:os';
+import nodePath from 'node:path';
+
+/** Where these tests keep the credits list: never the dev data folder. */
+const CREDITS_STORE = nodePath.join(
+  nodeOs.tmpdir(),
+  `credits-models-${process.pid}-${Math.random().toString(36).slice(2)}.json`
+);
 
 const app = createApp({ admission: new MainRequestAdmission() });
 const testServer = listeningServer(app);
@@ -166,7 +176,8 @@ describe('Models Routes', () => {
     ladder.accountId = 'default';
     service.status = 200;
     service.calls = 0;
-    __resetCreditsModelsForTests();
+    fs.rmSync(CREDITS_STORE, { force: true });
+    __resetCreditsModelsForTests({ storePath: CREDITS_STORE });
   });
 
   it('GET /api/models with no sessionId falls back to default runtime (cold discovery)', async () => {
@@ -269,17 +280,18 @@ describe('Models Routes', () => {
       expect(own.body.models).toEqual(claudeModels);
     });
 
-    it('fails honest: no menu at all, never the runtime’s own, once the service said and the list cannot be read', async () => {
+    it('answers the last good list, marked out of date, when the service cannot be read', async () => {
       ladder.accountId = 'dorkos-credits';
       let clock = 0;
-      __resetCreditsModelsForTests({ now: () => clock });
+      __resetCreditsModelsForTests({ now: () => clock, storePath: CREDITS_STORE });
       await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);
       clock += 6 * 60_000;
       service.status = 500;
       const res = await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);
-      expect(res.status).toBe(503);
-      expect(res.body).toMatchObject({ code: 'CREDITS_MODELS_UNAVAILABLE' });
-      expect(res.body.error).toMatch(/couldn't load the models DorkOS credits cover/i);
+      expect(res.status).toBe(200);
+      expect(res.body.models).toEqual([
+        expect.objectContaining({ value: 'md_claude_pick', creditsListOutOfDate: true }),
+      ]);
       expect(claudeRuntime.getSupportedModels).not.toHaveBeenCalled();
     });
 

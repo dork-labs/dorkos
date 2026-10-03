@@ -90,6 +90,7 @@ vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
   };
   return {
     ...(await importOriginal<typeof import('../../services/core/cloud/v1-client.js')>()),
+    readCloudInstanceToken: () => 'ik',
     captureCloudV1Context: () => ({
       client: createCloudApiClient({
         baseUrl: 'https://cloud.example.invalid',
@@ -126,6 +127,15 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { __resetCreditsModelsForTests } from '../../services/core/cloud/credits-models.js';
+import fs from 'node:fs';
+import nodeOs from 'node:os';
+import nodePath from 'node:path';
+
+/** Where these tests keep the credits list: never the dev data folder. */
+const CREDITS_STORE = nodePath.join(
+  nodeOs.tmpdir(),
+  `credits-models-${process.pid}-${Math.random().toString(36).slice(2)}.json`
+);
 
 const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
@@ -602,7 +612,8 @@ describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
   beforeEach(() => {
     db = createTestDb();
     registerRuntimes();
-    __resetCreditsModelsForTests();
+    fs.rmSync(CREDITS_STORE, { force: true });
+    __resetCreditsModelsForTests({ storePath: CREDITS_STORE });
     service.status = 200;
     service.saysProtocols = true;
     ladderAccount = 'default';
@@ -638,24 +649,34 @@ describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
       const res = await patch(BOUND_CLAUDE, { model });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('UNSUPPORTED_MODEL');
-      expect(res.body.error).toMatch(/DorkOS credits don't cover that model/);
+      expect(res.body.error).toMatch(/DorkOS credits don’t cover that model/);
     }
     expect(rowFor(BOUND_CLAUDE)?.model ?? null).toBeNull();
   });
 
-  it('refuses every model once the service said and the list cannot be read', async () => {
+  it('keeps judging from the last good list when the service cannot be read', async () => {
     bindSession(BOUND_CLAUDE, 'claude-code');
     ladderAccount = 'dorkos-credits';
     let clock = 0;
-    __resetCreditsModelsForTests({ now: () => clock });
+    __resetCreditsModelsForTests({ now: () => clock, storePath: CREDITS_STORE });
     expect((await patch(BOUND_CLAUDE, { model: 'md_claude_pick' })).status).toBe(200);
     clock += 6 * 60_000;
     service.status = 500;
 
-    const res = await patch(BOUND_CLAUDE, { model: 'md_claude_pick' });
+    expect((await patch(BOUND_CLAUDE, { model: 'md_claude_pick' })).status).toBe(200);
+    expect((await patch(BOUND_CLAUDE, { model: 'md_gpt_like' })).status).toBe(400);
+  });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Couldn't load the models DorkOS credits cover/);
+  it('judges a runtime alias by the id it expands to', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+    claude.getSupportedModels.mockResolvedValue([
+      { value: 'sonnet', displayName: 'Sonnet', description: '', resolvedModel: 'md_claude_pick' },
+      { value: 'haiku', displayName: 'Haiku', description: '', resolvedModel: 'md_gpt_like' },
+    ]);
+
+    expect((await patch(BOUND_CLAUDE, { model: 'sonnet' })).status).toBe(200);
+    expect((await patch(BOUND_CLAUDE, { model: 'haiku' })).status).toBe(400);
   });
 
   it('judges a session not yet started by the person’s pick of account', async () => {

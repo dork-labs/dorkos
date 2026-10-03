@@ -3,7 +3,7 @@ import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { creditsMenuFor } from '../services/core/cloud/credits-models.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { sessionRunsOnCredits } from './session-model-gate.js';
+import { sessionRunsOnCredits } from '../services/core/cloud/credits-model-gate.js';
 
 const router = Router();
 
@@ -31,9 +31,9 @@ function queryString(value: unknown): string | undefined {
  * caller asking about credits directly (`account=dorkos-credits` with no
  * session, as the agent settings do), gets only the models credits serve on
  * the runtime's protocol, the service's recommended one first. When the
- * service has said and the list cannot be read now, the answer is 503 and no
- * menu at all. A service that says nothing about protocols leaves the
- * runtime's own menu in place, as before. With no session and no `account`,
+ * service cannot be read now, the last list it answered stands, each row
+ * marked `creditsListOutOfDate`. A service that says nothing about protocols,
+ * or no list ever read, leaves the runtime's own menu in place, as before. With no session and no `account`,
  * the answer is always the runtime's own catalog, the menu every sign-in shares.
  */
 router.get('/', async (req, res) => {
@@ -60,12 +60,6 @@ router.get('/', async (req, res) => {
     : account === CREDITS_ACCOUNT_ID && runtime.getCapabilities().credits !== undefined;
   if (onCredits) {
     const menu = await creditsMenuFor(runtime.getCapabilities());
-    if (menu.kind === 'unavailable') {
-      return res.status(503).json({
-        error: "Couldn't load the models DorkOS credits cover. Try again in a moment.",
-        code: 'CREDITS_MODELS_UNAVAILABLE',
-      });
-    }
     if (menu.kind === 'filtered') return res.json({ models: menu.models });
     // The service says nothing about protocols: the runtime's own menu, as before.
   }

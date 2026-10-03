@@ -39,7 +39,7 @@ vi.mock('../../services/tasks/lifecycle/schedule-credits-model.js', () => ({
   scheduleCreditsModelRefusal: vi.fn(
     async (opts: { model?: string | null; account?: string | null }) =>
       opts.account === 'dorkos-credits' && opts.model === 'md_not_covered'
-        ? "DorkOS credits don't cover that model. Pick one from the model menu."
+        ? 'DorkOS credits don’t cover that model. Pick one from the model menu.'
         : null
   ),
 }));
@@ -209,7 +209,7 @@ describe('PATCH /api/tasks/:id — the account rule', () => {
 });
 
 describe('the model of a schedule on DorkOS credits (DOR-2636)', () => {
-  const REFUSAL = "DorkOS credits don't cover that model. Pick one from the model menu.";
+  const REFUSAL = 'DorkOS credits don’t cover that model. Pick one from the model menu.';
 
   it('refuses a create naming a model credits do not cover, saving nothing', async () => {
     const res = await request(fixtureTarget.server)
