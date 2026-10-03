@@ -16,7 +16,7 @@ import { reachesServerDestination, SERVER_DESTINATION_REFUSAL } from '@dorkos/sh
 import { requiresInitiateConsent, BRIDGE_PRINCIPAL_PREFIX } from './lib/consent-scope.js';
 import { createDefaultBudget, enforceBudget } from './budget-enforcer.js';
 import { checkRateLimit } from './rate-limiter.js';
-import { RelayTurnCeiling, type TurnCeilingScope } from './turn-ceiling.js';
+import { dispatchTurnAccounting, RelayTurnCeiling, type TurnCeilingScope } from './turn-ceiling.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { EndpointRegistry } from './endpoint-registry.js';
 import type { SubscriptionRegistry } from './subscription-registry.js';
@@ -704,7 +704,7 @@ export class RelayPublishPipeline {
     observation.assertOutsideTransaction();
     if (this.deps.adapterRegistry) {
       const ceiling = this.willDispatchAgentTurn(subject)
-        ? this.turnCeiling.tryReserve(subject)
+        ? dispatchTurnAccounting(this.turnCeiling).reserve(subject)
         : undefined;
       if (ceiling && !ceiling.allowed) {
         ceilingRefusal = ceilingRefusalReason(ceiling.scope!, subject);
@@ -722,22 +722,18 @@ export class RelayPublishPipeline {
           // adapter that answers `startsAgentTurns: false` on an agent-shaped
           // subject is uncounted here, and a refund that assumed otherwise would
           // pop somebody else's live reservation.
-          { counted: ceiling?.counted === true, observation }
+          { refundTurn: ceiling?.refund, observation }
         );
-        observation.assertOutsideTransaction();
-        // The reservation is given back when the dispatch it paid for did not
-        // happen: no adapter matched after all, the adapter refused, or it
-        // deliberately sent nothing. This is the AWAITED half — a detached
-        // `relay.agent.*` delivery reports success immediately and settles later,
-        // so its refund is `AdapterDelivery`'s (`refundTurn`). Guarded on
-        // `counted`, because a reservation the ceilings never charged has
-        // nothing to give back.
+        // Preserve ordinary awaited failure/skip eligibility. Refund before
+        // post-return bookkeeping; this closure cannot remove another dispatch.
+        // Detached acknowledgement refunds later in AdapterDelivery instead.
         if (
           ceiling?.counted &&
           (!adapterResult || adapterResult.skipped || !adapterResult.success)
         ) {
-          this.turnCeiling.release(subject);
+          ceiling.refund?.();
         }
+        observation.assertOutsideTransaction();
       }
       // An adapter that deliberately sent nothing did not deliver anything.
       // The Telegram/Slack echo guard returns success for a message the adapter

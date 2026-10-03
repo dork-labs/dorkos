@@ -232,7 +232,6 @@ export class RelayCore {
       sqliteIndex: this.sqliteIndex,
       maildirStore,
       deadLetterQueue,
-      refundTurn: (subject) => turnCeiling.release(subject),
       logger: options?.logger,
     });
     const watcherManager = new WatcherManager(
