@@ -2654,8 +2654,9 @@ export function sweepOrphanedMessageQueues(opts?: {
   let removed = 0;
   for (let i = 0; i < doomed.length; i += SWEEP_CHUNK_SIZE) {
     const chunk = doomed.slice(i, i + SWEEP_CHUNK_SIZE).map(queueKeyOf);
-    // Named before they go, so a sender waiting on one hears it will never run.
-    const gone = lifecycleListeners.size > 0 ? chunk.flatMap((id) => store?.list(id) ?? []) : [];
+    // Named before they go, so a sender waiting on one hears it will never run,
+    // and so an armed entry cannot fire a row that no longer exists.
+    const gone = chunk.flatMap((id) => store?.list(id) ?? []);
     removed += store?.deleteForSessions(chunk) ?? 0;
     for (const row of gone) {
       const entry = pending.get(row.id);
