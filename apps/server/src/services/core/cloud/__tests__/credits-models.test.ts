@@ -28,6 +28,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 
 import {
   __resetCreditsModelsForTests,
+  baseModelId,
   creditsLinkKey,
   creditsMenuFor,
   creditsModelOptions,
@@ -270,6 +271,46 @@ describe('a runtime on credits, end to end against the fake service', () => {
       kind: 'as-named',
       model: 'sonnet',
     });
+  });
+
+  it('reads a context-window marker as the same model, on either side', async () => {
+    expect(baseModelId('claude-opus-5-5[1m]')).toBe('claude-opus-5-5');
+    expect(baseModelId('claude-opus-5-5')).toBe('claude-opus-5-5');
+    cloud.context = fakeCloud(() =>
+      answer({
+        catalogVersion: 'cv',
+        models: [
+          model('claude-opus-5-5', {
+            protocols: ['anthropic-messages'],
+            recommendedOn: ['anthropic-messages'],
+          }),
+        ],
+      })
+    ).context;
+    // `default` expands to the 1M-context variant of a model credits serve.
+    expect(await resolveCreditsLaunchModel(CLAUDE, 'default', 'claude-opus-5-5[1m]')).toEqual({
+      kind: 'as-named',
+      model: 'default',
+    });
+    expect(await judgeCreditsModel(CLAUDE, 'claude-opus-5-5[1m]')).toEqual({
+      judged: true,
+      refusal: null,
+    });
+  });
+
+  it('stops using a kept list older than seven days', async () => {
+    let clock = 0;
+    restart(() => clock);
+    cloud.context = fakeCloud(() => answer(LIST)).context;
+    await creditsMenuFor(CLAUDE);
+    cloud.context = fakeCloud(() => answer({}, 500)).context;
+    clock += 6 * 24 * 60 * 60_000;
+    restart(() => clock);
+    expect((await creditsMenuFor(CLAUDE)).kind).toBe('filtered');
+    clock += 2 * 24 * 60 * 60_000;
+    restart(() => clock);
+    // Older than the cap: as though no list was ever read.
+    expect(await creditsMenuFor(CLAUDE)).toEqual({ kind: 'unfiltered' });
   });
 
   it('changes nothing while the service says nothing about protocols', async () => {

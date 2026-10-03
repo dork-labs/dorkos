@@ -18,6 +18,7 @@ import tokenFixture from '@dork-labs/cloud-api/fixtures/v1/inference/token.json'
 import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { createCloudApiClient } from '@dork-labs/cloud-api/client';
@@ -100,7 +101,8 @@ function makeSession(accountRoot?: string): AgentSession {
 async function launch(
   session: AgentSession,
   cwd = '/mock/project',
-  extra: Partial<MessageSenderOpts> = {}
+  extra: Partial<MessageSenderOpts> = {},
+  messageOpts?: MessageOpts
 ): Promise<{ options: Options | undefined; events: StreamEvent[] }> {
   const opts: MessageSenderOpts = { cwd, onSdkSessionRebind: async () => {}, ...extra };
   let options: Options | undefined;
@@ -109,7 +111,9 @@ async function launch(
     return { [Symbol.asyncIterator]: async function* () {} } as unknown as ReturnType<typeof query>;
   });
   const events: StreamEvent[] = [];
-  for await (const event of executeSdkQuery('s1', 'hello', session, opts)) events.push(event);
+  for await (const event of executeSdkQuery('s1', 'hello', session, opts, messageOpts)) {
+    events.push(event);
+  }
   return { options, events };
 }
 
@@ -436,10 +440,30 @@ describe('who pays for a Claude Code turn', () => {
       const { options } = await launch(session, undefined, {
         ...withCatalog(),
         modelSupportsAutoMode: true,
-        modelThinkingCapability: { supportsAutoMode: true },
       });
       expect(options?.model).toBe('md_suggested');
       expect(options?.permissionMode).toBe('default');
+    });
+
+    it('saves and marks nothing for a launch refused after the swap, so the next one says it', async () => {
+      service.list = SAYS_PROTOCOLS;
+      const session = {
+        ...makeSession(creditsClaudeRoot()),
+        // A model no other case names: the told-once memory spans this file.
+        model: 'claude-never-named-elsewhere',
+      };
+      // A folder grant Claude Code cannot keep read-only refuses the launch
+      // AFTER the model was decided, before any status event goes out.
+      await expect(
+        launch(session, undefined, withCatalog(), {
+          additionalDirectories: [{ path: '/work/odd?name', access: 'read' }],
+        } as MessageOpts)
+      ).rejects.toThrow();
+      expect(remembered).toEqual([]);
+
+      const next = await launch(session, undefined, withCatalog());
+      expect(substitutions(next.events)).toHaveLength(1);
+      expect(remembered).toEqual(['md_suggested']);
     });
 
     it('records the swap once per session and model', async () => {

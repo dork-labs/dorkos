@@ -309,6 +309,34 @@ export class SessionEventStore {
   }
 
   /**
+   * A session's `turn_start` rows only, with the person's message each one
+   * carries: what places a turn's notices (DOR-2636) in the turn they opened,
+   * rather than by a clock that the transcript does not share.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readTurnStarts(sessionId: string): { seq: number; userMessage: string | undefined }[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"type":"turn_start"%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const starts: { seq: number; userMessage: string | undefined }[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'turn_start')
+        starts.push({ seq: event.seq, userMessage: event.userMessage });
+    }
+    return starts;
+  }
+
+  /**
    * Every ask whose TURN NEVER ENDED, across every session — the asks a process
    * death left with nothing to answer them (DOR-1439).
    *

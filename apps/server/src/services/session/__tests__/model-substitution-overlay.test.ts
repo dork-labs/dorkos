@@ -19,10 +19,18 @@ import {
 } from '../session-state-projector.js';
 import { toRawSessionEvent } from '../session-event-normalizer.js';
 
+let currentStore: SessionEventStore | undefined;
 afterEach(() => {
   setSessionEventStore(undefined);
+  currentStore = undefined;
   disposeProjector('sess');
 });
+
+/** The store the case under test installed. */
+function getSessionEventStoreForTest(): SessionEventStore {
+  if (!currentStore) throw new Error('no store installed');
+  return currentStore;
+}
 
 const SWAP = {
   type: 'model_substituted',
@@ -33,31 +41,49 @@ const SWAP = {
   reason: 'credits-not-covered',
 } as const;
 
-function message(id: string, role: 'user' | 'assistant', timestamp: string): HistoryMessage {
-  return { id, role, content: 'text', timestamp } as HistoryMessage;
+function message(
+  id: string,
+  role: 'user' | 'assistant',
+  timestamp: string,
+  content = 'text'
+): HistoryMessage {
+  return { id, role, content, timestamp } as HistoryMessage;
 }
 
 describe('the model substitution notice', () => {
-  it('survives a reload, between the person’s message and the reply', () => {
-    setSessionEventStore(new SessionEventStore(createTestDb()));
+  it('survives a reload, in the turn it opened: after the person’s message, before the reply', () => {
+    currentStore = new SessionEventStore(createTestDb());
+    setSessionEventStore(currentStore);
     const projector = getOrCreateProjector('sess', undefined, { persist: 'record' });
-    projector.ingest({ type: 'turn_start', userMessage: 'go' } as RawSessionEvent);
+    // An earlier turn on its own.
+    projector.ingest({ type: 'turn_start', userMessage: 'first' } as RawSessionEvent);
+    projector.ingest({ type: 'turn_end' } as RawSessionEvent);
+    projector.ingest({ type: 'turn_start', userMessage: 'go on' } as RawSessionEvent);
     projector.ingest(SWAP as unknown as RawSessionEvent);
     projector.ingest({ type: 'turn_end' } as RawSessionEvent);
     disposeProjector('sess');
 
-    const now = Date.now();
+    // The record is written at launch, a few hundred ms BEFORE the CLI dates
+    // the person's message: a clock would put the notice above it.
+    const recordedAt = Date.parse(
+      getSessionEventStoreForTest().readModelSubstitutions('sess')[0]!.createdAt
+    );
+    const at = (ms: number) => new Date(recordedAt + ms).toISOString();
     const out = overlayModelSubstitutions('sess', [
-      message('u-1', 'user', new Date(now - 60_000).toISOString()),
-      message('a-1', 'assistant', new Date(now + 60_000).toISOString()),
+      message('u-0', 'user', at(-60_000), 'first'),
+      message('a-0', 'assistant', at(-59_000)),
+      message('u-1', 'user', at(300), 'go on'),
+      message('a-1', 'assistant', at(5_000)),
     ]);
 
     expect(out.map((m) => m.id)).toEqual([
+      'u-0',
+      'a-0',
       'u-1',
       expect.stringMatching(/^model-substituted-/),
       'a-1',
     ]);
-    expect(out[1]!.parts).toEqual([
+    expect(out[3]!.parts).toEqual([
       {
         type: 'model_substituted',
         from: 'opus',
@@ -66,6 +92,51 @@ describe('the model substitution notice', () => {
         toName: 'Suggested',
         reason: 'credits-not-covered',
       },
+    ]);
+  });
+
+  it('finds the right turn when the person sent the same words twice', () => {
+    const swapAt = (seq: number) => ({
+      event: { ...SWAP, seq } as never,
+      createdAt: '2026-10-01T10:00:00.000Z',
+    });
+    const out = applyModelSubstitutions(
+      [
+        message('u-1', 'user', '2026-10-01T09:00:00.000Z', 'continue'),
+        message('a-1', 'assistant', '2026-10-01T09:00:01.000Z'),
+        message('u-2', 'user', '2026-10-01T09:30:00.000Z', 'continue'),
+        message('a-2', 'assistant', '2026-10-01T09:30:01.000Z'),
+      ],
+      [swapAt(5)],
+      [
+        { seq: 1, userMessage: 'continue' },
+        { seq: 4, userMessage: 'continue' },
+      ]
+    );
+    expect(out.map((m) => m.id)).toEqual([
+      'u-1',
+      'a-1',
+      'u-2',
+      expect.stringMatching(/^model-substituted-/),
+      'a-2',
+    ]);
+  });
+
+  it('falls back to the first message dated after it when its turn was never recorded', () => {
+    const out = applyModelSubstitutions(
+      [
+        message('u-1', 'user', '2026-10-01T09:59:00.000Z'),
+        message('a-1', 'assistant', '2026-10-01T09:59:01.000Z'),
+        message('u-2', 'user', '2026-10-01T10:00:00.300Z'),
+      ],
+      [{ event: { ...SWAP, seq: 9 } as never, createdAt: '2026-10-01T10:00:00.000Z' }],
+      []
+    );
+    expect(out.map((m) => m.id)).toEqual([
+      'u-1',
+      'a-1',
+      'u-2',
+      expect.stringMatching(/^model-substituted-/),
     ]);
   });
 

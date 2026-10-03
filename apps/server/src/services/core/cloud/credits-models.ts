@@ -53,6 +53,12 @@ import {
 
 /** How long a read list is reused before the service is asked again. */
 const CATALOG_TTL_MS = 5 * 60_000;
+/**
+ * How old the last good list may be and still stand in for the service. Past
+ * this, a failed read answers as though no list was ever read: today's
+ * behaviour, never a stale menu that could refuse a model credits now serve.
+ */
+const LAST_GOOD_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 /** How long one read may take before the last good list stands in. */
 const CATALOG_WAIT_MS = 5_000;
 
@@ -137,7 +143,12 @@ function lastGoodFor(linkKey: string): InferenceModel[] | null {
       lastGood = null;
     }
   }
-  return lastGood && lastGood.linkKey === linkKey ? lastGood.models : null;
+  if (!lastGood || lastGood.linkKey !== linkKey) return null;
+  // Too old to stand in for the service: a list from last month says less
+  // about what credits serve today than no list at all.
+  const savedAt = Date.parse(lastGood.savedAt);
+  if (Number.isNaN(savedAt) || now() - savedAt > LAST_GOOD_MAX_AGE_MS) return null;
+  return lastGood.models;
 }
 
 /** Keep a fresh list as the last good one, in memory and on disk. Best effort. */
@@ -309,7 +320,20 @@ export async function creditsMenuFor(
 
 /** Whether a menu serves a model, by its id or by any id it is also known as. */
 function serves(models: readonly ModelOption[], ids: readonly (string | undefined)[]): boolean {
-  return ids.some((id) => id !== undefined && models.some((option) => option.value === id));
+  const wanted = ids.flatMap((id) => (id === undefined ? [] : [baseModelId(id)]));
+  return models.some((option) => wanted.includes(baseModelId(option.value)));
+}
+
+/**
+ * A model id without the bracketed variant marker a runtime's catalog may
+ * append (`claude-opus-5-5[1m]`, the one-million-token context variant of
+ * `claude-opus-5-5`). The marker selects a context window, not a model, so
+ * credits that serve the model serve it.
+ *
+ * @param id - A model id as a catalog or the service names it.
+ */
+export function baseModelId(id: string): string {
+  return id.replace(/(?:\[[^\]]*\])+$/, '');
 }
 
 /** What {@link resolveCreditsLaunchModel} answers. */

@@ -131,6 +131,13 @@ export interface ResolvedLaunch {
    */
   statusEvents: StreamEvent[];
   /**
+   * A credits swap this launch made (DOR-2636), owed a save once its notice is
+   * delivered: {@link deliverStatusEvents} runs `commit` after yielding the
+   * status events (the notice among them, unless this session was already told
+   * about this model). Absent when no model was swapped.
+   */
+  substitution?: { commit: () => Promise<void> };
+  /**
    * What this launch is pinned to, in the shape `captureLaunchFingerprint`
    * takes. Resolved even on the turn path, where nothing reads it: computing it
    * conditionally would mean the pump's fingerprint came from a code path the
@@ -162,6 +169,27 @@ const creditsModelSwapsSaid = new Set<string>();
 /** How many of those {@link creditsModelSwapsSaid} remembers at most. */
 const CREDITS_MODEL_SWAPS_KEPT = 1_000;
 
+/** The key one session-and-model swap is remembered under. */
+function swapKey(sessionId: string, model: string): string {
+  return `${sessionId}\u0000${model}`;
+}
+
+/**
+ * Yield a launch's status events, then take the save a credits swap owes
+ * (DOR-2636): the swapped model becomes the session's own and the swap is
+ * marked told only AFTER its `model_substituted` notice has gone out on the
+ * stream, which records it durably. So no path can save a swap without
+ * recording it: one that never delivers the events never saves either.
+ *
+ * @param resolved - What {@link resolveLaunch} answered.
+ */
+export async function* deliverStatusEvents(
+  resolved: Pick<ResolvedLaunch, 'statusEvents' | 'substitution'>
+): AsyncGenerator<StreamEvent> {
+  for (const event of resolved.statusEvents) yield event;
+  await resolved.substitution?.commit();
+}
+
 /**
  * Whether this session still has to be told that credits run another model
  * than the one it names, recording that it now has been: the notice is said
@@ -172,7 +200,7 @@ const CREDITS_MODEL_SWAPS_KEPT = 1_000;
  * @param model - The model it names that credits do not serve.
  */
 function noteCreditsModelSwap(sessionId: string, model: string): boolean {
-  const key = `${sessionId}\u0000${model}`;
+  const key = swapKey(sessionId, model);
   if (creditsModelSwapsSaid.has(key)) return false;
   creditsModelSwapsSaid.add(key);
   // Bounded: the oldest is forgotten first. The swap also becomes the session's
@@ -571,6 +599,8 @@ export async function resolveLaunch(args: {
   let modelSupportsAutoMode = opts.modelSupportsAutoMode;
   /** The catalog row of a model credits put in place of the named one, if any. */
   let swappedTo: { row: ModelOption | undefined } | undefined;
+  /** The save a credits swap owes, taken once its notice is delivered. */
+  let commitSubstitution: ResolvedLaunch['substitution'];
   if (onCredits) {
     const named = opts.lookupModel?.(launchModel);
     const decided = await resolveCreditsLaunchModel(
@@ -589,19 +619,30 @@ export async function resolveLaunch(args: {
       modelSupportsAutoMode = running ? (running.supportsAutoMode ?? false) : undefined;
     }
     if (decided.kind === 'replaced') {
-      await opts.rememberSessionModel?.(decided.model);
-      if (noteCreditsModelSwap(sessionId, decided.from)) {
-        statusEvents.push({
-          type: 'model_substituted',
-          data: {
-            from: decided.from,
-            fromName: named?.displayName ?? decided.from,
-            to: decided.model,
-            toName: decided.toName,
-            reason: 'credits-not-covered',
-          },
-        });
-      }
+      // Nothing is saved here. The notice and the save are ONE step, taken by
+      // `deliverStatusEvents` only once the notice has gone out on the turn's
+      // stream (and so been recorded): a path that ends the launch before its
+      // status events are delivered (a refused folder, a staged warm-up, a
+      // refused cross-account reuse) saves nothing and marks nothing told, so
+      // the next launch swaps again and says so.
+      const notice: StreamEvent = {
+        type: 'model_substituted',
+        data: {
+          from: decided.from,
+          fromName: named?.displayName ?? decided.from,
+          to: decided.model,
+          toName: decided.toName,
+          reason: 'credits-not-covered',
+        },
+      };
+      const announce = !creditsModelSwapsSaid.has(swapKey(sessionId, decided.from));
+      if (announce) statusEvents.push(notice);
+      commitSubstitution = {
+        commit: async () => {
+          noteCreditsModelSwap(sessionId, decided.from);
+          await opts.rememberSessionModel?.(decided.model);
+        },
+      };
     }
   }
 
@@ -829,6 +870,7 @@ export async function resolveLaunch(args: {
     enrichedContent,
     meshAgentId,
     statusEvents,
+    ...(commitSubstitution ? { substitution: commitSubstitution } : {}),
     launch: {
       accountRoot,
       options: sdkOptions,
