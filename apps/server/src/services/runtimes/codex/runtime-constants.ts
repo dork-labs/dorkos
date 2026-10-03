@@ -155,6 +155,12 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // supplies per turn (`credits-launch.ts`). Codex speaks only the responses
   // format, so credits reach it only once the endpoint serves that format;
   // until then it is reported as not wired and nothing offers it.
-  credits: { protocol: 'openai-responses', scope: 'conversation' },
+  // Web search is the vendor's own billed tool, which the credits endpoint
+  // cannot carry, so it is off on credits turns (`credits-launch.ts`).
+  credits: {
+    protocol: 'openai-responses',
+    scope: 'conversation',
+    caveat: "Web search isn't available on DorkOS credits.",
+  },
   features: {},
 };

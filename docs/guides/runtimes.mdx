@@ -135,7 +135,7 @@ An agent runs on credits only when you pick that for it in the app. If an agent'
 
 Codex and OpenCode don't have account lists, so each one has a single choice: its own sign-in, or DorkOS credits. The choice shows as **Runs on** on its card in Settings → Runtimes, and as its switch under **Use credits for**, but only once DorkOS credits serve that runtime. Until then neither place shows it. If a runtime is set to credits and credits can't run it for now, its row stays so you can switch it back.
 
-- **Codex**: the choice applies to new conversations. A conversation already going stays on whatever it started on. On credits, Codex doesn't use your own Codex settings in `~/.codex`: its MCP servers, its global `AGENTS.md` and its profiles stay out of credits conversations. The tools DorkOS gives an agent still work.
+- **Codex**: the choice applies to new conversations. A conversation already going stays on whatever it started on. Web search isn't available on DorkOS credits, so a Codex conversation on credits can't search the web. On credits, Codex doesn't use your own Codex settings in `~/.codex`: its MCP servers, its global `AGENTS.md` and its profiles stay out of credits conversations. The tools DorkOS gives an agent still work.
 - **OpenCode**: the choice moves all of OpenCode, conversations already going included. You can't switch while OpenCode is in the middle of a reply, so nothing it's doing is cut off. On credits, OpenCode offers the models your DorkOS account lists.
 
 On credits, neither one uses your own Codex or OpenCode sign-in or keys, and DorkOS never changes your own Codex or OpenCode settings. If DorkOS can't reach your credits, the chat stops and offers a way back to your own sign-in:

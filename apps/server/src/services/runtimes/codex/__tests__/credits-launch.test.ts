@@ -136,6 +136,8 @@ describe('a credits turn’s client options', () => {
           requires_openai_auth: false,
         },
       },
+      // The vendor's billed search tool cannot run on credits.
+      web_search: 'disabled',
     });
     // `config` becomes visible argv: the token must never be in it.
     expect(JSON.stringify(options.config)).not.toContain(LAUNCH.token);

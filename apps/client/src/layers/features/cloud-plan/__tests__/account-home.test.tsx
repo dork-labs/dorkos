@@ -117,6 +117,28 @@ describe('readCreditsFor — a runtime still recorded on credits', () => {
   });
 });
 
+describe('readCreditsFor — what a runtime does not get on credits', () => {
+  it('carries the runtime’s own caveat onto its row', () => {
+    const report: CloudCreditsStatus = {
+      ...ARMED,
+      runtimes: { ...ARMED.runtimes, codex: 'wired' },
+    };
+    const rows = readCreditsFor(report, () => null, {
+      codex: {
+        credits: {
+          protocol: 'openai-responses',
+          scope: 'conversation',
+          caveat: "Web search isn't available on DorkOS credits.",
+        },
+      } as never,
+    });
+    expect(rows.find((row) => row.runtime === 'codex')?.caveat).toBe(
+      "Web search isn't available on DorkOS credits."
+    );
+    expect(rows.find((row) => row.runtime === 'claude-code')?.caveat).toBeUndefined();
+  });
+});
+
 describe('creditsRuntimesOnOffer', () => {
   // Before linking, `enabled` is false by definition; the offer must not wait on it.
   it('names the wired runtimes before linking, by the name every runtime surface uses', () => {

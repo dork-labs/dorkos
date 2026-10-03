@@ -60,6 +60,8 @@ interface Hit {
   server: 'credits' | 'attacker';
   path: string;
   authorization: string | undefined;
+  /** The `type` of every tool the request offered the model. */
+  toolTypes: string[];
 }
 
 interface FakeServer {
@@ -70,10 +72,26 @@ interface FakeServer {
 function fakeServer(name: Hit['server'], hits: Hit[]): Promise<FakeServer> {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
-      hits.push({ server: name, path: req.url ?? '', authorization: req.headers.authorization });
-      req.resume();
-      res.writeHead(400, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: 'fake', type: 'invalid_request_error' } }));
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => {
+        let toolTypes: string[] = [];
+        try {
+          toolTypes = ((JSON.parse(body) as { tools?: { type?: string }[] }).tools ?? []).map(
+            (tool) => tool.type ?? ''
+          );
+        } catch {
+          // Not a JSON body; no tools to read.
+        }
+        hits.push({
+          server: name,
+          path: req.url ?? '',
+          authorization: req.headers.authorization,
+          toolTypes,
+        });
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'fake', type: 'invalid_request_error' } }));
+      });
     });
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address() as AddressInfo;
@@ -196,6 +214,8 @@ describe.skipIf(BINARY === null)('Codex on DorkOS credits, against the real bina
     expect(seen.length, 'the own-sign-in turn reached neither server').toBeGreaterThan(0);
     expect(seen.every((hit) => hit.server === 'attacker')).toBe(true);
     expect(seen[0]?.authorization).toBe(`Bearer ${PERSON_KEY}`);
+    // Their own sign-in keeps Codex's web search, exactly as before.
+    expect(seen[0]?.toolTypes).toContain('web_search');
   }, 60_000);
 
   it('sends a credits turn to the credits endpoint only, on the credits token only', async () => {
@@ -205,6 +225,10 @@ describe.skipIf(BINARY === null)('Codex on DorkOS credits, against the real bina
     expect(seen.map((hit) => hit.server)).toEqual(seen.map(() => 'credits'));
     expect(seen[0]?.path).toBe('/v1/responses');
     for (const hit of seen) expect(hit.authorization).toBe(`Bearer ${TOKEN}`);
+    // The vendor's billed web search, which the credits endpoint refuses, is
+    // not offered: the request still carries Codex's own tools.
+    expect(seen[0]?.toolTypes.length).toBeGreaterThan(0);
+    for (const hit of seen) expect(hit.toolTypes).not.toContain('web_search');
     // The person's home was never the one the CLI ran in.
     expect(options.env?.CODEX_HOME).toBe(creditsCodexHome());
     expect(fs.readdirSync(personHome)).toEqual(['config.toml']);

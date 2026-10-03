@@ -877,7 +877,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsQuestionPrompt: false,
           supportsPlugins: false,
           supportsAccounts: false,
-          credits: { protocol: 'openai-responses', scope: 'conversation' },
+          credits: {
+            protocol: 'openai-responses',
+            scope: 'conversation',
+            caveat: "Web search isn't available on DorkOS credits.",
+          },
           permissionModes: {
             supported: true,
             default: 'default',

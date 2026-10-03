@@ -841,6 +841,12 @@ export interface RuntimeCreditsSupport {
    *   so a switch is refused while any of its turns is running.
    */
   scope: 'conversation' | 'runtime';
+  /**
+   * What a person does not get on credits that they would on their own
+   * sign-in, as one plain sentence every surface that offers the choice shows
+   * beside it. Absent when nothing is missing.
+   */
+  caveat?: string;
 }
 
 /**

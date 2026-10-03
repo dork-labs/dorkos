@@ -110,6 +110,15 @@ describe('what a change reaches', () => {
   });
 });
 
+describe('what a runtime does not get on credits', () => {
+  it('says it beside the choice, in the runtime’s own sentence', async () => {
+    renderSection('codex', { ...LINKED, runtimes: { ...LINKED.runtimes, codex: 'wired' } });
+    expect(await screen.findByTestId('credits-runs-on-note')).toHaveTextContent(
+      "Web search isn't available on DorkOS credits."
+    );
+  });
+});
+
 describe('the choice', () => {
   it('reads the recorded choice and records the person’s pick', async () => {
     const { setCloudCreditsDefault } = renderSection('opencode', LINKED);
