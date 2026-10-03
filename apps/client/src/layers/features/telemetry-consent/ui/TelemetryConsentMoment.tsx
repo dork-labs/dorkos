@@ -59,7 +59,7 @@ export function TelemetryConsentMoment() {
       <DialogHeader>
         <DialogTitle>Share anonymous usage data?</DialogTitle>
         <DialogDescription>
-          A daily ping, install counts and feature use. Never your prompts, code or files.
+          A daily ping, package installs and feature use. Never your prompts, code or files.
         </DialogDescription>
       </DialogHeader>
 

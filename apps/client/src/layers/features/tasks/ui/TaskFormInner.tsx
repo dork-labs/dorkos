@@ -12,7 +12,7 @@ import {
   Switch,
   TrustDial,
   UnattendedAutonomyDialog,
-  SCHEDULED_RUN_CONSENT_CONSEQUENCE,
+  ScheduledRunConsequence,
 } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { isBypassPermissionMode, permissionModeLabel } from '@/layers/shared/lib';
@@ -591,7 +591,7 @@ export function ScheduleForm({
           is exactly the case that has to be asked about. */}
       <UnattendedAutonomyDialog
         descriptor={consent.pendingDescriptor}
-        consequence={SCHEDULED_RUN_CONSENT_CONSEQUENCE}
+        consequence={<ScheduledRunConsequence />}
         onCancel={consent.dismiss}
         onConfirm={consent.confirm}
       />

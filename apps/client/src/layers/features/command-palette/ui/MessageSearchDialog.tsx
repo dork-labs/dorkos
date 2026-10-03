@@ -166,7 +166,7 @@ export function MessageSearchDialog() {
           const status = (err as { status?: number } | null)?.status;
           if (status === 404) {
             toast.info('That folder is gone', {
-              description: `${path} no longer exists. You can still read this conversation.`,
+              description: `${path} is gone, so nothing new can run there. You can still read it.`,
             });
             return;
           }

@@ -106,7 +106,7 @@ export interface ActivityTimelineProps {
 /**
  * Time-grouped activity timeline.
  *
- * Groups items into Today / Yesterday / This Week / Earlier buckets.
+ * Groups items into Today / Yesterday / This week / Earlier buckets.
  * Renders a sticky group header above each bucket. Shows a skeleton shimmer
  * while data is loading, an error state with retry when the fetch failed, or
  * an empty state when no items match.

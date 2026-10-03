@@ -125,8 +125,8 @@ export function PermissionModeScopeNote({
       className={cn('text-muted-foreground space-y-1 text-xs', className)}
     >
       <p>This covers editing files, running commands and working outside this project.</p>
-      <p>DorkOS still asks before deleting a schedule or removing an agent.</p>
-      <p>To stop being asked, choose Always allow on its card, or in Settings under Permissions.</p>
+      <p>DorkOS still asks before deleting a schedule or removing an agent, for example.</p>
+      <p>To stop an ask, choose Always allow on its card, or in Settings under Permissions.</p>
     </div>
   );
 }

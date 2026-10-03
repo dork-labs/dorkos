@@ -568,7 +568,7 @@ export function InboxDecisionRow({
               responsive={false}
               onClick={followUp.onAccept}
             >
-              Allow next time
+              Always do this
             </Button>
             <Button
               type="button"

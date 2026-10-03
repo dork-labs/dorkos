@@ -9,7 +9,7 @@ export interface ActivityGroupHeaderProps {
 
 /**
  * Sticky section header that divides the activity timeline into time buckets
- * (Today, Yesterday, This Week, Earlier).
+ * (Today, Yesterday, This week, Earlier).
  *
  * Visually muted to keep focus on the rows beneath it.
  */

@@ -78,11 +78,13 @@ describe('PermissionModeScopeNote', () => {
       )
     ).toBeInTheDocument();
     expect(
-      screen.getByText('DorkOS still asks before deleting a schedule or removing an agent.')
+      screen.getByText(
+        'DorkOS still asks before deleting a schedule or removing an agent, for example.'
+      )
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        'To stop being asked, choose Always allow on its card, or in Settings under Permissions.'
+        'To stop an ask, choose Always allow on its card, or in Settings under Permissions.'
       )
     ).toBeInTheDocument();
   });

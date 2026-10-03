@@ -78,4 +78,14 @@ export function consentAsksNote(descriptor: PermissionModeDescriptor): string | 
  * sentence and stays with its own caller.
  */
 export const SCHEDULED_RUN_CONSENT_CONSEQUENCE =
-  'A scheduled run has nobody to ask. Every action just happens, with no approval card.';
+  'A scheduled run has nobody to ask. Nothing is asked, and nothing is recorded.';
+
+/**
+ * The contrast behind {@link SCHEDULED_RUN_CONSENT_CONSEQUENCE}: what the same
+ * blocked action does at a stop that asks. Each line is its own short paragraph,
+ * shown behind "More details" by {@link ScheduledRunConsequence}.
+ */
+export const SCHEDULED_RUN_CONSENT_CONTRAST = [
+  'At a stop that asks, an action it can’t take is refused.',
+  'The run works around it. Here, every action just happens.',
+] as const;

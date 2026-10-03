@@ -34,7 +34,7 @@ function localDate(reference: Date, dayOffset: number, hours = 10): Date {
 }
 
 // Reference "now": a Wednesday at 14:00 local time.
-// We use Wednesday so that: today=Wed, yesterday=Tue, Mon/Tue=This Week, >=2 weeks ago=Earlier.
+// We use Wednesday so that: today=Wed, yesterday=Tue, Mon/Tue=This week, >=2 weeks ago=Earlier.
 const NOW = (() => {
   // Find the most recent Wednesday (or today if Wednesday)
   const d = new Date();
@@ -130,7 +130,7 @@ describe('groupByTime', () => {
     ];
 
     const groups = groupByTime(items, NOW);
-    // Yesterday and This Week should be absent
+    // Yesterday and This week should be absent
     expect(groups.map((g) => g.label)).toEqual(['Today', 'Earlier']);
   });
 

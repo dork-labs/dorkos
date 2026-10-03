@@ -69,9 +69,10 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
           <AppWindow className="text-muted-foreground size-4 shrink-0" />
           <span>Interactive app from {serverName}</span>
         </div>
-        <p className="text-muted-foreground text-xs">
-          It can’t see your session, files or credentials.
-        </p>
+        <div className="text-muted-foreground space-y-1 text-xs">
+          <p>It runs code from {serverName} in a sealed-off frame.</p>
+          <p>It can’t see your session, files or credentials.</p>
+        </div>
         <div>
           <button
             type="button"

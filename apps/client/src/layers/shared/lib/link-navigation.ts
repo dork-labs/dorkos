@@ -538,14 +538,14 @@ export function describeRefusal(
     }
     return {
       title: `The desktop app can’t open ${scheme} links`,
-      detail: `They open from DorkOS in a browser.`,
+      detail: 'They open from DorkOS in a browser.',
     };
   }
 
   if (!scheme) {
     return {
       title: 'DorkOS couldn’t open that link',
-      detail: 'Only web, email and phone links open.',
+      detail: 'It isn’t a web, email or phone link.',
     };
   }
   return {

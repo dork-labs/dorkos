@@ -2,7 +2,7 @@
  * Time-based grouping utility for activity feed items.
  *
  * Groups a flat list of ActivityItems into buckets: Today, Yesterday,
- * This Week, and Earlier. Preserves insertion order so the natural
+ * This week, and Earlier. Preserves insertion order so the natural
  * descending sort (newest first) flows through intact.
  *
  * @module features/activity-feed-page/model/time-grouping
