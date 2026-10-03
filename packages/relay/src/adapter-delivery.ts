@@ -128,20 +128,6 @@ export interface AdapterDeliveryDeps {
   /** Dead letter queue for failed detached deliveries. */
   deadLetterQueue: DeadLetterQueue;
 
-  /**
-   * Give back a turn-ceiling reservation whose dispatch never ran (DOR-791).
-   *
-   * The pipeline reserves before handing a dispatch over, because that is what
-   * stops a burst from spending the last unit twice. This is the other end of
-   * that: a detached delivery that dead-letters — a refused capacity slot, a
-   * thrown adapter, an adapter that vanished mid-flight — ran no turn, and
-   * without this the allowance drains for work that never happened.
-   *
-   * Optional so a pipeline built without a ceiling (a test double) needs no
-   * stub; a missing callback simply means nothing is refunded.
-   */
-  refundTurn?: (subject: string) => void;
-
   /** Logger for delivery diagnostics. Defaults to `console`. */
   logger?: Logger;
 }
@@ -202,14 +188,8 @@ export class AdapterDelivery {
    * @param subject - The target subject
    * @param envelope - The relay envelope to deliver
    * @param contextBuilder - Optional callback to build adapter context
-   * @param opts.counted - Whether the caller charged this dispatch to the turn
-   *   ceiling. Carried, never re-derived: the reserve side asks the ADAPTER
-   *   whether this dispatch runs a turn ({@link RelayAdapter.startsAgentTurns}),
-   *   and a refund that guessed instead would give back a charge nobody made.
-   *   An adapter that answers "no" on an agent-shaped subject — the whole point
-   *   of the method being optional — would then have its uncounted failure pop
-   *   somebody else's real reservation, and two paid turns would run under a
-   *   one-turn ceiling. Both ends read the same answer or the counter drifts.
+   * @param opts.refundTurn - Exact, once-only refund for this dispatch, when counted.
+   *   The publisher owns the reservation; uncounted dispatches carry no closure.
    * @returns DeliveryResult, or null when no adapter registry is configured
    *          or no adapter matches the subject (publish() then falls back to
    *          the pending-buffer / dead-letter pipeline)
@@ -218,7 +198,7 @@ export class AdapterDelivery {
     subject: string,
     envelope: RelayEnvelope,
     contextBuilder?: (subject: string) => AdapterContext | undefined,
-    opts?: { counted?: boolean; observation?: ReceiptObservation }
+    opts?: { refundTurn?: () => void; observation?: ReceiptObservation }
   ): Promise<DeliveryResult | null> {
     const registry = this.deps.adapterRegistry;
     if (!registry) return null;
@@ -233,16 +213,10 @@ export class AdapterDelivery {
       if (registry.getBySubject && !registry.getBySubject(subject)) {
         return null;
       }
-      return this.deliverDetached(
-        subject,
-        envelope,
-        context,
-        opts?.counted === true,
-        opts?.observation
-      );
+      return this.deliverDetached(subject, envelope, context, opts?.refundTurn, opts?.observation);
     }
 
-    return this.deliverWithTimeout(subject, envelope, context);
+    return this.deliverWithTimeout(subject, envelope, context, opts?.refundTurn);
   }
 
   /**
@@ -258,14 +232,14 @@ export class AdapterDelivery {
    * @param subject - The target subject.
    * @param envelope - The envelope being delivered.
    * @param context - Adapter context, if the host built one.
-   * @param counted - Whether the pipeline charged this dispatch to the turn
+   * @param refundTurn - Exact refund closure when the pipeline charged this dispatch to the turn
    *   ceiling, so a failure below refunds exactly what was spent.
    */
   private deliverDetached(
     subject: string,
     envelope: RelayEnvelope,
     context: AdapterContext | undefined,
-    counted: boolean,
+    refundTurn: (() => void) | undefined,
     observation?: ReceiptObservation
   ): DeliveryResult {
     const startTime = Date.now();
@@ -291,9 +265,9 @@ export class AdapterDelivery {
     // The rejection handler belongs to the adapter promise alone. Bookkeeping exceptions
     // in either outcome handler cannot enter it and manufacture a delivery failure.
     void delivery.then(
-      (result) => this.finishDetached(subject, envelope, counted, observation, result),
+      (result) => this.finishDetached(subject, envelope, refundTurn, observation, result),
       (error: unknown) =>
-        this.finishDetachedRejection(subject, envelope, counted, observation, error)
+        this.finishDetachedRejection(subject, envelope, refundTurn, observation, error)
     );
 
     return { success: true, durationMs: Date.now() - startTime };
@@ -302,20 +276,20 @@ export class AdapterDelivery {
   private async finishDetached(
     subject: string,
     envelope: RelayEnvelope,
-    counted: boolean,
+    refundTurn: (() => void) | undefined,
     observation: ReceiptObservation | undefined,
     result: DeliveryResult | null
   ): Promise<void> {
+    if (result === null || !result.success) refundTurn?.();
     observation?.observeAdapter(envelope.id, result);
     try {
       if (result === null) {
-        await this.deadLetterDetached(subject, envelope, 'no adapter matched subject', counted);
+        await this.deadLetterDetached(subject, envelope, 'no adapter matched subject');
       } else if (!result.success) {
         await this.deadLetterDetached(
           subject,
           envelope,
           result.error ?? 'unknown error',
-          counted,
           result.code
         );
       } else if (!result.skipped) {
@@ -329,14 +303,15 @@ export class AdapterDelivery {
   private async finishDetachedRejection(
     subject: string,
     envelope: RelayEnvelope,
-    counted: boolean,
+    refundTurn: (() => void) | undefined,
     observation: ReceiptObservation | undefined,
     error: unknown
   ): Promise<void> {
+    refundTurn?.();
     observation?.settle(envelope.id, { state: 'outcome_unknown' });
     try {
       const message = error instanceof Error ? error.message : String(error);
-      await this.deadLetterDetached(subject, envelope, message, counted);
+      await this.deadLetterDetached(subject, envelope, message);
     } catch {
       this.warnBookkeeping();
     }
@@ -359,7 +334,8 @@ export class AdapterDelivery {
   private async deliverWithTimeout(
     subject: string,
     envelope: RelayEnvelope,
-    context: AdapterContext | undefined
+    context: AdapterContext | undefined,
+    refundTurn: (() => void) | undefined
   ): Promise<DeliveryResult | null> {
     let timer: NodeJS.Timeout | undefined;
     try {
@@ -381,6 +357,7 @@ export class AdapterDelivery {
 
       return result;
     } catch (err) {
+      refundTurn?.();
       const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.warn('RelayCore: adapter delivery failed:', errorMessage);
       return {
@@ -439,25 +416,16 @@ export class AdapterDelivery {
    * @param subject - The target subject.
    * @param envelope - The envelope whose delivery failed.
    * @param reason - Why it failed, recorded on the dead letter.
-   * @param counted - Whether this dispatch was charged to the turn ceiling.
    * @param code - The adapter's machine code, when it gave one.
    */
   private async deadLetterDetached(
     subject: string,
     envelope: RelayEnvelope,
     reason: string,
-    counted: boolean,
     code?: DeliveryResult['code']
   ): Promise<void> {
     this.logger.warn(`RelayCore: detached adapter delivery failed for ${subject}: ${reason}`);
 
-    // No turn ran, so the ceiling gets back exactly what it charged — and only
-    // if it charged. `counted` is the reserve side's own answer, carried down
-    // rather than re-derived here (see {@link deliver}). First, before any
-    // await: everything below can throw or be slow, and an allowance that only
-    // comes back when the dead-lettering goes smoothly is an allowance that
-    // leaks on exactly the busy machines this bound is for.
-    if (counted) this.deps.refundTurn?.(subject);
     try {
       await this.deps.maildirStore.ensureMaildir(subject);
       await this.deps.deadLetterQueue.reject(

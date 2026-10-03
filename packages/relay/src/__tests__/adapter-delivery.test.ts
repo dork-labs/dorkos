@@ -1,3 +1,4 @@
+import { dispatchTurnAccounting, RelayTurnCeiling } from '../turn-ceiling.js';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { AdapterDelivery, type AdapterDeliveryDeps } from '../adapter-delivery.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -625,4 +626,69 @@ describe('AdapterDelivery', () => {
       expect(chatNotice).not.toHaveBeenCalled();
     });
   });
+});
+
+describe('owned detached refund before bookkeeping', () => {
+  it.each(['logger', 'dead letter', 'receipt'] as const)(
+    'keeps a neighboring charge when %s throws',
+    async (failure) => {
+      const ceiling = new RelayTurnCeiling({ limits: { perAgent: () => 2, global: () => 2 } });
+      const owned = dispatchTurnAccounting(ceiling).reserve(AGENT_SUBJECT);
+      dispatchTurnAccounting(ceiling).reserve(AGENT_SUBJECT);
+      const deps = createDeps();
+      if (failure === 'logger')
+        vi.mocked(deps.logger!.warn).mockImplementation(() => {
+          throw new Error('logger failed');
+        });
+      if (failure === 'dead letter')
+        vi.mocked(deps.deadLetterQueue.reject).mockRejectedValue(new Error('DLQ failed'));
+      const delivery = new AdapterDelivery(deps);
+      const internals = delivery as unknown as {
+        finishDetached: (
+          subject: string,
+          envelope: RelayEnvelope,
+          refund: (() => void) | undefined,
+          observation: unknown,
+          result: DeliveryResult
+        ) => Promise<void>;
+      };
+      const observation =
+        failure === 'receipt'
+          ? {
+              observeAdapter() {
+                throw new Error('receipt failed');
+              },
+            }
+          : undefined;
+      await internals
+        .finishDetached(
+          AGENT_SUBJECT,
+          createEnvelope({ subject: AGENT_SUBJECT }),
+          owned.refund,
+          observation,
+          { success: false, durationMs: 0 }
+        )
+        .catch(() => {});
+      expect(ceiling.remaining(AGENT_SUBJECT)).toEqual({ agent: 1, global: 1 });
+      expect(dispatchTurnAccounting(ceiling).reserve(AGENT_SUBJECT).allowed).toBe(true);
+      expect(dispatchTurnAccounting(ceiling).reserve(AGENT_SUBJECT).allowed).toBe(false);
+    }
+  );
+});
+
+it('refunds an awaited rejection before a throwing failure diagnostic', async () => {
+  const ceiling = new RelayTurnCeiling({ limits: { perAgent: () => 2, global: () => 2 } });
+  const owned = dispatchTurnAccounting(ceiling).reserve(CHANNEL_SUBJECT);
+  dispatchTurnAccounting(ceiling).reserve(CHANNEL_SUBJECT);
+  const deps = createDeps();
+  vi.mocked(deps.adapterRegistry!.deliver).mockRejectedValue(new Error('delivery failed'));
+  vi.mocked(deps.logger!.warn).mockImplementation(() => {
+    throw new Error('logger failed');
+  });
+  await expect(
+    new AdapterDelivery(deps).deliver(CHANNEL_SUBJECT, createEnvelope(), undefined, {
+      refundTurn: owned.refund,
+    })
+  ).rejects.toThrow('logger failed');
+  expect(ceiling.remaining(CHANNEL_SUBJECT)).toEqual({ agent: 1, global: 1 });
 });

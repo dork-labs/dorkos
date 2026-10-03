@@ -1,3 +1,4 @@
+import type { AdapterDelivery } from '../adapter-delivery.js';
 /** Real Core GC/rebuild/reopen proofs; receipt clock never substitutes process lifetime. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -49,7 +50,7 @@ async function fixture(database?: Db, directory?: string) {
         receiptStore: DeliveryReceiptStore;
         adapterDelivery: {
           finishDetached: (...args: unknown[]) => Promise<void>;
-          deps: { refundTurn: (subject: string) => void };
+          deliver: AdapterDelivery['deliver'];
         };
       };
     };
@@ -61,7 +62,20 @@ async function fixture(database?: Db, directory?: string) {
     completions.push(completion);
     return completion;
   });
-  const refund = vi.spyOn(adapter.deps, 'refundTurn');
+  const refund = vi.fn();
+  const actualDeliver = adapter.deliver.bind(adapter);
+  vi.spyOn(adapter, 'deliver').mockImplementation((subject, envelope, builder, opts) => {
+    const ownedRefund = opts?.refundTurn;
+    return actualDeliver(subject, envelope, builder, {
+      ...opts,
+      refundTurn: ownedRefund
+        ? () => {
+            refund();
+            ownedRefund();
+          }
+        : undefined,
+    });
+  });
   // Finish construction-time/ordinary GC before advancing the receipt-only clock.
   await relay.runGcSweep();
   return {

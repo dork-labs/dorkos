@@ -80,10 +80,21 @@ function setup(
       return result;
     });
   }
-  const refundDeps = internals.publishPipeline.deps.adapterDelivery as unknown as {
-    deps: { refundTurn: (subject: string) => void };
-  };
-  const refund = vi.spyOn(refundDeps.deps, 'refundTurn');
+  const deliveryAdapter = internals.publishPipeline.deps.adapterDelivery;
+  const refund = vi.fn();
+  const actualDeliver = deliveryAdapter.deliver.bind(deliveryAdapter);
+  vi.spyOn(deliveryAdapter, 'deliver').mockImplementation((subject, envelope, builder, opts) => {
+    const ownedRefund = opts?.refundTurn;
+    return actualDeliver(subject, envelope, builder, {
+      ...opts,
+      refundTurn: ownedRefund
+        ? () => {
+            refund();
+            ownedRefund();
+          }
+        : undefined,
+    });
+  });
   return {
     core,
     registry,
@@ -348,7 +359,7 @@ it.each(['returns-false', 'throws'] as const)(
     value.delivery.resolve({ success: false, code: 'at_capacity' });
     await settleReaction();
     expect(reject).toHaveBeenCalledTimes(1);
-    expect(value.refund).toHaveBeenCalledExactlyOnceWith(SUBJECT);
+    expect(value.refund).toHaveBeenCalledExactlyOnceWith();
     expect(value.core.getDeliveryReceipt(accepted.messageId, LOCAL)?.failure?.code).toBe(
       'at_capacity'
     );
