@@ -23,7 +23,11 @@
 import path from 'path';
 import { authors, roomEntries, rooms, and, asc, eq, gt, inArray, sql, type Db } from '@dorkos/db';
 import { resolveClaudeRootSet } from '../runtimes/claude-code/claude-config-dir.js';
-import { resolveCodexRolloutRoots } from '../runtimes/codex/codex-home.js';
+import {
+  codexRolloutRootsIn,
+  creditsCodexHome,
+  resolveCodexRolloutRoots,
+} from '../runtimes/codex/codex-home.js';
 import { resolveOpenCodeStorePath } from '../runtimes/opencode/opencode-data-dir.js';
 import { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
 import { discoverCodexRollouts } from './codex-discovery.js';
@@ -277,7 +281,12 @@ export function createOpenCodeSource(
  * differentiator, and a search box covering one runtime undercuts the claim the
  * product leads with.
  */
-export const codexSource: FileSource = createCodexSource(() => resolveCodexRolloutRoots());
+export const codexSource: FileSource = createCodexSource(() => [
+  ...resolveCodexRolloutRoots(),
+  // Conversations run on DorkOS credits live in a DorkOS-owned home of their
+  // own (ADR 261002-221210), and are the person's history just the same.
+  ...codexRolloutRootsIn(creditsCodexHome()),
+]);
 
 /**
  * OpenCode conversations — **M3**, another program's SQLite store read through a

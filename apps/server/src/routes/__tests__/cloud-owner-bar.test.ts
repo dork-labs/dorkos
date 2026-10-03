@@ -68,6 +68,9 @@ vi.mock('../../services/core/cloud/credits-runtimes.js', () => ({
   creditsRuntimeViews: () => [],
 }));
 const credits = vi.hoisted(() => ({
+  // The default route asks whether a change changes anything before it asks
+  // whether a whole-runtime switch would cut a reply off.
+  creditsIsDefaultFor: vi.fn(() => false),
   setCreditsDefault: vi.fn(),
   undoFilledDefaults: vi.fn(() => []),
   dismissCreditsNotice: vi.fn(),

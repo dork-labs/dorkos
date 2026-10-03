@@ -34,8 +34,8 @@
  */
 import { Router, type Response } from 'express';
 import { z } from 'zod';
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { Problem } from '@dork-labs/cloud-api';
+import { runtimeDisplayName, type RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type {
   CloudAccountDeletionResponse,
   CloudAccountExportResponse,
@@ -70,12 +70,14 @@ import {
   requestAccountExport,
 } from '../services/core/cloud/billing-pages.js';
 import {
+  creditsIsDefaultFor,
   dismissCreditsNotice,
   setCreditsDefault,
   undoFilledDefaults,
 } from '../services/core/cloud/credits-defaults.js';
 import { creditsKilled } from '../services/core/cloud/credits-availability.js';
 import { creditsRuntimeViews, creditsStatus } from '../services/core/cloud/credits-runtimes.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
   refuseEnvelopeUnlessOwner,
   refuseErrorUnlessOwner,
@@ -544,8 +546,9 @@ const CreditsDefaultBodySchema = z.object({
 /**
  * PUT /api/cloud/credits/default — a person's choice for one runtime's default:
  * run new work on DorkOS credits, or go back to the runtime's own sign-in.
- * Recorded as chosen by the person (ADR 261001-000811). Refuses a runtime that
- * does not declare credits, and turning credits ON while they cannot be had,
+ * Recorded as chosen by the person (ADR 261001-000811). Refuses a runtime
+ * credits do not reach (undeclared, or its protocol not served), and turning
+ * credits ON while they cannot be had,
  * so nothing is ever set that would refuse every turn.
  */
 router.put('/credits/default', async (req, res) => {
@@ -555,9 +558,26 @@ router.put('/credits/default', async (req, res) => {
     return res.status(400).json({ error: 'Name a runtime and whether to use credits.' });
   }
   const { runtime, useCredits } = parsed.data;
+  // A runtime whose credits choice moves the whole runtime (OpenCode: one
+  // process, restarted on the other side) is not switched while it is in the
+  // middle of a reply: that reply would end, or run on what was switched away
+  // from. The person is told why, and nothing changes.
+  const live = runtimeRegistry.listRuntimes().find((candidate) => candidate.type === runtime) as
+    { hasRunningTurns?: () => boolean; getCapabilities(): RuntimeCapabilities } | undefined;
+  // A change that changes nothing is never refused.
+  const changes = creditsIsDefaultFor(runtime) !== useCredits;
+  if (
+    changes &&
+    live?.getCapabilities().credits?.scope === 'runtime' &&
+    live.hasRunningTurns?.() === true
+  ) {
+    return res.status(409).json({
+      error: `${runtimeDisplayName(runtime)} is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.`,
+    });
+  }
   if (useCredits) {
     const view = creditsRuntimeViews().find((candidate) => candidate.type === runtime);
-    if (!view?.capabilities.credits) {
+    if (!view?.wired) {
       return res
         .status(400)
         .json({ error: `${runtimeDisplayName(runtime)} can't run on DorkOS credits yet.` });

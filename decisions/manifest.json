@@ -2,6 +2,28 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261002-221210",
+      "slug": "codex-and-opencode-run-on-credits-by-request-format",
+      "title": "Codex and OpenCode run on credits through their own request format, offered only once it is served",
+      "status": "accepted",
+      "created": "2026-10-02",
+      "extractedFrom": "dorkos-account-by-default",
+      "specSlug": "dorkos-account-by-default",
+      "supersedes": null,
+      "amends": "261001-000811",
+      "affects": [
+        "packages/cloud-api/src/inference.ts",
+        "apps/server/src/services/core/cloud/credits-protocols.ts",
+        "apps/server/src/services/core/cloud/credits-inference.ts",
+        "apps/server/src/services/runtimes/codex/credits-launch.ts",
+        "apps/server/src/services/runtimes/codex/codex-runtime.ts",
+        "apps/server/src/services/runtimes/opencode/credits-sidecar.ts",
+        "apps/server/src/services/runtimes/opencode/credits-mode.ts",
+        "apps/server/src/services/runtimes/opencode/server-manager.ts",
+        "packages/shared/src/agent-runtime.ts"
+      ]
+    },
+    {
       "id": "261001-185204",
       "slug": "granted-document-events-use-a-durable-outbox",
       "title": "Granted document events use a durable outbox and remain untrusted",

@@ -20,7 +20,7 @@ import { NotificationStore } from '../notification-store.js';
 import { NotificationService, setNotificationService } from '../notification-service.js';
 import { resetSigninEpisodes, setCreditsRefusedSink } from '../../observability/index.js';
 import { watchCreditsRefusals } from '../emitters/credits-refused.js';
-import { CreditsUnavailableError } from '../../core/cloud/credits-inference.js';
+import { CreditsUnavailableError } from '../../core/cloud/credits-protocols.js';
 
 let store: NotificationStore;
 

@@ -57,12 +57,18 @@ export interface CreditsConfigPort {
  */
 export type RuntimeSignInState = 'working' | 'needs-attention' | 'none';
 
-/** What one runtime offers this module: its type, whether it declares credits, and its sign-in. */
+/** What one runtime offers this module: its type, whether credits reach it, and its sign-in. */
 export interface CreditsRuntimeView {
   /** The runtime's type. */
   type: string;
   /** Its declared capabilities. */
   capabilities: Pick<RuntimeCapabilities, 'credits'>;
+  /**
+   * Whether credits reach it right now: it declares them AND the endpoint
+   * serves its protocol (`creditsRuntimeWired`). Nothing here fills, offers
+   * or re-offers credits for a runtime this is `false` for.
+   */
+  wired: boolean;
   /** Where the runtime's own sign-in stands right now. */
   signIn: () => Promise<RuntimeSignInState>;
 }
@@ -243,8 +249,9 @@ export interface NewLinkAccount {
 /**
  * A NEW link: start the choices over when it is a different DorkOS account (or
  * one that cannot be told apart), keep them for the same account, then fill
- * the gaps: each runtime that declares credits, has NO record, and has no
- * sign-in at all runs on credits by default, recorded as `chosenBy: 'default'`
+ * the gaps: each runtime credits reach (it declares them and the endpoint
+ * serves its protocol), has NO record, and has no sign-in at all runs on
+ * credits by default, recorded as `chosenBy: 'default'`
  * and announced once.
  *
  * Called only from the link flow's approval, never at startup or by a
@@ -269,7 +276,7 @@ export async function fillCreditsGaps(
     : { defaults: {}, offer: 'none', agents: [], linkedTo: account.key };
   const switched: string[] = [];
   for (const runtime of runtimes) {
-    if (runtime.capabilities.credits === undefined) continue;
+    if (!runtime.wired) continue;
     if (start.defaults[runtime.type] !== undefined) continue;
     // A sign-in nobody can read is not a gap DorkOS may fill with money.
     const signIn = await runtime.signIn().catch((): RuntimeSignInState => 'working');
@@ -339,7 +346,7 @@ export async function creditsNotices(
     )
     .map(([runtime]) => runtime);
   if (filled.length > 0) notices.push({ kind: 'filled', runtimes: filled });
-  const declared = opts.runtimes.filter((runtime) => runtime.capabilities.credits !== undefined);
+  const declared = opts.runtimes.filter((runtime) => runtime.wired);
   if (
     settings.offer === 'pending' &&
     Object.keys(settings.defaults).length === 0 &&

@@ -92,6 +92,13 @@ describe('which names route a turn or pay for one', () => {
     'CLAUDE_CODE_OAUTH_TOKEN',
     '_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL',
     'AWS_BEARER_TOKEN_BEDROCK',
+    // A host program's own endpoint and sign-in for Claude Code. No family
+    // covers them, so they are named, and a folder setting one is blanked.
+    'CLAUDE_CODE_API_BASE_URL',
+    'CLAUDE_CODE_HOST_AUTH_ENV_VAR',
+    'CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST',
+    'CLAUDE_CODE_SESSION_ACCESS_TOKEN',
+    'CLAUDE_CODE_GATEWAY_TOKEN',
   ])('%s routes or pays', (name) => expect(routesOrPays(name)).toBe(true));
 
   // The agent's own cloud tools keep their accounts: with every CLAUDE_CODE_USE_*

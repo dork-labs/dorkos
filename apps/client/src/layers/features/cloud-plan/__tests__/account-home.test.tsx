@@ -99,6 +99,24 @@ describe('readCreditsFor', () => {
   });
 });
 
+describe('readCreditsFor — a runtime still recorded on credits', () => {
+  it('keeps its row, which can only be turned off, wherever credits cannot reach it', () => {
+    const stranded: CloudCreditsStatus = {
+      ...OFF,
+      defaults: { opencode: { runsOn: 'credits', chosenBy: 'user' } },
+    };
+    expect(readCreditsFor(stranded)).toEqual([
+      expect.objectContaining({
+        runtime: 'opencode',
+        on: true,
+        canTurnOn: false,
+        canTurnOff: true,
+        unreachable: true,
+      }),
+    ]);
+  });
+});
+
 describe('creditsRuntimesOnOffer', () => {
   // Before linking, `enabled` is false by definition; the offer must not wait on it.
   it('names the wired runtimes before linking, by the name every runtime surface uses', () => {
