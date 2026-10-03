@@ -33,7 +33,10 @@ export type AgentSendRecord = ExtensionAgentSendRow;
 
 /** What may change about a stored message after it is written. */
 export type AgentSendPatch = Partial<
-  Pick<AgentSendRecord, 'status' | 'reason' | 'sessionId' | 'cwd' | 'content' | 'receiptStatus'>
+  Pick<
+    AgentSendRecord,
+    'status' | 'receiptStatus' | 'receiptReason' | 'failureReason' | 'sessionId' | 'cwd' | 'content'
+  >
 >;
 
 /** Reads and writes `extension_agent_sends` and `extension_agent_chats`. */

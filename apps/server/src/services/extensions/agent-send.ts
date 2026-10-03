@@ -275,9 +275,7 @@ function receiptOf(row: AgentSendRecord): AgentSendReceipt {
   return {
     messageId: row.id,
     status: row.receiptStatus,
-    ...(row.receiptStatus === 'queued' && (row.reason === 'busy' || row.reason === 'at_capacity')
-      ? { reason: row.reason }
-      : {}),
+    ...(row.receiptStatus === 'queued' && row.receiptReason ? { reason: row.receiptReason } : {}),
     sessionId: row.sessionId,
   };
 }
@@ -472,7 +470,8 @@ export class AgentSendService {
       // row to mark. Settled below once the dispatch answers.
       status: 'queued',
       receiptStatus: 'queued',
-      reason: null,
+      receiptReason: null,
+      failureReason: null,
       content: renderAppMessage(name, extensionId, request.text, request.context, this.nonce()),
     });
     let attempt: Attempt;
@@ -495,14 +494,14 @@ export class AgentSendService {
       this.deps.store.update(row.id, {
         status: 'held',
         receiptStatus: 'queued',
-        reason: 'at_capacity',
+        receiptReason: 'at_capacity',
       });
     } else {
       // A turn that already started (or even ended) inside the dispatch keeps
       // the status the lifecycle gave it; only the receipt is settled here.
       this.deps.store.update(row.id, {
         receiptStatus: attempt.queued ? 'queued' : 'started',
-        reason: attempt.queued ? 'busy' : null,
+        receiptReason: attempt.queued ? 'busy' : null,
       });
     }
     return receiptOf(this.deps.store.get(row.id) ?? row);
@@ -638,15 +637,18 @@ export class AgentSendService {
       this.fail(row, 'undeliverable');
       return;
     }
-    const attempt = await this.attempt(row, target);
-    if (attempt.kind === 'refused') {
-      this.fail(row, 'undeliverable');
-      return;
+    // `queued` BEFORE the dispatch, so a turn that starts inside it finds the
+    // row ready to mark, exactly as a first send does.
+    this.deps.store.update(row.id, { status: 'queued' });
+    let attempt: Attempt;
+    try {
+      attempt = await this.attempt(row, target);
+    } catch (err) {
+      this.deps.store.update(row.id, { status: 'held' });
+      throw err;
     }
-    if (attempt.kind === 'sent') {
-      const current = this.deps.store.get(row.id);
-      if (current?.status === 'held') this.deps.store.update(row.id, { status: 'queued' });
-    }
+    if (attempt.kind === 'refused') this.fail(row, 'undeliverable');
+    else if (attempt.kind === 'held') this.deps.store.update(row.id, { status: 'held' });
   }
 
   /** Translate a dispatcher lifecycle event into this extension's delivery event. */
@@ -665,7 +667,7 @@ export class AgentSendService {
     }
     if (event.phase === 'settled') {
       if (row.status === 'done' || row.status === 'failed') return;
-      this.deps.store.update(row.id, { status: 'done', reason: null });
+      this.deps.store.update(row.id, { status: 'done' });
       this.deliver(row.extensionId, {
         kind: 'turn.done',
         messageId: row.id,
@@ -679,7 +681,7 @@ export class AgentSendService {
 
   /** Mark a message failed for good, and tell its extension. */
   private fail(row: AgentSendRecord, reason: AgentDeliveryFailureReason): void {
-    this.deps.store.update(row.id, { status: 'failed', reason, content: null });
+    this.deps.store.update(row.id, { status: 'failed', failureReason: reason, content: null });
     this.deliver(row.extensionId, {
       kind: 'turn.failed',
       messageId: row.id,

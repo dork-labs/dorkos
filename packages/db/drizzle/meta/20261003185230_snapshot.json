@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "46aa49f7-97fe-4023-b7f9-9723ad27c876",
+  "id": "5457ee79-9dcc-4078-b03e-8bd69b38bff0",
   "prevId": "aa0ac09e-577c-41d5-ba40-6606fe2cccb1",
   "tables": {
     "a2a_tasks": {
@@ -11645,8 +11645,15 @@
           "notNull": true,
           "autoincrement": false
         },
-        "reason": {
-          "name": "reason",
+        "receipt_reason": {
+          "name": "receipt_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -12,7 +12,7 @@ import { check, index, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzl
  *   `session_message_queue`, under the same id.
  * - `started` — a turn began with it.
  * - `done` — that turn ended.
- * - `failed` — it will never run; `reason` says why.
+ * - `failed` — it will never run; `failure_reason` says why.
  */
 export const EXTENSION_AGENT_SEND_STATUSES = [
   'held',
@@ -59,8 +59,10 @@ export const extensionAgentSends = sqliteTable(
     status: text('status', { enum: EXTENSION_AGENT_SEND_STATUSES }).notNull(),
     /** What the first send was told: running now, or waiting. */
     receiptStatus: text('receipt_status', { enum: ['started', 'queued'] }).notNull(),
-    /** Why it waited (`busy`, `at_capacity`) or why it failed; null otherwise. */
-    reason: text('reason'),
+    /** Why the first send was told it is waiting (`busy`, `at_capacity`); null when it started. */
+    receiptReason: text('receipt_reason', { enum: ['busy', 'at_capacity'] }),
+    /** Why it will never run, once `failed`; null otherwise. */
+    failureReason: text('failure_reason'),
     /** The fenced message, kept only while `held`; null once it is dispatched. */
     content: text('content'),
     /** When it was sent (ISO 8601). The 24-hour key window is measured from here. */
