@@ -1,3 +1,6 @@
+import { createPointerLedger } from '../tabs/pointer.js';
+import { unavailableDiagnostics } from '../tabs/diagnostics.js';
+import { createDiagnosticsBudget } from '../tabs/diagnostics-budget.js';
 import { createBrowserLifetime } from '../lifecycle/ownership.js';
 import { it, expect, vi } from 'vitest';
 import type { BrowserContext } from 'playwright-core';
@@ -45,6 +48,7 @@ function config(): EngineConfiguration {
 }
 function record(): BrowserRecord {
   return {
+    diagnosticsBudget: createDiagnosticsBudget(),
     lifetime: createBrowserLifetime('browser_0123456789abcdef0123456789ab', 0),
     browserId: parseBrowserId('browser_0123456789abcdef0123456789ab'),
     browserGeneration: 0,
@@ -103,9 +107,11 @@ function currentCleanupTab(r: BrowserRecord): TabRecord {
   const code = transpileModule(`return (${literal});`, {
     compilerOptions: { target: 9 },
   }).outputText;
-  return new Function('record', 'tabId', code)(
+  return new Function('record', 'tabId', 'createPointerLedger', 'unavailableDiagnostics', code)(
     r,
-    parseTabId('tab_0123456789abcdef0123456789abcdef')
+    parseTabId('tab_0123456789abcdef0123456789abcdef'),
+    createPointerLedger,
+    unavailableDiagnostics
   ) as TabRecord;
 }
 

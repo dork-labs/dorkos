@@ -1,3 +1,6 @@
+import type { DiagnosticsBudget } from '../tabs/diagnostics-budget.js';
+import type { DiagnosticsOwner } from '../tabs/diagnostics.js';
+import type { PointerLedger } from '../tabs/pointer.js';
 import type { BrowserLifetime } from './ownership.js';
 import type { BrowserContext, Page } from 'playwright-core';
 import type { BrowserBinding, BrowserCommand, BrowserResult } from '../contracts.js';
@@ -9,6 +12,7 @@ import type { FixtureProxy } from '../network/fixture-proxy.js';
 
 /** Internal acquisition ledger, allocated before any owned browser can launch. */
 export interface BrowserRecord {
+  diagnosticsBudget: DiagnosticsBudget;
   lifetime: BrowserLifetime;
   browserId: BrowserId;
   browserGeneration: number;
@@ -33,6 +37,8 @@ export interface BrowserRecord {
 }
 /** Private canonical Page and immutable-lifetime capture sequencing. */
 export interface TabRecord {
+  pointer: PointerLedger;
+  diagnostics: DiagnosticsOwner;
   page: Page;
   binding: BrowserBinding;
   stopped: boolean;

@@ -1,3 +1,5 @@
+import { createPointerLedger } from '../../tabs/pointer.js';
+import { unavailableDiagnostics } from '../../tabs/diagnostics.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CDPSession, Page } from 'playwright-core';
 import { createEngineInput } from '../engine-input.js';
@@ -57,6 +59,8 @@ function fixture(configure?: (context: { newCDPSession: ReturnType<typeof vi.fn>
     },
   };
   const tab: TabRecord = {
+    pointer: createPointerLedger(() => (tab.stopped ? null : tab.binding)),
+    diagnostics: unavailableDiagnostics,
     page: page as unknown as Page,
     binding,
     stopped: false,

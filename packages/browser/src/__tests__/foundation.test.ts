@@ -183,12 +183,22 @@ describe('browser engine contract foundation', () => {
       kind: 'frame',
       binding,
       captureSequence: 1,
+      rasterWidth: 1280,
+      rasterHeight: 720,
+      pointer: { x: 0, y: 0, revision: 1 },
       width: 1280,
       height: 720,
       byteLength: 2 * 1024 * 1024,
       format: 'jpeg',
     };
     expect(parseBrowserResult(frame)).toEqual(frame);
+    for (const invalid of [
+      { ...frame, rasterWidth: 0 },
+      { ...frame, rasterWidth: 16384, rasterHeight: 16384 },
+      { ...frame, pointer: { x: 1280, y: 0, revision: 1 } },
+      { ...frame, pointer: { x: 0, y: 720, revision: 1 } },
+    ])
+      expect(() => parseBrowserResult(invalid)).toThrow(BrowserValidationError);
     expect(() => parseBrowserResult({ ...frame, byteLength: frame.byteLength + 1 })).toThrow(
       BrowserValidationError
     );

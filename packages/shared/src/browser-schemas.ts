@@ -1,3 +1,4 @@
+import { createBrowserCaptureSchemas } from './browser-capture-schemas.js';
 /** Strict browser-safe managed-browser projections. Parsing never authorizes an actor or activates a runtime. */
 import { z } from 'zod';
 import { SemanticActionV1Schema } from './browser-semantic-schemas.js';
@@ -354,6 +355,14 @@ export const BrowserDiagnosticSchema = boundedBrowserJson(
     })
     .strict()
 );
+
+/** New negotiated projections; existing binding/frame/ACK schema identities stay unchanged. */
+export const { BrowserFramePointerEnvelopeSchema, BrowserDiagnosticSummarySchema } =
+  createBrowserCaptureSchemas({ binding: BrowserBindingSchema, frame: BrowserFrameSchema });
+/** Exact inferred capture geometry projection. */
+export type BrowserFramePointerEnvelope = z.infer<typeof BrowserFramePointerEnvelopeSchema>;
+/** Exact inferred scalar diagnostic summary. */
+export type BrowserDiagnosticSummary = z.infer<typeof BrowserDiagnosticSummarySchema>;
 
 /** Canonical Page binding. */
 export type BrowserBinding = z.infer<typeof BrowserBindingSchema>;

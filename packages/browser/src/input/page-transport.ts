@@ -1,3 +1,4 @@
+import type { PointerLedger } from '../tabs/pointer.js';
 import type { CDPSession, Page } from 'playwright-core';
 import type { BrowserBinding } from '../contracts.js';
 import { sameBinding } from './binding.js';
@@ -14,6 +15,7 @@ export interface PageInputCustody {
 }
 /** Private canonical Page port, never accepted from an input command. */
 export interface PageTransportOptions {
+  readonly pointer: PointerLedger;
   readonly page: Page;
   current(): boolean;
   readBinding(): BrowserBinding | null;
@@ -29,6 +31,7 @@ export interface OwnedPageTransport {
 
 /** Own exactly one public Page CDPSession; expose only fixed composition/drag cancellation. */
 export function createPageTransport(options: PageTransportOptions): OwnedPageTransport {
+  if (!options.pointer) throw new Error('POINTER_OBSERVER_UNAVAILABLE');
   const owner = new PageTransportOwner(options);
   owner.acquire();
   return Object.freeze({
@@ -67,7 +70,7 @@ class PageTransportOwner {
     void this.ready.catch(() => {});
     this.native = Object.freeze({
       dispatch: (step: NativeInputStep, signal: AbortSignal) =>
-        this.call((guard) => this.dispatch(step, guard), signal),
+        this.call((guard) => this.dispatch(step, guard), signal, step),
       cancelComposition: (signal: AbortSignal) =>
         this.call((guard) => this.sendCancel('Input.imeSetComposition', guard), signal),
       cancelDrag: (signal: AbortSignal) =>
@@ -155,6 +158,7 @@ class PageTransportOwner {
 
   private retire(): void {
     if (this.retired) return;
+    this.pointerInvalidate();
     this.retired = true;
     try {
       this.options.retire();
@@ -223,15 +227,34 @@ class PageTransportOwner {
     return send.call(session, method).then(() => {});
   }
 
-  private call(start: (guard: () => void) => Promise<void>, signal: AbortSignal): Promise<void> {
-    this.nativePending++;
-    let binding: BrowserBinding | null;
+  private pointerInvalidate(): void {
     try {
-      binding = this.options.readBinding();
+      if (this.options.pointer?.invalidate() !== undefined) this.options.pointer?.unavailable();
     } catch {
-      this.nativePending--;
-      return Promise.reject(new Error('INPUT_TARGET_REFUSED'));
+      this.options.pointer?.unavailable();
     }
+  }
+
+  private call(
+    start: (guard: () => void) => Promise<void>,
+    signal: AbortSignal,
+    step?: NativeInputStep
+  ): Promise<void> {
+    this.nativePending++;
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const operation = new Promise<void>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    let binding: BrowserBinding | null = null;
+    let ticket: object | null = null;
+    const fail = (error: unknown) => {
+      this.pointerInvalidate();
+      this.nativePending--;
+      this.uncertain = true;
+      reject(error);
+    };
     const guard = () => {
       if (
         !this.session ||
@@ -245,23 +268,37 @@ class PageTransportOwner {
       )
         throw new Error('INPUT_TARGET_REFUSED');
     };
-    let resolve!: () => void;
-    let reject!: (error: unknown) => void;
-    const operation = new Promise<void>((done, fail) => {
-      resolve = done;
-      reject = fail;
-    });
-    // Preregister before binding/current/API getters, which may synchronously reenter teardown.
-    const fail = (error: unknown) => {
-      this.nativePending--;
-      this.uncertain = true;
-      reject(error);
-    };
     try {
+      if (step?.kind === 'mouseMove' && this.options.pointer) {
+        try {
+          ticket = this.options.pointer.beginMove(step.x, step.y);
+          if (ticket !== null && this.options.pointer.accepts(ticket) !== true) {
+            this.options.pointer.unavailable();
+            ticket = null;
+          }
+        } catch {
+          this.options.pointer.unavailable();
+        }
+      }
+      binding = this.options.readBinding();
       guard();
       void Promise.resolve(start(guard)).then(() => {
-        this.nativePending--;
-        resolve();
+        try {
+          guard();
+          if (step?.kind === 'mouseMove' && this.options.pointer) {
+            try {
+              if (this.options.pointer.success(ticket) !== undefined)
+                this.options.pointer.unavailable();
+            } catch {
+              this.options.pointer.unavailable();
+            }
+            guard();
+          }
+          this.nativePending--;
+          resolve();
+        } catch (error) {
+          fail(error);
+        }
       }, fail);
     } catch (error) {
       fail(error);

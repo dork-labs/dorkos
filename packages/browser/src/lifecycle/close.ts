@@ -229,6 +229,10 @@ export function closeRecord(
   owner.parentEnd = Math.min(entry + PARENT_CLOSE_MS, callerEnd ?? Infinity);
   owner.inputEnd = Math.min(owner.parentEnd, entry + INPUT_WAIT_MS);
   owner.gate.stop();
+  for (const tab of record.tabs.values()) {
+    tab.pointer.invalidate();
+    tab.diagnostics.discard();
+  }
   for (const tab of record.tabs.values()) tab.stopped = true;
   void performClose(config, record).then(resolve, () => {
     owner.uncertain = true;
