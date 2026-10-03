@@ -18,8 +18,12 @@ import { MODELS_KEY } from '../../lib/models-query-key';
 import { useTransport } from '../TransportContext';
 import { accountKeys, configKeys } from './query-keys';
 
-/** The one query key the credits status is read under. */
-const cloudCreditsKeys = {
+/**
+ * The one query key the credits status is read under. Exported so a link that
+ * lands (in `features/cloud-link`) can refresh it: whether credits can be
+ * chosen moves with the link.
+ */
+export const cloudCreditsKeys = {
   status: () => ['cloud', 'plan-aware', 'credits'] as const,
 };
 

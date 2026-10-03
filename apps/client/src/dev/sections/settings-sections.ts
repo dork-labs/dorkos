@@ -6,8 +6,9 @@ import type { PlaygroundSection } from '../playground-registry';
  * Sources: SettingsShowcases — Full Settings Dialog, Individual Tabs,
  * Claude Code Accounts, FoundAccountsGroup, Runtime Usage, Execution
  * Exceptions Strip, Mobile Drill-In,
- * Loading & Empty States, Settings Primitives — and RuntimeCardShowcases,
- * which owns the Runtimes category.
+ * Loading & Empty States, Settings Primitives — RuntimeCardShowcases,
+ * which owns the Runtimes category, and CreditsOfferShowcases, its connect
+ * step that offers DorkOS credits first.
  */
 export const SETTINGS_SECTIONS: PlaygroundSection[] = [
   // Runtimes — the tab's cards, and the two things true of the whole fleet.
@@ -72,6 +73,23 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     page: 'settings',
     category: 'Runtimes',
     keywords: ['runtime', 'card', 'mobile', 'responsive', 'phone', 'narrow', 'make default'],
+  },
+  {
+    id: 'runtime-connect-dorkos-credits-first',
+    title: 'Runtime connect: DorkOS credits first',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: [
+      'runtime',
+      'connect',
+      'credits',
+      'dorkos account',
+      'default first',
+      'sign in',
+      'api key',
+      'other ways',
+      'link',
+    ],
   },
   // Dialogs
   {

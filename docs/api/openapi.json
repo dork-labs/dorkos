@@ -30951,6 +30951,33 @@
                         "failed"
                       ],
                       "description": "Present while linked after a relink ended without replacing the key: this computer stayed linked."
+                    },
+                    "pending": {
+                      "type": "object",
+                      "properties": {
+                        "userCode": {
+                          "type": "string",
+                          "description": "The 8-character code the human enters at the cloud."
+                        },
+                        "verificationUri": {
+                          "type": "string",
+                          "description": "Where the human goes to approve the link."
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "description": "ISO timestamp after which the code is dead."
+                        }
+                      },
+                      "required": [
+                        "userCode",
+                        "verificationUri",
+                        "expiresAt"
+                      ],
+                      "description": "The codes of the flow waiting for approval. Present only while pending, and only to the owner of this DorkOS."
+                    },
+                    "approvedCode": {
+                      "type": "string",
+                      "description": "The code whose approval made this link. Present only while linked by it, never after a relink that did not replace the link."
                     }
                   },
                   "required": [
@@ -31003,6 +31030,33 @@
                         "failed"
                       ],
                       "description": "Present while linked after a relink ended without replacing the key: this computer stayed linked."
+                    },
+                    "pending": {
+                      "type": "object",
+                      "properties": {
+                        "userCode": {
+                          "type": "string",
+                          "description": "The 8-character code the human enters at the cloud."
+                        },
+                        "verificationUri": {
+                          "type": "string",
+                          "description": "Where the human goes to approve the link."
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "description": "ISO timestamp after which the code is dead."
+                        }
+                      },
+                      "required": [
+                        "userCode",
+                        "verificationUri",
+                        "expiresAt"
+                      ],
+                      "description": "The codes of the flow waiting for approval. Present only while pending, and only to the owner of this DorkOS."
+                    },
+                    "approvedCode": {
+                      "type": "string",
+                      "description": "The code whose approval made this link. Present only while linked by it, never after a relink that did not replace the link."
                     }
                   },
                   "required": [

@@ -63,5 +63,6 @@ export {
   type DorkosAccountLine,
 } from './model/use-dorkos-account-line';
 export { creditsRuntimesOnOffer } from './model/use-credits-for';
+export { creditsVerb, type CreditsVerb } from './lib/credits-verb';
 export type { LocalSpend } from './model/use-local-spend';
 export { remainingFraction } from './lib/remaining-fraction';

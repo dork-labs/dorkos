@@ -34,16 +34,24 @@ import { ConnectErrorRow, ConnectProgressRow, ConnectedRow } from './connect-fee
  * calm. The key path is never removed (some people prefer it, or only have a
  * key); it is just deferred until asked for.
  *
+ * Under a DorkOS credits default (`asOtherWay`) the same two paths become the
+ * "Other ways" rows: a sign-in that names whose account it is, and "Paste a
+ * key" as a visible row of its own rather than a quiet link, because a first
+ * visit shows every way in at once (spec `dorkos-account-by-default` §3).
+ *
  * @param type - Runtime type (`'claude-code'` | `'codex'`).
  * @param onConnected - Reports the connect landing so the dialog can show its
  *   success moment (omitted where the opener keeps the inline confirmation).
+ * @param asOtherWay - Draw the paths as the rows under a DorkOS default.
  */
 export function LoginConnect({
   type,
   onConnected,
+  asOtherWay = false,
 }: {
   type: string;
   onConnected?: (success: RuntimeConnectSuccess) => void;
+  asOtherWay?: boolean;
 }) {
   const copy = getLoginCopy(type);
   const login = useDelegateRuntimeLogin(type);
@@ -74,8 +82,13 @@ export function LoginConnect({
           />
         ) : (
           <>
-            <Button size="sm" className="w-full" onClick={login.login}>
-              {copy.signInLabel}
+            <Button
+              size="sm"
+              variant={asOtherWay ? 'outline' : 'default'}
+              className="w-full"
+              onClick={login.login}
+            >
+              {asOtherWay ? copy.otherWayLabel : copy.signInLabel}
             </Button>
             <p className="text-muted-foreground text-xs">{copy.signInHint}</p>
           </>
@@ -98,6 +111,16 @@ export function LoginConnect({
             Back to sign in
           </button>
         </div>
+      ) : asOtherWay ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={() => setShowKey(true)}
+          data-testid={`login-connect-use-key-${type}`}
+        >
+          Paste a key
+        </Button>
       ) : (
         <button
           type="button"

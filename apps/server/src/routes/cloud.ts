@@ -83,6 +83,7 @@ import {
   refuseErrorUnlessOwner,
   type AccountOwnerWording,
 } from './cloud-owner-bar.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRouter } from './cloud-communities.js';
 
@@ -155,9 +156,17 @@ router.post('/link/start', async (req, res) => {
   }
 });
 
-/** GET /api/cloud/link/status — the live link-flow state machine. */
-router.get('/link/status', (_req, res) => {
-  res.json(getCloudLinkManager().getStatus());
+/**
+ * GET /api/cloud/link/status — the live link-flow state machine.
+ *
+ * Open to every caller, like the other reads, except for the code itself: a
+ * code waiting for approval links this computer to whichever account approves
+ * it, so only the person who may start a link (the owner bar) is shown it.
+ */
+router.get('/link/status', (req, res) => {
+  const { pending, ...status } = getCloudLinkManager().getStatus();
+  const mayLink = refuseUnlessAccountOwner(req, res) === undefined;
+  res.json(pending && mayLink ? { ...status, pending } : status);
 });
 
 /**

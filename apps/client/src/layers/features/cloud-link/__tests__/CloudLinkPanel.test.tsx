@@ -88,8 +88,11 @@ describe('CloudLinkPanel', () => {
     expect(screen.queryByText(/stays linked until you approve/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open the approval page/i })).toBeInTheDocument();
 
-    // Poll fires → linked. Same panel instance updates in place.
+    // Poll fires → linked. Same panel instance updates in place. The flow
+    // lives in the shared query cache, which tells its readers a timer tick
+    // after the answer lands, so the clock moves on a little past the poll.
     await flush(2500);
+    await flush(10);
     expect(screen.getByText('kai@dork.dev')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /unlink/i })).toBeInTheDocument();
     expect(cache.getQueryState(connectorKeys.catalog('gmail'))?.isInvalidated).toBe(true);

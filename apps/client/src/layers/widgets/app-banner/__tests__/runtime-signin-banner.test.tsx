@@ -19,7 +19,12 @@ import type { ReactNode } from 'react';
 import '@testing-library/jest-dom/vitest';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import {
+  CreditsOfferProvider,
+  TransportProvider,
+  type CreditsOfferSlot,
+} from '@/layers/shared/model';
+import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 
 import { deadSigninRuntimes } from '../lib/dead-runtime-signins';
 import { useAppBanners } from '../model/use-app-banners';
@@ -299,5 +304,59 @@ describe('runtime-signin descriptor', () => {
     expect(banner).not.toHaveTextContent('Sign in to Claude again');
     expect(banner).not.toHaveTextContent('Sign in again to continue');
     expect(screen.queryByRole('button', { name: 'Fix sign-in' })).toBeNull();
+  });
+});
+
+describe('the banner and DorkOS credits', () => {
+  const stubOffer: CreditsOfferSlot = () => <p>Stand-in offer</p>;
+
+  function renderWithCredits(auth: Partial<DependencyCheck>) {
+    const transport = createMockTransport();
+    vi.mocked(transport.checkRequirements).mockResolvedValue({
+      runtimes: {
+        'claude-code': {
+          dependencies: [
+            { name: 'Claude Code CLI', description: 'cli', status: 'satisfied' },
+            { name: 'Claude Code authentication', description: 'auth', status: 'missing', ...auth },
+          ],
+        },
+      },
+    });
+    vi.mocked(transport.getCloudCredits).mockResolvedValue({
+      enabled: false,
+      killed: false,
+      linked: false,
+      ready: false,
+      runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
+    });
+    vi.mocked(transport.getCloudStatus).mockResolvedValue({
+      linked: false,
+      accountLabel: null,
+      lastHeartbeatAt: null,
+    });
+    const Wrapper = harness(transport);
+    render(
+      <Wrapper>
+        <CreditsOfferProvider slot={stubOffer}>
+          <RuntimeSigninBanner runtimes={['claude-code']} />
+        </CreditsOfferProvider>
+      </Wrapper>
+    );
+    return transport;
+  }
+
+  it('leads with the same words the offer inside it uses, for a runtime with no sign-in', async () => {
+    renderWithCredits({});
+    const trigger = await screen.findByTestId('signin-banner-credits');
+    await waitFor(() => expect(trigger).toHaveTextContent('Use DorkOS credits'));
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  it('leads with signing in again for a sign-in that ran out', async () => {
+    const transport = renderWithCredits({ expiresAt: '2026-09-01T00:00:00.000Z' });
+    await waitFor(() => expect(transport.getCloudCredits).toHaveBeenCalled());
+    await waitFor(() => expect(transport.checkRequirements).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId('signin-banner-credits')).not.toBeInTheDocument();
   });
 });
