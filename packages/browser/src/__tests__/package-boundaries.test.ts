@@ -193,6 +193,9 @@ describe('private browser package boundaries', () => {
             'validation.ts',
             'profiles/reservation.ts',
             'runtime/inspection/records.ts',
+            // Private envelope schemas/correlation; no installer backend or SDK imports.
+            'runtime/installation-envelope/records.ts',
+            'runtime/installation-envelope/correlation.ts',
           ],
           'node:path': [
             'runtime-descriptor.ts',
@@ -206,6 +209,9 @@ describe('private browser package boundaries', () => {
             'engine.ts',
             'runtime/public-library.ts',
             'runtime/inspection/inspector.ts',
+            // Owner-private envelope reference/digest correspondence only.
+            'runtime/installation-envelope/correlation.ts',
+            'runtime/installation-envelope/domain.ts',
             'profiles/reservation.ts',
             'tabs/registry.ts',
           ],
