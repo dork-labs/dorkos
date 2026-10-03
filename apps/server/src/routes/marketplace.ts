@@ -24,8 +24,10 @@ import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import type { NotifyPluginsChanged } from '../services/marketplace/types.js';
 import type { AgentScopeRef } from '../services/marketplace/installed-scanner.js';
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
+import type { DevLinkService } from '../services/marketplace/dev-links/index.js';
 import { createRouteContext } from './marketplace/context.js';
 import { mountCacheRoutes } from './marketplace/cache.js';
+import { mountDevLinkRoutes } from './marketplace/dev-links.js';
 import { mountHeldBackRoutes } from './marketplace/held-back.js';
 import { mountInstalledRoutes } from './marketplace/installed.js';
 import { mountPackageActionRoutes } from './marketplace/package-actions.js';
@@ -98,6 +100,12 @@ export interface MarketplaceRouteDeps {
    * falls back to global scopes only.
    */
   listAgentScopes?: () => AgentScopeRef[];
+  /**
+   * Creates, lists and removes dev links (DOR-2696), the same service the
+   * `marketplace_link` capability uses. Absent, the `/dev-links` routes answer
+   * 503.
+   */
+  devLinks?: DevLinkService;
 }
 
 export type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -124,6 +132,10 @@ export type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
  * - `POST /packages/:name/update` — advisory update check of one package
  * - `GET /updates` — advisory update check of every installation in view, with what each new version runs
  * - `POST /updates` — reinstall exactly the installations a person was shown, held to what they saw
+ * - `GET /dev-links` — every dev link and whether it is in force
+ * - `POST /dev-links/preview` — what linking a folder would do
+ * - `POST /dev-links` — run a package from a folder (gated by `marketplace.link`)
+ * - `POST /dev-links/:name/unlink` — switch back (the person only)
  *
  * @param deps - Injected dependencies (source manager, cache, fetcher,
  *   installer, uninstall flow, update flow, dorkHome).
@@ -139,5 +151,6 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   mountPackageActionRoutes(router, deps, ctx);
   mountUpdateRoutes(router, deps, ctx);
   mountHeldBackRoutes(router, deps, ctx);
+  mountDevLinkRoutes(router, deps, ctx);
   return router;
 }

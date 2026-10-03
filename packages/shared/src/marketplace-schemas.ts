@@ -2,9 +2,11 @@
  * Shared marketplace API response types — consumed by the client transport
  * layer and the React query hooks that wrap it.
  *
- * Types are plain TypeScript interfaces (no Zod schemas) because they model
- * HTTP response shapes, not validated domain inputs. They must remain
- * browser-safe (no Node.js imports).
+ * Types are plain TypeScript interfaces because they model HTTP response
+ * shapes, not validated domain inputs. The one exception is the dev-link
+ * registry ({@link DevLinksFileSchema}): a file on disk the server, the
+ * harness engine and the CLI all read, so its one Zod schema lives here. Every
+ * export must remain browser-safe (no Node.js imports).
  *
  * Server-side source of truth:
  *   - `apps/server/src/routes/marketplace.ts` — AggregatedPackage
@@ -23,6 +25,8 @@
  *
  * @module shared/marketplace-schemas
  */
+import { z } from 'zod';
+import { ExtensionApprovedSourceSchema } from './config-schema.js';
 import type { PermissionMode } from './schemas.js';
 
 // ---------------------------------------------------------------------------
@@ -1184,6 +1188,13 @@ export interface InstalledPackage {
    */
   linked?: true;
   /**
+   * Set when this installation is a dev link (DOR-2696): the package runs
+   * straight from a folder on this computer, which a person linked. Never set
+   * together with {@link InstalledPackage.linked}, which is a link someone made
+   * by hand.
+   */
+  devLink?: InstalledDevLink;
+  /**
    * Set on a global installation that runs things on its own and is held
    * back from every session because nobody approved it as it is now
    * (DOR-2306). Absent when it loads.
@@ -1477,6 +1488,15 @@ export const MARKETPLACE_STAGE_DIR_MARKER = '.dorkos-stage-';
 export const MARKETPLACE_UNINSTALL_DIR_MARKER = '.dorkos-uninstall-';
 
 /**
+ * Suffix of the folder an installed copy is set aside in while a dev link
+ * takes its slot (DOR-2696): `<slot>.dorkos-devlink-parked`, restored by
+ * unlink. It carries no `<timestamp>-<uuid>` stamp on purpose, so install
+ * recovery and the backup janitor never touch it, while every reader that
+ * lists packages still skips it ({@link isInstallSiblingName}).
+ */
+export const MARKETPLACE_DEVLINK_PARKED_MARKER = '.dorkos-devlink-parked';
+
+/**
  * Every basename marker the install engine writes beside an install target.
  * Anything carrying one of these is the engine's own bookkeeping — never an
  * installed package, agent, plugin or skill — whatever it contains (a backup
@@ -1488,6 +1508,7 @@ export const MARKETPLACE_INSTALL_SIBLING_MARKERS: readonly string[] = [
   MARKETPLACE_BACKUP_DIR_MARKER,
   MARKETPLACE_STAGE_DIR_MARKER,
   MARKETPLACE_UNINSTALL_DIR_MARKER,
+  MARKETPLACE_DEVLINK_PARKED_MARKER,
 ];
 
 /**
@@ -1657,3 +1678,209 @@ export interface ForkShapeResult {
   /** The forked manifest, as written to disk. */
   manifest: Record<string, unknown>;
 }
+
+// ---------------------------------------------------------------------------
+// Dev links (DOR-2696) — a marketplace package run straight from a folder.
+//
+// A dev link is a symlink (a junction on Windows) in a package's normal slot,
+// `{dorkHome}/plugins/<name>` or `<project>/.dork/plugins/<name>`, plus one
+// record in `{dorkHome}/marketplace/dev-links.json` that DorkOS writes only on
+// a person's yes. The server, the harness engine and the CLI all read that
+// file through the schema below, so they can never disagree about its shape.
+// ---------------------------------------------------------------------------
+
+/** Where the dev-link registry lives, relative to the DorkOS data directory. */
+export const DEV_LINKS_FILE = 'marketplace/dev-links.json';
+
+/**
+ * A package name as a dev link records it. The same rule as the marketplace's
+ * `PackageNameSchema` (lowercase letters, digits and single hyphens, 1-64
+ * characters), restated because `@dorkos/shared` cannot depend on the package
+ * that owns it. The name is joined into a slot path, so nothing looser may pass.
+ */
+export const DevLinkPackageNameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/)
+  .refine((name) => !name.includes('--'), 'Must not contain consecutive hyphens');
+
+/** The package types a dev link can run. Agents, adapters and shapes load elsewhere. */
+export const DevLinkPackageTypeSchema = z.enum(['plugin', 'skill-pack']);
+
+/** Where a dev link was made from, kept for the record and the listing. */
+export const DevLinkViaSchema = z.enum(['app', 'terminal', 'agent-card']);
+
+/** One dev link, as DorkOS recorded it when a person said yes. */
+export const DevLinkRecordSchema = z
+  .object({
+    /** The package name from the folder's manifest at link time. */
+    name: DevLinkPackageNameSchema,
+    /** The package type from the folder's manifest at link time. */
+    type: DevLinkPackageTypeSchema,
+    /** `global` for every session, `project` for one project. */
+    scope: z.enum(['global', 'project']),
+    /** The canonical project folder; present exactly when `scope` is `project`. */
+    projectPath: z.string().min(1).optional(),
+    /** Absolute path of the link itself: the package's normal slot. */
+    slot: z.string().min(1),
+    /** The real path of the working folder the link points at. */
+    target: z.string().min(1),
+    /** Absolute path of the installed copy set aside for the link, when there was one. */
+    parked: z.string().min(1).optional(),
+    /** What unlink puts back for the parked copy, or for another copy of an extension id. */
+    restoreApprovals: z
+      .object({
+        /** Extension approvals the link's own approvals replaced, by extension id. */
+        extensions: z.record(z.string(), ExtensionApprovedSourceSchema).optional(),
+        /** Which of those ids were approved to run then; the rest only had a source. */
+        runIds: z.array(z.string()).optional(),
+        /** Stored global-activation entries (`<name>@global-<digest>`) of the parked copy. */
+        globalActivation: z.array(z.string()).optional(),
+      })
+      .optional(),
+    /** When the link was made. ISO 8601. */
+    linkedAt: z.string().min(1),
+    /** Where the person said yes. */
+    linkedVia: DevLinkViaSchema,
+  })
+  .refine((record) => (record.scope === 'project') === (record.projectPath !== undefined), {
+    message: 'A project dev link names its project, and a global one does not',
+    path: ['projectPath'],
+  });
+
+/** One dev link record. */
+export type DevLinkRecord = z.infer<typeof DevLinkRecordSchema>;
+
+/** The whole registry file. */
+export const DevLinksFileSchema = z.object({
+  version: z.literal(1),
+  links: z.array(DevLinkRecordSchema),
+});
+
+/** The whole registry file. */
+export type DevLinksFile = z.infer<typeof DevLinksFileSchema>;
+
+/**
+ * Parse the registry file's text. Pure.
+ *
+ * Anything that is not exactly the shape DorkOS writes (a torn write, a hand
+ * edit) is `'unreadable'`, and every reader treats that as "no slot is a dev
+ * link", never as an empty list it could write over without noticing.
+ *
+ * @param text - The file's contents.
+ * @returns The parsed file, or `'unreadable'`.
+ */
+export function parseDevLinksFile(text: string): DevLinksFile | 'unreadable' {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return 'unreadable';
+  }
+  const parsed = DevLinksFileSchema.safeParse(raw);
+  return parsed.success ? parsed.data : 'unreadable';
+}
+
+/** What a slot looks like on disk, read by the caller for {@link isActiveDevLink}. */
+export interface DevLinkSlotReading {
+  /** Whether the slot itself is a symlink or junction (`lstat`), false when it is missing. */
+  lstatIsLink: boolean;
+  /** The slot's real path, or `null` when it cannot be resolved (missing, dangling). */
+  realpathOfSlot: string | null;
+}
+
+/**
+ * Whether a recorded dev link is in force: the slot is a link and it still
+ * resolves to the recorded folder. A link someone pointed elsewhere since
+ * fails this, and is then treated like any link made by hand. Pure.
+ *
+ * @param record - The registry record.
+ * @param slot - What the slot looks like now.
+ */
+export function isActiveDevLink(
+  record: Pick<DevLinkRecord, 'target'>,
+  slot: DevLinkSlotReading
+): boolean {
+  return slot.lstatIsLink && slot.realpathOfSlot !== null && slot.realpathOfSlot === record.target;
+}
+
+/**
+ * The state of a recorded dev link, as the listing and doctor report it.
+ *
+ * - `active` — the link is in place and points at the recorded folder.
+ * - `folder-missing` — the link is in place but its folder is gone.
+ * - `link-missing` — nothing is at the slot any more.
+ * - `link-replaced` — a real folder, or a link to somewhere else, is at the slot.
+ */
+export type DevLinkState = 'active' | 'folder-missing' | 'link-missing' | 'link-replaced';
+
+/** A dev link as `GET /api/marketplace/dev-links` reports it. */
+export interface DevLinkStatus {
+  /** Package name. */
+  name: string;
+  /** Package type. */
+  type: 'plugin' | 'skill-pack';
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The project, for a project dev link. */
+  projectPath?: string;
+  /** The real path of the working folder. */
+  path: string;
+  /** Whether the link is in force, and what happened when it is not. */
+  state: DevLinkState;
+  /** The installed copy set aside for the link, or `null` when there is none. */
+  parked: { version?: string } | null;
+  /** When the link was made. ISO 8601. */
+  linkedAt: string;
+  /** When an edit last reloaded it, once something does. ISO 8601. */
+  lastReloadAt?: string;
+}
+
+/** The dev-link fields on an {@link InstalledPackage}. */
+export interface InstalledDevLink {
+  /** The real path of the working folder. */
+  path: string;
+  /** Whether the link is in force. */
+  state: DevLinkState;
+  /** Whether an installed copy is set aside and comes back on unlink. */
+  parked: boolean;
+}
+
+/** What linking a folder would do, as `POST /api/marketplace/dev-links/preview` reports it. */
+export interface DevLinkPreview {
+  /** Package name from the folder's manifest. */
+  name: string;
+  /** Package type. */
+  type: 'plugin' | 'skill-pack';
+  /** The version the folder declares, when it declares one. */
+  version?: string;
+  /** The real path of the folder. */
+  path: string;
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The slot the link would sit in. */
+  slot: string;
+  /** The installed copy that would be set aside, or `null`. */
+  replaces: { version: string } | null;
+  /** What the folder runs on its own, exactly as an install preview discloses it. */
+  effects: DisclosedEffects | null;
+  /** The extension ids the folder carries under `.dork/extensions`. */
+  extensions: string[];
+}
+
+/** Refusal codes a dev link can answer with, each with one plain sentence. */
+export type DevLinkErrorCode =
+  | 'dev_link_path_not_real'
+  | 'dev_link_path_not_allowed'
+  | 'dev_link_not_a_package'
+  | 'dev_link_unsupported_type'
+  | 'dev_link_project_not_found'
+  | 'dev_link_exists'
+  | 'dev_link_slot_is_linked'
+  | 'dev_link_slot_taken'
+  | 'dev_link_parked_exists'
+  | 'dev_link_not_found'
+  | 'dev_link_changed'
+  | 'dev_link_card_too_long'
+  | 'package_is_dev_linked';

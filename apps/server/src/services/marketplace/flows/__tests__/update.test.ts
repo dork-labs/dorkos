@@ -15,7 +15,8 @@
  * old suite set one everywhere, and passed against a shape nobody ships).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { updateDevLinks } from '../../dev-links/registry.js';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -1401,6 +1402,46 @@ describe('UpdateFlow', () => {
           note: 'linked install — update its source instead',
         });
       }
+      expect(ctx.installer.resolveLatest).not.toHaveBeenCalled();
+      expect(ctx.installer.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('dev links', () => {
+    it('checks a registered dev link as unknown with the dev-link note, and never reinstalls it', async () => {
+      // Purpose (DOR-2696): a dev link runs the person's folder and is never
+      // the published version; the check says so, and no apply reaches it.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'dev' }]),
+        latest: { dev: '9.0.0' },
+      });
+      const source = await realpath(await mkdtemp(path.join(tmpdir(), 'update-flow-dev-link-')));
+      cleanupDirs.push(source);
+      await stagePluginUnder(source, {
+        manifest: buildPluginManifest({ name: 'dev', version: '1.0.0' }),
+      });
+      const home = await realpath(ctx.dorkHome);
+      const slot = path.join(home, 'plugins', 'dev');
+      await mkdir(path.dirname(slot), { recursive: true });
+      await symlink(path.join(source, 'dev'), slot);
+      await updateDevLinks(home, () => [
+        {
+          name: 'dev',
+          type: 'plugin',
+          scope: 'global',
+          slot,
+          target: path.join(source, 'dev'),
+          linkedAt: '2026-10-03T00:00:00.000Z',
+          linkedVia: 'app',
+        },
+      ]);
+      const flow = new UpdateFlow(ctx.deps);
+
+      const { checks } = await checkAll(flow, ctx.dorkHome, { apply: true });
+      expect(checks[0]).toMatchObject({
+        status: 'unknown',
+        note: 'Dev link — runs from your folder',
+      });
       expect(ctx.installer.resolveLatest).not.toHaveBeenCalled();
       expect(ctx.installer.update).not.toHaveBeenCalled();
     });

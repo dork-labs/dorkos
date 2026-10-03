@@ -122,6 +122,13 @@ export const ExtensionApprovedSourceSchema = z.object({
    * asks again, because a path alone no longer says what is there.
    */
   digest: z.string().min(1).optional(),
+  /**
+   * The real path of the dev link this approval was given to (DOR-2696);
+   * absent for an installed copy. A dev link sits at its package's normal
+   * folder, so without this an approval of the installed copy would cover the
+   * link's files at the same path, and the other way round.
+   */
+  devLink: z.string().min(1).optional(),
 });
 
 /** The one copy of an extension a person approved to run code. */

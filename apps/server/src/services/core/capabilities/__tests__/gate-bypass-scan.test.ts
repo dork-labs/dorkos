@@ -455,6 +455,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person clicking Install in their own cockpit: their approval of what the package runs is recorded with the install',
       'routes/marketplace/updates.ts':
         'a person applying the updates they were shown in their own cockpit, which asks no second time',
+      'routes/marketplace/dev-links.ts':
+        'a person unlinking a dev link (the same bar as deciding an approval card), and recording that a link the gate let through was made by the person rather than on an agent card',
       'routes/marketplace/held-back.ts':
         'a person deciding a held-back package in their own terminal or app, the same bar as deciding an approval card (`routes/approvals.ts`)',
       'routes/agents.ts':

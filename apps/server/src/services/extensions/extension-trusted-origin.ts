@@ -86,8 +86,11 @@ export interface CopyOnDisk {
  *   after DorkOS installed it.
  * - `linked` — a global plugin that is, or holds, a symbolic link (a linked
  *   developer install): its files live somewhere DorkOS never checked.
+ * - `dev-link` — a plugin a person linked from a working folder (DOR-2696). It
+ *   runs whatever that folder holds, so it never borrows an installed copy's
+ *   origin, digest or source trust, at either scope.
  */
-export type OriginProblem = 'changed' | 'linked';
+export type OriginProblem = 'changed' | 'linked' | 'dev-link';
 
 /** Where a copy provably came from, and why not when it cannot say. */
 export interface OriginProof {
@@ -130,18 +133,26 @@ export function installRootOf(copyPath: string): string {
  * Pure: the caller reads the installs once per discovery pass
  * ({@link readTrustedInstalls}) and each copy once ({@link inspectCopy}).
  *
+ * A copy whose plugin is a dev link in force is answered `dev-link` before any
+ * install record or digest is read: a project install record for the same
+ * folder (the parked copy's) must never vouch for the developer's files.
+ *
  * @param copy - A discovered copy.
  * @param installs - The installs this machine's installer recorded.
  * @param onDisk - The copy's plugin folder as it is on disk now.
+ * @param devLinkedRoots - Install roots (as {@link installRootOf} spells them)
+ *   that are dev links in force, read once per discovery pass.
  */
 export function proveOrigin(
   copy: OriginCopy,
   installs: TrustedInstalls,
-  onDisk: CopyOnDisk
+  onDisk: CopyOnDisk,
+  devLinkedRoots: ReadonlySet<string> = new Set()
 ): OriginProof {
   const none: OriginProof = { origin: null, problem: null, pinnedDigest: null };
   if (!copy.sourcePlugin) return none;
   const root = installRootOf(copy.path);
+  if (devLinkedRoots.has(root)) return { ...none, problem: 'dev-link' };
   const pool = copy.scope === 'global' ? installs.global : installs.project;
   const install = pool.find((candidate) => path.resolve(candidate.installRoot) === root);
   if (!install?.source) return none;

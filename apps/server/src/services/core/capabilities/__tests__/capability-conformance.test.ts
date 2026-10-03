@@ -32,6 +32,7 @@
  *
  * @vitest-environment node
  */
+import { DevLinkError } from '../../../marketplace/dev-links/errors.js';
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import os from 'node:os';
@@ -159,6 +160,15 @@ const emptyPreview = {
  */
 const marketplaceDeps = {
   dorkHome: SANDBOX_CWD,
+  // `marketplace.link` describes its card before the gate (the description is
+  // bound into the approval), so the stub answers that; a call past the gate
+  // meets a structured refusal and never touches the disk.
+  devLinks: {
+    describeApproval: async () => 'Folder: /nonexistent-conformance-folder',
+    link: async () => {
+      throw new DevLinkError('dev_link_not_a_package', 400, 'No package found in this folder.');
+    },
+  },
   installer: {
     preview: async () => ({
       preview: emptyPreview,
@@ -547,6 +557,10 @@ capabilityConformance(registry, {
     'marketplace.recommend': { context: 'observability for a next.js app' },
     'marketplace.install': { name: 'nonexistent-conformance-pkg' },
     'marketplace.uninstall': { name: 'nonexistent-conformance-pkg' },
+    // Destructive with a required `path`: parseable, so the gate (not a
+    // ZodError) answers. A call past the gate meets the stub's structured
+    // refusal.
+    'marketplace.link': { path: '/nonexistent-conformance-folder' },
     'marketplace.create_package': {
       name: 'conformance-pkg',
       type: 'plugin',

@@ -106,6 +106,9 @@ const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
 /** The note on a check of a symlinked install, which is never reinstalled. */
 export const LINKED_INSTALL_NOTE = 'linked install — update its source instead';
 
+/** The note on a check of a dev link (DOR-2696), which is never reinstalled. */
+export const DEV_LINK_NOTE = 'Dev link — runs from your folder';
+
 /** One check, plus the request that would apply it. */
 interface PlannedCheck {
   check: UpdateCheckResult;
@@ -385,6 +388,9 @@ export class UpdateFlow {
     // A reinstall would replace the link, and the working copy behind it, with a
     // fresh fetch. No request is returned, so no apply can ever reach it.
     if (record.linked) return { check: unknownCheck(name, installed, LINKED_INSTALL_NOTE) };
+    // A dev link runs the person's folder and is never the published version;
+    // unlink, then install, is the switch.
+    if (record.package.devLink) return { check: unknownCheck(name, installed, DEV_LINK_NOTE) };
 
     const target = await this.targets.find(name, recorded);
     if (target.kind === 'none') {

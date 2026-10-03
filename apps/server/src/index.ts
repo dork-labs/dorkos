@@ -340,6 +340,7 @@ import {
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall/uninstall.js';
+import { DevLinkService } from './services/marketplace/dev-links/index.js';
 import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/installer/marketplace-installer.js';
@@ -5325,6 +5326,31 @@ async function start() {
       }
     };
 
+    // Dev links (DOR-2696): run a plugin or skill pack from a folder. One
+    // service for the routes and the `marketplace_link` capability. A link's
+    // yes for the extensions it carries is written beside every other
+    // extension approval, keeping the rest of that section as it is.
+    const devLinkExtensions = extensionManager;
+    const devLinkService = new DevLinkService({
+      dorkHome,
+      approvals: {
+        read: () => {
+          const extensions = configManager.get('extensions');
+          return {
+            approvedToRun: extensions.approvedToRun,
+            approvedSources: extensions.approvedSources ?? {},
+          };
+        },
+        write: (next) => {
+          const before = configManager.get('extensions');
+          configManager.set('extensions', { ...before, ...next });
+          logConfigWrite('linking a folder', 'extensions', before, configManager.get('extensions'));
+        },
+      },
+      onPluginsChanged,
+      refreshExtensions: () => devLinkExtensions.requestRefresh(),
+    });
+
     // Build the confirmation provider that gates marketplace mutations. There is
     // exactly one, and no way to switch it off: it records an approval the
     // operator decides from the approval card (`POST /api/approvals/:id/grant|deny`).
@@ -5360,6 +5386,7 @@ async function start() {
           approvals: approvalService,
           onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
         },
+        devLinks: devLinkService,
       })
     );
     mountedRouters.push('marketplace');
@@ -5414,6 +5441,7 @@ async function start() {
       consent: globalConsentRecorder,
       onPluginsChanged,
       listAgentScopes,
+      devLinks: devLinkService,
       logger,
     };
     logger.info('[Marketplace] MCP tools wired into external /mcp server');
