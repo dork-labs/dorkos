@@ -40,7 +40,8 @@ import { partitionSessionsByOrigin } from './partition-sessions-by-origin';
  * agent is on. One message, in one place, because three surfaces show it and
  * they must not drift into describing the same event three ways.
  */
-export const SESSION_LOOKUP_FAILED_MESSAGE = 'Couldn’t find this agent’s latest chat.';
+export const SESSION_LOOKUP_FAILED_MESSAGE =
+  'Couldn’t reach the server to find this agent’s latest chat.';
 
 /**
  * Tell the operator the lookup failed, without moving them.
