@@ -21,6 +21,8 @@ import {
   MARKETPLACE_DEVLINK_PARKED_MARKER,
   type DevLinkRecord,
 } from '@dorkos/shared/marketplace-schemas';
+import { recoverInterruptedInstalls, globalSweepDirs } from '../../recovery/backup-janitor.js';
+import { recoverInterruptedInstall } from '../../recovery/install-recovery.js';
 import {
   activeDevLinks,
   devLinkStateOf,
@@ -116,6 +118,26 @@ describe('dev-link registry', () => {
     expect(MARKETPLACE_DEVLINK_PARKED_MARKER).toBe('.dorkos-devlink-parked');
     expect(isInstallSiblingName(`flow${MARKETPLACE_DEVLINK_PARKED_MARKER}`)).toBe(true);
     expect(isInstallSiblingName('flow')).toBe(false);
+  });
+});
+
+describe('the parked copy and install recovery', () => {
+  it('is left alone by recovery and the startup sweep', async () => {
+    // Purpose: the parked name carries no <timestamp>-<uuid> stamp, so the
+    // engine never mistakes it for a crash-left backup it may settle or
+    // delete; deleting it would lose the person's installed copy.
+    const slot = path.join(home, 'plugins', 'flow');
+    const parked = `${slot}${MARKETPLACE_DEVLINK_PARKED_MARKER}`;
+    await mkdir(path.join(parked, '.dork'), { recursive: true });
+    await writeFile(path.join(parked, '.dork', 'manifest.json'), '{"name":"flow"}');
+    const quiet = { debug() {}, info() {}, warn() {}, error() {} };
+
+    await recoverInterruptedInstall(slot);
+    await recoverInterruptedInstalls(globalSweepDirs(home), quiet);
+
+    expect(await readFile(path.join(parked, '.dork', 'manifest.json'), 'utf-8')).toBe(
+      '{"name":"flow"}'
+    );
   });
 });
 

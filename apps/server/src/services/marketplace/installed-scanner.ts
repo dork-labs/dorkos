@@ -20,13 +20,18 @@
  * @module services/marketplace/installed-scanner
  */
 import { lstat, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { readDeclaredVersion, validatePackage } from '@dorkos/marketplace/package-validator';
-import type { PackageProvides } from '@dorkos/shared/marketplace-schemas';
+import type {
+  DevLinkRecord,
+  InstalledDevLink,
+  PackageProvides,
+} from '@dorkos/shared/marketplace-schemas';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
+import { canonicalSlotPath, devLinkStateOf, readDevLinks } from './dev-links/registry.js';
 import type { InstallRootDir } from './lib/install-roots.js';
 import { installKey, installRootsUnder, projectScopeRoot } from './lib/install-roots.js';
 import { readInstallMetadata, type InstallMetadata } from './installed-metadata.js';
@@ -91,6 +96,13 @@ export interface InstalledPackage {
    * listing can say why such an install is never updated in place.
    */
   linked?: true;
+  /**
+   * Set when this installation is a dev link (DOR-2696): a registered link to
+   * a folder a person chose. A dev link is never `linked`, which means a link
+   * made by hand. A dev link whose folder or link has gone missing is still
+   * listed, from its record, so it never vanishes from view.
+   */
+  devLink?: InstalledDevLink;
 }
 
 /** A registered agent whose project directory the cross-scope scan should walk. */
@@ -172,19 +184,92 @@ export type InstallationView = { projectPath: string } | { agents: AgentScopeRef
  *
  * @param scopeRoot - `dorkHome`, or a project's {@link projectScopeRoot}.
  */
-async function scanScopeRoot(scopeRoot: string): Promise<InstallationRecord[]> {
+async function scanScopeRoot(
+  scopeRoot: string,
+  devLinks: readonly DevLinkRecord[] = []
+): Promise<InstallationRecord[]> {
   const found: InstallationRecord[] = [];
   for (const { kind, dir } of installRootsUnder(scopeRoot)) {
+    // The dev links whose slot is in this root, by canonical slot path.
+    const canonicalDir = devLinks.length > 0 ? await canonicalSlotPath(dir) : dir;
+    const linksHere = new Map(
+      devLinks
+        .filter((link) => kind === 'plugins' && dirname(link.slot) === canonicalDir)
+        .map((link) => [link.slot, link])
+    );
+    const listed = new Set<string>();
     for (const entry of await listPackageDirEntries(dir)) {
-      const record = await readInstallationRecord(
-        join(dir, entry),
-        kind,
-        await isSymlink(join(dir, entry))
-      );
-      if (record) found.push(record);
+      const packagePath = join(dir, entry);
+      const symlinked = await isSymlink(packagePath);
+      const devLink = symlinked ? linksHere.get(join(canonicalDir, entry)) : undefined;
+      const state = devLink ? await devLinkStateOf(devLink) : undefined;
+      if (devLink && state === 'active') {
+        const record = await readInstallationRecord(packagePath, kind, false);
+        if (record) {
+          listed.add(devLink.slot);
+          found.push(withDevLink(record, devLink, state));
+        }
+        continue;
+      }
+      const record = await readInstallationRecord(packagePath, kind, symlinked);
+      if (record) {
+        if (linksHere.has(join(canonicalDir, entry))) listed.add(join(canonicalDir, entry));
+        found.push(record);
+      }
+    }
+    // A dev link whose folder or link is gone is still a row, built from its
+    // record, so the person sees it and can unlink it.
+    for (const link of linksHere.values()) {
+      if (listed.has(link.slot)) continue;
+      found.push(rowFromDevLinkRecord(link, kind, await devLinkStateOf(link)));
     }
   }
   return found;
+}
+
+/** Mark a listed installation as the dev link it is. */
+function withDevLink(
+  record: InstallationRecord,
+  link: DevLinkRecord,
+  state: InstalledDevLink['state']
+): InstallationRecord {
+  return {
+    ...record,
+    linked: false,
+    package: {
+      ...record.package,
+      devLink: { path: link.target, state, parked: link.parked !== undefined },
+    },
+  };
+}
+
+/** The row for a dev link nothing readable is behind. */
+function rowFromDevLinkRecord(
+  link: DevLinkRecord,
+  kind: InstallRootDir,
+  state: InstalledDevLink['state']
+): InstallationRecord {
+  return {
+    kind,
+    metadata: null,
+    linked: false,
+    package: {
+      name: link.name,
+      version: 'unknown',
+      type: link.type,
+      installPath: link.slot,
+      devLink: { path: link.target, state, parked: link.parked !== undefined },
+    },
+  };
+}
+
+/**
+ * The recorded dev links, or none when the registry cannot be read: no slot
+ * counts as a dev link on a file nobody can read.
+ */
+async function readDevLinkRecords(dorkHome: string): Promise<DevLinkRecord[]> {
+  const reading = await readDevLinks(dorkHome);
+  return 'links' in reading ? reading.links : [];
 }
 
 /**
@@ -201,9 +286,10 @@ export async function scanInstallationRecords(
   dorkHome: string,
   view: InstallationView
 ): Promise<InstallationRecord[]> {
+  const devLinks = await readDevLinkRecords(dorkHome);
   return 'projectPath' in view
-    ? scanProjectView(dorkHome, view.projectPath)
-    : scanEveryScope(dorkHome, view.agents);
+    ? scanProjectView(dorkHome, view.projectPath, devLinks)
+    : scanEveryScope(dorkHome, view.agents, devLinks);
 }
 
 /** Tag a record with scope fields, leaving the rest as the walk read it. */
@@ -225,16 +311,17 @@ function withScope(
  */
 async function scanProjectView(
   dorkHome: string,
-  projectPath: string
+  projectPath: string,
+  devLinks: readonly DevLinkRecord[]
 ): Promise<InstallationRecord[]> {
   const merged = new Map<string, InstallationRecord>();
-  for (const record of await scanScopeRoot(dorkHome)) {
+  for (const record of await scanScopeRoot(dorkHome, devLinks)) {
     merged.set(
       installKey(record.kind, record.package.name),
       withScope(record, { scope: 'global' })
     );
   }
-  for (const record of await scanScopeRoot(projectScopeRoot(projectPath))) {
+  for (const record of await scanScopeRoot(projectScopeRoot(projectPath), devLinks)) {
     const key = installKey(record.kind, record.package.name);
     const scope: PackageScope = merged.has(key) ? 'override' : 'agent-local';
     merged.set(key, withScope(record, { scope, agentPath: projectPath }));
@@ -251,9 +338,10 @@ async function scanProjectView(
  */
 async function scanEveryScope(
   dorkHome: string,
-  agents: AgentScopeRef[]
+  agents: AgentScopeRef[],
+  devLinks: readonly DevLinkRecord[]
 ): Promise<InstallationRecord[]> {
-  const globalRecords = (await scanScopeRoot(dorkHome)).map((record) =>
+  const globalRecords = (await scanScopeRoot(dorkHome, devLinks)).map((record) =>
     withScope(record, { scope: 'global' })
   );
   const globalKeys = new Set(globalRecords.map((r) => installKey(r.kind, r.package.name)));
@@ -264,7 +352,7 @@ async function scanEveryScope(
     if (seenPaths.has(agent.projectPath)) continue;
     seenPaths.add(agent.projectPath);
 
-    for (const record of await scanScopeRoot(projectScopeRoot(agent.projectPath))) {
+    for (const record of await scanScopeRoot(projectScopeRoot(agent.projectPath), devLinks)) {
       agentRecords.push(
         withScope(record, {
           scope: globalKeys.has(installKey(record.kind, record.package.name))

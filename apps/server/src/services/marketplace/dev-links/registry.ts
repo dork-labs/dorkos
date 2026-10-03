@@ -190,3 +190,22 @@ export async function activeDevLinks(dorkHome: string): Promise<DevLinkRecord[]>
   }
   return active;
 }
+
+/**
+ * The recorded dev link whose link still sits in this slot (in force, or
+ * pointing at a folder that has gone missing), or `null`. What install,
+ * update and uninstall consult before touching a slot: each of them would
+ * replace or delete the link, and unlink is the only way to switch back.
+ *
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @param slot - The install target, as the caller spells it.
+ */
+export async function devLinkInSlot(dorkHome: string, slot: string): Promise<DevLinkRecord | null> {
+  const reading = await readDevLinks(dorkHome);
+  if ('unreadable' in reading || reading.links.length === 0) return null;
+  const canonical = await canonicalSlotPath(slot);
+  const record = reading.links.find((link) => link.slot === canonical);
+  if (!record) return null;
+  const state = await devLinkStateOf(record);
+  return state === 'active' || state === 'folder-missing' ? record : null;
+}

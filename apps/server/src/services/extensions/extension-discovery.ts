@@ -18,6 +18,7 @@ import {
   readTrustedInstalls,
   type CopyOnDisk,
 } from './extension-trusted-origin.js';
+import { activeDevLinks, canonicalSlotPath } from '../marketplace/dev-links/registry.js';
 import { logger } from '../../lib/logger.js';
 import {
   satisfiesMinHostVersion,
@@ -131,9 +132,15 @@ export class ExtensionDiscovery {
     // Where each plugin-carried copy provably came from (§9.1): only from this
     // machine's own install records, never from a file inside the project.
     const installs = await readTrustedInstalls(this.dorkHome);
+    // Plugins that run from a folder a person linked (DOR-2696): no origin, no
+    // digest, only an approval given to that dev link. Read once per pass.
+    const devLinked = await this.devLinkedRoots(pluginRecords);
     // One walk per plugin folder per scan, however many extensions it carries.
+    // A dev-linked folder is never walked: it has no digest to compare, and a
+    // working folder can hold a whole `node_modules`.
     const copies = new Map<string, DiscoveredRecord>();
     for (const rec of pluginRecords) {
+      if (devLinked.has(installRootOf(rec.path))) continue;
       const key = `${rec.scope}:${installRootOf(rec.path)}`;
       if (!copies.has(key)) copies.set(key, rec);
     }
@@ -159,11 +166,21 @@ export class ExtensionDiscovery {
       const result = inspected.get(key)!;
       if (!result.ok) throw result.reason;
     }
+    const devRoots = new Set(devLinked.keys());
     for (const rec of pluginRecords) {
-      const result = inspected.get(`${rec.scope}:${installRootOf(rec.path)}`)!;
-      if (!result.ok) throw result.reason;
-      const onDisk = result.value;
-      const proof = proveOrigin(rec, installs, onDisk);
+      const target = devLinked.get(installRootOf(rec.path));
+      let onDisk: CopyOnDisk;
+      if (target !== undefined) {
+        // Never inspected (above): `proveOrigin` answers `dev-link` for it
+        // before it would look at the folder at all.
+        rec.devLink = { path: target };
+        onDisk = { folder: { kind: 'clean' } };
+      } else {
+        const result = inspected.get(`${rec.scope}:${installRootOf(rec.path)}`)!;
+        if (!result.ok) throw result.reason;
+        onDisk = result.value;
+      }
+      const proof = proveOrigin(rec, installs, onDisk, devRoots);
       if (proof.origin) {
         rec.trustedOrigin = proof.origin;
         if (proof.pinnedDigest) rec.pinnedDigest = proof.pinnedDigest;
@@ -352,6 +369,30 @@ export class ExtensionDiscovery {
       roots.push({ root: project, isCwd: false });
     }
     return roots;
+  }
+
+  /**
+   * The plugin install roots among these copies that are dev links in force,
+   * each mapped to the folder it runs from. Matched on the slot's canonical
+   * spelling, because a project may be named through a link of its own.
+   *
+   * @param pluginRecords - Every plugin-carried copy this pass found.
+   * @returns Install root (as {@link installRootOf} spells it) to the dev link's folder.
+   */
+  private async devLinkedRoots(
+    pluginRecords: readonly DiscoveredRecord[]
+  ): Promise<Map<string, string>> {
+    const found = new Map<string, string>();
+    const active = await activeDevLinks(this.dorkHome);
+    if (active.length === 0) return found;
+    const bySlot = new Map(active.map((link) => [link.slot, link.target]));
+    for (const rec of pluginRecords) {
+      const root = installRootOf(rec.path);
+      if (found.has(root)) continue;
+      const target = bySlot.get(await canonicalSlotPath(root));
+      if (target !== undefined) found.set(root, target);
+    }
+    return found;
   }
 
   /**

@@ -16,7 +16,8 @@ import {
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import type { NotifyPluginsChanged } from '../../types.js';
 import { MARKETPLACE_DEVLINK_PARKED_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { DevLinkService, type DevLinkApprovals, type DevLinkFs } from '../dev-link-service.js';
 import { DevLinkError } from '../errors.js';
@@ -26,8 +27,8 @@ let base: string;
 let home: string;
 let work: string;
 let approvals: DevLinkApprovals;
-let onPluginsChanged: ReturnType<typeof vi.fn>;
-let refreshExtensions: ReturnType<typeof vi.fn>;
+let onPluginsChanged: Mock<NotifyPluginsChanged>;
+let refreshExtensions: Mock<() => void>;
 
 /** Write a package folder: manifest, plugin.json, and optional extensions. */
 async function writePackage(
@@ -92,8 +93,8 @@ beforeEach(async () => {
   await mkdir(path.join(home, 'plugins'), { recursive: true });
   await writePackage(work, { extensions: ['flow-dash'] });
   approvals = { approvedToRun: [], approvedSources: {} };
-  onPluginsChanged = vi.fn();
-  refreshExtensions = vi.fn();
+  onPluginsChanged = vi.fn<NotifyPluginsChanged>();
+  refreshExtensions = vi.fn<() => void>();
 });
 
 afterEach(async () => {

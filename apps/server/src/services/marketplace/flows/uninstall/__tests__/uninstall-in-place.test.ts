@@ -19,7 +19,9 @@ import {
   stat,
   symlink,
   writeFile,
+  realpath,
 } from 'node:fs/promises';
+import { updateDevLinks } from '../../../dev-links/registry.js';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -390,6 +392,36 @@ describe('in-place uninstall (DOR-2245)', () => {
     await new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' });
     expect(await exists(root)).toBe(false);
     expect(await readFile(path.join(work, 'src', 'index.ts'), 'utf8')).toBe('dev');
+  });
+
+  // Purpose (DOR-2696): a registered dev link is taken out by unlink, which
+  // knows about the installed copy set aside for it. Uninstall must refuse
+  // and leave the link, the folder and the record as they were.
+  it('refuses to uninstall a registered dev link', async () => {
+    const dorkHome = await realpath(await home());
+    const work = await realpath(await home());
+    await put(work, '.claude-plugin/plugin.json', '{"name":"pkg"}');
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await mkdir(path.dirname(root), { recursive: true });
+    await symlink(work, root);
+    await updateDevLinks(dorkHome, () => [
+      {
+        name: 'pkg',
+        type: 'plugin',
+        scope: 'global',
+        slot: root,
+        target: work,
+        linkedAt: '2026-10-03T00:00:00.000Z',
+        linkedVia: 'app',
+      },
+    ]);
+    await expect(
+      new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' })
+    ).rejects.toMatchObject({
+      code: 'package_is_dev_linked',
+      message: 'pkg runs from a dev link. Unlink it first.',
+    });
+    expect((await lstat(root)).isSymbolicLink()).toBe(true);
   });
 
   // Purpose: an install made before records existed keeps what nothing proves

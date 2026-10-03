@@ -18,6 +18,7 @@ export {
 export { DevLinkError, packageIsDevLinked } from './errors.js';
 export {
   activeDevLinks,
+  devLinkInSlot,
   canonicalSlotPath,
   devLinkStateOf,
   devLinksFilePath,

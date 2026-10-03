@@ -77,6 +77,8 @@ import {
 import { freeSavedFileName, makeInert } from '../../lib/saved-copies/saved-copies.js';
 import { UninstallLocator, readManifestIfPresent } from './locate.js';
 import { UninstallSideEffects } from './side-effects.js';
+import { packageIsDevLinked } from '../../dev-links/errors.js';
+import { devLinkInSlot } from '../../dev-links/registry.js';
 import {
   type LocatedPackage,
   type UninstallFlowDeps,
@@ -198,9 +200,16 @@ export class UninstallFlow {
     const triedEmpty = new Set<string>();
     for (;;) {
       const located = await this.locator.locate(req, triedEmpty);
-      const result = await withInstallTargetLock(located.installRoot, () =>
-        this.removeLocated(req, located)
-      );
+      const result = await withInstallTargetLock(located.installRoot, async () => {
+        // A dev link (DOR-2696) is taken out by unlink, which knows about the
+        // installed copy set aside for it; removing the link here would strand
+        // that copy and the link's record. A link made by hand has no record
+        // and keeps today's remove-the-link behaviour below.
+        if (await devLinkInSlot(this.deps.dorkHome, located.installRoot)) {
+          throw packageIsDevLinked(req.name);
+        }
+        return this.removeLocated(req, located);
+      });
       if (result) {
         await this.forgetInstallRecord(located.installRoot);
         return result;

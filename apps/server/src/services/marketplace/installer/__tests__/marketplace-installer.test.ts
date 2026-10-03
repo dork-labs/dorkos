@@ -11,7 +11,17 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readdir,
+  readlink,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { updateDevLinks } from '../../dev-links/registry.js';
 import { tmpdir } from 'node:os';
 import nodePath from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -898,6 +908,47 @@ describe('MarketplaceInstaller', () => {
       expect(pluginFlow.install).not.toHaveBeenCalled();
       expect(agentFlow.install).not.toHaveBeenCalled();
       expect(skillPackFlow.install).not.toHaveBeenCalled();
+    });
+
+    it('refuses to install over a dev link, touching nothing and reporting no install event', async () => {
+      // Purpose (DOR-2696): an install moves the slot aside and deletes it on
+      // commit, link included. A dev link is replaced only by unlink, the
+      // explicit switch; and a dev link never reaches install telemetry.
+      const home = await realpath(await mkdtemp(nodePath.join(tmpdir(), 'installer-devlink-')));
+      try {
+        const work = nodePath.join(home, 'work');
+        await mkdir(work, { recursive: true });
+        const slot = nodePath.join(home, 'plugins', 'hello-plugin');
+        await mkdir(nodePath.dirname(slot), { recursive: true });
+        await symlink(work, slot, 'dir');
+        await updateDevLinks(home, () => [
+          {
+            name: 'hello-plugin',
+            type: 'plugin',
+            scope: 'global',
+            slot,
+            target: work,
+            linkedAt: '2026-10-03T00:00:00.000Z',
+            linkedVia: 'app',
+          },
+        ]);
+        const { deps, resolver, previewBuilder, pluginFlow } = buildDeps();
+        const manifest = buildPluginManifest({ name: 'hello-plugin' });
+        wireLocalResolution(resolver, 'hello-plugin', '/tmp/hello-plugin');
+        mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+        previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+
+        const installer = new MarketplaceInstaller({ ...deps, dorkHome: home });
+        await expect(installer.install({ name: 'hello-plugin' })).rejects.toMatchObject({
+          code: 'package_is_dev_linked',
+          message: 'hello-plugin runs from a dev link. Unlink it first.',
+        });
+        expect(pluginFlow.install).not.toHaveBeenCalled();
+        expect(mockedReportInstallEvent).not.toHaveBeenCalled();
+        expect(await readlink(slot)).toBe(work);
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
     });
 
     it('reports failure telemetry when a flow throws', async () => {

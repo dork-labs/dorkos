@@ -30,6 +30,9 @@ import { ConflictError, DisclosureChangedError } from './errors.js';
 import type { InstallerDeps } from './marketplace-installer.js';
 import { recordableContentHash, recordSourceOf } from './metadata.js';
 import { assertInstallable, type PackageStager, type StagedPackage } from './staging.js';
+import { INSTALL_ROOT_DIR_BY_TYPE, projectScopeRoot } from '../lib/install-roots.js';
+import { DevLinkError, packageIsDevLinked } from '../dev-links/errors.js';
+import { devLinkInSlot } from '../dev-links/registry.js';
 
 /** Sentinel marketplace value used when a package was resolved directly (git URL / local path). */
 const DIRECT_SOURCE_LABEL = '<direct>';
@@ -68,6 +71,18 @@ export class InstallDispatcher {
           `a ${req.approvedPackageType} package`,
           `a ${packageType} package`
         );
+      }
+
+      // A dev link in the slot this would land in (DOR-2696): installing
+      // would replace the link, and the person's folder behind it, without
+      // the explicit switch. Unlink is the way back to an installed copy.
+      if (INSTALL_ROOT_DIR_BY_TYPE[packageType] === 'plugins') {
+        const slot = req.projectPath
+          ? path.join(projectScopeRoot(req.projectPath), 'plugins', staged.manifest.name)
+          : path.join(this.deps.dorkHome, 'plugins', staged.manifest.name);
+        if (await devLinkInSlot(this.deps.dorkHome, slot)) {
+          throw packageIsDevLinked(staged.manifest.name);
+        }
       }
 
       // Refusals that depend only on the package's content: a schedule that
@@ -293,6 +308,8 @@ export class InstallDispatcher {
 
       return result;
     } catch (err) {
+      // Nothing was attempted against a dev link: no install event for it.
+      if (err instanceof DevLinkError) throw err;
       await this.reportTerminalOutcome({
         resolved,
         packageType,

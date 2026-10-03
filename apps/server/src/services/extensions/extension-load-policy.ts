@@ -180,7 +180,7 @@ import type { ExtensionsConfig } from './extension-enable-resolution.js';
  * plus where it provably came from when this machine can say (§9.1).
  */
 export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'sourcePlugin'> &
-  Partial<Pick<ExtensionRecord, 'trustedOrigin' | 'originProblem' | 'currentDigest'>>;
+  Partial<Pick<ExtensionRecord, 'trustedOrigin' | 'originProblem' | 'currentDigest' | 'devLink'>>;
 
 /**
  * The stored halves of a person's approvals: the ids, the copy each is for,
@@ -213,6 +213,9 @@ export function approvedSourceOf(copy: ExtensionCopy): ExtensionApprovedSource {
   // A copy that changed after DorkOS installed it is approved as its files
   // are now, and any further change asks again (security review, DOR-2527).
   if (copy.originProblem === 'changed' && copy.currentDigest) source.digest = copy.currentDigest;
+  // A copy running from a dev link is approved as that dev link, by path
+  // alone, so editing its folder never asks again (DOR-2696).
+  if (copy.devLink) source.devLink = copy.devLink.path;
   return source;
 }
 
@@ -231,6 +234,12 @@ export function isApprovedByPath(copy: ExtensionCopy, approvals: ExtensionApprov
     path.resolve(source.path) === path.resolve(copy.path) &&
     (source.plugin ?? null) === (copy.sourcePlugin ?? null);
   if (!samePath) return false;
+  // A dev link sits at its package's normal folder, so the path alone cannot
+  // tell it from the installed copy. An approval covers only the kind it was
+  // given to: an installed copy's never covers a dev link, a dev link's never
+  // covers the installed copy put back after unlink, and one dev link's never
+  // covers a link to another folder (DOR-2696).
+  if ((source.devLink ?? null) !== (copy.devLink?.path ?? null)) return false;
   // A project copy whose plugin changed after DorkOS installed it never keeps
   // running silently on a path approval: the yes must name its files as they
   // are now (security review of DOR-2527).
