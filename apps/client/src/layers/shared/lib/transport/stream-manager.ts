@@ -29,7 +29,7 @@
  *   `HttpTransport`, so the packaged Electron renderer (file:// + localhost API)
  *   reaches the streams too. They were SSE until ADR 260805-041016: an SSE
  *   stream holds one of a browser's ~6 sockets per origin for as long as it is
- *   open, so a window parking two of them meant the THIRD cockpit window took
+ *   open, so a window parking two of them meant the THIRD app window took
  *   the last socket and everything after it — including the fourth window's own
  *   HTML — queued behind streams that never end. The server still serves SSE at
  *   the same paths for integrations; the app does not use it.
@@ -59,6 +59,8 @@ import {
 import { WSConnection, type StreamConnectionOptions } from './ws-connection';
 import { addBreadcrumb } from '../breadcrumbs';
 import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
+import type { Transport } from '@dorkos/shared/transport';
+import { ownDocChannelConnection } from './doc-channel-ownership';
 import {
   createUnreadablePromptReporter,
   createUnreadableSnapshotReporter,
@@ -247,7 +249,7 @@ export const GENERIC_EVENTS = [
   // A blocking condition began or stopped standing (DOR-1570). A standing kind
   // stores no row while it stands, so these are the only live news that a
   // schedule was proposed or an approval is waiting — which is what the desktop
-  // shell draws its native banner from. No cockpit surface subscribes: the app
+  // shell draws its native banner from. No app surface subscribes: the app
   // already derives both from state it holds (the tasks query, and
   // `approval_pending`). Listed so the event reaches dispatch rather than being
   // silently dropped the day a surface does want it.
@@ -333,7 +335,7 @@ export type GenericEventName = (typeof GENERIC_EVENTS)[number];
 const DEFAULT_BASE_URL = '/api';
 
 /** Where StreamManager sources its streams from (see module doc). */
-type StreamSource = { baseUrl: string };
+type StreamSource = { baseUrl: string; owner?: Transport };
 
 /**
  * Build the URL of a session's durable event stream. The `cwd` query is
@@ -364,6 +366,7 @@ function sessionStreamUrl(
  */
 export class StreamManager {
   private readonly createConnection: CreateConnection;
+  private mutationRevision = 0;
   private listeners: StreamManagerListeners = {};
   private source: StreamSource = { baseUrl: DEFAULT_BASE_URL };
 
@@ -594,15 +597,16 @@ export class StreamManager {
    *
    * @param baseUrl - Same resolved origin `HttpTransport` is constructed with.
    */
-  useHttpSource(baseUrl: string): void {
-    this.setSource({ baseUrl });
+  useHttpSource(baseUrl: string, owner: Transport): void {
+    this.setSource({ baseUrl, owner });
   }
 
   private setSource(source: StreamSource): void {
     // Identical source → no-op, so StrictMode/HMR re-wiring doesn't churn
     // (tear down + re-open) perfectly healthy streams.
     const prev = this.source;
-    if (prev.baseUrl === source.baseUrl) return;
+    if (prev.baseUrl === source.baseUrl && prev.owner === source.owner) return;
+    const revision = ++this.mutationRevision;
     const reattach =
       this.attachedSessionId !== null
         ? { sessionId: this.attachedSessionId, cwd: this.attachedCwd }
@@ -622,21 +626,37 @@ export class StreamManager {
     // session is unchanged across a source switch, so observers must not see
     // an A→null→A flicker (same single-transition rule as attachSession).
     this.closeSessionStream();
+    if (revision !== this.mutationRevision) return;
     if (this.pinnedConnection) {
-      this.pinnedConnection.destroy();
+      const held = this.pinnedConnection;
       this.pinnedConnection = null;
+      held.destroy();
+      if (revision !== this.mutationRevision) return;
     }
     this.disconnectList();
+    if (revision !== this.mutationRevision) return;
     this.source = source;
     // Re-open whatever was live so a late source switch (HMR, view re-open)
     // doesn't silently kill active streams.
     if (reattach) {
-      this.sessionConnection = this.openSessionStream(reattach.sessionId, reattach.cwd);
-      this.sessionConnection.connect();
+      const connection = this.openSessionStream(reattach.sessionId, reattach.cwd);
+      if (revision !== this.mutationRevision) {
+        connection.destroy();
+        return;
+      }
+      this.sessionConnection = connection;
+      connection.connect();
+      if (revision !== this.mutationRevision) return;
     }
     if (repin) {
-      this.pinnedConnection = this.openSessionStream(repin.sessionId, repin.cwd);
-      this.pinnedConnection.connect();
+      const connection = this.openSessionStream(repin.sessionId, repin.cwd);
+      if (revision !== this.mutationRevision) {
+        connection.destroy();
+        return;
+      }
+      this.pinnedConnection = connection;
+      connection.connect();
+      if (revision !== this.mutationRevision) return;
     }
     if (hadList) this.connectList();
   }
@@ -659,6 +679,7 @@ export class StreamManager {
   attachSession(sessionId: string, cwd?: string | null): void {
     // The session is wanted again, so a release scheduled by an unmount that
     // was really a re-mount must not fire. See {@link releaseSession}.
+    const revision = ++this.mutationRevision;
     this.cancelPendingRelease();
     const nextCwd = cwd ?? null;
     if (
@@ -681,6 +702,7 @@ export class StreamManager {
     if (sessionId === this.pinnedSessionId && this.pinnedConnection) {
       if (nextCwd === this.pinnedCwd) {
         this.closeSessionStream();
+        if (revision !== this.mutationRevision) return;
         this.sessionConnection = this.pinnedConnection;
         this.pinnedConnection = null;
         this.attachedSessionId = sessionId;
@@ -693,8 +715,10 @@ export class StreamManager {
       // through to the normal re-open — the pin then shares the fresh
       // connection (one-owner invariant) and `pinnedCwd` follows `nextCwd` in
       // the shared-cwd sync below.
-      this.pinnedConnection.destroy();
+      const held = this.pinnedConnection;
       this.pinnedConnection = null;
+      held.destroy();
+      if (revision !== this.mutationRevision) return;
     }
 
     // TRANSFER-OUT (row 1): the outgoing active connection is SHARED with the
@@ -722,6 +746,7 @@ export class StreamManager {
       // nor transferable, so destroy it. No detach transition — a re-attach is
       // a single A→B switch, not A→null→B.
       this.closeSessionStream();
+      if (revision !== this.mutationRevision) return;
     }
 
     this.attachedSessionId = sessionId;
@@ -731,8 +756,14 @@ export class StreamManager {
     if (this.pinnedSessionId === sessionId && this.pinnedConnection === null) {
       this.pinnedCwd = nextCwd;
     }
-    this.sessionConnection = this.openSessionStream(sessionId, nextCwd);
-    this.sessionConnection.connect();
+    const connection = this.openSessionStream(sessionId, nextCwd);
+    if (revision !== this.mutationRevision) {
+      connection.destroy();
+      return;
+    }
+    this.sessionConnection = connection;
+    connection.connect();
+    if (revision !== this.mutationRevision) return;
     this.notifyAttachedChange(sessionId);
   }
 
@@ -760,12 +791,15 @@ export class StreamManager {
   pinSession(sessionId: string, cwd?: string | null): void {
     if (this.pinnedSessionId === sessionId) return;
 
+    const revision = this.mutationRevision;
     // Single-instance panel: a different session was pinned — unpin it (row 5)
     // before pinning the new one.
     if (this.pinnedSessionId !== null) {
       this.unpinSession();
+      if (this.mutationRevision !== revision + 1) return;
     }
 
+    const pinRevision = ++this.mutationRevision;
     if (sessionId === this.attachedSessionId) {
       // Shared: the active connection already streams this session. Record the
       // pin without opening a second connection (invariant). The pin's cwd is
@@ -790,8 +824,13 @@ export class StreamManager {
     const nextCwd = cwd ?? null;
     this.pinnedSessionId = sessionId;
     this.pinnedCwd = nextCwd;
-    this.pinnedConnection = this.openSessionStream(sessionId, nextCwd);
-    this.pinnedConnection.connect();
+    const connection = this.openSessionStream(sessionId, nextCwd);
+    if (pinRevision !== this.mutationRevision) {
+      connection.destroy();
+      return;
+    }
+    this.pinnedConnection = connection;
+    connection.connect();
   }
 
   /**
@@ -802,9 +841,12 @@ export class StreamManager {
    * pinned.
    */
   unpinSession(): void {
+    const revision = ++this.mutationRevision;
     if (this.pinnedConnection) {
-      this.pinnedConnection.destroy();
+      const held = this.pinnedConnection;
       this.pinnedConnection = null;
+      held.destroy();
+      if (revision !== this.mutationRevision) return;
     }
     this.pinnedSessionId = null;
     this.pinnedCwd = null;
@@ -812,8 +854,19 @@ export class StreamManager {
 
   /** Construct the active-session stream from the configured source. */
   private openSessionStream(sessionId: string, cwd: string | null): DurableStreamConnection {
-    const eventHandlers = this.buildSessionEventHandlers(sessionId);
+    const controller = new AbortController();
+    const owner = this.source.owner;
+    let producer = owner ? ownDocChannelConnection(owner, controller.signal) : undefined;
+    let retired = false;
+    let armed = false;
+    const eventHandlers = this.buildSessionEventHandlers(sessionId, () =>
+      armed && !retired && this.source.owner === owner ? producer : undefined
+    );
     const onStateChange = (state: ConnectionState): void => {
+      if (retired) return;
+      if (state !== 'connected') producer?.retire();
+      else if (owner && this.source.owner === owner && !producer?.current())
+        producer = ownDocChannelConnection(owner, controller.signal);
       // A bug-report breadcrumb (feedback-pipeline spec Part 1): the durable
       // session stream dropping is exactly the kind of "what just happened"
       // context a bug report benefits from, without the user having to notice
@@ -823,10 +876,47 @@ export class StreamManager {
       }
       this.listeners.onSessionConnectionState?.(sessionId, state);
     };
-    return this.createConnection(sessionStreamUrl(this.source.baseUrl, sessionId, cwd), {
-      eventHandlers,
-      onStateChange,
-    });
+    const connection = this.createConnection(
+      sessionStreamUrl(this.source.baseUrl, sessionId, cwd),
+      { eventHandlers, onStateChange }
+    );
+    const retire = () => {
+      retired = true;
+      try {
+        producer?.retire();
+      } finally {
+        controller.abort();
+      }
+    };
+    return {
+      connect: () => {
+        if (!retired) {
+          armed = true;
+          connection.connect();
+        }
+      },
+      disconnect: () => {
+        try {
+          retire();
+        } finally {
+          connection.disconnect();
+        }
+      },
+      destroy: () => {
+        try {
+          retire();
+        } finally {
+          connection.destroy();
+        }
+      },
+      ...(connection.enableVisibilityOptimization
+        ? {
+            enableVisibilityOptimization: () => {
+              if (!retired) connection.enableVisibilityOptimization?.();
+            },
+          }
+        : {}),
+    };
   }
 
   /**
@@ -836,8 +926,9 @@ export class StreamManager {
    */
   private closeSessionStream(): void {
     if (this.sessionConnection) {
-      this.sessionConnection.destroy();
+      const held = this.sessionConnection;
       this.sessionConnection = null;
+      held.destroy();
     }
   }
 
@@ -850,6 +941,7 @@ export class StreamManager {
    * that is still on screen.
    */
   detachSession(): void {
+    const revision = ++this.mutationRevision;
     this.cancelPendingRelease();
     if (this.attachedSessionId !== null && this.attachedSessionId === this.pinnedSessionId) {
       this.pinnedConnection = this.sessionConnection;
@@ -857,6 +949,7 @@ export class StreamManager {
       this.sessionConnection = null;
     } else {
       this.closeSessionStream();
+      if (revision !== this.mutationRevision) return;
     }
     this.attachedSessionId = null;
     this.attachedCwd = null;
@@ -935,8 +1028,9 @@ export class StreamManager {
   /** Tear down the global session-list stream. */
   disconnectList(): void {
     if (this.listConnection) {
-      this.listConnection.destroy();
+      const held = this.listConnection;
       this.listConnection = null;
+      held.destroy();
     }
   }
 
@@ -945,9 +1039,18 @@ export class StreamManager {
    * handler registered under each {@link SESSION_EVENT_TYPES} name.
    * Validates every frame and drops (warns on) malformed ones.
    */
-  private buildSessionEventHandlers(sessionId: string): Record<string, (data: unknown) => void> {
+  private buildSessionEventHandlers(
+    sessionId: string,
+    getProducer: () => ReturnType<typeof ownDocChannelConnection> | undefined
+  ): Record<string, (data: unknown) => void> {
     const handlers: Record<string, (data: unknown) => void> = {
       snapshot: (data) => this.handleSnapshot(sessionId, data),
+      canvas_event: (data) => {
+        getProducer()?.publish(data);
+      },
+      canvas_channel_snapshot: (data) => {
+        getProducer()?.publish(data);
+      },
     };
     const onEvent = (data: unknown): void => this.handleSessionEvent(sessionId, data);
     for (const type of SESSION_EVENT_TYPES) {

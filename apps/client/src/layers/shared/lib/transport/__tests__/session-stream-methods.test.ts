@@ -1,3 +1,6 @@
+import { createMockTransport } from '@dorkos/test-utils';
+import { subscribeDocChannelNotifications } from '../doc-channel-notifications';
+import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   SessionListEventSchema,
@@ -120,7 +123,7 @@ describe('createSessionStreamMethods', () => {
     it('captures the leading snapshot frame from a cold /events connect', async () => {
       // Real failure mode: hydration callers get nothing without this — there
       // is no REST snapshot endpoint; the leading frame IS the snapshot.
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       const snapshot = await script([['snapshot', SNAPSHOT]], () =>
         methods.getSessionSnapshot('sess-a', '/proj')
@@ -131,7 +134,7 @@ describe('createSessionStreamMethods', () => {
     });
 
     it('resolves a snapshot with one unreadable message, with a placeholder in its place (DOR-2078)', async () => {
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
       const frame = {
         ...SNAPSHOT,
         messages: [
@@ -149,7 +152,7 @@ describe('createSessionStreamMethods', () => {
     });
 
     it('throws when the leading frame is not a snapshot (protocol violation)', async () => {
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       await expect(
         script([['turn_start', TURN_START]], () => methods.getSessionSnapshot('sess-a'))
@@ -157,7 +160,7 @@ describe('createSessionStreamMethods', () => {
     });
 
     it('throws when the stream ends before a snapshot arrives', async () => {
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       await expect(script([], () => methods.getSessionSnapshot('sess-a'))).rejects.toThrow(
         /ended before a snapshot/
@@ -166,10 +169,35 @@ describe('createSessionStreamMethods', () => {
   });
 
   describe('subscribeSession', () => {
+    it('publishes document frames without yielding them or changing the transcript resume cursor', async () => {
+      const methods = createSessionStreamMethods('/api', createMockTransport());
+      const docs = vi.fn();
+      const stop = subscribeDocChannelNotifications(undefined, docs);
+      const events: SessionEvent[] = [];
+      try {
+        await script(
+          [
+            ['canvas_event', DOC_EVENT],
+            ['canvas_channel_snapshot', DOC_SNAPSHOT],
+            ['canvas_event', { ...DOC_EVENT, docSeq: -1 }],
+            ['turn_start', TURN_START],
+          ],
+          async () => {
+            for await (const event of methods.subscribeSession('request-alias', 7))
+              events.push(event);
+          }
+        );
+        expect(events).toEqual([TURN_START]);
+        expect(docs.mock.calls.map(([frame]) => frame)).toEqual([DOC_EVENT, DOC_SNAPSHOT]);
+      } finally {
+        stop();
+      }
+    });
+
     it('yields validated events, skipping the snapshot frame', async () => {
       // Real failure mode: a cold connect leads with a snapshot frame — leaking
       // it into the event iteration would corrupt seq-based consumers.
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       const events: SessionEvent[] = [];
       await script(
@@ -186,7 +214,7 @@ describe('createSessionStreamMethods', () => {
     });
 
     it('yields an unreadable question as an inline notice at the same seq (DOR-2078)', async () => {
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       const events: SessionEvent[] = [];
       await script(
@@ -200,7 +228,7 @@ describe('createSessionStreamMethods', () => {
     });
 
     it('passes the resume cursor as ?after= alongside cwd', async () => {
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       await script([], async () => {
         for await (const _ of methods.subscribeSession('sess-a', 42, '/proj')) void _;
@@ -213,7 +241,7 @@ describe('createSessionStreamMethods', () => {
       // Real failure mode (review finding): the server emits a snapshot on a
       // RESUME connect only when the cursor is unservable — silently skipping
       // it would hide every event between the stale cursor and the fallback.
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       await expect(
         script([['snapshot', SNAPSHOT]], async () => {
@@ -225,7 +253,7 @@ describe('createSessionStreamMethods', () => {
     it('closes the socket when the consumer aborts', async () => {
       // Real failure mode: a consumer aborting its signal must close the socket,
       // or the connection (and its server-side subscription) leaks.
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
       const external = new AbortController();
 
       const iterator = methods
@@ -239,8 +267,38 @@ describe('createSessionStreamMethods', () => {
       await vi.waitFor(() => expect(socket.readyState).toBe(3));
     });
 
+    it('drains throwing retirement subscribers and closes the actual socket on external abort', async () => {
+      const owner = createMockTransport();
+      const external = new AbortController();
+      const removed = vi.spyOn(external.signal, 'removeEventListener');
+      const sibling = vi.fn();
+      const stops = [
+        subscribeDocChannelNotifications(undefined, vi.fn(), owner, () => {
+          throw new Error('Subscriber retirement');
+        }),
+        subscribeDocChannelNotifications(undefined, vi.fn(), owner, sibling),
+      ];
+      const iterator = createSessionStreamMethods('/api', owner)
+        .subscribeSession('sess-a', undefined, undefined, external.signal)
+        [Symbol.asyncIterator]();
+      const next = iterator.next();
+      try {
+        const socket = await nthSocket();
+        external.abort();
+        await next;
+        expect(socket.readyState).toBe(3);
+        expect(sibling).toHaveBeenCalledOnce();
+        expect(removed).toHaveBeenCalledWith('abort', expect.any(Function));
+      } finally {
+        external.abort();
+        await iterator.return?.();
+        stops.forEach((stop) => stop());
+        removed.mockRestore();
+      }
+    });
+
     it('drops a malformed frame with a warning instead of corrupting the stream', async () => {
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       const events: SessionEvent[] = [];
       await script(
@@ -265,7 +323,7 @@ describe('createSessionStreamMethods', () => {
     it('does not leak other event families from the unified stream', async () => {
       // Real failure mode: /events is the unified fan-out — sync updates and
       // relay frames must not leak into the session-list contract.
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       const events: SessionListEvent[] = [];
       await script(
@@ -290,7 +348,7 @@ describe('createSessionStreamMethods', () => {
       // fails HERE with a name rather than silently narrowing the sweep below.
       expect(Object.keys(samples).sort()).toEqual([...discriminants].sort());
 
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       const events: SessionListEvent[] = [];
       await script(
@@ -333,7 +391,7 @@ describe('createSessionStreamMethods', () => {
       // exported copy nothing reads would pin nothing. A frame named by the set is
       // forwarded; a frame not named by it is dropped in silence.
       const samples = listEventSamples();
-      const methods = createSessionStreamMethods('/api');
+      const methods = createSessionStreamMethods('/api', createMockTransport());
 
       const events: SessionListEvent[] = [];
       await script(

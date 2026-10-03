@@ -103,7 +103,7 @@ export class HttpTransport implements Transport {
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),
-      createSessionStreamMethods(baseUrl),
+      createSessionStreamMethods(baseUrl, this),
       createSystemMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createHarnessMethods(baseUrl),
