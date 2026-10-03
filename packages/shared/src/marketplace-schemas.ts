@@ -28,6 +28,7 @@
 import { z } from 'zod';
 import { ExtensionApprovedSourceSchema } from './config-schema.js';
 import type { PermissionMode } from './schemas.js';
+import type { CheckResult } from './health-schemas.js';
 
 // ---------------------------------------------------------------------------
 // Package type
@@ -1884,3 +1885,104 @@ export type DevLinkErrorCode =
   | 'dev_link_changed'
   | 'dev_link_card_too_long'
   | 'package_is_dev_linked';
+
+/** One recorded dev link as the `Dev links` health check judges it. */
+export interface DevLinkHealthEntry {
+  /** Package name. */
+  name: string;
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The project, for a project dev link. */
+  projectPath?: string;
+  /** The real path of the working folder. */
+  target: string;
+  /** What the link looks like on disk now. */
+  state: DevLinkState;
+}
+
+/** What reading the registry found, for {@link judgeDevLinks}. */
+export type DevLinkHealthReading =
+  { entries: readonly DevLinkHealthEntry[] } | { unreadable: true; file?: string };
+
+/** What each state that is not `active` means, said to a person. */
+const DEV_LINK_STATE_WORDS: Record<Exclude<DevLinkState, 'active'>, string> = {
+  'folder-missing': 'its folder is gone',
+  'link-missing': 'its link was removed',
+  'link-replaced': 'something else is in its place',
+};
+
+/**
+ * A value as it can be pasted back into a POSIX shell (bare when safe,
+ * otherwise single-quoted).
+ */
+function devLinkShellWord(value: string): string {
+  return /^[A-Za-z0-9_./,:@%+=-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The `Dev links` health verdict, shared by `dorkos doctor` and
+ * `GET /api/health/deep` so the two cannot disagree. Pure.
+ *
+ * `paths: false` is the content-free form the server returns: package names
+ * only, no folder or project path (the deep-health response is readable by
+ * anything that can reach the server). The CLI, reading on the person's own
+ * machine, passes `paths: true` and names each folder.
+ *
+ * @param reading - The recorded links and their states, or that the file could not be read.
+ * @param opts.paths - Whether to name folders and projects.
+ */
+export function judgeDevLinks(
+  reading: DevLinkHealthReading,
+  opts: { paths: boolean }
+): CheckResult & { status: 'pass' | 'warn' } {
+  if ('unreadable' in reading) {
+    return {
+      label: "Dev links can't be read",
+      status: 'warn',
+      detail:
+        `No package runs from a folder until this file is fixed` +
+        (opts.paths && reading.file ? `: ${reading.file}` : '.'),
+      fix: 'Linking a folder again starts a fresh list and keeps the old file aside:\n  dorkos marketplace link <path>',
+    };
+  }
+  const entries = reading.entries;
+  if (entries.length === 0) return { label: 'No dev links', status: 'pass' };
+  const where = (entry: DevLinkHealthEntry): string =>
+    entry.scope === 'project'
+      ? opts.paths && entry.projectPath
+        ? ` (project ${entry.projectPath})`
+        : ' (one project)'
+      : '';
+  const broken = entries.filter((entry) => entry.state !== 'active');
+  const count = (n: number) => `${n} dev ${n === 1 ? 'link' : 'links'}`;
+  if (broken.length === 0) {
+    return {
+      label: `${count(entries.length)} in use`,
+      status: 'pass',
+      detail: entries
+        .map((entry) => `${entry.name}${where(entry)}${opts.paths ? ` → ${entry.target}` : ''}`)
+        .join('; '),
+    };
+  }
+  return {
+    label: `${count(broken.length)} ${broken.length === 1 ? 'needs' : 'need'} a look`,
+    status: 'warn',
+    detail: broken
+      .map(
+        (entry) =>
+          `${entry.name}${where(entry)}: ${DEV_LINK_STATE_WORDS[entry.state as Exclude<DevLinkState, 'active'>]}` +
+          (opts.paths && entry.state === 'folder-missing' ? ` (${entry.target})` : '')
+      )
+      .join('; '),
+    fix: [
+      'Unlink each one to switch back:',
+      ...broken.map(
+        (entry) =>
+          `  dorkos marketplace unlink ${entry.name}` +
+          (entry.scope === 'project'
+            ? ` --project ${opts.paths && entry.projectPath ? devLinkShellWord(entry.projectPath) : '<project folder>'}`
+            : '')
+      ),
+    ].join('\n'),
+  };
+}
