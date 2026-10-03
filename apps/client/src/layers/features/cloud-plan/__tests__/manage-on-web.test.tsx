@@ -263,7 +263,7 @@ describe('manage on the web', () => {
       expect(await screen.findByRole('status')).toHaveTextContent(
         'Your export is being prepared. You’ll get an email when it’s ready.'
       );
-      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Check again' })).toBeInTheDocument();
     });
 
     it('offers the download once the export is ready, opening it only from a press', async () => {

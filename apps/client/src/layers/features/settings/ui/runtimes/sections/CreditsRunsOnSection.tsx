@@ -129,10 +129,14 @@ export function CreditsRunsOnSectionView({
       </SegmentedControl>
       <p className="text-muted-foreground text-xs" data-testid="credits-runs-on-note">
         {runsOn === 'credits' && !canChooseCredits
-          ? `DorkOS credits can't run ${name} right now, so its new work stops instead of using your own sign-in. Switch to your ${name} sign-in to keep going.`
+          ? `${name} can’t run on credits now, so new work stops. Switch to your own sign-in.`
           : creditsRunsOnNote(name, scope, chosenByDorkos)}
-        {caveat ? ` ${caveat}` : null}
       </p>
+      {caveat ? (
+        <p className="text-muted-foreground text-xs" data-testid="credits-runs-on-caveat">
+          {caveat}
+        </p>
+      ) : null}
       {failure !== null && (
         <p className="text-destructive text-xs" role="alert">
           {failure}

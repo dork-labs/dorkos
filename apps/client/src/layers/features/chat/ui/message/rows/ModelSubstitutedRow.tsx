@@ -24,8 +24,7 @@ export function ModelSubstitutedRow({ fromName, toName }: ModelSubstitutedRowPro
       icon={<Bot aria-hidden="true" className="text-muted-foreground size-3 shrink-0" />}
       label={
         <span className="text-muted-foreground">
-          DorkOS credits don’t cover {fromName}, so this ran on {toName}. You can pick another model
-          from the model menu.
+          DorkOS credits don’t cover {fromName}, so this ran on {toName}. Switch in the model menu.
         </span>
       }
     />
