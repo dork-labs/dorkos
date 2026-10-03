@@ -240,6 +240,8 @@ export class ExtensionServerLifecycle {
       }
 
       const router = Router();
+      // Starting again lifts the stop on its messages (DOR-2683).
+      getAgentSendService()?.extensionStarted(id);
       const { ctx, getScheduledCleanups, releaseListeners, dispose } = createDataProviderContext({
         extensionId: id,
         // A copy that runs by origin runs from its verified snapshot, so what

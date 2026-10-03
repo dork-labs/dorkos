@@ -109,6 +109,9 @@ function chat(facts: Partial<SessionFacts> = {}): SessionFacts {
   };
 }
 
+/** When set, every dispatch waits on it first: a send or retry caught mid-flight. */
+let dispatchGate: Promise<void> | undefined;
+
 /** The canonical id the next dispatch reports, when a case wants one that differs. */
 let canonicalFor: ((sessionId: string) => string) | undefined;
 
@@ -117,6 +120,7 @@ async function fakeDispatch(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
   dispatched.push(opts);
+  if (dispatchGate) await dispatchGate;
   if (opts.countsTowardLaunchCap && capFull) {
     return { refused: 'LAUNCH_CAP_FULL', message: 'Too many agent-started sessions are running.' };
   }
@@ -193,6 +197,7 @@ beforeEach(async () => {
   capFull = false;
   agents = new Map();
   canonicalFor = undefined;
+  dispatchGate = undefined;
   sessions = new Map([[session, chat()]]);
   db = createTestDb();
   queue = new MessageQueueStore(db);
@@ -669,6 +674,70 @@ describe('ctx.agent.send — who it is for', () => {
 });
 
 describe('ctx.agent.send — the extension stops', () => {
+  it('fails a held message whose retry was mid-flight when the extension stopped', async () => {
+    capFull = true;
+    const receipt = await service.send(EXT, { to: session, text: 'soon', idempotencyKey: 'k' });
+    const hold = gate();
+    dispatchGate = hold.wait;
+    const draining = service.drainHeld();
+    await vi.waitFor(() => expect(dispatched).toHaveLength(2));
+
+    // The row reads `queued` mid-retry, so the stop cannot see it as held.
+    service.extensionStopped(EXT);
+    hold.open();
+    await draining;
+    dispatchGate = undefined;
+    capFull = false;
+    await service.drainHeld();
+    await settle();
+
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    expect(events).toEqual([
+      expect.objectContaining({
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        reason: 'stopped',
+      }),
+    ]);
+  });
+
+  it('fails a first send still in flight when the extension stopped, instead of holding it', async () => {
+    capFull = true;
+    const hold = gate();
+    dispatchGate = hold.wait;
+    const sending = service.send(EXT, { to: session, text: 'soon', idempotencyKey: 'k' });
+    await vi.waitFor(() => expect(dispatched).toHaveLength(1));
+
+    service.extensionStopped(EXT);
+    hold.open();
+    const receipt = await sending;
+    dispatchGate = undefined;
+    capFull = false;
+    await service.drainHeld();
+    await settle();
+
+    expect(receipt).toMatchObject({ status: 'failed', failure: 'stopped' });
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    expect(events).toEqual([
+      expect.objectContaining({
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        reason: 'stopped',
+      }),
+    ]);
+  });
+
+  it('holds messages again once the extension starts again', async () => {
+    service.extensionStopped(EXT);
+    service.extensionStarted(EXT);
+    capFull = true;
+
+    const receipt = await service.send(EXT, { to: session, text: 'soon', idempotencyKey: 'k' });
+
+    expect(receipt).toMatchObject({ status: 'queued', reason: 'at_capacity' });
+    expect(store.get(receipt.messageId)?.status).toBe('held');
+  });
+
   it('fails its held messages with `stopped`, and keeps them out of any chat', async () => {
     capFull = true;
     const receipt = await service.send(EXT, { to: session, text: 'soon', idempotencyKey: 'k' });

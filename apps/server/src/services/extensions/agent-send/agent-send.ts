@@ -92,6 +92,7 @@ import {
   FAILURE_MESSAGE,
   MESSAGEABLE_ORIGINS,
   describeInputProblem,
+  receiptOf,
   renderAppMessage,
   type AgentSendRequest,
 } from './agent-send-message.js';
@@ -167,24 +168,6 @@ type Attempt =
   | { kind: 'held' }
   | { kind: 'refused'; code: 'not_found' | 'not_allowed' | 'unavailable'; message: string };
 
-/** The receipt a stored message answers with: the first one, or `failed` once it has. */
-function receiptOf(row: AgentSendRecord): AgentSendReceipt {
-  if (row.status === 'failed') {
-    return {
-      messageId: row.id,
-      status: 'failed',
-      ...(row.failureReason ? { failure: row.failureReason as AgentDeliveryFailureReason } : {}),
-      sessionId: row.sessionId,
-    };
-  }
-  return {
-    messageId: row.id,
-    status: row.receiptStatus,
-    ...(row.receiptStatus === 'queued' && row.receiptReason ? { reason: row.receiptReason } : {}),
-    sessionId: row.sessionId,
-  };
-}
-
 /** The agent-send seam. See the module documentation. */
 export class AgentSendService {
   /** Sends in flight, by extension and key: a racing retry waits for the first. */
@@ -206,6 +189,12 @@ export class AgentSendService {
   private readonly agentLocks = new Map<string, Promise<unknown>>();
   /** Events for messages mid-dispatch, held until the chat's final id is known. */
   private readonly attempting = new Map<string, AgentDeliveryEvent[]>();
+  /**
+   * Extensions stopped since they last started. Their messages are never
+   * held again: a send or retry that comes back "no room" after the stop is
+   * failed with `stopped` instead, so nothing goes out once they are gone.
+   */
+  private readonly stoppedExtensions = new Set<string>();
   /** Messages this process wrote: never "left behind by a restart". */
   private readonly createdHere = new Set<string>();
   private unsubscribeLifecycle: (() => void) | null = null;
@@ -344,9 +333,32 @@ export class AgentSendService {
    */
   extensionStopped(extensionId: string): void {
     if (this.stopped) return;
+    this.stoppedExtensions.add(extensionId);
     for (const row of this.deps.store.listByStatus(['held'])) {
       if (row.extensionId === extensionId) this.fail(row, 'stopped');
     }
+  }
+
+  /**
+   * An extension started (again): its messages may be held for room once more.
+   *
+   * @param extensionId - The extension that started.
+   */
+  extensionStarted(extensionId: string): void {
+    this.stoppedExtensions.delete(extensionId);
+  }
+
+  /**
+   * Hold a message for room, or fail it with `stopped` when its extension
+   * stopped while the attempt was in flight (a stop only fails rows that are
+   * `held` at that instant).
+   */
+  private holdOrFail(row: AgentSendRecord): void {
+    if (this.stoppedExtensions.has(row.extensionId)) {
+      this.fail(row, 'stopped');
+      return;
+    }
+    this.deps.store.update(row.id, { status: 'held' });
   }
 
   /**
@@ -422,11 +434,8 @@ export class AgentSendService {
       throw new AgentSendError(attempt.code, attempt.message);
     }
     if (attempt.kind === 'held') {
-      this.deps.store.update(row.id, {
-        status: 'held',
-        receiptStatus: 'queued',
-        receiptReason: 'at_capacity',
-      });
+      this.deps.store.update(row.id, { receiptStatus: 'queued', receiptReason: 'at_capacity' });
+      this.holdOrFail(row);
     } else {
       // A turn that already started (or even ended) inside the dispatch keeps
       // the status the lifecycle gave it; only the receipt is settled here.
@@ -587,6 +596,7 @@ export class AgentSendService {
     if (this.draining) return this.draining;
     this.draining = (async () => {
       for (const row of this.deps.store.listByStatus(['held'])) {
+        if (this.stoppedExtensions.has(row.extensionId)) continue;
         await this.retry(row).catch((err: unknown) =>
           logger.warn('[agent-send] a held message could not be retried', {
             messageId: row.id,
@@ -629,11 +639,11 @@ export class AgentSendService {
     try {
       attempt = await this.attempt(row, target);
     } catch (err) {
-      this.deps.store.update(row.id, { status: 'held' });
+      this.holdOrFail(row);
       throw err;
     }
     if (attempt.kind === 'refused') this.fail(row, 'undeliverable');
-    else if (attempt.kind === 'held') this.deps.store.update(row.id, { status: 'held' });
+    else if (attempt.kind === 'held') this.holdOrFail(row);
   }
 
   /** Translate a dispatcher lifecycle event into this extension's delivery event. */

@@ -7,7 +7,8 @@
  * @module services/extensions/agent-send/agent-send-message
  */
 import { z } from 'zod';
-import type { AgentDeliveryFailureReason } from '@dorkos/extension-api/server';
+import type { AgentDeliveryFailureReason, AgentSendReceipt } from '@dorkos/extension-api/server';
+import type { AgentSendRecord } from './agent-send-store.js';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { fenceUntrustedBlock, mintFenceNonce } from '../../runtimes/shared/untrusted-fence.js';
 
@@ -132,4 +133,22 @@ export function describeInputProblem(input: unknown): string {
     return `Give the message an idempotencyKey of 1 to ${AGENT_SEND_KEY_MAX} characters.`;
   }
   return 'Send { to, text, idempotencyKey } and an optional context.';
+}
+
+/** The receipt a stored message answers with: the first one, or `failed` once it has. */
+export function receiptOf(row: AgentSendRecord): AgentSendReceipt {
+  if (row.status === 'failed') {
+    return {
+      messageId: row.id,
+      status: 'failed',
+      ...(row.failureReason ? { failure: row.failureReason as AgentDeliveryFailureReason } : {}),
+      sessionId: row.sessionId,
+    };
+  }
+  return {
+    messageId: row.id,
+    status: row.receiptStatus,
+    ...(row.receiptStatus === 'queued' && row.receiptReason ? { reason: row.receiptReason } : {}),
+    sessionId: row.sessionId,
+  };
 }

@@ -2761,6 +2761,30 @@ describe('onDispatchLifecycle — what became of a message, by its id (DOR-2683)
     ]);
   });
 
+  it('reports a mid-launch message the sweep deleted as session_gone when it never starts', async () => {
+    // The runtime knows this chat by another id, so its open turn is filed
+    // under that one and the sweep can take the chat while the launch is
+    // still assembling its context. The launch then fails before any turn.
+    runtime.getInternalSessionId.mockReturnValue(`${session}-internal`);
+    let fail: (() => void) | undefined;
+    vi.mocked(assembleAdditionalContext).mockImplementationOnce(
+      () => new Promise((_resolve, reject) => (fail = () => reject(new Error('no context'))))
+    );
+    runtime.withScenarios([quickTurn()]);
+    const sent = send('never starts', { messageId: 'swept-launching' });
+    await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+
+    noteSessionOrphaned(session);
+    sweepOrphanedMessageQueues({ isLive: () => false });
+    fail!();
+    await sent.catch(() => undefined);
+    await settle();
+
+    expect(seen.filter((e) => e.messageId === 'swept-launching')).toEqual([
+      { phase: 'dropped', messageId: 'swept-launching', reason: 'session_gone' },
+    ]);
+  });
+
   it('reports the rows a vanished session’s sweep deletes', () => {
     const gone = `${session}-gone`;
     store.enqueue({ id: 'swept-one', sessionId: gone, content: 'gone', clientId: TAB });

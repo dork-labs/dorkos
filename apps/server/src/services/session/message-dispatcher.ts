@@ -297,6 +297,12 @@ export type DispatchLifecycleEvent =
   | { phase: 'dropped'; messageId: string; reason: 'removed' | 'session_gone' };
 
 const lifecycleListeners = new Set<(event: DispatchLifecycleEvent) => void>();
+/**
+ * Messages whose rows the orphan sweep deleted while their launch was under
+ * way. If that launch then starts no turn, the drop is the session's going,
+ * not a person's Remove, and is reported as such.
+ */
+const sweptWhileLaunching = new Set<string>();
 
 /**
  * Hear every accepted message start, settle or drop, whoever sent it and
@@ -1264,7 +1270,11 @@ function returnToQueue(plan: DispatchPlan): void {
     // No row to put back (it was removed, or never written): no turn will
     // start for this message, so its caller hears that now, or never (a
     // launch-cap slot is released on it).
-    emitLifecycle({ phase: 'dropped', messageId: plan.messageId, reason: 'removed' });
+    emitLifecycle({
+      phase: 'dropped',
+      messageId: plan.messageId,
+      reason: sweptWhileLaunching.delete(plan.messageId) ? 'session_gone' : 'removed',
+    });
     plan.turn.onSettled?.('failed');
     return;
   }
@@ -1429,6 +1439,7 @@ function launchDispatchInner(
         // not annotate a newer turn's slot.
         const slot = inFlight.get(sessionKey);
         if (slot?.token === token) slot.sawTurnStart = true;
+        sweptWhileLaunching.delete(messageId);
         emitLifecycle({ phase: 'started', messageId, sessionId: sessionKey });
         turn.onTurnStart?.(seq);
       },
@@ -2667,7 +2678,10 @@ export function sweepOrphanedMessageQueues(opts?: {
     const gone = chunk.flatMap((id) => store?.list(id) ?? []);
     removed += store?.deleteForSessions(chunk) ?? 0;
     for (const row of gone) {
-      if (launching.has(row.id)) continue;
+      if (launching.has(row.id)) {
+        sweptWhileLaunching.add(row.id);
+        continue;
+      }
       const entry = pending.get(row.id);
       pending.delete(row.id);
       emitLifecycle({ phase: 'dropped', messageId: row.id, reason: 'session_gone' });
@@ -2758,6 +2772,7 @@ export function resetMessageDispatcher(): void {
   resetSessionKeys();
   dispatchMutex.clear();
   orphanedSessions.clear();
+  sweptWhileLaunching.clear();
 }
 
 // Wired on import rather than from the composition root, deliberately. The
