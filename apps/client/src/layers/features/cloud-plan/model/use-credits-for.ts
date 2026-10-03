@@ -19,7 +19,7 @@
 import type { CloudCreditsChosenBy, CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
 import type { RuntimeCapabilities, RuntimeCreditsSupport } from '@dorkos/shared/agent-runtime';
 import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/runtime';
-import { claudeAccountName } from '@/layers/shared/lib';
+import { claudeAccountName, serverSentence } from '@/layers/shared/lib';
 import { useClaudeAccounts, useCloudCredits, useSetCreditsDefault } from '@/layers/shared/model';
 
 /** One runtime the credits path is wired for, as the switch row reads it. */
@@ -166,27 +166,12 @@ function givenName(
 const NO_REASON = 'Try again in a moment.';
 
 /**
- * The reason a failed turn-on came back with, when the SERVER gave one; the
- * plain fallback otherwise.
- *
- * A transport error's message is not always words meant for a person: a
- * network failure reads "Failed to fetch" or "Load failed", and a response
- * with no JSON body falls back to its status text or "HTTP 500". Only a
- * message the server wrote is passed through — the request got an answer (a
- * numeric `status`), the answer's own JSON `error` field is the message, and
- * it is a sentence (status texts and bare codes never end in one).
+ * The reason a failed turn-on came back with, when the SERVER gave one
+ * ({@link serverSentence}); the plain fallback otherwise.
  *
  * @param error - What the transport rejected with.
  * @internal Exported for testing only.
  */
 export function errorReason(error: unknown): string {
-  if (!(error instanceof Error)) return NO_REASON;
-  const { status, body } = error as Error & { status?: unknown; body?: unknown };
-  const written =
-    typeof status === 'number' &&
-    typeof body === 'object' &&
-    body !== null &&
-    (body as { error?: unknown }).error === error.message &&
-    /[.!?]$/.test(error.message.trim());
-  return written ? error.message : NO_REASON;
+  return serverSentence(error) ?? NO_REASON;
 }

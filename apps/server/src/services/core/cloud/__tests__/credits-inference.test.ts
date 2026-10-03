@@ -137,8 +137,11 @@ describe('a launch that chose credits', () => {
     });
   });
 
-  it('gets the chat endpoint and the token in its own variable for the chat format', async () => {
-    __setCreditsStateForTests({ token, now: live });
+  it('gets the chat endpoint and the token in its own variable once the token serves chat', async () => {
+    __setCreditsStateForTests({
+      token: { ...token, served: ['anthropicMessages', 'openaiChat'] },
+      now: live,
+    });
     const launch = await resolveCreditsLaunch(SPEAKS_CHAT, 'OpenCode', 0);
     expect(launch).toEqual({
       protocol: 'openai-chat-completions',
@@ -150,12 +153,32 @@ describe('a launch that chose credits', () => {
   });
 
   it('is refused for a format the held token does not serve, never sent to another endpoint', async () => {
-    // The fixture token is from a service that does not serve `responses`.
+    // The fixture token predates the `served` list: Anthropic only.
     __setCreditsStateForTests({ token, now: live });
+    for (const [declares, label] of [
+      [SPEAKS_RESPONSES, 'Codex'],
+      [SPEAKS_CHAT, 'OpenCode'],
+    ] as const) {
+      await expect(resolveCreditsLaunch(declares, label, 0)).rejects.toMatchObject({
+        reason: 'not-supported',
+        code: 'credits_unavailable',
+      });
+    }
+    // An endpoint being present is not enough: the format must be listed.
+    __setCreditsStateForTests({
+      token: { ...everyFormat, served: ['anthropicMessages'] },
+      now: () => Date.parse(everyFormat.expiresAt) - 3_600_000,
+    });
     await expect(resolveCreditsLaunch(SPEAKS_RESPONSES, 'Codex', 0)).rejects.toMatchObject({
       reason: 'not-supported',
-      code: 'credits_unavailable',
     });
+  });
+
+  it('keeps Claude Code working on a token that lists nothing, as every token did before', async () => {
+    __setCreditsStateForTests({ token, now: live });
+    expect((await resolveCreditsLaunch(DECLARES, 'Claude Code', 0)).baseUrl).toBe(
+      token.endpoints.anthropicMessages
+    );
   });
 
   it('gets the responses endpoint once the service serves that format', async () => {
@@ -227,13 +250,19 @@ describe('the wiring report', () => {
         { type: 'opencode', ...SPEAKS_CHAT },
         { type: 'codex', ...SPEAKS_RESPONSES },
       ]).runtimes
-    ).toEqual({ 'claude-code': 'wired', opencode: 'wired', codex: 'follow-up' });
-    // A token from a service that does not serve it: still not wired.
+    ).toEqual({ 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' });
+    // A token that lists nothing (every token before the list): Claude Code
+    // only, and nothing offered for OpenCode or Codex.
     __setCreditsStateForTests({ token, now: live });
-    expect(creditsWiringReport([{ type: 'codex', ...SPEAKS_RESPONSES }]).runtimes.codex).toBe(
-      'follow-up'
-    );
+    expect(
+      creditsWiringReport([
+        { type: 'claude-code', ...DECLARES },
+        { type: 'opencode', ...SPEAKS_CHAT },
+        { type: 'codex', ...SPEAKS_RESPONSES },
+      ]).runtimes
+    ).toEqual({ 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' });
     expect(creditsRuntimeWired(SPEAKS_RESPONSES)).toBe(false);
+    expect(creditsRuntimeWired(SPEAKS_CHAT)).toBe(false);
   });
 
   it('reports it as wired once the held token carries its endpoint', () => {
@@ -250,7 +279,7 @@ describe('the wiring report', () => {
 });
 
 describe('which endpoint serves which format', () => {
-  it('answers the two formats every token carries, and the optional one only when present', () => {
+  it('serves a format only when the token lists it and carries its endpoint; unlisted is Anthropic only', () => {
     expect(creditsEndpointFor(token.endpoints, 'anthropic-messages')).toBe(
       token.endpoints.anthropicMessages
     );
@@ -258,9 +287,17 @@ describe('which endpoint serves which format', () => {
       token.endpoints.openaiChat
     );
     expect(creditsEndpointFor(token.endpoints, 'openai-responses')).toBeNull();
+    expect(creditsProtocolServed('anthropic-messages', null)).toBe(true);
+    expect(creditsProtocolServed('anthropic-messages', token)).toBe(true);
+    expect(creditsProtocolServed('openai-chat-completions', null)).toBe(false);
+    expect(creditsProtocolServed('openai-chat-completions', token)).toBe(false);
     expect(creditsProtocolServed('openai-responses', null)).toBe(false);
     expect(creditsProtocolServed('openai-responses', everyFormat)).toBe(true);
-    expect(creditsProtocolServed('openai-chat-completions', null)).toBe(true);
+    expect(creditsProtocolServed('openai-chat-completions', everyFormat)).toBe(true);
+    // Listed but with no endpoint to send it to: not served.
+    expect(
+      creditsProtocolServed('openai-responses', { ...token, served: ['openaiResponses'] })
+    ).toBe(false);
   });
 });
 

@@ -6,7 +6,7 @@
  * config is proved in `credits-mode.binary.test.ts`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { InferenceModel } from '@dork-labs/cloud-api';
+import type { InferenceModel, InferenceToken } from '@dork-labs/cloud-api';
 import tokenFixture from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
 
 const choice = vi.hoisted(() => ({ credits: false }));
@@ -37,7 +37,11 @@ import {
   planTurnWithoutCloud,
 } from '../credits-sidecar.js';
 
-const TOKEN = { ...tokenFixture, expiresAt: '2999-01-01T00:00:00.000Z' };
+const TOKEN: InferenceToken = {
+  ...tokenFixture,
+  served: ['anthropicMessages', 'openaiChat'],
+  expiresAt: '2999-01-01T00:00:00.000Z',
+};
 const LAUNCH = {
   protocol: 'openai-chat-completions' as const,
   baseUrl: TOKEN.endpoints.openaiChat,
@@ -168,6 +172,14 @@ describe('planning the sidecar', () => {
     await expect(planOpenCodeTurn()).rejects.toMatchObject({ reason: 'unreachable' });
     link.linked = false;
     await expect(planOpenCodeTurn()).rejects.toMatchObject({ reason: 'not-linked' });
+  });
+
+  it('plans no paying sidecar and refuses turns while the token does not list chat', async () => {
+    choice.credits = true;
+    __setCreditsStateForTests({ token: { ...TOKEN, served: undefined } });
+    __setCreditsModelsForTests({ catalogVersion: 'cv', models: [model('m', true)] });
+    expect(await planOpenCodeSidecar()).toMatchObject({ mode: 'credits', launch: null });
+    await expect(planOpenCodeTurn()).rejects.toMatchObject({ reason: 'not-supported' });
   });
 
   it('plans a credits turn on the chat endpoint, the token and the models', async () => {

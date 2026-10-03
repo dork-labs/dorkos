@@ -17,7 +17,7 @@ import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { SegmentedControl, SegmentedControlItem } from '@/layers/shared/ui';
 import { useCloudCredits, useSetCreditsDefault } from '@/layers/shared/model';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import { CREDITS_ACCOUNT_LABEL } from '@/layers/shared/lib';
+import { CREDITS_ACCOUNT_LABEL, serverSentence } from '@/layers/shared/lib';
 
 /** The two values the choice can take. */
 type RunsOn = 'own-sign-in' | 'credits';
@@ -50,7 +50,7 @@ export function creditsRunsOnNote(
 ): string {
   const reach =
     scope === 'runtime'
-      ? `A change moves every ${name} conversation, and stops anything ${name} is running at that moment.`
+      ? `A change moves every ${name} conversation, so it can't be made while ${name} is in the middle of a reply.`
       : `A change applies to new ${name} conversations. One already going stays on what it started on.`;
   return chosenByDorkos
     ? `DorkOS chose credits when you linked, because ${name} had no sign-in. ${reach}`
@@ -142,7 +142,11 @@ export function CreditsRunsOnSection({ type }: { type: string }) {
       chosenByDorkos={runsOn === 'credits' && choice?.chosenBy === 'default'}
       scope={scope}
       pending={setDefault.isPending}
-      failure={setDefault.isError ? 'Couldn’t change that. Try again in a moment.' : null}
+      failure={
+        setDefault.isError
+          ? `Couldn’t change that. ${serverSentence(setDefault.error) ?? 'Try again in a moment.'}`
+          : null
+      }
       onChange={(next) => {
         if (next !== runsOn) setDefault.mutate({ runtime: type, useCredits: next === 'credits' });
       }}

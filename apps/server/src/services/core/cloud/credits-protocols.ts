@@ -10,7 +10,7 @@
  *
  * @module services/core/cloud/credits-protocols
  */
-import type { InferenceToken } from '@dork-labs/cloud-api';
+import type { InferenceFormat, InferenceToken } from '@dork-labs/cloud-api';
 import type { RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 
@@ -156,12 +156,22 @@ export function creditsEndpointFor(
   }
 }
 
+/** The `served` name (`InferenceFormatSchema`) of each protocol a runtime declares. */
+const FORMAT_OF: Record<RuntimeCreditsProtocol, InferenceFormat> = {
+  'anthropic-messages': 'anthropicMessages',
+  'openai-chat-completions': 'openaiChat',
+  'openai-responses': 'openaiResponses',
+};
+
+/** What a token that lists nothing is served for: what every service before the list served. */
+const SERVED_WHEN_UNLISTED: readonly InferenceFormat[] = ['anthropicMessages'];
+
 /**
  * Whether the credits endpoint serves a protocol, as far as this server can
- * know: the two formats every token carries are always served, and the
- * optional one only when the live token carries its endpoint. No live token
- * means the optional one is NOT known to be served, which offers nothing: a
- * runtime is never offered credits on the strength of a guess.
+ * know: the live token LISTS its format (`served`) and carries its endpoint.
+ * A token that lists nothing, and no token at all, count as serving the
+ * Anthropic format only, so a runtime is never offered credits on the
+ * strength of an endpoint being present, a guess, or an old service's silence.
  *
  * @param protocol - The protocol a runtime declares.
  * @param token - The live token, or `null` when none is held.
@@ -170,13 +180,9 @@ export function creditsProtocolServed(
   protocol: RuntimeCreditsProtocol,
   token: InferenceToken | null
 ): boolean {
-  switch (protocol) {
-    case 'anthropic-messages':
-    case 'openai-chat-completions':
-      return true;
-    case 'openai-responses':
-      return token !== null && creditsEndpointFor(token.endpoints, protocol) !== null;
-  }
+  const served = token?.served ?? SERVED_WHEN_UNLISTED;
+  if (!served.includes(FORMAT_OF[protocol])) return false;
+  return token === null || creditsEndpointFor(token.endpoints, protocol) !== null;
 }
 
 /**

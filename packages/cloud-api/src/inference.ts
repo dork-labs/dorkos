@@ -24,12 +24,12 @@ export const InferenceTokenRequestSchema = z
  *
  * Each field is a BASE a client appends its format's own path to (`/v1/messages`,
  * `/chat/completions`, `/responses`), and each names a request format, never a
- * supplier. The first two are always present. `openaiResponses` is optional:
- * a service that does not serve that format for this token leaves it out, and
- * **an absent endpoint means that format is not served**. A caller must then
- * not send that format's requests with this token at all — not to another
- * endpoint here, and not anywhere else — so an app offers a runtime that
- * speaks only that format nothing until a token carrying the field arrives.
+ * supplier. The first two are always present; `openaiResponses` is optional.
+ * Whether a format is SERVED is said by the token's `served` list, not by an
+ * endpoint being present: a format the token does not list must not be sent
+ * with this token at all — not to its endpoint, not to another endpoint here,
+ * and not anywhere else — so an app offers a runtime that speaks only that
+ * format nothing until a token lists it.
  */
 export const InferenceEndpointsSchema = z
   .object({
@@ -49,6 +49,18 @@ export const InferenceEndpointsSchema = z
 
 /** Where a minted token may send each request format. */
 export type InferenceEndpoints = z.infer<typeof InferenceEndpointsSchema>;
+
+/**
+ * One request format, named by the endpoint field that carries it. Mechanism,
+ * not catalog: it says which wire a caller encodes in, never which supplier or
+ * model serves it.
+ */
+export const InferenceFormatSchema = z
+  .enum(['anthropicMessages', 'openaiChat', 'openaiResponses'])
+  .describe('A request format, named by its field in `endpoints`.');
+
+/** One request format. */
+export type InferenceFormat = z.infer<typeof InferenceFormatSchema>;
 
 /** What a minted token is allowed to do at once. */
 export const InferenceLimitsSchema = z
@@ -73,6 +85,12 @@ export const InferenceTokenSchema = z
     token: SecretValueSchema,
     expiresAt: TimestampSchema,
     endpoints: InferenceEndpointsSchema,
+    served: z
+      .array(InferenceFormatSchema)
+      .optional()
+      .describe(
+        'The request formats this token may be used for. Absent means `anthropicMessages` only, which is what every service before this field served: an endpoint being present is not enough, the format must be listed here too.'
+      ),
     limits: InferenceLimitsSchema,
     catalogVersion: z
       .string()

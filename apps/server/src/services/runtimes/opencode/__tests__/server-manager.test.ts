@@ -804,7 +804,7 @@ describe('OpenCodeServerManager', () => {
       expect(spawnEnv(1).DORKOS_CREDITS_TOKEN).toBe('tok-it_2');
     });
 
-    it('recycles at once across sides, even with other turns running', async () => {
+    it('recycles at once across sides when nothing else is running', async () => {
       const choice = { credits: true };
       const manager = new OpenCodeServerManager({
         planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
@@ -814,8 +814,43 @@ describe('OpenCodeServerManager', () => {
       const { child } = await bootReady(manager);
       exitOnKill(child);
       choice.credits = false;
-      expect((await manager.prepareTurn(true)).mode).toBe('own');
+      expect((await manager.prepareTurn(false)).mode).toBe('own');
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+
+    it('never ends or re-bills a running turn: a switch across sides waits for it, and says so', async () => {
+      const choice = { credits: false };
+      let running = 1;
+      const manager = new OpenCodeServerManager({
+        planSidecar: async () => (choice.credits ? creditsPlan() : OWN),
+        planTurn: async () => (choice.credits ? creditsPlan() : OWN),
+        runsOnCredits: () => choice.credits,
+      });
+      manager.setBusyProbe(() => running > 0);
+      const { child, client } = await bootReady(manager);
+      exitOnKill(child);
+      choice.credits = true;
+
+      // The choice changed while a turn runs on the person's own sign-in.
+      await manager.syncToChoice();
+      expect(await manager.getClient('/repo')).toBe(client);
+      await expect(manager.prepareTurn(true)).rejects.toMatchObject({
+        code: 'runtime_switch_pending',
+        message: expect.stringContaining(
+          'still finishing a reply on your own sign-in, so it can’t move to DorkOS credits yet'.replace(
+            '’',
+            "'"
+          )
+        ),
+      });
+      expect(child.kill).not.toHaveBeenCalled();
+
+      // The turn ends: the waiting switch happens, and the next boot is credits.
+      running = 0;
+      await manager.turnSettled();
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+      await bootReady(manager);
+      expect(spawnEnv(1).DORKOS_CREDITS_TOKEN).toBe('tok-it_1');
     });
 
     it('drops a credits sidecar on unlink or a new link, and follows a changed choice', async () => {

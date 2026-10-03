@@ -1,11 +1,12 @@
 ---
 covers:
   - "feat(credits): run Codex and OpenCode on DorkOS credits once each one's format is served (DOR-2633)"
+  - 'fix(credits): offer Codex and OpenCode only once the service lists their format, and never switch OpenCode mid-reply (DOR-2633)'
 ---
 
 ### Added
 
-- Codex and OpenCode can run on DorkOS credits once your DorkOS account offers them. Each gets a **Runs on** choice on its card in Settings › Runtimes and a switch under **Use credits for**, and neither shows up anywhere until credits can actually pay for it. For Codex the choice applies to new conversations. For OpenCode it moves all of OpenCode, and switching stops anything it is running at that moment (DOR-2633)
+- Codex and OpenCode are ready to run on DorkOS credits. Each gets a **Runs on** choice on its card in Settings › Runtimes and a switch under **Use credits for**, but neither shows up anywhere until DorkOS credits actually serve it. For Codex the choice applies to new conversations. For OpenCode it moves all of OpenCode, and you can't switch while OpenCode is in the middle of a reply, so nothing it's doing is cut off (DOR-2633)
 
 ### Fixed
 

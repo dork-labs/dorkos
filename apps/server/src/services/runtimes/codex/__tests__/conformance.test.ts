@@ -250,6 +250,7 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 
 import { CodexRuntime } from '../codex-runtime.js';
 import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
+import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 // The fixture whose token serves every format: Codex speaks only `responses`.
 import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
@@ -479,11 +480,11 @@ runtimeConformance(
               token:
                 heldToken === null
                   ? null
-                  : {
+                  : InferenceTokenSchema.parse({
                       ...CREDITS_TOKEN_FIXTURE,
                       token: heldToken,
                       expiresAt: '2999-01-01T00:00:00.000Z',
-                    },
+                    }),
             });
             try {
               const clientsBefore = codexClientOptions.length;

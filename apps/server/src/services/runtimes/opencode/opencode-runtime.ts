@@ -131,6 +131,7 @@ import {
   OPENCODE_CREDITS_PROVIDER_ID,
   OPENCODE_LABEL,
   OPENCODE_OWN_PLAN,
+  OpenCodeSwitchPendingError,
   creditsModelFor,
   openCodeRunsOnCredits,
   type OpenCodeSidecarPlan,
@@ -228,6 +229,9 @@ export class OpenCodeRuntime implements AgentRuntime {
       approvals: this.approvals,
       registry: this.registry,
     };
+    // A switch between own sign-in and DorkOS credits restarts the sidecar,
+    // so it waits while any turn here is running (ADR 261002-221210).
+    this.provider.setBusyProbe?.(() => this.activeTurns.size > 0);
   }
 
   /** Install the internal connector tool boundary after its listener starts. */
@@ -457,6 +461,15 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   /**
+   * Whether any OpenCode turn is running now. Switching OpenCode between its
+   * own sign-in and DorkOS credits restarts its one process, so the switch is
+   * refused while this is true (ADR 261002-221210).
+   */
+  hasRunningTurns(): boolean {
+    return this.activeTurns.size > 0;
+  }
+
+  /**
    * What the sidecar runs this turn on, made so before anything is sent.
    *
    * @param sessionId - The session about to send.
@@ -509,6 +522,13 @@ export class OpenCodeRuntime implements AgentRuntime {
     try {
       plan = await this.prepareSidecar(sessionId);
     } catch (err) {
+      if (err instanceof OpenCodeSwitchPendingError) {
+        yield {
+          type: 'error',
+          data: { message: err.message, code: err.code, category: 'execution_error' },
+        };
+        return;
+      }
       const refusal = creditsRefusalEvent(err);
       if (!refusal) throw err;
       yield refusal;
@@ -673,6 +693,13 @@ export class OpenCodeRuntime implements AgentRuntime {
           this.approvals.clearSession(sessionId);
           this.activeTurns.delete(sessionId);
         }
+        // A Runs on switch that waited for running turns may happen now.
+        void this.provider.turnSettled?.().catch((err) => {
+          logger.warn(
+            '[OpenCodeRuntime] could not apply the waiting Runs on switch',
+            logError(err)
+          );
+        });
       }
     }
   }

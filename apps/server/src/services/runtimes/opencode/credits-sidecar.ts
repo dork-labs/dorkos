@@ -247,3 +247,36 @@ export async function planTurnWithoutCloud(
   if (runsOnCredits()) throw new CreditsUnavailableError('not-supported', OPENCODE_LABEL);
   return OPENCODE_OWN_PLAN;
 }
+
+/** How each side is said in a sentence. */
+const SIDE_NAME: Record<OpenCodeSidecarMode, string> = {
+  own: 'your own sign-in',
+  credits: 'DorkOS credits',
+};
+
+/**
+ * A turn asked for the other side of OpenCode's Runs on choice while another
+ * OpenCode turn is still running on the side it is leaving. Switching restarts
+ * OpenCode, which would end that turn, so the switch waits and this turn is
+ * refused with nothing sent. The message is the sentence a person reads.
+ */
+export class OpenCodeSwitchPendingError extends Error {
+  /** Stable code the chat can key on. */
+  readonly code = 'runtime_switch_pending';
+
+  /**
+   * Build the refusal for one turn.
+   *
+   * @param from - The side OpenCode is running on now.
+   * @param to - The side the person switched to.
+   */
+  constructor(
+    readonly from: OpenCodeSidecarMode,
+    readonly to: OpenCodeSidecarMode
+  ) {
+    super(
+      `OpenCode is still finishing a reply on ${SIDE_NAME[from]}, so it can't move to ${SIDE_NAME[to]} yet and nothing was sent. Send this again once that reply is done.`
+    );
+    this.name = 'OpenCodeSwitchPendingError';
+  }
+}

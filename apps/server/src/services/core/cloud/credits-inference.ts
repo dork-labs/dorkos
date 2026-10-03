@@ -474,7 +474,9 @@ export async function resolveCreditsLaunch(
   const token = await ensureCreditsToken(waitMs);
   if (token === null) throw new CreditsUnavailableError('unreachable', runtimeLabel);
   const baseUrl = creditsEndpointFor(token.endpoints, protocol);
-  if (baseUrl === null) throw new CreditsUnavailableError('not-supported', runtimeLabel);
+  if (baseUrl === null || !creditsProtocolServed(protocol, token)) {
+    throw new CreditsUnavailableError('not-supported', runtimeLabel);
+  }
   return { protocol, baseUrl, token: token.token, tokenId: token.tokenId };
 }
 

@@ -86,7 +86,7 @@ describe('what a change reaches', () => {
       'A change applies to new Codex conversations. One already going stays on what it started on.'
     );
     expect(creditsRunsOnNote('OpenCode', 'runtime', false)).toBe(
-      'A change moves every OpenCode conversation, and stops anything OpenCode is running at that moment.'
+      "A change moves every OpenCode conversation, so it can't be made while OpenCode is in the middle of a reply."
     );
     expect(creditsRunsOnNote('OpenCode', 'runtime', true)).toMatch(
       /^DorkOS chose credits when you linked, because OpenCode had no sign-in\./
@@ -101,6 +101,17 @@ describe('the choice', () => {
     expect(own).toBeChecked();
     await userEvent.click(screen.getByRole('radio', { name: 'DorkOS credits' }));
     await waitFor(() => expect(setCloudCreditsDefault).toHaveBeenCalledWith('opencode', true));
+  });
+
+  it('says the server’s reason when a switch is refused', async () => {
+    const reason =
+      'OpenCode is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.';
+    const { setCloudCreditsDefault } = renderSection('opencode', LINKED);
+    setCloudCreditsDefault.mockRejectedValueOnce(
+      Object.assign(new Error(reason), { status: 409, body: { error: reason } })
+    );
+    await userEvent.click(await screen.findByRole('radio', { name: 'DorkOS credits' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(`Couldn’t change that. ${reason}`);
   });
 
   it('shows credits as the current choice when that is what is recorded', async () => {

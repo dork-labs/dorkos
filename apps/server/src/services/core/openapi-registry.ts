@@ -1523,7 +1523,7 @@ const RuntimeCapabilitiesSchema = z.object({
       protocol: z.enum(RUNTIME_CREDITS_PROTOCOLS),
       scope: z.enum(['conversation', 'runtime']).openapi({
         description:
-          'What a change of the credits choice reaches: `conversation` — new conversations follow it and one already going stays on what it started on; `runtime` — the whole runtime moves, and switching stops what it is running.',
+          'What a change of the credits choice reaches: `conversation` — new conversations follow it and one already going stays on what it started on; `runtime` — the whole runtime moves, so a switch is refused while it is in the middle of a reply.',
       }),
     })
     .optional()

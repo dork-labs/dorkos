@@ -366,9 +366,11 @@ encodes in — all three are de-facto public standards — not a supplier a requ
 Which provider actually serves a request is not part of this contract and is published nowhere.
 
 Each endpoint is a base a client appends its format's own path to. The first two are always
-present. `openaiResponses` arrives optional: a token without it may not be used for that format
-at all, so an app offers a runtime that speaks only that format nothing until a token carrying
-the field arrives. A client one release behind ignores the field and loses nothing.
+present; `openaiResponses` is optional. Which formats a token may be used for is its `served`
+list (`InferenceFormatSchema`, named by the endpoint fields), not the endpoints: an endpoint
+being present is not enough. **An absent `served` means `anthropicMessages` only**, which is what
+every service before the field served, so an old service never starts another format by
+omission. A client one release behind ignores both fields and loses nothing.
 
 ### Where amounts appear, and where they do not
 

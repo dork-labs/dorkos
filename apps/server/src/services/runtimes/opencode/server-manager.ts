@@ -29,6 +29,7 @@ import { logger, logError } from '../../../lib/logger.js';
 import { resolveOpenCodeBinaryPath } from './providers/check-dependencies.js';
 import type { OpenCodeClientProvider } from './sessions/session-mapper.js';
 import {
+  OpenCodeSwitchPendingError,
   openCodeCreditsConfig,
   openCodeCreditsEnv,
   openCodeRunsOnCredits,
@@ -192,12 +193,11 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     if (this.phase === 'stopped') {
       throw new Error('OpenCode sidecar manager has been shut down');
     }
-    // A sidecar on the other side of the person's Runs on choice is never
-    // handed out: switching credits on or off recycles it first, so a client
-    // asked for after the switch always talks to the side that was chosen.
-    if (this.client && this.running && this.running.mode !== this.desiredMode()) {
-      await this.recycle();
-    }
+    // A sidecar on the other side of the person's Runs on choice is recycled
+    // before it is handed out, unless a turn is still running on it: that turn
+    // is never ended or moved by a switch. Reads (lists, history) keep using
+    // it meanwhile, and the switch happens when the last turn settles.
+    if (this.client && this.mismatched() && !this.busy()) await this.recycle();
     if (this.client) return this.client;
     if (this.starting) return this.starting;
     return this.trackBoot(this.boot());
@@ -208,12 +208,39 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     return this.runsOnCredits() ? 'credits' : 'own';
   }
 
+  /** Whether the running sidecar is on the other side of the person's choice. */
+  private mismatched(): boolean {
+    return this.running !== null && this.running.mode !== this.desiredMode();
+  }
+
+  /** Whether any OpenCode turn is running; installed by the runtime. */
+  private busy: () => boolean = () => false;
+
+  /**
+   * Tell the manager how to ask whether any turn is running, so a switch of the
+   * person's Runs on choice waits for those turns rather than ending them.
+   *
+   * @param probe - Answers whether any OpenCode turn is in flight.
+   */
+  setBusyProbe(probe: () => boolean): void {
+    this.busy = probe;
+  }
+
+  /**
+   * A turn ended: apply a switch that was waiting for it, once nothing else is
+   * running on the sidecar.
+   */
+  async turnSettled(): Promise<void> {
+    if (this.mismatched() && !this.busy()) await this.recycle();
+  }
+
   /**
    * Make the sidecar right for a turn about to be sent, and say what it runs
    * on (ADR 261001-000811). On credits this resolves the token and the model
    * list first, and REFUSES (throws `CreditsUnavailableError`) when credits
    * cannot pay, before anything is sent. A sidecar booted on another plan is
-   * recycled: always when it is on the other side, and on a new token or
+   * recycled: when it is on the other side and nothing else is running on it
+   * (otherwise the turn is refused with `OpenCodeSwitchPendingError`), and on a new token or
    * model list only when no other turn is running on it (the token it holds
    * bills the same link and is still good, and recycling would end those turns).
    *
@@ -225,6 +252,12 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     const plan = await this.planTurn();
     if (this.starting) await this.starting.catch(() => undefined);
     const running = this.running;
+    // A switch between sides waits for every running turn: restarting now
+    // would end them, and sending this turn to the old side would run it on
+    // what the person just switched away from. Refused, with nothing sent.
+    if (running && running.mode !== plan.mode && othersActive) {
+      throw new OpenCodeSwitchPendingError(running.mode, plan.mode);
+    }
     if (running && running.fingerprint !== plan.fingerprint) {
       // Kept only for a sidecar that can pay: same side, a token of its own.
       const keep = running.mode === plan.mode && running.launch !== null && othersActive;
@@ -258,7 +291,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    * credits were turned on would keep their keys there.
    */
   async syncToChoice(): Promise<void> {
-    if (this.running && this.running.mode !== this.desiredMode()) await this.recycle();
+    if (this.mismatched() && !this.busy()) await this.recycle();
   }
 
   /** The running sidecar's client, or `null` when no sidecar is up. Never boots. */

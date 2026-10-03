@@ -102,6 +102,17 @@ export interface OpenCodeClientProvider {
    * @param othersActive - Whether another turn is running on the sidecar now.
    */
   prepareTurn?(othersActive: boolean): Promise<OpenCodeSidecarPlan>;
+
+  /**
+   * Install how to ask whether any OpenCode turn is running, so a switch of
+   * the Runs on choice waits for running turns instead of ending them.
+   *
+   * @param probe - Answers whether any turn is in flight.
+   */
+  setBusyProbe?(probe: () => boolean): void;
+
+  /** A turn ended; a switch that was waiting for it may now happen. */
+  turnSettled?(): Promise<void>;
 }
 
 /**

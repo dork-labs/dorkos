@@ -170,6 +170,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   UsageStateSchema: 'how a credit or subscription position reads at a glance',
   UsageGroupBySchema: 'how to group a query',
   InferenceRefusalReasonSchema: 'conditions a caller can act on',
+  InferenceFormatSchema: 'which wire a request is encoded in, named by its endpoint field',
   OrgKindSchema: 'personal or shared; a structural fact',
   MemberRoleSchema: 'what a member may do',
   InvitationStatusSchema: 'how far an invitation has got',

@@ -825,6 +825,33 @@ describe('the inference endpoints, one per request format', () => {
   });
 });
 
+describe('which formats a token is served for', () => {
+  const token = JSON.parse(
+    readFileSync(
+      path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'v1', 'inference', 'token.json'),
+      'utf8'
+    )
+  );
+
+  it('still reads a token minted before the list existed, which lists nothing', () => {
+    // Absent means the first format only: a client reads it that way, so an
+    // old service never starts the other formats by omission.
+    const parsed = contract.InferenceTokenSchema.safeParse(token);
+    expect(parsed.success && parsed.data.served).toBeUndefined();
+  });
+
+  it('carries the formats a service serves, by their endpoint field names', () => {
+    const parsed = contract.InferenceTokenSchema.safeParse({
+      ...token,
+      served: ['anthropicMessages', 'openaiChat'],
+    });
+    expect(parsed.success && parsed.data.served).toEqual(['anthropicMessages', 'openaiChat']);
+    expect(
+      contract.InferenceTokenSchema.safeParse({ ...token, served: ['someOtherWire'] }).success
+    ).toBe(false);
+  });
+});
+
 describe('the inference refusal reasons', () => {
   it('keeps every reason it published before, which is what additive means', () => {
     for (const reason of [

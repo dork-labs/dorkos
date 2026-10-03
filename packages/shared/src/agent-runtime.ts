@@ -798,8 +798,8 @@ export interface RuntimeCreditsSupport {
    *   stays on whatever it started on (Claude Code, Codex: a conversation
    *   lives in the account folder or home that paid for it).
    * - `runtime` — the whole runtime moves, conversations already going
-   *   included, and switching stops anything it is running at that moment
-   *   (OpenCode, whose one sidecar is restarted on the other side).
+   *   included (OpenCode, whose one sidecar is restarted on the other side),
+   *   so a switch is refused while any of its turns is running.
    */
   scope: 'conversation' | 'runtime';
 }

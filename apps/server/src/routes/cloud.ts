@@ -27,7 +27,7 @@
 import { Router, type Response } from 'express';
 import { z } from 'zod';
 import type { Problem } from '@dork-labs/cloud-api';
-import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import { runtimeDisplayName, type RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type {
   CloudAccountDeletionResponse,
   CloudAccountExportResponse,
@@ -69,6 +69,7 @@ import {
 import { creditsKilled } from '../services/core/cloud/credits-availability.js';
 import { creditsRuntimeViews, creditsStatus } from '../services/core/cloud/credits-runtimes.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRouter } from './cloud-communities.js';
 
@@ -502,6 +503,17 @@ router.put('/credits/default', async (req, res) => {
     return res.status(400).json({ error: 'Name a runtime and whether to use credits.' });
   }
   const { runtime, useCredits } = parsed.data;
+  // A runtime whose credits choice moves the whole runtime (OpenCode: one
+  // process, restarted on the other side) is not switched while it is in the
+  // middle of a reply: that reply would end, or run on what was switched away
+  // from. The person is told why, and nothing changes.
+  const live = runtimeRegistry.listRuntimes().find((candidate) => candidate.type === runtime) as
+    { hasRunningTurns?: () => boolean; getCapabilities(): RuntimeCapabilities } | undefined;
+  if (live?.getCapabilities().credits?.scope === 'runtime' && live.hasRunningTurns?.() === true) {
+    return res.status(409).json({
+      error: `${runtimeDisplayName(runtime)} is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.`,
+    });
+  }
   if (useCredits) {
     const view = creditsRuntimeViews().find((candidate) => candidate.type === runtime);
     if (!view?.wired) {

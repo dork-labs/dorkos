@@ -64,6 +64,12 @@ vi.mock('../../services/core/cloud/credits-defaults.js', () => mockCreditsDefaul
 
 // Whether login is on, for the person-only bar on the link check.
 const posture = vi.hoisted(() => ({ authEnabled: false }));
+// The live runtimes the default route asks whether a whole-runtime switch
+// would cut a reply off.
+const liveRuntimes = vi.hoisted(() => ({ list: [] as unknown[] }));
+vi.mock('../../services/core/runtime-registry.js', () => ({
+  runtimeRegistry: { listRuntimes: () => liveRuntimes.list },
+}));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (key === 'auth' ? { enabled: posture.authEnabled } : undefined),
@@ -360,6 +366,32 @@ describe('cloud routes', () => {
         .expect(400);
       expect(res.body.error).toBe("Codex can't run on DorkOS credits yet.");
       expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
+    });
+
+    it('refuses to switch a whole runtime while it is in the middle of a reply, and says why', async () => {
+      liveRuntimes.list = [
+        {
+          type: 'opencode',
+          getCapabilities: () => ({
+            credits: { protocol: 'openai-chat-completions', scope: 'runtime' },
+          }),
+          hasRunningTurns: () => true,
+        },
+      ];
+      try {
+        for (const useCredits of [true, false]) {
+          const res = await request(server)
+            .put('/api/cloud/credits/default')
+            .send({ runtime: 'opencode', useCredits })
+            .expect(409);
+          expect(res.body.error).toBe(
+            'OpenCode is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.'
+          );
+        }
+        expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
+      } finally {
+        liveRuntimes.list = [];
+      }
     });
 
     it('refuses a runtime that declares credits in a format the endpoint does not serve', async () => {

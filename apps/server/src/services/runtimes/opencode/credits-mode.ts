@@ -7,7 +7,11 @@
  * @module services/runtimes/opencode/credits-mode
  */
 import type { CreditsLaunch } from '../../core/cloud/credits-protocols.js';
-import { CreditsUnavailableError, creditsEndpointFor } from '../../core/cloud/credits-protocols.js';
+import {
+  CreditsUnavailableError,
+  creditsEndpointFor,
+  creditsProtocolServed,
+} from '../../core/cloud/credits-protocols.js';
 import {
   creditsModels,
   heldCreditsToken,
@@ -32,7 +36,10 @@ import {
 export async function planOpenCodeSidecar(): Promise<OpenCodeSidecarPlan> {
   if (!openCodeRunsOnCredits()) return OPENCODE_OWN_PLAN;
   const token = heldCreditsToken();
-  const baseUrl = token ? creditsEndpointFor(token.endpoints, 'openai-chat-completions') : null;
+  const baseUrl =
+    token && creditsProtocolServed('openai-chat-completions', token)
+      ? creditsEndpointFor(token.endpoints, 'openai-chat-completions')
+      : null;
   const launch: CreditsLaunch | null =
     token && baseUrl
       ? { protocol: 'openai-chat-completions', baseUrl, token: token.token, tokenId: token.tokenId }

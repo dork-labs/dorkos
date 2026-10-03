@@ -172,7 +172,9 @@ import {
 } from '../../../core/cloud/credits-inference.js';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { planOpenCodeTurn } from '../credits-mode.js';
-import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token.json' with { type: 'json' };
+import { InferenceTokenSchema } from '@dork-labs/cloud-api';
+// The fixture whose token serves every format, chat completions included.
+import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
 import CREDITS_MODELS_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/models.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
@@ -646,11 +648,11 @@ runtimeConformance(
               token:
                 heldToken === null
                   ? null
-                  : {
+                  : InferenceTokenSchema.parse({
                       ...CREDITS_TOKEN_FIXTURE,
                       token: heldToken,
                       expiresAt: '2999-01-01T00:00:00.000Z',
-                    },
+                    }),
             });
             try {
               const sessionId = randomUUID();
