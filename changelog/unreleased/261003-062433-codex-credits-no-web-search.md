@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(credits): turn off Codex web search on DorkOS credits turns (DOR-2679)'
+  - "fix(credits): say Codex can't search the web wherever it can move onto credits, and pin its tools to local kinds (DOR-2679)"
 ---
 
 ### Fixed
