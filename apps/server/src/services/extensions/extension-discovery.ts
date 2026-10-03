@@ -132,15 +132,37 @@ export class ExtensionDiscovery {
     // machine's own install records, never from a file inside the project.
     const installs = await readTrustedInstalls(this.dorkHome);
     // One walk per plugin folder per scan, however many extensions it carries.
-    const inspected = new Map<string, Promise<CopyOnDisk>>();
+    const copies = new Map<string, DiscoveredRecord>();
     for (const rec of pluginRecords) {
       const key = `${rec.scope}:${installRootOf(rec.path)}`;
-      let pending = inspected.get(key);
-      if (!pending) {
-        pending = inspectCopy(rec);
-        inspected.set(key, pending);
-      }
-      const onDisk = await pending;
+      if (!copies.has(key)) copies.set(key, rec);
+    }
+    type Inspection = { ok: true; value: CopyOnDisk } | { ok: false; reason: unknown };
+    const inspected = new Map<string, Inspection>();
+    const inputs = [...copies];
+    let next = 0;
+    // Independent roots can overlap, but each folder's security walk is unchanged.
+    // Keep results in input order and drain every worker before propagating a failure.
+    await Promise.all(
+      Array.from({ length: Math.min(4, inputs.length) }, async () => {
+        while (next < inputs.length) {
+          const [key, rec] = inputs[next++];
+          try {
+            inspected.set(key, { ok: true, value: await inspectCopy(rec) });
+          } catch (reason) {
+            inspected.set(key, { ok: false, reason });
+          }
+        }
+      })
+    );
+    for (const [key] of inputs) {
+      const result = inspected.get(key)!;
+      if (!result.ok) throw result.reason;
+    }
+    for (const rec of pluginRecords) {
+      const result = inspected.get(`${rec.scope}:${installRootOf(rec.path)}`)!;
+      if (!result.ok) throw result.reason;
+      const onDisk = result.value;
       const proof = proveOrigin(rec, installs, onDisk);
       if (proof.origin) {
         rec.trustedOrigin = proof.origin;
