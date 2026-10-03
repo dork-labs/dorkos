@@ -175,9 +175,7 @@ function ExecutionRow({
             className="hover:bg-accent border-border text-muted-foreground mt-1 w-full border-t px-2 py-2 text-left text-xs transition-colors"
             data-testid={`${testId}-inherit`}
           >
-            {serverDefault
-              ? `Using server default: ${serverDefault}. Tap to restore`
-              : 'Use server default: the runtime picks'}
+            {serverDefault ? `Use server default: ${serverDefault}` : 'Use server default'}
           </button>
         </ResponsivePopoverContent>
       </ResponsivePopover>

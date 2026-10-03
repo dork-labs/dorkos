@@ -14,7 +14,7 @@ import {
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createRelayRouter } from '../relay.js';
-import { initAuth, sessionGate } from '../../services/core/auth/index.js';
+import { initAuth, readOwnerAccount, sessionGate } from '../../services/core/auth/index.js';
 import { initConfigManager, configManager } from '../../services/core/config-manager.js';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 
@@ -430,6 +430,38 @@ it('verified ownership ignores forged body/from/replyTo and uniform404 hides oth
   const missing = await request(target.server)
     .get(`/api/relay/messages/${UNKNOWN}/status`)
     .set('Authorization', `Bearer ${otherKey}`);
+  expect(hidden.status).toBe(404);
+  expect(hidden.body).toEqual(missing.body);
+  expect(hidden.headers['cache-control']).toBe('no-store');
+});
+
+// Operational install-owner bars must not restrict each authenticated account's own receipts.
+it('lets a real authenticated noninstallowner publish and read only their own receipt', async () => {
+  db.insert(user).values({ id: 'other-user', name: 'Other', email: 'other@receipt.test' }).run();
+  const otherKey = await key('other-user');
+  const ownerKey = await key('install-owner');
+  configManager.set('auth', { enabled: true });
+  expect(readOwnerAccount()?.id).toBe('install-owner');
+  mount();
+  const post = await send({ ownerUserId: 'install-owner' }).set(
+    'Authorization',
+    `Bearer ${otherKey}`
+  );
+  expect(post.status).toBe(200);
+  expect(rows()).toMatchObject([
+    { message_id: post.body.messageId, owner_user_id: 'other-user', state: 'accepted' },
+  ]);
+  const own = await request(target.server)
+    .get(post.body.statusUrl)
+    .set('Authorization', `Bearer ${otherKey}`);
+  expect(own.status).toBe(200);
+  expect(own.body.messageId).toBe(post.body.messageId);
+  const hidden = await request(target.server)
+    .get(post.body.statusUrl)
+    .set('Authorization', `Bearer ${ownerKey}`);
+  const missing = await request(target.server)
+    .get(`/api/relay/messages/${UNKNOWN}/status`)
+    .set('Authorization', `Bearer ${ownerKey}`);
   expect(hidden.status).toBe(404);
   expect(hidden.body).toEqual(missing.body);
   expect(hidden.headers['cache-control']).toBe('no-store');

@@ -224,7 +224,7 @@ describe('ScheduleRow', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: /Run Now/i })).toHaveAttribute('data-disabled');
+        expect(screen.getByRole('menuitem', { name: /Run now/i })).toHaveAttribute('data-disabled');
       });
     });
   });
@@ -412,7 +412,7 @@ describe('ScheduleRow', () => {
       expect(screen.getByRole('menuitem', { name: /Edit/i })).toBeTruthy();
     });
 
-    expect(screen.getByRole('menuitem', { name: /Run Now/i })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /Run now/i })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: /Delete/i })).toBeTruthy();
   });
 
@@ -457,12 +457,12 @@ describe('ScheduleRow', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Delete scheduled task')).toBeTruthy();
+      expect(screen.getByText('Delete “Daily Review”?')).toBeTruthy();
     });
 
     // Dialog body mentions the schedule name — allow multiple matches (schedule row + dialog)
     expect(screen.getAllByText(/Daily Review/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/cannot be undone/i)).toBeTruthy();
+    expect(screen.getByText(/can’t be undone/)).toBeTruthy();
   });
 
   it('expands run history when expanded prop is true', () => {
@@ -613,7 +613,7 @@ describe('ScheduleRow', () => {
       renderScheduleRow({ ...activeSchedule, runtime: 'codex' });
 
       expect(screen.getByTestId('task-override-chip')).toBeInTheDocument();
-      expect(screen.getByLabelText('Runtime: Codex')).toBeInTheDocument();
+      expect(screen.getByLabelText('Runs on Codex')).toBeInTheDocument();
     });
 
     it('shows the model beside it, shortened the way every other surface shortens it', () => {

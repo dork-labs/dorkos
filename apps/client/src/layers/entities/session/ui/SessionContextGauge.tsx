@@ -126,7 +126,7 @@ export function SessionContextGauge({ session }: { session: Session }) {
             </span>
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-56">
-            Context usage isn’t available for this session yet. Open it to see live usage.
+            No context usage yet. Open the session to see it.
           </TooltipContent>
         </Tooltip>
       )}

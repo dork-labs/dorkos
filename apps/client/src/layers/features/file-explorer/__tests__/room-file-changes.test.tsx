@@ -185,7 +185,7 @@ describe('renaming a room’s file', () => {
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'There’s already something called “plan.md” there, so nothing was changed. Pick another name.'
+        '“plan.md” already exists there, so nothing changed. Pick another name.'
       )
     );
     expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
@@ -204,7 +204,7 @@ describe('renaming a room’s file', () => {
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'Somebody changed this room’s files outside DorkOS, so changes are paused until that is sorted out. The warning above the files says how.'
+        'Changes are paused. Somebody changed these files outside DorkOS. See the warning above.'
       )
     );
     expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
@@ -286,13 +286,12 @@ describe('deleting from a room’s files', () => {
 
     await press('notes.md', 'Delete');
     const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent('Delete this file?');
-    expect(dialog).toHaveTextContent(
-      '“notes.md” leaves the room’s files. The room’s history keeps a copy, so an agent or git can bring it back if you need it.'
-    );
+    expect(dialog).toHaveTextContent('Delete “notes.md”?');
+    expect(dialog).toHaveTextContent('“notes.md” leaves the room’s files.');
+    expect(dialog).toHaveTextContent('The room’s history keeps a copy. An agent can restore it.');
     expect(transport.deleteRoomFile).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete file' }));
     await waitFor(() =>
       expect(transport.deleteRoomFile).toHaveBeenCalledWith(ROOM_ID, {
         path: 'notes.md',
@@ -311,7 +310,7 @@ describe('deleting from a room’s files', () => {
 
     await press('designs', 'Delete');
     const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent('Delete this folder?');
+    expect(dialog).toHaveTextContent('Delete “designs”?');
     await waitFor(() =>
       expect(dialog).toHaveTextContent('“designs” and the 2 files in it leave the room’s files.')
     );
@@ -324,12 +323,12 @@ describe('deleting from a room’s files', () => {
 
     await press('notes.md', 'Delete');
     fireEvent.click(
-      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete file' })
     );
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'Somebody else is changing this room’s files right now, so nothing was changed. Try again in a moment.'
+        'Somebody else is changing these files. Nothing changed. Try again in a moment.'
       )
     );
     expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
@@ -346,7 +345,7 @@ describe('deleting from a room’s files', () => {
 
     await press('plan.md', 'Delete');
     fireEvent.click(
-      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete file' })
     );
     await waitFor(() => expect(document.activeElement).toBe(tree));
   });
@@ -372,7 +371,7 @@ describe('deleting from a room’s files', () => {
 
     await press('notes.md', 'Delete');
     fireEvent.click(
-      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete file' })
     );
 
     const race = await screen.findByText(
@@ -407,7 +406,7 @@ describe('deleting from a room’s files', () => {
 
     await press('notes.md', 'Delete');
     fireEvent.click(
-      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete file' })
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Open their version' }));
 
@@ -500,7 +499,7 @@ describe('uploading into a room’s files', () => {
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'One upload can carry up to 20 files, so nothing was uploaded. Try again with fewer.'
+        'Nothing was uploaded. One upload takes up to 20 files.'
       )
     );
     expect(transport.uploadRoomFiles).not.toHaveBeenCalled();
@@ -535,7 +534,7 @@ describe('uploading into a room’s files', () => {
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'This room’s files are already as large as they are allowed to get, so nothing was changed. Delete something first.'
+        'This room’s files are full, so nothing changed. Delete something first.'
       )
     );
     expect(screen.queryByRole('treeitem', { name: 'big.bin' })).not.toBeInTheDocument();
@@ -592,7 +591,7 @@ describe('making new files in a room', () => {
     fireEvent.keyDown(folder, { key: 'Enter' });
 
     expect(
-      await screen.findByText('Name its first file. The folder appears when you save it.')
+      await screen.findByText('Name its first file. The folder appears on save.')
     ).toBeInTheDocument();
     const first = screen.getByRole('textbox', { name: 'First file in plans' });
     fireEvent.change(first, { target: { value: 'q4.md' } });
@@ -621,7 +620,7 @@ describe('making new files in a room', () => {
     fireEvent.keyDown(name, { key: 'Enter' });
 
     expect(toastError).toHaveBeenCalledWith(
-      'There’s already “Notes.md” there, and a name that differs only in capital letters is the same file on some computers. Pick another name.'
+      '“Notes.md” is already there. Some computers ignore capital letters in names. Pick another name.'
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -664,7 +663,7 @@ describe('making new files in a room', () => {
     fireEvent.keyDown(name, { key: 'Enter' });
 
     expect(toastError).toHaveBeenCalledWith(
-      'There’s already something called “notes.md” there, so nothing was changed. Pick another name.'
+      '“notes.md” already exists there, so nothing changed. Pick another name.'
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });

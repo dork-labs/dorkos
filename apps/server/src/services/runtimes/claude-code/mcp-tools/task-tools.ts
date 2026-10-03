@@ -20,6 +20,7 @@ import {
 } from '@dorkos/shared/schemas';
 import type { EffortLevel, PermissionMode, UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify } from '@dorkos/skills/slug';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 import {
@@ -27,6 +28,7 @@ import {
   taskWorkOf,
 } from '../../../tasks/schedule-permission-clamp.js';
 import {
+  CREDITS_SCHEDULE_AGENT_REFUSAL,
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
   OPERATOR_ONLY_TASK_CODE,
@@ -434,6 +436,10 @@ export function createCreateScheduleHandler(
     if (err) return err;
     const refusal = refuseOperatorOnlyTaskFields(args);
     if (refusal) return refusal;
+    // DorkOS credits are the owner's to choose, never an agent's (DOR-2678).
+    if (args.account === CREDITS_ACCOUNT_ID) {
+      return jsonContent(CREDITS_SCHEDULE_AGENT_REFUSAL, true);
+    }
     // `agentId` is not a create field — `target` is — and a silent strip is what
     // sent an agent looking for another way to own its own task.
     if (args.agentId !== undefined) {
@@ -605,6 +611,18 @@ export function createUpdateScheduleHandler(
     // person approved.
     const existing = deps.taskStore!.getTask(args.id);
     if (!existing) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+
+    // Naming DorkOS credits, or switching a schedule on them back on, starts
+    // spending the DorkOS account's money: the owner's call, never an agent's
+    // (DOR-2678). `enabled` is otherwise agent-writable.
+    const runsOnCredits =
+      (args.account !== undefined ? args.account : existing.account) === CREDITS_ACCOUNT_ID;
+    if (
+      args.account === CREDITS_ACCOUNT_ID ||
+      (runsOnCredits && args.enabled === true && !existing.enabled)
+    ) {
+      return jsonContent(CREDITS_SCHEDULE_AGENT_REFUSAL, true);
+    }
 
     // A new timing and the package's own timing are two different answers to
     // one question; the call has to pick (DOR-2302).

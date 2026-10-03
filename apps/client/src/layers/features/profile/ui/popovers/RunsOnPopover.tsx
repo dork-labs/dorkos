@@ -65,7 +65,7 @@ export function RunsOnPopover({ member }: ProfilePickContentProps) {
   return (
     <div className="space-y-3 p-1" data-slot="profile-runs-on">
       <div className="space-y-1">
-        <div className={LABEL_CLASS}>Runtime</div>
+        <div className={LABEL_CLASS}>Runs on</div>
         <Select
           value={agent.runtime ?? 'claude-code'}
           onValueChange={(value) => update({ runtime: value } as Partial<AgentManifest>)}

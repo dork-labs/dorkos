@@ -19,7 +19,7 @@ export function NoAgentSelected() {
       </div>
       <div className="space-y-1">
         <p className="text-sm font-medium">No agent selected</p>
-        <p className="text-muted-foreground text-xs">Select an agent to view its profile.</p>
+        <p className="text-muted-foreground text-xs">Pick an agent to see its profile.</p>
       </div>
     </div>
   );
@@ -44,7 +44,7 @@ export function AgentNotFound({ agentPath }: AgentNotFoundProps) {
       <div className="space-y-1">
         <p className="text-sm font-medium">Agent not found</p>
         <p className="text-muted-foreground font-mono text-xs break-all">{agentPath}</p>
-        <p className="text-muted-foreground text-xs">The agent at this path could not be loaded.</p>
+        <p className="text-muted-foreground text-xs">Nothing here could be opened as an agent.</p>
       </div>
     </div>
   );

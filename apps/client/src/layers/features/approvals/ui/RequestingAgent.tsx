@@ -81,7 +81,7 @@ const UNKNOWN_ORIGIN_LABEL = 'DorkOS doesn’t know who asked';
  * would sit directly above that card's own "Proposed by an agent". Naming what
  * is known, and only that, is the same rule the origin labels follow.
  */
-const AGENT_UNNAMED_LABEL = 'An agent asked — DorkOS can’t say which';
+const AGENT_UNNAMED_LABEL = 'An agent asked. DorkOS can’t tell which.';
 
 /**
  * What to say about an asker nothing named.

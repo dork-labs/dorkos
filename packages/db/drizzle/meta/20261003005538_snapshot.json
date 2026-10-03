@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "361359f7-ab0e-4b08-8f98-182b0480d0e2",
+  "id": "91c32db2-f34a-46bc-a1e6-493af5d8b5ee",
   "prevId": "7bf70ddf-f17f-43e5-8f55-9bedb9c462f2",
   "tables": {
     "a2a_tasks": {
@@ -428,6 +428,13 @@
         },
         "decided_at": {
           "name": "decided_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "decided_by_user_id": {
+          "name": "decided_by_user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -1180,177 +1187,6 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
-    },
-    "relay_delivery_receipts": {
-      "name": "relay_delivery_receipts",
-      "columns": {
-        "message_id": {
-          "name": "message_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "boot_epoch": {
-          "name": "boot_epoch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "accepted_at": {
-          "name": "accepted_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "settled_at": {
-          "name": "settled_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "failure_code": {
-          "name": "failure_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "failure_message": {
-          "name": "failure_message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_relay_delivery_receipts_expiry": {
-          "name": "idx_relay_delivery_receipts_expiry",
-          "columns": [
-            "expires_at",
-            "message_id"
-          ],
-          "isUnique": false
-        },
-        "idx_relay_delivery_receipts_recovery": {
-          "name": "idx_relay_delivery_receipts_recovery",
-          "columns": [
-            "state",
-            "boot_epoch"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "relay_delivery_receipt_state": {
-          "name": "relay_delivery_receipt_state",
-          "value": "\"relay_delivery_receipts\".\"state\" IN ('accepted', 'delivered', 'failed', 'outcome_unknown')"
-        },
-        "relay_delivery_receipt_settlement": {
-          "name": "relay_delivery_receipt_settlement",
-          "value": "\n      (\"relay_delivery_receipts\".\"state\" = 'accepted' AND \"relay_delivery_receipts\".\"settled_at\" IS NULL AND \"relay_delivery_receipts\".\"failure_code\" IS NULL AND \"relay_delivery_receipts\".\"failure_message\" IS NULL)\n      OR (\"relay_delivery_receipts\".\"state\" = 'delivered' AND \"relay_delivery_receipts\".\"settled_at\" IS NOT NULL AND \"relay_delivery_receipts\".\"failure_code\" IS NULL AND \"relay_delivery_receipts\".\"failure_message\" IS NULL)\n      OR (\"relay_delivery_receipts\".\"state\" = 'failed' AND \"relay_delivery_receipts\".\"settled_at\" IS NOT NULL AND \"relay_delivery_receipts\".\"failure_code\" IS NOT NULL AND \"relay_delivery_receipts\".\"failure_code\" IN ('at_capacity', 'chat_unavailable', 'rate_limited', 'budget_exceeded', 'initiate_denied', 'untrusted_bridge_principal', 'turn_ceiling', 'adapter_unavailable', 'not_dispatched', 'adapter_failed') AND \"relay_delivery_receipts\".\"failure_message\" IS NOT NULL)\n      OR (\"relay_delivery_receipts\".\"state\" = 'outcome_unknown' AND \"relay_delivery_receipts\".\"settled_at\" IS NOT NULL AND \"relay_delivery_receipts\".\"failure_code\" IS NOT NULL AND \"relay_delivery_receipts\".\"failure_code\" = 'observation_lost' AND \"relay_delivery_receipts\".\"failure_message\" IS NOT NULL)\n    "
-        }
-      }
-    },
-    "relay_receipt_observer_owner": {
-      "name": "relay_receipt_observer_owner",
-      "columns": {
-        "singleton_key": {
-          "name": "singleton_key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "owner_token": {
-          "name": "owner_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "pid": {
-          "name": "pid",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "hostname": {
-          "name": "hostname",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "relay_receipt_observer_owner_owner_token_unique": {
-          "name": "relay_receipt_observer_owner_owner_token_unique",
-          "columns": [
-            "owner_token"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "relay_receipt_observer_singleton": {
-          "name": "relay_receipt_observer_singleton",
-          "value": "\"relay_receipt_observer_owner\".\"singleton_key\" = 'observer'"
-        }
-      }
     },
     "agent_denials": {
       "name": "agent_denials",

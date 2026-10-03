@@ -395,6 +395,8 @@ export type ApprovalConsumeResult =
       capabilityId: string;
       requestedBy?: string;
       authorityBindingDigest?: string;
+      /** The signed-in account that said yes; absent when nobody was signed in. */
+      decidedByUserId?: string;
     }
   | { outcome: 'pending'; approvalId: string; expiresAt: string }
   | { outcome: 'denied'; approvalId: string; reason?: string }
@@ -827,6 +829,7 @@ export class ApprovalService {
       createdAt: new Date(now).toISOString(),
       expiresAt: new Date(now + this.ttlMs).toISOString(),
       decidedAt: null,
+      decidedByUserId: null,
       consumedAt: null,
       // A delivery ADDRESS, not an authority: where to tell the answer to, when
       // the asking surface had a session at all.
@@ -857,10 +860,12 @@ export class ApprovalService {
    * Record the operator's yes.
    *
    * @param approvalId - ULID of the approval to grant.
+   * @param decidedByUserId - The signed-in account saying yes, when there is
+   *   one (login on). Kept on the row and handed back when the yes is spent.
    * @returns Why the call failed, or `undefined` when the approval is now granted.
    */
-  grant(approvalId: string): ApprovalDecisionFailure | undefined {
-    return this.decide(approvalId, 'granted');
+  grant(approvalId: string, decidedByUserId?: string): ApprovalDecisionFailure | undefined {
+    return this.decide(approvalId, 'granted', undefined, decidedByUserId);
   }
 
   /**
@@ -987,6 +992,7 @@ export class ApprovalService {
       approvalId: row.id,
       capabilityId: row.capabilityId,
       ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
+      ...(row.decidedByUserId ? { decidedByUserId: row.decidedByUserId } : {}),
       // Both halves or neither: a label with no id behind it is the shape this
       // field exists to avoid, since the id is what makes the name checkable.
       ...(row.subjectKind && row.subjectLabel && row.subjectId
@@ -1609,7 +1615,8 @@ export class ApprovalService {
   private decide(
     approvalId: string,
     decision: 'granted' | 'denied',
-    reason?: string
+    reason?: string,
+    decidedByUserId?: string
   ): ApprovalDecisionFailure | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     if (!row) return 'unknown';
@@ -1625,6 +1632,7 @@ export class ApprovalService {
         state: decision,
         decidedAt: new Date().toISOString(),
         denyReason: decision === 'denied' ? (reason ?? null) : null,
+        decidedByUserId: decision === 'granted' ? (decidedByUserId ?? null) : null,
       })
       // Conditional on the row still being pending and unspent, so two operators
       // clicking at once cannot both record a decision.

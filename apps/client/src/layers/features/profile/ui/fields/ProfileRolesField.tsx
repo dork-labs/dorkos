@@ -62,7 +62,7 @@ export function ProfileRolesField() {
       <FieldCardContent className="space-y-3">
         <SettingRow
           label="What kind of work you do"
-          description="Read only by DorkBot and your other agents, on this machine. Nobody else sees it."
+          description="Only DorkBot and your agents read this. It stays on this machine."
           orientation="vertical"
         >
           <ProfileRolePicker
@@ -73,7 +73,7 @@ export function ProfileRolesField() {
             busy={status === 'saving' || isLoading}
           />
         </SettingRow>
-        {status === 'error' && <FieldNote tone="error">Could not save that. Try again.</FieldNote>}
+        {status === 'error' && <FieldNote tone="error">Couldn’t save that. Try again.</FieldNote>}
         {status !== 'error' && lastSaved && sameRoles(selected, lastSaved) && (
           <FieldNote tone="ok">Saved.</FieldNote>
         )}

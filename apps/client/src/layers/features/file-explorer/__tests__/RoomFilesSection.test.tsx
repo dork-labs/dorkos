@@ -470,7 +470,7 @@ describe('RoomFilesSection previews', () => {
 
     fireEvent.click(await screen.findByRole('treeitem', { name: 'logo.png' }));
     expect(
-      await screen.findByText('This isn’t a text file, so it can’t be shown or edited here.')
+      await screen.findByText('Only text files can be shown or edited here.')
     ).toBeInTheDocument();
   });
 
@@ -486,7 +486,7 @@ describe('RoomFilesSection previews', () => {
     renderSection(transport);
 
     fireEvent.click(await screen.findByRole('treeitem', { name: 'dump.json' }));
-    expect(await screen.findByText(/larger than 5\.0 MB/)).toBeInTheDocument();
+    expect(await screen.findByText(/Files over 5\.0 MB/)).toBeInTheDocument();
   });
 
   it('renders the API`s own sentence for a link it will not follow', async () => {

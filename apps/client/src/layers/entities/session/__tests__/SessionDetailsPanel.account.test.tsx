@@ -119,7 +119,7 @@ describe('SessionDetailsPanel — the account a session belongs to (DOR-1970)', 
 
     // Wait for a row that is always present, so the absence below is asserted
     // against a rendered panel rather than against one that has not painted.
-    expect(await screen.findByText('Runtime')).toBeInTheDocument();
+    expect(await screen.findByText('Runs on')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('Account')).not.toBeInTheDocument());
   });
 });

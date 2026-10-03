@@ -16,6 +16,7 @@ import {
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { parseBody } from '../lib/route-utils.js';
+import { isInstallOwner } from '../services/core/auth/install-owner.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { verifyRequestAuth, type RequestUser } from '../services/core/auth/session-gate.js';
 import {
@@ -56,6 +57,11 @@ export interface ConnectorOwnerBoundaryDeps {
   readonly loginEnabled: () => boolean;
   /** Exact DorkOS browser origins; defaults to the server-owned static set. */
   readonly trustedOrigins?: () => readonly string[];
+  /**
+   * Whether a signed-in account owns this install; defaults to the shared
+   * `isInstallOwner`. Injected for deterministic route evidence.
+   */
+  readonly isAccountOwner?: (user: RequestUser | undefined) => boolean;
 }
 
 /** Dependencies for the connector owner-management HTTP boundary. */
@@ -116,7 +122,8 @@ function refuseCommonMachineSignals(
 }
 
 /**
- * Resolve a browser/local operator while refusing program, agent, and approval-token callers.
+ * Resolve a browser/local operator while refusing program, agent, and approval-token callers,
+ * and, with login on, any signed-in account that does not own this install.
  *
  * @param req - Incoming request containing only server-verified identity signals.
  * @param res - Response carrying the session gate's verified user.
@@ -156,6 +163,17 @@ export function resolveConnectorOperator(
       res,
       'operator_cookie_required',
       'Sign in to the DorkOS app to make this account decision.'
+    );
+    return undefined;
+  }
+  // Connections reach their apps through this computer's DorkOS account, so
+  // with login on they are the owner's alone, never another signed-in
+  // account's (DOR-2678) — the same owner `/api/cloud/*` asks for.
+  if (deps.loginEnabled() && !(deps.isAccountOwner ?? isInstallOwner)(user)) {
+    sendOwnerRefusal(
+      res,
+      'owner_only',
+      'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
     );
     return undefined;
   }

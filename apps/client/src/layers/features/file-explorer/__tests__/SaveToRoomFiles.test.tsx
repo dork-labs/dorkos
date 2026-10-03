@@ -168,7 +168,7 @@ describe('Save to room files', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Save to the top folder' }));
     expect(
-      await screen.findByText('That file isn’t in this room’s chat any more.')
+      await screen.findByText('That file is no longer in this room’s chat.')
     ).toBeInTheDocument();
   });
 });

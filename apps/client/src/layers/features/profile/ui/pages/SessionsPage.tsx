@@ -87,7 +87,7 @@ export function SessionsPage({ member }: ProfilePageContentProps) {
   if (sessions.length === 0) {
     return (
       <p className="text-muted-foreground text-sm">
-        No conversations yet. {member.displayName} starts one the first time you message it.
+        No conversations yet. Message {member.displayName} to start one.
       </p>
     );
   }

@@ -191,7 +191,7 @@ export function ElicitationPrompt({
           </Button>
           {urlOpened && (
             <Button size="sm" onClick={handleUrlAccept} disabled={submitting}>
-              {submitting ? 'Submitting…' : 'Done'}
+              {submitting ? 'Sending…' : 'Done'}
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={handleDecline} disabled={submitting}>
@@ -248,7 +248,7 @@ export function ElicitationPrompt({
           )}
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={handleFormSubmit} disabled={submitting}>
-              {submitting ? 'Submitting…' : 'Accept'}
+              {submitting ? 'Sending…' : 'Accept'}
             </Button>
             <Button size="sm" variant="ghost" onClick={handleDecline} disabled={submitting}>
               Decline

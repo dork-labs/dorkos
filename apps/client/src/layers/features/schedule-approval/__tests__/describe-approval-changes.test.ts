@@ -10,7 +10,7 @@ describe('describeApprovalChanges (DOR-2323)', () => {
         { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'schedule' },
       ])
     ).toEqual([
-      { label: 'Runtime', from: 'the agent’s own', to: 'codex', unbroken: true },
+      { label: 'Runs on', from: 'the agent’s own', to: 'codex', unbroken: true },
       // A model name is one word; the card never breaks it at a hyphen.
       { label: 'Model', from: 'claude-sonnet-4', to: 'claude-opus-4', unbroken: true },
     ]);

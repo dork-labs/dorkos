@@ -47,7 +47,7 @@ export const taskFilterSchema = createFilterSchema<Task>({
     labels: {
       active: 'Active',
       paused: 'Paused',
-      pending_approval: 'Pending Approval',
+      pending_approval: 'Pending approval',
     },
     colors: {
       active: 'text-status-success',

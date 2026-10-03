@@ -62,7 +62,7 @@ describe('SessionInspector — without a session', () => {
   it('says so instead of rendering empty rows', () => {
     mockSessionId.mockReturnValue(null);
     render(<SessionInspector />);
-    expect(screen.getByText('Open a session to see what it is doing.')).toBeInTheDocument();
+    expect(screen.getByText('Open a session to inspect it.')).toBeInTheDocument();
     expect(screen.queryByText('Live')).not.toBeInTheDocument();
   });
 });
@@ -179,7 +179,7 @@ describe('SessionInspector — the resolved group', () => {
     expect(valueFor('Effort')).toBe('high');
     expect(valueFor('Fast mode')).toBe('off');
     expect(valueFor('Permissions')).toBe('plan');
-    expect(valueFor('Session id')).toBe('session-42');
+    expect(valueFor('Session ID')).toBe('session-42');
     expect(valueFor('Git')).toBe('dor-452 · changed');
   });
 

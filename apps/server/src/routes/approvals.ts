@@ -491,7 +491,12 @@ export function createApprovalsRouter(
       }
     }
 
-    const failure = approvals.grant(approvalId);
+    // Who said yes, kept with the yes: a change only the owner of this DorkOS
+    // may make is checked against it when the yes is spent (DOR-2678).
+    const failure = approvals.grant(
+      approvalId,
+      authority.posture === 'signed-in-operator' ? authority.decidedBy : undefined
+    );
     if (failure) {
       // Another answer won the card while the setting was being saved: the yes
       // did not happen, so neither may the setting it came with.

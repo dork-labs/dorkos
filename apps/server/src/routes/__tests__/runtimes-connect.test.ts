@@ -417,7 +417,7 @@ describe('runtime connect endpoints', () => {
     it('rejects a runtime that does not support sign-in without spawning', async () => {
       const res = await request(server).post('/api/runtimes/opencode/login');
       expect(res.status).toBe(400);
-      expect(res.body.ok).toBe(false);
+      expect(res.body).toEqual({ ok: false, error: 'OpenCode does not support sign-in.' });
       expect(delegateRuntimeLogin).not.toHaveBeenCalled();
     });
 
@@ -545,7 +545,7 @@ describe('runtime connect endpoints', () => {
     it('forwards an accountRoot for codex too — the route does not gate by type, the service does', async () => {
       vi.mocked(delegateRuntimeLogin).mockResolvedValue({
         ok: false,
-        error: '"codex" does not support pinning a specific account.',
+        error: 'Codex does not support pinning a specific account.',
       });
       const res = await request(server)
         .post('/api/runtimes/codex/login')
@@ -556,7 +556,7 @@ describe('runtime connect endpoints', () => {
       });
       expect(res.body).toEqual({
         ok: false,
-        error: '"codex" does not support pinning a specific account.',
+        error: 'Codex does not support pinning a specific account.',
       });
     });
   });

@@ -34,8 +34,7 @@ const MAX_POLL_REQUEST_FAILURES = 5;
 const POLL_RETRY_NOTICE = 'Couldn’t check the sign-in. Retrying.';
 
 /** What a person reads once the poll requests have failed too many times running. */
-const POLL_UNREACHABLE_MESSAGE =
-  'We couldn’t check whether the sign-in finished. Try again in a moment.';
+const POLL_UNREACHABLE_MESSAGE = 'Couldn’t check if the sign-in finished. Try again in a moment.';
 
 /**
  * The sign-in flow's steps, in order. The one invariant is consent ordering: the
@@ -222,7 +221,7 @@ function pollErrorMessage(
   data: McpSigninPollResult | undefined,
   requestFailures: number
 ): string | null {
-  if (data?.status === 'failed') return data.error ?? 'The sign-in did not complete.';
+  if (data?.status === 'failed') return data.error ?? 'Sign-in didn’t finish. Try again.';
   if (requestFailures >= MAX_POLL_REQUEST_FAILURES) return POLL_UNREACHABLE_MESSAGE;
   return null;
 }
@@ -378,7 +377,7 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
             ...IDLE_STATE,
             phase: 'failed',
             startFailure: describeSigninError({
-              message: 'DorkOS could not build a sign-in link for this server.',
+              message: 'Couldn’t make a sign-in link for this server.',
             }),
           });
           return;

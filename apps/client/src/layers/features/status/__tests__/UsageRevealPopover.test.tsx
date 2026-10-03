@@ -28,12 +28,12 @@ describe('UsageRevealPopover (DOR-109 /context)', () => {
   it('shows the honest empty state when the session has no usage yet', () => {
     // A cold session (e.g. Codex before any turn) has no usage — never a blank popover.
     render(<UsageRevealPopover usage={null} open onOpenChange={vi.fn()} />);
-    expect(screen.getByText('No usage data for this session yet.')).toBeInTheDocument();
+    expect(screen.getByText('No usage yet.')).toBeInTheDocument();
   });
 
   it('shows the honest empty state when usage carries no renderable metric', () => {
     render(<UsageRevealPopover usage={{ kind: 'pay-as-you-go' }} open onOpenChange={vi.fn()} />);
-    expect(screen.getByText('No usage data for this session yet.')).toBeInTheDocument();
+    expect(screen.getByText('No usage yet.')).toBeInTheDocument();
   });
 
   it('reveals the usage & cost detail when the session has usage', () => {
@@ -51,7 +51,7 @@ describe('UsageRevealPopover (DOR-109 /context)', () => {
 
   it('renders nothing while closed', () => {
     render(<UsageRevealPopover usage={null} open={false} onOpenChange={vi.fn()} />);
-    expect(screen.queryByText('No usage data for this session yet.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No usage yet.')).not.toBeInTheDocument();
   });
 });
 
@@ -131,7 +131,7 @@ describe('UsageRevealPopover — the account windows (spec claude-account-ui §6
       />
     );
     expect(screen.getByText('Estimated session cost')).toBeInTheDocument();
-    expect(screen.getByText('Estimated — no price was listed for this model.')).toBeInTheDocument();
+    expect(screen.getByText('Estimated. This model has no listed price.')).toBeInTheDocument();
     expect(screen.getByText('Using overage capacity')).toBeInTheDocument();
     expect(screen.getByText('Rate limit reached')).toBeInTheDocument();
   });

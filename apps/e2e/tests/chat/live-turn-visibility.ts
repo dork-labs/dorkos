@@ -192,7 +192,7 @@ export function registerLiveTurnVisibilityTests(deps: LiveTurnVisibilityDeps): v
       await expect(page.getByRole('button', { name: 'Stop generating' })).toHaveCount(0);
 
       // The way out is answering it, and that does end the turn.
-      await card.getByRole('button', { name: /^Deny(?!\s+All)/ }).click();
+      await card.getByRole('button', { name: /^Don’t allow(?!\s+any)/ }).click();
       await expect(transcript(page)).toContainText('DENIED-BRANCH', {
         timeout: SERVER_ROUND_TRIP_MS,
       });

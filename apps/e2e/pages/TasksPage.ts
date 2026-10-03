@@ -117,7 +117,7 @@ export class TasksPage {
 
   /** Get the Create button in the create dialog. */
   get createButton() {
-    return this.createDialog.getByRole('button', { name: /^create$/i });
+    return this.createDialog.getByRole('button', { name: /^create task$/i });
   }
 
   /** Get the Cancel button in the create dialog. */

@@ -18,7 +18,7 @@ describe('PermissionDeniedChip', () => {
     );
 
     const chip = screen.getByTestId('permission-denied-chip');
-    expect(chip).toHaveTextContent('Blocked by auto-mode classifier: Destructive shell command');
+    expect(chip).toHaveTextContent('Blocked by auto mode: Destructive shell command');
     expect(chip).toHaveTextContent('Bash');
     expect(chip).toHaveAttribute('data-reason-type', 'classifier');
   });
@@ -33,7 +33,7 @@ describe('PermissionDeniedChip', () => {
     );
 
     expect(screen.getByTestId('permission-denied-chip')).toHaveTextContent(
-      'Blocked by auto-mode classifier: Write outside the working directory is not allowed.'
+      'Blocked by auto mode: Write outside the working directory is not allowed.'
     );
   });
 
@@ -42,7 +42,7 @@ describe('PermissionDeniedChip', () => {
 
     const chip = screen.getByTestId('permission-denied-chip');
     expect(chip).toHaveTextContent('Blocked: Rule blocked it.');
-    expect(chip).not.toHaveTextContent('auto-mode classifier');
+    expect(chip).not.toHaveTextContent('auto mode');
   });
 
   // DOR-795: a backgrounded helper's tool call is auto-denied by the runtime and
@@ -63,7 +63,7 @@ describe('PermissionDeniedChip', () => {
     expect(chip).toHaveTextContent(
       'Helper agent_ch was blocked from using Bash: Backgrounded agents cannot request permission.'
     );
-    expect(chip).toHaveTextContent(/can’t ask you to approve anything/);
+    expect(chip).toHaveTextContent(/can’t ask for approval/);
     expect(chip).toHaveAttribute('data-agent-id', 'agent_child_7abcdef');
   });
 
@@ -93,7 +93,7 @@ describe('PermissionDeniedChip', () => {
     );
 
     expect(screen.getByTestId('permission-denied-chip')).toHaveTextContent(
-      'Helper agent_ch was blocked from using WebFetch by the auto-mode classifier: Untrusted host'
+      'Helper agent_ch was blocked from using WebFetch by auto mode: Untrusted host'
     );
   });
 

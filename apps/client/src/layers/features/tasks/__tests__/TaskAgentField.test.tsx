@@ -116,7 +116,7 @@ describe('the task form agent row', () => {
       renderLocked(UNREADABLE);
 
       expect(screen.getByTestId('settled-agent')).toHaveTextContent(
-        'DorkOS couldn’t read your list of agents, so it can’t show which one this is.'
+        'Couldn’t load your agents to show this one.'
       );
       for (const claim of CLAIMS) expect(screen.queryByText(claim)).toBeNull();
     });
@@ -142,7 +142,7 @@ describe('the task form agent row', () => {
       expect(screen.queryByRole('button')).toBeNull();
       expect(screen.queryByText('test-bot')).toBeNull();
       expect(screen.getByTestId('agent-locked-note')).toHaveTextContent(
-        'You can’t change the agent after a task is created. To run this work as a different agent, create a new task.'
+        'The agent is set once. For another agent, make a new task.'
       );
     });
   });
@@ -182,7 +182,7 @@ describe('the task form agent row', () => {
         />
       );
       expect(screen.getByTestId('agent-pick-waiting')).toHaveTextContent(
-        /couldn’t read what that agent runs on/
+        /Couldn’t check that agent, so nothing changed/
       );
     });
   });

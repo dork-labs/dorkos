@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import {
+  approvals,
   createDb,
   relayDeliveryReceipts,
   relayReceiptObserverOwner,
@@ -13,7 +14,7 @@ import {
 import type { Db } from '../index';
 
 const migrationDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../drizzle');
-const predecessorIndex = 138;
+const predecessorTag = '20261003005538_approval_decided_by';
 const directories: string[] = [];
 const handles: Db[] = [];
 const now = '2026-10-02T17:00:00.000Z';
@@ -41,7 +42,11 @@ function predecessorMigrations(): string {
   ) as {
     entries: { idx: number; tag: string }[];
   };
-  journal.entries = journal.entries.filter((entry) => entry.idx <= predecessorIndex);
+  const predecessorIndex = journal.entries.findIndex((entry) => entry.tag === predecessorTag);
+  expect(predecessorIndex).toBeGreaterThan(-1);
+  expect(journal.entries[predecessorIndex + 1]?.tag).toMatch(/_relay_delivery_receipts$/);
+  journal.entries = journal.entries.slice(0, predecessorIndex + 1);
+  expect(journal.entries.at(-1)?.tag).toBe(predecessorTag);
   for (const entry of journal.entries)
     copyFileSync(
       path.join(migrationDir, `${entry.tag}.sql`),
@@ -53,9 +58,27 @@ function predecessorMigrations(): string {
 
 describe('Relay delivery receipt migration', () => {
   // Exercise a real pre-feature database, not a fresh-schema mock that cannot lose existing rows.
-  it('upgrades without losing message accounting and repeats idempotently', () => {
+  it('upgrades the latest predecessor without losing message accounting or approval decisions and repeats idempotently', () => {
     const db = database();
     migrate(db, { migrationsFolder: predecessorMigrations() });
+    // The latest incoming migration's decision provenance must survive receipt table creation.
+    db.insert(approvals)
+      .values({
+        id: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+        tokenHash: 'upgrade-fixture-token-digest',
+        capabilityId: 'test.receipt-upgrade',
+        capabilityTitle: 'Upgrade fixture',
+        inputHash: 'upgrade-fixture-input-digest',
+        summary: 'Existing approval decision',
+        state: 'granted',
+        createdAt: now,
+        expiresAt,
+        decidedAt: now,
+        decidedByUserId: 'existing-approval-decider',
+      })
+      .run();
+    const approvalBefore = db.$client.prepare('SELECT * FROM approvals').get();
+    expect(approvalBefore).toMatchObject({ decided_by_user_id: 'existing-approval-decider' });
     db.$client
       .prepare(
         `INSERT INTO relay_index (id, subject, endpoint_hash, status, created_at)
@@ -69,6 +92,7 @@ describe('Relay delivery receipt migration', () => {
     ).toBeUndefined();
     runMigrations(db);
     runMigrations(db);
+    expect(db.$client.prepare('SELECT * FROM approvals').get()).toEqual(approvalBefore);
     expect(db.$client.prepare('SELECT id, status FROM relay_index').all()).toEqual([
       { id: messageId, status: 'delivered' },
     ]);

@@ -173,7 +173,7 @@ export function InteractionAsk({
               disabled={isAnswering}
               onClick={() => void answer(ask, 'deny')}
             >
-              {interaction.type === 'question' ? 'Skip' : 'Deny'}
+              {interaction.type === 'question' ? 'Skip' : 'Don’t allow'}
             </Button>
             {onOpenSession && (
               <Button

@@ -28,7 +28,7 @@ function summaryText(preTokens?: number, postTokens?: number): string {
  *
  * Success state ({@link CompactResultRow} with a refresh glyph): "Compacted
  * context · N → M tokens" plus a `manual`/`auto` trigger badge. Failure state
- * (amber alert glyph): "Compaction failed" with the SDK error beneath. Sourced
+ * (amber alert glyph): "Couldn’t compact" with the SDK error beneath. Sourced
  * from the `compact_boundary` part folded by `projectInProgressTurn`.
  */
 export function CompactBoundaryRow({
@@ -46,7 +46,7 @@ export function CompactBoundaryRow({
         icon={
           <AlertTriangle aria-hidden="true" className="text-status-warning-dot size-3 shrink-0" />
         }
-        label={<span className="text-status-warning-fg">Compaction failed</span>}
+        label={<span className="text-status-warning-fg">Couldn’t compact</span>}
       >
         {error ? <p className="text-muted-foreground mt-1 text-xs">{error}</p> : null}
       </CompactResultRow>

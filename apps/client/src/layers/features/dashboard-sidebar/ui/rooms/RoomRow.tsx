@@ -471,9 +471,11 @@ export const RoomRow = memo(function RoomRow({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Archive {title}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              It leaves your sidebar and its agents stop being triggered by it. Everything said in
-              it is kept, and you can bring it back straight afterwards.
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>It leaves your sidebar, and its agents stop answering there.</p>
+                <p>Its messages are kept. You can bring it back any time.</p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -487,9 +489,11 @@ export const RoomRow = memo(function RoomRow({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Leave {title}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You can still read what’s here, but you won’t be able to post again. You can join it
-              again from this menu any time.
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>You can still read it, but you can’t post.</p>
+                <p>Rejoin from this menu any time.</p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

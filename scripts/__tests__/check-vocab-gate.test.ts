@@ -1134,7 +1134,10 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     const copySource = apiCopy
       .map((text, index) => `const apiCopy${index} = { message: ${JSON.stringify(text)} };`)
       .join('\n');
-    expect(apiCopy).toHaveLength(11);
+    expect(apiCopy).toHaveLength(12);
+    expect(apiCopy).toContain(
+      'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
+    );
     expect(scanSource(routePath, copySource, loadBannedTerms())).toEqual([]);
   });
 

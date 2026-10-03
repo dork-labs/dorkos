@@ -37,13 +37,13 @@ export function TaskTemplateGallery({ onSelect, selectedId, className }: TaskTem
   if (isError) {
     return (
       <p className="text-destructive text-sm">
-        Couldn’t load the ready-made tasks. You can still start from scratch.
+        Couldn’t load ready-made tasks. Start from scratch instead.
       </p>
     );
   }
 
   if (!presets || presets.length === 0) {
-    return <p className="text-muted-foreground text-sm">No presets available.</p>;
+    return <p className="text-muted-foreground text-sm">No ready-made tasks yet.</p>;
   }
 
   return (

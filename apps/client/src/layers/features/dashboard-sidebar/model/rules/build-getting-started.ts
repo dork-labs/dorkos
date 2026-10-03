@@ -38,8 +38,8 @@ const SUGGESTIONS: readonly Suggestion[] = [
     applies: (f) => f.discoveredUnregisteredPaths.length > 0,
     label: (f) =>
       f.discoveredUnregisteredPaths.length === 1
-        ? 'Meet the agent we found'
-        : `Meet the ${f.discoveredUnregisteredPaths.length} agents we found`,
+        ? 'Meet the agent DorkOS found'
+        : `Meet the ${f.discoveredUnregisteredPaths.length} agents DorkOS found`,
   },
   {
     id: 'suggestion:add-agent',

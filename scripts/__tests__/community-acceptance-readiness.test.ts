@@ -30,82 +30,91 @@ const SOURCE_SWEEP = join(REPO_ROOT, 'scripts/sweep-ephemeral-docker.sh');
 
 type Readiness = 'eventual-tcp' | 'never-tcp';
 
-function fakeDocker(dir: string, readiness: Readiness): string {
+function fakeDocker(dir: string, readiness: Readiness): { bin: string; bashEnv: string } {
   const bin = join(dir, 'bin');
   const docker = join(bin, 'docker');
   const sleep = join(bin, 'sleep');
   const state = join(dir, 'state');
+  const bashEnv = join(dir, 'fixture-shell.sh');
   mkdirSync(bin, { recursive: true });
+  mkdirSync(state, { recursive: true });
+  // The real Bash runner and sweep share cheap deterministic command functions.
+  // PATH fallbacks keep the fixture isolated even if a function is unavailable.
   writeFileSync(
-    docker,
-    `#!/usr/bin/env bash
-set -euo pipefail
-state="${state}"
-mkdir -p "$state"
-log() { printf '%s\\n' "$*" >> "$state/calls"; }
-log "$*"
+    bashEnv,
+    `fixture_docker_log() { printf '%s\\n' "$*" >> "${state}/calls"; }
+fixture_docker() {
+local state="${state}" destination
+fixture_docker_log "$*"
 case "$1" in
-  pull) exit 0 ;;
+  pull) return 0 ;;
   # The sweep runs first and must find nothing here: a fresh fixture repo has no
   # leftovers, so every listing is empty and nothing is removed. Answering it for
   # real (rather than letting \`docker info\` fail) keeps this suite honest about
   # run.sh and the sweep composing.
-  info) exit 0 ;;
+  info) return 0 ;;
   container)
-    case "\${2:-}" in ls) exit 0 ;; esac ;;
+    case "\${2:-}" in ls) return 0 ;; esac ;;
   volume)
-    case "\${2:-}" in ls) exit 0 ;; create) printf 'fake-volume\\n'; exit 0 ;; rm) exit 0 ;; esac ;;
+    case "\${2:-}" in ls) return 0 ;; create) printf 'fake-volume\\n'; return 0 ;; rm) return 0 ;; esac ;;
   network)
-    case "\${2:-}" in ls|create|rm) exit 0 ;; inspect) printf 'true\\n'; exit 0 ;; esac ;;
-  run) printf 'fake-postgres\\n'; exit 0 ;;
+    case "\${2:-}" in ls|create|rm) return 0 ;; inspect) printf 'true\\n'; return 0 ;; esac ;;
+  run) printf 'fake-postgres\\n'; return 0 ;;
   exec)
     if [[ " $* " == *' pg_isready '* ]]; then
       if [[ " $* " == *' -h 127.0.0.1 '* ]]; then
         if [[ "${readiness}" == never-tcp ]]; then
-          log tcp-not-ready
-          exit 1
+          fixture_docker_log tcp-not-ready
+          return 1
         fi
         if [[ ! -f "$state/tcp-attempted" ]]; then
-          touch "$state/tcp-attempted"
-          log tcp-not-ready
-          exit 1
+          : > "$state/tcp-attempted"
+          fixture_docker_log tcp-not-ready
+          return 1
         fi
-        touch "$state/tcp-ready"
-        log tcp-ready
-        exit 0
+        : > "$state/tcp-ready"
+        fixture_docker_log tcp-ready
+        return 0
       fi
-      log unix-ready
-      exit 0
+      fixture_docker_log unix-ready
+      return 0
     fi
-    exit 0 ;;
+    return 0 ;;
   create)
     if [[ ! -f "$state/tcp-ready" ]]; then
-      log app-create-before-tcp
-      exit 97
+      fixture_docker_log app-create-before-tcp
+      return 97
     fi
-    log app-create
+    fixture_docker_log app-create
     printf 'fake-app\\n'
-    exit 0 ;;
-  start) exit 0 ;;
+    return 0 ;;
+  start) return 0 ;;
   inspect)
     if [[ " $* " == *'{{.Internal}}'* ]]; then printf 'true\\n';
     elif [[ " $* " == *'{{.State.ExitCode}}'* ]]; then printf '0\\n';
     else printf 'false\\n'; fi
-    exit 0 ;;
+    return 0 ;;
   cp)
     destination="\${!#}"
     if [[ " $* " == *playwright-artifacts* ]]; then mkdir -p "$destination"; else printf evidence > "$destination"; fi
-    exit 0 ;;
-  rm) exit 0 ;;
+    return 0 ;;
+  rm) return 0 ;;
 esac
 printf 'unexpected docker command: %s\\n' "$*" >&2
-exit 98
+return 98
+}
+docker() { fixture_docker "$@"; }
+sleep() { return 0; }
 `
+  );
+  writeFileSync(
+    docker,
+    '#!/usr/bin/env bash\nset -euo pipefail\nif ! declare -F fixture_docker >/dev/null; then printf "Community fixture shell is unavailable.\\n" >&2; exit 98; fi\nfixture_docker "$@"\n'
   );
   writeFileSync(sleep, '#!/usr/bin/env bash\nexit 0\n');
   chmodSync(docker, 0o755);
   chmodSync(sleep, 0o755);
-  return bin;
+  return { bin, bashEnv };
 }
 
 function fixtureRunner(dir: string): string {
@@ -123,7 +132,7 @@ function fixtureRunner(dir: string): string {
 
 function runFixture(readiness: Readiness): { code: number; calls: string } {
   const dir = mkdtempSync(join(tmpdir(), 'community-pg-readiness-'));
-  const bin = fakeDocker(dir, readiness);
+  const { bin, bashEnv } = fakeDocker(dir, readiness);
   try {
     const result = spawnSync('bash', [fixtureRunner(dir), '--image', 'fixture-community-image'], {
       cwd: dir,
@@ -131,6 +140,7 @@ function runFixture(readiness: Readiness): { code: number; calls: string } {
       env: {
         // eslint-disable-next-line no-restricted-syntax -- the fixture replaces docker through PATH.
         PATH: `${bin}:${process.env.PATH ?? ''}`,
+        BASH_ENV: bashEnv,
       },
     });
     return {

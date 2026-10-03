@@ -43,14 +43,13 @@ export function AutoModeConfirmDialog({
                 decision 3). Spending the alarm colour here is what taught people
                 to stop reading it. */}
             <Sparkles className="text-muted-foreground size-4" />
-            Turn on Auto mode
+            Turn on Auto mode?
             <Badge size="xs" variant="secondary" className="tracking-wide uppercase">
               Preview
             </Badge>
           </AlertDialogTitle>
           <AlertDialogDescription>
-            The agent runs on its own and only checks with you before risky actions, like deleting
-            files or running unfamiliar commands. You can switch back anytime.
+            Asks only before risky steps, like deleting files. Switch back anytime.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

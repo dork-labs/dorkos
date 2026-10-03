@@ -142,7 +142,7 @@ test.describe('Room files — reading them, and changing one @smoke', () => {
 
     // Never a silent overwrite, and never a silent discard: the refusal is a
     // question with the other version's author on it.
-    await expect(dialog.getByText(/changed this file while you were editing it/)).toBeVisible({
+    await expect(dialog.getByText(/changed this file while you edited/)).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(dialog.getByRole('button', { name: 'Open their version' })).toBeVisible();

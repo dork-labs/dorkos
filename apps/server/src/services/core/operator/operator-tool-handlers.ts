@@ -42,7 +42,7 @@ import { sanitizedConfigSnapshot } from './config-patch.js';
 import {
   applyGuardedConfigWrite,
   OPERATOR_TOOL_AUTHORITY,
-  PERSON_APPROVED_AUTHORITY,
+  personApprovedAuthority,
   type GuardedConfigWriteResult,
 } from './config-write.js';
 import {
@@ -540,7 +540,7 @@ function agentWriter(identity?: AgentIdentity): DisplayNameWriter {
  * The one way through is a person's yes: such a patch is decided in every floor
  * area it touches, by the strictest of them (`operatorOnlyAreasForPatch`, spec
  * `agent-permissions` D6), and asks on a card unless one of them is Blocked; and when the gate spent that approval the write goes through
- * {@link PERSON_APPROVED_AUTHORITY}, because the change is then the person's.
+ * {@link personApprovedAuthority}, because the change is then the person's.
  *
  * **This is also where an agent-set display name gets its receipt** (DOR-1022).
  * `profile.displayName` stays writable here — DorkBot saving "call me Dorian" is
@@ -564,7 +564,12 @@ export function createConfigPatchHandler(identity?: AgentIdentity, approval?: Gr
       // A person approved THIS patch on a card (the gate asks in the floor area
       // an operator-only setting belongs to): the change is theirs. Without
       // that, the agent may change preferences only, exactly as before.
-      authority: approval?.via === 'approval' ? PERSON_APPROVED_AUTHORITY : OPERATOR_TOOL_AUTHORITY,
+      // The DorkOS account's own settings ask one more thing of that yes: that
+      // it came from the owner of this DorkOS (DOR-2678).
+      authority:
+        approval?.via === 'approval'
+          ? personApprovedAuthority(approval.decidedByUserId)
+          : OPERATOR_TOOL_AUTHORITY,
       source: 'the config_patch tool',
       writer: agentWriter(identity),
     });

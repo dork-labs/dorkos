@@ -129,13 +129,13 @@ describe('an unattributed request says what IS known (DOR-1929)', () => {
     // an agent".
     render(<RequestingAgent hasAgentPath={false} attributedToAgent />);
 
-    expect(screen.getByText('An agent asked — DorkOS can’t say which')).toBeInTheDocument();
+    expect(screen.getByText('An agent asked. DorkOS can’t tell which.')).toBeInTheDocument();
   });
 
   it('prefers "an agent asked" over the surface it came over', () => {
     render(<RequestingAgent hasAgentPath={false} attributedToAgent origin="session" />);
 
-    expect(screen.getByText('An agent asked — DorkOS can’t say which')).toBeInTheDocument();
+    expect(screen.getByText('An agent asked. DorkOS can’t tell which.')).toBeInTheDocument();
   });
 
   it('never draws an agent mark for a request nothing named', () => {
