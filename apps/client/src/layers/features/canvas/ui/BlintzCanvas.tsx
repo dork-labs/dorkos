@@ -1,10 +1,13 @@
-import { MarkdownEditor } from 'blintz';
+import { MarkdownEditor, type MarkdownEditorProps } from 'blintz';
 import './blintz.css';
 import { cn } from '@/layers/shared/lib';
 import { useResolvedTheme } from '@/layers/shared/model';
 
 /** Props for {@link BlintzCanvas}. */
-export interface BlintzCanvasProps {
+export interface BlintzCanvasProps extends Pick<
+  MarkdownEditorProps,
+  'sourceRevision' | 'onSourceReady' | 'onSourceSelection' | 'onTaskToggleRequest'
+> {
   /** Current markdown document. Seeds the editor; on divergence it re-seeds. */
   value: string;
   /** When `false`, render read-only — no editing chrome, no keyboard input. */
@@ -26,7 +29,16 @@ export interface BlintzCanvasProps {
  * Uses the app's resolved theme and semantic colors through Blintz's public
  * theme contract. An open document follows theme changes without remounting.
  */
-export function BlintzCanvas({ value, editable, onChange, className }: BlintzCanvasProps) {
+export function BlintzCanvas({
+  value,
+  editable,
+  onChange,
+  className,
+  sourceRevision,
+  onSourceReady,
+  onSourceSelection,
+  onTaskToggleRequest,
+}: BlintzCanvasProps) {
   const resolvedTheme = useResolvedTheme();
   return (
     // The ancestor supplies inherited theme tokens without adding another inset.
@@ -41,6 +53,10 @@ export function BlintzCanvas({ value, editable, onChange, className }: BlintzCan
         theme={resolvedTheme}
         editable={editable}
         onChange={onChange}
+        sourceRevision={sourceRevision}
+        onSourceReady={onSourceReady}
+        onSourceSelection={onSourceSelection}
+        onTaskToggleRequest={onTaskToggleRequest}
         className={cn('desktop:select-text', className)}
       />
     </div>

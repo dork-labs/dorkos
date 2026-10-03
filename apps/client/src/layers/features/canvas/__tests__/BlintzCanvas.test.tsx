@@ -2,18 +2,31 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { MarkdownEditorProps, MarkdownSourcePort } from 'blintz';
 
-// Stub the heavy editor — this suite verifies the data-theme wrapper and that a
-// live theme change reaches an already-mounted editor.
-vi.mock('blintz', () => ({
-  MarkdownEditor: ({ value, theme }: { value: string; theme: string }) => (
-    <div data-testid="markdown-editor" data-editor-theme={theme}>
-      {value}
-    </div>
-  ),
+const editorControl = vi.hoisted(() => ({
+  real: false,
+  props: undefined as MarkdownEditorProps | undefined,
 }));
+
+// Keep theme controls isolated; the public-package case renders the genuine editor.
+vi.mock('blintz', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('blintz')>();
+  return {
+    ...actual,
+    MarkdownEditor: (props: MarkdownEditorProps) => {
+      editorControl.props = props;
+      if (editorControl.real) return <actual.MarkdownEditor {...props} />;
+      return (
+        <div data-testid="markdown-editor" data-editor-theme={props.theme}>
+          {props.value}
+        </div>
+      );
+    },
+  };
+});
 
 // Use the REAL store-backed hook so a theme change actually propagates. use-theme
 // is a light module (zustand only), so importActual avoids pulling the whole
@@ -38,6 +51,8 @@ function themeWrapper(): HTMLElement {
 }
 
 beforeEach(() => {
+  editorControl.real = false;
+  editorControl.props = undefined;
   act(() => useThemeStore.getState().setTheme('light'));
 });
 afterEach(cleanup);
@@ -69,5 +84,96 @@ describe('BlintzCanvas theme forwarding', () => {
     expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-editor-theme', 'dark');
     // Same editor node — the wrapper re-rendered, the editor was not torn down.
     expect(screen.getByTestId('markdown-editor')).toBe(editorBefore);
+  });
+});
+
+describe('BlintzCanvas public source callbacks', () => {
+  it('forwards the original optional revision and callback identities', () => {
+    const onSourceReady = vi.fn<NonNullable<MarkdownEditorProps['onSourceReady']>>();
+    const onSourceSelection = vi.fn<NonNullable<MarkdownEditorProps['onSourceSelection']>>();
+    const onTaskToggleRequest = vi.fn<NonNullable<MarkdownEditorProps['onTaskToggleRequest']>>();
+    render(
+      <BlintzCanvas
+        value="# raw"
+        editable={false}
+        sourceRevision="raw-1"
+        onSourceReady={onSourceReady}
+        onSourceSelection={onSourceSelection}
+        onTaskToggleRequest={onTaskToggleRequest}
+      />
+    );
+    expect(editorControl.props?.sourceRevision).toBe('raw-1');
+    expect(editorControl.props?.onSourceReady).toBe(onSourceReady);
+    expect(editorControl.props?.onSourceSelection).toBe(onSourceSelection);
+    expect(editorControl.props?.onTaskToggleRequest).toBe(onTaskToggleRequest);
+    expect(onTaskToggleRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy callers callback-free', () => {
+    render(<BlintzCanvas value="# raw" editable={false} />);
+    expect(editorControl.props?.sourceRevision).toBeUndefined();
+    expect(editorControl.props?.onSourceReady).toBeUndefined();
+    expect(editorControl.props?.onSourceSelection).toBeUndefined();
+    expect(editorControl.props?.onTaskToggleRequest).toBeUndefined();
+  });
+
+  it('receives the genuine published editor port and invalidates an equal-text old revision', async () => {
+    editorControl.real = true;
+    let port: MarkdownSourcePort | undefined;
+    const onSourceReady: NonNullable<MarkdownEditorProps['onSourceReady']> = (next) => {
+      port = next;
+    };
+    const mounted = render(
+      <BlintzCanvas
+        value="Raw source"
+        editable={false}
+        sourceRevision="raw-1"
+        onSourceReady={onSourceReady}
+      />
+    );
+    await waitFor(() => expect(port?.snapshot().kind).toBe('mapped'));
+    const originalPort = port!;
+    const oldGeneration = originalPort.generation();
+    expect(originalPort.snapshot()).toMatchObject({
+      kind: 'mapped',
+      value: { text: 'Raw source' },
+    });
+    mounted.rerender(
+      <BlintzCanvas
+        value="Raw source"
+        editable={false}
+        sourceRevision="raw-2"
+        onSourceReady={onSourceReady}
+      />
+    );
+    await waitFor(() => expect(originalPort.generation()).not.toBe(oldGeneration));
+    expect(originalPort.selection(oldGeneration)).toMatchObject({
+      kind: 'unavailable',
+      reason: 'stale',
+    });
+    mounted.unmount();
+    expect(originalPort.snapshot()).toMatchObject({ kind: 'unavailable', reason: 'disposed' });
+  });
+  it('preserves the genuine package unavailable result for model-mismatched heading input', async () => {
+    editorControl.real = true;
+    let port: MarkdownSourcePort | undefined;
+    const onSourceReady: NonNullable<MarkdownEditorProps['onSourceReady']> = (next) => {
+      port = next;
+    };
+    render(
+      <BlintzCanvas
+        value="# raw"
+        editable={false}
+        sourceRevision="heading-1"
+        onSourceReady={onSourceReady}
+      />
+    );
+    await waitFor(() => expect(port).toBeDefined());
+    expect(port!.snapshot()).toMatchObject({ kind: 'unavailable', reason: 'unmapped' });
+    let rebound: ReturnType<MarkdownSourcePort['bindSource']> | undefined;
+    act(() => {
+      rebound = port!.bindSource('# raw', port!.generation());
+    });
+    expect(rebound).toMatchObject({ kind: 'unavailable', reason: 'model-mismatch' });
   });
 });
