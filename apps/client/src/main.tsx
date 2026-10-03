@@ -24,6 +24,7 @@ import { HttpTransport, streamManager } from '@/layers/shared/lib/transport';
 import { createBootCache } from '@/layers/shared/lib/query-persister';
 import {
   TransportProvider,
+  CreditsOfferProvider,
   useAppStore,
   useExtensionRegistry,
   useThemeStore,
@@ -34,6 +35,7 @@ import {
 } from '@/layers/shared/model';
 import { openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
+import { renderCreditsOffer } from '@/layers/widgets/credits-offer';
 import { switchAgentCwd } from '@/layers/entities/session';
 import { eraseCommunityOwnerState } from '@/layers/entities/community';
 import { applyShapeAction } from '@/layers/entities/shapes';
@@ -247,7 +249,12 @@ function Root() {
                 gate: remote visitors reach it once the exposure-guard permits a
                 tunnel, so no passcode layer is needed. */}
             <AuthGuard>
-              <RouterProvider router={router} />
+              {/* DorkOS credits, offered first where nothing works yet (spec
+                  `dorkos-account-by-default` §3): composed in a widget and
+                  handed to every feature that draws it, onboarding included. */}
+              <CreditsOfferProvider slot={renderCreditsOffer}>
+                <RouterProvider router={router} />
+              </CreditsOfferProvider>
             </AuthGuard>
             {/* Auto-open a diff review when the attached agent edits a file
                 (DOR-212). Renders nothing — a shell-level subscriber that lives

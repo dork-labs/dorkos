@@ -13,7 +13,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { creditsWiredFor, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { useModels, useSessionId } from '@/layers/entities/session';
 import { useSessionAccount, type SessionAccount } from '@/layers/features/status';
 import {
@@ -22,7 +23,12 @@ import {
   type LimitState,
   type SessionLimitView,
 } from '@/layers/shared/lib';
-import { accountKeys, useClaudeAccounts, useTransport } from '@/layers/shared/model';
+import {
+  accountKeys,
+  useClaudeAccounts,
+  useCloudCredits,
+  useTransport,
+} from '@/layers/shared/model';
 import { canOpenPicker, isSelectable } from '../lib/continue-picker';
 import { isCarryOverRefused } from '../lib/limit-banner';
 import type { ModelName } from '../lib/limit-marker';
@@ -35,6 +41,17 @@ const DEFAULT_RUNTIME = 'claude-code';
 
 /** The states in which the work may move to another account. */
 const MOVABLE: ReadonlySet<LimitState> = new Set(['limited', 'handing-off', 'model-limited']);
+
+/**
+ * The states that lead with "Keep going on DorkOS credits": the account is out
+ * and the person has not chosen yet. A move already counting down, a chosen
+ * wait and a reset are left as they are.
+ */
+const CREDITS_LEAD: ReadonlySet<LimitState> = new Set([
+  'limited',
+  'model-limited',
+  'all-accounts-out',
+]);
 
 /**
  * The session's account as the banner reads it: `useSessionAccount`'s answer,
@@ -61,6 +78,12 @@ export interface LimitBanner {
   identityGate: boolean;
   /** Whether the picker may open (`canOpenPicker`) and the plan allows a carry-over. */
   canPick: boolean;
+  /**
+   * Whether the banner leads with "Keep going on DorkOS credits": the server
+   * reports credits wired for this runtime, the work may carry over, and it is
+   * not credits that ran out. Never acted on by itself.
+   */
+  creditsOffered: boolean;
   /** Names and colors an account of this session's runtime by its registry id. */
   nameOf: (accountId: string) => NamedAccount;
   /** The runtime's models, for display names. */
@@ -139,6 +162,14 @@ export function useLimitBanner(sessionId: string, injected?: LimitBannerAccount)
 
   const { continuedHere, continueHere } = useContinuedHere(sessionId, limit?.since ?? null);
 
+  const { data: credits } = useCloudCredits();
+  const creditsOffered =
+    state !== null &&
+    CREDITS_LEAD.has(state) &&
+    !refused &&
+    limit?.accountId !== CREDITS_ACCOUNT_ID &&
+    creditsWiredFor(credits, runtime);
+
   // A refused write belongs to the state it was made in: kept with that
   // state's key, and not shown once the limit has moved on.
   const since = limit?.since ?? null;
@@ -182,6 +213,7 @@ export function useLimitBanner(sessionId: string, injected?: LimitBannerAccount)
     subject,
     identityGate,
     canPick,
+    creditsOffered,
     nameOf,
     models,
     continuedHere,

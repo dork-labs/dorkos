@@ -17,16 +17,25 @@
  *
  * @module features/chat/ui/message/AuthErrorActions
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Check, LogIn, RotateCcw } from 'lucide-react';
-import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { runtimeAuthConnectKind, runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
 import { Button, Spinner } from '@/layers/shared/ui';
-import { useSettingsDeepLink } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useCreditsOfferSlot,
+  useSetCreditsDefault,
+  useSettingsDeepLink,
+  type CreditsOfferSlot,
+} from '@/layers/shared/model';
 import { useLocalCaller } from '@/layers/entities/config';
 import {
   getLoginCopy,
+  KeepItLocalNote,
   RemoteSigninNotice,
   useDelegateRuntimeLogin,
+  useRuntimeCreditsOffer,
 } from '@/layers/entities/runtime';
 import { useSessions } from '@/layers/entities/session';
 
@@ -214,6 +223,55 @@ function ProviderPickerActions({ onRetry }: { onRetry?: () => void }) {
 }
 
 /**
+ * Auth-error actions for a runtime with no sign-in at all, where the server
+ * reports DorkOS credits wired for it (spec `dorkos-account-by-default` §3):
+ * credits first, the runtime's own ways right under it, and the line that
+ * nothing has to leave this computer.
+ *
+ * Choosing credits is the person's choice, made here: the runtime's new work
+ * goes on credits by default, this send rides credits as its one-shot account,
+ * and the turn goes again. Signed out, the card links this computer in place
+ * first and then does the same. A sign-in that expired or ran out never lands
+ * here — it leads with signing in again ({@link InlineSigninActions}).
+ */
+function CreditsFirstActions({
+  runtime,
+  sessionId,
+  onRetry,
+  renderOffer,
+  children,
+}: {
+  runtime: string;
+  sessionId: string;
+  onRetry?: () => void;
+  renderOffer: CreditsOfferSlot;
+  children: ReactNode;
+}) {
+  const setDefault = useSetCreditsDefault();
+  const setRetryAccount = useAppStore((s) => s.setRetryAccount);
+  return (
+    <div className="mt-3 space-y-3" data-testid="auth-error-credits-first">
+      {renderOffer({
+        runtime,
+        origin: `auth-error:${sessionId}`,
+        onChoose: async () => {
+          await setDefault.mutateAsync({ runtime, useCredits: true });
+          setRetryAccount({ id: CREDITS_ACCOUNT_ID, sessionId });
+          onRetry?.();
+        },
+      })}
+      <section aria-label="Other ways">
+        <p className="text-muted-foreground text-2xs font-medium tracking-wide uppercase">
+          Other ways
+        </p>
+        {children}
+      </section>
+      <KeepItLocalNote ollama={runtimeAuthConnectKind(runtime) === 'provider-picker'} />
+    </div>
+  );
+}
+
+/**
  * The half that reads data. Mounted only with a session id, so the session-list
  * query — and the QueryClient and Transport it needs — are required only on the
  * path that actually signs in.
@@ -230,6 +288,8 @@ function SessionSigninActions({
   const { sessions, isLoading } = useSessions();
   const isLocalCaller = useLocalCaller();
   const runtime = sessions.find((s) => s.id === sessionId)?.runtime;
+  const offer = useRuntimeCreditsOffer(runtime);
+  const renderOffer = useCreditsOfferSlot();
 
   // Answered before the runtime is, and without waiting for the session list,
   // because it does not depend on either: nothing that repairs a sign-in —
@@ -241,17 +301,30 @@ function SessionSigninActions({
   // rendering the deep-link now would flip to a Sign in button a moment later.
   // Hold the actions back rather than show one and replace it.
   if (isLoading) return null;
-  if (!runtime || !runtimeSupportsLogin(runtime)) {
-    return <ProviderPickerActions onRetry={onRetry} />;
+  const ownWays =
+    !runtime || !runtimeSupportsLogin(runtime) ? (
+      <ProviderPickerActions onRetry={onRetry} />
+    ) : (
+      <InlineSigninActions
+        runtime={runtime}
+        sessionId={sessionId}
+        onRetry={onRetry}
+        onSigninComplete={onSigninComplete}
+      />
+    );
+  if (runtime && offer === 'lead' && renderOffer) {
+    return (
+      <CreditsFirstActions
+        runtime={runtime}
+        sessionId={sessionId}
+        onRetry={onRetry}
+        renderOffer={renderOffer}
+      >
+        {ownWays}
+      </CreditsFirstActions>
+    );
   }
-  return (
-    <InlineSigninActions
-      runtime={runtime}
-      sessionId={sessionId}
-      onRetry={onRetry}
-      onSigninComplete={onSigninComplete}
-    />
-  );
+  return ownWays;
 }
 
 /**

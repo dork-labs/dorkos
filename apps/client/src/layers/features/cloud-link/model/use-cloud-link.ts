@@ -1,10 +1,19 @@
 /**
- * DorkOS account-link model — owns the device-link flow lifecycle for the
- * Settings panel (accounts-and-auth P2). Reads the settled summary
+ * DorkOS account-link model — owns the device-link flow lifecycle for every
+ * surface that links this computer (accounts-and-auth P2, spec
+ * `dorkos-account-by-default` §3). Reads the settled summary
  * (`GET /api/cloud/status`) for the initial render, drives `start`/`unlink`
  * through the transport, and polls the live flow state
  * (`GET /api/cloud/link/status`) from `pending` to a terminal state, stopping on
- * every terminal state and on unmount.
+ * every terminal state and once nothing on screen reads it.
+ *
+ * **One flow, however many surfaces show it.** The codes, the flow state and
+ * who started it live in the query cache rather than in one component, so the
+ * code a person was shown in a runtime's connect card is the same code
+ * Settings › DorkOS account shows, and either can finish or cancel it. The
+ * surface that started a link names itself (`origin`) and may hand over what to
+ * do once it lands (`afterLink`), so it picks up where it was after approval
+ * even when the person approved it from another surface.
  *
  * This is INDEPENDENT of local login: nothing here reads the auth session or the
  * AuthGuard. The instance token never reaches the client and is never logged.
@@ -13,11 +22,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { useTransport } from '@/layers/shared/model';
+import { cloudCreditsKeys, configKeys, useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '@/layers/entities/connectors';
 import { accountSignInKeys } from '@/layers/entities/community';
 import type {
-  CloudLinkState,
   CloudLinkStatus,
   CloudLinkSummary,
   StartLinkResult,
@@ -26,11 +34,14 @@ import type {
 /** How often the panel polls the flow state while a link is `pending`. */
 const POLL_INTERVAL_MS = 2500;
 
-/** Flow states that end the poll — no further transitions are expected. */
-const TERMINAL_STATES = new Set<CloudLinkState>(['linked', 'denied', 'expired', 'unlinked']);
-
 /** TanStack Query key for the settled cloud-link summary. */
 export const cloudStatusKey = ['cloud', 'status'] as const;
+
+/** TanStack Query key for the live flow state every surface polls together. */
+export const cloudLinkStatusKey = ['cloud', 'link', 'status'] as const;
+
+/** TanStack Query key for the codes in hand and who asked for them. Never fetched. */
+const cloudLinkFlowKey = ['cloud', 'link', 'flow'] as const;
 
 /**
  * The settled linked/unlinked summary (`GET /api/cloud/status`) on its own,
@@ -136,11 +147,33 @@ export type CloudLinkView =
   | { kind: 'denied' }
   | { kind: 'revoked' };
 
+/** What a surface says about itself when it starts a link. */
+export interface StartCloudLinkOptions {
+  /**
+   * Which surface asked, so it can tell its own link from one another surface
+   * started (`'settings'`, `'runtime-connect:claude-code'`). Only one link is
+   * ever in flight, and every surface shows its code.
+   */
+  origin?: string;
+  /**
+   * What to do once THIS link lands, wherever it was approved from — how the
+   * surface that started it carries on from where it was. Runs once, only for
+   * a first link that was approved, and never for a relink that did not
+   * replace the link.
+   */
+  afterLink?: () => unknown;
+}
+
 /** Everything the {@link CloudLinkPanel} needs to render and drive the flow. */
 export interface UseCloudLink {
   view: CloudLinkView;
   /** Begin the device flow (or restart it after expiry/denial). */
-  start: () => Promise<void>;
+  start: (options?: StartCloudLinkOptions) => Promise<void>;
+  /**
+   * Get a new code for the link that just expired or was turned down, for the
+   * same surface and the same next step it was started with.
+   */
+  restart: () => Promise<void>;
   /** Unlink this computer from its DorkOS account. */
   unlink: () => Promise<void>;
   /** Stop a link in progress, or dismiss the note a relink that didn't finish left. */
@@ -149,6 +182,53 @@ export interface UseCloudLink {
   unlinking: boolean;
   /** Friendly message when `start` fails (e.g. the cloud was unreachable). */
   startError: string | null;
+  /** Which surface started the link in flight, or `null` when none named itself. */
+  origin: string | null;
+}
+
+/** The codes in hand, and who asked for them — shared by every surface. */
+interface LinkFlowEntry {
+  codes: StartLinkResult | null;
+  origin: string | null;
+  afterLink: (() => unknown) | null;
+  starting: boolean;
+  startError: string | null;
+}
+
+const PENDING: CloudLinkStatus = { state: 'pending' };
+const IDLE: CloudLinkStatus = { state: 'idle' };
+
+const NO_FLOW: LinkFlowEntry = {
+  codes: null,
+  origin: null,
+  afterLink: null,
+  starting: false,
+  startError: null,
+};
+
+/**
+ * Everything a link that just landed refreshes, then what the surface that
+ * started it asked to happen next.
+ *
+ * @param queryClient - The app's query client.
+ * @param afterLink - The starting surface's next step, or `null`.
+ */
+async function land(queryClient: QueryClient, afterLink: (() => unknown) | null): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
+    queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
+    // Which space sites sign in with the account belongs to the account.
+    queryClient.invalidateQueries({ queryKey: accountSignInKeys.all }),
+    // Whether credits can be chosen, and the Runs on entry, move with the link.
+    queryClient.invalidateQueries({ queryKey: cloudCreditsKeys.status() }),
+    queryClient.invalidateQueries({ queryKey: configKeys.all }),
+  ]);
+  if (!afterLink) return;
+  try {
+    await afterLink();
+  } catch {
+    // The surface that asked shows its own failure; the link stands.
+  }
 }
 
 /** Extract a friendly message from a transport error. */
@@ -159,7 +239,8 @@ function cloudErrorMessage(err: unknown): string {
 
 /**
  * Own the account-link flow: settled summary, device-flow codes, live polling,
- * and the link/unlink actions. See the module doc for the independence contract.
+ * and the link/unlink actions. See the module doc for the independence contract
+ * and for why every caller shares one flow.
  */
 export function useCloudLink(): UseCloudLink {
   const transport = useTransport();
@@ -167,72 +248,54 @@ export function useCloudLink(): UseCloudLink {
 
   const summary = useCloudStatus();
 
-  const [flow, setFlow] = useState<StartLinkResult | null>(null);
-  const [linkStatus, setLinkStatus] = useState<CloudLinkStatus | null>(null);
-  const [starting, setStarting] = useState(false);
+  const { data: flow } = useQuery<LinkFlowEntry>({
+    queryKey: cloudLinkFlowKey,
+    // Never fetched: the entry is written by `start`/`cancel`/`unlink` alone.
+    queryFn: () => queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey) ?? NO_FLOW,
+    initialData: NO_FLOW,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+  const setFlow = useCallback(
+    (patch: Partial<LinkFlowEntry> | null) =>
+      queryClient.setQueryData<LinkFlowEntry>(cloudLinkFlowKey, (prev) =>
+        patch === null ? NO_FLOW : { ...(prev ?? NO_FLOW), ...patch }
+      ),
+    [queryClient]
+  );
+
   const [unlinking, setUnlinking] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // True while this hook is mounted — guards state updates from awaited transport
-  // calls that resolve after unmount (belt-and-suspenders alongside `stopPolling`).
-  const mountedRef = useRef(true);
-  // True once the user has started a device flow — makes the one-shot mount status
-  // fetch defer to `start()`'s `pending` state if it loses the resolve race.
-  const flowActiveRef = useRef(false);
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+  // The landing, read off the poll itself rather than an effect, so it runs
+  // once per answer however many surfaces subscribe. It is not awaited by the
+  // poll: the refreshes it starts are reads of their own, and the flow state
+  // must reach every reader without waiting on them.
+  const readStatus = useCallback(async (): Promise<CloudLinkStatus | null> => {
+    const before = queryClient.getQueryData<CloudLinkStatus | null>(cloudLinkStatusKey);
+    const next = await transport.getCloudLinkStatus();
+    if (before?.state === 'pending' && next.state === 'linked') {
+      const current = queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey) ?? NO_FLOW;
+      queryClient.setQueryData<LinkFlowEntry>(cloudLinkFlowKey, { ...current, afterLink: null });
+      void land(queryClient, next.relinkOutcome ? null : current.afterLink);
     }
-  }, []);
+    return next;
+  }, [transport, queryClient]);
 
-  const poll = useCallback(async () => {
-    try {
-      const next = await transport.getCloudLinkStatus();
-      if (!mountedRef.current) return;
-      setLinkStatus(next);
-      if (TERMINAL_STATES.has(next.state)) {
-        stopPolling();
-        if (next.state === 'linked') {
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
-            queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
-            // Which space sites sign in with the account belongs to the account.
-            queryClient.invalidateQueries({ queryKey: accountSignInKeys.all }),
-          ]);
-        }
-      }
-    } catch {
-      // Transient (network / 5xx): keep the interval and retry next tick.
-    }
-  }, [transport, queryClient, stopPolling]);
-
-  const startPolling = useCallback(() => {
-    stopPolling();
-    pollRef.current = setInterval(() => void poll(), POLL_INTERVAL_MS);
-  }, [poll, stopPolling]);
-
-  // Read the live flow state once on mount so a runtime `unlinked` (revoked),
-  // `expired`, or `denied` state surfaces immediately; clean up the poll on
-  // unmount.
-  useEffect(() => {
-    mountedRef.current = true;
-    transport
-      .getCloudLinkStatus()
-      .then((s) => {
-        // Skip if unmounted, or if a device flow has already started — the mount
-        // fetch must not clobber `start()`'s `pending` state if it resolves later.
-        if (mountedRef.current && !flowActiveRef.current) setLinkStatus(s);
-      })
-      .catch(() => {
-        /* best-effort — the summary still drives the baseline view */
-      });
-    return () => {
-      mountedRef.current = false;
-      stopPolling();
-    };
-  }, [transport, stopPolling]);
+  const status = useQuery<CloudLinkStatus | null>({
+    queryKey: cloudLinkStatusKey,
+    queryFn: readStatus,
+    retry: false,
+    // Poll only while a code is showing; every terminal state stops it.
+    // Read from the cache, not this render's closure: the codes and the
+    // `pending` land in two writes, and the timer is set from whichever is last.
+    refetchInterval: (query) =>
+      query.state.data?.state === 'pending' &&
+      queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey)?.codes
+        ? POLL_INTERVAL_MS
+        : false,
+    refetchIntervalInBackground: true,
+  });
+  const linkStatus = status.data ?? null;
 
   // A link that ended somewhere else (the account was deleted, or this
   // computer was unlinked on the web) reaches this panel as the shared summary
@@ -244,57 +307,65 @@ export function useCloudLink(): UseCloudLink {
   useEffect(() => {
     const before = wasLinked.current;
     wasLinked.current = linkedNow;
-    if (before !== true || linkedNow !== false || flowActiveRef.current) return;
+    if (before !== true || linkedNow !== false) return;
+    const inFlight = queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey) ?? NO_FLOW;
+    if (inFlight.codes || inFlight.starting) return;
     transport
       .getCloudLinkStatus()
-      .then((s) => {
-        if (mountedRef.current && !flowActiveRef.current) setLinkStatus(s);
-      })
-      .catch(() => {
-        // The summary still drives the view once the flow state is cleared.
-        if (mountedRef.current && !flowActiveRef.current) setLinkStatus(null);
-      });
-  }, [linkedNow, transport]);
+      .then((s) => queryClient.setQueryData(cloudLinkStatusKey, s))
+      // The summary still drives the view once the flow state is cleared.
+      .catch(() => queryClient.setQueryData(cloudLinkStatusKey, null));
+  }, [linkedNow, transport, queryClient]);
 
-  const start = useCallback(async () => {
-    setStartError(null);
-    setStarting(true);
-    flowActiveRef.current = true;
-    try {
-      const codes = await transport.startCloudLink();
-      setFlow(codes);
-      setLinkStatus({ state: 'pending' });
-      startPolling();
-    } catch (err) {
-      flowActiveRef.current = false;
-      setStartError(cloudErrorMessage(err));
-    } finally {
-      setStarting(false);
-    }
-  }, [transport, startPolling]);
+  const start = useCallback(
+    async (options: StartCloudLinkOptions = {}) => {
+      setFlow({ starting: true, startError: null });
+      // A mount-time read still in flight must not land over the `pending`
+      // this start is about to write.
+      await queryClient.cancelQueries({ queryKey: cloudLinkStatusKey });
+      try {
+        const codes = await transport.startCloudLink();
+        setFlow({
+          codes,
+          origin: options.origin ?? null,
+          afterLink: options.afterLink ?? null,
+          starting: false,
+        });
+        queryClient.setQueryData(cloudLinkStatusKey, PENDING);
+      } catch (err) {
+        setFlow({ starting: false, startError: cloudErrorMessage(err) });
+      }
+    },
+    [transport, queryClient, setFlow]
+  );
+
+  const restart = useCallback(() => {
+    const previous = queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey) ?? NO_FLOW;
+    return start({
+      ...(previous.origin !== null ? { origin: previous.origin } : {}),
+      ...(previous.afterLink !== null ? { afterLink: previous.afterLink } : {}),
+    });
+  }, [queryClient, start]);
 
   const cancel = useCallback(async () => {
-    stopPolling();
     setFlow(null);
-    flowActiveRef.current = false;
-    setStartError(null);
+    await queryClient.cancelQueries({ queryKey: cloudLinkStatusKey });
     try {
-      setLinkStatus(await transport.cancelCloudLink());
+      queryClient.setQueryData(cloudLinkStatusKey, await transport.cancelCloudLink());
     } catch {
       // The server keeps its own state; the next status read reconciles it.
-      setLinkStatus(null);
+      queryClient.setQueryData(cloudLinkStatusKey, null);
     }
     await queryClient.invalidateQueries({ queryKey: cloudStatusKey });
-  }, [transport, queryClient, stopPolling]);
+  }, [transport, queryClient, setFlow]);
 
   const unlink = useCallback(async () => {
     setUnlinking(true);
     try {
       await transport.unlinkCloud();
-      stopPolling();
       setFlow(null);
-      flowActiveRef.current = false;
-      setLinkStatus({ state: 'idle' });
+      await queryClient.cancelQueries({ queryKey: cloudLinkStatusKey });
+      queryClient.setQueryData(cloudLinkStatusKey, IDLE);
       // Optimistically settle the summary so the panel returns to idle at once;
       // the invalidation then reconciles with the server.
       queryClient.setQueryData<CloudLinkSummary>(cloudStatusKey, {
@@ -304,6 +375,7 @@ export function useCloudLink(): UseCloudLink {
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
+        queryClient.invalidateQueries({ queryKey: cloudCreditsKeys.status() }),
         invalidateAccountReads(queryClient),
       ]);
     } catch {
@@ -313,18 +385,18 @@ export function useCloudLink(): UseCloudLink {
     } finally {
       setUnlinking(false);
     }
-  }, [transport, queryClient, stopPolling]);
+  }, [transport, queryClient, setFlow]);
 
   const view = useMemo<CloudLinkView>(() => {
     const flowState = linkStatus?.state;
 
     // An active device flow (codes in hand) shows the pending view.
-    if (flow && flowState === 'pending') {
+    if (flow.codes && flowState === 'pending') {
       return {
         kind: 'pending',
-        userCode: flow.userCode,
-        verificationUri: flow.verificationUri,
-        expiresAt: flow.expiresAt,
+        userCode: flow.codes.userCode,
+        verificationUri: flow.codes.verificationUri,
+        expiresAt: flow.codes.expiresAt,
       };
     }
     // Terminal flow states surface whether or not we still hold the codes.
@@ -350,7 +422,17 @@ export function useCloudLink(): UseCloudLink {
       };
     }
     return { kind: 'idle' };
-  }, [flow, linkStatus, summary.data, summary.isLoading]);
+  }, [flow.codes, linkStatus, summary.data, summary.isLoading]);
 
-  return { view, start, unlink, cancel, starting, unlinking, startError };
+  return {
+    view,
+    start,
+    restart,
+    unlink,
+    cancel,
+    starting: flow.starting,
+    unlinking,
+    startError: flow.startError,
+    origin: flow.origin,
+  };
 }

@@ -7,6 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SystemRequirements, RuntimeRequirements } from '@dorkos/shared/agent-runtime';
 import { createMockTransport } from '@dorkos/test-utils';
+import type { CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { SystemRequirementsStep } from '../SystemRequirementsStep';
 
@@ -130,6 +131,8 @@ function renderStep(options: {
   config?: ReturnType<typeof configWith>;
   /** Render the way the dev playground does: pre-baked scan AND pre-baked pick. */
   simulated?: boolean;
+  /** `GET /api/cloud/credits`, when the test needs DorkOS credits in play. */
+  credits?: CloudCreditsStatus;
 }) {
   const capabilities =
     options.capabilities ??
@@ -141,6 +144,7 @@ function renderStep(options: {
       defaultRuntime: Object.keys(capabilities)[0] ?? 'claude-code',
     }),
     getConfig: vi.fn().mockResolvedValue(options.config ?? configWith()),
+    ...(options.credits ? { getCloudCredits: vi.fn().mockResolvedValue(options.credits) } : {}),
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
@@ -166,6 +170,24 @@ function renderStep(options: {
 }
 
 describe('SystemRequirementsStep', () => {
+  it('counts a runtime whose new work runs on DorkOS credits as ready', async () => {
+    renderStep({
+      requirements: { runtimes: { codex: CODEX_LOGIN } },
+      config: configWith({ runtime: 'codex' }),
+      credits: {
+        enabled: true,
+        killed: false,
+        linked: true,
+        ready: true,
+        runtimes: { 'claude-code': 'follow-up', codex: 'wired', opencode: 'follow-up' },
+        defaults: { codex: { runsOn: 'credits', chosenBy: 'user' } },
+      },
+    });
+
+    expect(await screen.findByTestId('onboarding-get-started')).toHaveTextContent('Meet DorkBot');
+    expect(screen.getByRole('heading')).toHaveTextContent('You’re ready');
+  });
+
   it('one runtime ready: shows Meet DorkBot and fires onContinue', async () => {
     const onContinue = vi.fn();
     renderStep({

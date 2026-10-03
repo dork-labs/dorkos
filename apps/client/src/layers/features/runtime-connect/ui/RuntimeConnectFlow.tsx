@@ -11,16 +11,29 @@
  * one-click provisioning inline (ADR-0317).
  *
  * Being the one entry point is also what makes it the right place to answer
- * "can this browser connect anything at all" (DOR-1655) — see the guard below.
+ * "can this browser connect anything at all" (DOR-1655), and "is DorkOS the
+ * default here" (spec `dorkos-account-by-default` §3) — see below. Every
+ * surface that opens a runtime's connect step (Settings › Runtimes, the
+ * onboarding connect step, the status bar, Run with…) gets both by passing this
+ * slot.
  *
  * @module features/runtime-connect/ui/RuntimeConnectFlow
  */
+import { useState, type ReactNode } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
 import { useLocalCaller } from '@/layers/entities/config';
 import {
+  getRuntimeDescriptor,
+  KeepItLocalNote,
   RemoteSigninNotice,
+  useRuntimeCreditsOffer,
   type RuntimeConnectSlot,
   type RuntimeConnectSlotProps,
 } from '@/layers/entities/runtime';
+import { cn } from '@/layers/shared/lib';
+import { useCreditsOfferSlot, useSetCreditsDefault } from '@/layers/shared/model';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
+import { creditsConnectSuccess } from '../lib/connect-success';
 import { LoginConnect } from './LoginConnect';
 import { OpenCodeProviderPicker } from './OpenCodeProviderPicker';
 
@@ -32,6 +45,9 @@ export function RuntimeConnectFlow({
   onConnected,
 }: RuntimeConnectSlotProps) {
   const isLocalCaller = useLocalCaller();
+  const offer = useRuntimeCreditsOffer(type);
+  const renderCreditsOffer = useCreditsOfferSlot();
+  const setDefault = useSetCreditsDefault();
 
   // Every flow below this line ends at a loopback-only endpoint — the delegated
   // login and paste-key for Claude Code and Codex, and OpenCode's OpenRouter
@@ -45,13 +61,87 @@ export function RuntimeConnectFlow({
   // a button that says otherwise.
   if (!isLocalCaller) return <RemoteSigninNotice />;
 
-  if (connect.kind === 'provider-picker') {
-    return <OpenCodeProviderPicker currentProvider={currentProvider} onConnected={onConnected} />;
+  const lead = offer === 'lead' && renderCreditsOffer !== null;
+  const ownWays =
+    connect.kind === 'provider-picker' ? (
+      <OpenCodeProviderPicker currentProvider={currentProvider} onConnected={onConnected} />
+    ) : connect.kind === 'login' ? (
+      <LoginConnect type={type} onConnected={onConnected} asOtherWay={lead} />
+    ) : null;
+  if (ownWays === null) return null;
+
+  const label = getRuntimeDescriptor(type).label;
+  // A runtime that can run a model on this computer is told so by name.
+  const ollama = connect.kind === 'provider-picker';
+
+  // Its new work already runs on credits: that is a working setup, so it says
+  // so and offers no card. Its own ways stay one tap away (a repeat visit).
+  if (offer === 'on-credits') {
+    return (
+      <div className="space-y-3" data-testid={`credits-ready-${type}`}>
+        <div role="status">
+          <p className="text-status-success-fg flex items-center gap-1.5 text-sm font-medium">
+            <Check className="size-3.5" aria-hidden />
+            You’re ready
+          </p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            New work on {label} runs on your DorkOS credits.
+          </p>
+        </div>
+        <OtherWays collapsed>{ownWays}</OtherWays>
+      </div>
+    );
   }
-  if (connect.kind === 'login') {
-    return <LoginConnect type={type} onConnected={onConnected} />;
+
+  // Nothing works yet and credits reach this runtime: DorkOS first, the
+  // runtime's own ways as visible rows right under it (a first visit), and the
+  // line that nothing has to leave this computer.
+  if (lead) {
+    return (
+      <div className="space-y-4" data-testid={`default-first-${type}`}>
+        {renderCreditsOffer({
+          runtime: type,
+          origin: `runtime-connect:${type}`,
+          fullWidth: true,
+          onChoose: async () => {
+            await setDefault.mutateAsync({ runtime: type, useCredits: true });
+            onConnected?.(creditsConnectSuccess(label));
+          },
+        })}
+        <OtherWays>{ownWays}</OtherWays>
+        <KeepItLocalNote ollama={ollama} />
+      </div>
+    );
   }
-  return null;
+
+  return ownWays;
+}
+
+/**
+ * The runtime's own ways under a DorkOS default: shown as short rows on a
+ * first visit, folded behind one quiet "Other ways" on a repeat one.
+ */
+function OtherWays({ collapsed = false, children }: { collapsed?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(!collapsed);
+  if (!collapsed) {
+    return (
+      <section className="space-y-2" aria-label="Other ways">
+        <p className="text-muted-foreground text-2xs font-medium tracking-wide uppercase">
+          Other ways
+        </p>
+        {children}
+      </section>
+    );
+  }
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors">
+        <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
+        Other ways
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-3">{children}</CollapsibleContent>
+    </Collapsible>
+  );
 }
 
 /**

@@ -8,10 +8,12 @@ import {
   useRuntimeCapabilities,
   selectRuntimeReadiness,
   getRuntimeDescriptor,
+  runsOnCredits,
   RuntimeSetupPanel,
   type RuntimeConnectSlot,
 } from '@/layers/entities/runtime';
 import { cn } from '@/layers/shared/lib';
+import { useCloudCredits } from '@/layers/shared/model';
 import {
   Button,
   HoverBorderGradient,
@@ -90,6 +92,7 @@ export function SystemRequirementsStep({
   const reducedMotion = useReducedMotion();
   const query = useRuntimeRequirements();
   const { data: capabilityMap } = useRuntimeCapabilities();
+  const { data: credits } = useCloudCredits();
 
   const requirements = simulatedResult ?? query.data;
   const settled = simulatedResult !== undefined || query.isSuccess || query.isError;
@@ -111,11 +114,16 @@ export function SystemRequirementsStep({
     const ready: string[] = [];
     const notReady: string[] = [];
     for (const type of Object.keys(requirements.runtimes)) {
-      if (selectRuntimeReadiness(requirements, type, true).state === 'ready') ready.push(type);
+      // A runtime whose new work runs on DorkOS credits is ready: choosing
+      // credits in its connect card is a finished setup, not a gap.
+      const isReady =
+        selectRuntimeReadiness(requirements, type, true).state === 'ready' ||
+        (simulatedResult === undefined && runsOnCredits(credits, type));
+      if (isReady) ready.push(type);
       else notReady.push(type);
     }
     return { readyTypes: ready, notReadyTypes: notReady };
-  }, [requirements]);
+  }, [requirements, credits, simulatedResult]);
 
   const hasReady = readyTypes.length > 0;
 

@@ -56,6 +56,15 @@ export { listRuntimeTypes } from './lib/list-runtime-types';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { CommandTransparencyNote } from './ui/CommandTransparencyNote';
 export { RemoteSigninNotice } from './ui/RemoteSigninNotice';
+export { KeepItLocalNote } from './ui/KeepItLocalNote';
+export {
+  creditsOfferFor,
+  creditsWiredFor,
+  runsOnCredits,
+  selectRuntimeSignIn,
+  type RuntimeCreditsOffer,
+} from './lib/credits-offer';
+export { useRuntimeCreditsOffer } from './model/use-runtime-credits-offer';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';
 export type {
   RuntimeConnectSlot,

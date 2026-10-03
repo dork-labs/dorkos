@@ -15,6 +15,11 @@
 export interface LoginCopy {
   /** Label on the delegated sign-in button. */
   signInLabel: string;
+  /**
+   * The same sign-in as one of the "Other ways" under a DorkOS credits
+   * default, where it has to say whose account it is ("Sign in with Claude").
+   */
+  otherWayLabel: string;
   /** One-line hint under the sign-in button. */
   signInHint: string;
   /** Status line shown while the delegated login is in flight. */
@@ -30,6 +35,7 @@ export interface LoginCopy {
 const LOGIN_COPY: Record<string, LoginCopy> = {
   'claude-code': {
     signInLabel: 'Sign in',
+    otherWayLabel: 'Sign in with Claude',
     signInHint: 'Use your Claude subscription or Anthropic account.',
     signInPending: 'Waiting for sign-in to complete…',
     keyLabel: 'Anthropic API key',
@@ -38,6 +44,7 @@ const LOGIN_COPY: Record<string, LoginCopy> = {
   },
   codex: {
     signInLabel: 'Sign in with ChatGPT',
+    otherWayLabel: 'Sign in with ChatGPT',
     signInHint: 'Use your ChatGPT account.',
     signInPending: 'Waiting for sign-in to complete…',
     keyLabel: 'OpenAI API key',

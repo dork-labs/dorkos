@@ -52,3 +52,16 @@ export function loginConnectSuccess(label: string): RuntimeConnectSuccess {
     body: `This session uses ${label}. Change models from the model menu.`,
   };
 }
+
+/**
+ * Success copy once a runtime's new work runs on DorkOS credits, chosen from
+ * its connect step.
+ *
+ * @param label - The runtime's display label (e.g. `"Claude Code"`).
+ */
+export function creditsConnectSuccess(label: string): RuntimeConnectSuccess {
+  return {
+    title: `${label} is ready`,
+    body: `New work on ${label} runs on your DorkOS credits. Change it any time in Settings › Runtimes.`,
+  };
+}

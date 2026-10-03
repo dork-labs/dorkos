@@ -1,8 +1,8 @@
 import { useId, useState, type ReactNode } from 'react';
-import { ACCOUNT_RESUME_PROMPT } from '@dorkos/shared/account-usage';
+import { ACCOUNT_RESUME_PROMPT, CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { AccountDot, Banner, Button } from '@/layers/shared/ui';
 import { formatResetTime, modelBucketName } from '@/layers/shared/lib';
-import { useNow } from '@/layers/shared/model';
+import { useCreditsOfferSlot, useNow } from '@/layers/shared/model';
 import {
   bannerActions,
   bannerVariantFor,
@@ -127,6 +127,7 @@ export function AccountLimitBanner({
   now: fixedNow,
 }: AccountLimitBannerProps) {
   const banner = useLimitBanner(sessionId, injected);
+  const renderCreditsOffer = useCreditsOfferSlot();
   const { limit, state, subject, identityGate } = banner;
   // Seconds only while a move counts down; minutes otherwise. One interval.
   const tick = useNow(state === 'handing-off' ? 1000 : 60_000);
@@ -143,6 +144,7 @@ export function AccountLimitBanner({
   const checkboxId = useId();
 
   if (!limit || !state) return null;
+  const leadsWithCredits = banner.creditsOffered && renderCreditsOffer !== null;
 
   const plan = limit.plan;
   const fallbackModel = modelDisplayName(limit.modelFallback, banner.models);
@@ -300,6 +302,19 @@ export function AccountLimitBanner({
             <label htmlFor={checkboxId}>Continue automatically when it resets</label>
           </div>
         )}
+        {/* Out of usage leads with DorkOS credits where they reach this runtime:
+            the person's choice, never a switch made for them. Signed out, it
+            links this computer right here first. */}
+        {leadsWithCredits && renderCreditsOffer && (
+          <div className="mt-1.5">
+            {renderCreditsOffer({
+              runtime: banner.runtime,
+              origin: `limit:${sessionId}`,
+              intent: 'keep-going',
+              onChoose: () => banner.continueOn({ account: CREDITS_ACCOUNT_ID }),
+            })}
+          </div>
+        )}
         {actions.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {actions.map((action) => (
@@ -307,7 +322,7 @@ export function AccountLimitBanner({
                 key={action}
                 size="sm"
                 variant={
-                  PRIMARY_ACTIONS.has(action)
+                  PRIMARY_ACTIONS.has(action) && !leadsWithCredits
                     ? 'default'
                     : action === 'continue-here'
                       ? 'ghost'

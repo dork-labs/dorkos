@@ -1,8 +1,26 @@
 import { LogIn } from 'lucide-react';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 
-import { Banner, Button } from '@/layers/shared/ui';
-import { useSettingsDeepLink } from '@/layers/shared/model';
+import {
+  creditsOfferFor,
+  KeepItLocalNote,
+  selectRuntimeSignIn,
+  useRuntimeRequirements,
+} from '@/layers/entities/runtime';
+import {
+  Banner,
+  Button,
+  ResponsivePopover,
+  ResponsivePopoverContent,
+  ResponsivePopoverTitle,
+  ResponsivePopoverTrigger,
+} from '@/layers/shared/ui';
+import {
+  useCloudCredits,
+  useCreditsOfferSlot,
+  useSettingsDeepLink,
+  type CreditsOfferSlot,
+} from '@/layers/shared/model';
 
 /** The Settings tab where signing in again actually happens. */
 const RUNTIMES_SETTINGS_TAB = 'runtimes';
@@ -98,10 +116,19 @@ export interface RuntimeSigninBannerProps {
  * would let the one signal a web-only operator has be hidden while their agents
  * are still stuck.
  *
+ * ## When it leads with DorkOS credits
+ *
+ * Only for a runtime with no sign-in at all that the server reports credits
+ * wired for (spec `dorkos-account-by-default` §3): "Use DorkOS credits" comes
+ * first and opens the offer in place, with Sign in beside it. A sign-in that
+ * expired or ran out — the usual reason this row is up — leads with signing in
+ * again, and nothing ever switches to credits by itself.
+ *
  * @param runtimes - Runtime types whose sign-in is dead.
  */
 export function RuntimeSigninBanner({ runtimes }: RuntimeSigninBannerProps) {
   const { open: openSettings } = useSettingsDeepLink();
+  const renderCreditsOffer = useCreditsOfferSlot();
   if (runtimes.length === 0) return null;
 
   const named = runtimes.slice(0, NAMED_LIMIT).map(runtimeDisplayName);
@@ -117,14 +144,62 @@ export function RuntimeSigninBanner({ runtimes }: RuntimeSigninBannerProps) {
       variant="critical"
       icon={LogIn}
       actions={
-        <Button variant="outline" size="sm" onClick={() => openSettings(RUNTIMES_SETTINGS_TAB)}>
-          Sign in
-        </Button>
+        <>
+          {renderCreditsOffer && (
+            <CreditsLeadAction runtimes={runtimes} renderCreditsOffer={renderCreditsOffer} />
+          )}
+          <Button variant="outline" size="sm" onClick={() => openSettings(RUNTIMES_SETTINGS_TAB)}>
+            Sign in
+          </Button>
+        </>
       }
     >
       Your <span className="font-medium">{subject}</span> stopped working{rest}. Agents and
       scheduled tasks stay stuck until you sign in again.
     </Banner>
+  );
+}
+
+/**
+ * "Use DorkOS credits", first in the row, for the first named runtime with no
+ * sign-in at all that credits reach — or nothing. Its own component so the
+ * reads it needs run only where the app shell supplies the offer.
+ */
+function CreditsLeadAction({
+  runtimes,
+  renderCreditsOffer,
+}: {
+  runtimes: string[];
+  renderCreditsOffer: CreditsOfferSlot;
+}) {
+  const requirements = useRuntimeRequirements();
+  const { data: credits } = useCloudCredits();
+  const creditsFor = runtimes.find(
+    (type) =>
+      creditsOfferFor(selectRuntimeSignIn(requirements.data, type), credits, type) === 'lead'
+  );
+  if (!creditsFor) return null;
+  return (
+    <ResponsivePopover>
+      <ResponsivePopoverTrigger asChild>
+        <Button size="sm" data-testid="signin-banner-credits">
+          Use DorkOS credits
+        </Button>
+      </ResponsivePopoverTrigger>
+      <ResponsivePopoverContent align="end" className="w-80 p-4">
+        <ResponsivePopoverTitle>
+          Run {runtimeDisplayName(creditsFor)} on DorkOS credits
+        </ResponsivePopoverTitle>
+        <div className="space-y-3">
+          {renderCreditsOffer({
+            runtime: creditsFor,
+            origin: `signin-banner:${creditsFor}`,
+            fullWidth: true,
+          })}
+          <KeepItLocalNote />
+        </div>
+      </ResponsivePopoverContent>
+    </ResponsivePopover>
   );
 }
 
