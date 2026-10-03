@@ -172,8 +172,13 @@ it('upgrades populated accounting-era batches without changing their existing da
   ) as {
     entries: { tag: string }[];
   };
-  journal.entries.pop();
-  expect(journal.entries.at(-1)?.tag).toBe('0138_canvas_channel_accounting');
+  // Everything up to the accounting era, whatever later migrations exist: a
+  // later one (DOR-2678's approvals column) must not move this test's cut.
+  const accountingEra = journal.entries.findIndex(
+    (entry) => entry.tag === '0138_canvas_channel_accounting'
+  );
+  expect(accountingEra).toBeGreaterThan(-1);
+  journal.entries = journal.entries.slice(0, accountingEra + 1);
   for (const entry of journal.entries)
     copyFileSync(
       join(migrationDirectory, `${entry.tag}.sql`),
