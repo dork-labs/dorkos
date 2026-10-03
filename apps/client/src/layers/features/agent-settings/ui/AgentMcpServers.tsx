@@ -54,7 +54,7 @@ function InboundMcpCrossLink() {
 
   return (
     <p className="text-muted-foreground text-xs leading-relaxed">
-      Want other apps to use DorkOS as an MCP server instead? That is the other direction.{' '}
+      Want other apps to use DorkOS’s tools?{' '}
       <Button
         variant="link"
         size="sm"
@@ -241,8 +241,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
 
       {!canAdd && (
         <p className="text-muted-foreground text-xs">
-          This agent’s runtime can’t run DorkOS-managed MCP servers yet. Any servers below show
-          read-only status.
+          This agent can’t use added servers yet. View only.
         </p>
       )}
 
@@ -263,7 +262,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
               onClick={() => managed.refetch()}
               className="focus-visible:ring-2"
             >
-              Retry
+              Try again
             </Button>
           </FieldCardContent>
         </FieldCard>
@@ -272,9 +271,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
           <FieldCardContent>
             <p className="text-muted-foreground text-sm">
               No MCP servers yet.{' '}
-              {canAdd
-                ? 'Add one to give this agent tools from an external server.'
-                : 'This runtime can’t run managed servers.'}
+              {canAdd ? 'Add one for more tools.' : 'This agent can’t use them yet.'}
             </p>
           </FieldCardContent>
         </FieldCard>

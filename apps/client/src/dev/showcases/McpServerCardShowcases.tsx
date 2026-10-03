@@ -97,7 +97,7 @@ function AttentionStatesSection() {
             scope="agent"
             pluginName={null}
             status="needs-sign-in"
-            sentence="Sign in to granola so this agent can use its tools."
+            sentence="Sign in to granola to use its tools."
             managed
             toggle={<EnableSwitch name="granola" on />}
             actions={
@@ -268,7 +268,7 @@ function WorkingStatesSection() {
             scope="agent"
             pluginName={null}
             status="signed-in"
-            sentence="DorkOS has a sign-in for this server. Test to check it responds."
+            sentence="Signed in. Test to check it answers."
             managed
             toggle={<EnableSwitch name="posthog" on />}
             actions={
@@ -441,7 +441,7 @@ function ElsewhereStatesSection() {
             scope={null}
             pluginName={null}
             status="connected"
-            sentence="This agent’s runtime loads this server. Add it to manage it here."
+            sentence="Loaded from outside DorkOS. Add it to manage it here."
             managed={false}
             actions={addAction('my-server')}
           />
@@ -474,7 +474,7 @@ function OpeningOrderSection() {
       {
         name: 'granola',
         status: 'needs-sign-in',
-        sentence: 'Sign in to granola so this agent can use its tools.',
+        sentence: 'Sign in to granola to use its tools.',
         managed: true,
       },
       {

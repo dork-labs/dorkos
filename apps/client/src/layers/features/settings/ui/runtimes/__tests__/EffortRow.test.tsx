@@ -174,7 +174,7 @@ describe('EffortRow', () => {
       value: 'high',
     });
     const clear = screen.getByTestId('runtime-effort-clear-claude-code');
-    expect(clear).toHaveTextContent('High is saved here and does nothing. Clear it');
+    expect(clear).toHaveTextContent('High is saved but unused. Clear it');
     await userEvent.click(clear);
     expect(onChange).toHaveBeenCalledWith(null);
   });

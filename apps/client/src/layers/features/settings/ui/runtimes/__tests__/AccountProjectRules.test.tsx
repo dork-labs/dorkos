@@ -144,7 +144,7 @@ describe('LimitToProjectsDialog', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'Only these projects' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Tick at least one project, or choose Any project.'
+      'Pick a project, or choose Any project.'
     );
     expect(transport.setAccountOnlyProjects).not.toHaveBeenCalled();
   });
@@ -206,8 +206,9 @@ describe('ProjectLimitsList', () => {
     expect(screen.getByText('client-app')).toBeInTheDocument();
     expect(screen.getByText('Uses only Work and Main')).toBeInTheDocument();
     expect(screen.getByTestId('project-limits-note')).toHaveTextContent(
-      'set by the Flow extension or a script'
+      'use only the accounts listed'
     );
+    expect(screen.getByRole('button', { name: 'About project limits' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Let client-app use every account' }));
     await waitFor(() =>
       expect(transport.setProjectAccounts).toHaveBeenCalledWith('/work/client-app', null)

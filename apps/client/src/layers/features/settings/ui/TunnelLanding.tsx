@@ -15,7 +15,7 @@ export function TunnelLanding({ onGetStarted }: TunnelLandingProps) {
           DorkOS from any device" under the illustration, and this block used to
           repeat it verbatim a few pixels below. */}
       <p className="text-muted-foreground mx-auto max-w-[280px] text-center text-xs leading-relaxed">
-        Create a secure tunnel to reach your sessions from your phone, tablet, or any browser.
+        Reach your sessions from your phone, tablet or any browser.
       </p>
 
       {/* The press comes from the Button primitive now, and the 1% hover grow
@@ -25,8 +25,7 @@ export function TunnelLanding({ onGetStarted }: TunnelLandingProps) {
       </Button>
 
       <p className="text-muted-foreground/60 mx-auto max-w-[280px] text-center text-xs">
-        One-time setup, about 2 minutes: paste a free ngrok token, then create your owner login if
-        you don’t have one yet.
+        One-time setup, about 2 minutes.
       </p>
     </div>
   );

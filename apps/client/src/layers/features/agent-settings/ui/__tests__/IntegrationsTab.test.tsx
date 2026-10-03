@@ -377,7 +377,7 @@ describe('IntegrationsTab', () => {
     it('State C: shows no-bindings message with IntegrationPicker CTA when relay is on and adapters exist', () => {
       // Default beforeEach: relay enabled, one catalog entry, no bindings.
       const view = renderTab();
-      expect(view.getByText('Let this agent reach the outside world')).toBeInTheDocument();
+      expect(view.getByText('Message this agent from anywhere')).toBeInTheDocument();
       expect(view.getByText('Add connection')).toBeInTheDocument();
     });
   });
@@ -478,7 +478,7 @@ describe('IntegrationsTab', () => {
       const dialogContent = screen.getByRole('alertdialog');
       const confirmButton = within(dialogContent)
         .getAllByRole('button')
-        .find((el) => el.textContent === 'Remove');
+        .find((el) => el.textContent === 'Remove connection');
       expect(confirmButton).toBeDefined();
       fireEvent.click(confirmButton!);
 
@@ -668,7 +668,7 @@ describe('IntegrationsTab', () => {
       fireEvent.click(screen.getByText('Send test'));
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith('Test OK: routed in 42ms');
+        expect(mockToastSuccess).toHaveBeenCalledWith('Test message delivered in 42ms');
       });
     });
 
@@ -693,7 +693,7 @@ describe('IntegrationsTab', () => {
       fireEvent.click(screen.getByText('Send test'));
 
       await waitFor(() => {
-        expect(mockToastError).toHaveBeenCalledWith('Test failed: Agent not found');
+        expect(mockToastError).toHaveBeenCalledWith('Test message didn’t arrive: Agent not found');
       });
     });
   });
@@ -743,7 +743,7 @@ describe('IntegrationsTab', () => {
       });
 
       const view = renderTab();
-      expect(view.getByText(/Paused .* no messages routing/)).toBeInTheDocument();
+      expect(view.getByText(/Paused: no messages delivered/)).toBeInTheDocument();
     });
   });
 

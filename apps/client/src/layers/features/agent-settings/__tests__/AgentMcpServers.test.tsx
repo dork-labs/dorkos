@@ -149,9 +149,7 @@ describe('AgentMcpServers', () => {
     });
     const { container } = renderComponent(transport);
 
-    await waitFor(() =>
-      expect(within(container).getByText(/other apps to use dorkos as an mcp server/i))
-    );
+    await waitFor(() => expect(within(container).getByText(/other apps to use DorkOS’s tools/i)));
     fireEvent.click(within(container).getByRole('button', { name: /see settings.*tools/i }));
     expect(openSettingsSpy).toHaveBeenCalledWith('tools', 'external-mcp');
   });
@@ -195,9 +193,7 @@ describe('AgentMcpServers', () => {
     expect(within(container).queryByText('computer')).not.toBeInTheDocument();
     expect(within(container).queryByText('project')).not.toBeInTheDocument();
     expect(
-      within(container).getByText(
-        'This agent’s runtime loads this server. Add it to manage it here.'
-      )
+      within(container).getByText('Loaded from outside DorkOS. Add it to manage it here.')
     ).toBeInTheDocument();
     // Servers DorkOS does not manage are not editable — no enable switch.
     expect(within(container).queryByLabelText('Enable legacy')).not.toBeInTheDocument();
@@ -328,7 +324,7 @@ describe('AgentMcpServers', () => {
     await waitFor(() =>
       expect(within(container).getByText(/Couldn.t load managed servers/i)).toBeInTheDocument()
     );
-    expect(within(container).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(within(container).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
   it('disables Add and explains when the runtime cannot run managed servers (OpenCode)', async () => {
@@ -342,9 +338,7 @@ describe('AgentMcpServers', () => {
     const { container } = renderComponent(transport);
 
     await waitFor(() =>
-      expect(
-        within(container).getByText(/can.t run DorkOS-managed MCP servers yet/i)
-      ).toBeInTheDocument()
+      expect(within(container).getByText(/can.t use added servers yet/i)).toBeInTheDocument()
     );
     expect(
       within(container).queryByRole('button', { name: /add server/i })
@@ -369,9 +363,7 @@ describe('AgentMcpServers', () => {
     await waitFor(() =>
       expect(within(container).getByRole('button', { name: /add server/i })).toBeInTheDocument()
     );
-    expect(
-      within(container).queryByText(/can.t run DorkOS-managed MCP servers yet/i)
-    ).not.toBeInTheDocument();
+    expect(within(container).queryByText(/can.t use added servers yet/i)).not.toBeInTheDocument();
   });
 
   it('offers Add to agent on an unmanaged card for a managed-capable runtime', async () => {
@@ -526,11 +518,11 @@ describe('AgentMcpServers', () => {
 
     // The confirm surface shows the exact command the operator entered.
     await waitFor(() =>
-      expect(within(container).getByText(/Confirm this server for Test Agent/i)).toBeInTheDocument()
+      expect(within(container).getByText(/Add this server to Test Agent\?/i)).toBeInTheDocument()
     );
     expect(within(container).getByText('npx')).toBeInTheDocument();
 
-    fireEvent.click(within(container).getByRole('button', { name: /confirm & add/i }));
+    fireEvent.click(within(container).getByRole('button', { name: /^add server$/i }));
 
     await waitFor(() => expect(grantApproval).toHaveBeenCalledWith('appr-1'));
     expect(addAgentMcpServer).toHaveBeenCalledTimes(2);
@@ -623,7 +615,7 @@ describe('AgentMcpServers', () => {
 
     await waitFor(() =>
       expect(
-        within(container).getByText('Sign in to granola so this agent can use its tools.')
+        within(container).getByText('Sign in to granola to use its tools.')
       ).toBeInTheDocument()
     );
     // The raw "Unauthorized" string never reaches the user.
@@ -781,7 +773,7 @@ describe('AgentMcpServers', () => {
     await pressTest(container, 'granola');
     await waitFor(() =>
       expect(
-        within(container).getByText('Sign in to granola so this agent can use its tools.')
+        within(container).getByText('Sign in to granola to use its tools.')
       ).toBeInTheDocument()
     );
 
@@ -795,7 +787,7 @@ describe('AgentMcpServers', () => {
     // 3. The line is GONE, and the row says so.
     await waitFor(() =>
       expect(
-        within(container).queryByText('Sign in to granola so this agent can use its tools.')
+        within(container).queryByText('Sign in to granola to use its tools.')
       ).not.toBeInTheDocument()
     );
     expect(within(container).getByText('Signed in')).toBeInTheDocument();
@@ -822,7 +814,7 @@ describe('AgentMcpServers', () => {
     await pressTest(container, 'granola');
     await waitFor(() =>
       expect(
-        within(container).getByText('Sign in to granola so this agent can use its tools.')
+        within(container).getByText('Sign in to granola to use its tools.')
       ).toBeInTheDocument()
     );
 
@@ -832,7 +824,7 @@ describe('AgentMcpServers', () => {
 
     await waitFor(() =>
       expect(
-        within(container).queryByText('Sign in to granola so this agent can use its tools.')
+        within(container).queryByText('Sign in to granola to use its tools.')
       ).not.toBeInTheDocument()
     );
     expect(within(container).getByText('Signed in')).toBeInTheDocument();

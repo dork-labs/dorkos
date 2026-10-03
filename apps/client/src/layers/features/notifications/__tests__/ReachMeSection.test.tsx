@@ -160,7 +160,7 @@ describe('adding this device', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Add this device' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/set to refuse notifications/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/blocks notifications from DorkOS/);
     expect(registerPushSubscription).not.toHaveBeenCalled();
   });
 });
@@ -235,10 +235,10 @@ describe('the warning that nothing can carry an escalation', () => {
 
     // The section is on screen, but the device list has not answered yet.
     expect(await screen.findByText(/Devices DorkOS can reach/)).toBeInTheDocument();
-    expect(screen.queryByText(/Nothing can carry that yet\./)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nothing can reach you yet\./)).not.toBeInTheDocument();
 
     releaseDevices({ subscriptions: [] });
-    expect(await screen.findByText(/Nothing can carry that yet\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing can reach you yet\./)).toBeInTheDocument();
   });
 
   it('stays quiet once a device is subscribed', async () => {
@@ -257,7 +257,7 @@ describe('the warning that nothing can carry an escalation', () => {
     });
 
     expect(await screen.findByText(/Another device/)).toBeInTheDocument();
-    expect(screen.queryByText(/Nothing can carry that yet\./)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nothing can reach you yet\./)).not.toBeInTheDocument();
   });
 });
 
@@ -268,7 +268,9 @@ describe('surfaces that cannot be pushed to', () => {
     const getPushVapidPublicKey = vi.fn();
     renderSection({ getPushVapidPublicKey });
 
-    expect(await screen.findByText(/The desktop app is already running/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/The desktop app shows its own notifications/)
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add this device' })).not.toBeInTheDocument();
     // Reading the key GENERATES the install's keypair, so a surface that cannot
     // use it must not ask for it.
@@ -279,9 +281,7 @@ describe('surfaces that cannot be pushed to', () => {
     stubPushIncapableBrowser();
     renderSection();
 
-    expect(
-      await screen.findByText(/This browser cannot receive notifications/)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/This browser can’t get notifications/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add this device' })).not.toBeInTheDocument();
   });
 
@@ -289,7 +289,9 @@ describe('surfaces that cannot be pushed to', () => {
     stubPushCapableBrowser();
     renderSection({ getPushVapidPublicKey: vi.fn().mockResolvedValue({ key: null }) });
 
-    expect(await screen.findByText(/could not set up push notifications/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/couldn’t set up notifications on this computer/)
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add this device' })).not.toBeInTheDocument();
   });
 });

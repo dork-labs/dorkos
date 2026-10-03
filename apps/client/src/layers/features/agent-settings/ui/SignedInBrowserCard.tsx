@@ -76,19 +76,25 @@ export function SignedInBrowserCard({ agentId, agentLabel }: SignedInBrowserCard
           )}
           <div className="min-w-0 space-y-1">
             <p className="text-sm font-medium">
-              {pending ? `Confirm the signed-in browser for ${agentLabel}` : 'Signed-in browser'}
+              {pending ? `Give ${agentLabel} the signed-in browser?` : 'Signed-in browser'}
             </p>
-            <p className="text-muted-foreground text-xs">
-              {pending
-                ? 'This command runs on your machine whenever the agent starts a session. Each session gets its own browser, so agents working at the same time never share one.'
-                : 'A web browser that starts signed in to the sites you saved. The agent never sees your passwords.'}
-            </p>
+            {pending ? (
+              <>
+                <p className="text-muted-foreground text-xs">
+                  Runs on this computer when a session starts.
+                </p>
+                <p className="text-muted-foreground text-xs">Each session gets its own browser.</p>
+              </>
+            ) : (
+              <p className="text-muted-foreground text-xs">
+                Starts signed in to your saved sites. The agent never sees your passwords.
+              </p>
+            )}
             {data.saved ? (
               <p className="text-xs">Signed in to {sites}.</p>
             ) : (
               <p className="text-status-warning-fg text-xs">
-                No sign-ins saved yet, so it starts signed out. Run{' '}
-                <code className="font-mono">{loginHint}</code>
+                Starts signed out. Run <code className="font-mono">{loginHint}</code>
                 <CopyButton
                   value={loginHint}
                   label="Copy the sign-in command"
@@ -128,7 +134,7 @@ export function SignedInBrowserCard({ agentId, agentLabel }: SignedInBrowserCard
             disabled={addServer.isPending}
             className="focus-visible:ring-2"
           >
-            {addServer.isPending ? 'Adding…' : pending ? 'Confirm & add' : 'Give it the browser'}
+            {addServer.isPending ? 'Adding…' : pending ? 'Add browser' : 'Give it the browser'}
           </Button>
         </div>
       </FieldCardContent>

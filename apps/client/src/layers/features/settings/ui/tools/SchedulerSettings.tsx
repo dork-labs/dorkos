@@ -25,10 +25,7 @@ export function SchedulerSettings({ scheduler, onUpdate }: SchedulerSettingsProp
     <>
       {/* Same wording as the Control Center row that writes the same setting
           (`ControlCenterSwitches`): one control, one name. */}
-      <SettingRow
-        label="Scheduled runs at once"
-        description="How many scheduled tasks may run at the same time."
-      >
+      <SettingRow label="Scheduled runs at once" description="How many tasks can run at once.">
         <Input
           type="number"
           min={1}

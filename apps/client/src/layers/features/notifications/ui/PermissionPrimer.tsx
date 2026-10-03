@@ -1,5 +1,5 @@
 /**
- * "Want a nudge when this needs you?" — the one time DorkOS asks about browser
+ * "Get notified when this needs you" — the one time DorkOS asks about browser
  * notifications.
  *
  * @module features/notifications/ui/PermissionPrimer
@@ -37,8 +37,7 @@ export function PermissionPrimer({ onAllow, onNotNow }: PermissionPrimerProps) {
     >
       <Bell className="text-muted-foreground size-4 shrink-0" aria-hidden />
       <p className="text-muted-foreground min-w-0 flex-1 text-xs">
-        Want a nudge when this needs you? DorkOS can show a notification while you are looking at
-        something else.
+        Get notified when this needs you, even in another tab.
       </p>
       {/* Its own line under the words on a phone, beside them from `sm` up. The
           two buttons are ~210px together, which is most of a narrow zone's

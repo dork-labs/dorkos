@@ -13,9 +13,9 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  { label: 'Initialising ngrok agent', thresholdMs: STEP_THRESHOLDS_MS[0] },
-  { label: 'Opening secure tunnel', thresholdMs: STEP_THRESHOLDS_MS[1] },
-  { label: 'Registering public URL', thresholdMs: STEP_THRESHOLDS_MS[2] },
+  { label: 'Starting ngrok', thresholdMs: STEP_THRESHOLDS_MS[0] },
+  { label: 'Opening a secure link', thresholdMs: STEP_THRESHOLDS_MS[1] },
+  { label: 'Getting your public address', thresholdMs: STEP_THRESHOLDS_MS[2] },
 ];
 
 /**

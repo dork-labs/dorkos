@@ -212,6 +212,16 @@ describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () =>
     expect(screen.getByTestId('execution-exception')).toHaveTextContent('model opus');
   });
 
+  it('says where an agent runs as a sentence, never with the word runtime', async () => {
+    const onCodex = exception('gamma', false);
+    onCodex.report.deviations = [{ field: 'runtime', label: 'Codex' }];
+    renderInjected([onCodex]);
+
+    const row = await screen.findByTestId('execution-exception');
+    expect(row).toHaveTextContent('runs on Codex');
+    expect(row).not.toHaveTextContent(/runtime/i);
+  });
+
   it('spends no catalog round-trip deciding what the caller already decided', async () => {
     const transport = renderInjected([exception('alpha', false)]);
     await screen.findByTestId('execution-exception');

@@ -30,7 +30,7 @@ export const PRESET_LABEL: Record<PermissionPreset, string> = {
 export const PRESET_SUMMARY: Record<PermissionPreset, string> = {
   careful: 'Agents ask before they change anything, and can’t reach outside DorkOS.',
   balanced: 'Agents run their rooms and ask before anything wider.',
-  full: 'Agents do the everyday work themselves and ask before installing or changing settings.',
+  full: 'Agents do everyday work alone and ask before installs or settings changes.',
 };
 
 /**
@@ -50,11 +50,11 @@ export function defaultSourceText(
     case 'preset':
       return preset ? `From ${PRESET_LABEL[preset]}` : 'From your preset';
     case 'unchanged':
-      return 'Not chosen yet, so it works as it did before';
+      return 'Not chosen yet, so it works as before';
     case 'floor':
       return 'Never Allowed';
     case 'always-asks':
-      return 'Always asks, so you see what it would change';
+      return 'Always asks, so you see the change first';
     default:
       return '';
   }
@@ -62,7 +62,7 @@ export function defaultSourceText(
 
 /** What Blocked means, said once wherever it is explained. */
 export const BLOCKED_IS_NOT_A_SANDBOX =
-  "Blocked stops an agent that plays by the rules; it isn't a sandbox.";
+  'Blocked stops agents that follow the rules. It isn’t a sandbox.';
 
 /**
  * Where a Files & commands stop came from, in words.
@@ -74,10 +74,10 @@ export function filesSourceText(source: FilesAndCommandsSource): string {
     case 'agent':
       return 'Set for this agent';
     case 'runtime':
-      return 'Set for its runtime in Settings → Runtimes';
+      return 'Set in Settings → Runtimes';
     case 'default':
       return 'The setting everyone has';
     case 'runtime-own':
-      return 'Not set, so each runtime starts where it always has';
+      return 'Not set, so each AI tool uses its own default';
   }
 }

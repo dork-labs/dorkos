@@ -1,4 +1,4 @@
-import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/ui';
+import { FieldCard, FieldCardContent, MoreDetails, SwitchSettingRow } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig, TelemetryPayloadDisclosure } from '@/layers/entities/config';
 
 /**
@@ -33,10 +33,7 @@ export function PrivacyTab() {
         {/* No heading here: the Settings dialog draws the panel's own "Privacy
             & Data" header. This is the explainer that sits under it. */}
         <p className="text-muted-foreground text-xs">
-          DorkOS shares a little anonymous data by default so we can count active installs and see
-          which features get used. It is anonymous by construction: no prompts, code, file paths, or
-          session content are ever sent, and nothing sends before the first-run notice. Crash
-          reports are separate and stay off until you turn them on.{' '}
+          Nothing is shared unless a switch below is on.{' '}
           <a
             href="https://dorkos.ai/telemetry"
             target="_blank"
@@ -47,41 +44,48 @@ export function PrivacyTab() {
           </a>
           .
         </p>
+        <MoreDetails className="text-xs">
+          <p>
+            The three count switches are anonymous. They never send prompts, code or file paths.
+          </p>
+          <p>The counts never send before the first-run notice.</p>
+          <p>Crash reports and AI run data are separate. Both start off.</p>
+        </MoreDetails>
       </div>
 
       <FieldCard>
         <FieldCardContent>
           <SwitchSettingRow
             label="Share anonymous install counts"
-            description="Send anonymous marketplace install events so we can rank packages and spot broken installs."
+            description="Counts marketplace installs, to rank packages and spot broken ones."
             checked={telemetry?.install ?? false}
             onCheckedChange={(v) => setChannel('install', v)}
             disabled={updateConfig.isPending}
           />
           <SwitchSettingRow
             label="Share an anonymous daily heartbeat"
-            description="Send one small anonymous ping about once a day so we can count active installs. You can see exactly what gets sent below."
+            description="One anonymous ping a day, to count active installs. Exact payload below."
             checked={telemetry?.heartbeat ?? false}
             onCheckedChange={(v) => setChannel('heartbeat', v)}
             disabled={updateConfig.isPending}
           />
           <SwitchSettingRow
             label="Share anonymous feature-usage events"
-            description="Send a few named events like app start and new session so we can see which features get used. Counts only, never prompts, code, file paths, or session content."
+            description="Counts events like app start, to see which features get used."
             checked={telemetry?.usage ?? false}
             onCheckedChange={(v) => setChannel('usage', v)}
             disabled={updateConfig.isPending}
           />
           <SwitchSettingRow
             label="Share AI run metadata"
-            description="Send a small summary of each agent turn: which model ran, how many tokens it used, how long it took, and the cost. Never your prompts, your code, or your conversations. Off until you turn it on."
+            description="Model, tokens, time and cost per turn. Never your prompts, code or conversations."
             checked={telemetry?.aiMetadata ?? false}
             onCheckedChange={(v) => setChannel('aiMetadata', v)}
             disabled={updateConfig.isPending}
           />
           <SwitchSettingRow
             label="Share crash reports"
-            description="Send a cleaned-up crash report to dorkos.ai when something breaks. Scrubbed first: no error messages, no file paths, no code. Off until you turn it on."
+            description="A scrubbed report to dorkos.ai when something breaks. No error messages, paths or code."
             checked={telemetry?.errorReporting ?? false}
             onCheckedChange={(v) => setChannel('errorReporting', v)}
             disabled={updateConfig.isPending}

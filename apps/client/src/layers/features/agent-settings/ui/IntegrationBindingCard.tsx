@@ -54,8 +54,8 @@ const STATE_DOT_CLASS: Record<CardAdapterState, string> = {
 function buildRestrictionDetail(binding: AdapterBinding): string {
   const parts: string[] = [];
   if (binding.canInitiate) parts.push('Can start conversations');
-  if (!binding.canReply) parts.push('Cannot reply');
-  if (!binding.canReceive) parts.push('Cannot receive');
+  if (!binding.canReply) parts.push('Can’t reply');
+  if (!binding.canReceive) parts.push('Can’t receive');
   return parts.join(' · ');
 }
 
@@ -139,7 +139,7 @@ export function IntegrationBindingCard({
   const restrictionDetail = isRestricted ? buildRestrictionDetail(binding) : '';
 
   const activityText = useMemo(() => {
-    if (isPaused) return 'Paused \u2014 no messages routing';
+    if (isPaused) return 'Paused: no messages delivered';
     if (!lastMessageAt) return 'No recent activity';
     return `Last received ${formatRelativeTime(lastMessageAt).toLowerCase()}`;
     // `tick` is intentionally read as a dep so the label recomputes on the 60s interval.
@@ -251,10 +251,9 @@ export function IntegrationBindingCard({
       <AlertDialog open={showRemoveConfirm} onOpenChange={setShowRemoveConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove connection</AlertDialogTitle>
+            <AlertDialogTitle>Remove the {integrationName} connection?</AlertDialogTitle>
             <AlertDialogDescription>
-              Remove the connection to {integrationName}? The agent will no longer receive messages
-              from it.
+              This agent stops getting messages from it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -266,7 +265,7 @@ export function IntegrationBindingCard({
               }}
               className="bg-red-600 hover:bg-red-700"
             >
-              Remove
+              Remove connection
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

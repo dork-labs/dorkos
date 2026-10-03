@@ -109,7 +109,7 @@ export function EffortRow({
   return (
     <SettingRow
       label="Effort"
-      description="How hard a new conversation thinks before it answers."
+      description="How much effort new conversations put into answers."
       orientation="vertical"
     >
       {!supportsEffort ? (
@@ -135,7 +135,7 @@ export function EffortRow({
               className="focus-ring text-status-warning-fg self-start rounded-sm text-xs underline-offset-2 hover:underline disabled:pointer-events-none disabled:opacity-50"
               data-testid={`runtime-effort-clear-${runtimeType}`}
             >
-              {effortLabel(value)} is saved here and does nothing. Clear it
+              {effortLabel(value)} is saved but unused. Clear it
             </button>
           )}
         </div>

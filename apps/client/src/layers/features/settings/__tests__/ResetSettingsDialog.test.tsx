@@ -36,8 +36,8 @@ describe('ResetSettingsDialog', () => {
 
   it('says what it resets and what it leaves alone', () => {
     render(<ResetSettingsDialog open onOpenChange={onOpenChange} />);
-    expect(screen.getByText(/back to how they shipped/i)).toBeInTheDocument();
-    expect(screen.getByText(/your projects, agents, and chats stay/i)).toBeInTheDocument();
+    expect(screen.getByText(/go back to default/i)).toBeInTheDocument();
+    expect(screen.getByText(/your projects, agents and chats stay/i)).toBeInTheDocument();
   });
 
   it('resets nothing until the confirm is pressed', () => {

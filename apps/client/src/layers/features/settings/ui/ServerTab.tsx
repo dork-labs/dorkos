@@ -58,10 +58,10 @@ export function ServerTab() {
             {config.isDevMode ? (
               <div className="-mx-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/30">
                 <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                  Development Build
+                  Development build
                 </span>
                 <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
-                  Running from source. Version checks disabled
+                  Running from source. Update checks are off.
                 </p>
               </div>
             ) : (
@@ -193,10 +193,7 @@ function LoggingSection({ config }: { config: ServerConfig }) {
         </Select>
       </SettingRow>
 
-      <SettingRow
-        label="Biggest log file"
-        description="How big one log file gets before DorkOS starts a new one."
-      >
+      <SettingRow label="Biggest log file" description="When DorkOS starts a new file.">
         <div className="flex items-center gap-1.5">
           <Input
             type="number"
@@ -213,10 +210,7 @@ function LoggingSection({ config }: { config: ServerConfig }) {
         </div>
       </SettingRow>
 
-      <SettingRow
-        label="Old files kept"
-        description="How many old log files to keep. Between 1 and 30."
-      >
+      <SettingRow label="Old files kept" description="From 1 to 30.">
         <Input
           type="number"
           min={1}
@@ -297,7 +291,7 @@ function ServerUnreachable({
         Can’t reach the DorkOS server
       </span>
       <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
-        It may be restarting. Give it a moment and try again.
+        It may be restarting. Try again shortly.
       </p>
       {detail ? (
         <p className="text-3xs mt-1 font-mono break-words text-amber-700/80 dark:text-amber-300/80">
@@ -333,7 +327,7 @@ function ServerAddress({ port }: { port: number }) {
       <div>
         <p className="text-sm font-medium">Address</p>
         <p className="text-muted-foreground text-xs">
-          Where DorkOS is answering on this computer. Bookmark it, or point another app at it.
+          Where DorkOS runs on this computer. Bookmark it or share it.
         </p>
       </div>
       {/* One grid for both URLs so the controls column is sized by the widest
@@ -352,8 +346,7 @@ function ServerAddress({ port }: { port: number }) {
           </button>
         </AddressField>
         <p className="text-muted-foreground col-span-2 text-xs">
-          Give this one to MCP clients like Claude Code, Cursor, or Windsurf. It is a URL to paste,
-          not a page to visit.
+          For MCP clients like Claude Code or Cursor. Paste it, don’t visit it.
         </p>
         <AddressField url={`${baseUrl}/mcp`} label="MCP endpoint" />
       </div>

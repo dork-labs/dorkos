@@ -69,23 +69,23 @@ export function ServerRestartOverlay({ open, onDismiss }: ServerRestartOverlayPr
         {timedOut ? (
           <>
             <p className="text-foreground text-sm font-medium">
-              Server did not restart within 30 seconds.
+              DorkOS didn’t come back within 30 seconds.
             </p>
             <p className="text-muted-foreground text-sm">Check your terminal for errors.</p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={startPolling}>
-                Try Again
+                Try again
               </Button>
               <Button variant="outline" size="sm" onClick={onDismiss}>
-                Dismiss
+                Close
               </Button>
             </div>
           </>
         ) : (
           <>
             <Spinner size="lg" className="text-muted-foreground" />
-            <p className="text-foreground text-sm font-medium">Restarting server…</p>
-            <p className="text-muted-foreground text-sm">Waiting for server to come back…</p>
+            <p className="text-foreground text-sm font-medium">Restarting DorkOS…</p>
+            <p className="text-muted-foreground text-sm">Waiting for it to come back…</p>
           </>
         )}
       </div>

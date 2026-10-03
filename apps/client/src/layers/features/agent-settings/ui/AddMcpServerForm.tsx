@@ -256,11 +256,11 @@ export function AddMcpServerForm({
           <div className="flex items-start gap-2">
             <ShieldAlert className="text-status-warning-dot mt-0.5 size-4 shrink-0" />
             <div className="space-y-1">
-              <p className="text-sm font-medium">Confirm this server for {agentLabel}</p>
+              <p className="text-sm font-medium">Add this server to {agentLabel}?</p>
               <p className="text-muted-foreground text-xs">
                 {kind === 'stdio'
-                  ? 'This command runs on your machine whenever the agent starts a session.'
-                  : 'The agent connects to this URL whenever it starts a session.'}
+                  ? 'Runs on this computer when a session starts.'
+                  : 'The agent connects here when a session starts.'}
               </p>
             </div>
           </div>
@@ -284,7 +284,7 @@ export function AddMcpServerForm({
               disabled={addServer.isPending}
               className="focus-visible:ring-2"
             >
-              {addServer.isPending ? 'Adding…' : 'Confirm & add'}
+              {addServer.isPending ? 'Adding…' : 'Add server'}
             </Button>
           </div>
         </FieldCardContent>
