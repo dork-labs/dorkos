@@ -6,7 +6,13 @@
  * resumes the wrong delivery, or the hold outlives its window with nobody told.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CapacityHold, HOLD_ANNOUNCE_AFTER_MS, WAITING_PER_SLOT } from '../capacity-hold.js';
+import {
+  CapacityHold,
+  HOLD_ANNOUNCE_AFTER_MS,
+  WAITING_PER_SLOT,
+  type CapacityLease,
+  type SlotOutcome,
+} from '../capacity-hold.js';
 
 /** One slot, and a ceiling far longer than anything a test waits out by hand. */
 function oneSlot(overrides: { holdCeilingMs?: number; announceAfterMs?: number } = {}) {
@@ -17,6 +23,12 @@ function oneSlot(overrides: { holdCeilingMs?: number; announceAfterMs?: number }
       ? { announceAfterMs: overrides.announceAfterMs }
       : {}),
   });
+}
+
+/** Narrow a real acquisition before returning its lease. */
+function requireLease(outcome: SlotOutcome): CapacityLease {
+  if (typeof outcome === 'string') throw new Error(`Expected acquired slot, got ${outcome}`);
+  return outcome;
 }
 
 beforeEach(() => {
@@ -31,8 +43,8 @@ describe('taking a slot', () => {
   it('hands out exactly as many slots as there are, and no more', async () => {
     const hold = new CapacityHold({ maxConcurrent: 2, holdCeilingMs: 300_000 });
 
-    await expect(hold.acquire({ mayWait: false })).resolves.toBe('acquired');
-    await expect(hold.acquire({ mayWait: false })).resolves.toBe('acquired');
+    await expect(hold.acquire({ mayWait: false })).resolves.toMatchObject({ kind: 'acquired' });
+    await expect(hold.acquire({ mayWait: false })).resolves.toMatchObject({ kind: 'acquired' });
     expect(hold.running).toBe(2);
 
     await expect(hold.acquire({ mayWait: false })).resolves.toBe('line_full');
@@ -54,25 +66,25 @@ describe('taking a slot', () => {
 describe('a message for a busy runtime is held, not dropped', () => {
   it('starts the held delivery when the slot is released', async () => {
     const hold = oneSlot();
-    await hold.acquire({ mayWait: true });
+    const initial = await hold.acquire({ mayWait: true });
 
     const held = hold.acquire({ mayWait: true });
     await vi.advanceTimersByTimeAsync(0);
     expect(hold.waiting).toBe(1);
 
-    hold.release();
+    hold.release(requireLease(initial));
 
     // Seeded defect: make `release()` decrement `active` and return without
     // draining the line. This resolves to nothing — the message is dropped
     // exactly as the old semaphore dropped it — and the assertion times out.
-    await expect(held).resolves.toBe('acquired');
+    await expect(held).resolves.toMatchObject({ kind: 'acquired' });
     expect(hold.running).toBe(1);
     expect(hold.waiting).toBe(0);
   });
 
   it('releases a slot even when the turn that held it threw', async () => {
     const hold = oneSlot();
-    await hold.acquire({ mayWait: true });
+    const initial = await hold.acquire({ mayWait: true });
     const held = hold.acquire({ mayWait: true });
     await vi.advanceTimersByTimeAsync(0);
 
@@ -80,55 +92,67 @@ describe('a message for a busy runtime is held, not dropped', () => {
     try {
       throw new Error('the turn exploded');
     } catch {
-      hold.release();
+      hold.release(requireLease(initial));
     }
 
-    await expect(held).resolves.toBe('acquired');
+    await expect(held).resolves.toMatchObject({ kind: 'acquired' });
   });
 
   it('runs waiting deliveries oldest first', async () => {
     const hold = oneSlot();
-    await hold.acquire({ mayWait: true });
+    const initial = await hold.acquire({ mayWait: true });
 
     const order: string[] = [];
-    const first = hold.acquire({ mayWait: true }).then((o) => order.push(`first:${o}`));
+    const first = hold.acquire({ mayWait: true }).then((o) => {
+      order.push(`first:${typeof o === 'string' ? o : o.kind}`);
+      return o;
+    });
     await vi.advanceTimersByTimeAsync(0);
-    const second = hold.acquire({ mayWait: true }).then((o) => order.push(`second:${o}`));
+    const second = hold.acquire({ mayWait: true }).then((o) => {
+      order.push(`second:${typeof o === 'string' ? o : o.kind}`);
+      return o;
+    });
     await vi.advanceTimersByTimeAsync(0);
 
-    hold.release();
+    hold.release(requireLease(initial));
     await vi.advanceTimersByTimeAsync(0);
     // Seeded defect: `this.line.pop()` instead of `this.line[0]`. The newest
     // message jumps the queue and the oldest can starve; `order` reads
     // `['second:acquired']` here.
     expect(order).toEqual(['first:acquired']);
 
-    hold.release();
+    hold.release(requireLease(await first));
     await Promise.all([first, second]);
     expect(order).toEqual(['first:acquired', 'second:acquired']);
   });
 
   it('resumes each held delivery on its own promise, never another one', async () => {
     const hold = oneSlot();
-    await hold.acquire({ mayWait: true });
+    const initial = await hold.acquire({ mayWait: true });
 
     // Two chats, two different agents, both waiting on the same ceiling. The
     // line carries no identity of its own — each wait resolves ITS caller — so
     // the only way a hold could reach the wrong agent is a shared resolver.
     const settled: string[] = [];
-    const alice = hold.acquire({ mayWait: true }).then((o) => settled.push(`alice:${o}`));
+    const alice = hold.acquire({ mayWait: true }).then((o) => {
+      settled.push(`alice:${typeof o === 'string' ? o : o.kind}`);
+      return o;
+    });
     await vi.advanceTimersByTimeAsync(0);
-    const bob = hold.acquire({ mayWait: true }).then((o) => settled.push(`bob:${o}`));
+    const bob = hold.acquire({ mayWait: true }).then((o) => {
+      settled.push(`bob:${typeof o === 'string' ? o : o.kind}`);
+      return o;
+    });
     await vi.advanceTimersByTimeAsync(0);
 
-    hold.release();
+    hold.release(requireLease(initial));
     await vi.advanceTimersByTimeAsync(0);
     expect(settled).toEqual(['alice:acquired']);
     // Bob is still waiting: one release is one start, so nobody rode in on
     // somebody else's slot.
     expect(hold.waiting).toBe(1);
 
-    hold.release();
+    hold.release(requireLease(await alice));
     await Promise.all([alice, bob]);
     expect(settled).toEqual(['alice:acquired', 'bob:acquired']);
     expect(hold.running).toBe(1);
@@ -154,13 +178,13 @@ describe('a message for a busy runtime is held, not dropped', () => {
 describe('telling the person their message is waiting', () => {
   it('says nothing at all about a hold that clears quickly', async () => {
     const hold = oneSlot();
-    await hold.acquire({ mayWait: true });
+    const initial = await hold.acquire({ mayWait: true });
     const onHeld = vi.fn();
     const held = hold.acquire({ mayWait: true, onHeld });
 
     await vi.advanceTimersByTimeAsync(HOLD_ANNOUNCE_AFTER_MS - 1);
-    hold.release();
-    await expect(held).resolves.toBe('acquired');
+    hold.release(requireLease(initial));
+    await expect(held).resolves.toMatchObject({ kind: 'acquired' });
 
     // Seeded defect: call `onHeld()` at park time instead of on a timer. Every
     // sub-second hold then posts a line into a chat that is about to get its
@@ -186,12 +210,12 @@ describe('telling the person their message is waiting', () => {
 
   it('does not speak after the wait has already ended', async () => {
     const hold = oneSlot();
-    await hold.acquire({ mayWait: true });
+    const initial = await hold.acquire({ mayWait: true });
     const onHeld = vi.fn();
     const held = hold.acquire({ mayWait: true, onHeld });
 
-    hold.release();
-    await expect(held).resolves.toBe('acquired');
+    hold.release(requireLease(initial));
+    await expect(held).resolves.toMatchObject({ kind: 'acquired' });
 
     // Seeded defect: drop the `clearTimeout(announce)` in `settle`. The turn is
     // running — has possibly already answered — and the chat is told it is
@@ -243,7 +267,7 @@ describe('a hold that outlives its window', () => {
 
   it('leaves the slot count untouched when a wait expires', async () => {
     const hold = oneSlot({ holdCeilingMs: 60_000 });
-    await hold.acquire({ mayWait: true });
+    const initial = await hold.acquire({ mayWait: true });
     const held = hold.acquire({ mayWait: true });
 
     await vi.advanceTimersByTimeAsync(60_000);
@@ -253,7 +277,7 @@ describe('a hold that outlives its window', () => {
     // would drop the count below the truth and the ceiling would shrink by one
     // for the life of the process.
     expect(hold.running).toBe(1);
-    hold.release();
+    hold.release(requireLease(initial));
     expect(hold.running).toBe(0);
   });
 
@@ -273,5 +297,74 @@ describe('a hold that outlives its window', () => {
     await expect(first).resolves.toBe('stopped');
     await expect(second).resolves.toBe('stopped');
     expect(hold.waiting).toBe(0);
+  });
+});
+
+describe('capacity acquisition identity causal control', () => {
+  it.each([false, true])(
+    'keeps another acquired slot when original release is repeated: %s',
+    async (repeat) => {
+      const hold = new CapacityHold({ maxConcurrent: 2, holdCeilingMs: 300_000 });
+      const first = await hold.acquire({ mayWait: false });
+      await hold.acquire({ mayWait: false });
+      Reflect.apply(hold.release, hold, [first]);
+      if (repeat) Reflect.apply(hold.release, hold, [first]);
+      expect(hold.running).toBe(1);
+      await hold.acquire({ mayWait: false });
+      expect(hold.running).toBe(2);
+      await expect(hold.acquire({ mayWait: false })).resolves.toBe('line_full');
+    }
+  );
+});
+
+describe('original pool acquisition custody', () => {
+  it('rejects copied and foreign leases without freeing a live slot', async () => {
+    const hold = oneSlot();
+    const foreignPool = oneSlot();
+    const original = requireLease(await hold.acquire({ mayWait: false }));
+    const foreign = requireLease(await foreignPool.acquire({ mayWait: false }));
+    expect(Object.isFrozen(original)).toBe(true);
+
+    hold.release({ ...original });
+    hold.release(foreign);
+    expect(hold.running).toBe(1);
+    await expect(hold.acquire({ mayWait: false })).resolves.toBe('line_full');
+    expect(foreignPool.running).toBe(1);
+
+    hold.release(original);
+    expect(hold.running).toBe(0);
+    const successor = requireLease(await hold.acquire({ mayWait: false }));
+    hold.release(original);
+    expect(hold.running).toBe(1);
+    await expect(hold.acquire({ mayWait: false })).resolves.toBe('line_full');
+    hold.release(successor);
+    foreignPool.release(foreign);
+    expect(hold.running).toBe(0);
+    expect(foreignPool.running).toBe(0);
+  });
+
+  it('reserves the oldest waiter slot before its promise continuation runs', async () => {
+    const hold = oneSlot();
+    const original = requireLease(await hold.acquire({ mayWait: false }));
+    const oldest = hold.acquire({ mayWait: true });
+    const next = hold.acquire({ mayWait: true });
+
+    hold.release(original);
+    expect(hold.running).toBe(1);
+    expect(hold.waiting).toBe(1);
+    await expect(hold.acquire({ mayWait: false })).resolves.toBe('line_full');
+    hold.release(original);
+    expect(hold.running).toBe(1);
+    expect(hold.waiting).toBe(1);
+
+    const firstLease = requireLease(await oldest);
+    expect(firstLease).not.toBe(original);
+    hold.release(firstLease);
+    expect(hold.running).toBe(1);
+    expect(hold.waiting).toBe(0);
+    const nextLease = requireLease(await next);
+    expect(nextLease).not.toBe(firstLease);
+    hold.release(nextLease);
+    expect(hold.running).toBe(0);
   });
 });
