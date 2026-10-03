@@ -66,23 +66,36 @@ const contributionSlots = new WeakMap<object, Map<string, Map<string, object>>>(
 export function enterContribution(
   target: object,
   method: (slot: string, contribution: { id: string }) => () => void,
-  input: { slot: string; contribution: { id: string }; requireCurrent: () => void }
+  input: {
+    slot: string;
+    contribution: { id: string };
+    requireCurrent: () => void;
+    track: (cleanup: () => void) => void;
+  }
 ): () => void {
-  const { slot, contribution, requireCurrent } = input;
+  const { slot, contribution, requireCurrent, track } = input;
   const id = contribution.id;
   let all = contributionSlots.get(target);
   if (!all) contributionSlots.set(target, (all = new Map()));
   let slots = all.get(slot);
   if (!slots) all.set(slot, (slots = new Map()));
   const occurrence = {};
-  requireCurrent();
-  slots.set(id, occurrence);
-  const remove = Reflect.apply(method, target, [slot, contribution]);
-  return retainCleanup(() => {
+  let entered = false;
+  const receipt: { remove?: () => void } = {};
+  const cleanup = retainCleanup(() => {
+    if (!entered) return;
+    // A port may commit before throwing: missing receipt never proves zero effects.
+    if (!receipt.remove) throw new Error('Extension registration cleanup is unknown.');
     if (slots.get(id) !== occurrence) return;
     slots.delete(id);
-    return Reflect.apply(remove, undefined, []);
+    return Reflect.apply(receipt.remove, undefined, []);
   });
+  track(cleanup);
+  requireCurrent();
+  slots.set(id, occurrence);
+  entered = true;
+  receipt.remove = Reflect.apply(method, target, [slot, contribution]);
+  return cleanup;
 }
 /** Every captured obligation is attempted even when an earlier one throws. */
 export function disposeTogether(callbacks: Array<() => void>): void {
@@ -134,4 +147,14 @@ export function subscribeOwned(
   context.owner.track(cleanup);
   context.owner.requireCurrent();
   return cleanup;
+}
+
+/** Observe a throwing lifetime guard without introducing another authority. */
+export function isHostCurrent(requireCurrent: () => void): boolean {
+  try {
+    requireCurrent();
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -15,7 +15,14 @@ vi.mock('@/layers/shared/lib/ui-action-dispatcher', async (importOriginal) => ({
 }));
 
 import { ExtensionLoader } from '../model/extension-loader';
-import { getExtensionLoadAdmission } from '@/layers/shared/lib';
+import {
+  getExtensionLoadAdmission,
+  registerExtensionLoadOwner,
+  beginExtensionAuthOperation,
+  authenticateExtensionAuthOperation,
+  resumeExtensionLoads,
+} from '@/layers/shared/lib';
+import { createInitialSlots, useExtensionRegistry } from '@/layers/shared/model';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 
@@ -980,4 +987,120 @@ describe('caller cleanup return remains unobserved settlement', () => {
       if (kind === 'command') expect(deps.unregisterCommandHandler).toHaveBeenCalledOnce();
     }
   );
+});
+
+/** Real Zustand commit notifications; only module delivery is substituted. */
+async function unreturnedReceiptFixture(kind: 'healthy' | 'getter' | 'entered' | 'committed') {
+  const id = 'receipt-' + kind;
+  const record = makeCompiledRecord(id);
+  const url = '/api/extensions/' + id + '/bundle?generation=' + record.bundleGeneration;
+  const previousFetch = globalThis.fetch;
+  useExtensionRegistry.setState({ slots: createInitialSlots() });
+  const registry = useExtensionRegistry.getState();
+  const failure = vi.fn();
+  const register = vi.fn(() => {
+    throw new Error('ENTERED_WITHOUT_RECEIPT');
+  });
+  const port = kind === 'entered' ? { ...registry, register } : { ...registry };
+  if (kind === 'getter')
+    Object.defineProperty(port, 'register', {
+      get() {
+        throw new Error('REFUSED_BEFORE_ENTRY');
+      },
+    });
+  let notified = false;
+  const stop = useExtensionRegistry.subscribe(() => {
+    if (kind === 'committed' && !notified) {
+      notified = true;
+      throw new Error('COMMITTED_NOTIFICATION_FAILED');
+    }
+  });
+  const loader = new ExtensionLoader(
+    makeDeps({ registry: port as unknown as ExtensionAPIDeps['registry'] }),
+    getExtensionLoadAdmission(),
+    failure
+  );
+  vi.doMock(url, () => ({
+    activate(api: import('@dorkos/extension-api').ExtensionAPI) {
+      api.registerComponent('dashboard.sections', 'one', () => null);
+    },
+  }));
+  mockFetch([record]);
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const outcome = await loader.initialize();
+    return { loader, failure, outcome, register, registry };
+  } finally {
+    stop();
+    errors.mockRestore();
+    globalThis.fetch = previousFetch;
+    vi.doUnmock(url);
+  }
+}
+
+describe('unreturned registration receipt custody', () => {
+  afterEach(() => useExtensionRegistry.setState({ slots: createInitialSlots() }));
+  it.each(['healthy', 'getter'] as const)(
+    '%s remains conclusive with real registry state',
+    async (kind) => {
+      const { loader, outcome, failure } = await unreturnedReceiptFixture(kind);
+      expect(outcome.loaded.size).toBe(kind === 'healthy' ? 1 : 0);
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(
+        kind === 'healthy' ? 1 : 0
+      );
+      expect(loader.deactivateAll()).toBe(true);
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(0);
+      expect(failure).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['entered', 'committed'] as const)(
+    '%s without a receipt retains sticky unknown custody',
+    async (kind) => {
+      const { loader, outcome, failure, register } = await unreturnedReceiptFixture(kind);
+      expect(outcome.loaded.size).toBe(0);
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(
+        kind === 'committed' ? 1 : 0
+      );
+      if (kind === 'entered') expect(register).toHaveBeenCalledOnce();
+      expect(loader.deactivateAll()).toBe(false);
+      expect(loader.deactivateAll()).toBe(false);
+      expect(failure).toHaveBeenCalledOnce();
+    }
+  );
+  it('unknown old occurrence never removes a genuine same-ID replacement', async () => {
+    const { loader, registry } = await unreturnedReceiptFixture('committed');
+    const component = () => null;
+    const release = registry.register('dashboard.sections', {
+      id: 'receipt-committed:one',
+      component,
+    });
+    expect(loader.deactivateAll()).toBe(false);
+    expect(useExtensionRegistry.getState().slots['dashboard.sections'][0].component).toBe(
+      component
+    );
+    release();
+    expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(0);
+  });
+  it('genuine provider retirement cannot heal unknown custody after current sign-in', async () => {
+    const { loader } = await unreturnedReceiptFixture('committed');
+    const provider = {};
+    const unregister = registerExtensionLoadOwner(
+      provider,
+      getExtensionLoadAdmission(),
+      () => loader.deactivateAll(),
+      async () => {}
+    );
+    try {
+      beginExtensionAuthOperation({}, 'signOut');
+      const owner = {};
+      const token = beginExtensionAuthOperation(owner, 'signIn');
+      expect(authenticateExtensionAuthOperation(owner, token)).toBe(true);
+      expect(resumeExtensionLoads(owner, token)).toBeNull();
+      expect(getExtensionLoadAdmission().suspended).toBe(true);
+      expect(getExtensionLoadAdmission().retirementFailed).toBe(true);
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(1);
+    } finally {
+      unregister();
+    }
+  });
 });

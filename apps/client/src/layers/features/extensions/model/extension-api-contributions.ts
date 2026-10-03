@@ -16,6 +16,7 @@ import type { ExtensionAPIDeps } from './types';
 import {
   prepareCommandRegistration,
   enterContribution,
+  isHostCurrent,
   disposeTogether,
   subscribeOwned,
   type HostEntry,
@@ -89,7 +90,8 @@ function registerCommand(
   const registration = registrationContexts.get(deps);
   const target = registration?.deps ?? deps;
   const command = prepareCommandRegistration(target, actionId, () => {
-    if (registration ? registration.owner.isCurrent() : isContributionCurrent(context)) callback();
+    if (registration ? registration.owner.isCurrent() : isHostCurrent(context.requireCurrent))
+      callback();
   });
   cleanups.push(command.cleanup); // Before handler entry, including an unacknowledged throw.
   hostCall(target, command.enter, []);
@@ -391,9 +393,9 @@ export function createOwnedRegistrationDeps(
             slot,
             contribution: contribution as { id: string },
             requireCurrent: owner.requireCurrent,
+            track: owner.track,
           }
         );
-        owner.track(cleanup);
         owner.requireCurrent();
         return cleanup;
       },
@@ -406,14 +408,6 @@ export function createOwnedRegistrationDeps(
 }
 
 const registrationContexts = new WeakMap<ExtensionAPIDeps, RegistrationContext>();
-function isContributionCurrent(context: ContributionContext): boolean {
-  try {
-    context.requireCurrent();
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function registerContribution(
   context: ContributionContext,
@@ -427,9 +421,16 @@ function registerContribution(
     : enterContribution(
         registry,
         method as (slot: string, contribution: { id: string }) => () => void,
-        { slot, contribution, requireCurrent: context.requireCurrent }
+        {
+          slot,
+          contribution,
+          requireCurrent: context.requireCurrent,
+          track: (cleanup) => {
+            context.cleanups.push(cleanup);
+          },
+        }
       );
-  context.cleanups.push(cleanup);
+  if (registrationContexts.has(context.deps)) context.cleanups.push(cleanup);
   context.requireCurrent();
   return cleanup;
 }
