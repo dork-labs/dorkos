@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(extensions): let an extension message an agent with ctx.agent.send (DOR-2683)'
+  - "fix(session): disarm swept rows' pending entries whether or not anyone listens (DOR-2683)"
 ---
 
 ### Added
