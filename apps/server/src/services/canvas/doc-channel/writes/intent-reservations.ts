@@ -1,5 +1,6 @@
+import { readPreparedIntentPage } from '../readers/prepared-readers.js';
 /** Complete, streaming sole-ledger reservation census; it grants no conversion credit. */
-import { asc, gt, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
+import type { DbTransaction } from '@dorkos/db';
 import { z } from 'zod';
 import { CanvasChannelCheckboxRequestSchema } from '@dorkos/shared/canvas-channel-schemas';
 import type { DocWriteIntentRow } from '../store.js';
@@ -143,13 +144,7 @@ export function scanCheckboxReservations(
   try {
     for (;;) {
       const rows = readChecked('canvas_doc_write_intents', 'reservation-census', () =>
-        tx
-          .select()
-          .from(canvasDocWriteIntents)
-          .where(cursor === undefined ? undefined : gt(canvasDocWriteIntents.intentId, cursor))
-          .orderBy(asc(canvasDocWriteIntents.intentId))
-          .limit(PAGE_SIZE)
-          .all()
+        readPreparedIntentPage(tx, cursor)
       );
       for (const row of rows) include(summary, request, row);
       if (rows.length < PAGE_SIZE) break;

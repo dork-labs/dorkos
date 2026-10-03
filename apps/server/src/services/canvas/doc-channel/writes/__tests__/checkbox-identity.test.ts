@@ -266,12 +266,16 @@ it('validates every bounded keyset page rather than accepting an early physical 
   h.db.$client
     .prepare("UPDATE canvas_doc_write_intents SET evidence='{}' WHERE intent_id='page-0200'")
     .run();
-  const prepare = vi.spyOn(h.db.$client, 'prepare');
+  const all = vi.spyOn(Object.getPrototypeOf(h.db.$client.prepare('SELECT 1')), 'all');
   expect(h.service.writeFence.readiness()).toEqual({ ready: false, reason: 'corrupt' });
-  expect(prepare.mock.calls.filter(([query]) => query.includes('NOT IN'))).toHaveLength(3);
-  prepare.mockClear();
+  expect(all.mock.contexts.filter((statement) => statement.source.includes('NOT IN'))).toHaveLength(
+    3
+  );
+  all.mockClear();
   expect(() => h.service.writeFence.assertAdmission(actual)).toThrow(CheckboxFenceUnavailableError);
-  expect(prepare.mock.calls.filter(([query]) => query.includes('NOT IN'))).toHaveLength(3);
+  expect(all.mock.contexts.filter((statement) => statement.source.includes('NOT IN'))).toHaveLength(
+    3
+  );
 });
 
 it('rereads owned current durable state after staging and refuses an externally changed row before rename', async () => {

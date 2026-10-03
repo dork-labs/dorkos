@@ -1,17 +1,15 @@
+import { readPreparedIntentPage } from '../readers/prepared-readers.js';
 /** Complete original-policy accounting; a held reservation never acquires new authority. */
 import { types as utilTypes } from 'node:util';
 import {
   sql,
   type Db,
-  asc,
   canvasDocEvents,
   eq,
-  gt,
   approvals,
   canvasDocChannels,
   canvasDocGrants,
   canvasDocIdentityIntents,
-  canvasDocWriteIntents,
   type DbTransaction,
 } from '@dorkos/db';
 import {
@@ -265,13 +263,7 @@ export function scanCheckboxReservationPolicies(
     let validated = 0;
     for (;;) {
       const rows = readChecked('canvas_doc_write_intents', 'policy-census', () =>
-        tx
-          .select()
-          .from(canvasDocWriteIntents)
-          .where(cursor === undefined ? undefined : gt(canvasDocWriteIntents.intentId, cursor))
-          .orderBy(asc(canvasDocWriteIntents.intentId))
-          .limit(100)
-          .all()
+        readPreparedIntentPage(tx, cursor)
       );
       for (const row of rows) {
         validated = add(validated, 1);

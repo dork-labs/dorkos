@@ -1,4 +1,5 @@
 /** Real FILE rows stay fresh; compiled query reuse is never authority or a retained result. */
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +17,18 @@ import {
   type DbTransaction,
 } from '@dorkos/db';
 import { DocChannelStore, DocChannelCorruptionError } from '../store.js';
+import {
+  readPreparedIntentPage,
+  readPreparedUnresolvedIntentPage,
+} from '../readers/prepared-readers.js';
+import { completionFixture } from '../writes/__tests__/completion-fixtures.js';
+import { rawByteHash } from '../writes/checkbox-bytes.js';
+import {
+  scanCheckboxReservations,
+  CheckboxReservationCensusError,
+} from '../writes/intent-reservations.js';
+import { validateCheckboxEvidence } from '../writes/checkbox-evidence.js';
+import type { DocWriteIntentRow } from '../store.js';
 import { fixture as checkboxFixture } from '../writes/__tests__/checkbox-fixture.js';
 
 const NOW = '2026-10-03T12:00:00.000Z';
@@ -116,12 +129,18 @@ it.each(['commit', 'rollback'] as const)(
         escaped = tx;
         expect(h.store.getChannel('document-1', tx)?.updatedAt).toBe(NOW);
         expect(h.store.getChannel('document-1', tx)?.updatedAt).toBe(NOW);
+        expect(readPreparedIntentPage(tx)).toEqual([]);
+        expect(readPreparedUnresolvedIntentPage(tx)).toEqual([]);
         if (end === 'rollback') throw new Error('expected rollback');
       });
     if (end === 'rollback') expect(work).toThrow('expected rollback');
     else work();
     expect(escaped).toBeDefined();
     expect(() => h.store.getChannel('document-1', escaped!)).toThrow(
+      'transaction is no longer active'
+    );
+    expect(() => readPreparedIntentPage(escaped!)).toThrow('transaction is no longer active');
+    expect(() => readPreparedUnresolvedIntentPage(escaped!)).toThrow(
       'transaction is no longer active'
     );
     h.store.transaction((tx) => expect(h.store.getChannel('document-1', tx)?.updatedAt).toBe(NOW));
@@ -189,9 +208,17 @@ it('keeps an actual second-connection exclusive-lock refusal and succeeds freshl
   // A short native lock wait injects SQLITE_BUSY; the test deadline remains its original default.
   h.db.$client.pragma('busy_timeout=1');
   expect(h.store.getChannel('document-1')?.documentId).toBe('document-1');
+  expect(readPreparedIntentPage(h.db)).toEqual([]);
+  expect(readPreparedUnresolvedIntentPage(h.db)).toEqual([]);
   other.exec('BEGIN EXCLUSIVE');
   try {
     expect(() => h.store.getChannel('document-1')).toThrow(
+      expect.objectContaining({ code: 'SQLITE_BUSY' })
+    );
+    expect(() => readPreparedIntentPage(h.db)).toThrow(
+      expect.objectContaining({ code: 'SQLITE_BUSY' })
+    );
+    expect(() => readPreparedUnresolvedIntentPage(h.db)).toThrow(
       expect.objectContaining({ code: 'SQLITE_BUSY' })
     );
   } finally {
@@ -260,4 +287,107 @@ it('observes a second-connection original grant revoke across an actual held fil
   expect((await stat(h.path)).ino).toBe(inode);
   expect(h.row().eventId).toBe(input.eventId);
   expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+// Synthetic census rows retain actual consumed-approval evidence; these reader tests grant no write authority.
+async function ledgerRows(count: number) {
+  const h = await completionFixture();
+  cleanups.push(h.cleanup);
+  const rows = Array.from({ length: count }, (_, index): DocWriteIntentRow => {
+    const row = structuredClone(h.prepared);
+    row.intentId = `reader-${String(index).padStart(5, '0')}`;
+    row.eventId = randomUUID();
+    row.input = { ...(row.input as object), eventId: row.eventId };
+    row.envelopeHash = rawByteHash(Buffer.from(JSON.stringify(row.input)));
+    row.evidence = {
+      ...(row.evidence as object),
+      tempPath: join(row.resolvedCwd, `.dork-checkbox-${row.intentId}.tmp`),
+    };
+    validateCheckboxEvidence(row);
+    return row;
+  });
+  h.http.channels.transaction((tx) => {
+    for (const row of rows) {
+      tx.insert(canvasDocWriteIntents).values(row).run();
+      validateCheckboxEvidence(h.http.channels.getWriteIntent(row.intentId, tx)!);
+    }
+  });
+  return { ...h, rows };
+}
+
+it('executes fresh 100+100+5 full and unresolved pages with exact cursor parameters and wrap', async () => {
+  const h = await ledgerRows(205);
+  const nativePrepare = vi.spyOn(h.db.$client, 'prepare');
+  const before = nativePrepare.mock.calls.length;
+  for (const reader of [readPreparedIntentPage, readPreparedUnresolvedIntentPage]) {
+    const first = reader(h.db);
+    const second = reader(h.db, first[99]!.intentId);
+    const third = reader(h.db, second[99]!.intentId);
+    expect([first.length, second.length, third.length]).toEqual([100, 100, 5]);
+    expect([...first, ...second, ...third]).toEqual(h.rows);
+    expect(reader(h.db, third[4]!.intentId)).toEqual([]);
+    expect(reader(h.db)).toEqual(first);
+    expect(reader(h.db, 'reader-00099')).toEqual(second);
+  }
+  expect(nativePrepare.mock.calls.length - before).toBe(4);
+  h.db
+    .update(canvasDocWriteIntents)
+    .set({ updatedAt: LATER, status: 'committed' })
+    .where(eq(canvasDocWriteIntents.intentId, h.rows[0]!.intentId))
+    .run();
+  expect(readPreparedIntentPage(h.db)[0]).toMatchObject({ updatedAt: LATER, status: 'committed' });
+  expect(readPreparedUnresolvedIntentPage(h.db)).toHaveLength(100);
+  expect(readPreparedUnresolvedIntentPage(h.db)[0]!.intentId).toBe(h.rows[1]!.intentId);
+  // Preserve the old two cursor branches exactly, including unresolved empty-string first-page semantics.
+  expect(readPreparedIntentPage(h.db, '')).toHaveLength(100);
+  expect(readPreparedUnresolvedIntentPage(h.db, '')).toEqual(
+    readPreparedUnresolvedIntentPage(h.db)
+  );
+});
+
+it('checks a newly corrupted 205th row after successful cached full pages and preserves the native JSON cause', async () => {
+  const h = await ledgerRows(205);
+  expect(
+    h.http.channels.transaction((tx) =>
+      scanCheckboxReservations(tx, { documentId: h.prepared.documentId })
+    ).validated
+  ).toBe(205);
+  readPreparedIntentPage(h.db, 'reader-00199');
+  h.db.$client
+    .prepare('UPDATE canvas_doc_write_intents SET evidence=? WHERE intent_id=?')
+    .run('{invalid', 'reader-00204');
+  expect(() => readPreparedIntentPage(h.db, 'reader-00199')).toThrow(SyntaxError);
+  try {
+    h.http.channels.transaction((tx) =>
+      scanCheckboxReservations(tx, { documentId: h.prepared.documentId })
+    );
+    throw new Error('The corrupt final page was accepted.');
+  } catch (error) {
+    expect(error).toBeInstanceOf(CheckboxReservationCensusError);
+    expect(error).toMatchObject({ cause: expect.any(DocChannelCorruptionError) });
+  }
+});
+
+it('isolates compiled ALL plans for foreign FILE and same-native wrapper while observing fresh retained rows', async () => {
+  const first = await changed(),
+    second = await changed();
+  expect(readPreparedIntentPage(first.db).map((row) => row.eventId)).toEqual([first.input.eventId]);
+  expect(readPreparedIntentPage(second.db).map((row) => row.eventId)).toEqual([
+    second.input.eventId,
+  ]);
+  const schema = first.db._.fullSchema;
+  if (!schema) throw new Error('The genuine schema is unavailable.');
+  const wrapper = drizzle(first.db.$client, { schema });
+  const nativePrepare = vi.spyOn(first.db.$client, 'prepare');
+  readPreparedIntentPage(wrapper);
+  expect(nativePrepare.mock.calls).toHaveLength(1);
+  readPreparedIntentPage(first.db);
+  expect(nativePrepare.mock.calls).toHaveLength(1);
+  first.db.update(canvasDocWriteIntents).set({ errorCode: 'fresh retained row' }).run();
+  expect(readPreparedIntentPage(wrapper)[0]!.errorCode).toBe('fresh retained row');
+  expect(readPreparedIntentPage(first.db)[0]!.errorCode).toBe('fresh retained row');
+  expect(readPreparedIntentPage(second.db)[0]!.errorCode).toBeNull();
+  first.db.$client.close();
+  expect(() => readPreparedIntentPage(first.db)).toThrow();
+  expect(() => readPreparedIntentPage(wrapper)).toThrow();
 });

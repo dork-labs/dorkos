@@ -1,5 +1,6 @@
+import { readPreparedUnresolvedIntentPage } from '../readers/prepared-readers.js';
 /** Derived current admission over the sole durable intent ledger; never an effect ledger. */
-import { asc, gt, sql, canvasDocWriteIntents, type Db } from '@dorkos/db';
+import type { Db } from '@dorkos/db';
 import {
   DocChannelCorruptionError,
   requireDocChannelStoreDatabase,
@@ -97,16 +98,7 @@ export class CheckboxWriteFence {
         let cursor: string | undefined;
         let fenced = false;
         for (;;) {
-          const rows = this.db
-            .select()
-            .from(canvasDocWriteIntents)
-            .where(
-              sql`${canvasDocWriteIntents.status} NOT IN ('committed','no_op','conflict')
-              ${cursor ? sql`AND ${gt(canvasDocWriteIntents.intentId, cursor)}` : sql``}`
-            )
-            .orderBy(asc(canvasDocWriteIntents.intentId))
-            .limit(100)
-            .all();
+          const rows = readPreparedUnresolvedIntentPage(this.db, cursor);
           for (const selected of rows) {
             const row = selected;
             let evidence: ReturnType<typeof validateCheckboxEvidence>;

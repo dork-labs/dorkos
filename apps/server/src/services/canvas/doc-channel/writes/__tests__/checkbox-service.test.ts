@@ -33,9 +33,90 @@ import type { DocWriteIntentRow } from '../../store.js';
 import { rawByteHash } from '../checkbox-bytes.js';
 import { recoverCheckboxPage } from '../write-recovery.js';
 import { VerifiedCheckboxAuthoritySchema } from '../checkbox-evidence.js';
+
+const crashTests: { drain(): Promise<void> }[] = [];
+function crashTestOwnership() {
+  let active = true;
+  let child: ReturnType<typeof fork> | undefined;
+  let closed: Promise<void> | undefined;
+  let task: Promise<void> | undefined;
+  let cancelCheckpoint: (() => void) | undefined;
+  const assertActive = () => {
+    if (!active) throw new Error('Crash test ended.');
+  };
+  const owner = {
+    assertActive,
+    run(work: () => Promise<void>) {
+      task = work();
+      void task.catch(() => {});
+      return task;
+    },
+    capture(value: ReturnType<typeof fork>) {
+      assertActive();
+      child = value;
+      closed = new Promise<void>((resolve) => value.once('close', () => resolve()));
+      const checkpoint = new Promise<{
+        dir: string;
+        documentId: string;
+        grantId: string;
+        eventId: string;
+      }>((resolve, reject) => {
+        const onMessage = (data: unknown) => {
+          if (active)
+            resolve(data as { dir: string; documentId: string; grantId: string; eventId: string });
+        };
+        const onExit = (code: number | null, signal: string | null) =>
+          reject(new Error(`Worker exited ${code} (${signal}) before checkpoint.`));
+        const onError = (error: Error) => reject(error);
+        value.once('message', onMessage);
+        value.once('exit', onExit);
+        value.once('error', onError);
+        cancelCheckpoint = () => {
+          value.off('message', onMessage);
+          reject(new Error('Crash test ended before checkpoint.'));
+        };
+      });
+      void checkpoint.catch(() => {});
+      return checkpoint;
+    },
+    async drain() {
+      active = false;
+      cancelCheckpoint?.();
+      if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          (async () => {
+            await closed;
+            if (task) await Promise.allSettled([task]);
+          })(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('Owned crash worker did not drain.')), 2000);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    },
+    async awaitClosed() {
+      await closed;
+      assertActive();
+    },
+  };
+  crashTests.push(owner);
+  return owner;
+}
+
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
+  const drains = await Promise.allSettled(crashTests.splice(0).map((owner) => owner.drain()));
   for (const cleanup of cleanups.splice(0)) await cleanup();
+  const failures = drains.filter((result) => result.status === 'rejected');
+  if (failures.length)
+    throw new AggregateError(
+      failures.map((result) => result.reason),
+      'Owned crash workers did not drain.'
+    );
 });
 async function fixture(options: CheckboxServiceOptions = {}) {
   const h = await makeFixture(options);
@@ -276,15 +357,84 @@ it('does not invoke a replaced async public authority method or expose its actua
 it.each(['prepared', 'staged', 'replaced'] as const)(
   'recovers genuine process loss at %s without reapplying a marker',
   async (point) => {
+    const owner = crashTestOwnership();
+    await owner.run(async () => {
+      const seed = await fixture();
+      owner.assertActive();
+      const request = await seed.request();
+      const originalPhysical = await stat(seed.path, { bigint: true });
+      await seed.service.stop();
+      seed.db.$client.close();
+      owner.assertActive();
+      const child = fork(
+        fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
+        [
+          point,
+          JSON.stringify({
+            dir: seed.dir,
+            documentId: seed.documentId,
+            grantId: seed.grantId,
+            approved: seed.approved,
+            request,
+          }),
+        ],
+        { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
+      );
+      const checkpoint = owner.capture(child);
+      void checkpoint.catch(() => {});
+      child.stderr!.resume();
+      const message = await checkpoint;
+      owner.assertActive();
+      child.kill('SIGKILL');
+      await once(child, 'exit');
+      await owner.awaitClosed();
+      owner.assertActive();
+      const h = await makeFixture({}, message);
+      cleanups.push(h.cleanup);
+      owner.assertActive();
+      const original = h.row();
+      expect(original.eventId).toBe(message.eventId);
+      expect(original.status).toBe('prepared');
+      expect(h.service.validate(original)).toMatchObject({
+        v: 2,
+        originalIdentity: {
+          device: String(originalPhysical.dev),
+          inode: String(originalPhysical.ino),
+        },
+      });
+      const bytes = await readFile(h.path),
+        inode = (await stat(h.path)).ino;
+      const receipt = await h.service.recover(original.intentId);
+      expect(receipt.status).toBe(point === 'replaced' ? 'changed' : 'in_doubt');
+      expect(await readFile(h.path)).toEqual(bytes);
+      expect((await stat(h.path)).ino).toBe(inode);
+      expect(h.counts()).toEqual({
+        events: { n: point === 'replaced' ? 2 : 0 },
+        batches: { n: point === 'replaced' ? 1 : 0 },
+      });
+      if (point === 'replaced') expect(await h.service.recover(original.intentId)).toEqual(receipt);
+      expect(h.row().envelopeHash).toBe(original.envelopeHash);
+      expect((await readdir(h.dir)).filter((name) => name.startsWith('.dork-checkbox-'))).toEqual(
+        []
+      );
+    });
+  }
+);
+
+it('drains its own crash worker when the genuine checkpoint fails before IPC', async () => {
+  const owner = crashTestOwnership();
+  await owner.run(async () => {
     const seed = await fixture();
-    const request = await seed.request();
-    const originalPhysical = await stat(seed.path, { bigint: true });
+    owner.assertActive();
+    const request = { ...(await seed.request()), expectedFileVersion: '0'.repeat(64) };
+    const before = await readFile(seed.path);
     await seed.service.stop();
     seed.db.$client.close();
+    owner.assertActive();
     const child = fork(
       fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
       [
-        point,
+        'prepared',
         JSON.stringify({
           dir: seed.dir,
           documentId: seed.documentId,
@@ -295,50 +445,116 @@ it.each(['prepared', 'staged', 'replaced'] as const)(
       ],
       { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
     );
-    let stderr = '';
-    child.stderr!.on('data', (data) => {
-      stderr += String(data);
-    });
-    const message = await new Promise<{
-      dir: string;
-      documentId: string;
-      grantId: string;
-      eventId: string;
-    }>((resolve, reject) => {
-      child.once('message', (data) =>
-        resolve(data as { dir: string; documentId: string; grantId: string; eventId: string })
-      );
-      child.once('exit', (code) => reject(new Error(`Worker exited ${code}: ${stderr}`)));
-    });
-    child.kill('SIGKILL');
-    await once(child, 'exit');
-    const h = await makeFixture({}, message);
-    cleanups.push(h.cleanup);
-    const original = h.row();
-    expect(original.eventId).toBe(message.eventId);
-    expect(original.status).toBe('prepared');
-    expect(h.service.validate(original)).toMatchObject({
-      v: 2,
-      originalIdentity: {
-        device: String(originalPhysical.dev),
-        inode: String(originalPhysical.ino),
-      },
-    });
-    const bytes = await readFile(h.path),
-      inode = (await stat(h.path)).ino;
-    const receipt = await h.service.recover(original.intentId);
-    expect(receipt.status).toBe(point === 'replaced' ? 'changed' : 'in_doubt');
-    expect(await readFile(h.path)).toEqual(bytes);
-    expect((await stat(h.path)).ino).toBe(inode);
-    expect(h.counts()).toEqual({
-      events: { n: point === 'replaced' ? 2 : 0 },
-      batches: { n: point === 'replaced' ? 1 : 0 },
-    });
-    if (point === 'replaced') expect(await h.service.recover(original.intentId)).toEqual(receipt);
-    expect(h.row().envelopeHash).toBe(original.envelopeHash);
-    expect((await readdir(h.dir)).filter((name) => name.startsWith('.dork-checkbox-'))).toEqual([]);
+    const checkpoint = owner.capture(child);
+    child.stderr!.resume();
+    await expect(checkpoint).rejects.toThrow('before checkpoint');
+    await owner.awaitClosed();
+    expect(child.exitCode).toBe(1);
+    owner.assertActive();
+    const reopened = await makeFixture({}, seed);
+    cleanups.push(reopened.cleanup);
+    owner.assertActive();
+    expect(await readFile(reopened.path)).toEqual(before);
+    expect(reopened.row()).toMatchObject({ eventId: request.eventId, status: 'conflict' });
+    expect(reopened.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  });
+});
+
+it('drains a held pre-checkpoint child and retires its late fixture continuation', async () => {
+  const owner = crashTestOwnership();
+  const seed = await fixture();
+  const request = await seed.request();
+  const before = await readFile(seed.path);
+  await seed.service.stop();
+  seed.db.$client.close();
+  owner.assertActive();
+  const child = fork(
+    fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
+    [
+      'prepared',
+      JSON.stringify({
+        dir: seed.dir,
+        documentId: seed.documentId,
+        grantId: seed.grantId,
+        approved: seed.approved,
+        request,
+      }),
+    ],
+    { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
+  );
+  const checkpoint = owner.capture(child);
+  const closed = once(child, 'close');
+  child.stderr!.resume();
+  let fixtureContinuations = 0;
+  const continuation = owner.run(async () => {
+    await checkpoint;
+    owner.assertActive();
+    fixtureContinuations += 1;
+    owner.assertActive();
+    const reopened = await makeFixture({}, seed);
+    cleanups.push(reopened.cleanup);
+  });
+  const refusal = expect(continuation).rejects.toThrow('ended before checkpoint');
+  await once(child, 'spawn');
+  try {
+    await owner.drain();
+    await refusal;
+    expect(child.signalCode).toBe('SIGKILL');
+    expect(fixtureContinuations).toBe(0);
+    expect(() => owner.assertActive()).toThrow('Crash test ended');
+    expect(await readFile(seed.path)).toEqual(before);
+  } finally {
+    // Also owns cleanup if the drain implementation is deliberately broken by a control.
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await closed;
+    await Promise.allSettled([continuation]);
   }
-);
+  // A test can end while an earlier genuine fixture phase is awaited, before fork exists.
+  const lateOwner = crashTestOwnership();
+  let release!: () => void;
+  const heldBeforeFork = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let lateChild: ReturnType<typeof fork> | undefined;
+  let lateClosed: Promise<unknown> | undefined;
+  const lateTask = lateOwner.run(async () => {
+    await heldBeforeFork;
+    lateOwner.assertActive();
+    lateChild = fork(
+      fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
+      [
+        'prepared',
+        JSON.stringify({
+          dir: seed.dir,
+          documentId: seed.documentId,
+          grantId: seed.grantId,
+          approved: seed.approved,
+          request,
+        }),
+      ],
+      { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
+    );
+    lateClosed = once(lateChild, 'close');
+    lateChild.stderr!.resume();
+    await lateOwner.capture(lateChild);
+  });
+  const lateRefusal = expect(lateTask).rejects.toThrow('Crash test ended');
+  try {
+    const drain = lateOwner.drain();
+    release();
+    await drain;
+    await lateRefusal;
+    expect(lateChild).toBeUndefined();
+    expect(await readFile(seed.path)).toEqual(before);
+  } finally {
+    release();
+    // Own exact fallback for the deliberate pre-fork guard omission control.
+    if (lateChild && lateChild.exitCode === null && lateChild.signalCode === null)
+      lateChild.kill('SIGKILL');
+    if (lateClosed) await lateClosed;
+    await Promise.allSettled([lateTask]);
+  }
+});
 
 it('refuses a newer grant revision after staging and freezes the original approval evidence', async () => {
   const h: Awaited<ReturnType<typeof fixture>> = await fixture({
