@@ -99,6 +99,8 @@ export function useKeepCreditsOutOfProject() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: accountKeys.all });
       void queryClient.invalidateQueries({ queryKey: configKeys.all });
+      // What the project runs on now decides which models the menu offers.
+      void queryClient.invalidateQueries({ queryKey: MODELS_KEY });
     },
   });
 }

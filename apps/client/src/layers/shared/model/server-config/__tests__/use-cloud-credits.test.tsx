@@ -11,7 +11,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '../../TransportContext';
 import { MODELS_KEY } from '../../../lib/models-query-key';
-import { useSetCreditsDefault } from '../use-cloud-credits';
+import { useKeepCreditsOutOfProject, useSetCreditsDefault } from '../use-cloud-credits';
 
 describe('useSetCreditsDefault', () => {
   it('refreshes every model menu once the choice is saved', async () => {
@@ -28,6 +28,26 @@ describe('useSetCreditsDefault', () => {
     const { result } = renderHook(() => useSetCreditsDefault(), { wrapper });
 
     await act(() => result.current.mutateAsync({ runtime: 'claude-code', useCredits: true }));
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: MODELS_KEY });
+  });
+});
+
+describe('useKeepCreditsOutOfProject', () => {
+  it('refreshes every model menu once credits are kept out of the project', async () => {
+    const transport = createMockTransport({
+      keepCreditsOutOfProject: vi.fn().mockResolvedValue({ launch: { ok: true } }),
+    });
+    const queryClient = new QueryClient();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useKeepCreditsOutOfProject(), { wrapper });
+
+    await act(() => result.current.mutateAsync('session-1'));
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: MODELS_KEY });
   });
