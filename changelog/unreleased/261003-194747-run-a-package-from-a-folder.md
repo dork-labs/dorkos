@@ -6,6 +6,7 @@ covers:
   - 'test(marketplace): read the dev-link source pin through the shared lexer (DOR-2696)'
   - 'fix(marketplace): bind the dev-link card to what it showed, and harden link and unlink (DOR-2696)'
   - 'fix(marketplace): hold marketplace_link to the exact text the person approved (DOR-2696)'
+  - 'fix(marketplace): bind the whole dev-link card, and refuse one that does not fit (DOR-2696)'
 ---
 
 ### Added

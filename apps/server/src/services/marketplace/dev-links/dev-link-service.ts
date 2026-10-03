@@ -196,14 +196,27 @@ export class DevLinkService {
    * about again rather than linked.
    *
    * @param request - The folder, scope and the explicit switch.
-   * @returns The description, at most `APPROVAL_DETAIL_MAX_LENGTH` characters.
-   * @throws {DevLinkError} When the folder cannot be linked as asked, so no
-   *   card is raised for a link that would be refused.
+   * @returns The whole description. It is never cut short: what a person
+   *   approves is bound to every character of it.
+   * @throws {DevLinkError} When the folder cannot be linked as asked, or its
+   *   description does not fit on a card (`dev_link_card_too_long`), so no card
+   *   is raised for a link that would be refused or only partly shown.
    */
   async describeApproval(request: DevLinkTarget & { replaceInstalled?: boolean }): Promise<string> {
     const plan = await this.plan(request);
     if (plan.slotHolds === 'installed' && !request.replaceInstalled) throw slotTaken(plan.preview);
-    return describePlan(plan.preview, request.replaceInstalled === true);
+    const description = describePlan(plan.preview, request.replaceInstalled === true);
+    // A card stores at most this much. Cutting the text would bind the
+    // approval to only part of what the folder runs, and anything added past
+    // the cut would ride in on it, so a folder that does not fit is refused.
+    if (description.length > APPROVAL_DETAIL_MAX_LENGTH) {
+      throw new DevLinkError(
+        'dev_link_card_too_long',
+        400,
+        "This folder runs too much to show on one approval card, so it can't be linked this way."
+      );
+    }
+    return description;
   }
 
   /**
@@ -324,7 +337,7 @@ export class DevLinkService {
       }
       const reading = await readDevLinks(this.deps.dorkHome);
       const others = 'links' in reading ? reading.links.filter((l) => !sameLink(l, record)) : [];
-      this.forgetApprovals(record, restored === 'installed', others);
+      await this.forgetApprovals(record, restored === 'installed', others);
       await updateDevLinks(this.deps.dorkHome, (links) =>
         links.filter((link) => !sameLink(link, record))
       );
@@ -636,24 +649,33 @@ export class DevLinkService {
    * @param others - Every other recorded dev link, read under the lock.
    * @internal
    */
-  private forgetApprovals(
+  private async forgetApprovals(
     record: DevLinkRecord,
     installedBack: boolean,
     others: readonly DevLinkRecord[]
-  ): void {
+  ): Promise<void> {
     const current = this.deps.approvals.read();
+    // Each approval's plugin folder, spelled canonically: an approval given
+    // through a linked spelling of the project still belongs to this slot.
+    const replaced = record.restoreApprovals?.extensions ?? {};
+    const roots = new Map<string, string>();
+    for (const source of [...Object.values(current.approvedSources), ...Object.values(replaced)]) {
+      if (!roots.has(source.path)) roots.set(source.path, await canonicalRootOf(source.path));
+    }
+    const rootOf = (source: ExtensionApprovedSource): string =>
+      roots.get(source.path) ?? path.resolve(source.path);
     const restore = record.restoreApprovals?.extensions ?? {};
     const runIds = new Set(record.restoreApprovals?.runIds ?? []);
     let approvedToRun = [...current.approvedToRun];
     const approvedSources = { ...current.approvedSources };
     let changed = false;
     for (const [id, source] of Object.entries(current.approvedSources)) {
-      if (!isLinkApproval(source, record)) continue;
+      if (!isLinkApproval(source, record, rootOf)) continue;
       changed = true;
       const previous = restore[id];
       delete approvedSources[id];
       approvedToRun = approvedToRun.filter((approved) => approved !== id);
-      if (!previous || !stillMeaningful(previous, record, installedBack, others)) continue;
+      if (!previous || !stillMeaningful(previous, record, installedBack, others, rootOf)) continue;
       approvedSources[id] = previous;
       if (runIds.has(id)) approvedToRun.push(id);
     }
@@ -780,9 +802,30 @@ async function carriedExtensions(folder: string): Promise<string[]> {
   return ids.sort();
 }
 
+/**
+ * The canonical plugin folder an approval's extension path sits in
+ * (`<root>/.dork/extensions/<id>` → `<root>`, its ancestors resolved through
+ * links, its own name kept), or the path itself when it has another shape.
+ */
+async function canonicalRootOf(extensionPath: string): Promise<string> {
+  const resolved = path.resolve(extensionPath);
+  const extensionsDir = path.dirname(resolved);
+  if (
+    path.basename(extensionsDir) !== 'extensions' ||
+    path.basename(path.dirname(extensionsDir)) !== '.dork'
+  ) {
+    return resolved;
+  }
+  return canonicalSlotPath(path.dirname(path.dirname(extensionsDir)));
+}
+
 /** Whether an approval was given to this dev link: its folder, inside its own slot. */
-function isLinkApproval(source: ExtensionApprovedSource, record: DevLinkRecord): boolean {
-  return source.devLink === record.target && isContained(path.resolve(source.path), record.slot);
+function isLinkApproval(
+  source: ExtensionApprovedSource,
+  record: DevLinkRecord,
+  rootOf: (source: ExtensionApprovedSource) => string
+): boolean {
+  return source.devLink === record.target && isContained(rootOf(source), record.slot);
 }
 
 /**
@@ -793,11 +836,11 @@ function stillMeaningful(
   previous: ExtensionApprovedSource,
   record: DevLinkRecord,
   installedBack: boolean,
-  others: readonly DevLinkRecord[]
+  others: readonly DevLinkRecord[],
+  rootOf: (source: ExtensionApprovedSource) => string
 ): boolean {
-  if (isContained(path.resolve(previous.path), record.slot))
-    return installedBack && !previous.devLink;
-  if (previous.devLink) return others.some((other) => isLinkApproval(previous, other));
+  if (isContained(rootOf(previous), record.slot)) return installedBack && !previous.devLink;
+  if (previous.devLink) return others.some((other) => isLinkApproval(previous, other, rootOf));
   return true;
 }
 
@@ -821,5 +864,5 @@ function describePlan(preview: DevLinkPreview, replaceInstalled: boolean): strin
   );
   lines.push(`It runs on its own: ${describeDisclosedEffects(preview.effects)}`);
   lines.push('Edits to this folder run without another card.');
-  return lines.join('\n').slice(0, APPROVAL_DETAIL_MAX_LENGTH);
+  return lines.join('\n');
 }

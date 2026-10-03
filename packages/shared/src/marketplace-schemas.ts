@@ -1882,4 +1882,5 @@ export type DevLinkErrorCode =
   | 'dev_link_parked_exists'
   | 'dev_link_not_found'
   | 'dev_link_changed'
+  | 'dev_link_card_too_long'
   | 'package_is_dev_linked';

@@ -109,4 +109,43 @@ describe('marketplace.link after the gate passes', () => {
     await expect(lstat(path.join(home, 'plugins', 'flow'))).rejects.toThrow();
     expect(approvals.approvedToRun).toEqual([]);
   });
+
+  it('raises no card for a folder whose card would be cut short', async () => {
+    // Purpose: a folder padded past the card's 4,000 characters used to get a
+    // card bound to the cut text; an extension added past the cut between the
+    // card and the retry then rode in on the person's yes. Now there is no card
+    // to approve and nothing is linked.
+    for (let i = 0; i < 60; i++) {
+      const id = `ext-${String(i).padStart(2, '0')}-${'x'.repeat(60)}`;
+      const dir = path.join(work, '.dork', 'extensions', id);
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, 'extension.json'), JSON.stringify({ id }));
+    }
+    let approvals: DevLinkApprovals = { approvedToRun: [], approvedSources: {} };
+    const devLinks = new DevLinkService({
+      dorkHome: home,
+      approvals: { read: () => approvals, write: (next) => void (approvals = next) },
+      onPluginsChanged: () => undefined,
+      refreshExtensions: () => undefined,
+      boundary: () => base,
+    });
+    const gate = new ApprovalService(createTestDb());
+    initCapabilityTierGate({ approvals: gate });
+    const registry = composeRegistry([marketplaceDomain], {
+      logger: noopLogger,
+      marketplaceDeps: { devLinks } as unknown as MarketplaceMcpDeps,
+    });
+    const agent = { agentPath: '/agents/scout', displayName: 'Scout', createdAt: '2026-10-03' };
+
+    await expect(
+      registry.invoke(
+        'marketplace.link',
+        { path: work },
+        { identity: agent, retryChannel: 'mcp-argument' }
+      )
+    ).rejects.toMatchObject({ payload: { code: 'dev_link_card_too_long' } });
+    expect(gate.listPending()).toEqual([]);
+    await expect(lstat(path.join(home, 'plugins', 'flow'))).rejects.toThrow();
+    expect(approvals.approvedToRun).toEqual([]);
+  });
 });

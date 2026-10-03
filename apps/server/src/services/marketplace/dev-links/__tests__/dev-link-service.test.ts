@@ -347,6 +347,41 @@ describe('DevLinkService.link', () => {
     expect(approvals.approvedToRun).toEqual([]);
   });
 
+  it('refuses a folder whose card would be cut short, so nothing past the cut can be approved', async () => {
+    // Purpose: a card stores 4,000 characters. Binding the approval to a cut
+    // text let a folder padded past the cut gain one more extension (sorting
+    // last) between the card and the retry with the token still matching.
+    // The whole text is bound now, and a folder that does not fit is refused
+    // before any card.
+    for (let i = 0; i < 60; i++) {
+      const id = `ext-${String(i).padStart(2, '0')}-${'x'.repeat(60)}`;
+      const dir = path.join(work, '.dork', 'extensions', id);
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, 'extension.json'), JSON.stringify({ id }));
+    }
+    const svc = service();
+    const err = await refusal(svc.describeApproval({ path: work, scope: 'global' }));
+    expect(err).toMatchObject({ code: 'dev_link_card_too_long', status: 400 });
+
+    // Even a caller holding text cut at the card's limit cannot link the
+    // folder once it gains a last-sorting extension.
+    const cut = (await svc.preview({ path: work, scope: 'global' })).extensions.join(', ');
+    expect(cut.length).toBeGreaterThan(4000);
+    const late = path.join(work, '.dork', 'extensions', 'zzz-late');
+    await mkdir(late, { recursive: true });
+    await writeFile(path.join(late, 'extension.json'), '{"id":"zzz-late"}');
+    const stale = `Folder: ${work}\n`.padEnd(4000, 'x');
+    expect(
+      (
+        await refusal(
+          svc.link({ path: work, scope: 'global', via: 'agent-card', expectedChange: stale })
+        )
+      ).code
+    ).toBe('dev_link_changed');
+    await expect(lstat(globalSlot())).rejects.toThrow();
+    expect(approvals.approvedToRun).toEqual([]);
+  });
+
   it('refuses to link a plugin into its own folder', async () => {
     // Purpose: <repo>/.dork/plugins/<name> pointing at <repo> is a loop every
     // scanner would follow, finding each extension twice.
@@ -591,6 +626,24 @@ describe('DevLinkService.unlink', () => {
       approvedToRun: [],
       approvedSources: { 'flow-dash': { path: '/elsewhere/flow-dash' } },
     });
+  });
+
+  it('forgets an approval given through a linked spelling of the project', async () => {
+    // Purpose: discovery names a project the way it was opened, which can be a
+    // symlink to the canonical folder the dev link records. An approval given
+    // under that spelling is still this dev link's and must go with it.
+    const project = path.join(base, 'proj');
+    await mkdir(project);
+    const alias = path.join(base, 'proj-alias');
+    await symlink(project, alias, 'dir');
+    await service().link({ path: work, scope: 'project', projectPath: project, via: 'app' });
+    approvals.approvedSources['flow-dash'] = {
+      path: path.join(alias, '.dork', 'plugins', 'flow', '.dork', 'extensions', 'flow-dash'),
+      plugin: 'flow',
+      devLink: work,
+    };
+    await service().unlink({ name: 'flow', scope: 'project', projectPath: project });
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
   });
 
   it("does not strip another dev link's approval when the same folder is linked twice", async () => {
