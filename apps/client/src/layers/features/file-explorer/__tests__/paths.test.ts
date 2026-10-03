@@ -11,12 +11,12 @@ describe('revealActionLabel', () => {
   });
 
   it('falls back to a generic name everywhere else', () => {
-    expect(revealActionLabel('linux-x64')).toBe('Show in File Manager');
-    expect(revealActionLabel('freebsd-x64')).toBe('Show in File Manager');
+    expect(revealActionLabel('linux-x64')).toBe('Show in file manager');
+    expect(revealActionLabel('freebsd-x64')).toBe('Show in file manager');
   });
 
   it('falls back to the generic name before the server config has loaded', () => {
-    expect(revealActionLabel(undefined)).toBe('Show in File Manager');
+    expect(revealActionLabel(undefined)).toBe('Show in file manager');
   });
 });
 

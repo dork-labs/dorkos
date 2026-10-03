@@ -72,7 +72,7 @@ describe('useNativeCommands', () => {
     await waitFor(() =>
       expect(transport.updateSession).toHaveBeenCalledWith('s1', { title: 'Foo' }, '/repo')
     );
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Renamed session to "Foo"'));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Renamed session to “Foo”'));
   });
 
   it('settles /rename even when the composer unmounts before the mutation lands', async () => {

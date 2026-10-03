@@ -180,10 +180,10 @@ export const SHORTCUTS = {
     label: 'Stop generating',
     group: 'chat',
   },
-  APPROVE_TOOL: { id: 'approve-tool', key: 'enter', label: 'Approve tool', group: 'chat' },
-  DENY_TOOL: { id: 'deny-tool', key: 'esc', label: 'Deny tool', group: 'chat' },
+  APPROVE_TOOL: { id: 'approve-tool', key: 'enter', label: 'Allow tool', group: 'chat' },
+  DENY_TOOL: { id: 'deny-tool', key: 'esc', label: 'Don’t allow tool', group: 'chat' },
   TOGGLE_OPTION: { id: 'toggle-option', key: '1-9', label: 'Toggle option', group: 'chat' },
-  SUBMIT_ANSWER: { id: 'submit-answer', key: 'enter', label: 'Submit answer', group: 'chat' },
+  SUBMIT_ANSWER: { id: 'submit-answer', key: 'enter', label: 'Send answer', group: 'chat' },
   // Its own chord, and NOT `mod+shift+a`: that one has opened the Profile since
   // that panel shipped, and a key whose meaning depends on whether something
   // happens to be waiting is a promise the `?` panel cannot make — it would have

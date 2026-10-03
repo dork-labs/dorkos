@@ -150,7 +150,7 @@ describe('useReadOnlyModeHint', () => {
 
   it('is spent by the dismissal and does not come back', async () => {
     const { rerender } = render(<Harness sessionId="s1" runtime="codex" mode="default" />);
-    await userEvent.click(screen.getByRole('button', { name: 'Got it' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.getByTestId('eligible')).toHaveTextContent('no');
     rerender(<Harness sessionId="s1" runtime="codex" mode="default" />);
     expect(screen.getByTestId('eligible')).toHaveTextContent('no');
@@ -215,14 +215,14 @@ describe('ReadOnlyModeNotice', () => {
   it('says what the mode does and what happens when you ask for more', () => {
     render(<ReadOnlyModeNotice runtimeLabel="Codex" onDismiss={() => {}} />);
     expect(screen.getByTestId('read-only-mode-notice')).toHaveTextContent(
-      'In this mode Codex can read files but not change them. Ask for a change and it will say no, with nothing for you to approve.'
+      'In this mode, Codex reads files but won’t change them. Asking won’t help.'
     );
   });
 
   it('names whichever runtime declared the mode, never Codex by hardcode', () => {
     render(<ReadOnlyModeNotice runtimeLabel="OpenCode" onDismiss={() => {}} />);
     expect(screen.getByTestId('read-only-mode-notice')).toHaveTextContent(
-      'In this mode OpenCode can read files'
+      'In this mode, OpenCode reads files but won’t change them'
     );
   });
 
@@ -243,8 +243,10 @@ describe('ReadOnlyModeNotice', () => {
     render(<ReadOnlyModeNotice runtimeLabel="Codex" onDismiss={() => {}} />);
     expect(screen.queryByRole('button', { name: 'Change permissions' })).not.toBeInTheDocument();
     // The sentence and the dismissal still stand.
-    expect(screen.getByTestId('read-only-mode-notice')).toHaveTextContent('can read files');
-    expect(screen.getByRole('button', { name: 'Got it' })).toBeInTheDocument();
+    expect(screen.getByTestId('read-only-mode-notice')).toHaveTextContent(
+      'reads files but won’t change them'
+    );
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
   });
 
   it('reports that it reached the screen, once', () => {

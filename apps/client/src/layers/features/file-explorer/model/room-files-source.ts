@@ -89,7 +89,7 @@ function toExplorerEntry(entry: RoomFileEntry): ExplorerEntry {
  */
 const NOT_READABLE_COPY = new Map<string, string>([
   ['ROOM_FILE_NOT_READABLE', 'This isn’t a file that can be shown here.'],
-  ['ROOM_FILE_NOT_FOUND', 'This file isn’t in the room’s files any more.'],
+  ['ROOM_FILE_NOT_FOUND', 'This file is no longer in the room.'],
 ]);
 
 /**
@@ -229,7 +229,7 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
           return {
             status: 'refused',
             reason:
-              'Somebody changed this file while you were editing it, so nothing was saved. Close this and open it again to see their version.',
+              'Somebody changed this file while you edited it. Nothing was saved. Reopen it to see theirs.',
           };
         }
         // The room's copy has changed since the warning above the files was
@@ -286,7 +286,7 @@ export function changeRefusal(
     return {
       status: 'refused',
       reason:
-        'Somebody changed these files after you opened them, so nothing was changed. Look at the new version, then try again.',
+        'Somebody changed these files after you opened them. Nothing changed. Check, then try again.',
     };
   }
   if (code === 'ROOM_FILE_EXISTS') {

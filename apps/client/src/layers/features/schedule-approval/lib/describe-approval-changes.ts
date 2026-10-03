@@ -31,7 +31,7 @@ const LABEL: Record<Change['field'], string> = {
   cron: 'Schedule',
   timezone: 'Timezone',
   name: 'Name',
-  runtime: 'Runtime',
+  runtime: 'Runs on',
   model: 'Model',
   effort: 'Effort',
   maxRuntime: 'Time limit',
@@ -54,7 +54,7 @@ function formatDuration(ms: number): string {
 
 /** The card's name for a part of the agent the schedule follows (DOR-2337). */
 const AGENT_LABEL: Partial<Record<Change['field'], string>> = {
-  runtime: 'Agent’s runtime',
+  runtime: 'Agent runs on',
   model: 'Agent’s model',
   effort: 'Agent’s effort',
 };

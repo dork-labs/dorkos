@@ -419,7 +419,7 @@ describe('useSessionStatus and a permission change that has not taken yet', () =
     expect(toast.warning).toHaveBeenCalledTimes(1);
     const [title, options] = vi.mocked(toast.warning).mock.calls[0]!;
     expect(String(title)).toMatch(/next message/i);
-    expect((options as { description?: string })?.description).toMatch(/already running/i);
+    expect((options as { description?: string })?.description).toMatch(/current reply/i);
   });
 
   it('says nothing when the change did reach the running reply', async () => {

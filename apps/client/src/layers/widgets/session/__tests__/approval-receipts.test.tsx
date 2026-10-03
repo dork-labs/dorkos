@@ -196,7 +196,7 @@ describe('approval receipts', () => {
     render(<Lifecycle initialEvents={turnWithAsk('tc-1')} />);
 
     expect(screen.queryByTestId('approval-receipt')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /approve/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Allow/ }));
 
     const receipt = await screen.findByTestId('approval-receipt');
     expect(receipt.getAttribute('data-outcome')).toBe('allowed');
@@ -210,7 +210,7 @@ describe('approval receipts', () => {
     // failure that did not happen.
     render(<Lifecycle initialEvents={turnWithAsk('tc-1', 'rm -rf /')} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /deny/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Don’t allow/ }));
 
     const receipt = await screen.findByTestId('approval-receipt');
     expect(receipt.getAttribute('data-outcome')).toBe('denied');
@@ -321,8 +321,8 @@ describe('approval receipts', () => {
     // Only the input-zone card is the keyboard target, so only its Approve
     // carries the Enter hint — that is the ask the person is being shown.
     const inputZoneApprove = screen
-      .getAllByRole('button', { name: /approve/i })
-      .find((button) => /Approve\s*Enter/.test(button.textContent ?? ''));
+      .getAllByRole('button', { name: /^Allow/ })
+      .find((button) => /Allow\s*Enter/.test(button.textContent ?? ''));
     fireEvent.click(inputZoneApprove!);
 
     await waitFor(() => {
@@ -330,7 +330,7 @@ describe('approval receipts', () => {
     });
     // The receipt names the answered ask; the survivor is still a live card.
     expect(screen.getByTestId('approval-receipt').textContent).toContain('Run "npm test"');
-    expect(screen.getByRole('button', { name: /deny/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
   });
 
   it('one batch answer reads as one line, with the individual asks behind an expander', async () => {

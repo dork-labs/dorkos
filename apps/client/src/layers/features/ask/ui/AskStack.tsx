@@ -108,7 +108,7 @@ export function AskStack({
           disabled={isAnswering}
           onClick={onDenyAll}
         >
-          Deny all
+          Don’t allow any
         </Button>
       </AskCard.Actions>
     </AskCard.Root>

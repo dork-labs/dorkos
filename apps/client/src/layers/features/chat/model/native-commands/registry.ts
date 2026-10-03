@@ -97,7 +97,7 @@ export const NATIVE_COMMANDS: NativeCommand[] = [
   },
   {
     name: 'clear',
-    description: 'Start a fresh session in this project',
+    description: 'Start a new session here',
     run: (_args, ctx) => {
       // Open a fresh session in the same project, linked back to the current one.
       // No message is sent — this is a client navigation, not a model turn.

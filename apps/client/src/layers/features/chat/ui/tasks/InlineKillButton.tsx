@@ -78,7 +78,7 @@ export function InlineKillButton({ taskType, onConfirm }: InlineKillButtonProps)
           ? 'bg-destructive/5 text-destructive hover:bg-destructive/10 text-3xs px-1.5 py-0.5 font-medium'
           : 'text-muted-foreground/40 hover:text-destructive size-4'
       )}
-      aria-label={confirming ? 'Confirm stop task' : 'Stop task'}
+      aria-label={confirming ? 'Press again to stop task' : 'Stop task'}
       tabIndex={0}
     >
       {confirming ? 'Stop?' : <X className="size-3" />}

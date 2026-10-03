@@ -34,48 +34,27 @@ import { ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK } from '
  * not a sentence.
  */
 const SAVE_REFUSAL_COPY = new Map<string, string>([
-  [
-    'REQUEST_TOO_LARGE',
-    'That is too much text to send in one go, so nothing was saved. A room’s files are for documents people read. Anything this big belongs in the room’s attachments.',
-  ],
-  ['FILE_TOO_LARGE', 'This file would be bigger than this room allows, so nothing was saved.'],
-  [
-    'REPO_CAP_EXCEEDED',
-    'This room’s files are already as large as they are allowed to get, so nothing was saved.',
-  ],
+  ['REQUEST_TOO_LARGE', 'Too much text to save here. Put big files in the room’s attachments.'],
+  ['FILE_TOO_LARGE', 'This file is bigger than the room allows, so it wasn’t saved.'],
+  ['REPO_CAP_EXCEEDED', 'This room’s files are full, so nothing was saved.'],
   [
     'MAIN_CHECKOUT_DIRTY',
-    'Somebody changed this room’s files outside DorkOS, so saving is paused until that is sorted out. The warning above the files says how.',
+    'Saving is paused. Somebody changed these files outside DorkOS. See the warning above.',
   ],
   [
     'MERGE_IN_FLIGHT',
-    'Somebody else is writing to this room’s files right now. Nothing was saved. Try again in a moment.',
+    'Somebody else is saving these files. Nothing was saved. Try again in a moment.',
   ],
-  [
-    'PEOPLE_ONLY',
-    'Only a person can save a room’s files this way. An agent brings its work in by merging.',
-  ],
-  [
-    'ROOM_FILE_NOT_TEXT',
-    'This file has something in it that is not text, so it cannot be saved from here.',
-  ],
-  ['ROOM_FILE_PATH_INVALID', 'That file name could mean somewhere else, so nothing was saved.'],
-  [
-    'ROOM_FILE_NOT_FOUND',
-    'This file is not in the room’s files any more, so there was nothing to save over.',
-  ],
-  ['ROOM_FILE_NOT_READABLE', 'This is not a file that can be edited here.'],
-  ['ROOM_HAS_NO_REPO', 'This room does not have files of its own any more.'],
-  [
-    'ROOM_REPOS_DISABLED',
-    'Rooms cannot have files of their own on this install right now, so nothing was saved.',
-  ],
-  [
-    'ROOM_REPO_GIT_UNAVAILABLE',
-    'This computer doesn’t have git installed, and a room’s files are a git repository.',
-  ],
-  ['ROOM_NOT_FOUND', 'This room is not there any more.'],
-  ['ROOM_ARCHIVED', 'This room is archived, so its files cannot be changed.'],
+  ['PEOPLE_ONLY', 'Only a person can save here. Agents bring work in by merging.'],
+  ['ROOM_FILE_NOT_TEXT', 'This file isn’t plain text, so it can’t be saved here.'],
+  ['ROOM_FILE_PATH_INVALID', 'That file name points somewhere else, so nothing was saved.'],
+  ['ROOM_FILE_NOT_FOUND', 'This file is gone from the room, so there was nothing to save over.'],
+  ['ROOM_FILE_NOT_READABLE', 'This file can’t be edited here.'],
+  ['ROOM_HAS_NO_REPO', 'This room no longer has its own files.'],
+  ['ROOM_REPOS_DISABLED', 'Room files are turned off on this install, so nothing was saved.'],
+  ['ROOM_REPO_GIT_UNAVAILABLE', 'Room files need git, and git isn’t installed on this computer.'],
+  ['ROOM_NOT_FOUND', 'This room no longer exists.'],
+  ['ROOM_ARCHIVED', 'This room is archived, so its files can’t be changed.'],
   [ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK],
 ]);
 

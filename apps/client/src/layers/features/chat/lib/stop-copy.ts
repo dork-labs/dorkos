@@ -51,14 +51,14 @@ export function stopNotice(receipt: InterruptReceipt): StopNotice {
       return { message: 'You stopped this reply.', isFailure: false };
     case 'closed':
       return {
-        message: 'You stopped this reply. The agent didn’t answer, so DorkOS ended it.',
+        message: 'Stopped. Your agent didn’t answer, so DorkOS ended it.',
         isFailure: false,
       };
     case 'not-running':
       return { message: null, isFailure: false };
     case 'unconfirmed':
       return {
-        message: `Stop requested. ${runtimeLabel(receipt.runtime)} didn’t confirm it. The agent may still be working.`,
+        message: `Stop requested. ${runtimeLabel(receipt.runtime)} didn’t confirm, so it may still be working.`,
         isFailure: false,
       };
     case 'failed':
@@ -95,7 +95,7 @@ export function shouldReofferStop(receipt: InterruptReceipt, stillStreaming: boo
 /**
  * How a runtime is named in the one sentence that names one.
  *
- * Falls back to "the runtime" rather than printing an id nobody recognises: the
+ * Falls back to "your agent" rather than printing an id nobody recognises: the
  * sentence has to read as English to a person who has never heard of the
  * adapter that answered.
  *
@@ -110,6 +110,6 @@ function runtimeLabel(runtime: string): string {
     case 'opencode':
       return 'OpenCode';
     default:
-      return 'The runtime';
+      return 'Your agent';
   }
 }

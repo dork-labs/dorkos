@@ -900,7 +900,7 @@ describe('MobileTabsLayout', () => {
       // `quiet` has no Now zone at all, which is the whole trap: the failure
       // that most needs saying is the one where nothing else drew the zone.
       expect(buildSidebarModel(quietFixture).zones.some((zone) => zone.id === 'now')).toBe(false);
-      const notice = await screen.findByText(/could not check whether anything is waiting/i);
+      const notice = await screen.findByText(/Couldn’t check for approvals/i);
       expect(panel('home').contains(notice)).toBe(true);
 
       // And the retry is wired to a real refetch rather than being decoration.
@@ -915,7 +915,7 @@ describe('MobileTabsLayout', () => {
       mockState = quietFixture;
       renderLayout();
       await waitFor(() => expect(screen.queryByTestId('mobile-now-attention')).toBeNull());
-      expect(screen.queryByText(/could not check whether anything is waiting/i)).toBeNull();
+      expect(screen.queryByText(/Couldn’t check for approvals/i)).toBeNull();
     });
 
     it('draws a blocked Ask ONCE — the card, not the card and a row (DOR-1391)', async () => {

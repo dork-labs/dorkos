@@ -196,7 +196,7 @@ export function useChatQueue({
     if (!trimmed) return;
     messageQueue.updateQueued(editingId, trimmed);
     if (isNativeCommandContent(trimmed)) {
-      toast.warning('Saved as a command. It will run, not send, when its turn comes.');
+      toast.warning('Saved as a command. It runs instead of sending.');
     }
   }, [input, messageQueue]);
 

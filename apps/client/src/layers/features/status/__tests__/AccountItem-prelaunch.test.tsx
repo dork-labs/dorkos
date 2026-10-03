@@ -245,10 +245,10 @@ describe('AccountItem before launch — the account picker', () => {
     render(<Chip />);
     await waitFor(() => expect(accountGroup()).toBeInTheDocument());
     expect(screen.getByTestId('account-scope-note')).toHaveTextContent(
-      'This session only. Locked once the first message sends.'
+      'This session only. Locked after the first message.'
     );
     expect(accountGroup()).toHaveAccessibleDescription(
-      'This session only. Locked once the first message sends.'
+      'This session only. Locked after the first message.'
     );
   });
 
@@ -432,8 +432,8 @@ describe('AccountItem before launch — the account picker', () => {
     const rows = within(accountGroup()).getAllByRole('radio');
     const acme = rows.find((el) => el.getAttribute('data-radio-value') === 'acme-corp')!;
     const personal = rows.find((el) => el.getAttribute('data-radio-value') === 'personal')!;
-    expect(acme).toHaveTextContent('Does not look like an account folder yet');
-    expect(personal).not.toHaveTextContent('Does not look like an account folder yet');
+    expect(acme).toHaveTextContent('Not an account folder yet');
+    expect(personal).not.toHaveTextContent('Not an account folder yet');
   });
 
   it('is not there with one account, where there is nothing to choose', async () => {

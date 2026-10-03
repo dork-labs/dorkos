@@ -87,9 +87,7 @@ export function SubagentsItem({ count, running, waiting }: SubagentsItemProps) {
         {/* The one line that explains why the session looks finished and isn't.
             Only when it is true — during a turn this would be noise. */}
         {waiting && (
-          <p className="mb-1 font-medium">
-            Still working in the background. The agent picks up again when they finish.
-          </p>
+          <p className="mb-1 font-medium">Still working. The agent continues when they finish.</p>
         )}
         <ul className="space-y-1">
           {running.map((subagent) => (
