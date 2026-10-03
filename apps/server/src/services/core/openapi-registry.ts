@@ -1554,6 +1554,10 @@ const RuntimeCapabilitiesSchema = z.object({
         description:
           'What a change of the credits choice reaches: `conversation` — new conversations follow it and one already going stays on what it started on; `runtime` — the whole runtime moves, so a switch is refused while it is in the middle of a reply.',
       }),
+      caveat: z.string().optional().openapi({
+        description:
+          'What a person does not get on credits that they would on their own sign-in, as one sentence shown beside the choice. Absent when nothing is missing.',
+      }),
     })
     .optional()
     .openapi({

@@ -125,6 +125,7 @@ function CreditsRunsOnShowcaseSection() {
             runsOn="own-sign-in"
             chosenByDorkos={false}
             scope="conversation"
+            caveat="Codex can't search the web on DorkOS credits."
             canChooseCredits
             pending={false}
             failure={null}

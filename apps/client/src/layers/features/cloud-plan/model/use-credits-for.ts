@@ -50,6 +50,8 @@ export interface CreditsForRow {
   previousSignIn: string | null;
   /** What a change reaches, as the runtime declares it; `undefined` while capabilities load. */
   scope: RuntimeCreditsSupport['scope'] | undefined;
+  /** What the runtime does not get on credits, in the runtime's own sentence, if anything. */
+  caveat: string | undefined;
   /** Whether an agent or a session can pick another account for this runtime. */
   hasAccountPicks: boolean;
 }
@@ -97,6 +99,7 @@ export function readCreditsFor(
         unreachable: !reachable,
         previousSignIn: previousSignIn(runtime),
         scope: capabilities[runtime]?.credits?.scope,
+        caveat: capabilities[runtime]?.credits?.caveat,
         hasAccountPicks: capabilities[runtime]?.supportsAccounts === true,
       },
     ];

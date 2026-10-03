@@ -79,6 +79,8 @@ export interface CreditsRunsOnSectionViewProps {
   chosenByDorkos: boolean;
   /** The runtime's declared credits scope. */
   scope: RuntimeCreditsSupport['scope'] | undefined;
+  /** What the runtime does not get on credits, in the runtime's own sentence, if anything. */
+  caveat?: string;
   /** Whether credits can be chosen now; `false` leaves only the way back to the own sign-in. */
   canChooseCredits: boolean;
   /** A write is in flight. */
@@ -95,6 +97,7 @@ export function CreditsRunsOnSectionView({
   runsOn,
   chosenByDorkos,
   scope,
+  caveat,
   canChooseCredits,
   pending,
   failure,
@@ -128,6 +131,7 @@ export function CreditsRunsOnSectionView({
         {runsOn === 'credits' && !canChooseCredits
           ? `DorkOS credits can't run ${name} right now, so its new work stops instead of using your own sign-in. Switch to your ${name} sign-in to keep going.`
           : creditsRunsOnNote(name, scope, chosenByDorkos)}
+        {caveat ? ` ${caveat}` : null}
       </p>
       {failure !== null && (
         <p className="text-destructive text-xs" role="alert">
@@ -148,7 +152,8 @@ export function CreditsRunsOnSectionView({
 export function CreditsRunsOnSection({ type }: { type: string }) {
   const { data } = useCloudCredits();
   const setDefault = useSetCreditsDefault();
-  const scope = useCapabilitiesForRuntime(type)?.credits?.scope;
+  const credits = useCapabilitiesForRuntime(type)?.credits;
+  const scope = credits?.scope;
   if (!creditsRunsOnShown(data, type)) return null;
   const choice = data?.defaults?.[type];
   const runsOn: RunsOn = choice?.runsOn === 'credits' ? 'credits' : 'own-sign-in';
@@ -158,6 +163,7 @@ export function CreditsRunsOnSection({ type }: { type: string }) {
       runsOn={runsOn}
       chosenByDorkos={runsOn === 'credits' && choice?.chosenBy === 'default'}
       scope={scope}
+      {...(credits?.caveat ? { caveat: credits.caveat } : {})}
       canChooseCredits={creditsReachable(data, type)}
       pending={setDefault.isPending}
       failure={
