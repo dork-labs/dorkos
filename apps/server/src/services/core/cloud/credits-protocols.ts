@@ -17,7 +17,13 @@ import type { StreamEvent } from '@dorkos/shared/types';
 
 /** Why a launch that chose credits cannot have them. */
 export type CreditsUnavailableReason =
-  'off' | 'not-linked' | 'unreachable' | 'not-supported' | 'folder-sign-in' | 'stopped';
+  | 'off'
+  | 'not-linked'
+  | 'unreachable'
+  | 'not-supported'
+  | 'folder-sign-in'
+  | 'stopped'
+  | 'no-models';
 
 /**
  * A launch chose DorkOS credits and cannot have them, so it is refused rather
@@ -119,6 +125,8 @@ function creditsRefusalSentence(reason: CreditsUnavailableReason, runtimeLabel: 
       return `Couldn't reach DorkOS credits, so nothing was sent. Try again, or use your ${runtimeLabel} sign-in.`;
     case 'folder-sign-in':
       return `This folder's ${runtimeLabel} settings name their own sign-in, so it can't run on DorkOS credits and nothing was sent. Use your ${runtimeLabel} sign-in here, or stop using credits in this project.`;
+    case 'no-models':
+      return `DorkOS credits don’t cover a ${runtimeLabel} model yet, so nothing was sent. Use your ${runtimeLabel} sign-in instead.`;
     case 'stopped':
       return `DorkOS credits stopped working partway through this turn. Try again, or use your ${runtimeLabel} sign-in.`;
   }

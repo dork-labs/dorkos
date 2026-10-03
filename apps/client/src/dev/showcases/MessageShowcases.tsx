@@ -5,7 +5,7 @@ import {
   StagedContextNote,
   UserMessageContent,
 } from '@/layers/features/chat';
-import { PermissionDeniedChip } from '@/layers/features/chat/ui/message/PermissionDeniedChip';
+import { PermissionDeniedChip } from '@/layers/features/chat/ui/message/rows/PermissionDeniedChip';
 import { MessageImage } from '@/layers/features/chat/ui/message/MessageImage';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';

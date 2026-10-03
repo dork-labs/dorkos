@@ -679,6 +679,31 @@ describe('projectInProgressTurn', () => {
     });
   });
 
+  it('folds a model_substituted into a lasting notice part naming both models (DOR-2636)', () => {
+    const events: SessionEvent[] = [
+      {
+        type: 'model_substituted',
+        seq: 2,
+        from: 'opus',
+        fromName: 'Opus',
+        to: 'md_suggested',
+        toName: 'Suggested',
+        reason: 'credits-not-covered',
+      },
+      { seq: 3, type: 'text_delta', text: 'On it.' },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts.map((p) => p.type)).toEqual(['model_substituted', 'text']);
+    expect(parts[0]).toEqual({
+      type: 'model_substituted',
+      from: 'opus',
+      fromName: 'Opus',
+      to: 'md_suggested',
+      toName: 'Suggested',
+      reason: 'credits-not-covered',
+    });
+  });
+
   it('a main-thread denial folds without inventing an agentId', () => {
     // Absence is the claim "this happened on the main thread" — an empty string
     // would attribute it to a helper that never existed.

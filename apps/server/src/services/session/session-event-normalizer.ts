@@ -301,6 +301,21 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return denied;
     }
 
+    // A turn that ran on another model than its session names (DOR-2636).
+    // Forwarded whole: the runtime's transcript never says a model was swapped,
+    // so this event is the only lasting record that it was.
+    case 'model_substituted': {
+      const substituted: RawOf<'model_substituted'> = {
+        type: 'model_substituted',
+        from: String(data.from ?? ''),
+        fromName: String(data.fromName ?? data.from ?? ''),
+        to: String(data.to ?? ''),
+        toName: String(data.toName ?? data.to ?? ''),
+        reason: 'credits-not-covered',
+      };
+      return substituted;
+    }
+
     // A transient operational status (hook progress, a raw SDK `status` token).
     // Drives the client status strip; forward only the fields present. Operation
     // lifecycle (compaction) rides `operation_progress`, not this member.

@@ -468,6 +468,29 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
           turn.errors.push(event);
         }
         break;
+      case 'model_substituted':
+        // A turn that ran on another model than its session names, because
+        // DorkOS credits do not cover it (DOR-2636). For a log-backed runtime
+        // this stream IS the transcript, so the notice survives a reopen only
+        // if it is rebuilt here: the same lasting row the Claude Code overlay
+        // puts back, in the turn it opened (after the person's message, before
+        // the reply, which this fold emits at `turn_end`).
+        messages.push({
+          id: `model-substituted-${event.seq}`,
+          role: 'assistant',
+          content: '',
+          parts: [
+            {
+              type: 'model_substituted',
+              from: event.from,
+              fromName: event.fromName,
+              to: event.to,
+              toName: event.toName,
+              reason: event.reason,
+            },
+          ],
+        });
+        break;
       case 'image_attachment':
         // A reference, exactly as it rode the stream — the bytes are behind the
         // URL and this loader never touches them.

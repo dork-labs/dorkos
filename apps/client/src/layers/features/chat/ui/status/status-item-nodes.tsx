@@ -254,6 +254,7 @@ export function buildStatusItemNodes(
       disabled={!sessionId}
       sessionId={sessionId || undefined}
       runtime={runtimeChip.runtime}
+      onCredits={input.account.onCredits}
       compact={compactItems}
     />
   );

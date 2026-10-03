@@ -9,6 +9,18 @@
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { ModelOption } from '@dorkos/shared/types';
 import { logger } from '../lib/logger.js';
+import { judgeCreditsModel } from '../services/core/cloud/credits-models.js';
+import { resolvedModelFor } from '../services/core/cloud/credits-model-gate.js';
+
+/** What the model gate needs to know about who pays for the session. */
+export interface ModelGateOptions {
+  /**
+   * The session runs (or will run) on DorkOS credits, so the model has to be
+   * one credits serve on its runtime's protocol, whatever the runtime's own
+   * catalog says.
+   */
+  onCredits?: boolean;
+}
 
 /**
  * Check a requested model against the catalog its runtime offers, returning an
@@ -36,13 +48,34 @@ import { logger } from '../lib/logger.js';
  * WRITE PATH ONLY: a session already persisted on a now-absent model still loads
  * and runs, and the picker surfaces it as unavailable so the person can choose.
  *
+ * **On DorkOS credits, once the service says which protocols its models are
+ * on, none of that degrading applies.** The catalog is the service's list of
+ * what credits serve, filtered by the runtime's protocol, and it convicts: an
+ * unlisted model is refused, and so is every model while the list cannot be
+ * read (spec `dorkos-account-by-default` §1). A service that says nothing about
+ * protocols leaves this gate exactly as it was.
+ *
  * @param runtime - The runtime that owns the session being updated.
  * @param model - The model id the request asks to store.
+ * @param options - Whether the session runs on credits.
  */
 export async function rejectUnknownModel(
   runtime: AgentRuntime,
-  model: string
+  model: string,
+  options: ModelGateOptions = {}
 ): Promise<string | null> {
+  // On credits, once the service says which protocols its models are on, its
+  // list is the catalog and it does not degrade: a model it does not list is
+  // never stored, and neither is anything while the list cannot be read. A
+  // service that says nothing leaves the runtime's own check below in charge.
+  if (options.onCredits) {
+    const verdict = await judgeCreditsModel(
+      runtime.getCapabilities(),
+      model,
+      await resolvedModelFor(runtime, model)
+    );
+    if (verdict.judged) return verdict.refusal;
+  }
   let offered: ModelOption[];
   try {
     offered = await runtime.getSupportedModels();

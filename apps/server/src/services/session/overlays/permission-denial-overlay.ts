@@ -42,6 +42,7 @@ import type { HistoryMessage, MessagePart } from '@dorkos/shared/types';
 import { logger } from '../../../lib/logger.js';
 import { getSessionEventStore, peekProjector } from '../session-state-projector.js';
 import type { RecordedPermissionDenial } from '../session-event-store.js';
+import { spliceByCreatedAt } from './splice-by-created-at.js';
 
 /** The `permission_denied` session-event member. */
 type PermissionDeniedSessionEvent = Extract<SessionEvent, { type: 'permission_denied' }>;
@@ -132,23 +133,7 @@ export function applyPermissionDenials(
   const unanchored = denials.filter((d) => !anchored.has(d.event.toolCallId));
   if (unanchored.length === 0) return messages;
 
-  const merged: HistoryMessage[] = [];
-  let next = 0;
-  let lastSeen = '';
-  for (const message of messages) {
-    // Carry the last timestamp forward across undated messages so a dated
-    // denial is not pushed ahead of the run it belongs to.
-    if (message.timestamp !== undefined) lastSeen = message.timestamp;
-    while (next < unanchored.length && unanchored[next].createdAt <= lastSeen) {
-      merged.push(denialMessage(unanchored[next]));
-      next += 1;
-    }
-    merged.push(message);
-  }
-  // Anything dated after the whole transcript — including every denial in a
-  // session whose messages carry no timestamps at all — closes it out.
-  for (; next < unanchored.length; next += 1) merged.push(denialMessage(unanchored[next]));
-  return merged;
+  return spliceByCreatedAt(messages, unanchored, denialMessage);
 }
 
 /**

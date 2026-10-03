@@ -37,12 +37,13 @@
  *
  * @module entities/agent/model/use-execution-exceptions
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ModelOption } from '@dorkos/shared/types';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import {
+  agentRunsOnCredits,
   claudeAccountName,
   CREDITS_ACCOUNT_LABEL,
   describeAgentExecution,
@@ -50,7 +51,7 @@ import {
   type AgentExecutionReport,
   type KnownAccount,
 } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { useCloudCredits, useTransport } from '@/layers/shared/model';
 import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
@@ -86,6 +87,17 @@ export interface ExecutionExceptions {
 
 /** Nothing known yet — the shape a loading read returns, so consumers never branch on undefined. */
 const EMPTY: readonly ExecutionException[] = [];
+
+/** The cache slot one agent's catalog is read from: its runtime, on credits or not. */
+function catalogKey(runtime: string, onCredits: boolean): string {
+  return onCredits ? `${runtime}\u0000credits` : runtime;
+}
+
+/** The `useModels` scope a {@link catalogKey} names. */
+function catalogScope(key: string): { runtime: string; account?: string } {
+  const [runtime, credits] = key.split('\u0000');
+  return credits ? { runtime: runtime!, account: CREDITS_ACCOUNT_ID } : { runtime: runtime! };
+}
 
 /**
  * Find every agent whose execution settings depart from the server's defaults.
@@ -167,6 +179,21 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
   // for naming it. Asking anyway would trade a served answer for a failed
   // request that says the same thing.
   const knownRuntimesKey = knownRuntimes?.join(',');
+  // An agent on DorkOS credits is judged against the menu credits offer it,
+  // which is its runtime's own menu until the service says which protocols its
+  // models are on (DOR-2636). Its catalog is keyed apart for that reason.
+  const creditsInput = config?.claudeCode?.credits;
+  const creditsDefaults = useCloudCredits().data?.defaults;
+  const creditsKey = useCallback(
+    (agent: { id: string; runtime?: string | null; account?: string | null }) =>
+      agentRunsOnCredits(agent, {
+        defaultRuntime,
+        runtimeDeclaresCredits: (type) => capabilityMap?.capabilities[type]?.credits !== undefined,
+        credits: creditsInput,
+        runtimeDefaultsToCredits: (type) => creditsDefaults?.[type]?.runsOn === 'credits',
+      }),
+    [defaultRuntime, capabilityMap, creditsInput, creditsDefaults]
+  );
   const runtimesToCheck = useMemo(() => {
     if (!checkModels || !agents) return [];
     const connected = knownRuntimesKey === undefined ? null : new Set(knownRuntimesKey.split(','));
@@ -175,18 +202,18 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
       if (!agent?.model && !agent?.effort) continue;
       const runtime = agent.runtime ?? defaultRuntime;
       if (connected && !connected.has(runtime)) continue;
-      wanted.add(runtime);
+      wanted.add(catalogKey(runtime, creditsKey(agent)));
     }
     return [...wanted].sort();
-  }, [checkModels, agents, defaultRuntime, knownRuntimesKey]);
+  }, [checkModels, agents, defaultRuntime, knownRuntimesKey, creditsKey]);
 
   // The same query options `useModels` builds, so the strip and the status-bar
   // picker share one cached catalog per runtime instead of fetching it twice —
   // imported rather than re-spelled, because a hand-written key that drifted by
   // one argument would silently mint a second cache.
   const catalogs = useQueries({
-    queries: runtimesToCheck.map((runtime) => ({
-      ...modelsQueryOptions(transport, { runtime }),
+    queries: runtimesToCheck.map((key) => ({
+      ...modelsQueryOptions(transport, catalogScope(key)),
       // A catalog is decoration on this screen, not its subject: a runtime that
       // cannot answer should leave the models unknown at once rather than retry
       // three times while the strip waits to say anything.
@@ -210,7 +237,7 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
   for (const [path, agent] of Object.entries(agents)) {
     if (!agent) continue;
     const runtime = agent.runtime ?? defaultRuntime;
-    const catalog = byRuntime.get(runtime);
+    const catalog = byRuntime.get(catalogKey(runtime, creditsKey(agent)));
     const serverDefaultModel = serverModelFor(runtime);
     // The model that will actually run this agent's turn — its own pin, else
     // what it inherits. The Runs on picker has always reasoned about this one; the

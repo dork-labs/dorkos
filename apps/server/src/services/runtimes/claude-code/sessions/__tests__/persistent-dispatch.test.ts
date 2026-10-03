@@ -50,6 +50,41 @@ vi.mock('../../messaging/context-builder.js', () => ({
   renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
+// A credits swap's save (DOR-2636), attached to every launch while `swap.on`,
+// so a test can see which paths take it: only one that delivered the notice.
+const swap = vi.hoisted(() => ({
+  on: false,
+  commit: vi.fn(async () => {}),
+  crossAccount: false,
+}));
+// A reuse the warm process refuses as another account's (the cross-account
+// guard), on demand, so the refused-dispatch path can be driven.
+vi.mock('../pump-launch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../pump-launch.js')>();
+  const { AccountPinViolationError } = await import('../launch-fingerprint.js');
+  return {
+    ...actual,
+    decideProcessReuse: (...args: Parameters<typeof actual.decideProcessReuse>) =>
+      swap.crossAccount
+        ? {
+            action: 'adjust',
+            apply: async () => {
+              throw new AccountPinViolationError({ root: '/a' } as never, { root: '/b' } as never);
+            },
+          }
+        : actual.decideProcessReuse(...args),
+  };
+});
+vi.mock('../../messaging/launch-resolver.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../messaging/launch-resolver.js')>();
+  return {
+    ...actual,
+    resolveLaunch: async (...args: Parameters<typeof actual.resolveLaunch>) => {
+      const resolved = await actual.resolveLaunch(...args);
+      return swap.on ? { ...resolved, substitution: { commit: swap.commit } } : resolved;
+    },
+  };
+});
 vi.mock('../../../../relay/relay-state.js', () => ({ isRelayEnabled: () => false }));
 vi.mock('../../../../tasks/task-state.js', () => ({ isTasksEnabled: () => false }));
 vi.mock('../../../../core/config-manager.js', () => ({
@@ -1321,6 +1356,48 @@ describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 
 // pump and the composer started offering Steer — a session opting itself into an
 // experiment nobody switched on. The opt-in stays OFF here (the file's
 // `beforeEach` leaves it off), which is the whole point of the block.
+describe('a credits model swap is saved only once its notice is delivered (DOR-2636)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+    swap.on = true;
+    swap.commit.mockClear();
+  });
+  afterEach(() => {
+    swap.on = false;
+  });
+
+  it('saves nothing for a staged note that boots a cold process, then saves on the real turn', async () => {
+    const sessionId = nextSession();
+
+    await runtime.deliverIntoTurn(sessionId, 'context first', {
+      mode: 'stage',
+      messageId: 'stage-1',
+    });
+    await vi.waitFor(() => expect(cli.processes[0]!.staged).toHaveLength(1));
+    // The stage's launch never delivers its status events, so it owes no save.
+    expect(swap.commit).not.toHaveBeenCalled();
+
+    await turn(sessionId, 'now do the thing');
+    expect(swap.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves nothing for a dispatch the warm process refuses as another account’s', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    expect(swap.commit).toHaveBeenCalledTimes(1);
+    swap.commit.mockClear();
+    swap.crossAccount = true;
+    try {
+      const events = await turn(sessionId, 'refused');
+      expect(events.some((e) => e.type === 'error')).toBe(true);
+    } finally {
+      swap.crossAccount = false;
+    }
+
+    expect(swap.commit).not.toHaveBeenCalled();
+  });
+});
+
 describe('Add context starts nothing while the opt-in is off (DOR-1307)', () => {
   it('refuses a stage on a COLD session, launching nothing and registering nothing', async () => {
     const sessionId = nextSession();

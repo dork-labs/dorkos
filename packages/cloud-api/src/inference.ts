@@ -138,6 +138,18 @@ export const InferenceModelSchema = z
     contextWindow: z.number().int().positive(),
     maxOutputTokens: z.number().int().positive(),
     supports: ModelSupportsSchema,
+    protocols: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'The request formats (by their `InferenceFormatSchema` names) a caller should offer this model in. A caller offers a model only in a format listed here, and ignores values it does not know, never an error. Absent means the service has not said.'
+      ),
+    recommendedOn: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'The request formats (by their `InferenceFormatSchema` names) in which this is the model the service suggests starting with. At most one model per format; a caller that finds more uses the first. Absent means none.'
+      ),
   })
   .describe('One routed model. No provider or vendor is named anywhere in this shape.');
 

@@ -12,6 +12,7 @@
  *
  * @module services/core/operator/agent-updater
  */
+import { creditsAgentModelRefusal } from '../cloud/credits-model-gate.js';
 import { z } from 'zod';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
 import {
@@ -50,7 +51,7 @@ const SYSTEM_PROTECTED_FIELDS = ['displayName', 'description', 'isSystem'] as co
 
 /** Discriminating code for {@link AgentUpdateError}, mapped to HTTP status by the route. */
 export type AgentUpdateErrorCode =
-  'VALIDATION' | 'NOT_FOUND' | 'SYSTEM_PROTECTED' | 'OPERATOR_ONLY';
+  'VALIDATION' | 'NOT_FOUND' | 'SYSTEM_PROTECTED' | 'OPERATOR_ONLY' | 'UNSUPPORTED_MODEL';
 
 /**
  * Typed failure from {@link updateAgentManifest}. Callers translate `code` into
@@ -298,6 +299,20 @@ export async function updateAgentManifest(opts: {
         `Cannot modify ${blockedFields.join(', ')} on system agents`
       );
     }
+  }
+
+  // An agent on DorkOS credits names a model credits serve (DOR-2636), on this
+  // path as on the operator's: the same rule refuses the same models. Its
+  // account is operator-only, so it is the one already on file.
+  if (typeof rawBody.model === 'string') {
+    const refusal = await creditsAgentModelRefusal({
+      agentId: existing.id,
+      runtime: typeof rawBody.runtime === 'string' ? rawBody.runtime : existing.runtime,
+      account: existing.account,
+      model: rawBody.model,
+      accountNamedNow: false,
+    });
+    if (refusal) throw new AgentUpdateError('UNSUPPORTED_MODEL', refusal);
   }
 
   // Write convention files if provided alongside manifest fields.

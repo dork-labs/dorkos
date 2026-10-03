@@ -47,6 +47,7 @@ const NO_ACCOUNT_CHIP: SessionAccount = {
   chipState: 'unknown',
   trackerItems: [],
   lifecycle: 'idle',
+  onCredits: false,
   pending: false,
 };
 
@@ -349,6 +350,7 @@ const ACCT_1_CHIP: SessionAccount = {
   chipState: 'ok',
   trackerItems: [],
   lifecycle: 'idle',
+  onCredits: false,
   pending: false,
 };
 

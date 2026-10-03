@@ -903,6 +903,39 @@ describe('the inference refusal reasons', () => {
   });
 });
 
+describe('which request formats a routed model is offered in', () => {
+  const model = {
+    id: 'md_opaque_0001',
+    displayName: 'a model',
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+    supports: { tools: true, promptCaching: true, streaming: true, thinking: false },
+  };
+
+  it('still parses a model from a service that says nothing about formats', () => {
+    // Additive within /v1: the response a previous minor published still parses.
+    expect(contract.InferenceModelSchema.safeParse(model).success).toBe(true);
+  });
+
+  it('carries the formats and the recommendation as plain strings, unknown ones intact', () => {
+    const parsed = contract.InferenceModelSchema.parse({
+      ...model,
+      protocols: ['anthropicMessages', 'a-format-added-later'],
+      recommendedOn: ['anthropicMessages'],
+    });
+    // A value this release does not know never rejects the list: a caller one
+    // release behind ignores it, the same rule as the token's `served`.
+    expect(parsed.protocols).toEqual(['anthropicMessages', 'a-format-added-later']);
+    expect(parsed.recommendedOn).toEqual(['anthropicMessages']);
+  });
+
+  it('spells formats with the one vocabulary the token uses', () => {
+    for (const value of ['anthropicMessages', 'openaiChat', 'openaiResponses']) {
+      expect(contract.InferenceFormatSchema.safeParse(value).success).toBe(true);
+    }
+  });
+});
+
 describe('the remote-access additions', () => {
   const status = {
     mode: 'managed',

@@ -395,8 +395,18 @@ export function createSystemMethods(baseUrl: string) {
       }
     },
 
-    getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]> {
-      const qs = buildQueryString({ sessionId: opts?.sessionId, runtime: opts?.runtime });
+    getModels(opts?: {
+      sessionId?: string;
+      runtime?: string;
+      account?: string;
+      cwd?: string;
+    }): Promise<ModelOption[]> {
+      const qs = buildQueryString({
+        sessionId: opts?.sessionId,
+        runtime: opts?.runtime,
+        account: opts?.account,
+        cwd: opts?.cwd,
+      });
       return fetchJSON<{ models: ModelOption[] }>(baseUrl, `/models${qs}`).then((r) => r.models);
     },
 

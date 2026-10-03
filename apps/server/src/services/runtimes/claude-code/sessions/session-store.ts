@@ -552,6 +552,29 @@ export class SessionStore {
   }
 
   /**
+   * Make a model the session's own without the live switch `updateSession`
+   * attempts: the launch about to start is the one that will run it. Used when
+   * DorkOS credits run another model than the session named (DOR-2636), so the
+   * status line, the picker and the next turn show the model that really ran.
+   * Best effort: a store that cannot be written costs the stored row only.
+   *
+   * @param session - The session record the launch holds.
+   * @param sessionId - The id the settings are stored under.
+   * @param model - The model that will run.
+   */
+  async rememberModel(session: AgentSession, sessionId: string, model: string): Promise<void> {
+    session.model = model;
+    try {
+      await this.settingsPort?.saveSessionSettings(sessionId, { model });
+    } catch (err) {
+      logger.warn('[SessionStore] could not store the model credits ran', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
    * Update mutable session fields, auto-creating (hydrated from durable
    * settings) if the session isn't currently in memory. Always resolves
    * `updated: true` — there is no "session does not exist" case for this

@@ -7,7 +7,7 @@
  *
  * @module features/status/model/use-session-account
  */
-import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { Session, TrackerItemRef } from '@dorkos/shared/types';
 import { useAccountIdentityGate, useCapabilitiesForRuntime } from '@/layers/entities/runtime';
@@ -124,6 +124,11 @@ export interface SessionAccount {
   /** The session's lifecycle, or `null` before it has launched. */
   lifecycle: SessionLifecycle | null;
   /**
+   * Whether the session runs (or will run) on DorkOS credits, so its model
+   * menu is the models credits serve rather than the runtime's own.
+   */
+  onCredits: boolean;
+  /**
    * True before the first message: the account is still the pre-launch hint
    * (`pendingAccount`, else what the server's ladder would pick), so the chip
    * is the account picker rather than a readout.
@@ -177,7 +182,7 @@ export function useSessionAccount(
   const row = id ? (sessions.find((session) => session.id === id) ?? null) : null;
   const streamStatus = useSessionStreamStatus(id);
   const accountSwitch = useAccountSwitch(id);
-  const { accounts, nameFor, colorFor } = useClaudeAccounts();
+  const { accounts, nameFor, colorFor, credits } = useClaudeAccounts();
   // A runtime that does not tell accounts apart bills its one implicit account.
   const supportsAccounts = useCapabilitiesForRuntime(runtime)?.supportsAccounts ?? true;
 
@@ -252,6 +257,9 @@ export function useSessionAccount(
     chipState: chipState(usage, limit),
     trackerItems: row ? trackerItemsOf(row) : NO_TRACKER_ITEMS,
     lifecycle,
+    onCredits:
+      accountId === CREDITS_ACCOUNT_ID ||
+      (credits !== null && path !== null && path === credits.path),
     pending,
   };
 }

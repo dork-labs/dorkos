@@ -56,6 +56,8 @@ export interface PumpLaunchPlan {
   meshAgentId: string | undefined;
   /** Events the turn must yield before any SDK output. */
   statusEvents: StreamEvent[];
+  /** The save a credits swap owes once its notice is delivered (DOR-2636). */
+  substitution?: { commit: () => Promise<void> };
   /** Exactly the options a launch for this dispatch would use. */
   sdkOptions: Options;
   /** What such a launch would be pinned to. */

@@ -69,6 +69,12 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * into a child transcript no reader ever opens, so the parent conversation comes
  * back showing an agent that simply stopped making progress. The row is what
  * `permission-denial-overlay` puts back.
+ *
+ * `model_substituted` is the third (DOR-2636): a turn that ran on another model
+ * than its session names, because DorkOS credits do not cover that model. The
+ * transcript names the model that ran and never the one it replaced, so the row
+ * is what `model-substitution-overlay` puts back as a lasting notice. Eager for
+ * the same reason a denial is: the turn it opens may never reach `turn_end`.
  */
 export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn_start',
@@ -79,6 +85,7 @@ export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'elicitation_prompt',
   'interaction_resolved',
   'permission_denied',
+  'model_substituted',
 ]);
 
 /**
@@ -123,6 +130,7 @@ export const EAGERLY_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'elicitation_prompt',
   'interaction_resolved',
   'permission_denied',
+  'model_substituted',
 ]);
 
 /**

@@ -21,10 +21,8 @@ vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
   captureCloudV1Context: () => null,
 }));
 
-import {
-  __setCreditsModelsForTests,
-  __setCreditsStateForTests,
-} from '../../../core/cloud/credits-inference.js';
+import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
+import { __setCreditsCatalogForTests } from '../../../core/cloud/credits-models.js';
 import { planOpenCodeSidecar, planOpenCodeTurn } from '../credits-mode.js';
 import {
   OPENCODE_CREDITS_PROVIDER_ID,
@@ -55,7 +53,7 @@ afterEach(() => {
   choice.credits = false;
   link.linked = true;
   __setCreditsStateForTests({ token: null });
-  __setCreditsModelsForTests(null);
+  __setCreditsCatalogForTests(null);
 });
 
 describe('the credits sidecar’s environment', () => {
@@ -156,7 +154,7 @@ describe('planning the sidecar', () => {
   it('plans no paying sidecar and refuses turns while the token does not list chat', async () => {
     choice.credits = true;
     __setCreditsStateForTests({ token: { ...TOKEN, served: undefined } });
-    __setCreditsModelsForTests({ catalogVersion: 'cv', models: [model('m', true)] });
+    __setCreditsCatalogForTests([model('m', true)]);
     expect(await planOpenCodeSidecar()).toEqual({
       mode: 'credits',
       fingerprint: 'credits:none',
@@ -168,10 +166,38 @@ describe('planning the sidecar', () => {
   it('plans a credits turn on the models when credits can pay, and the plan holds no credential', async () => {
     choice.credits = true;
     __setCreditsStateForTests({ token: TOKEN });
-    __setCreditsModelsForTests({ catalogVersion: 'cv', models: [model('m', true)] });
+    __setCreditsCatalogForTests([model('m', true)]);
     const plan = await planOpenCodeTurn();
     expect(plan).toEqual({ mode: 'credits', fingerprint: 'credits:m', models: [model('m', true)] });
     expect(JSON.stringify(plan)).not.toContain(TOKEN.token);
+  });
+});
+
+describe('the credits model list OpenCode is handed (DOR-2636)', () => {
+  it('is every listed model while the service says nothing about formats', async () => {
+    choice.credits = true;
+    __setCreditsStateForTests({ token: TOKEN });
+    __setCreditsCatalogForTests([model('a', true), model('b', true)]);
+    expect((await planOpenCodeTurn()).models.map((m) => m.id)).toEqual(['a', 'b']);
+  });
+
+  it('is only the models listed in its chat format once the service says', async () => {
+    choice.credits = true;
+    __setCreditsStateForTests({ token: TOKEN });
+    __setCreditsCatalogForTests([
+      { ...model('claude-only', true), protocols: ['anthropicMessages'] },
+      { ...model('chat', true), protocols: ['openaiChat', 'a-format-added-later'] },
+    ]);
+    expect((await planOpenCodeTurn()).models.map((m) => m.id)).toEqual(['chat']);
+  });
+
+  it('refuses a turn when the service lists formats but none in chat', async () => {
+    choice.credits = true;
+    __setCreditsStateForTests({ token: TOKEN });
+    __setCreditsCatalogForTests([
+      { ...model('claude-only', true), protocols: ['anthropicMessages'] },
+    ]);
+    await expect(planOpenCodeTurn()).rejects.toMatchObject({ reason: 'unreachable' });
   });
 });
 

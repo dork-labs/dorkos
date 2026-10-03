@@ -472,6 +472,20 @@ describe('StreamManager', () => {
         agentId: 'agent_child_7',
       } as SessionEvent,
     ],
+    // A turn that ran on another model than the session names (DOR-2636): a
+    // dropped frame here would be the silent switch the notice exists to end.
+    [
+      'model_substituted',
+      {
+        type: 'model_substituted',
+        seq: 2,
+        from: 'opus',
+        fromName: 'Opus',
+        to: 'md_suggested',
+        toName: 'Suggested',
+        reason: 'credits-not-covered',
+      } as SessionEvent,
+    ],
     // The in-session capability hold (DOR-939) and its resolution. Same failure
     // mode as the four above and the reason DOR-963 exists: the pair shipped
     // with a server emitter, a store fold, and an inline card — and no entry in

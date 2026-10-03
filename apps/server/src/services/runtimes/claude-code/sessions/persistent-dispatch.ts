@@ -158,6 +158,7 @@ import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
 import {
   creditsRefusalEvent,
+  deliverStatusEvents,
   resolveEffectiveCwd,
   resolveLaunch,
 } from '../messaging/launch-resolver.js';
@@ -568,6 +569,7 @@ export class PersistentDispatch {
       enrichedContent: resolved.enrichedContent,
       meshAgentId: resolved.meshAgentId,
       statusEvents: resolved.statusEvents,
+      ...(resolved.substitution ? { substitution: resolved.substitution } : {}),
       sdkOptions: resolved.sdkOptions,
       fingerprint: captureLaunchFingerprint(resolved.launch),
     };
@@ -628,7 +630,8 @@ export class PersistentDispatch {
     }
 
     bundle.plan = plan;
-    for (const event of plan.statusEvents) yield event;
+    // A credits swap is saved only once its notice has gone out (DOR-2636).
+    yield* deliverStatusEvents(plan);
 
     let window: TurnWindow;
     // A turn is booting from here until its window opens — the span in which the

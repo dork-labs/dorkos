@@ -25,6 +25,7 @@ import type { SessionAttachmentStore } from '../../../session/attachments/index.
 import type { AgentSession } from '../agent-types.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
 import type { ModelThinkingCapability } from './thinking-config.js';
+import type { ModelOption } from '@dorkos/shared/types';
 
 /** Lightweight projection of the SDK's SlashCommand type — avoids leaking SDK types. */
 export interface SdkCommandEntry {
@@ -169,6 +170,21 @@ export interface MessageSenderOpts {
    * Drives the auto→default coercion guard (see `resolveEffectivePermissionMode`).
    */
   modelSupportsAutoMode?: boolean;
+  /**
+   * The runtime's own catalog row for a model value (an alias such as `sonnet`,
+   * or a wire id; `undefined` reads the `default` alias), or `undefined` when
+   * the catalog does not know it. Read when DorkOS credits run another model
+   * than the session names (DOR-2636), so the swap is judged on the id an
+   * alias expands to, named by display name, and launched with the capability
+   * (thinking, effort, auto mode, fast mode) of the model that will really run.
+   */
+  lookupModel?: (value: string | undefined) => ModelOption | undefined;
+  /**
+   * Make a model the session's own: the in-memory record and the stored
+   * settings. Called when credits ran another model than the session named, so
+   * the status line, the picker and the next turn all show the model that ran.
+   */
+  rememberSessionModel?: (model: string) => Promise<void>;
   /**
    * Pre-resolved marketplace plugin entries for the Claude Agent SDK
    * `options.plugins` field (marketplace-05, ADR-0239). Populated by the

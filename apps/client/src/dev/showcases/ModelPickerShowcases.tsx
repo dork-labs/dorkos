@@ -28,6 +28,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { createPlaygroundTransport } from '../playground-transport';
 import {
   CLAUDE_CODE_CATALOG,
+  CREDITS_CATALOG,
   OPENCODE_CATALOG,
   UNVERIFIED_CATALOG,
 } from './model-picker-showcase-data';
@@ -56,7 +57,15 @@ function catalogTransport(models: ModelOption[]): Transport {
  *
  * @param props - The catalog to offer and the model that starts selected.
  */
-function PickerDemo({ models, selected }: { models: ModelOption[]; selected: string }) {
+function PickerDemo({
+  models,
+  selected,
+  onCredits,
+}: {
+  models: ModelOption[];
+  selected: string;
+  onCredits?: boolean;
+}) {
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
   );
@@ -76,6 +85,7 @@ function PickerDemo({ models, selected }: { models: ModelOption[]; selected: str
             onChangeEffort={() => {}}
             fastMode={false}
             onChangeFastMode={() => {}}
+            onCredits={onCredits}
           />
         </div>
       </TransportProvider>
@@ -108,6 +118,13 @@ export function ModelPickerShowcases() {
           models={OPENCODE_CATALOG}
           selected="openrouter/meta-llama/llama-3.1-nemotron-ultra-253b-v1-free-preview"
         />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        On DorkOS credits — only what credits cover, the suggestion first
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <PickerDemo models={CREDITS_CATALOG} selected="credits-suggested" onCredits />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Claude Code — three short names in a tiered menu</ShowcaseLabel>

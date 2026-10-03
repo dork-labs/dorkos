@@ -250,6 +250,7 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 
 import { CodexRuntime } from '../codex-runtime.js';
 import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
+import { __setCreditsCatalogForTests } from '../../../core/cloud/credits-models.js';
 import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 // The fixture whose token serves every format: Codex speaks only `responses`.
 import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
@@ -641,3 +642,120 @@ it.skipIf(LIVE)(
     for (const prompt of sent) expect(prompt.endsWith(DOC_VISIBLE_TRIGGER)).toBe(true);
   }
 );
+
+// DOR-2636: a Codex turn on credits runs a model credits serve in Codex's
+// format, once the service says which formats its models are in; while it
+// says nothing, the session's model stands.
+describe.skipIf(LIVE)('the model a Codex credits turn runs (DOR-2636)', () => {
+  const supports = { tools: true, promptCaching: false, streaming: true, thinking: false };
+  const served = (id: string, formats: string[], recommendedOn: string[] = []) => ({
+    id,
+    displayName: `Name ${id}`,
+    contextWindow: 200_000,
+    maxOutputTokens: 32_000,
+    supports,
+    protocols: formats,
+    recommendedOn,
+  });
+
+  async function creditsTurn(model: string | undefined) {
+    codexRunsOnCredits.value = true;
+    __setCreditsStateForTests({
+      token: InferenceTokenSchema.parse({
+        ...CREDITS_TOKEN_FIXTURE,
+        expiresAt: '2999-01-01T00:00:00.000Z',
+      }),
+    });
+    try {
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/bin/codex',
+      });
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+      if (model !== undefined) await runtime.updateSession(sessionId, { model });
+      const before = threadOptionsSeen.length;
+      const events = [];
+      for await (const event of runtime.sendMessage(sessionId, 'ping', { cwd: projectDir })) {
+        events.push(event);
+      }
+      return { events, threads: threadOptionsSeen.slice(before) };
+    } finally {
+      codexRunsOnCredits.value = false;
+      __setCreditsStateForTests({ token: null });
+    }
+  }
+
+  afterAll(() => __setCreditsCatalogForTests(null));
+
+  it('runs a model credits do not serve in its format on the suggestion, and says so', async () => {
+    __setCreditsCatalogForTests([
+      served('claude-x', ['anthropicMessages']),
+      served('gpt-pick', ['openaiResponses'], ['openaiResponses']),
+    ]);
+    const { events, threads } = await creditsTurn('gpt-not-served');
+    expect(threads[0]).toMatchObject({ model: 'gpt-pick' });
+    expect(events.filter((e) => e.type === 'model_substituted')).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({ from: 'gpt-not-served', to: 'gpt-pick' }),
+      }),
+    ]);
+  });
+
+  it('keeps a model it serves, and starts one with no model on the suggestion', async () => {
+    __setCreditsCatalogForTests([served('gpt-pick', ['openaiResponses'], ['openaiResponses'])]);
+    expect((await creditsTurn('gpt-pick')).threads[0]).toMatchObject({ model: 'gpt-pick' });
+    expect((await creditsTurn(undefined)).threads[0]).toMatchObject({ model: 'gpt-pick' });
+  });
+
+  it('refuses plainly when the service lists formats but none in Codex’s', async () => {
+    __setCreditsCatalogForTests([served('claude-x', ['anthropicMessages'])]);
+    const { events, threads } = await creditsTurn('gpt-anything');
+    expect(threads).toHaveLength(0);
+    expect(events[0]).toMatchObject({ type: 'error', data: { reason: 'no-models' } });
+  });
+
+  it('keeps the swap notice, named from Codex’s catalog, in the rebuilt history', async () => {
+    __setCreditsCatalogForTests([served('gpt-pick', ['openaiResponses'], ['openaiResponses'])]);
+    codexRunsOnCredits.value = true;
+    __setCreditsStateForTests({
+      token: InferenceTokenSchema.parse({
+        ...CREDITS_TOKEN_FIXTURE,
+        expiresAt: '2999-01-01T00:00:00.000Z',
+      }),
+    });
+    try {
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/bin/codex',
+      });
+      vi.spyOn(runtime, 'getSupportedModels').mockResolvedValue([
+        { value: 'gpt-old', displayName: 'GPT Old', description: '' },
+      ]);
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+      await runtime.updateSession(sessionId, { model: 'gpt-old' });
+      const history = await driveDurableTurn(runtime, sessionId, 'ping', projectDir);
+      const notice = history.find((m) => m.id.startsWith('model-substituted-'));
+      expect(notice?.parts).toEqual([
+        expect.objectContaining({
+          type: 'model_substituted',
+          from: 'gpt-old',
+          fromName: 'GPT Old',
+          to: 'gpt-pick',
+          toName: 'Name gpt-pick',
+        }),
+      ]);
+    } finally {
+      codexRunsOnCredits.value = false;
+      __setCreditsStateForTests({ token: null });
+    }
+  });
+
+  it('changes nothing while the service says nothing about formats', async () => {
+    __setCreditsCatalogForTests([{ ...served('m', []), protocols: undefined }]);
+    const { events, threads } = await creditsTurn('gpt-whatever');
+    expect(threads[0]).toMatchObject({ model: 'gpt-whatever' });
+    expect(events.some((e) => e.type === 'model_substituted')).toBe(false);
+  });
+});

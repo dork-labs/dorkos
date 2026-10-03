@@ -53,6 +53,7 @@ import {
   scheduleAccountRefusal,
   scheduleRunFolder,
 } from '../../../tasks/lifecycle/schedule-account-eligibility.js';
+import { scheduleCreditsModelRefusal } from '../../../tasks/lifecycle/schedule-credits-model.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -645,6 +646,20 @@ export function createUpdateScheduleHandler(
         ),
       });
       if (refusal) return jsonContent({ error: refusal.message, code: refusal.code }, true);
+    }
+    // A schedule whose runs go on DorkOS credits names a model credits serve
+    // (DOR-2636). Same rule and sentence as the update route.
+    if (args.model !== undefined || args.account !== undefined || args.runtime !== undefined) {
+      const modelRefusal = await scheduleCreditsModelRefusal({
+        model: args.model !== undefined ? args.model : existing.model,
+        account: args.account !== undefined ? args.account : existing.account,
+        runtime: args.runtime !== undefined ? args.runtime : existing.runtime,
+        folder: scheduleRunFolder(
+          existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null
+        ),
+      });
+      if (modelRefusal)
+        return jsonContent({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' }, true);
     }
 
     // The MERGED schedule is what gets written and registered, so the merged
