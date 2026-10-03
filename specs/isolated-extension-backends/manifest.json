@@ -1,0 +1,15 @@
+{
+  "id": "261003-204731",
+  "slug": "isolated-extension-backends",
+  "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",
+  "created": "2026-10-03",
+  "status": "specified",
+  "project": "extensibility-platform",
+  "linearIssue": "DOR-2686",
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md",
+    "designDecisions": "design-decisions.md",
+    "tasks": "03-tasks.json"
+  }
+}

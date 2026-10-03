@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261003-204731",
+      "slug": "isolated-extension-backends",
+      "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",
+      "created": "2026-10-03",
+      "status": "specified",
+      "project": "extensibility-platform",
+      "linearIssue": "DOR-2686"
+    },
+    {
       "id": "261003-200014",
       "slug": "extension-agent-tools-and-skills",
       "title": "Extensions give agents tools and skills, registered at extension load",
