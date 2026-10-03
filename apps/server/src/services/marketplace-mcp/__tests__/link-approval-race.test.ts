@@ -22,6 +22,7 @@ import {
 import { DevLinkService, type DevLinkApprovals } from '../../marketplace/dev-links/index.js';
 import { marketplaceDomain } from '../marketplace-capabilities.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
+import { memoryConsentStore } from '../../marketplace/dev-links/__tests__/memory-consent-store.js';
 
 let base: string;
 let home: string;
@@ -55,6 +56,7 @@ describe('marketplace.link after the gate passes', () => {
     // link to the approved text refuses it.
     let approvals: DevLinkApprovals = { approvedToRun: [], approvedSources: {} };
     const service = new DevLinkService({
+      consent: memoryConsentStore(),
       dorkHome: home,
       approvals: { read: () => approvals, write: (next) => void (approvals = next) },
       onPluginsChanged: () => undefined,
@@ -123,6 +125,7 @@ describe('marketplace.link after the gate passes', () => {
     }
     let approvals: DevLinkApprovals = { approvedToRun: [], approvedSources: {} };
     const devLinks = new DevLinkService({
+      consent: memoryConsentStore(),
       dorkHome: home,
       approvals: { read: () => approvals, write: (next) => void (approvals = next) },
       onPluginsChanged: () => undefined,

@@ -38,6 +38,7 @@ import {
   type DevLinkApprovals,
 } from '../../services/marketplace/dev-links/index.js';
 import type { MarketplaceRouteDeps } from '../marketplace.js';
+import { memoryConsentStore } from '../../services/marketplace/dev-links/__tests__/memory-consent-store.js';
 
 const target = swappableServer();
 const server = target.server;
@@ -76,6 +77,7 @@ beforeEach(async () => {
     marketplaceDeps: {} as MarketplaceMcpDeps,
   });
   const devLinks = new DevLinkService({
+    consent: memoryConsentStore(),
     dorkHome: home,
     approvals: {
       read: () => extensionApprovals,

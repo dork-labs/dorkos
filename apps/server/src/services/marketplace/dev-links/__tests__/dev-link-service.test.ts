@@ -23,6 +23,7 @@ import { lex } from '../../../../../../../scripts/lib/code-only.mjs';
 import { DevLinkService, type DevLinkApprovals, type DevLinkFs } from '../dev-link-service.js';
 import { DevLinkError } from '../errors.js';
 import { readDevLinks, updateDevLinks } from '../registry.js';
+import { memoryConsentStore } from './memory-consent-store.js';
 
 let base: string;
 let home: string;
@@ -62,6 +63,7 @@ async function writePackage(
 
 function service(fs: Partial<DevLinkFs> = {}): DevLinkService {
   return new DevLinkService({
+    consent: memoryConsentStore(),
     dorkHome: home,
     approvals: {
       read: () => structuredClone(approvals),
@@ -152,6 +154,7 @@ describe('DevLinkService refusals', () => {
     // Purpose: the boundary limits where DorkOS reaches on disk; a dev link
     // runs code from the folder, so it must stay inside.
     const svc = new DevLinkService({
+      consent: memoryConsentStore(),
       dorkHome: home,
       approvals: { read: () => approvals, write: () => undefined },
       onPluginsChanged,
@@ -424,6 +427,7 @@ describe('DevLinkService.link', () => {
     // Purpose: a symlink needs a privilege on Windows; a junction does not.
     const calls: unknown[][] = [];
     const svc = new DevLinkService({
+      consent: memoryConsentStore(),
       dorkHome: home,
       approvals: { read: () => approvals, write: () => undefined },
       onPluginsChanged,

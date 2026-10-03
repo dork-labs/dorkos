@@ -35,6 +35,7 @@ import path from 'node:path';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import {
   DevLinkPackageNameSchema,
+  disclosesAnything,
   MARKETPLACE_DEVLINK_PARKED_MARKER,
   type DevLinkPreview,
   type DevLinkRecord,
@@ -43,11 +44,17 @@ import {
 } from '@dorkos/shared/marketplace-schemas';
 import { getBoundary, isContained } from '../../../lib/boundary.js';
 import { readRunnableDeclarations } from '../preview/permission-preview.js';
-import { describeDisclosedEffects, disclosedEffectsOf } from '../preview/disclosed-effects.js';
+import { describeEffectsInFull, disclosedEffectsOf } from '../preview/disclosed-effects.js';
 import { APPROVAL_DETAIL_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
 import { readInstalledIdentity } from '../installed-scanner.js';
 import { withInstallTargetLock } from '../transaction.js';
 import type { NotifyPluginsChanged } from '../types.js';
+import {
+  applyLinkConsent,
+  forgetLinkConsent,
+  planLinkConsent,
+  type DevLinkConsentStore,
+} from './consent.js';
 import { DevLinkError } from './errors.js';
 import { canonicalSlotPath, devLinkStateOf, readDevLinks, updateDevLinks } from './registry.js';
 
@@ -85,6 +92,11 @@ export interface DevLinkServiceDeps {
   dorkHome: string;
   /** Where extension approvals live (`config.extensions`). */
   approvals: DevLinkApprovalStore;
+  /**
+   * Where the link-time yes for hooks and global activation is recorded (the
+   * hook-decision lists, `hookDecisionConsentStore` in `consent.ts`).
+   */
+  consent: DevLinkConsentStore;
   /** The marketplace's post-change notifier: refreshes plugins and projections. */
   onPluginsChanged: NotifyPluginsChanged;
   /** Ask extensions to re-scan, without waiting. */
@@ -157,6 +169,12 @@ interface LinkPlan {
   projectPath: string | undefined;
   /** What the slot holds now. */
   slotHolds: 'nothing' | 'adoptable-link' | 'installed';
+  /**
+   * Whether every hook and program declaration in the folder could be read,
+   * so the card shows all of them. A yes is recorded for what it runs only
+   * when it does.
+   */
+  declarationsReadable: boolean;
 }
 
 /** The folder a package carries its extensions in. */
@@ -271,7 +289,7 @@ export class DevLinkService {
           );
         }
         const captured = this.capturedApprovals(preview);
-        const record: DevLinkRecord = {
+        const base: DevLinkRecord = {
           name: preview.name,
           type: preview.type,
           scope: preview.scope,
@@ -279,14 +297,32 @@ export class DevLinkService {
           slot,
           target: preview.path,
           ...(parked !== undefined && { parked }),
-          ...(Object.keys(captured.extensions).length > 0 && {
-            restoreApprovals: {
-              extensions: captured.extensions,
-              ...(captured.runIds.length > 0 && { runIds: captured.runIds }),
-            },
-          }),
           linkedAt: new Date().toISOString(),
           linkedVia: request.via,
+        };
+        // What the card's yes covers besides extensions: worked out from the
+        // same plan the card text was just held to, under the lock.
+        const consent = planLinkConsent(this.deps.consent, {
+          preview,
+          record: base,
+          declarationsReadable: plan.declarationsReadable,
+          dorkHome: this.deps.dorkHome,
+        });
+        const record: DevLinkRecord = {
+          ...base,
+          ...((Object.keys(captured.extensions).length > 0 ||
+            consent.capturedGlobal.length > 0) && {
+            restoreApprovals: {
+              ...(Object.keys(captured.extensions).length > 0 && {
+                extensions: captured.extensions,
+              }),
+              ...(captured.runIds.length > 0 && { runIds: captured.runIds }),
+              ...(consent.capturedGlobal.length > 0 && {
+                globalActivation: consent.capturedGlobal,
+              }),
+            },
+          }),
+          ...(consent.grantedHooks.length > 0 && { grantedHooks: consent.grantedHooks }),
         };
         await updateDevLinks(this.deps.dorkHome, (links) => [...links, record], {
           replaceUnreadable: true,
@@ -294,6 +330,8 @@ export class DevLinkService {
         undo.push(() =>
           updateDevLinks(this.deps.dorkHome, (links) => links.filter((l) => !sameLink(l, record)))
         );
+        applyLinkConsent(this.deps.consent, record, consent);
+        undo.push(async () => forgetLinkConsent(this.deps.consent, record, true));
         this.approveExtensions(preview);
         this.notify(preview.name, projectPath, 'install');
         return this.statusOf(record, 'active');
@@ -338,6 +376,7 @@ export class DevLinkService {
       const reading = await readDevLinks(this.deps.dorkHome);
       const others = 'links' in reading ? reading.links.filter((l) => !sameLink(l, record)) : [];
       await this.forgetApprovals(record, restored === 'installed', others);
+      forgetLinkConsent(this.deps.consent, record, restored === 'installed');
       await updateDevLinks(this.deps.dorkHome, (links) =>
         links.filter((link) => !sameLink(link, record))
       );
@@ -475,6 +514,8 @@ export class DevLinkService {
     }
 
     const declared = await readRunnableDeclarations(folder);
+    const declarationsReadable =
+      declared.unreadableHooks.length === 0 && declared.unreadableDeclarations.length === 0;
     const preview: DevLinkPreview = {
       name,
       type: identity.type,
@@ -486,7 +527,7 @@ export class DevLinkService {
       effects: disclosedEffectsOf({ ...declared, schedules: [] }),
       extensions: await carriedExtensions(folder),
     };
-    return { preview, projectPath, slotHolds };
+    return { preview, projectPath, slotHolds, declarationsReadable };
   }
 
   /**
@@ -862,7 +903,26 @@ function describePlan(preview: DevLinkPreview, replaceInstalled: boolean): strin
   lines.push(
     `Extensions it may run: ${preview.extensions.length > 0 ? preview.extensions.join(', ') : 'none'}`
   );
-  lines.push(`It runs on its own: ${describeDisclosedEffects(preview.effects)}`);
-  lines.push('Edits to this folder run without another card.');
+  // Every hook, server and program in full, never a count: the yes records
+  // approval for exactly these (the global-activation and hook decisions,
+  // `consent.ts`), and the approval is bound to this text, so a hook moved to
+  // another event, or a changed command, is a different card.
+  lines.push('It runs on its own:');
+  lines.push(
+    ...describeEffectsInFull(
+      preview.effects,
+      preview.scope === 'global'
+        ? 'in every session'
+        : 'declared, but not started for a project install'
+    )
+  );
+  if (preview.scope === 'global' && preview.effects && disclosesAnything(preview.effects)) {
+    lines.push('Approving lets these start in every session.');
+  } else if (preview.scope === 'project' && (preview.effects?.hooks.length ?? 0) > 0) {
+    lines.push('Approving lets its hooks run in this project.');
+  }
+  lines.push(
+    'Anything new it adds later asks first. Edits to this folder run without another card.'
+  );
   return lines.join('\n');
 }

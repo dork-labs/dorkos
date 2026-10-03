@@ -15,7 +15,8 @@
 import type { HarnessId } from '../manifest/schema.js';
 import type { InstalledPlugin } from '../sources/installed.js';
 import type { ProjectionAction, ProjectionWarning } from './types.js';
-import { devLinkLabel, dropWholePlugin } from './installed-projector.js';
+import { devLinkLabel } from './dev-link-labels.js';
+import { dropWholePlugin } from './installed-projector.js';
 
 /**
  * The harness a global package's unreadable-hooks warning is attributed to.

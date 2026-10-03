@@ -30,7 +30,15 @@
  * @module services/harness/__tests__/status-model
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { diffSnapshots, snapshotTree } from '@dorkos/harness/journeys';
@@ -1411,5 +1419,68 @@ describe('VC-01, AP-07 — a removal DorkOS may not make', () => {
     } finally {
       chmodSync(skills, 0o755);
     }
+  });
+});
+
+describe('DOR-2696 — a package running from a dev link says so', () => {
+  it('labels its project rows and its all-projects rows with the folder', () => {
+    // Seeded defect that reds it: drop the dev-link label from the plan's
+    // actions (`labelDevLinkActions`) or from `globalInstallDropReason`.
+    const { repo, home } = stageBare('dev-link', ['claude-code', 'codex']);
+    const work = mkdtempSync(join(tmpdir(), 'status-dev-link-work-'));
+    staged.push(work);
+    const folder = realpathSync(work);
+    writeJsonAt(join(folder, '.dork', 'manifest.json'), {
+      schemaVersion: 1,
+      name: 'flow',
+      version: '0.0.1',
+      type: 'plugin',
+      description: 'In development',
+      layers: ['skills'],
+    });
+    writeSkill(join(folder, 'skills', 'greet'), 'greet');
+    const projectSlot = join(realpathSync(repo), '.dork', 'plugins', 'flow');
+    const globalSlot = join(realpathSync(home), 'plugins', 'flow');
+    mkdirSync(dirname(projectSlot), { recursive: true });
+    mkdirSync(dirname(globalSlot), { recursive: true });
+    symlinkSync(folder, projectSlot, 'dir');
+    symlinkSync(folder, globalSlot, 'dir');
+    const record = {
+      name: 'flow',
+      type: 'plugin',
+      slot: '',
+      target: folder,
+      linkedAt: 'x',
+      linkedVia: 'app',
+    };
+    writeJsonAt(join(home, 'marketplace', 'dev-links.json'), {
+      version: 1,
+      links: [
+        { ...record, scope: 'project', projectPath: realpathSync(repo), slot: projectSlot },
+        { ...record, scope: 'global', slot: globalSlot },
+      ],
+    });
+
+    const status = statusOf(repo, home);
+    const label = `(dev link: ${folder})`;
+
+    const projectRow = row(status, 'skill', '.dork/plugins/flow/skills/greet', 'flow__greet');
+    expect(Object.values(projectRow.cells).map((cell) => cell?.reason)).toEqual(
+      expect.arrayContaining([expect.stringContaining(label)])
+    );
+    const globalRow = status.rows.find((r) => r.scope === 'global' && r.name === 'flow__greet');
+    expect(Object.values(globalRow?.cells ?? {}).map((cell) => cell?.reason)).toEqual(
+      expect.arrayContaining([expect.stringContaining(label)])
+    );
+
+    // Synced, the same row's projected cells carry the label too.
+    syncEverything(repo, home);
+    const synced = row(
+      statusOf(repo, home),
+      'skill',
+      '.dork/plugins/flow/skills/greet',
+      'flow__greet'
+    );
+    for (const cell of Object.values(synced.cells)) expect(cell?.reason).toContain(label);
   });
 });

@@ -36,7 +36,8 @@ import {
 } from '../sources/installed.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
 import { planUnreadableSkillWarnings } from './unreadable-skills.js';
-import { labelDevLinkActions, pluginTokenSkillWarningReason } from './installed-projector.js';
+import { labelDevLinkActions } from './dev-link-labels.js';
+import { pluginTokenSkillWarningReason } from './installed-projector.js';
 import type { ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 import { directoryWriteBlock } from '../apply/write-path-occupants.js';
 

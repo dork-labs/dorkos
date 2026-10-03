@@ -1739,6 +1739,13 @@ export const DevLinkRecordSchema = z
         globalActivation: z.array(z.string()).optional(),
       })
       .optional(),
+    /**
+     * Project hook approvals (`harness.approvedHooks` entries) this link
+     * recorded when it was made, because the card showed those hooks. Unlink
+     * removes exactly these, so an approval that was there before the link
+     * (the installed copy's, the same hooks in the same project) stays.
+     */
+    grantedHooks: z.array(z.string()).optional(),
     /** When the link was made. ISO 8601. */
     linkedAt: z.string().min(1),
     /** Where the person said yes. */

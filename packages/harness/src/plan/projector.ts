@@ -52,13 +52,13 @@ import {
   planSkillNameCollisions,
   dropNonPortableLayers,
   dropWholePlugin,
-  labelDevLinkActions,
   mergeHookConfigs,
   rewritePluginRootInHooks,
   PROJECTABLE_PLUGIN_TYPES,
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
 } from './installed-projector.js';
+import { labelDevLinkActions } from './dev-link-labels.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
 import { planUnreadableSkillWarnings } from './unreadable-skills.js';

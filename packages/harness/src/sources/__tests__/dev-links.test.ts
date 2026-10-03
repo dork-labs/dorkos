@@ -28,11 +28,10 @@ import { project } from '../../engine.js';
 import { applyPlan } from '../../apply/apply.js';
 import { formatDropList } from '../../report/drop-list.js';
 import {
-  DEV_LINK_MARKER,
   GENERATED_COMMAND_MARKER,
-  MANAGED_HOOK_DEV_LINK_KEY,
   MANAGED_HOOK_SENTINEL_KEY,
 } from '../../plan/installed-projector.js';
+import { DEV_LINK_MARKER, MANAGED_HOOK_DEV_LINK_KEY } from '../../plan/dev-link-labels.js';
 
 const made: string[] = [];
 afterEach(() => {
