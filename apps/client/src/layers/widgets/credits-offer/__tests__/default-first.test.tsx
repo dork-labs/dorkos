@@ -227,6 +227,7 @@ describe('a runtime connect step with nothing working yet', () => {
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
       state: 'linked',
       accountLabel: 'kai@dork.dev',
+      approvedCode: 'WXYZ7890',
     });
     vi.mocked(transport.getCloudStatus).mockResolvedValue({
       linked: true,
@@ -393,6 +394,7 @@ function approve(transport: Transport) {
   vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
     state: 'linked',
     accountLabel: 'kai@dork.dev',
+    approvedCode: 'WXYZ7890',
   });
   vi.mocked(transport.getCloudStatus).mockResolvedValue({
     linked: true,
@@ -489,6 +491,90 @@ describe('what happens once the link lands', () => {
   });
 });
 
+describe('two tabs, one code', () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  /** One tab: its own query cache over the one server both tabs talk to. */
+  function tab(transport: Transport, testId: string) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <CreditsOfferProvider slot={renderCreditsOffer}>
+            <div data-testid={testId}>
+              <RuntimeConnectFlow
+                type="claude-code"
+                connect={{ kind: 'login', label: 'Connect Claude' }}
+              />
+            </div>
+          </CreditsOfferProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  it("never carries on in one tab when the other tab's code is approved", async () => {
+    vi.useFakeTimers();
+    const { transport } = setup({ content: <></> });
+    cleanup();
+    const second = {
+      userCode: 'CODE2222',
+      verificationUri: 'https://dorkos.ai/activate',
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    };
+    tab(transport, 'tab-a');
+    tab(transport, 'tab-b');
+    await flush(10);
+    await flush(10);
+
+    // Tab A starts CODE1 (WXYZ7890).
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByTestId('tab-a')).getByRole('button', { name: 'Use DorkOS credits' })
+      );
+    });
+    await flush();
+    expect(within(screen.getByTestId('tab-a')).getByText('WXYZ7890')).toBeInTheDocument();
+    // Tab B starts CODE2, which replaces it on the server.
+    vi.mocked(transport.startCloudLink).mockResolvedValue(second);
+    await act(async () => {
+      fireEvent.click(
+        within(screen.getByTestId('tab-b')).getByRole('button', { name: 'Use DorkOS credits' })
+      );
+    });
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
+      state: 'pending',
+      pending: second,
+    });
+    await flush(2500);
+    await flush(10);
+    // Both tabs now show the one code the server is waiting on.
+    expect(within(screen.getByTestId('tab-a')).getByText('CODE2222')).toBeInTheDocument();
+
+    // CODE2 is approved. Only tab B, which started it, carries on.
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
+      state: 'linked',
+      accountLabel: 'kai@dork.dev',
+      approvedCode: 'CODE2222',
+    });
+    vi.mocked(transport.getCloudStatus).mockResolvedValue({
+      linked: true,
+      accountLabel: 'kai@dork.dev',
+      lastHeartbeatAt: null,
+    });
+    await flush(2500);
+    await flush(10);
+    await flush(10);
+
+    expect(transport.setCloudCreditsDefault).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('before choosing, the account is read again', () => {
   afterEach(cleanup);
 
@@ -530,6 +616,10 @@ describe('where the offer sits', () => {
     await settled(queryClient);
     expect(await screen.findByRole('button', { name: 'Use DorkOS credits' })).toBeInTheDocument();
     expect(screen.getByTestId('remote-signin-notice')).toBeInTheDocument();
+    // "This computer" would be the phone: the line names the right one.
+    expect(screen.getByTestId('keep-it-local-note')).toHaveTextContent(
+      'Prefer to keep everything on the computer DorkOS runs on? Use your own sign-in there.'
+    );
     expect(screen.queryByRole('button', { name: /Sign in with Claude/ })).not.toBeInTheDocument();
   });
 

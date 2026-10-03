@@ -11,9 +11,12 @@
  * who started it live in the query cache rather than in one component, so the
  * code a person was shown in a runtime's connect card is the same code
  * Settings › DorkOS account shows, and either can finish or cancel it. The
- * surface that started a link names itself (`origin`), and the code that landed
- * is recorded (`landed`), so a surface that is still on screen can tell that
- * the code IT started was approved and carry on from where it was. Nothing is
+ * server names the code it is waiting on, so another tab shows that same code
+ * instead of starting its own, and a tab whose code was replaced drops it. The
+ * surface that started a link names itself (`origin`), and the code is
+ * recorded as landed (`landed`) only when the server says THAT code was
+ * approved, so a surface still on screen can tell that the code IT started
+ * was approved and carry on from where it was. Nothing is
  * stored to run later: a surface that has gone away, another tab, or a relink
  * that did not replace the link carries nothing on.
  *
@@ -193,8 +196,9 @@ export interface UseCloudLink {
   /** Which surface started the link in flight, or `null` when none named itself. */
   origin: string | null;
   /**
-   * The code whose approval last linked this computer in this tab, or `null`.
-   * Never set by a relink that did not replace the link.
+   * The code this tab started whose approval linked this computer, or `null`,
+   * read off the server's own answer (`approvedCode`). Never set for another
+   * tab's code, nor by a relink that did not replace the link.
    */
   landed: LandedLink | null;
 }
@@ -280,18 +284,37 @@ export function useCloudLink(): UseCloudLink {
   const readStatus = useCallback(async (): Promise<CloudLinkStatus | null> => {
     const before = queryClient.getQueryData<CloudLinkStatus | null>(cloudLinkStatusKey);
     const next = await transport.getCloudLinkStatus();
-    if (before?.state === 'pending' && next.state === 'linked') {
-      const current = queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey) ?? NO_FLOW;
-      // Only a first link that was approved records its code; a relink that did
-      // not replace the link changed nothing a surface could carry on from.
-      if (current.codes && !next.relinkOutcome) {
-        queryClient.setQueryData<LinkFlowEntry>(cloudLinkFlowKey, {
-          ...current,
-          landed: { userCode: current.codes.userCode, origin: current.origin },
-        });
-      }
-      void land(queryClient);
+    const current = queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey) ?? NO_FLOW;
+    // The server names the one code it is waiting on. A different one means
+    // another tab started a new link: the code this tab held is dead, so it is
+    // dropped, and this tab no longer started anything.
+    if (
+      next.state === 'pending' &&
+      next.pending &&
+      current.codes &&
+      next.pending.userCode !== current.codes.userCode
+    ) {
+      queryClient.setQueryData<LinkFlowEntry>(cloudLinkFlowKey, {
+        ...current,
+        codes: null,
+        origin: null,
+      });
     }
+    // A code this tab started counts as landed only when the server says THAT
+    // code was approved. Another tab's approval, and a relink that did not
+    // replace the link (the server names no code for one), record nothing.
+    if (
+      next.state === 'linked' &&
+      next.approvedCode !== undefined &&
+      current.codes?.userCode === next.approvedCode &&
+      current.landed?.userCode !== next.approvedCode
+    ) {
+      queryClient.setQueryData<LinkFlowEntry>(cloudLinkFlowKey, {
+        ...current,
+        landed: { userCode: next.approvedCode, origin: current.origin },
+      });
+    }
+    if (before?.state === 'pending' && next.state === 'linked') void land(queryClient);
     return next;
   }, [transport, queryClient]);
 
@@ -299,14 +322,9 @@ export function useCloudLink(): UseCloudLink {
     queryKey: cloudLinkStatusKey,
     queryFn: readStatus,
     retry: false,
-    // Poll only while a code is showing; every terminal state stops it.
-    // Read from the cache, not this render's closure: the codes and the
-    // `pending` land in two writes, and the timer is set from whichever is last.
-    refetchInterval: (query) =>
-      query.state.data?.state === 'pending' &&
-      queryClient.getQueryData<LinkFlowEntry>(cloudLinkFlowKey)?.codes
-        ? POLL_INTERVAL_MS
-        : false,
+    // Poll while a link waits for approval, whichever tab started it; every
+    // terminal state stops it.
+    refetchInterval: (query) => (query.state.data?.state === 'pending' ? POLL_INTERVAL_MS : false),
     refetchIntervalInBackground: true,
   });
   const linkStatus = status.data ?? null;
@@ -409,12 +427,15 @@ export function useCloudLink(): UseCloudLink {
     const flowState = linkStatus?.state;
 
     // An active device flow (codes in hand) shows the pending view.
-    if (flow.codes && flowState === 'pending') {
+    // An active device flow shows the pending view: the code the server says
+    // it is waiting on (the same in every tab), else the one this tab holds.
+    const codes = flowState === 'pending' ? (linkStatus?.pending ?? flow.codes) : null;
+    if (codes) {
       return {
         kind: 'pending',
-        userCode: flow.codes.userCode,
-        verificationUri: flow.codes.verificationUri,
-        expiresAt: flow.codes.expiresAt,
+        userCode: codes.userCode,
+        verificationUri: codes.verificationUri,
+        expiresAt: codes.expiresAt,
       };
     }
     // Terminal flow states surface whether or not we still hold the codes.

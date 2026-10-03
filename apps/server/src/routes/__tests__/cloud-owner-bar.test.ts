@@ -403,5 +403,38 @@ describe('the DorkOS account owner bar', () => {
       await request(server).get('/api/cloud/plan').expect(200);
       await request(server).get('/api/cloud/credits').expect(200);
     });
+    describe('the code waiting for approval', () => {
+      const waiting = {
+        state: 'pending',
+        pending: {
+          userCode: 'WXYZ7890',
+          verificationUri: 'https://x/activate',
+          expiresAt: 'later',
+        },
+      };
+
+      it('is shown to the person at this computer, so every tab shows the one code', async () => {
+        manager.getStatus.mockReturnValueOnce(waiting);
+        const res = await request(server).get('/api/cloud/link/status').expect(200);
+        expect(res.body.pending.userCode).toBe('WXYZ7890');
+      });
+
+      it('is never shown to an agent, which could approve it with an account of its own', async () => {
+        manager.getStatus.mockReturnValueOnce(waiting);
+        const res = await request(server)
+          .get('/api/cloud/link/status')
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .expect(200);
+        expect(res.body).toEqual({ state: 'pending' });
+      });
+
+      it('is never shown to a signed-in person who does not own this install', async () => {
+        posture.authEnabled = true;
+        signedInUser = { userId: 'user_member', credential: 'cookie' };
+        manager.getStatus.mockReturnValueOnce(waiting);
+        const res = await request(server).get('/api/cloud/link/status').expect(200);
+        expect(res.body.pending).toBeUndefined();
+      });
+    });
   });
 });

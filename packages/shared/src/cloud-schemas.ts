@@ -37,6 +37,16 @@ export interface CloudLinkStatus {
    * `linked`: this instance stayed linked the whole time.
    */
   relinkOutcome?: 'denied' | 'expired' | 'failed';
+  /**
+   * The codes of the flow waiting for approval: present only while `pending`,
+   * and only to the owner of this DorkOS. Every tab shows this one code.
+   */
+  pending?: StartLinkResult;
+  /**
+   * The code whose approval made this link: present only while `linked` by
+   * it, never after a relink that did not replace the link.
+   */
+  approvedCode?: string;
 }
 
 /**

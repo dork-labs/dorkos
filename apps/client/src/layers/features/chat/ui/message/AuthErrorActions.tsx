@@ -255,6 +255,7 @@ function CreditsActions({
   lead: boolean;
   children: ReactNode;
 }) {
+  const remote = !useLocalCaller();
   const setDefault = useSetCreditsDefault();
   const setRetryAccount = useAppStore((s) => s.setRetryAccount);
   const label = getRuntimeDescriptor(runtime).label;
@@ -300,7 +301,10 @@ function CreditsActions({
     <div className="mt-3 space-y-3" data-testid="auth-error-credits-first">
       {offer}
       {otherWays(children)}
-      <KeepItLocalNote ollama={runtimeAuthConnectKind(runtime) === 'provider-picker'} />
+      <KeepItLocalNote
+        ollama={runtimeAuthConnectKind(runtime) === 'provider-picker'}
+        remote={remote}
+      />
     </div>
   );
 }

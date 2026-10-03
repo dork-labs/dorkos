@@ -106,6 +106,35 @@ describe('CloudLinkManager', () => {
     expect(paths).toContain('/api/instances/heartbeat');
   });
 
+  it('reports the code waiting for approval, then the code whose approval linked it', async () => {
+    let released = false;
+    const approve = () => (released = true);
+    const fetchImpl = routerFetch({
+      code: () => CODES,
+      token: () =>
+        released
+          ? { status: 200, body: { access_token: 'dork_inst_live' } }
+          : { status: 400, body: { error: 'authorization_pending' } },
+      heartbeat: () => ({
+        status: 200,
+        body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-07-03T00:00:00Z' },
+      }),
+    });
+    manager = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+
+    const start = await manager.startLink();
+    expect(manager.getStatus()).toMatchObject({ state: 'pending', pending: start });
+    expect(manager.getStatus().approvedCode).toBeUndefined();
+
+    approve();
+    await manager.pendingLink;
+    expect(manager.getStatus()).toMatchObject({ state: 'linked', approvedCode: 'ABCD1234' });
+    expect(manager.getStatus().pending).toBeUndefined();
+
+    await manager.unlink();
+    expect(manager.getStatus().approvedCode).toBeUndefined();
+  });
+
   it('reconciles managed provider registration on link and unlink without exposing key material', async () => {
     const fetchImpl = routerFetch({
       code: () => CODES,

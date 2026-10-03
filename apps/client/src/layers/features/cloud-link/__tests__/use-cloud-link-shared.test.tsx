@@ -43,10 +43,12 @@ function setup() {
 
 /** Let the next poll answer `linked`, optionally with how a relink ended. */
 function land(transport: Transport, relinkOutcome?: 'denied') {
+  // The server names the approved code, except for a relink that did not
+  // replace the link.
   vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
     state: 'linked',
     accountLabel: 'kai@dork.dev',
-    ...(relinkOutcome ? { relinkOutcome } : {}),
+    ...(relinkOutcome ? { relinkOutcome } : { approvedCode: 'WXYZ7890' }),
   });
 }
 
@@ -119,5 +121,43 @@ describe('the shared link flow', () => {
     await flush();
     expect(both.result.current.here.origin).toBe('a');
     expect(both.result.current.here.view.kind).toBe('pending');
+  });
+
+  it('records nothing when the server says another code was approved (another tab)', async () => {
+    const { transport, both } = setup();
+    await flush();
+    await act(() => both.result.current.here.start({ origin: 'a' }));
+    await flush();
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
+      state: 'linked',
+      accountLabel: 'kai@dork.dev',
+      approvedCode: 'OTHER123',
+    });
+    await flush(2500);
+    await flush(10);
+
+    expect(both.result.current.there.view.kind).toBe('linked');
+    expect(both.result.current.there.landed).toBeNull();
+  });
+
+  it('shows the code another tab started, and drops its own once replaced', async () => {
+    const { transport, both } = setup();
+    await flush();
+    await act(() => both.result.current.here.start({ origin: 'a' }));
+    await flush();
+    const replacement = {
+      userCode: 'OTHER123',
+      verificationUri: 'https://dorkos.ai/activate',
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    };
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({
+      state: 'pending',
+      pending: replacement,
+    });
+    await flush(2500);
+    await flush(10);
+
+    expect(both.result.current.there.view).toMatchObject({ kind: 'pending', userCode: 'OTHER123' });
+    expect(both.result.current.here.origin).toBeNull();
   });
 });

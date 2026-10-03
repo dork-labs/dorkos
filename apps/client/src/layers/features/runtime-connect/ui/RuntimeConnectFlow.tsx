@@ -114,7 +114,7 @@ export function RuntimeConnectFlow({
       <div className="space-y-4" data-testid={`default-first-${type}`}>
         {creditsOffer(true)}
         <OtherWays>{ownWays}</OtherWays>
-        <KeepItLocalNote ollama={ollama} />
+        <KeepItLocalNote ollama={ollama} remote={!isLocalCaller} />
       </div>
     );
   }

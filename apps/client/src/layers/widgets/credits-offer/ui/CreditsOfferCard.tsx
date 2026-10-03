@@ -47,11 +47,14 @@ function reasonOf(err: unknown, fallback: string): string {
  * sends anybody to Settings.
  *
  * - **Signed out**: the button starts the ONE link flow (`features/cloud-link`)
- *   with this surface as its origin, and remembers the code it started. When
- *   THAT code is approved — here, or in Settings › DorkOS account, which shows
- *   the same code — and this card is still on screen, it makes the choice, or
- *   for a choice that spends at once (`confirmAfterLink`) asks first. A card
- *   that has gone away, another tab, and a relink carry nothing on.
+ *   with this surface as its origin, and remembers the code it started. While
+ *   any code waits — started here, in Settings, or in another tab — every
+ *   surface shows that one code (the server names it), not a button for a
+ *   second one. When the server says THAT code was approved (its
+ *   `approvedCode`) and this card is still on screen, the card makes the
+ *   choice, or for a choice that spends at once (`confirmAfterLink`) asks
+ *   first. A card that has gone away, a code another surface or tab started,
+ *   a code replaced by a newer one, and a relink carry nothing on.
  * - **Signed in**: the button makes the choice now. Before it does, the plan
  *   is read again; an account with nothing left to spend is offered the page
  *   to add credits instead, and never moved onto them.

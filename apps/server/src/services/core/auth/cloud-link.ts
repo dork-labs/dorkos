@@ -142,6 +142,17 @@ export interface CloudLinkStatus {
   lastHeartbeatAt?: string;
   /** Present while linked after a relink ended without replacing the key. */
   relinkOutcome?: CloudRelinkOutcome;
+  /**
+   * The codes of the flow waiting for approval, present only while `pending`
+   * (and only for the owner — the route strips it for anyone else), so every
+   * tab shows the one code rather than starting another.
+   */
+  pending?: StartLinkResult;
+  /**
+   * The code whose approval made this link, present only while `linked` by
+   * it, so a tab can tell its own code's approval from another tab's.
+   */
+  approvedCode?: string;
 }
 
 /** The `GET /api/cloud/status` settled-summary shape. */
@@ -277,6 +288,10 @@ export class CloudLinkManager {
 
   private state: CloudLinkState = 'idle';
   private relinkOutcome: CloudRelinkOutcome | undefined;
+  /** The codes of the flow waiting for approval, while `pending`. */
+  private pendingCodes: StartLinkResult | undefined;
+  /** The code whose approval made the current link. */
+  private approvedCode: string | undefined;
   private lastHeartbeatAt: string | undefined;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private pollController: AbortController | undefined;
@@ -346,6 +361,7 @@ export class CloudLinkManager {
     const generation = this.advanceGeneration();
     this.cancelPoll();
     this.relinkOutcome = undefined;
+    this.pendingCodes = undefined;
     const baseUrl = resolveCloudBaseUrl();
     // Resolve the analytics-merge opt-in HERE, at link time: the descriptor built
     // now is what the cloud persists and reads to alias this install's anonymous
@@ -363,20 +379,29 @@ export class CloudLinkManager {
       throw new Error('Cloud link request was superseded');
     }
 
+    const result: StartLinkResult = {
+      userCode: codes.user_code,
+      verificationUri: codes.verification_uri,
+      expiresAt: new Date(this.now() + codes.expires_in * 1000).toISOString(),
+    };
+    this.pendingCodes = result;
     this.setState('pending');
     const controller = new AbortController();
     this.pollController = controller;
-    const exchange = this.runPoll(baseUrl, descriptor, codes, controller.signal, generation);
+    const exchange = this.runPoll(
+      baseUrl,
+      descriptor,
+      codes,
+      controller.signal,
+      generation,
+      result.userCode
+    );
     this.pollSettled = exchange.then(() => undefined);
     this.pollTask = exchange.then((approved) =>
       approved ? this.afterApproval(baseUrl, descriptor, approved) : undefined
     );
 
-    return {
-      userCode: codes.user_code,
-      verificationUri: codes.verification_uri,
-      expiresAt: new Date(this.now() + codes.expires_in * 1000).toISOString(),
-    };
+    return result;
   }
 
   /**
@@ -409,7 +434,8 @@ export class CloudLinkManager {
     descriptor: InstanceDescriptor,
     codes: { device_code: string; interval: number; expires_in: number },
     signal: AbortSignal,
-    generation: number
+    generation: number,
+    userCode: string
   ): Promise<string | undefined> {
     try {
       const result = await pollForToken({
@@ -426,6 +452,7 @@ export class CloudLinkManager {
       if (baseUrl !== resolveCloudBaseUrl()) return undefined;
       if (result.status === 'approved') {
         this.config.save({ instanceToken: result.accessToken, instanceName: descriptor.name });
+        this.approvedCode = userCode;
         this.setState('linked');
         return result.accessToken;
       }
@@ -576,6 +603,7 @@ export class CloudLinkManager {
     this.clearKeepingProof();
     this.lastHeartbeatAt = undefined;
     this.relinkOutcome = undefined;
+    this.approvedCode = undefined;
     this.setState('idle');
   }
 
@@ -588,6 +616,10 @@ export class CloudLinkManager {
       ...(this.lastHeartbeatAt ? { lastHeartbeatAt: this.lastHeartbeatAt } : {}),
       ...(this.state === 'linked' && this.relinkOutcome
         ? { relinkOutcome: this.relinkOutcome }
+        : {}),
+      ...(this.state === 'pending' && this.pendingCodes ? { pending: this.pendingCodes } : {}),
+      ...(this.state === 'linked' && this.approvedCode && !this.relinkOutcome
+        ? { approvedCode: this.approvedCode }
         : {}),
     };
   }

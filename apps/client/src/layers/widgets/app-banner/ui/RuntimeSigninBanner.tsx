@@ -1,6 +1,7 @@
 import { LogIn } from 'lucide-react';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 
+import { useLocalCaller } from '@/layers/entities/config';
 import { useCloudStatus } from '@/layers/features/cloud-link';
 import { creditsVerb, useCloudPlan } from '@/layers/features/cloud-plan';
 import {
@@ -176,6 +177,7 @@ function CreditsLeadAction({
 }) {
   const requirements = useRuntimeRequirements();
   const { data: credits } = useCloudCredits();
+  const remote = !useLocalCaller();
   // The trigger says what the offer inside it says ("Try…", "Buy…", "Use…").
   const linked = useCloudStatus().data?.linked === true;
   const verb = creditsVerb(linked, useCloudPlan({ enabled: linked }).data);
@@ -201,7 +203,7 @@ function CreditsLeadAction({
             origin: `signin-banner:${creditsFor}`,
             fullWidth: true,
           })}
-          <KeepItLocalNote />
+          <KeepItLocalNote remote={remote} />
         </div>
       </ResponsivePopoverContent>
     </ResponsivePopover>
