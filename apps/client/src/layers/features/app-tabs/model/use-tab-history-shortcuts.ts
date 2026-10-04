@@ -109,6 +109,8 @@ export function useTabHistoryShortcuts(): void {
     const onMouseUp = (event: MouseEvent) => {
       if (!isSideButton(event)) return;
       event.preventDefault();
+      // Same rule as the keys: an open dialog or menu keeps the page still.
+      if (isInOverlay(event.target)) return;
       go(event.button === MOUSE_BACK ? 'back' : 'forward');
     };
 

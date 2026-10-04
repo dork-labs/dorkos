@@ -9,7 +9,7 @@ import {
   MAX_TAB_HISTORY,
   type AppTab,
 } from '../app-tabs/app-tabs-store';
-import { DIALOG_SEARCH_KEYS } from '../dialog-search-schema';
+import { DIALOG_MODIFIER_KEYS } from '../dialog-search-schema';
 
 const STORAGE_KEY = 'dork.app-tabs';
 
@@ -56,6 +56,9 @@ function expectInvariant(): void {
     expect(tab.history.length).toBeGreaterThan(0);
     expect(tab.history.length).toBeLessThanOrEqual(MAX_TAB_HISTORY);
     expect(tab.history[tab.cursor]).toBe(tab.href);
+    for (let i = 1; i < tab.history.length; i += 1) {
+      expect(tab.history[i], 'identical adjacent entries').not.toBe(tab.history[i - 1]);
+    }
   }
 }
 
@@ -389,16 +392,29 @@ describe('per-tab history — a dialog is not a page', () => {
     expect(trail()).toEqual(['[/]']);
   });
 
-  it('treats every dialog param in the shared schema as a modifier', () => {
-    // Purpose: the list comes from `dialogSearchSchema`, so each of its params counts.
+  it('treats every modifier param as a modifier', () => {
+    // Purpose: the list comes from `DIALOG_MODIFIER_KEYS`, so each of its params counts.
     setTabs(['/'], 0);
     visit('/team');
-    for (const key of DIALOG_SEARCH_KEYS) {
+    for (const key of DIALOG_MODIFIER_KEYS) {
       visit(`/team?${key}=x`);
       visit('/team');
     }
     visit('/team?settings=tools&settingsSection=mcp');
     expect(trail()).toEqual(['/', '[/team?settings=tools&settingsSection=mcp]']);
+  });
+
+  it('keeps every step of a profile chain, so Back walks it', () => {
+    // Purpose: a profile is an address — owner, then a managed agent, then a
+    // page are three places the profile hooks push, and three Back presses.
+    setTabs(['/team'], 0);
+    visit('/team?profile=owner', '/team?profile=agent', '/team?profile=agent&profilePage=memory');
+    expect(trail()).toEqual([
+      '/team',
+      '/team?profile=owner',
+      '/team?profile=agent',
+      '[/team?profile=agent&profilePage=memory]',
+    ]);
   });
 
   it('still records a change to any other search param as a new page', () => {
@@ -433,6 +449,17 @@ describe('per-tab history — no two identical entries side by side', () => {
 });
 
 describe('per-tab history — a traversal the app made itself', () => {
+  it('steps the tab’s own cursor before handing focus to a sibling at that href', () => {
+    // Purpose: after Cmd+T a sibling often sits at `/`; an app-made
+    // history.back() onto this tab's own previous `/` must not jump tabs.
+    const sibling = { id: 'a', href: '/', history: ['/'], cursor: 0 };
+    const mine = { id: 'b', href: '/team', history: ['/', '/team'], cursor: 1 };
+    useAppTabsStore.setState({ tabs: [sibling, mine], activeTabId: 'b' });
+    useAppTabsStore.getState().syncLocation('/', { traversal: true });
+    expect(useAppTabsStore.getState().activeTabId).toBe('b');
+    expect(trail()).toEqual(['[/]', '/team']);
+  });
+
   it('steps the cursor back when it lands on the entry before', () => {
     // Purpose: `router.history.back()` must not push, leaving `[a, b, a]`.
     setHistory(['/', '/team', '/tasks']);
@@ -490,7 +517,7 @@ describe('goToHistoryIndex', () => {
 });
 
 describe('history invariant under random actions', () => {
-  it('holds history[cursor] === href after every one of 500 seeded steps', () => {
+  it('holds history[cursor] === href, with no identical neighbours, after 500 seeded steps', () => {
     // Purpose: no sequence of actions may break the invariant the controls
     // and persistence rely on. Deterministic PRNG so a failure reproduces.
     let seed = 2107;
@@ -499,7 +526,17 @@ describe('history invariant under random actions', () => {
       return seed / 2 ** 31;
     };
     const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)];
-    const hrefs = ['/', '/team', '/tasks', '/activity', '/session?session=a', '/channels?id=r'];
+    const hrefs = [
+      '/',
+      '/team',
+      '/tasks',
+      '/activity',
+      '/session?session=a',
+      '/channels?id=r',
+      '/?settings=open',
+      '/team?tasks=open',
+      '/team?profile=a',
+    ];
 
     setTabs(['/'], 0);
     for (let step = 0; step < 500; step += 1) {

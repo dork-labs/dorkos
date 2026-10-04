@@ -52,10 +52,10 @@ function press(
   return event.defaultPrevented;
 }
 
-/** Click a mouse button: press and release. */
-function click(button: number): void {
+/** Click a mouse button on `target` (default `document.body`): press and release. */
+function click(button: number, target: EventTarget = document.body): void {
   for (const type of ['mousedown', 'mouseup']) {
-    document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button }));
+    target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button }));
   }
 }
 
@@ -179,6 +179,17 @@ describe('useTabHistoryShortcuts — mouse side buttons', () => {
     expect(activeHref()).toBe('/');
     click(4);
     expect(activeHref()).toBe('/team');
+  });
+
+  it('does nothing from inside an open dialog', () => {
+    // Purpose: same rule as the keys — the page must not move under an overlay.
+    renderHook(() => useTabHistoryShortcuts());
+    const dialog = document.body.appendChild(document.createElement('div'));
+    dialog.setAttribute('role', 'dialog');
+
+    click(3, dialog);
+    expect(activeHref()).toBe('/team');
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('ignores the ordinary buttons', () => {

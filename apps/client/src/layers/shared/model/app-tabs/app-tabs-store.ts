@@ -16,8 +16,10 @@
  * applied on every router location change ({@link AppTabsState.syncLocation}):
  *
  * 1. The active tab already sits at this location → nothing to do.
- * 2. **Only when the browser traversed history** (Back/Forward) and another tab
- *    sits at exactly this location → that tab becomes active.
+ * 2. **Only when the browser traversed history** (Back/Forward): if the active
+ *    tab's own previous or next entry is this location, its cursor steps there;
+ *    otherwise, if another tab sits at exactly this location, that tab becomes
+ *    active.
  * 3. Otherwise the active tab **adopts** the location, exactly like navigating
  *    inside a browser tab changes what that tab holds.
  * 4. No tabs at all (first paint) → mint one for wherever we landed.
@@ -56,14 +58,15 @@
  * history stack shared by every tab, so exposing it as Back would walk through
  * tab switches and into closed tabs' pasts. Instead every tab carries
  * `history` and a `cursor` into it, with `history[cursor] === href` always.
- * Only rule 3 writes to it: a new entry (PUSH) drops anything ahead of the
+ * Only rule 3 adds or rewrites entries: a new entry (PUSH) drops anything ahead of the
  * cursor and appends, like a browser forgetting Forward; a REPLACE (a loader
  * redirect, a search-param update) rewrites the current entry in place, and so
  * does opening or closing a URL-backed dialog (`?settings=`, `?tasks=`, …),
- * which changes what is over the page, not the page. Two identical entries are
- * never left side by side. A traversal no sibling tab answers (the app calling
- * `history.back()` itself) steps the cursor when it lands on a neighbouring
- * entry. Rules 1 and 2 and tab switches record nothing. Back, Forward and the History menu
+ * which changes what is over the page, not the page (which params count is
+ * `DIALOG_MODIFIER_KEYS`; a profile is an address and is left to the router).
+ * Two identical entries are never left side by side. Rule 2's cursor step
+ * moves through entries without recording any; rule 1 and tab switches record
+ * nothing. Back, Forward and the History menu
  * move the cursor here first ({@link AppTabsState.goToHistoryIndex}) and then
  * navigate, so the sync that follows hits rule 1.
  *
@@ -83,7 +86,7 @@
  */
 import { create } from 'zustand';
 import { classifyLink } from '../../lib/link-navigation';
-import { DIALOG_SEARCH_KEYS } from '../dialog-search-schema';
+import { DIALOG_MODIFIER_KEYS } from '../dialog-search-schema';
 
 /** One tab: a stable client id, the location it holds, and where it has been. */
 export interface AppTab {
@@ -169,7 +172,7 @@ const PARSE_BASE = 'http://tab.local';
 function withoutDialogParams(href: string): string | null {
   try {
     const url = new URL(href, PARSE_BASE);
-    for (const key of DIALOG_SEARCH_KEYS) url.searchParams.delete(key);
+    for (const key of DIALOG_MODIFIER_KEYS) url.searchParams.delete(key);
     url.searchParams.sort();
     return `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
   } catch {
@@ -188,18 +191,22 @@ function differsOnlyByDialog(a: string, b: string): boolean {
 }
 
 /**
- * How the active tab takes on a location it does not hold — rule 3. A
- * traversal onto a neighbouring entry (a `router.history.back()` the app made
- * itself) moves the cursor; a replace, or a dialog opening or closing, rewrites
- * the current entry; anything else is a new page.
+ * A traversal onto the tab's own neighbouring entry (a `router.history.back()`
+ * the app made itself) steps the cursor there. `null` when neither neighbour is
+ * `href`.
  */
-function adoptLocation(tab: AppTab, href: string, traversal: boolean, replace: boolean): AppTab {
-  if (traversal && tab.history[tab.cursor - 1] === href) {
-    return { ...tab, href, cursor: tab.cursor - 1 };
-  }
-  if (traversal && tab.history[tab.cursor + 1] === href) {
-    return { ...tab, href, cursor: tab.cursor + 1 };
-  }
+function stepToNeighbour(tab: AppTab, href: string): AppTab | null {
+  if (tab.history[tab.cursor - 1] === href) return { ...tab, href, cursor: tab.cursor - 1 };
+  if (tab.history[tab.cursor + 1] === href) return { ...tab, href, cursor: tab.cursor + 1 };
+  return null;
+}
+
+/**
+ * How the active tab takes on a location it does not hold — rule 3. A replace,
+ * or a modal dialog opening or closing, rewrites the current entry; anything
+ * else is a new page.
+ */
+function adoptLocation(tab: AppTab, href: string, replace: boolean): AppTab {
   const moved =
     replace || differsOnlyByDialog(tab.href, href) ? replaceEntry(tab, href) : pushEntry(tab, href);
   return collapseDuplicates(moved);
@@ -384,12 +391,19 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
       if (active?.href === href) return state;
 
       if (traversal) {
+        // The tab's own history first: a traversal onto its neighbouring entry
+        // is this tab moving, even when a sibling happens to hold that href
+        // (`/` after Cmd+T is the everyday case).
+        const stepped = active ? stepToNeighbour(active, href) : null;
+        if (active && stepped) {
+          return { tabs: state.tabs.map((t) => (t.id === active.id ? stepped : t)) };
+        }
         const match = state.tabs.find((t) => t.href === href);
         if (match) return { activeTabId: match.id };
       }
 
       if (active) {
-        const moved = adoptLocation(active, href, traversal, replace);
+        const moved = adoptLocation(active, href, replace);
         return { tabs: state.tabs.map((t) => (t.id === active.id ? moved : t)) };
       }
 
