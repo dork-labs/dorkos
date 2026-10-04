@@ -117,7 +117,6 @@ export function LinkWithPassword({
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
-              autoFocus
             />
           </Field>
           <Button type="submit" className="w-full" disabled={busy || !password}>

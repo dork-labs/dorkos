@@ -4,6 +4,7 @@ covers:
   - 'refactor(community): one account clean-out shared by recovery and linking'
   - 'feat(community): link a matching account on sign-in, through one gate'
   - 'feat(community): ask for the account password on the sign-in page'
+  - "fix(community): let the link panel's password field take focus normally"
 ---
 
 ### Added
