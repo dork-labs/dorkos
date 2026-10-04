@@ -47,6 +47,7 @@
 import {
   JUNCTION_COMMIT_WARNING,
   checkPlan,
+  devLinkLabel,
   globalInstallDropReason,
   HARNESS_MANIFEST_PATH,
   HARNESS_NATIVE_SKILL_ROOTS,
@@ -390,10 +391,13 @@ function deriveCell(
 
   const drifted = index.drifted.get(key);
   // No reason on a drifted cell: the target is what says where the file should
-  // have been, and "it is not there yet" needs no sentence beyond that.
+  // have been, and "it is not there yet" needs no sentence beyond that. The one
+  // exception is a dev link's label (DOR-2696), which is about where the
+  // package runs from, not about the file, and is said on every cell of it.
   if (drifted) {
     return {
       state: 'drifted',
+      ...(drifted.devLink === undefined ? {} : { reason: devLinkLabel(drifted.devLink) }),
       ...(drifted.target === undefined ? {} : { target: drifted.target }),
     };
   }

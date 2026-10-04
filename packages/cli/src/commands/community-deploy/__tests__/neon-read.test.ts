@@ -10,10 +10,14 @@ import {
   readNeonOrganizations,
   readNeonProjects,
   readNeonRegions,
+  readNeonRegionsForKey,
+  NEON_REGIONS_SNAPSHOT,
+  NEON_REGIONS_SNAPSHOT_DATE,
   readNeonDirectConnection,
   readNeonEndpoints,
   verifyNeonDirectEndpoint,
 } from '../neon-read.js';
+import { NEON_ORG_KEY_OUTPUT, NEON_SCOPE_OUTPUT } from './fake-launch-tools.js';
 import { mutateTrustedProviderFields } from './provider-contract-harness.js';
 
 const temporaryDirectories: string[] = [];
@@ -67,6 +71,66 @@ cat "$FIXTURE_PATH"
         longitude: null,
       },
     ]);
+  });
+  describe('for a key that may not read the region list (DOR-2700)', () => {
+    const answering = (stderr: string) => fakeNeon(`printf '%s\\n' '${stderr}' >&2\nexit 1`);
+
+    // Neon answers an organization key this way, and setup's other reads accept that key.
+    // Catches the key the docs recommend being stopped by the region read.
+    it('uses the saved snapshot when Neon says this kind of key may not read the list', async () => {
+      const executable = await answering(NEON_ORG_KEY_OUTPUT);
+      const { regions, savedList } = await readNeonRegionsForKey(options(executable));
+      expect(savedList).toBe(true);
+      expect(regions.map(({ id }) => id)).toEqual([...NEON_REGIONS_SNAPSHOT]);
+      expect(regions.filter(({ isDefault }) => isDefault).map(({ id }) => id)).toEqual([
+        'aws-us-east-1',
+      ]);
+    });
+
+    // The snapshot goes stale silently: Neon adds regions and nothing here would notice. This
+    // pins what it is and when it was taken, so refreshing it is a deliberate, visible change.
+    it('pins the snapshot to the live read it came from', () => {
+      expect(NEON_REGIONS_SNAPSHOT_DATE).toBe('2026-10-03');
+      expect([...NEON_REGIONS_SNAPSHOT]).toEqual([
+        'aws-us-east-1',
+        'aws-us-east-2',
+        'aws-us-west-2',
+        'aws-eu-central-1',
+        'aws-eu-west-2',
+        'aws-ap-southeast-1',
+        'aws-ap-southeast-2',
+        'aws-sa-east-1',
+        'azure-eastus2',
+        'azure-westus3',
+        'azure-gwc',
+      ]);
+    });
+
+    it('reads the live list whenever the key may', async () => {
+      const executable = await fakeNeon(`cat "$FIXTURE_PATH"`);
+      const { regions, savedList } = await readNeonRegionsForKey(
+        options(executable, {
+          FIXTURE_PATH: fileURLToPath(new URL('./fixtures/neon/regions.json', import.meta.url)),
+        })
+      );
+      expect(savedList).toBe(false);
+      expect(regions.map(({ id }) => id)).toEqual(['aws-us-east-2', 'aws-fixture-unknown-1']);
+    });
+
+    // Catches the fallback hiding an outage, an old CLI, or a real refusal.
+    it.each([
+      'ERROR: Request timed out',
+      'ERROR: internal server error',
+      'ERROR: Unknown command: api',
+      NEON_SCOPE_OUTPUT,
+      'ERROR: not allowed for now',
+    ])('still fails on %j', async (stderr) => {
+      const executable = await answering(stderr);
+      await expect(readNeonRegionsForKey(options(executable))).rejects.toMatchObject({
+        code: 'EXIT',
+        keyKindLimited: false,
+      });
+    });
   });
   it('rejects every mutation of trusted active-region fields', async () => {
     const fixture = JSON.parse(

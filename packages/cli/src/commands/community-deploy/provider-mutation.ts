@@ -5,6 +5,26 @@
  */
 import { ProviderCommandError, runProviderCommand } from './provider-process.js';
 
+/**
+ * What a person reads for each code. The CLI prints an error's message after `Space setup
+ * failed:`, and a raw code such as `CREATION_OUTCOME_UNCERTAIN` there told a person nothing
+ * (DOR-2702). The code itself stays on the error and in the launch journal.
+ */
+const PLAIN_MESSAGES: Record<ProviderMutationError['code'], string> = {
+  INVALID_INPUT: 'Setup was given a value it cannot use, so it stopped before that change.',
+  INVALID_RESPONSE:
+    'Fly, Neon or Tigris answered in a way setup could not check, so setup stopped to stay safe.',
+  PROVIDER_UNAVAILABLE:
+    'Setup could not reach Fly, Neon or the image registry. Check your connection and that fly and neonctl are installed, then try again.',
+  // The error does not know which credential acted, so it names every one it could be, the way
+  // `describeCommunityCredential` does; the create path names the exact one (refused-create.ts).
+  ACCESS_DENIED:
+    'Fly or Neon refused the credential setup used: FLY_API_TOKEN, FLY_ACCESS_TOKEN or NEON_API_KEY if set, otherwise your saved sign-in. Use one that can create these resources.',
+  // Also true for a command that ran to the end and failed, such as a deploy whose check failed.
+  CREATION_OUTCOME_UNCERTAIN:
+    'A Fly, Neon or Tigris step did not finish cleanly, so setup cannot be sure what it changed. Its progress is saved: run the resume command printed above (dorkos community deploy --list-incomplete finds the run).',
+};
+
 /** Stable, secret-free failure from a provider mutation boundary. */
 export class ProviderMutationError extends Error {
   /** Safe classification suitable for the launch journal. */
@@ -17,7 +37,7 @@ export class ProviderMutationError extends Error {
 
   /** Create a mutation error without provider output. */
   constructor(code: ProviderMutationError['code']) {
-    super(`Provider mutation failed (${code})`);
+    super(PLAIN_MESSAGES[code]);
     this.name = 'ProviderMutationError';
     this.code = code;
   }

@@ -101,6 +101,13 @@ export interface ProjectionAction {
    * is about {@link harness}.
    */
   harnessAgnostic?: boolean;
+  /**
+   * The working folder this action's package runs from, when it is a
+   * registered dev link (DOR-2696). Set together with the
+   * `(dev link: <folder>)` label on {@link reason}, so a report can read the
+   * fact without parsing the sentence. Absent for every installed copy.
+   */
+  devLink?: string;
 }
 
 /**

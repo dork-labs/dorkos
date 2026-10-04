@@ -15,6 +15,7 @@
 import type { HarnessId } from '../manifest/schema.js';
 import type { InstalledPlugin } from '../sources/installed.js';
 import type { ProjectionAction, ProjectionWarning } from './types.js';
+import { devLinkLabel } from './dev-link-labels.js';
 import { dropWholePlugin } from './installed-projector.js';
 
 /**
@@ -217,7 +218,14 @@ export function globalInstallDropReason(
   plugin: InstalledPlugin,
   opts?: { sharedWithTools?: boolean }
 ): string {
-  const shared = opts?.sharedWithTools === true;
+  const reason = globalInstallReasonOf(plugin, opts?.sharedWithTools === true);
+  // A package running from a dev link says so wherever this sentence is
+  // printed: the drop list, `dorkos harness sync` and the status page.
+  return plugin.devLink === undefined ? reason : `${reason} ${devLinkLabel(plugin.devLink.path)}`;
+}
+
+/** {@link globalInstallDropReason} before any dev-link label. */
+function globalInstallReasonOf(plugin: InstalledPlugin, shared: boolean): string {
   if (plugin.skills.length === 0) {
     return shared ? GLOBAL_INSTALL_NO_SKILLS_SHARED : GLOBAL_INSTALL_NO_SKILLS;
   }
@@ -291,12 +299,12 @@ export function planGlobalInstallDrops(input: {
   const drops: ProjectionAction[] = [];
   for (const plugin of input.plugins) {
     if (plugin.location.scope !== 'global') continue;
-    drops.push(
-      dropWholePlugin(
-        plugin,
-        globalInstallDropReason(plugin, { sharedWithTools: input.sharedWithTools === true })
-      )
+    const drop = dropWholePlugin(
+      plugin,
+      globalInstallDropReason(plugin, { sharedWithTools: input.sharedWithTools === true })
     );
+    if (plugin.devLink !== undefined) drop.devLink = plugin.devLink.path;
+    drops.push(drop);
     if (!projectNames.has(plugin.name) || noticed.has(plugin.name)) continue;
     noticed.add(plugin.name);
     drops.push(dropWholePlugin(plugin, bothScopesNoticeReason(plugin.name, input.repoRoot)));

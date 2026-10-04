@@ -36,6 +36,7 @@ import {
 } from '../sources/installed.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
 import { planUnreadableSkillWarnings } from './unreadable-skills.js';
+import { labelDevLinkActions } from './dev-link-labels.js';
 import { pluginTokenSkillWarningReason } from './installed-projector.js';
 import type { ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 import { directoryWriteBlock } from '../apply/write-path-occupants.js';
@@ -510,7 +511,7 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
         const target = join(tier.dir, namespaced);
         if (planned.has(target)) continue;
         planned.add(target);
-        actions.push({
+        const action: ProjectionAction = {
           kind: 'symlink',
           artifact: 'skill',
           harness: tier.harness,
@@ -521,7 +522,8 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
           source: skill.sourceDir,
           target,
           reason: tier.reason(skill.hasSchedule),
-        });
+        };
+        actions.push(...labelDevLinkActions([action], plugin));
       }
       const tokenReason = pluginTokenSkillWarningReason(skill);
       if (tokenReason !== undefined) {
