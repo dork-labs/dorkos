@@ -83,7 +83,7 @@ async function harness(behavior: FakeLaunchBehavior, credentials: Record<string,
     return { printed, failure, exitCode };
   };
 
-  const launch = () =>
+  const launch = (neonRegion = 'aws-us-east-2', ...extra: string[]) =>
     run([
       '--version',
       '0.76.0',
@@ -94,9 +94,10 @@ async function harness(behavior: FakeLaunchBehavior, credentials: Record<string,
       '--neon-org',
       'org-dorian',
       '--neon-region',
-      'aws-us-east-2',
+      neonRegion,
       '--app-name',
       APP,
+      ...extra,
     ]);
 
   const journals = async (): Promise<Array<Record<string, unknown>>> => {
@@ -271,6 +272,75 @@ describe('a preflight read the service refuses (DOR-2657)', () => {
         'Setup needs a token or sign-in that can create apps in it.'
     );
     expect(`${result.printed}\n${result.failure?.message}`).not.toContain(MARK);
+    expect(await journals()).toEqual([]);
+  });
+});
+
+describe('a Neon organization key, the kind the docs recommend (DOR-2700)', () => {
+  const ORG_KEY = { NEON_API_KEY: `napi_${MARK}_organization` };
+
+  // Neon's region list refuses organization keys outright, so every preflight with the
+  // recommended key used to stop on "Neon preflight is unavailable". Catches that coming back.
+  it('passes preflight on a dry run', async () => {
+    const { launch, journals, state } = await harness({ neonKey: 'organization' }, ORG_KEY);
+
+    const result = await launch('aws-us-east-2', '--dry-run');
+
+    expect(result.failure).toBeNull();
+    expect(result.exitCode).toBe(0);
+    expect(result.printed).not.toContain('preflight is unavailable');
+    expect(result.printed).not.toContain(MARK);
+    expect((await state()).neonProject).toBeNull();
+    expect(await journals()).toEqual([]);
+  });
+
+  // Catches the fallback reaching only preflight: the key must carry the create too. The fakes
+  // stop at the image deploy, after every create. A whole fake launch spawns dozens of processes,
+  // hence the longer deadline.
+  it('creates the Neon project in the chosen region', { timeout: 30_000 }, async () => {
+    const { launch, state } = await harness({ neonKey: 'organization' }, ORG_KEY);
+
+    const result = await launch();
+
+    expect(result.printed).toContain('Journal state: bucket_created');
+    expect((await state()).neonProject).toMatchObject({
+      org_id: 'org-dorian',
+      region_id: 'aws-us-east-2',
+    });
+  });
+
+  // Catches the fallback waving any region through, and a raw code reaching the person: a
+  // region outside the saved list stops before consent, makes nothing, and says why.
+  it('still refuses a region it cannot vouch for, before making anything', async () => {
+    const { launch, journals, state } = await harness({ neonKey: 'organization' }, ORG_KEY);
+
+    const result = await launch('aws-moon-1');
+
+    expect(result.failure?.message).toBe(
+      "This Neon key can't read Neon's live list of regions, so setup checked aws-moon-1 " +
+        "against a saved list, and it isn't there. Check the region name. If it's a new Neon " +
+        'region, use a personal key or sign in with neonctl auth, so setup can read the live list.'
+    );
+    expect(result.printed).not.toContain('NEON_REGION_UNAVAILABLE');
+    expect((await state()).flyApp).toBeNull();
+    expect((await state()).neonProject).toBeNull();
+    expect(await journals()).toEqual([]);
+  });
+
+  // A project-scoped key is refused by the projects read and limited by the region read. Catches
+  // it losing the clear message to either the race or the region fallback.
+  it('still names a project-scoped key that cannot read the organization', async () => {
+    const { launch, journals } = await harness(
+      { neonKey: 'project' },
+      { NEON_API_KEY: `napi_${MARK}_project_scoped` }
+    );
+
+    const result = await launch();
+
+    expect(result.failure?.message).toBe(
+      "The Neon key in NEON_API_KEY can't read organization org-dorian. " +
+        'Setup needs a key or sign-in that can create projects in it.'
+    );
     expect(await journals()).toEqual([]);
   });
 });
