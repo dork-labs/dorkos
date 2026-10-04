@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide-react';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import {
+  extensionRestartingCopy,
+  extensionServerErrorCopy,
+  isExtensionServerErrorCode,
+} from '@dorkos/shared/extension-server-status';
 import { Badge, Button, Card, DevLinkPath, DevLinkTag, Switch } from '@/layers/shared/ui';
 import { cn, openLink } from '@/layers/shared/lib';
 import {
@@ -23,6 +28,10 @@ interface ExtensionCardProps {
   onSetRunApproval: (id: string, approve: boolean) => void;
   /** Whether an approve/stop call for this extension is in progress. */
   isSettingApproval: boolean;
+  /** Reload extensions: the tab's existing Reload, offered beside a stopped server half. */
+  onReload: () => void;
+  /** Whether a reload is in progress. */
+  isReloading: boolean;
 }
 
 const TERMINAL_STATUSES = new Set(['disabled', 'discovered', 'incompatible', 'invalid']);
@@ -37,6 +46,8 @@ export function ExtensionCard({
   isToggling,
   onSetRunApproval,
   isSettingApproval,
+  onReload,
+  isReloading,
 }: ExtensionCardProps) {
   const { manifest, status, scope, error, serverError, origin, approvedToRun } = extension;
   const [errorExpanded, setErrorExpanded] = useState(false);
@@ -175,10 +186,33 @@ export function ExtensionCard({
           {/* An extension that asks to run separately does not run yet
               (DOR-2686, `isolation_not_ready`), and nothing of it is running, so
               the rebuild sentence below would be false. Its message is complete. */}
-          {serverError?.code === 'isolation_not_ready' && (
-            <p className="text-status-warning-fg text-sm">{serverError.message}</p>
+          {/* A server half that runs separately stopped or cannot start
+              (DOR-2686). The server's own sentence when it sent one, else the
+              shared copy for its code, with the tab's Reload beside it. */}
+          {serverError && isExtensionServerErrorCode(serverError.code) && (
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1"
+              data-testid={`extension-server-status-${extension.id}`}
+            >
+              <p className="text-status-warning-fg text-sm">
+                {serverError.message || extensionServerErrorCopy(serverError.code, manifest.name)}
+              </p>
+              <button
+                type="button"
+                onClick={onReload}
+                disabled={isReloading}
+                className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-xs underline underline-offset-2 disabled:opacity-50"
+              >
+                Reload
+              </button>
+            </div>
           )}
-          {serverError && serverError.code !== 'isolation_not_ready' && (
+          {extension.restartingAt && !serverError && (
+            <p className="text-muted-foreground text-sm" role="status">
+              {extensionRestartingCopy(manifest.name)}
+            </p>
+          )}
+          {serverError && !isExtensionServerErrorCode(serverError.code) && (
             <p className="text-status-warning-fg text-sm">
               Couldn’t rebuild its server part: {serverError.message}. The last version still runs.
             </p>

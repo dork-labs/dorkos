@@ -122,6 +122,8 @@ export function ExtensionsSettingsTab() {
       isToggling={togglingIds.has(ext.id)}
       onSetRunApproval={handleSetRunApproval}
       isSettingApproval={approvingIds.has(ext.id)}
+      onReload={handleReload}
+      isReloading={reloadMutation.isPending}
     />
   );
 

@@ -30,6 +30,7 @@ import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import { RunningExtensionTools } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { isolationKeyOf, waitsForIsolation } from './isolation/isolation-view.js';
+import { extensionServerErrorCopy } from '@dorkos/shared/extension-server-status';
 
 const require = createRequire(import.meta.url);
 
@@ -283,7 +284,7 @@ export class ExtensionServerLifecycle {
     // old in-process code cannot keep serving under the new promise.
     if (waitsForIsolation(record.manifest)) {
       await this.stop(id);
-      const message = `${record.manifest.name} needs a newer DorkOS to run its server part.`;
+      const message = extensionServerErrorCopy(ISOLATION_NOT_READY, record.manifest.name)!;
       record.serverError = { code: ISOLATION_NOT_READY, message };
       logger.info(`[Extensions] Server init refused for ${id}: ${ISOLATION_NOT_READY}`);
       return { ok: false, error: message };
