@@ -28,6 +28,11 @@ export async function withRequestStart<T>(pool: Pool, work: () => Promise<T>): P
   return storage.run({ snapshot: taken.rows[0].snapshot, clearedUserId: null }, work);
 }
 
+/** Whether the current request has a recorded start: every mutating `/api/*` request does. */
+export function hasRequestStart(): boolean {
+  return storage.getStore() !== undefined;
+}
+
 /** Note that the current request cleared this account, so its own session and link are new. */
 export function markAccessCleared(userId: string): void {
   const start = storage.getStore();

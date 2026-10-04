@@ -896,6 +896,103 @@ describe('an account write under way while the account is cleared', () => {
   });
 });
 
+describe('a member write under way while the account is cleared', () => {
+  /** Hold one row lock from a separate connection until released, as a slow competing write. */
+  async function holdLock(sql: string, params: unknown[]) {
+    const client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query(sql, params);
+    return async () => {
+      await client.query('COMMIT');
+      client.release();
+    };
+  }
+
+  /** Wait until some request is blocked on a row lock. */
+  async function waitForLockWait() {
+    for (let tries = 0; ; tries++) {
+      const waiting = await pool.query(
+        "SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND datname=current_database()"
+      );
+      if (waiting.rowCount) return;
+      if (tries > 300) throw new Error('the write never waited');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  /** A squatter's account (email never confirmed) with a password session, and its victim. */
+  async function squatterSession(email: string, role: 'member' | 'admin' = 'member') {
+    const made = await account(email);
+    await pool.query('UPDATE members SET role=$2 WHERE id=$1', [made.memberId, role]);
+    const cookie = cookieOf(await passwordSignIn(email));
+    expect(await whoIs(trusted, cookie)).toBe(email);
+    return { ...made, cookie };
+  }
+
+  it('refuses a pairing approval the trusted clean-out overtook', async () => {
+    // Purpose: fails if a squatter's approval, authorized by a session read before the clean-out
+    // committed, still binds a local install to the account after the real owner took it over
+    // (the pairing has no member yet, so the clean-out's own revocation cannot reach it).
+    const squatter = await squatterSession('pairing-race@example.com');
+    const pairing = await pool.query<{ id: string }>(
+      `INSERT INTO connection_pairings(community_id,verifier_hash,install_name,scopes,expires_at)
+       VALUES($1,$2,'Squatter laptop','{read,post}',now()+interval '10 minutes') RETURNING id`,
+      [communityId, hashSecret('pairing-race-verifier')]
+    );
+    const pairingId = pairing.rows[0].id;
+    // The approval reads the session, then waits here on the pairing row.
+    const release = await holdLock('SELECT 1 FROM connection_pairings WHERE id=$1 FOR UPDATE', [
+      pairingId,
+    ]);
+    let approving: Promise<Response>;
+    try {
+      approving = call(trusted, '/api/v1/pairings/approve', 'POST', { pairingId }, squatter.cookie);
+      await waitForLockWait();
+      identity('pairing-race@example.com', 'pairing-race-at-issuer');
+      expect((await providerSignIn(trusted, 'oidc')).location.pathname).toBe('/signed-in');
+    } finally {
+      await release();
+    }
+    const refused = await approving;
+    expect(refused.status).toBe(401);
+    expect(
+      (
+        await pool.query('SELECT member_id,approved_at FROM connection_pairings WHERE id=$1', [
+          pairingId,
+        ])
+      ).rows[0]
+    ).toEqual({ member_id: null, approved_at: null });
+  });
+
+  it('refuses an invitation the trusted clean-out overtook', async () => {
+    // Purpose: fails if an admin squatter's invitation, authorized before the clean-out
+    // committed, is created after it and lets someone join on the squatter's say-so.
+    const squatter = await squatterSession('invite-race@example.com', 'admin');
+    // The invitation reads the session, then waits here on the community row.
+    const release = await holdLock('SELECT 1 FROM communities WHERE id=$1 FOR NO KEY UPDATE', [
+      communityId,
+    ]);
+    let inviting: Promise<Response>;
+    try {
+      inviting = call(trusted, '/api/v1/invites', 'POST', { seats: 1 }, squatter.cookie);
+      await waitForLockWait();
+      identity('invite-race@example.com', 'invite-race-at-issuer');
+      expect((await providerSignIn(trusted, 'oidc')).location.pathname).toBe('/signed-in');
+    } finally {
+      await release();
+    }
+    const refused = await inviting;
+    expect(refused.status).toBe(401);
+    expect(
+      (
+        await pool.query('SELECT 1 FROM invites WHERE issuer_member_id=$1 AND revoked_at IS NULL', [
+          squatter.memberId,
+        ])
+      ).rowCount
+    ).toBe(0);
+  });
+});
+
 describe('waiting sign-ins and the linked notice', () => {
   it('prunes waiting sign-ins an hour after they expired or were used', async () => {
     // Purpose: fails if expired or used waiting sign-ins pile up forever, or a live one goes.

@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import type { Context } from 'hono';
 import type { CommunityAuth } from './auth.js';
+import { hasRequestStart, writtenBeforeClearing } from './sign-in/request-start.js';
 import { ApiError } from './http.js';
 import {
   bearerCredential,
@@ -375,6 +376,7 @@ export async function assertPrincipalCurrentInTransaction(
     );
     if (current.rowCount) return;
   } else if (sessionId) {
+    await refuseIfClearedSinceStart(client, await memberUserId(client, principal.id));
     // Member removal locks M then deletes S. Take those row locks in the same
     // order; a joined FOR SHARE can lock S first and deadlock with removal.
     const member = await client.query<{ user_id: string }>(
@@ -405,6 +407,7 @@ export async function lockPrincipalAuthority(
   const lifecycle = lifecycleResult.rows[0]?.lifecycle;
   if (lifecycle !== 'active' && !(isReadOnlyLifecycle(lifecycle) && scope === 'read'))
     throw lifecycleError(lifecycle ?? 'unavailable');
+  await refuseIfClearedSinceStart(client, await memberUserId(client, principal.ownerMemberId));
   const owner = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
     [principal.ownerMemberId, principal.community_id]
@@ -537,7 +540,40 @@ export async function lockChannel(
   return channel;
 }
 
-/** Lock and check the current actor after the channel lock for each channel mutation. */
+/**
+ * Refuse a write whose acting account was cleared (`clearAccountAccess`: password recovery, or a
+ * trusted sign-in taking over a never-confirmed account) after this request began. The session
+ * or credential the request was authorized by was read before that clean-out committed, so it
+ * may be one the clean-out ended.
+ *
+ * Call it inside the write's transaction, before locking any of the account's `members` rows:
+ * the clean-out locks `"user"` then `members`, and taking them in the same order cannot deadlock.
+ * The `FOR SHARE` read waits for a clean-out in flight. A request with no recorded start is a
+ * read (`GET`), which writes nothing; every mutating `/api/*` request has one (app.ts).
+ */
+export async function refuseIfClearedSinceStart(
+  client: PoolClient,
+  userId: string | null
+): Promise<void> {
+  if (!userId || !hasRequestStart()) return;
+  if (await writtenBeforeClearing(client, userId, { lock: true }))
+    throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in again to continue.');
+}
+
+/** The account behind a membership, read without a lock, for {@link refuseIfClearedSinceStart}. */
+async function memberUserId(client: PoolClient, memberId: string): Promise<string | null> {
+  const row = await client.query<{ user_id: string | null }>(
+    'SELECT user_id FROM members WHERE id=$1',
+    [memberId]
+  );
+  return row.rows[0]?.user_id ?? null;
+}
+
+/**
+ * Lock and check the current actor after the channel lock for each channel mutation. It also
+ * refuses an actor whose account was cleared after this request began
+ * ({@link refuseIfClearedSinceStart}), so every member-authorized write through here gets that.
+ */
 export async function requireLiveRole(
   client: PoolClient,
   member: Member,
@@ -545,6 +581,7 @@ export async function requireLiveRole(
   options: HeldRemovalOption = {}
 ): Promise<Member['role']> {
   await lockActiveCommunity(client, member.community_id, options);
+  await refuseIfClearedSinceStart(client, member.user_id);
   const result = await client.query<{ role: Member['role'] }>(
     'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [member.id, member.community_id]
