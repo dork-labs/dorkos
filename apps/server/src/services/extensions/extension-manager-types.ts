@@ -147,6 +147,7 @@ export function toPublic(
     ...(record.sourcePlugin ? { sourcePlugin: record.sourcePlugin } : {}),
     error: record.error,
     serverError: record.serverError,
+    restartingAt: record.restartingAt ?? null,
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,

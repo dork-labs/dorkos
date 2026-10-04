@@ -27,8 +27,19 @@ export const ExtensionApprovalPermissionsSchema = z
     runtime: z.enum(['in-process', 'subprocess']),
     /** Hosts it may connect to (`allow.net`), as declared. */
     net: z.array(z.string()),
-    /** Programs it may start (`allow.run`), and whether each was found on this computer. */
-    run: z.array(z.object({ name: z.string(), found: z.boolean() })),
+    /**
+     * Programs it may start (`allow.run`), and whether each was found on this
+     * computer. `refusedReason` is set when a file was found but DorkOS will
+     * not let it run (it sits in extension files, or is a Windows script), in
+     * a plain sentence the card shows; absent for a program simply not found.
+     */
+    run: z.array(
+      z.object({
+        name: z.string(),
+        found: z.boolean(),
+        refusedReason: z.string().optional(),
+      })
+    ),
     /** Whether it may message agents and start agent sessions (`allow.agents`). */
     agents: z.boolean(),
     /** Whether it has screens (a client bundle), which run in DorkOS with your access. */
@@ -226,10 +237,11 @@ export const ApproveExtensionRequestSchema = z
     plugin: z.string().min(1).nullable().optional(),
     /**
      * The permission set the card showed (DOR-2686): where it runs and the
-     * hosts, programs and agent access it declared. Compared when sent, as a
-     * set, so a manifest that changed what it asks for while the card was on
-     * screen is refused with `409 stale_approval` instead of being approved
-     * on a yes given to the old lists.
+     * hosts, programs and agent access it declared. Compared when sent: a
+     * manifest that asks for anything outside it by now is refused with
+     * `409 stale_approval` instead of being approved on a yes given to the
+     * old lists. One that narrowed since is approved, and what it declares
+     * now (the narrower set) is recorded.
      */
     permissions: z
       .object({

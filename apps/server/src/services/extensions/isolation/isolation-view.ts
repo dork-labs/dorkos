@@ -14,6 +14,7 @@ import {
 } from '@dorkos/extension-api';
 import fs from 'fs/promises';
 import path from 'path';
+import { ISOLATED_SERVER_PARTS_RUN } from '@dorkos/shared/extension-server-status';
 import { resolveProgram, type ResolveProgramOptions } from './resolve-program.js';
 
 /**
@@ -110,11 +111,15 @@ export function isolationKeyOf(record: Pick<ExtensionRecord, 'isolation'>): {
 /**
  * Whether this extension asks to run separately and so does not run yet
  * (DOR-2686 phase 1): its server half is refused with `isolation_not_ready`,
- * and nothing it ships — skills included — reaches agents as if it ran. The
- * phase that starts isolated extensions deletes this and its uses.
+ * and nothing it ships — skills included — reaches agents as if it ran. Gated
+ * by `ISOLATED_SERVER_PARTS_RUN` (`@dorkos/shared/extension-server-status`),
+ * the same switch that puts "can't run in this version yet" on every card, so
+ * the refusal and the warning cannot drift apart. The phase that starts
+ * isolated extensions flips that switch, then deletes this and its uses.
  *
  * @param manifest - The parsed `extension.json`.
  */
 export function waitsForIsolation(manifest: ExtensionManifest): boolean {
-  return manifest.serverCapabilities?.runtime === 'subprocess';
+  // One switch for the refusal and the card line that warns of it.
+  return !ISOLATED_SERVER_PARTS_RUN && manifest.serverCapabilities?.runtime === 'subprocess';
 }

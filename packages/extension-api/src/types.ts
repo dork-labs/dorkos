@@ -204,6 +204,12 @@ export interface ExtensionRecord {
    * matches its source. Cleared when a fixed version takes over.
    */
   serverError?: { code: string; message: string; details?: string };
+  /**
+   * When a restart of an extension that runs separately is pending after it
+   * stopped (DOR-2686), as ISO 8601; `null` or absent otherwise. The card says
+   * "Restarting <Name>…" while it is set.
+   */
+  restartingAt?: string | null;
   /** Content hash of the compiled client bundle; changes whenever the served code does. */
   sourceHash?: string;
   /** Whether the compiled bundle is available on the server. */
@@ -250,6 +256,11 @@ export interface ExtensionRecordPublic {
    * the client bundle keeps loading. See {@link ExtensionRecord.serverError}.
    */
   serverError?: { code: string; message: string; details?: string };
+  /**
+   * When a restart is pending after it stopped (DOR-2686), as ISO 8601, or
+   * `null`. See {@link ExtensionRecord.restartingAt}. Absent from an older server.
+   */
+  restartingAt?: string | null;
   bundleReady: boolean;
   hasServerEntry: boolean;
   hasDataProxy: boolean;

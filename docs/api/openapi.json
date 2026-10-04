@@ -10958,6 +10958,9 @@
                 },
                 "found": {
                   "type": "boolean"
+                },
+                "refusedReason": {
+                  "type": "string"
                 }
               },
               "required": [

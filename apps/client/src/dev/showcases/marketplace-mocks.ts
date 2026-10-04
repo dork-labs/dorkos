@@ -170,7 +170,13 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
     { path: `${MOCK_DORK_HOME}/agents/code-reviewer/agent.json`, action: 'create' },
     { path: `${MOCK_DORK_HOME}/agents/code-reviewer/SKILL.md`, action: 'create' },
   ],
-  extensions: [{ id: 'code-reviewer-ext', slots: ['sidebar', 'chat-toolbar'] }],
+  extensions: [
+    {
+      id: 'code-reviewer-ext',
+      slots: ['sidebar', 'chat-toolbar'],
+      isolation: { runtime: 'in-process', net: [], run: [], agents: false },
+    },
+  ],
   hooks: [],
   unreadableHooks: [],
   mcpServers: [],
@@ -257,7 +263,18 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
     { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/config.json`, action: 'modify' },
     { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/legacy-hooks.json`, action: 'delete' },
   ],
-  extensions: [{ id: 'deploy-bot-ext', slots: ['dashboard-panel', 'task-runner'] }],
+  extensions: [
+    {
+      id: 'deploy-bot-ext',
+      slots: ['dashboard-panel', 'task-runner'],
+      isolation: {
+        runtime: 'subprocess',
+        net: ['api.github.com', 'api.vercel.com'],
+        run: ['git', 'bash'],
+        agents: true,
+      },
+    },
+  ],
   hooks: [
     {
       event: 'PostToolUse',

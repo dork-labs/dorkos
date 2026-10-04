@@ -15,6 +15,7 @@ vi.mock('../../../core/config-manager.js', () => ({
 }));
 
 import { listPendingExtensionApprovals } from '../../extension-approval-queue.js';
+import { PROGRAM_INSIDE_EXTENSION, PROGRAM_NOT_FOUND } from '../resolve-program.js';
 
 describe('PendingExtensionApproval.permissions and .added', () => {
   let tmp: string;
@@ -158,5 +159,33 @@ describe('PendingExtensionApproval.permissions and .added', () => {
     const [pending] = await list([other]);
     expect(pending!.added).toBeNull();
     expect(pending!.permissions?.agents).toBe(true);
+  });
+  // Purpose: a program DorkOS found but refuses (inside extension files, a
+  // Windows script) carries the refusal sentence so the card never lists it as
+  // runnable; one merely missing carries only `found: false`.
+  it('carries the refusal reason for a refused program, not for a missing one', async () => {
+    const tool = await record(
+      'tool',
+      { serverEntry: './server.ts', runtime: 'subprocess', allow: { run: ['helper', 'gone'] } },
+      {
+        isolation: {
+          runtime: 'subprocess',
+          net: [],
+          run: ['helper', 'gone'],
+          resolvedRun: [
+            { name: 'helper', path: null, reason: PROGRAM_INSIDE_EXTENSION },
+            { name: 'gone', path: null, reason: PROGRAM_NOT_FOUND },
+          ],
+          agents: false,
+          memoryMb: 256,
+        },
+      }
+    );
+    state.extensions = { approvedToRun: [], approvedSources: {} };
+    const [pending] = await list([tool]);
+    expect(pending!.permissions?.run).toEqual([
+      { name: 'helper', found: false, refusedReason: PROGRAM_INSIDE_EXTENSION },
+      { name: 'gone', found: false },
+    ]);
   });
 });

@@ -41,6 +41,8 @@ function renderCard(extension: ExtensionRecordPublic) {
       isToggling={false}
       onSetRunApproval={vi.fn()}
       isSettingApproval={false}
+      onReload={vi.fn()}
+      isReloading={false}
     />
   );
 }

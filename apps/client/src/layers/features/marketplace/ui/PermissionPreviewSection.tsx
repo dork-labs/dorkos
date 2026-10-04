@@ -24,6 +24,7 @@ import { useState, type ComponentType } from 'react';
 
 import { cn } from '@/layers/shared/lib';
 import { Badge, CollapsibleFieldCard } from '@/layers/shared/ui';
+import { ExtensionPermissionLines } from '@/layers/entities/extension';
 import {
   formatPermissionPreview,
   summarizePermissionPreview,
@@ -240,6 +241,73 @@ function PermissionSection({ title, items, tone, defaultOpen = false }: SectionP
   );
 }
 
+/** One preview extension that says where it runs. */
+type DescribedExtension = PermissionPreview['extensions'][number] & {
+  isolation: NonNullable<PermissionPreview['extensions'][number]['isolation']>;
+};
+
+/** Whether the server said where this extension runs (an older one does not). */
+function isDescribed(ext: PermissionPreview['extensions'][number]): ext is DescribedExtension {
+  return ext.isolation !== undefined;
+}
+
+/**
+ * What each extension in the package can reach once turned on (DOR-2686), in
+ * the same lines its approval card will show: where it runs, then the hosts,
+ * programs and agent access it declares. Open by default, beside the commands,
+ * because it is part of what a person has to see before trusting a package.
+ * Draws nothing for a package with no extensions, or from an older server that
+ * never says where they run.
+ *
+ * @param extensions - The package's extensions, as the preview lists them.
+ */
+function ExtensionReachSection({ extensions }: { extensions: PermissionPreview['extensions'] }) {
+  const [open, setOpen] = useState(true);
+  const described = extensions.filter(isDescribed);
+  if (described.length === 0) return null;
+
+  return (
+    <CollapsibleFieldCard
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+          What its extensions can reach
+        </span>
+      }
+      badge={
+        <Badge variant="secondary" className="text-xs">
+          {described.length}
+        </Badge>
+      }
+    >
+      <ul className="space-y-3" data-testid="preview-extension-reach">
+        {described.map((ext) => (
+          <li key={ext.id} className="flex min-w-0 items-start gap-2 text-sm">
+            <Puzzle className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-foreground font-mono text-xs break-all">
+                <bdi>{ext.id}</bdi>
+              </p>
+              <ExtensionPermissionLines
+                permissions={{
+                  runtime: ext.isolation.runtime,
+                  net: ext.isolation.net,
+                  // Not installed yet, so nobody has looked for the programs.
+                  run: ext.isolation.run.map((name) => ({ name })),
+                  agents: ext.isolation.agents,
+                  ...(ext.hasServer !== undefined ? { hasServer: ext.hasServer } : {}),
+                }}
+                data-testid={`preview-extension-reach-${ext.id}`}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </CollapsibleFieldCard>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Public component
 // ---------------------------------------------------------------------------
@@ -276,7 +344,8 @@ interface PermissionPreviewSectionProps {
  * says what the install does — {@link summarizePermissionPreview} — and under
  * it three groups start expanded: the commands a package declares, the jobs it
  * will schedule, and any conflicts, which are what somebody has to see before
- * trusting a stranger's package. The other four — effects included — open on a
+ * trusting a stranger's package. What its extensions can reach (DOR-2686)
+ * opens too, for the same reason. The other four — effects included — open on a
  * click, with their counts in their headings, because nothing here may be
  * hidden: DorkOS is honest by design, and a collapsed section says "second",
  * never "never".
@@ -303,6 +372,7 @@ export function PermissionPreviewSection({ preview, installBase }: PermissionPre
     <div className="space-y-6">
       {hasAnything && <p className="text-sm">{summarizePermissionPreview(preview)}</p>}
       <PermissionSection title="What this package will do" items={groups.effects} />
+      <ExtensionReachSection extensions={preview.extensions} />
       <PermissionSection
         title="Commands this package declares"
         items={groups.commands}

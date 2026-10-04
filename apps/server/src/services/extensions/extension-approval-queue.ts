@@ -78,6 +78,7 @@ import {
   type ExtensionApprovals,
 } from './extension-load-policy.js';
 import { addedSince, declaredSet } from './isolation/permission-coverage.js';
+import { PROGRAM_NOT_FOUND } from './isolation/resolve-program.js';
 
 /** The longest the second line of an approval row may be. */
 export const APPROVAL_WHY_MAX_LENGTH = 300;
@@ -413,6 +414,11 @@ async function permissionsOf(record: ExtensionRecord): Promise<ExtensionApproval
     run: isolation.resolvedRun.map((program) => ({
       name: program.name,
       found: program.path !== null,
+      // A program that is merely missing says so through `found`; one DorkOS
+      // found and refused carries why, so the card never lists it as runnable.
+      ...(program.path === null && program.reason && program.reason !== PROGRAM_NOT_FOUND
+        ? { refusedReason: program.reason }
+        : {}),
     })),
     agents: isolation.agents,
     hasPage,

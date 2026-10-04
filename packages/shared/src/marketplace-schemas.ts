@@ -571,6 +571,8 @@ export interface PermissionPreview {
       run: string[];
       agents: boolean;
     };
+    /** Whether it has a server half; without one it is screens only (DOR-2686). */
+    hasServer?: boolean;
   }[];
   /** Shell hooks the package registers with the harness, commands verbatim. */
   hooks: PreviewHook[];

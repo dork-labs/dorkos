@@ -63,6 +63,7 @@ const FLOW: PendingExtensionApproval = {
 let waiting: PendingExtensionApproval[];
 let approveStatus: number;
 let posts: Array<{ url: string; body: unknown }>;
+let staleReplacement: PendingExtensionApproval | null;
 
 /** A fake of the four extension routes the bell reaches. */
 async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -72,6 +73,14 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
   if (init?.method === 'POST') {
     posts.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
     if (url.endsWith('/extensions/flow/approve')) {
+      if (approveStatus === 409) {
+        // The extension widened while the row was on screen.
+        if (staleReplacement) waiting = [staleReplacement];
+        return json(
+          { error: 'This extension changed since you saw it.', code: 'stale_approval' },
+          409
+        );
+      }
       if (approveStatus !== 200) return json({ error: 'Nope' }, approveStatus);
       waiting = [];
       return json({ extension: { id: 'flow' } });
@@ -135,6 +144,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     waiting = [FLOW];
     approveStatus = 200;
     posts = [];
+    staleReplacement = null;
     vi.stubGlobal('fetch', vi.fn(fakeFetch));
   });
 
@@ -218,7 +228,9 @@ describe('InboxBell — an extension waiting to be turned on', () => {
 
       await user.click(within(row).getByRole('button', { name: 'More about this' }));
 
-      const items = within(row)
+      // The ⓘ panel's gift rows, not the permission lines drawn on the row.
+      const gifts = row.querySelector('[data-slot="extension-agent-gift-rows"]') as HTMLElement;
+      const items = within(gifts)
         .getAllByRole('listitem')
         .map((item) => item.textContent);
       expect(items).toEqual([
@@ -248,7 +260,13 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(posts).toEqual([
       {
         url: '/api/extensions/flow/approve',
-        body: { path: FLOW.path, version: '1.2.0', plugin: 'flow' },
+        body: {
+          path: FLOW.path,
+          version: '1.2.0',
+          plugin: 'flow',
+          // The permission set the row listed, so a widening is refused as stale.
+          permissions: { runtime: 'in-process', net: [], run: [], agents: false },
+        },
       },
     ]);
   });
@@ -281,5 +299,105 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       })
     );
     expect(await screen.findByText('Turn on Flow?')).toBeInTheDocument();
+  });
+  describe('what it can reach (DOR-2686)', () => {
+    const MAIL: PendingExtensionApproval = {
+      ...FLOW,
+      id: 'flow',
+      permissions: {
+        runtime: 'subprocess',
+        net: ['imap.fastmail.com', 'smtp.fastmail.com'],
+        run: [{ name: 'git', found: true }],
+        agents: false,
+        hasPage: false,
+      },
+    };
+
+    // Purpose: the row states the access level before the yes; an in-process
+    // extension says it runs inside DorkOS with full access.
+    it('states full access for an extension that runs inside DorkOS', async () => {
+      renderBell();
+      const { row } = await openRow();
+      expect(
+        within(row).getByText('Runs inside DorkOS with full access to this computer.')
+      ).toBeInTheDocument();
+    });
+
+    // Purpose: an isolated extension lists its hosts on the row, not behind ⓘ,
+    // and the yes echoes exactly that set.
+    it('lists hosts on the row and sends that set with the yes', async () => {
+      waiting = [MAIL];
+      renderBell();
+      const { user, row } = await openRow();
+      const lines = within(row).getByTestId('extension-permissions-flow');
+      // Said before the yes: its server part does not run in this version yet.
+      expect(lines.querySelector('li')).toHaveTextContent(
+        'Its server part can’t run in this version yet.'
+      );
+      expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+      expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com, smtp.fastmail.com');
+
+      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+      await waitFor(() => expect(posts).toHaveLength(1));
+      expect((posts[0]!.body as { permissions: unknown }).permissions).toEqual({
+        runtime: 'subprocess',
+        net: ['imap.fastmail.com', 'smtp.fastmail.com'],
+        run: ['git'],
+        agents: false,
+      });
+    });
+
+    // Purpose: a re-ask leads with what is new since the last yes.
+    it('leads a re-ask with the new host', async () => {
+      waiting = [
+        { ...MAIL, added: { net: ['api.example.com'], run: [], agents: false, runtime: false } },
+      ];
+      renderBell();
+      const { row } = await openRow();
+      const lines = within(row).getByTestId('extension-permissions-flow');
+      const first = lines.querySelector('li');
+      expect(first).toHaveTextContent('Now also wants to connect to: api.example.com');
+    });
+
+    // Purpose: a yes to a row that widened while on screen is refused, says so
+    // plainly, and the row comes back showing what it asks for now.
+    it('says so plainly and redraws the row when the yes is stale', async () => {
+      waiting = [MAIL];
+      approveStatus = 409;
+      staleReplacement = {
+        ...MAIL,
+        permissions: { ...MAIL.permissions!, net: [...MAIL.permissions!.net, 'api.example.com'] },
+      };
+      renderBell();
+      const { user, row } = await openRow();
+
+      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('Flow changed since you saw it. Check it again.')
+      );
+      // A first ask has no earlier approval, yet the redrawn row still leads
+      // with the host the refused card did not list.
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('extension-permissions-flow').querySelector('li')
+        ).toHaveTextContent('Now also wants to connect to: api.example.com')
+      );
+      expect(screen.getByTestId('extension-permissions-flow')).toHaveTextContent(
+        'Can connect to: imap.fastmail.com, smtp.fastmail.com, api.example.com'
+      );
+    });
+
+    // Purpose: a server one version behind sends no set; the row adds nothing
+    // and the yes compares nothing.
+    it('adds nothing and echoes nothing when the server sent no set', async () => {
+      waiting = [{ ...FLOW, permissions: null }];
+      renderBell();
+      const { user, row } = await openRow();
+      expect(within(row).queryByText(/Runs (inside|separately)/)).not.toBeInTheDocument();
+      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+      await waitFor(() => expect(posts).toHaveLength(1));
+      expect(posts[0]!.body).not.toHaveProperty('permissions');
+    });
   });
 });
