@@ -19,7 +19,7 @@ Some steps depend on work that is not on `main` yet. Do not start a run until ev
 | L3         | Restricted credentials reach the launcher through `FLY_API_TOKEN` and `NEON_API_KEY` (see [L3 preconditions](#l3-preconditions)) | DOR-2602                                     | done: in v0.94.0                                                 |
 | L3         | A plain refusal for a Fly token or Neon key that can't create, and a Neon organization key that passes setup                     | DOR-2656, DOR-2657 (#2447); DOR-2700 (#2526) | done: in v0.96.0 and v0.97.0                                     |
 | L3         | Resuming right after a stopped `fly deploy` waits for Fly's Machine lease                                                        | DOR-2702 (#2529)                             | done: in v0.97.0                                                 |
-| L3         | Resuming after a Control-C that lands right after a create intent (the (c) sub-case)                                             | DOR-2701 (#2528)                             | pending: PR open, in no release                                  |
+| L3         | Resuming after a Control-C that lands right after a create intent (the (c) sub-case)                                             | DOR-2701 (#2528)                             | pending: merged, in no release yet                               |
 | L4         | The draft guide `docs/self-hosting/community.mdx`                                                                                | task 1.6 (DOR-2596, PR #2387)                | pending: PR open, on `hold`                                      |
 
 ## Rules for every run
@@ -236,7 +236,8 @@ A project-scoped key cannot read the org, so it cannot pass setup's read-only ch
 
    Then delete the bucket's access key (named after the bucket, usually `<bucket>_access_key`), which `fly storage destroy` leaves active (see the Tigris access keys exception above).
 
-2. Take the after inventory and compare, using the exceptions above.
+2. For any run that stopped before it finished, run `dorkos community deploy --forget <run-id>`. Expect: it checks each resource the run made, says they are gone, and `--list-incomplete` stops listing the run. If something is still there, it names it with its remove command and keeps the run. For a run that made a bucket, expect the access-key steps too, and delete that key. Never delete a journal file by hand.
+3. Take the after inventory and compare, using the exceptions above.
 
 ### L3 revocation (always, even after a failed run)
 

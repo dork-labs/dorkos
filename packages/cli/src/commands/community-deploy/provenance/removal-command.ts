@@ -42,6 +42,8 @@ export interface RemoveUncertainCommandInput {
   output: Writable & { isTTY?: boolean };
   /** Exact `--resume` command for a journal, or `null` without saved choices. */
   resumeCommand(journal: LaunchJournal): string | null;
+  /** The same choices as a fresh launch, or `null` without saved choices. */
+  startCommand?(journal: LaunchJournal): string | null;
   /** The existing recovery report for a journal. */
   recovery(journal: LaunchJournal): string;
   /** Test seam: the probe for one service. */
@@ -95,6 +97,7 @@ export async function runRemoveUncertainCommand(
     runId: input.runId,
     journal,
     resumeCommand: input.resumeCommand(journal),
+    startCommand: input.startCommand?.(journal) ?? null,
     recovery: input.recovery(journal),
   };
   // Removal mode has its own cancel handler: it aborts the running service process, and the

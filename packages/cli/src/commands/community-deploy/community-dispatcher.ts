@@ -46,6 +46,8 @@ import {
   createInitialCommunityLaunchJournal,
 } from './resume.js';
 import { runRemoveUncertainCommand } from './provenance/removal-command.js';
+import { runForgetCommand } from './provenance/forget-command.js';
+import { classifyUncertainJournal, SERVICE_LABEL } from './provenance/uncertain-verdict.js';
 import { tigrisAccessKeyName } from './provenance/tigris-access-key.js';
 import {
   describeStoppedLaunch,
@@ -82,6 +84,8 @@ Options:
                          Check the resource a stopped create may have left behind, and
                          remove it only if DorkOS can prove this run made it
   --confirm <id>         With --remove-uncertain: the id it showed, to remove without a prompt
+  --forget <run-id>      Stop listing a stopped launch, once DorkOS has checked that
+                         everything it made is gone
   -h, --help             Show this help
 
 There is no --yes mode. Before the first write, type the generated app name in an interactive terminal.
@@ -113,11 +117,23 @@ interface CommunityResumeSelection extends CommunityPreflightSelection {
 
 /** The exact `--resume` command for a saved journal, or `null` without saved plan choices. */
 export function resumeCommand(plan: LaunchJournal): string | null {
+  const choices = planChoices(plan);
+  return choices ? `dorkos community deploy --resume ${plan.runId} ${choices}` : null;
+}
+
+/**
+ * A fresh launch with a saved journal's choices, for a run that was cleared because it made
+ * nothing, or `null` without saved plan choices.
+ */
+export function startCommand(plan: LaunchJournal): string | null {
+  const choices = planChoices(plan);
+  return choices ? `dorkos community deploy ${choices}` : null;
+}
+
+function planChoices(plan: LaunchJournal): string | null {
   const selection = plan.recoveryContext;
   if (!selection) return null;
   return [
-    'dorkos community deploy',
-    `--resume ${plan.runId}`,
     `--version ${selection.version}`,
     `--fly-org ${selection.flyOrganization}`,
     `--fly-region ${selection.flyRegion}`,
@@ -197,24 +213,31 @@ export function formatCommunityRecovery(journal: LaunchJournal): string {
           ? 'neonProjectId'
           : 'tigrisBucketId'
     ];
+  // A run in shape A, or with a removal under way, cannot be resumed: `--resume` would stop at
+  // the same step every time. Only `--remove-uncertain` moves it forward, so it is the one command
+  // offered, and "Resume with:" is never printed for it (DOR-2701).
+  const nextStep = journal.pendingRemoval
+    ? [
+        'Next: finish the removal that is in progress with:',
+        `  dorkos community deploy --remove-uncertain ${journal.runId}`,
+      ]
+    : noRecordedId
+      ? [
+          'Next: check whether that create landed with:',
+          `  dorkos community deploy --remove-uncertain ${journal.runId}`,
+          'If it never landed, this run can continue from where it stopped. If DorkOS can prove this run made it, DorkOS can remove it.',
+        ]
+      : null;
   return [
     'Confirmed retained resources:',
     rows.length ? rows.join('\n') : '  No resource identity has been confirmed.',
     `Journal state: ${journal.state}`,
     ...(reconciliation ? ['Manual reconciliation required:', reconciliation] : []),
-    ...(journal.pendingRemoval
-      ? [
-          `A removal is in progress. Finish it with: dorkos community deploy --remove-uncertain ${journal.runId}`,
-        ]
-      : noRecordedId
-        ? [
-            `Check whether DorkOS can prove this run made it and remove it: dorkos community deploy --remove-uncertain ${journal.runId}`,
-          ]
-        : []),
     'Automatic cleanup was not attempted.',
-    ...(command
-      ? ['Resume with:', `  ${command}`]
-      : ['Resume command unavailable because this older journal has no saved plan context.']),
+    ...(nextStep ??
+      (command
+        ? ['Resume with:', `  ${command}`]
+        : ['Resume command unavailable because this older journal has no saved plan context.'])),
   ].join('\n');
 }
 
@@ -258,6 +281,7 @@ export async function runCommunityDispatcher(
       resume: { type: 'string' },
       'remove-uncertain': { type: 'string' },
       confirm: { type: 'string' },
+      forget: { type: 'string' },
     },
   });
   if (parsed.values.help) {
@@ -265,14 +289,18 @@ export async function runCommunityDispatcher(
     return 0;
   }
   const removeRunId = parsed.values['remove-uncertain'];
+  const forgetRunId = parsed.values.forget;
   if (parsed.values.confirm !== undefined && removeRunId === undefined) {
     throw new Error('--confirm works only with --remove-uncertain');
   }
-  if (removeRunId !== undefined) {
+  const standalone =
+    removeRunId !== undefined ? 'remove-uncertain' : forgetRunId !== undefined ? 'forget' : null;
+  if (standalone !== null) {
     const combined = [
       'resume',
       'dry-run',
       'list-incomplete',
+      ...(standalone === 'forget' ? ['remove-uncertain', 'confirm'] : ['forget']),
       'version',
       'fly-org',
       'fly-region',
@@ -288,34 +316,48 @@ export async function runCommunityDispatcher(
     });
     if (combined.length > 0) {
       throw new Error(
-        `--remove-uncertain cannot be combined with ${combined.map((flag) => `--${flag}`).join(', ')}`
+        `--${standalone} cannot be combined with ${combined.map((flag) => `--${flag}`).join(', ')}`
       );
     }
+  }
+  const standaloneServiceOptions = (signal?: AbortSignal) => ({
+    fly: {
+      executable: 'fly',
+      env: context.processEnv,
+      timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+      signal,
+    },
+    neon: {
+      executable: 'neonctl',
+      env: context.processEnv,
+      timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+      signal,
+    },
+    graphqlTimeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+    signal,
+  });
+  if (forgetRunId !== undefined) {
+    // Forgetting reads an account too, so it names an exported credential the same way.
+    process.stdout.write(formatCommunityCredentialNotice(context.processEnv));
+    return runForgetCommand({
+      runId: forgetRunId,
+      journalPath: launchJournalPath(context.dorkHome, forgetRunId),
+      serviceOptions: standaloneServiceOptions(),
+      output: process.stdout,
+    });
+  }
+  if (removeRunId !== undefined) {
     // Removal acts on an account too, so it names an exported credential the same way.
     process.stdout.write(formatCommunityCredentialNotice(context.processEnv));
     return runRemoveUncertainCommand({
       runId: removeRunId,
       journalPath: launchJournalPath(context.dorkHome, removeRunId),
       confirmToken: parsed.values.confirm,
-      serviceOptions: (signal) => ({
-        fly: {
-          executable: 'fly',
-          env: context.processEnv,
-          timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
-          signal,
-        },
-        neon: {
-          executable: 'neonctl',
-          env: context.processEnv,
-          timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
-          signal,
-        },
-        graphqlTimeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
-        signal,
-      }),
+      serviceOptions: standaloneServiceOptions,
       input: process.stdin,
       output: process.stdout,
       resumeCommand,
+      startCommand,
       recovery: formatCommunityRecovery,
     });
   }
@@ -335,6 +377,14 @@ export async function runCommunityDispatcher(
   if (resumeJournal?.pendingRemoval) {
     throw new Error(
       `A removal is in progress for this run. Finish it first: dorkos community deploy --remove-uncertain ${resumeJournal.runId}`
+    );
+  }
+  // A create whose outcome was never known stops every resume at the same step, so say what moves
+  // the run forward before asking for consent again (DOR-2701).
+  const unresolved = resumeJournal ? classifyUncertainJournal(resumeJournal) : null;
+  if (resumeJournal && unresolved?.shape === 'uncertain-create') {
+    throw new Error(
+      `This run stopped while creating a ${SERVICE_LABEL[unresolved.intent.provider]}, and DorkOS has not checked whether it landed. Check it first, and the run can continue: dorkos community deploy --remove-uncertain ${resumeJournal.runId}`
     );
   }
   let latest: LaunchJournal | null = resumeJournal;

@@ -154,6 +154,7 @@ describe('--remove-uncertain output', () => {
     runId: RUN_ID,
     journal: journal(),
     resumeCommand: `dorkos community deploy --resume ${RUN_ID}`,
+    startCommand: 'dorkos community deploy --version 0.82.0 --app-name community-acme',
     recovery: 'RECOVERY REPORT',
   };
   const target = {
@@ -171,13 +172,28 @@ describe('--remove-uncertain output', () => {
     [{ outcome: 'not-a-create' as const }, 0, 'RECOVERY REPORT'],
     [
       { outcome: 'absent' as const, provider: 'fly' as const, cleared: false },
-      0,
-      'This run cannot be resumed',
+      1,
+      'Nothing was changed.',
     ],
     [
       { outcome: 'absent' as const, provider: 'fly' as const, cleared: true },
       0,
       'it no longer shows in --list-incomplete',
+    ],
+    [
+      { outcome: 'absent' as const, provider: 'fly' as const, cleared: true },
+      0,
+      'Start again with: dorkos community deploy --version 0.82.0 --app-name community-acme',
+    ],
+    [
+      {
+        outcome: 'absent' as const,
+        provider: 'neon' as const,
+        cleared: false,
+        released: true as const,
+      },
+      0,
+      `can continue from where it stopped.\nContinue with: dorkos community deploy --resume ${RUN_ID}`,
     ],
     [
       {
@@ -188,7 +204,7 @@ describe('--remove-uncertain output', () => {
         clearableInMs: 483_000,
       },
       0,
-      `Run dorkos community deploy --remove-uncertain ${RUN_ID} again in about 9 minutes (after 10:44 UTC) to check once more and clear it.`,
+      `Run dorkos community deploy --remove-uncertain ${RUN_ID} again in about 9 minutes (after 10:44 UTC). If it is still missing then, DorkOS clears this run.`,
     ],
     [
       {

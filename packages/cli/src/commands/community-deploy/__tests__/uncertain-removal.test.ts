@@ -129,17 +129,22 @@ describe('uncertain removal command', () => {
     expect(probeFor).not.toHaveBeenCalled();
   });
 
-  it('reports absent and unreachable without changing the journal of a run that made something', async () => {
+  it('changes nothing for a run that made something while its create is recent or unreadable', async () => {
     // The Fly app exists, so the run must stay listed: its journal is what points at that app.
+    // Inside the create window a cut-off create can still land, so even the intent stays.
     const journal = shapeA('neon');
     await setup(journal);
     const { probe, state } = memoryProbe('neon');
     state.present = false;
-    const { dependencies, persist, discard } = deps(probe, confirmWith('project-1'));
+    const { dependencies, persist, discard } = deps(probe, confirmWith('project-1'), {
+      now: () => '2026-09-23T10:35:00.000Z',
+    });
     await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
       outcome: 'absent',
       provider: 'neon',
       cleared: false,
+      clearableAfter: '2026-09-23T10:43:03.000Z',
+      clearableInMs: 483_000,
     });
     probe.find.mockRejectedValueOnce(new Error('server error'));
     await expect(runUncertainRemoval(dependencies)).resolves.toEqual({

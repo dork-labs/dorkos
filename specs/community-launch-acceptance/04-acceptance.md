@@ -26,7 +26,7 @@ This file holds ids, digests, versions, pass or fail, and messages with names re
 - Every run: macOS 26.6.2 on Apple Silicon (arm64), Node v24.14.1, flyctl v0.4.110, neonctl 7.0.1, Tigris CLI 3.14.0, gh 2.101.0. L2 also used Docker 29.5.2 and Google Chrome 154.
 - Not verified: Windows, Linux, and fresh accounts (A1).
 - Not verified: an upgrade from one release to another on a guided-setup community. L2 ran on v0.96.0 when v0.95.0's migration fingerprint differed, so by Open question 4 it rehearsed a same-image redeploy. The guide keeps "not yet rehearsed on guided setup" for the cross-version upgrade. v0.97.0 now shares v0.96.0's fingerprint, so a later run could rehearse v0.96.0 to v0.97.0.
-- Not verified: Control-C right after setup saves a create intent and before the create's outcome is known (DOR-2701). The fix is #2528, open and in no release.
+- Not verified: Control-C right after setup saves a create intent and before the create's outcome is known (DOR-2701). The fix is #2528, merged but in no release yet.
 
 ## The runs
 
@@ -83,7 +83,7 @@ Earlier live runs also interrupted and resumed owner setup (gate runs 7 and 8, D
 
 Automated tests: `packages/cli/src/commands/community-deploy/__tests__/resume.test.ts`, `execute.test.ts`, `fly-lease.test.ts`, `stop-launch.test.ts`, `stop-wording.test.ts`, and the second resume run in `packages/cli/scripts/test-community-deploy-package.ts`.
 
-**Pending sub-case (DOR-2701).** A Control-C that lands just after setup saves a create intent, before the create's outcome is known, left v0.96.0 with a run that `--resume` could not continue. The fix is #2528, still open. This sub-case needs one more attended run on the first release that contains it.
+**Pending sub-case (DOR-2701).** A Control-C that lands just after setup saves a create intent, before the create's outcome is known, left v0.96.0 with a run that `--resume` could not continue. The fix is #2528, merged but not yet released. This sub-case needs one more attended run on the first release that contains it.
 
 ### A3: failed provisioning — PASS
 
@@ -172,15 +172,15 @@ Automated tests: `packages/cli/src/__tests__/community-deploy-no-dorkos-hosts.te
 
 The runs in order. Each defect a run found was filed, fixed and released before the next try, except DOR-2701.
 
-| Run | Release | Date       | Result                          | Defect found                                                                                                                                                      | Fixed in     | Released in |
-| --- | ------- | ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------- |
-| L3  | v0.94.0 | 2026-10-01 | Stopped at (a)                  | A refused Fly create ended in "creation outcome requires manual reconciliation", and `--remove-uncertain` could not clear the run (DOR-2656, DOR-2657)            | #2447        | v0.96.0     |
-| L2  | v0.95.0 | 2026-10-02 | Stopped at the driver           | Step 15: a channel reopened at an old saved row after the reader caught up. Step 17: the driver expected the wrong first menu row (a test fix, not a product bug) | #2476        | v0.96.0     |
-| L2  | v0.96.0 | 2026-10-03 | PASS                            | none                                                                                                                                                              |              |             |
-| L3  | v0.96.0 | 2026-10-03 | (a) passed; (b) and (c) stopped | DOR-2700: the Neon preflight message was a race, vague 6 times in 9, and an organization key could never pass                                                     | #2526        | v0.97.0     |
-|     |         |            |                                 | DOR-2701: Control-C right after a create intent left a run that `--resume` could not continue                                                                     | #2528 (open) | not yet     |
-|     |         |            |                                 | DOR-2702: resuming right after a stopped `fly deploy` failed while Fly held the Machine's lease, and ended on a raw error code                                    | #2529        | v0.97.0     |
-| L3  | v0.97.0 | 2026-10-04 | PASS ((a), (b), (b2), (c), (d)) | none                                                                                                                                                              |              |             |
+| Run | Release | Date       | Result                          | Defect found                                                                                                                                                      | Fixed in | Released in |
+| --- | ------- | ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- |
+| L3  | v0.94.0 | 2026-10-01 | Stopped at (a)                  | A refused Fly create ended in "creation outcome requires manual reconciliation", and `--remove-uncertain` could not clear the run (DOR-2656, DOR-2657)            | #2447    | v0.96.0     |
+| L2  | v0.95.0 | 2026-10-02 | Stopped at the driver           | Step 15: a channel reopened at an old saved row after the reader caught up. Step 17: the driver expected the wrong first menu row (a test fix, not a product bug) | #2476    | v0.96.0     |
+| L2  | v0.96.0 | 2026-10-03 | PASS                            | none                                                                                                                                                              |          |             |
+| L3  | v0.96.0 | 2026-10-03 | (a) passed; (b) and (c) stopped | DOR-2700: the Neon preflight message was a race, vague 6 times in 9, and an organization key could never pass                                                     | #2526    | v0.97.0     |
+|     |         |            |                                 | DOR-2701: Control-C right after a create intent left a run that `--resume` could not continue                                                                     | #2528    | not yet     |
+|     |         |            |                                 | DOR-2702: resuming right after a stopped `fly deploy` failed while Fly held the Machine's lease, and ended on a raw error code                                    | #2529    | v0.97.0     |
+| L3  | v0.97.0 | 2026-10-04 | PASS ((a), (b), (b2), (c), (d)) | none                                                                                                                                                              |          |             |
 
 ## Findings that did not block
 

@@ -13,6 +13,9 @@ import { readNeonBranches, readNeonBranchTopology, readNeonProjects } from '../n
 import { deleteNeonProject } from '../neon-mutate.js';
 import { readFlySecretInventory } from '../tigris-session.js';
 import { ProviderMutationError } from '../provider-mutation.js';
+import { FlyGraphqlClientError } from '../fly-graphql-client.js';
+import { FLY_APP_NOT_FOUND } from '../fly-graphql-contract.js';
+import type { LaunchResourceChecks } from '../provenance/forget-launch.js';
 import type {
   NeonProjectFacts,
   RemovalProvider,
@@ -39,16 +42,39 @@ async function confirmFlyNameUnlisted(
   }
 }
 
+/**
+ * Read one app by name, counting it missing only on the bar DOR-2656 set for "the create never
+ * landed": Fly's exact `NOT_FOUND` on `app`, and an organization listing, a separate read, that
+ * lacks the name. Any other null answer is a failed read, because a server error can null the field.
+ */
+async function readFlyAppOrProvedMissing(
+  options: CommunityServiceOptions,
+  organization: string,
+  appName: string
+) {
+  const app = await useTigrisClient(options, (client) =>
+    client.readAppProvenanceOrNotFound(appName)
+  );
+  if (app === null) throw new ProviderMutationError('INVALID_RESPONSE');
+  if (app === FLY_APP_NOT_FOUND) {
+    await confirmFlyNameUnlisted(options, organization, appName);
+    return null;
+  }
+  return app;
+}
+
 function flyProbe(options: CommunityServiceOptions): UncertainResourceProbe {
   const readApp = (name: string) =>
     useTigrisClient(options, (client) => client.readAppProvenance(name));
   return {
     find: async (intent) => {
-      const app = await readApp(intent.resourceName);
-      if (app === null) {
-        await confirmFlyNameUnlisted(options, intent.organizationId, intent.resourceName);
-        return { kind: 'absent' };
-      }
+      // "Absent" can let a run go on to create this name again, so it takes the strict proof.
+      const app = await readFlyAppOrProvedMissing(
+        options,
+        intent.organizationId,
+        intent.resourceName
+      );
+      if (app === null) return { kind: 'absent' };
       // An app with this name in another organization belongs to someone else; it is not read
       // further and never offered for removal.
       if (app.organizationSlug !== intent.organizationId) return { kind: 'absent' };
@@ -199,4 +225,38 @@ export function createDefaultRemovalProbes(
       : provider === 'neon'
         ? neonProbe(options)
         : tigrisProbe(options);
+}
+
+/**
+ * Exact checks that a run's own resources are gone, for `--forget`. Each one throws when it cannot
+ * read the answer, so a failed read is never taken for "gone".
+ *
+ * @param options - Local executable and profile settings.
+ */
+export function createDefaultLaunchResourceChecks(
+  options: CommunityServiceOptions
+): LaunchResourceChecks {
+  const flyAppGone = async (appName: string, organization: string) =>
+    (await readFlyAppOrProvedMissing(options, organization, appName)) === null;
+  return {
+    flyAppGone,
+    neonProjectGone: async (projectId, organization) =>
+      !(await readNeonProjects(options.neon, organization)).some(
+        (project) => project.id === projectId
+      ),
+    tigrisBucketGone: async (addOnId) => {
+      try {
+        await useTigrisClient(options, (client) => client.readTigris(addOnId));
+        return false;
+      } catch (error) {
+        // Fly's exact "no such add-on" answer, or its record of a deleted one.
+        if (error instanceof FlyGraphqlClientError && error.code === 'ADD_ON_MISSING') return true;
+        throw error;
+      }
+    },
+    findIntended: (intent, journal) =>
+      createDefaultRemovalProbes(options)(intent.provider).find(intent, journal),
+    tigrisNameHeld: (bucketName) =>
+      useTigrisClient(options, (client) => client.isTigrisNameHeld(bucketName)),
+  };
 }
