@@ -98,6 +98,22 @@ describe('renderInstalledTable', () => {
     expect(table).toMatch(/^mcp-thing\s+.*global\s+libraries incomplete$/m);
   });
 
+  // DOR-2696: a dev link names its folder, and says when the folder is gone.
+  it('marks dev links with their folder, and a missing folder', () => {
+    const table = renderInstalledTable([
+      { ...GLOBAL_FLOW, devLink: { path: '/code/flow', state: 'active', parked: false } },
+      {
+        ...GLOBAL_FLOW,
+        name: 'fmt',
+        version: 'unknown',
+        devLink: { path: '/code/fmt', state: 'folder-missing', parked: true },
+      },
+    ]);
+
+    expect(table).toMatch(/^flow\s+.*global\s+dev link → \/code\/flow$/m);
+    expect(table).toMatch(/^fmt\s+.*global\s+dev link → \/code\/fmt \(folder missing\)$/m);
+  });
+
   it('leaves the NOTES column out when no row has a note', () => {
     expect(renderInstalledTable([GLOBAL_FLOW])).not.toContain('NOTES');
   });

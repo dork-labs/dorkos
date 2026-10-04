@@ -162,6 +162,9 @@ dorkos marketplace update <package> --project <path>      # Check or apply withi
 dorkos marketplace held-back                              # List packages held back from every session, and why
 dorkos marketplace held-back --allow <package>            # Print what it runs, then let it load (asks first)
 dorkos marketplace held-back --refuse <package>           # Keep it held back
+dorkos marketplace link <path>                            # Run a package from a folder on your computer (asks first)
+dorkos marketplace link <path> --replace-installed        # ...setting the installed copy aside while linked
+dorkos marketplace unlink <package>                       # Stop running it from the folder (you only)
 
 dorkos marketplace add <url> [--name <name>]              # Register a new source and fetch its listing (you only)
 dorkos marketplace remove <name>                          # Remove a source (you only)
@@ -194,6 +197,8 @@ A package linked to a working copy is never checked, so `outdated` lists it unde
 
 - `installed --json` prints `{ "installed": [...] }`, one entry per installation.
 - `outdated --json` prints `{ "outdated": [...], "unknown": [...], "linked": [...] }`. Each entry is one installation's check, with its name, both versions, where it lives, and a `note` saying why when it couldn't be checked. Packages that are up to date are left out.
+
+`link` runs a plugin or skill pack straight from a folder on your computer, so you can work on it without reinstalling. It shows the package, the folder, everything it runs and what it replaces, then asks you (`--yes` skips the question). Add `--project <path>` to link it for one project only. If you already have the package installed, add `--replace-installed`: the installed copy is set aside, not deleted. An agent that runs `link` gets an approval id and a token instead, and runs it again with `--approval <token>` once you say yes in DorkOS. `unlink` switches back: your installed copy comes back, or the package is removed. Your folder is never touched, and only you can unlink. `installed` marks each one `dev link → <folder>`, and `dorkos doctor` names any whose folder is gone.
 
 `add` and `remove` are yours alone. A source is a place DorkOS will download and run code from, so an agent that runs either one is turned down with a plain refusal telling it to ask you. See [Marketplace sources](/docs/marketplace#marketplace-sources).
 

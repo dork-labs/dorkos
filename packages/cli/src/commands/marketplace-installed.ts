@@ -7,12 +7,13 @@
  * every scope; with it, the view one project sees (global installs plus its
  * own). `--json` prints `{ installed }`, the server's rows untouched.
  * `--verify` also says whether each installation's files still match what
- * was installed (DOR-2197), in a FILES column.
+ * was installed (DOR-2197), in a FILES column. A dev link (DOR-2696) is marked
+ * `dev link → <folder>` in NOTES, with what is wrong when it is not in use.
  *
  * @module commands/marketplace-installed
  */
 import { parseArgs } from 'node:util';
-import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
+import type { DevLinkState, InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import { apiCall } from '../lib/api-client.js';
 import { placeOf } from '../lib/installation-label.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
@@ -93,9 +94,26 @@ function filesOf(pkg: InstalledPackage): string | undefined {
   }
 }
 
+/** What a dev link that is not in use says after its folder. */
+const DEV_LINK_TROUBLE: Record<Exclude<DevLinkState, 'active'>, string> = {
+  'folder-missing': 'folder missing',
+  'link-missing': 'link removed',
+  'link-replaced': 'link replaced',
+};
+
+/** The dev-link note: `dev link → <folder>`, and what is wrong when it is not in use. */
+function devLinkNoteOf(pkg: InstalledPackage): string | undefined {
+  if (!pkg.devLink) return undefined;
+  const { path, state } = pkg.devLink;
+  return state === 'active'
+    ? `dev link → ${path}`
+    : `dev link → ${path} (${DEV_LINK_TROUBLE[state]})`;
+}
+
 /** The short notes a row carries, in a fixed order. */
 function notesOf(pkg: InstalledPackage): string {
   return [
+    devLinkNoteOf(pkg),
     pkg.linked && 'linked',
     pkg.scope === 'override' && 'overrides global',
     pkg.dependencyWarnings && pkg.dependencyWarnings.length > 0 && 'libraries incomplete',
@@ -221,6 +239,14 @@ export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): P
         (sortable.length > 0
           ? ` Run 'dorkos marketplace check-files ${sortable[0].name}' to sort them.`
           : " Delete any you don't need.")
+    );
+  }
+  const devLinked = packages.filter((p) => p.devLink);
+  if (devLinked.length > 0) {
+    console.log('');
+    console.log(
+      'dev link: runs straight from a folder on this computer. ' +
+        `Run 'dorkos marketplace unlink ${devLinked[0].name}' to switch back.`
     );
   }
   if (packages.some((p) => p.linked)) {
