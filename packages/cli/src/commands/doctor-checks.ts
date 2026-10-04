@@ -333,14 +333,19 @@ export function checkDevLinks(dorkHome: string): CheckResult {
  * server's `devLinkStateOf` (`services/marketplace/dev-links/registry.ts`),
  * which the CLI cannot import. Reads only; never repairs.
  */
-function devLinkStateSync(record: Pick<DevLinkRecord, 'slot' | 'target'>): DevLinkState {
+function devLinkStateSync(
+  record: Pick<DevLinkRecord, 'slot' | 'target'>
+): DevLinkState | 'slot-unreadable' {
   let lstatIsLink = false;
   let present = false;
   try {
     lstatIsLink = fs.lstatSync(record.slot).isSymbolicLink();
     present = true;
-  } catch {
-    // Nothing at the slot.
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // Only "not there" means not there. A permission error says nothing about
+    // whether the link exists, so it is not reported as removed.
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') return 'slot-unreadable';
   }
   let realpathOfSlot: string | null = null;
   try {

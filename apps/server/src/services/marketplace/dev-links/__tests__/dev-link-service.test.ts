@@ -544,7 +544,11 @@ describe('DevLinkService.unlink', () => {
     await rm(globalSlot());
     await writePackage(globalSlot(), { version: '2.0.0' });
     expect((await service().list()).links[0]?.state).toBe('link-replaced');
-    await service().unlink({ name: 'flow', scope: 'global' });
+    // Says the other thing was left in place, so nobody reads "removed" as gone.
+    expect(await service().unlink({ name: 'flow', scope: 'global' })).toEqual({
+      restored: 'removed',
+      leftInPlace: true,
+    });
     // The real folder someone put there is untouched.
     expect(
       JSON.parse(await readFile(path.join(globalSlot(), '.dork', 'manifest.json'), 'utf-8')).version
@@ -572,6 +576,7 @@ describe('DevLinkService.unlink', () => {
     expect(await service().unlink({ name: 'flow', scope: 'global' })).toEqual({
       restored: 'removed',
       parkedLeftAt: parked,
+      leftInPlace: true,
     });
     expect((await lstat(parked)).isDirectory()).toBe(true);
     expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });

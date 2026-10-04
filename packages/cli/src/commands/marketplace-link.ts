@@ -9,7 +9,10 @@
  * It asks `POST /api/marketplace/dev-links/preview` what linking would do,
  * prints the package name, the folder, what it runs and what it replaces, and
  * asks before linking (`--yes` skips the question). Then `POST
- * /api/marketplace/dev-links` makes the link.
+ * /api/marketplace/dev-links` makes the link, sending back the preview's
+ * `change` text as `expectedChange`: the yes covers what the person read, so a
+ * folder that gained a hook or an extension while the question waited is
+ * refused rather than linked.
  *
  * Linking changes which code runs, so the route gates it: a caller that is not
  * the person at the keyboard (an agent, which carries `DORKOS_AGENT_TOKEN`, and
@@ -24,12 +27,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import type { DevLinkPreview, DevLinkStatus } from '@dorkos/shared/marketplace-schemas';
-import { apiCall } from '../lib/api-client.js';
+import type {
+  DevLinkPreview,
+  DevLinkPreviewResponse,
+  DevLinkStatus,
+} from '@dorkos/shared/marketplace-schemas';
+import { ApiError, apiCall } from '../lib/api-client.js';
 import { confirm } from '../lib/confirm-prompt.js';
 import { renderDisclosureLines } from '../lib/disclosure-render.js';
 import { printError, printJson } from '../lib/operator-output.js';
-import { resolveProjectFlag, shellWord } from '../lib/package-commands.js';
+import { resolveProjectFlag, shellWord, unlinkCommand } from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** The longest folder path the server accepts (`DEV_LINK_PATH_MAX` on the route). */
@@ -116,6 +123,28 @@ function runningAsAgent(): boolean {
 }
 
 /**
+ * Why a folder could not be read, naming the system's reason. Pure.
+ *
+ * @param typed - The folder as resolved from what was typed.
+ * @param err - What `realpath` threw.
+ * @returns One line for stderr.
+ */
+export function describeUnreadableFolder(typed: string, err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  const reason =
+    code === 'ENOENT'
+      ? `No folder at ${typed}.`
+      : code === 'EACCES' || code === 'EPERM'
+        ? `Can't read ${typed}: permission denied (${code}).`
+        : `Can't read ${typed}${code ? ` (${code})` : ''}.`;
+  // A quoted '~/x' reaches us as <cwd>/~/x: the shell only expands an unquoted ~.
+  const tilde = typed.split(path.sep).includes('~')
+    ? ' The shell does not expand ~ inside quotes; use the full path.'
+    : '';
+  return `Error: ${reason}${tilde}`;
+}
+
+/**
  * The lines describing what linking would do. Pure, so tests can read them.
  *
  * @param preview - The server's preview.
@@ -148,8 +177,8 @@ export async function runMarketplaceLink(args: MarketplaceLinkArgs): Promise<num
   let folder: string;
   try {
     folder = fs.realpathSync(args.folder);
-  } catch {
-    console.error(`Error: No folder at ${args.folder}.`);
+  } catch (err) {
+    console.error(describeUnreadableFolder(args.folder, err));
     return 1;
   }
   if (folder.length > PATH_MAX) {
@@ -160,10 +189,11 @@ export async function runMarketplaceLink(args: MarketplaceLinkArgs): Promise<num
   const where = { scope, ...(args.projectPath && { projectPath: args.projectPath }) };
 
   try {
-    const preview = await apiCall<DevLinkPreview>('POST', '/api/marketplace/dev-links/preview', {
-      path: folder,
-      ...where,
-    });
+    const preview = await apiCall<DevLinkPreviewResponse>(
+      'POST',
+      '/api/marketplace/dev-links/preview',
+      { path: folder, ...where, ...(args.replaceInstalled && { replaceInstalled: true }) }
+    );
     if (!args.json) {
       for (const line of describeLinkPreview(preview)) console.log(line);
       console.log('');
@@ -201,6 +231,10 @@ export async function runMarketplaceLink(args: MarketplaceLinkArgs): Promise<num
         ...where,
         ...(args.replaceInstalled && { replaceInstalled: true }),
         via: 'terminal',
+        // What the person just read. The server refuses the link when the
+        // folder no longer reads the same, and ignores this for an agent,
+        // whose yes is the approval card.
+        ...(typeof preview.change === 'string' && { expectedChange: preview.change }),
       },
       args.approvalToken ? { 'X-DorkOS-Approval': args.approvalToken } : undefined
     );
@@ -235,11 +269,17 @@ export async function runMarketplaceLink(args: MarketplaceLinkArgs): Promise<num
     console.log(`${status.name} now runs from ${status.path}.`);
     if (status.parked) {
       console.log(
-        `Your installed copy is set aside. Run 'dorkos marketplace unlink ${status.name}' to get it back.`
+        `Your installed copy is set aside. To get it back, run: ${unlinkCommand(status.name, args.projectPath)}`
       );
     }
     return 0;
   } catch (err) {
+    if (err instanceof ApiError && err.body.code === 'dev_link_changed') {
+      console.error(
+        'Nothing was linked. The folder changed since you checked it. Run the command again.'
+      );
+      return 1;
+    }
     printError(err);
     return 1;
   }

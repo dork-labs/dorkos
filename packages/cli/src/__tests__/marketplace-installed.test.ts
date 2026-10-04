@@ -152,6 +152,44 @@ describe('runMarketplaceInstalled', () => {
     expect(printed(logSpy)).toMatch(/flow\s+0\.7\.2\s+plugin\s+Alpha/);
   });
 
+  // Purpose (DOR-2696): the footer's unlink line must work when pasted. A
+  // project's dev link is unlinked with its project; without --project the
+  // command looks in the global slot and says nothing is linked there.
+  it("names a project dev link's project in the unlink hint", async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, {
+        packages: [
+          {
+            ...ALPHA_FLOW,
+            agentName: undefined,
+            agentPath: '/work/my alpha',
+            devLink: { path: '/code/flow', state: 'active', parked: false },
+          },
+        ],
+      })
+    );
+
+    await runMarketplaceInstalled({ json: false, verify: false });
+
+    expect(printed(logSpy)).toContain(
+      "To switch back, run: dorkos marketplace unlink flow --project '/work/my alpha'"
+    );
+  });
+
+  it('gives a global dev link a bare unlink hint', async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, {
+        packages: [
+          { ...GLOBAL_FLOW, devLink: { path: '/code/flow', state: 'active', parked: false } },
+        ],
+      })
+    );
+
+    await runMarketplaceInstalled({ json: false, verify: false });
+
+    expect(printed(logSpy)).toContain('To switch back, run: dorkos marketplace unlink flow');
+  });
+
   it("forwards --project as the projectPath query, for that project's view", async () => {
     fetchMock.mockResolvedValueOnce(mockResponse(200, { packages: [] }));
 

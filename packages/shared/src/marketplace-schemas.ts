@@ -1870,6 +1870,20 @@ export interface DevLinkPreview {
   extensions: string[];
 }
 
+/**
+ * What `POST /api/marketplace/dev-links/preview` answers: the preview plus the
+ * approval text a yes binds to.
+ */
+export interface DevLinkPreviewResponse extends DevLinkPreview {
+  /**
+   * The approval card text for this folder as it reads now. A person who says
+   * yes after reading the preview sends it back as `expectedChange` on
+   * `POST /api/marketplace/dev-links`, which refuses with `dev_link_changed`
+   * when the folder no longer describes the same way.
+   */
+  change: string;
+}
+
 /** Refusal codes a dev link can answer with, each with one plain sentence. */
 export type DevLinkErrorCode =
   | 'dev_link_path_not_real'
@@ -1896,8 +1910,12 @@ export interface DevLinkHealthEntry {
   projectPath?: string;
   /** The real path of the working folder. */
   target: string;
-  /** What the link looks like on disk now. */
-  state: DevLinkState;
+  /**
+   * What the link looks like on disk now, or `slot-unreadable` when the
+   * place it sits could not be looked at (a permission error, say), so
+   * whether it is there is unknown rather than "missing".
+   */
+  state: DevLinkState | 'slot-unreadable';
 }
 
 /** What reading the registry found, for {@link judgeDevLinks}. */
@@ -1905,10 +1923,11 @@ export type DevLinkHealthReading =
   { entries: readonly DevLinkHealthEntry[] } | { unreadable: true; file?: string };
 
 /** What each state that is not `active` means, said to a person. */
-const DEV_LINK_STATE_WORDS: Record<Exclude<DevLinkState, 'active'>, string> = {
+const DEV_LINK_STATE_WORDS: Record<Exclude<DevLinkHealthEntry['state'], 'active'>, string> = {
   'folder-missing': 'its folder is gone',
   'link-missing': 'its link was removed',
   'link-replaced': 'something else is in its place',
+  'slot-unreadable': "its place on disk can't be read; check its permissions",
 };
 
 /**
@@ -1954,6 +1973,8 @@ export function judgeDevLinks(
         : ' (one project)'
       : '';
   const broken = entries.filter((entry) => entry.state !== 'active');
+  // Unlinking cannot fix a place nobody can read, so those get no unlink line.
+  const unlinkable = broken.filter((entry) => entry.state !== 'slot-unreadable');
   const count = (n: number) => `${n} dev ${n === 1 ? 'link' : 'links'}`;
   if (broken.length === 0) {
     return {
@@ -1970,19 +1991,22 @@ export function judgeDevLinks(
     detail: broken
       .map(
         (entry) =>
-          `${entry.name}${where(entry)}: ${DEV_LINK_STATE_WORDS[entry.state as Exclude<DevLinkState, 'active'>]}` +
+          `${entry.name}${where(entry)}: ${DEV_LINK_STATE_WORDS[entry.state as Exclude<DevLinkHealthEntry['state'], 'active'>]}` +
           (opts.paths && entry.state === 'folder-missing' ? ` (${entry.target})` : '')
       )
       .join('; '),
     fix: [
-      'Unlink each one to switch back:',
-      ...broken.map(
+      ...(unlinkable.length > 0 ? ['Unlink each one to switch back:'] : []),
+      ...unlinkable.map(
         (entry) =>
           `  dorkos marketplace unlink ${entry.name}` +
           (entry.scope === 'project'
             ? ` --project ${opts.paths && entry.projectPath ? devLinkShellWord(entry.projectPath) : '<project folder>'}`
             : '')
       ),
+      ...(unlinkable.length < broken.length
+        ? ['Make sure you can read the plugins folder, then run dorkos doctor again.']
+        : []),
     ].join('\n'),
   };
 }

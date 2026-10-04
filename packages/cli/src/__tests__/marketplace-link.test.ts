@@ -12,6 +12,7 @@ vi.mock('../lib/confirm-prompt.js', () => ({ confirm: vi.fn() }));
 
 import { confirm } from '../lib/confirm-prompt.js';
 import {
+  describeUnreadableFolder,
   parseMarketplaceLinkArgs,
   runMarketplaceLink,
   type MarketplaceLinkArgs,
@@ -45,6 +46,9 @@ const originalIsTTY = process.stdin.isTTY;
 const printed = () => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
 const printedErr = () => errSpy.mock.calls.map((c) => String(c[0])).join('\n');
 
+/** The approval text the preview hands back, which the yes binds to. */
+const CHANGE = 'Folder: /x\nExtensions it may run: none';
+
 function preview(overrides: Record<string, unknown> = {}) {
   return {
     name: 'flow',
@@ -56,6 +60,7 @@ function preview(overrides: Record<string, unknown> = {}) {
     replaces: null,
     effects: null,
     extensions: [],
+    change: CHANGE,
     ...overrides,
   };
 }
@@ -158,7 +163,14 @@ describe('runMarketplaceLink', () => {
     // The link the person typed is resolved: the folder shown is the folder linked.
     expect(call(0).body).toEqual({ path: realFolder, scope: 'global' });
     expect(call(1).url).toMatch(/\/api\/marketplace\/dev-links$/);
-    expect(call(1).body).toEqual({ path: realFolder, scope: 'global', via: 'terminal' });
+    // The yes is bound to the preview the person read, not to the folder as it
+    // reads when the request lands.
+    expect(call(1).body).toEqual({
+      path: realFolder,
+      scope: 'global',
+      via: 'terminal',
+      expectedChange: CHANGE,
+    });
     expect(printed()).toContain(`Folder: ${realFolder}`);
     expect(printed()).toContain('runs nothing on its own');
     expect(printed()).toContain(`flow now runs from ${realFolder}.`);
@@ -225,9 +237,14 @@ describe('runMarketplaceLink', () => {
       projectPath: project,
       replaceInstalled: true,
       via: 'terminal',
+      expectedChange: CHANGE,
     });
+    // The preview is asked with the replace choice, so its text matches the link's.
+    expect(call(0).body).toMatchObject({ replaceInstalled: true });
     expect(printed()).toContain('Sets aside the installed copy (1.0.0)');
-    expect(printed()).toContain("Run 'dorkos marketplace unlink flow' to get it back.");
+    expect(printed()).toContain(
+      `To get it back, run: dorkos marketplace unlink flow --project ${project}`
+    );
   });
 
   // The agent path: the CLI always carries the agent's identity, the server
@@ -278,6 +295,39 @@ describe('runMarketplaceLink', () => {
     expect(printedErr()).toContain('No folder at');
   });
 
+  it('says plainly that the folder changed when the server refuses the stale yes', async () => {
+    // Purpose: a folder that gained a hook while the question waited is
+    // refused; the person is told what happened and what to do, not a code.
+    confirmMock.mockResolvedValueOnce(true);
+    fetchMock.mockResolvedValueOnce(mockResponse(200, preview())).mockResolvedValueOnce(
+      mockResponse(409, {
+        error: 'The folder changed after you approved it. Ask again.',
+        code: 'dev_link_changed',
+      })
+    );
+
+    expect(await runMarketplaceLink(args())).toBe(1);
+
+    expect(printedErr()).toBe(
+      'Nothing was linked. The folder changed since you checked it. Run the command again.'
+    );
+    expect(printed()).not.toContain('now runs from');
+  });
+
+  it('names the reason a folder cannot be read, and the quoted-~ trap', () => {
+    // Purpose: "No folder" for a permission problem sends the person looking
+    // in the wrong place; a quoted ~ reaches us as a literal folder named ~.
+    expect(describeUnreadableFolder('/a/b', { code: 'EACCES' })).toBe(
+      "Error: Can't read /a/b: permission denied (EACCES)."
+    );
+    expect(describeUnreadableFolder('/a/b', { code: 'ENAMETOOLONG' })).toBe(
+      "Error: Can't read /a/b (ENAMETOOLONG)."
+    );
+    expect(describeUnreadableFolder('/cwd/~/code', { code: 'ENOENT' })).toBe(
+      'Error: No folder at /cwd/~/code. The shell does not expand ~ inside quotes; use the full path.'
+    );
+  });
+
   it('prints the server refusal as it is', async () => {
     fetchMock.mockResolvedValueOnce(
       mockResponse(400, {
@@ -318,6 +368,15 @@ describe('marketplace unlink', () => {
     expect(await runMarketplaceUnlink({ name: 'flow', json: false })).toBe(0);
 
     expect(printed()).toBe('flow removed. Your folder was not touched.');
+  });
+
+  it('does not call the package removed when something else holds its place', () => {
+    // Purpose: unlink left that other thing alone; "removed" would claim more
+    // than happened.
+    expect(describeUnlink('flow', { restored: 'removed', leftInPlace: true })).toEqual([
+      'Unlinked flow. Your folder was not touched.',
+      'Something else had already taken its place, and that was left as it is.',
+    ]);
   });
 
   it('says where an installed copy that could not go back is', () => {

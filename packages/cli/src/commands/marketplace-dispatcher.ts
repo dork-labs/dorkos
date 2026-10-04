@@ -185,19 +185,22 @@ Usage: dorkos marketplace link <path> [options]
 
 Run a marketplace package straight from a folder on this computer, so you can
 work on it without reinstalling. It shows the package, the folder, everything
-it runs and what it replaces, then asks before linking.
+it runs and what it replaces, then asks before linking. If the folder changes
+while it asks, nothing is linked.
 
 An agent has to get a person's approval first: the command answers with an
 approval id and a token, and you run it again with --approval once the person
-has said yes in DorkOS.
+has said yes in DorkOS. An agent is never asked here; the approval is its yes.
 
 Options:
       --project <path>     Link it for this project only (default: every session)
       --replace-installed  Set the installed copy aside while linked; unlinking
                            brings it back
   -y, --yes                Do not ask first (it still prints what runs)
-      --approval <token>   Retry a link a person approved in DorkOS
-      --json               Print the answer as JSON (needs --yes to link)
+      --approval <token>   Retry a link a person approved in DorkOS; like --yes,
+                           it is not asked again here
+      --json               Print the answer as JSON. With no one to ask, a
+                           person adds --yes; an agent does not need it
 
 Examples:
   dorkos marketplace link ~/code/my-plugin

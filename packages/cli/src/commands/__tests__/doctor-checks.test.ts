@@ -276,6 +276,53 @@ describe('checkDevLinks', () => {
     }
   });
 
+  it('says a link that was removed is not in use, with the unlink that finishes it', () => {
+    const dir = home([{ name: 'flow', folder: 'flow', exists: true }]);
+    try {
+      fs.unlinkSync(path.join(dir, 'plugins', 'flow'));
+      const result = checkDevLinks(dir);
+      expect(result.detail).toBe('flow: its link was removed');
+      expect(result.fix).toContain('dorkos marketplace unlink flow');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'calls a slot it cannot look at unreadable, not removed',
+    () => {
+      // Purpose: a permission error says nothing about whether the link is
+      // there. Reporting it removed, with an unlink as the fix, would send the
+      // person to undo a link that may be fine.
+      const dir = home([{ name: 'flow', folder: 'flow', exists: true }]);
+      const plugins = path.join(dir, 'plugins');
+      try {
+        fs.chmodSync(plugins, 0o000);
+        const result = checkDevLinks(dir);
+        expect(result.status).toBe('warn');
+        expect(result.detail).toBe("flow: its place on disk can't be read; check its permissions");
+        expect(result.detail).not.toContain('removed');
+        expect(result.fix).not.toContain('dorkos marketplace unlink');
+      } finally {
+        fs.chmodSync(plugins, 0o755);
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it('warns when the registry is not a file it can read', () => {
+    // Purpose: any read error but "no file" is a warning, never "No dev links".
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-devlinks-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'marketplace', 'dev-links.json'), { recursive: true });
+      const result = checkDevLinks(dir);
+      expect(result.status).toBe('warn');
+      expect(result.label).toBe("Dev links can't be read");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('warns when the registry cannot be read, naming the file', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-devlinks-'));
     try {

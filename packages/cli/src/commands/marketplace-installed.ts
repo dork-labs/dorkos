@@ -17,7 +17,7 @@ import type { DevLinkState, InstalledPackage } from '@dorkos/shared/marketplace-
 import { apiCall } from '../lib/api-client.js';
 import { placeOf } from '../lib/installation-label.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
-import { resolveProjectFlag } from '../lib/package-commands.js';
+import { resolveProjectFlag, unlinkCommand } from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runMarketplaceInstalled}. */
@@ -244,9 +244,13 @@ export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): P
   const devLinked = packages.filter((p) => p.devLink);
   if (devLinked.length > 0) {
     console.log('');
+    // A project's dev link is unlinked with its project, or the command looks
+    // in the global slot and finds nothing.
+    const first = devLinked[0];
+    const project = first.scope && first.scope !== 'global' ? first.agentPath : undefined;
     console.log(
       'dev link: runs straight from a folder on this computer. ' +
-        `Run 'dorkos marketplace unlink ${devLinked[0].name}' to switch back.`
+        `To switch back, run: ${unlinkCommand(first.name, project)}`
     );
   }
   if (packages.some((p) => p.linked)) {

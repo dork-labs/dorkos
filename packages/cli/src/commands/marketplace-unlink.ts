@@ -33,6 +33,8 @@ export interface UnlinkResultBody {
   restored: 'installed' | 'removed';
   /** Where the set-aside copy still is, when something else held its place. */
   parkedLeftAt?: string;
+  /** Set when something else had already taken the link's place; it was left as it is. */
+  leftInPlace?: true;
 }
 
 /** One-line usage string surfaced in error messages. */
@@ -82,6 +84,14 @@ export function describeUnlink(name: string, result: UnlinkResultBody): string[]
     return [
       `Unlinked ${name}. Your folder was not touched.`,
       `Your installed copy couldn't go back because something else is in its place. It is still at ${result.parkedLeftAt}.`,
+    ];
+  }
+  // Only the record went: what is in the slot now is not the dev link, and
+  // unlink did not touch it, so it is not "removed".
+  if (result.leftInPlace) {
+    return [
+      `Unlinked ${name}. Your folder was not touched.`,
+      'Something else had already taken its place, and that was left as it is.',
     ];
   }
   return [`${name} removed. Your folder was not touched.`];

@@ -63,6 +63,18 @@ describe('runMarketplaceDispatcher', () => {
     expect(help).toMatch(/dorkos install.*shorthand/is);
   });
 
+  it('says in link help that --approval skips the question, and an agent needs no --yes', async () => {
+    // Purpose (DOR-2696): the help must match what the command does. --approval
+    // skips the local question like --yes, and an agent's --json run links
+    // after approval with no --yes at all.
+    expect(await runMarketplaceDispatcher('link', ['--help'])).toBe(0);
+
+    const help = printed(logSpy);
+    expect(help).toMatch(/--approval <token>.*like --yes/s);
+    expect(help).toMatch(/an agent does not need it/);
+    expect(help).not.toContain('needs --yes to link');
+  });
+
   it.each([
     'install',
     'update',
