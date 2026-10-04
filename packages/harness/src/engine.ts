@@ -19,6 +19,10 @@ import { CLAUDE_COMMANDS_DIR, CLAUDE_SKILLS_DIR } from './plan/installed-project
 import type { ClaudeOnlySkillLocation, ProjectionPlan } from './plan/types.js';
 import type { ClaudeHooksConfig } from './generate/hooks.js';
 import { scanInstalledSources } from './sources/installed.js';
+import {
+  localExtensionSkillPackages,
+  readRunningExtensionSkillsSync,
+} from './sources/running-extension-skills.js';
 import type { DevLinkRecord } from '@dorkos/shared/marketplace-schemas';
 import { inventorySourceTree } from './inventory/index.js';
 import { detectHarnessFootprints } from './scaffold/manifest.js';
@@ -174,6 +178,15 @@ export function scanClaudeOnlySkills(
  * true the moment somebody answers that question. Injected for the same reason
  * as the two above — this engine reads no config.
  *
+ * The running local extensions' skills (DOR-2685) are read from the server's
+ * ledger under the dork home (`sources/running-extension-skills.ts`), so a
+ * terminal `dorkos harness sync` plans exactly what the server plans and its
+ * sweep never removes a running extension's skills. `opts.extensionSkillsHome`
+ * names the dork home to read that ledger from when it differs from
+ * `opts.dorkHome` — a caller that keeps the global plugins out by passing no
+ * home (an agent workspace) still reads the ledger, so it does not sweep links
+ * the server projected.
+ *
  * @param repoRoot - absolute path to the repository root.
  * @param opts - optional resolved dork home, enabling global-scope projection,
  *   an optional per-package gate on hook contribution, the harness DorkOS's own
@@ -188,6 +201,7 @@ export function project(
     dorkosHarness?: HarnessId;
     sharedWithTools?: boolean;
     devLinks?: readonly DevLinkRecord[];
+    extensionSkillsHome?: string;
   }
 ): ProjectionPlan {
   const installed = scanInstalledSources({
@@ -195,6 +209,14 @@ export function project(
     projectRoot: repoRoot,
     ...(opts?.devLinks ? { devLinks: opts.devLinks } : {}),
   });
+  const ledgerHome = opts?.extensionSkillsHome ?? opts?.dorkHome;
+  const extensions =
+    ledgerHome === undefined
+      ? { packages: [], warnings: [] }
+      : localExtensionSkillPackages(readRunningExtensionSkillsSync(ledgerHome), {
+          projectRoot: repoRoot,
+          dorkHome: ledgerHome,
+        });
   const manifest = loadManifest(repoRoot);
   return buildPlan({
     repoRoot,
@@ -206,6 +228,8 @@ export function project(
     claudeOnlySkills: scanClaudeOnlySkills(repoRoot, manifest),
     installedPlugins: installed.plugins,
     unreadableManifests: installed.unreadableManifests,
+    extensionPackages: extensions.packages,
+    extensionWarnings: extensions.warnings,
     // Detection is not a one-shot scaffold question any more. Every plan asks
     // the repo which harnesses it can see, so one added after the manifest was
     // written is reported instead of silently never projected to (TR-11).

@@ -70,6 +70,15 @@ import {
   CLAUDE_PLUGIN_ROOT_TOKEN,
 } from '../scan/scanner.js';
 
+/**
+ * What the skill planners read of a package: its namespace and its skills.
+ *
+ * Narrower than an installed plugin on purpose, so a running extension's skills
+ * (`sources/running-extension-skills.ts`, DOR-2685) go through exactly the same
+ * planners as a plugin's without pretending to be a marketplace package.
+ */
+export type SkillSourcePackage = Pick<InstalledPlugin, 'name' | 'skills'>;
+
 /** Repo-relative Claude Code project slash-command dir (holds authored + wrapper commands). */
 export const CLAUDE_COMMANDS_DIR = '.claude/commands';
 
@@ -604,7 +613,7 @@ function pluginRootSkillWarning(
  */
 export function planInstalledSkills(
   harness: HarnessId,
-  plugin: ProjectInstalledPlugin
+  plugin: SkillSourcePackage
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const dir = INSTALLED_SKILL_TARGET_DIRS[harness];
   const actions: ProjectionAction[] = [];
@@ -682,7 +691,7 @@ export function planInstalledSkills(
  *   when an enabled harness already covers the directory).
  */
 export function planCanonicalSkillLinks(input: {
-  plugins: readonly ProjectInstalledPlugin[];
+  plugins: readonly SkillSourcePackage[];
   harnesses: readonly HarnessId[];
 }): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const alreadyLinked = input.harnesses.some(
@@ -967,7 +976,9 @@ interface EffectiveInstalledSkill {
 }
 
 /** Enumerate every installed skill by its effective (frontmatter) identity. */
-function effectiveInstalledSkills(plugins: readonly InstalledPlugin[]): EffectiveInstalledSkill[] {
+function effectiveInstalledSkills(
+  plugins: readonly SkillSourcePackage[]
+): EffectiveInstalledSkill[] {
   const out: EffectiveInstalledSkill[] = [];
   for (const plugin of plugins) {
     for (const skill of plugin.skills) {
@@ -1000,7 +1011,7 @@ function effectiveInstalledSkills(plugins: readonly InstalledPlugin[]): Effectiv
  */
 export function planSkillNameCollisions(input: {
   authoredSkillNames: readonly string[];
-  plugins: readonly InstalledPlugin[];
+  plugins: readonly SkillSourcePackage[];
   harnesses: readonly HarnessId[];
 }): ProjectionWarning[] {
   const affectedHarnesses = input.harnesses.filter((h) => FRONTMATTER_KEYED_HARNESSES.includes(h));

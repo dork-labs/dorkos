@@ -56,6 +56,7 @@ import {
   sweepAuthoredOrphans,
 } from './authored-orphans.js';
 import {
+  absolutePlanPath,
   isDanglingSymlink,
   isSymlink,
   listDir,
@@ -157,7 +158,7 @@ function scaffoldPresent(absTarget: string): boolean {
 
 /** The relative symlink text that points from `target` to `source`. */
 function relativeLink(repoRoot: string, source: string, target: string): string {
-  return relative(dirname(join(repoRoot, target)), join(repoRoot, source));
+  return relative(dirname(join(repoRoot, target)), absolutePlanPath(repoRoot, source));
 }
 
 /**
@@ -209,7 +210,7 @@ function applySymlink(repoRoot: string, action: ProjectionAction): string | unde
   const absTarget = join(repoRoot, action.target);
   const linkText = relativeLink(repoRoot, action.source, action.target);
 
-  const absSource = join(repoRoot, action.source);
+  const absSource = absolutePlanPath(repoRoot, action.source);
   for (let attempt = 0, removalRetries = 0; attempt < SYMLINK_ATTEMPTS;) {
     if (pathExists(absTarget)) {
       // A real file/dir — never destroy hand-authored content, and say what it is.
@@ -994,7 +995,12 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
       if (kind === 'absent') return true;
       if (kind === 'file' || kind === 'directory') return false;
       const linkText = relativeLink(repoRoot, action.source, action.target);
-      return !linkMatchesPlan(absTarget, join(repoRoot, action.source), linkText, linkCheck());
+      return !linkMatchesPlan(
+        absTarget,
+        absolutePlanPath(repoRoot, action.source),
+        linkText,
+        linkCheck()
+      );
     }
     case 'scaffold':
       return !action.target || !scaffoldPresent(join(repoRoot, action.target));
