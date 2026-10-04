@@ -2,7 +2,7 @@
  * A first-in, first-out counting semaphore: at most `size` tasks run at once,
  * and the rest wait their turn in arrival order.
  *
- * @module services/marketplace/lib/slots
+ * @module lib/concurrency/slots
  */
 
 /** A first-in, first-out counting semaphore. */

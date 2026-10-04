@@ -19,6 +19,12 @@ import { initBoundary } from '../../lib/boundary.js';
 import projectRoutes from '../projects.js';
 import { ProjectRegistry } from '../../services/projects/project-registry.js';
 
+const auth = vi.hoisted(() => ({ enabled: false }));
+
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: (key: string) => (key === 'auth' ? { enabled: auth.enabled } : undefined) },
+}));
+
 vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
@@ -110,6 +116,55 @@ describe('GET /api/projects/resolve', () => {
     const res = await request(server).get('/api/projects/resolve').query({ cwd: outside });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+  });
+
+  it('refuses a caller that names itself an agent with 403, and records nothing', async () => {
+    const res = await request(server)
+      .get('/api/projects/resolve')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .query({ cwd: worktree });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('project_lookup_person_required');
+    expect(res.body).not.toHaveProperty('project');
+  });
+
+  it('refuses a request from another site with 403', async () => {
+    const res = await request(server)
+      .get('/api/projects/resolve')
+      .set('origin', 'https://evil.example')
+      .query({ cwd: worktree });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('project_lookup_person_required');
+    expect(res.body.message).toContain('https://evil.example');
+  });
+
+  it('refuses a cross-site browser request that sends no Origin (an <img> or no-cors fetch)', async () => {
+    const res = await request(server)
+      .get('/api/projects/resolve')
+      .set('sec-fetch-site', 'cross-site')
+      .query({ cwd: worktree });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('project_lookup_person_required');
+    expect(res.body).not.toHaveProperty('project');
+  });
+
+  it('answers the app itself, which a browser marks same-origin', async () => {
+    const res = await request(server)
+      .get('/api/projects/resolve')
+      .set('sec-fetch-site', 'same-origin')
+      .query({ cwd: worktree });
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses a caller without a session cookie while login is on', async () => {
+    auth.enabled = true;
+    try {
+      const res = await request(server).get('/api/projects/resolve').query({ cwd: worktree });
+      expect(res.status).toBe(403);
+      expect(res.body).not.toHaveProperty('project');
+    } finally {
+      auth.enabled = false;
+    }
   });
 
   it('refuses a missing cwd with 400', async () => {
