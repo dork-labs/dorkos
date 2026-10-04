@@ -140,6 +140,54 @@ describe('--forget retires a run only when everything it made is gone', () => {
     await expect(runForgetLaunch(deps)).resolves.toMatchObject({ outcome: 'forgotten' });
   });
 
+  // A bucket is read through this run's own, marker-proved app, so a same-name bucket there in
+  // "another organization" is not proof it is someone else's: the name read must still settle it.
+  it("never takes a same-name bucket on the run's own app as someone else's", async () => {
+    const world = await interruptAt('tigris');
+    world.world.fly = null;
+    world.world.neon = null;
+    const flyNetwork = (await read()).provenance!.flyNetwork!;
+    world.intended.found = {
+      kind: 'tigris',
+      facts: {
+        app: { name: NAME, organization: 'personal', network: flyNetwork },
+        totalCount: 1,
+        addOns: [{ token: 'addon-9', name: NAME, organization: 'elsewhere', createdAt: LATER }],
+      },
+    };
+    world.intended.nameHeld = true;
+    await expect(
+      runForgetLaunch({
+        readJournal: () => readLaunchJournal(journalFile()),
+        discard: (expected: number) => deleteLaunchJournal(journalFile(), expected),
+        checks: world.checks,
+        now: () => LATER,
+      })
+    ).resolves.toEqual({ outcome: 'pending-create', provider: 'tigris', status: 'present' });
+    expect(await readLaunchJournal(journalFile())).not.toBeNull();
+  });
+
+  it('never takes a failed bucket name read for a free name', async () => {
+    const world = await interruptAt('tigris');
+    world.world.fly = null;
+    world.world.neon = null;
+    world.intended.found = { kind: 'tigris', facts: null };
+    await expect(
+      runForgetLaunch({
+        readJournal: () => readLaunchJournal(journalFile()),
+        discard: (expected: number) => deleteLaunchJournal(journalFile(), expected),
+        checks: {
+          ...world.checks,
+          tigrisNameHeld: async () => {
+            throw new Error('unreadable');
+          },
+        },
+        now: () => LATER,
+      })
+    ).resolves.toMatchObject({ outcome: 'pending-create', provider: 'tigris' });
+    expect(await readLaunchJournal(journalFile())).not.toBeNull();
+  });
+
   it('tells the person to delete the access key of a bucket the run made (DOR-2646)', async () => {
     const world = services();
     await executeCommunityCreationPhase(plan, await read(), world.creation);

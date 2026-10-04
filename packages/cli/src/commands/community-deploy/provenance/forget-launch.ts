@@ -33,7 +33,11 @@ export interface LaunchResourceChecks {
    * `--remove-uncertain` makes for its verdict.
    */
   findIntended(intent: PendingIntent, journal: LaunchJournal): Promise<ProbeResult>;
-  /** Whether any bucket anywhere holds this name; only Fly's exact `NOT_FOUND` means free. */
+  /**
+   * Whether Fly's add-on lookup by name finds a bucket with this name; only its exact `NOT_FOUND`
+   * means free. The lookup answers for what the signed-in Fly account can see, which includes the
+   * run's own organization; that is all it is relied on to show.
+   */
   tigrisNameHeld(bucketName: string): Promise<boolean>;
 }
 
@@ -85,8 +89,10 @@ export function runResources(journal: LaunchJournal): RunResource[] {
 }
 
 /**
- * Reasons that show a same-name resource is not this run's: it does not carry the marker this run
- * recorded before its create and sent with it, or it lives where this run never asked for one.
+ * Reasons that show a same-name Fly app or Neon project is not this run's: it does not carry the
+ * marker this run recorded before its create and sent with it, or it lives where this run never
+ * asked for one. Never applied to a bucket: a bucket has no marker of its own and is read through
+ * this run's own app, so a same-name bucket there is never proved someone else's.
  * `outside-window` is deliberately not here: the marker is checked first, so a resource judged
  * only on its time carries this run's marker, and is this run's create landing late.
  */
@@ -116,6 +122,7 @@ export function judgeIntendedCreate(
   if (verdict.verdict === 'absent') return 'not-landed';
   if (
     verdict.verdict === 'unproved' &&
+    intent.provider !== 'tigris' &&
     verdict.candidates.length > 0 &&
     verdict.candidates.every((candidate) => NOT_THIS_RUNS.has(candidate.reason))
   ) {
@@ -136,8 +143,10 @@ async function intendedCreateState(
     judged = 'unreadable';
   }
   if (judged === 'not-landed' || intent.provider !== 'tigris') return judged;
-  // A bucket is read through its app. Once the person has removed that app, the bucket can only be
-  // read by name, and a name nothing holds anywhere cannot be this run's.
+  // A bucket is read through its app, and anything short of "absent" there (the app removed, or a
+  // same-name bucket on it) is settled by name instead. The bucket would live in the run's own
+  // organization, which the signed-in account can see, so a name Fly reports free to it cannot be
+  // this run's bucket. A failed read settles nothing.
   try {
     return (await checks.tigrisNameHeld(intent.resourceName)) ? judged : 'not-landed';
   } catch {
