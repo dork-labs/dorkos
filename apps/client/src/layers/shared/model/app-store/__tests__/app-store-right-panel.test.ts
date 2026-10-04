@@ -62,6 +62,31 @@ describe('RightPanelSlice', () => {
       expect(useAppStore.getState().activeRightPanelTab).toBe('canvas');
     });
 
+    it('restoreOpen: false brings back the tab but leaves the panel closed', () => {
+      // Below desktop width the panel is a sheet; reopening it on load would
+      // cover the page before you did anything.
+      localStorage.setItem(
+        'dorkos-right-panel-state',
+        JSON.stringify({ open: true, activeTab: 'files' })
+      );
+      useAppStore.getState().loadRightPanelState({ restoreOpen: false });
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('files');
+    });
+
+    it('restoreOpen: false still opens the panel a pending link asked for', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-state',
+        JSON.stringify({ open: false, activeTab: 'files' })
+      );
+      useAppStore.setState({
+        requestedRightPanel: { tabId: 'profile', agentPath: null, shielded: true },
+      });
+      useAppStore.getState().loadRightPanelState({ restoreOpen: false });
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+    });
+
     it('loadRightPanelState defaults gracefully when localStorage is empty', () => {
       useAppStore.getState().loadRightPanelState();
       expect(useAppStore.getState().rightPanelOpen).toBe(false);
@@ -108,6 +133,18 @@ describe('RightPanelSlice', () => {
         useAppStore.getState().loadRightPanelState();
 
         expect(readLayouts()['agent-a']).toMatchObject({ open: false, activeTab: 'files' });
+      });
+
+      it('keeps migrated layouts when the new key holds something other than a map', () => {
+        localStorage.setItem('dorkos-right-panel-layouts-v2', '[1,2]');
+        localStorage.setItem(
+          LEGACY,
+          JSON.stringify({ 'agent-a': { open: true, activeTab: 'files', accessedAt: 3 } })
+        );
+        useAppStore.getState().loadRightPanelState();
+        expect(readLayouts()).toEqual({
+          'agent-a': { open: true, activeTab: 'files', accessedAt: 3 },
+        });
       });
 
       it('drops a corrupt old map without touching the new one', () => {
@@ -220,6 +257,20 @@ describe('RightPanelSlice', () => {
       useAppStore.getState().setRightPanelOpen(false);
 
       expect(readLayouts()['agent-b']).toMatchObject({ open: false, activeTab: 'a-only' });
+    });
+
+    it('keeps the carried tab through a project that cannot show it (A → B → C)', () => {
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('flow');
+      // B cannot show Flow, so the container falls back on screen.
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+      useAppStore.getState().setActiveRightPanelTabView('profile');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-c');
+
+      expect(useAppStore.getState().activeRightPanelTab).toBe('flow');
+      expect(useAppStore.getState().inheritedRightPanelTab).toBe('flow');
     });
 
     it('a tab you pick on the inheriting project replaces the carried one', () => {

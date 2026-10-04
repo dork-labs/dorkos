@@ -161,8 +161,14 @@ export interface RightPanelSlice {
     agentPath?: string | null,
     options?: { inherit?: boolean }
   ) => void;
-  /** Load the persisted global right panel state from localStorage (initial mount). */
-  loadRightPanelState: () => void;
+  /**
+   * Load the persisted global right panel state from localStorage (initial mount).
+   *
+   * @param options - `restoreOpen: false` restores the tab but not the open
+   *   state, unless a link is pending. Used below desktop width, where reopening
+   *   the panel on load would cover the page with a sheet.
+   */
+  loadRightPanelState: (options?: { restoreOpen?: boolean }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +317,10 @@ export const createRightPanelSlice: StateCreator<
       // other agent's profile has no business following you into this project,
       // so the container picks this agent's own default tab instead.
       open = get().rightPanelOpen;
-      activeTab = requested !== null ? null : get().activeRightPanelTab;
+      // The carried tab, not a fallback the previous agent showed in its place:
+      // passing through a project that cannot show your tab must not lose it.
+      activeTab =
+        requested !== null ? null : (get().inheritedRightPanelTab ?? get().activeRightPanelTab);
       inherited = activeTab;
     } else {
       open = false;
@@ -319,6 +328,8 @@ export const createRightPanelSlice: StateCreator<
     }
     // The global layout is the last one you looked at, so a reload on this
     // agent restores it even when the agent has nothing stored (DOR-2579).
+    // Never runs before `loadRightPanelState`: that hydrate reads this same key
+    // on mount, and a bind ahead of it would overwrite the layout it restores.
     writeRightPanelState({ open, activeTab });
     set({
       rightPanelLayoutKey: agentKey,
@@ -329,7 +340,7 @@ export const createRightPanelSlice: StateCreator<
     });
   },
 
-  loadRightPanelState: () => {
+  loadRightPanelState: (options) => {
     migrateLegacyRightPanelLayouts();
     const entry = readRightPanelState();
     if (!entry) return;
@@ -339,7 +350,7 @@ export const createRightPanelSlice: StateCreator<
     // `/session` is the one that decides whether the link was about that agent.
     const requested = get().requestedRightPanel;
     set({
-      rightPanelOpen: requested !== null || entry.open,
+      rightPanelOpen: requested !== null || ((options?.restoreOpen ?? true) && entry.open),
       activeRightPanelTab: requested?.tabId ?? entry.activeTab,
     });
   },

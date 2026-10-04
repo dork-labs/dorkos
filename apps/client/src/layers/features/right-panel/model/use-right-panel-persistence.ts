@@ -8,14 +8,19 @@ import { useCurrentAgent } from '@/layers/entities/agent';
  *
  * Restores the persisted open/closed state and active tab for the shell-level
  * right panel before any agent is in scope — the sensible initial layout for the
- * dashboard and other non-session routes. Per-agent layouts are bound separately
+ * dashboard and other non-session routes. Below desktop width it restores the
+ * tab only, so a reload never opens the sheet over the page. Per-agent layouts are bound separately
  * by {@link useRightPanelLayoutPersistence} on the session route.
  */
 export function useRightPanelPersistence(): void {
   const loadRightPanelState = useAppStore((s) => s.loadRightPanelState);
+  // Below desktop width the panel is a sheet over the page, so a reload brings
+  // back its tab but not its open state. Captured once: this runs on mount only.
+  const belowDesktop = useIsBelowDesktop();
+  const restoreOpen = useRef(!belowDesktop);
 
   useEffect(() => {
-    loadRightPanelState();
+    loadRightPanelState({ restoreOpen: restoreOpen.current });
   }, [loadRightPanelState]);
 }
 

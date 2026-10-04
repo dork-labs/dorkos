@@ -179,6 +179,20 @@ interface RightPanelLayoutEntry extends RightPanelStateEntry {
 
 type RightPanelLayoutMap = Record<string, RightPanelLayoutEntry>;
 
+/**
+ * Read the stored per-agent map. Anything that is not a plain object — missing,
+ * an array, a number someone else wrote — reads as an empty map, so a write
+ * built on top of it is never lost to a bad value. Throws on unparseable JSON,
+ * which callers already catch.
+ */
+function loadRightPanelLayoutMap(): RightPanelLayoutMap {
+  const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
+  const parsed: unknown = raw ? JSON.parse(raw) : null;
+  return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? (parsed as RightPanelLayoutMap)
+    : {};
+}
+
 /** Persist the per-agent map, keeping only the newest {@link MAX_RIGHT_PANEL_LAYOUTS} entries. */
 function saveRightPanelLayoutMap(map: RightPanelLayoutMap): void {
   const entries = Object.entries(map);
@@ -211,8 +225,7 @@ export function migrateLegacyRightPanelLayouts(): void {
     localStorage.removeItem(LEGACY_RIGHT_PANEL_LAYOUTS_KEY);
     const legacy: unknown = JSON.parse(legacyRaw);
     if (legacy === null || typeof legacy !== 'object') return;
-    const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
-    const map: RightPanelLayoutMap = raw ? JSON.parse(raw) : {};
+    const map = loadRightPanelLayoutMap();
     for (const [agentKey, value] of Object.entries(legacy as Record<string, unknown>)) {
       if (agentKey in map || value === null || typeof value !== 'object') continue;
       const { open, activeTab, accessedAt } = value as Record<string, unknown>;
@@ -264,8 +277,7 @@ export function writeRightPanelLayout(agentKey: string | null, entry: RightPanel
   writeRightPanelState(entry);
   if (agentKey === null) return;
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
-    const map: RightPanelLayoutMap = raw ? JSON.parse(raw) : {};
+    const map = loadRightPanelLayoutMap();
     map[agentKey] = { ...entry, accessedAt: Date.now() };
     saveRightPanelLayoutMap(map);
   } catch {}

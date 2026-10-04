@@ -3,10 +3,14 @@ import { renderHook, cleanup } from '@testing-library/react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 const mockLoadRightPanelForAgent = vi.fn();
+const mockLoadRightPanelState = vi.fn();
 let mockBelowDesktop = false;
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ loadRightPanelForAgent: mockLoadRightPanelForAgent }),
+    selector({
+      loadRightPanelForAgent: mockLoadRightPanelForAgent,
+      loadRightPanelState: mockLoadRightPanelState,
+    }),
   useIsBelowDesktop: () => mockBelowDesktop,
 }));
 
@@ -22,7 +26,10 @@ vi.mock('@/layers/entities/agent', () => ({
   useCurrentAgent: () => ({ data: mockAgent, isPending: mockIsPending }),
 }));
 
-import { useRightPanelLayoutPersistence } from '../model/use-right-panel-persistence';
+import {
+  useRightPanelLayoutPersistence,
+  useRightPanelPersistence,
+} from '../model/use-right-panel-persistence';
 
 /** Minimal AgentManifest stub — only the id is read by the hook. */
 function agentWithId(id: string): AgentManifest {
@@ -146,5 +153,32 @@ describe('useRightPanelLayoutPersistence', () => {
     mockLoadRightPanelForAgent.mockClear();
     unmount();
     expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('useRightPanelPersistence', () => {
+  beforeEach(() => {
+    mockLoadRightPanelState.mockClear();
+    mockBelowDesktop = false;
+  });
+
+  afterEach(() => cleanup());
+
+  it('restores the open state on desktop', () => {
+    renderHook(() => useRightPanelPersistence());
+    expect(mockLoadRightPanelState).toHaveBeenCalledWith({ restoreOpen: true });
+  });
+
+  it('restores the tab only below desktop width, so a reload never opens the sheet', () => {
+    mockBelowDesktop = true;
+    renderHook(() => useRightPanelPersistence());
+    expect(mockLoadRightPanelState).toHaveBeenCalledWith({ restoreOpen: false });
+  });
+
+  it('hydrates once: crossing the breakpoint later does not hydrate again', () => {
+    const { rerender } = renderHook(() => useRightPanelPersistence());
+    mockBelowDesktop = true;
+    rerender();
+    expect(mockLoadRightPanelState).toHaveBeenCalledTimes(1);
   });
 });
