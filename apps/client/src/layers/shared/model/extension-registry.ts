@@ -118,11 +118,51 @@ export interface CommandPaletteContribution extends BaseContribution {
   keywords?: string[];
 }
 
-export interface DialogContribution extends BaseContribution {
+/**
+ * An open flag kept outside the app store, shaped for `useSyncExternalStore`.
+ * Extension dialogs use one each, since an extension cannot add a key to
+ * `useAppStore()`.
+ */
+export interface DialogOpenState {
+  /** Whether the dialog is open now. */
+  getSnapshot: () => boolean;
+  /** Open or close it; notifies subscribers only on a real change. */
+  set: (open: boolean) => void;
+  /** Listen for changes; returns the unsubscribe. */
+  subscribe: (listener: () => void) => () => void;
+}
+
+/**
+ * Make a closed {@link DialogOpenState}.
+ *
+ * @param options - `onOpen` runs each time it goes from closed to open, before
+ *   subscribers hear of it, whichever caller opened it.
+ * @returns An open flag that starts false.
+ */
+export function createDialogOpenState(options?: { onOpen?: () => void }): DialogOpenState {
+  let open = false;
+  const listeners = new Set<() => void>();
+  return {
+    getSnapshot: () => open,
+    set: (next) => {
+      if (next === open) return;
+      open = next;
+      if (open) options?.onOpen?.();
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
+/** Fields every dialog contribution has, whichever way its open state is kept. */
+interface DialogContributionBase extends BaseContribution {
   /** Dialog component accepting `open` and `onOpenChange` props. */
   component: ComponentType<{ open: boolean; onOpenChange: (open: boolean) => void }>;
-  /** Key in `useAppStore()` that controls open state (e.g., 'settingsOpen'). */
-  openStateKey: string;
   /**
    * URL search-param value identifying this dialog for deep linking
    * (e.g., `?dialog=settings`). Omit for dialogs that should not be
@@ -130,6 +170,26 @@ export interface DialogContribution extends BaseContribution {
    */
   urlParam?: 'settings' | 'agent' | 'tasks' | 'relay' | 'mesh' | 'profile';
 }
+
+/**
+ * A dialog the host renders. Built-in dialogs keep their open flag in
+ * `useAppStore()` under `openStateKey` and are always mounted, so they can
+ * animate out. Extension dialogs keep it in their own `openState` and are
+ * mounted only while open, so one that ignores its `open` prop still hides.
+ */
+export type DialogContribution = DialogContributionBase &
+  (
+    | {
+        /** Key in `useAppStore()` that controls open state (e.g., 'settingsOpen'). */
+        openStateKey: string;
+        openState?: never;
+      }
+    | {
+        /** The dialog's own open flag; the host mounts it only while this is true. */
+        openState: DialogOpenState;
+        openStateKey?: never;
+      }
+  );
 
 export interface SettingsTabContribution extends BaseContribution {
   label: string;
@@ -333,13 +393,16 @@ export const useExtensionRegistry = create<ExtensionRegistryState>()(
           `register/${slotId}/${contribution.id}`
         );
 
-        // Return unsubscribe function
+        // Removes this exact entry, never a later one that replaced it under the
+        // same id: a reload that registers before the old cleanup runs must not
+        // lose the new contribution to the stale unsubscribe.
         return () => {
+          if (!get().slots[slotId].includes(withDefaults)) return;
           set(
             (state) => ({
               slots: {
                 ...state.slots,
-                [slotId]: state.slots[slotId].filter((c) => c.id !== contribution.id),
+                [slotId]: state.slots[slotId].filter((c) => c !== withDefaults),
               },
             }),
             undefined,

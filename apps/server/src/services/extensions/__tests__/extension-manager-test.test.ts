@@ -112,6 +112,15 @@ describe('MockExtensionAPI', () => {
     expect(typeof handle.close).toBe('function');
   });
 
+  it("refuses registerComponent('dialog') like the real host: not counted, and warned", () => {
+    const api = new MockExtensionAPI('test-ext');
+
+    api.registerComponent('dialog', 'dlg-1', () => null);
+
+    expect(api.getContributions()['dialog']).toBe(0);
+    expect(api.warnings).toEqual([expect.stringContaining('use registerDialog')]);
+  });
+
   it('tracks registerSettingsTab calls under settings.tabs slot', () => {
     const api = new MockExtensionAPI('test-ext');
 

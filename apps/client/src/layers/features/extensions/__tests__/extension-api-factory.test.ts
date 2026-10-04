@@ -318,12 +318,47 @@ describe('createExtensionAPI', () => {
       expect(typeof controls.close).toBe('function');
     });
 
-    it('open/close do not throw', () => {
+    it('keeps its own open flag, which open() and close() drive', () => {
       const { api } = createExtensionAPI('my-ext', deps);
       const controls = api.registerDialog('my-dialog', () => null);
+      const contribution = vi.mocked(deps.registry.register).mock.calls[0]![1] as {
+        openState: { getSnapshot: () => boolean };
+        openStateKey?: string;
+      };
 
-      expect(() => controls.open()).not.toThrow();
-      expect(() => controls.close()).not.toThrow();
+      // Not an app-store key: an extension cannot add one, so a key never opened.
+      expect(contribution.openStateKey).toBeUndefined();
+      expect(contribution.openState.getSnapshot()).toBe(false);
+      controls.open();
+      expect(contribution.openState.getSnapshot()).toBe(true);
+      controls.close();
+      expect(contribution.openState.getSnapshot()).toBe(false);
+    });
+
+    it('gives each dialog its own open flag', () => {
+      const { api } = createExtensionAPI('my-ext', deps);
+      const first = api.registerDialog('one', () => null);
+      api.registerDialog('two', () => null);
+      const [one, two] = vi
+        .mocked(deps.registry.register)
+        .mock.calls.map(([, c]) => c as { openState: { getSnapshot: () => boolean } });
+
+      first.open();
+      expect(one!.openState.getSnapshot()).toBe(true);
+      expect(two!.openState.getSnapshot()).toBe(false);
+    });
+
+    it("refuses registerComponent('dialog'), which could never open", () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+
+      const unsub = api.registerComponent('dialog', 'my-dialog', () => null);
+
+      expect(deps.registry.register).not.toHaveBeenCalled();
+      expect(cleanups).toHaveLength(0);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('registerDialog'));
+      expect(() => unsub()).not.toThrow();
+      warn.mockRestore();
     });
 
     it('adds the registry unsub to cleanups', () => {
@@ -332,7 +367,9 @@ describe('createExtensionAPI', () => {
       const { api, cleanups } = createExtensionAPI('my-ext', deps);
 
       api.registerDialog('my-dialog', () => null);
-      expect(cleanups).toContain(unsub);
+      expect(cleanups).toHaveLength(1);
+      cleanups[0]!();
+      expect(unsub).toHaveBeenCalledTimes(1);
     });
   });
 

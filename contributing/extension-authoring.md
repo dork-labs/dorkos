@@ -128,8 +128,8 @@ api.registerComponent(slot, id, Component, { priority?, label?, icon?, visibleWh
 // Add a command palette item
 api.registerCommand(id, label, callback, { icon?, shortcut? }): () => void
 
-// Register a dialog
-api.registerDialog(id, Component): { open: () => void; close: () => void }
+// Register a dialog, closed until you call open()
+api.registerDialog(id, Dialog): { open: () => void; close: () => void }
 
 // Add a tab to the settings dialog
 api.registerSettingsTab(id, label, Component, { group? }): () => void
@@ -149,7 +149,7 @@ api.registerStatusBarItem(id, Item, { label, priority?, when?, urgent? }): () =>
 - **`visibleWhen?`** — `dashboard.sections` only: a predicate the host re-evaluates on every render. Return false to hide your section without unregistering it (useful when it has nothing to say). Omit it and the section is always visible.
 - **`group?`** — `settings.tabs` only: names the sidebar section the tab sits under in the Settings dialog. The built-in sections are `'You'`, `'Agents'` and `'This computer'`, and naming one adds your tab to the end of it. `'Advanced'` puts your tab behind the folded Advanced disclosure at the bottom, with Server, Tools, Room limits, Experiments and Danger zone; use it for something most people set once or never. Any other name makes a section of its own, below the built-in ones and above Advanced. Omit it and the tab lands under "Add-ons", the section reserved for contributed tabs, so a tab written before this field existed still files itself somewhere honest. Same option on `registerSettingsTab`.
 
-`registerPage` and `registerStatusBarItem` have sections of their own under [UI Slots](#ui-slots): [Pages](#pages-x) and [The status bar](#the-status-bar).
+`registerPage`, `registerStatusBarItem` and `registerDialog` have sections of their own under [UI Slots](#ui-slots): [Pages](#pages-x), [The status bar](#the-status-bar) and [Dialogs](#dialogs).
 
 ### UI Control
 
@@ -340,7 +340,7 @@ api.id: string
 | `sidebar.footer`        | Bottom of the sidebar                                  |
 | `dashboard.sections`    | "From your extensions", at the top of the Activity tab |
 | `command-palette.items` | Command palette entries                                |
-| `dialog`                | Modal dialog layer                                     |
+| `dialog`                | Modal dialog layer, through `registerDialog`           |
 | `settings.tabs`         | Settings dialog tabs                                   |
 | `right-panel`           | Shell-level right panel (contextual inspector) tabs    |
 | `status-bar`            | The chat status bar, beside the runtime and account    |
@@ -468,6 +468,49 @@ function RunChip({ trackerItems, compact }: StatusBarSlotContext) {
   return <span>{compact ? first.id : `${first.id} · ${first.stage ?? 'Working'}`}</span>;
 }
 ```
+
+### Dialogs
+
+`api.registerDialog(id, Dialog)` adds a dialog that starts closed and returns `{ open, close }`. Call `open()` from anywhere, such as a palette command, and `close()` to hide it again; both are safe to call before the dialog first renders, and calling them twice does nothing.
+
+The host keeps whether the dialog is open. It mounts your component only while the dialog is open and unmounts it once it closes, so you never hide it yourself, and its state starts fresh each time it opens. Your component receives `ExtensionDialogProps`:
+
+- **`open`**: always `true` while your component is mounted. It is there for a component you also use somewhere else.
+- **`onOpenChange(open)`**: call `onOpenChange(false)` when the person closes the dialog. It never throws.
+
+Extensions cannot import the host's UI components, so your component draws the dialog itself: a backdrop, a frame with `role="dialog"` and an accessible name, and the ways to close it. Escape, a click on the backdrop and your own close button each call `onOpenChange(false)`. Move focus into the dialog when it mounts and keep Tab inside it.
+
+```tsx
+import type { ExtensionAPI, ExtensionDialogProps } from '@dorkos/extension-api';
+import { useEffect } from 'react';
+
+function PauseDialog({ onOpenChange }: ExtensionDialogProps) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onOpenChange(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onOpenChange]);
+  return (
+    <div className="backdrop" onClick={(e) => e.target === e.currentTarget && onOpenChange(false)}>
+      <div role="dialog" aria-label="Pause flow">
+        {/* … */}
+        <button onClick={() => onOpenChange(false)}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+export function activate(api: ExtensionAPI): void {
+  const pause = api.registerDialog('pause', PauseDialog);
+  api.registerCommand('pause', 'Pause flow', () => pause.open());
+}
+```
+
+One extension dialog is open at a time, across every extension: opening one closes any other first, so two never fight over Escape or focus. If your component throws while it renders, the host closes it and logs the error; the rest of the app keeps working, and `open()` tries again with a fresh mount.
+
+`registerComponent('dialog', …)` is refused with a console warning: a dialog added that way would have no `open()`.
 
 ## TypeScript vs JavaScript
 

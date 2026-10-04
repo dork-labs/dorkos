@@ -59,6 +59,23 @@ async function importBundle(id: string): Promise<ExtensionModule | null> {
 }
 
 /**
+ * Run an extension's registration cleanups, logging any that throw so the rest
+ * still run.
+ *
+ * @param id - The extension, for the log.
+ * @param cleanups - The unsubscribe functions its registrations returned.
+ */
+function runCleanups(id: string, cleanups: ReadonlyArray<() => void>): void {
+  for (const cleanup of cleanups) {
+    try {
+      cleanup();
+    } catch (err) {
+      console.error(`[extensions] Error in cleanup for ${id}:`, err);
+    }
+  }
+}
+
+/**
  * Signal the server to initialize the server-side component of an extension.
  *
  * This is a fire-and-forget coordination signal for dynamic enable/reload
@@ -193,12 +210,12 @@ export class ExtensionLoader {
         continue;
       }
 
+      const { api, cleanups } = createExtensionAPI(
+        rec.id,
+        this.deps,
+        rec.manifest.capabilities?.events ?? []
+      );
       try {
-        const { api, cleanups } = createExtensionAPI(
-          rec.id,
-          this.deps,
-          rec.manifest.capabilities?.events ?? []
-        );
         const deactivateFn = module.activate(api);
 
         // Auto-register a secrets settings tab from the manifest if the
@@ -223,6 +240,7 @@ export class ExtensionLoader {
         serverInits.push(initServerExtension(rec));
       } catch (err) {
         console.error(`[extensions] Failed to activate ${rec.id}:`, err);
+        runCleanups(rec.id, cleanups);
       }
     }
 
@@ -309,13 +327,7 @@ export class ExtensionLoader {
         console.error(`[extensions] Error calling deactivate for ${id}:`, err);
       }
 
-      for (const cleanup of ext.cleanups) {
-        try {
-          cleanup();
-        } catch (err) {
-          console.error(`[extensions] Error in cleanup for ${id}:`, err);
-        }
-      }
+      runCleanups(id, ext.cleanups);
     }
 
     this.loaded.clear();
@@ -352,13 +364,7 @@ export class ExtensionLoader {
           console.error(`[extensions] Error deactivating ${id}:`, err);
         }
 
-        for (const cleanup of ext.cleanups) {
-          try {
-            cleanup();
-          } catch (err) {
-            console.error(`[extensions] Error in cleanup for ${id}:`, err);
-          }
-        }
+        runCleanups(id, ext.cleanups);
 
         this.loaded.delete(id);
       }
@@ -391,7 +397,14 @@ export class ExtensionLoader {
         if (this.disposed || gen !== this.generation) break;
 
         const { api, cleanups } = createExtensionAPI(id, this.deps);
-        const deactivateFn = module.activate(api);
+        let deactivateFn: ReturnType<ExtensionModule['activate']>;
+        try {
+          deactivateFn = module.activate(api);
+        } catch (err) {
+          // Whatever it registered before throwing comes out again.
+          runCleanups(id, cleanups);
+          throw err;
+        }
 
         this.autoRegisterConfigTab(rec, cleanups);
 
