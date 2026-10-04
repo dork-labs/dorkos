@@ -49,7 +49,8 @@ import { mayRunExtensionCode } from '../../../extensions/extension-load-policy.j
 import { runAutoProjection } from '../../../harness/auto-project.js';
 import { DevLinkService } from '../dev-link-service.js';
 import { devLinkExtensionsOf } from '../dev-link-extensions.js';
-import { chokidarDevLinkWatch, DevLinkWatcher } from '../dev-link-watcher.js';
+import { DevLinkWatcher } from '../dev-link-watcher.js';
+import { chokidarDevLinkWatch } from '../dev-link-watch.js';
 import { memoryConsentStore } from './memory-consent-store.js';
 
 const PLUGIN = 'flow';

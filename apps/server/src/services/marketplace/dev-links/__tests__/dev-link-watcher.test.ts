@@ -53,7 +53,14 @@ describe('isIgnoredDevLinkPath', () => {
     ['.venv/lib/site.py', true],
     ['venv/bin/python', true],
     ['dist/index.js', true],
-    ['.dork/extensions/dash/dist/index.js', false],
+    ['.dork/extensions/dash/dist/index.js', true],
+    ['.dork/extensions/foo/dist/x.js', true],
+    ['.dork/extensions/dist/dist/a.js', true],
+    ['bin/.venv/lib/x.py', true],
+    ['skills/x/__pycache__/a.pyc', true],
+    ['skills/.venv/SKILL.md', true],
+    ['skills/x/build/out.md', true],
+    ['commands/dist/go.md', false],
     ['skills/build/SKILL.md', false],
     ['skills/coverage/SKILL.md', false],
     ['commands/build/x.md', false],
@@ -87,18 +94,24 @@ describe('isIgnoredDevLinkPath', () => {
     expect(isIgnoredDevLinkPath('bin/build', false)).toBe(false);
   });
 
-  it('keeps build-named folders inside declaration paths, the extensions and declared paths', () => {
-    // Purpose: `skills/build`, an extension called `dist` or a plugin.json
-    // path through `dist/` are ordinary folders there; only `.git` and
-    // `node_modules` are skipped, so the watch still opens them.
+  it('keeps a build-named folder only where the package named it', () => {
+    // Purpose: a skill or extension called `build`/`dist`, or a folder on the
+    // way to a plugin.json path, is the package's own; a build folder inside
+    // one (or a venv anywhere) is output, and watching it would bring back
+    // the too-many-watches risk.
     expect(isIgnoredDevLinkPath('skills/build', true)).toBe(false);
-    expect(isIgnoredDevLinkPath('bin/build', true)).toBe(false);
     expect(isIgnoredDevLinkPath('.dork/extensions/dist', true)).toBe(false);
+    expect(isIgnoredDevLinkPath('.dork/extensions/foo/dist', true)).toBe(true);
+    expect(isIgnoredDevLinkPath('skills/x/__pycache__', true)).toBe(true);
+    expect(isIgnoredDevLinkPath('bin/.venv', true)).toBe(true);
+    expect(isIgnoredDevLinkPath('bin/build', true)).toBe(true);
+    expect(isIgnoredDevLinkPath('skills/venv', true)).toBe(true);
     expect(isIgnoredDevLinkPath('skills/node_modules', true)).toBe(true);
     const declared = ['dist/hooks.json'];
     expect(isIgnoredDevLinkPath('dist', true, declared)).toBe(false);
     expect(isIgnoredDevLinkPath('dist/hooks.json', false, declared)).toBe(false);
-    expect(isIgnoredDevLinkPath('dist/bundle.js', false, declared)).toBe(true);
+    // `dist` itself is the package's, but a build folder inside it is not.
+    expect(isIgnoredDevLinkPath('dist/build/x.js', false, declared)).toBe(true);
     expect(isIgnoredDevLinkPath('dist', true)).toBe(true);
   });
 });
@@ -133,6 +146,13 @@ describe('declaredPathsOf', () => {
   });
 });
 
+/** A folder's listing, which these small fixtures always get. */
+async function listed(...args: Parameters<typeof shapeOf>): Promise<Map<string, string>> {
+  const shape = await shapeOf(...args);
+  if (!shape) throw new Error('expected a listing');
+  return shape;
+}
+
 describe('shapeOf', () => {
   let dir: string;
   beforeEach(async () => {
@@ -149,7 +169,7 @@ describe('shapeOf', () => {
     // Purpose (N1): a folder's own modification time moves when a child is
     // added; `node_modules` filling up or `.dork/data` being written must not
     // read as a change to the extension or the manifest folder.
-    const before = await shapeOf(dir);
+    const before = await listed(dir);
     await new Promise((resolve) => setTimeout(resolve, 20));
     await mkdir(path.join(dir, '.dork', 'extensions', 'dash', 'node_modules', 'x'), {
       recursive: true,
@@ -159,11 +179,11 @@ describe('shapeOf', () => {
     await mkdir(path.join(dir, 'target', 'debug'), { recursive: true });
     await writeFile(path.join(dir, 'target', 'debug', 'out'), 'x');
     await mkdir(path.join(dir, 'skills', 'a', 'node_modules'), { recursive: true });
-    expect(shapeChanges(before, await shapeOf(dir))).toEqual([]);
+    expect(shapeChanges(before, await listed(dir))).toEqual([]);
 
     // And a real file at a swept level does.
     await writeFile(path.join(dir, '.dork', 'extensions', 'dash', 'more.ts'), 'y');
-    expect(shapeChanges(before, await shapeOf(dir))).toEqual([
+    expect(shapeChanges(before, await listed(dir))).toEqual([
       { rel: '.dork/extensions/dash/more.ts', kind: 'add' },
     ]);
   });
@@ -174,12 +194,12 @@ describe('shapeOf', () => {
     // a directory listing without modification times alone would miss.
     await mkdir(path.join(dir, '.dork', 'extensions', 'dash', 'src', 'deep'), { recursive: true });
     await mkdir(path.join(dir, 'skills', 'build'), { recursive: true });
-    const before = await shapeOf(dir);
+    const before = await listed(dir);
     await writeFile(path.join(dir, 'skills', 'a', 'SKILL.md'), 'x');
     await writeFile(path.join(dir, 'skills', 'build', 'SKILL.md'), 'x');
     await writeFile(path.join(dir, '.dork', 'extensions', 'dash', 'src', 'deep', 'a.ts'), 'x');
     expect(
-      shapeChanges(before, await shapeOf(dir)).sort((a, b) => a.rel.localeCompare(b.rel))
+      shapeChanges(before, await listed(dir)).sort((a, b) => a.rel.localeCompare(b.rel))
     ).toEqual([
       { rel: '.dork/extensions/dash/src/deep/a.ts', kind: 'add' },
       { rel: 'skills/a/SKILL.md', kind: 'add' },
@@ -190,10 +210,10 @@ describe('shapeOf', () => {
   it('lists a path plugin.json names, even through a build-named folder', async () => {
     // Purpose: `"hooks": "./dist/hooks.json"` is a declaration the sweep must see.
     await mkdir(path.join(dir, 'dist'), { recursive: true });
-    const before = await shapeOf(dir, ['dist/hooks.json']);
+    const before = await listed(dir, ['dist/hooks.json']);
     await writeFile(path.join(dir, 'dist', 'hooks.json'), '{}');
     await writeFile(path.join(dir, 'dist', 'bundle.js'), 'x');
-    expect(shapeChanges(before, await shapeOf(dir, ['dist/hooks.json']))).toEqual([
+    expect(shapeChanges(before, await listed(dir, ['dist/hooks.json']))).toEqual([
       { rel: 'dist/hooks.json', kind: 'add' },
     ]);
   });

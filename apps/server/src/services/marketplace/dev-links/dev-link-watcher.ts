@@ -85,7 +85,6 @@
  *
  * @module services/marketplace/dev-links/dev-link-watcher
  */
-import chokidar from 'chokidar';
 import {
   DevLinkReloadActionSchema,
   type DevLinkRecord,
@@ -102,6 +101,8 @@ import {
   relativeTo,
   shapeChanges,
   shapeOf,
+  updateShape,
+  type DevLinkShape,
   type DevLinkChange,
   type DevLinkChangeKind,
 } from './dev-link-changes.js';
@@ -111,7 +112,10 @@ import {
   type DevLinkExtensions,
 } from './dev-link-extensions.js';
 import { DevLinkLane } from './dev-link-lane.js';
+import { chokidarDevLinkWatch, type DevLinkWatchFactory } from './dev-link-watch.js';
 import { devLinkStateOf, readDevLinks } from './registry.js';
+
+export type { DevLinkWatchFactory, DevLinkWatchListeners } from './dev-link-watch.js';
 
 /**
  * How long a folder must be quiet before a burst of edits is acted on.
@@ -140,36 +144,6 @@ const DEV_LINK_REARM_MS = 60_000;
  * the measurement.
  */
 const DEV_LINK_SETTLE_MS = 100;
-
-/** How long a file must stop changing before chokidar reports it (`skills-watcher.ts`). */
-const WRITE_STABILITY_MS = 50;
-
-/** @see {@link WRITE_STABILITY_MS} */
-const WRITE_POLL_MS = 25;
-
-/** Callbacks a {@link DevLinkWatchFactory} reports through. */
-export interface DevLinkWatchListeners {
-  /** A filesystem event at an absolute path. */
-  onEvent(kind: DevLinkChangeKind, absPath: string): void;
-  /** The first scan finished. */
-  onReady(): void;
-  /** The watch failed. */
-  onError(err: unknown): void;
-}
-
-/**
- * Open a watch on a folder. The default is chokidar; a test passes a fake.
- *
- * @param folder - The folder's real path.
- * @param ignored - Whether an absolute path inside it is never watched, given
- *   whether it is known to be a directory.
- * @param listeners - Where to report.
- */
-export type DevLinkWatchFactory = (
-  folder: string,
-  ignored: (absPath: string, isDirectory?: boolean) => boolean,
-  listeners: DevLinkWatchListeners
-) => { close(): Promise<void> };
 
 /** What {@link DevLinkWatcher} needs. */
 export interface DevLinkWatcherDeps {
@@ -202,6 +176,8 @@ export interface DevLinkWatcherDeps {
   maxWaitMs?: number;
   /** Override {@link DEV_LINK_REARM_MS}; `0` switches the timer off. @internal For tests. */
   rearmMs?: number;
+  /** Override the sweep's entry cap (`shapeOf`). @internal For tests. */
+  sweepMaxEntries?: number;
   /** Override {@link DEV_LINK_SETTLE_MS}. @internal For tests. */
   settleMs?: number;
   /** Override the chokidar watch. @internal For tests. */
@@ -233,8 +209,13 @@ interface WatchedFolder {
   burstStartedAt?: number;
   /** The burst being acted on now. */
   inFlight?: Promise<void>;
-  /** The listing last acted on ({@link shapeOf}). */
-  shape?: Map<string, string>;
+  /**
+   * The listing last acted on ({@link shapeOf}); absent when the folder is too
+   * big to list, and then the sweep leaves it to the live watch.
+   */
+  shape?: DevLinkShape;
+  /** The folder was too big to list; latched so it is logged once. */
+  capped?: boolean;
   /** Declaration paths the folder's plugin.json names, as last read. */
   declared: string[];
 }
@@ -248,38 +229,6 @@ function keyOf(record: DevLinkKey): string {
 function sameRecord(a: DevLinkRecord, b: DevLinkRecord): boolean {
   return keyOf(a) === keyOf(b) && a.target === b.target && a.slot === b.slot;
 }
-
-/**
- * The default watch: chokidar over the whole folder, links not followed.
- *
- * @internal Exported so a test can wrap the real watch and see it close.
- */
-export const chokidarDevLinkWatch: DevLinkWatchFactory = (folder, ignored, listeners) => {
-  const watcher = chokidar.watch(folder, {
-    persistent: true,
-    ignoreInitial: true,
-    // A link inside the working folder is not followed: it could lead out of
-    // the folder, or back into it.
-    followSymlinks: false,
-    ignored: (absPath: string, stats?: { isDirectory(): boolean }) =>
-      ignored(absPath, stats?.isDirectory()),
-    awaitWriteFinish: { stabilityThreshold: WRITE_STABILITY_MS, pollInterval: WRITE_POLL_MS },
-  });
-  watcher.on('all', (eventName, absPath) => {
-    if (
-      eventName === 'add' ||
-      eventName === 'addDir' ||
-      eventName === 'change' ||
-      eventName === 'unlink' ||
-      eventName === 'unlinkDir'
-    ) {
-      listeners.onEvent(eventName, absPath);
-    }
-  });
-  watcher.on('ready', () => listeners.onReady());
-  watcher.on('error', (err) => listeners.onError(err));
-  return { close: () => watcher.close() };
-};
 
 /** The order actions are reported in. */
 const ACTION_ORDER = DevLinkReloadActionSchema.options;
@@ -295,7 +244,7 @@ export class DevLinkWatcher {
    * listing last acted on (absent when it was never watched), for a catch-up
    * on return.
    */
-  private readonly lost = new Map<string, Map<string, string> | undefined>();
+  private readonly lost = new Map<string, DevLinkShape | 'unlisted' | undefined>();
   /** Each dev link's projections. */
   private readonly lanes = new Map<string, DevLinkLane>();
   /** Global plugin refreshes, shared by every global dev link. */
@@ -416,10 +365,43 @@ export class DevLinkWatcher {
   async sweep(): Promise<void> {
     await this.sync();
     for (const watched of this.folders.values()) {
-      if (!watched.handle || watched.dead || !watched.shape) continue;
-      const changes = shapeChanges(watched.shape, await shapeOf(watched.folder, watched.declared));
-      if (changes.length > 0) this.enqueue(watched, changes);
+      if (!watched.handle || watched.dead) continue;
+      this.compare(watched, watched.shape, await this.listing(watched));
     }
+  }
+
+  /**
+   * Act on what differs between two listings, and keep the newer one as the
+   * baseline. Either missing (a folder too big to list) compares nothing.
+   */
+  private compare(
+    watched: WatchedFolder,
+    before: DevLinkShape | undefined,
+    now: DevLinkShape | undefined
+  ): void {
+    if (before && now) this.enqueue(watched, shapeChanges(before, now));
+    watched.shape = now;
+  }
+
+  /**
+   * The folder's listing now, or `undefined` when it is too big to list. That
+   * is logged once per folder: a cut listing would report changes that never
+   * happened, so the live watch is all there is for it.
+   */
+  private async listing(watched: WatchedFolder): Promise<DevLinkShape | undefined> {
+    const shape = await shapeOf(watched.folder, watched.declared, this.deps.sweepMaxEntries);
+    if (!shape && !watched.capped) {
+      logger.warn('[Marketplace] A dev link folder is too big to compare; only its watch is used', {
+        folder: watched.folder,
+      });
+    }
+    watched.capped = !shape;
+    return shape ?? undefined;
+  }
+
+  /** What a lost folder's catch-up compares against. */
+  private lastListing(watched: WatchedFolder | undefined): DevLinkShape | 'unlisted' | undefined {
+    return watched?.capped ? 'unlisted' : watched?.shape;
   }
 
   /**
@@ -495,7 +477,7 @@ export class DevLinkWatcher {
       if (this.held.has(keyOf(record))) continue;
       const state = await devLinkStateOf(record);
       if (state === 'folder-missing' && !this.lost.has(record.target)) {
-        this.lost.set(record.target, this.folders.get(record.target)?.shape);
+        this.lost.set(record.target, this.lastListing(this.folders.get(record.target)));
       }
       if (state !== 'active') continue;
       wanted.set(record.target, [...(wanted.get(record.target) ?? []), record]);
@@ -523,10 +505,11 @@ export class DevLinkWatcher {
       // A folder that went missing and is back, or a watch that died: what
       // changed meanwhile was never seen, so it is compared against the
       // listing last acted on. A folder never watched before has none, and
-      // everything in it is new.
-      let catchUpFrom: ReadonlyMap<string, string> | undefined;
+      // everything in it is new; one too big to list is left to its watch.
+      let catchUpFrom: DevLinkShape | undefined;
       if (this.lost.has(folder)) {
-        catchUpFrom = this.lost.get(folder) ?? new Map();
+        const last = this.lost.get(folder);
+        catchUpFrom = last === 'unlisted' ? undefined : (last ?? new Map());
         this.lost.delete(folder);
       } else if (watched.dead) {
         catchUpFrom = watched.shape;
@@ -541,17 +524,14 @@ export class DevLinkWatcher {
    * @param catchUpFrom - The listing last acted on, when changes may have been
    *   missed: whatever differs from it now is acted on.
    */
-  private async arm(
-    watched: WatchedFolder,
-    catchUpFrom: ReadonlyMap<string, string> | undefined
-  ): Promise<void> {
+  private async arm(watched: WatchedFolder, catchUpFrom: DevLinkShape | undefined): Promise<void> {
     if (watched.handle) await watched.handle.close().catch(() => undefined);
     watched.handle = undefined;
     watched.dead = false;
     watched.declared = declaredPathsOf(await readPluginJson(watched.folder));
     // Read before the watch opens, so a write in the moments after is a
     // difference the settle comparison finds.
-    const before = await shapeOf(watched.folder, watched.declared);
+    const before = await this.listing(watched);
     watched.shape = before;
     const settleMs = this.deps.settleMs ?? DEV_LINK_SETTLE_MS;
     const seenCodes = new Set<string>();
@@ -564,7 +544,7 @@ export class DevLinkWatcher {
       if (readyOnce) return;
       readyOnce = true;
       const timer = setTimeout(() => {
-        void this.compareAfterSettle(watched, before).finally(settled);
+        void this.compareAfterSettle(watched).finally(settled);
       }, settleMs);
       timer.unref?.();
     };
@@ -597,20 +577,13 @@ export class DevLinkWatcher {
         },
       }
     );
-    if (catchUpFrom) this.enqueue(watched, shapeChanges(catchUpFrom, before));
+    if (catchUpFrom && before) this.enqueue(watched, shapeChanges(catchUpFrom, before));
   }
 
   /** The one comparison right after a watch settles. */
-  private async compareAfterSettle(
-    watched: WatchedFolder,
-    before: ReadonlyMap<string, string>
-  ): Promise<void> {
+  private async compareAfterSettle(watched: WatchedFolder): Promise<void> {
     if (this.stopped || this.folders.get(watched.folder) !== watched || !watched.handle) return;
-    const changes = shapeChanges(
-      watched.shape ?? before,
-      await shapeOf(watched.folder, watched.declared)
-    );
-    if (changes.length > 0) this.enqueue(watched, changes);
+    this.compare(watched, watched.shape, await this.listing(watched));
   }
 
   /**
@@ -694,7 +667,9 @@ export class DevLinkWatcher {
       await this.serialize(async () => {
         if (this.folders.get(watched.folder) === watched && watched.records.length > 0) {
           const states = await Promise.all(watched.records.map((r) => devLinkStateOf(r)));
-          if (states.includes('folder-missing')) this.lost.set(watched.folder, watched.shape);
+          if (states.includes('folder-missing')) {
+            this.lost.set(watched.folder, this.lastListing(watched));
+          }
         }
         await this.close(watched);
       });
@@ -703,11 +678,13 @@ export class DevLinkWatcher {
     const declared = declaredPathsOf(await readPluginJson(watched.folder));
     const declaredChanged = declared.join('\n') !== watched.declared.join('\n');
     watched.declared = declared;
-    watched.shape = await shapeOf(watched.folder, declared);
+    // Only the paths this burst touched are read again, so the sweep does not
+    // act on them a second time; the full walk is the sweep's job.
+    if (watched.shape) await updateShape(watched.folder, watched.shape, changes, declared);
     if (declaredChanged && watched.handle) {
       // The watch decided what to skip with the old paths: a folder plugin.json
       // now names may never have been opened. Replace it; its catch-up
-      // compares against the listing just taken, so nothing is acted on twice.
+      // compares against the listing just updated, so nothing runs twice.
       watched.dead = true;
       void this.sync();
     }

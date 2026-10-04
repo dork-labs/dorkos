@@ -18,28 +18,35 @@ import { isRuntimeStatePath } from '../lib/content-hash.js';
 
 /**
  * Directory names never watched anywhere inside a linked folder, compared
- * lowercased: version control and dependencies.
+ * lowercased: version control, dependencies, and Python's virtual
+ * environments and bytecode caches (a `.venv` alone can hold more folders
+ * than a watch can open). No package names a skill or extension like these.
  */
-const ALWAYS_IGNORED_DIR_NAMES = new Set(['.git', 'node_modules']);
+const ALWAYS_IGNORED_DIR_NAMES = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__']);
 
 /**
- * Directory names also never watched outside the paths a package declares
- * things in, compared lowercased: the build, cache and virtual environment
- * folders a toolchain fills (a Rust `target/` or a Python `.venv` alone can
- * hold more folders than a watch can open). Inside a declaration path, the
- * extensions folder or a path plugin.json names, the same name is an ordinary
- * folder (`skills/build/SKILL.md`, an extension called `dist`), so there only
- * {@link ALWAYS_IGNORED_DIR_NAMES} apply.
+ * Build and coverage output folder names, compared lowercased: ignored too
+ * (a Rust `target/` is as large as a `.venv`), except where the name is a
+ * package's own choice ({@link isPackageNamed}): a skill, command or extension
+ * called `build` or `dist`, or a folder on the way to a path plugin.json names.
+ * A build folder inside one of those (`.dork/extensions/dash/dist`) is still
+ * ignored.
  */
-const BUILD_DIR_NAMES = new Set([
-  'target',
-  '.venv',
-  'venv',
-  'dist',
-  'build',
-  '__pycache__',
-  '.next',
-  'coverage',
+const BUILD_DIR_NAMES = new Set(['target', 'dist', 'build', '.next', 'coverage']);
+
+/**
+ * The folders whose direct children a package names itself: each skill,
+ * command, task, extension, agent and output style.
+ */
+const NAMED_CHILD_CONTAINERS = new Set<string>([
+  EFFECT_BEARING_PATHS.skills,
+  EFFECT_BEARING_PATHS.commands,
+  EFFECT_BEARING_PATHS.tasks,
+  EFFECT_BEARING_PATHS.extensions,
+  EFFECT_BEARING_PATHS.agents,
+  EFFECT_BEARING_PATHS.outputStyles,
+  '.claude/agents',
+  '.claude/output-styles',
 ]);
 
 /**
@@ -157,11 +164,11 @@ export interface DevLinkReloadPlan {
 
 /**
  * Whether a path inside a linked folder is never watched or acted on: anything
- * inside a `.git` or `node_modules` folder (any case); outside the paths a
- * package declares things in, anything inside a {@link BUILD_DIR_NAMES}
- * folder too; such a folder itself when it is known to be one; and DorkOS's
- * own runtime state (`isRuntimeStatePath`: saved data, secrets, install
- * records).
+ * inside an {@link ALWAYS_IGNORED_DIR_NAMES} folder (any case); anything inside
+ * a {@link BUILD_DIR_NAMES} folder the package did not name itself
+ * ({@link isPackageNamed}); such a folder itself when it is known to be one;
+ * and DorkOS's own runtime state (`isRuntimeStatePath`: saved data, secrets,
+ * install records).
  *
  * A last segment is only ignored by those names as a directory, so a program
  * named `build` is still a change. Editor and OS leftovers ({@link JUNK_FILE})
@@ -178,27 +185,32 @@ export function isIgnoredDevLinkPath(
   declared: readonly string[] = []
 ): boolean {
   if (rel === '') return false;
+  const original = rel.split('/');
   const segments = rel.toLowerCase().split('/');
   const last = segments.length - 1;
-  const names = nearDeclarations(rel, declared) ? ALWAYS_IGNORED_DIR_NAMES : ALL_IGNORED_DIR_NAMES;
-  if (segments.some((segment, i) => (i < last || isDirectory) && names.has(segment))) {
-    return true;
-  }
+  const ignoredAt = (segment: string, i: number): boolean =>
+    (i < last || isDirectory) &&
+    (ALWAYS_IGNORED_DIR_NAMES.has(segment) ||
+      (BUILD_DIR_NAMES.has(segment) && !isPackageNamed(original.slice(0, i + 1), declared)));
+  if (segments.some(ignoredAt)) return true;
   if (!isDirectory && JUNK_FILE.test(segments[last]!)) return true;
   return isRuntimeStatePath(rel);
 }
 
-/** Every directory name ignored outside the declaration paths. */
-const ALL_IGNORED_DIR_NAMES = new Set([...ALWAYS_IGNORED_DIR_NAMES, ...BUILD_DIR_NAMES]);
-
 /**
- * Whether `rel` lies inside a declaration path, the extensions folder or a
- * declared path, or on the way to one (`dist` when plugin.json names
- * `dist/hooks.json`).
+ * Whether a build-named folder is one the package named itself: the direct
+ * child of a {@link NAMED_CHILD_CONTAINERS} folder (`skills/build`, an
+ * extension called `dist`), or on the way to a path plugin.json names (`dist`
+ * for `dist/hooks.json`).
+ *
+ * @param segments - The folder's path, split, original case.
+ * @param declared - Extra declaration paths from the folder's plugin.json.
  */
-function nearDeclarations(rel: string, declared: readonly string[]): boolean {
-  return [EXTENSIONS_REL, ...DECLARATION_PATHS, ...PROJECTED_PATHS, ...declared].some(
-    (root) => under(rel, root) || under(root, rel)
+function isPackageNamed(segments: readonly string[], declared: readonly string[]): boolean {
+  const folder = segments.join('/');
+  return (
+    NAMED_CHILD_CONTAINERS.has(segments.slice(0, -1).join('/')) ||
+    declared.some((path) => under(path, folder))
   );
 }
 
@@ -368,6 +380,22 @@ export function relativeTo(folder: string, abs: string): string | null {
   return rel.split(path.sep).join('/');
 }
 
+/** The sweep's listing of a folder: signature by folder-relative path. */
+export type DevLinkShape = Map<string, string>;
+
+/** A path's signature in a {@link DevLinkShape}: `d` for a directory, `mtime:size` otherwise. */
+async function signatureOf(
+  folder: string,
+  rel: string,
+  declared: readonly string[]
+): Promise<{ signature: string; isDirectory: boolean } | null> {
+  const stats = await lstat(path.join(folder, rel)).catch(() => null);
+  if (!stats) return null;
+  const isDirectory = stats.isDirectory();
+  if (isIgnoredDevLinkPath(rel, isDirectory, declared)) return null;
+  return { signature: isDirectory ? 'd' : `${stats.mtimeMs}:${stats.size}`, isDirectory };
+}
+
 /**
  * A cheap listing of where a folder's declarations and extensions live, keyed
  * by folder-relative path: the folder and `.dork` one level deep, every
@@ -377,22 +405,31 @@ export function relativeTo(folder: string, abs: string): string | null {
  * folder (`node_modules` filling up, `.dork/data` being written) never reads
  * as a change. Ignored paths are left out, and links are not followed.
  *
+ * A folder with more than `maxEntries` there gets no listing at all: a cut
+ * listing depends on walk order, so comparing two of them would report
+ * changes that never happened.
+ *
  * @param folder - The linked folder.
  * @param declared - Extra declaration paths from the folder's plugin.json.
- * @returns Signature by path: `d` for a directory, `mtime:size` otherwise.
+ * @param maxEntries - The most entries listed; defaults to {@link SWEEP_MAX_ENTRIES}.
+ * @returns The listing, or `null` when the folder holds more than `maxEntries`.
  */
 export async function shapeOf(
   folder: string,
-  declared: readonly string[] = []
-): Promise<Map<string, string>> {
-  const shape = new Map<string, string>();
+  declared: readonly string[] = [],
+  maxEntries = SWEEP_MAX_ENTRIES
+): Promise<DevLinkShape | null> {
+  const shape: DevLinkShape = new Map();
+  let capped = false;
   const record = async (rel: string): Promise<boolean | null> => {
-    const stats = await lstat(path.join(folder, rel)).catch(() => null);
-    if (!stats) return null;
-    const isDirectory = stats.isDirectory();
-    if (isIgnoredDevLinkPath(rel, isDirectory, declared)) return null;
-    shape.set(rel, isDirectory ? 'd' : `${stats.mtimeMs}:${stats.size}`);
-    return isDirectory;
+    if (shape.size >= maxEntries) {
+      capped = true;
+      return null;
+    }
+    const found = await signatureOf(folder, rel, declared);
+    if (!found) return null;
+    shape.set(rel, found.signature);
+    return found.isDirectory;
   };
   const children = async (rel: string): Promise<string[]> =>
     ((await readdir(path.join(folder, rel)).catch(() => [])) as string[])
@@ -403,13 +440,52 @@ export async function shapeOf(
     for (const child of await children(rel)) await record(child);
   }
   const walk = async (rel: string, depth: number): Promise<void> => {
-    if (shape.size >= SWEEP_MAX_ENTRIES) return;
+    if (capped) return;
     const isDirectory = await record(rel);
     if (!isDirectory || depth >= SWEEP_MAX_DEPTH) return;
     for (const child of await children(rel)) await walk(child, depth + 1);
   };
   for (const rel of [...DEEP_SWEPT_PATHS, ...declared]) await walk(rel, 0);
-  return shape;
+  return capped ? null : shape;
+}
+
+/** Whether {@link shapeOf} lists `rel` (ignoring whether it exists). */
+function isListed(rel: string, declared: readonly string[]): boolean {
+  const parts = rel.split('/');
+  const parent = parts.slice(0, -1).join('/');
+  if ((SHALLOW_SWEPT_DIRS as readonly string[]).includes(parent)) return true;
+  return [...DEEP_SWEPT_PATHS, ...declared].some(
+    (root) => under(rel, root) && parts.length - root.split('/').length <= SWEEP_MAX_DEPTH
+  );
+}
+
+/**
+ * Bring a listing up to date with the changes just acted on, reading only
+ * those paths, so the next sweep does not act on them again. The full walk
+ * belongs to the sweep and to arming a watch; a burst touches a few paths.
+ *
+ * @param folder - The linked folder.
+ * @param shape - The listing to update in place.
+ * @param changes - The changes just acted on.
+ * @param declared - Extra declaration paths from the folder's plugin.json.
+ */
+export async function updateShape(
+  folder: string,
+  shape: DevLinkShape,
+  changes: readonly DevLinkChange[],
+  declared: readonly string[] = []
+): Promise<void> {
+  for (const { rel } of changes) {
+    if (rel === '') continue;
+    const found = isListed(rel, declared) ? await signatureOf(folder, rel, declared) : null;
+    if (found) {
+      shape.set(rel, found.signature);
+      continue;
+    }
+    // Gone (or no longer listed): so is everything under it.
+    shape.delete(rel);
+    for (const key of [...shape.keys()]) if (key.startsWith(`${rel}/`)) shape.delete(key);
+  }
 }
 
 /**
