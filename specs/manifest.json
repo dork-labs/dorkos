@@ -3547,6 +3547,14 @@
       "created": "2026-10-01",
       "status": "specified",
       "linearIssue": "DOR-2662"
+    },
+    {
+      "id": "261004-192008",
+      "slug": "desktop-tab-history",
+      "title": "Back, forward and history for each desktop tab",
+      "created": "2026-10-04",
+      "status": "specified",
+      "linearIssue": "DOR-2107"
     }
   ]
 }
