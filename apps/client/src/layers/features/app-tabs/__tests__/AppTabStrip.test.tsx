@@ -98,10 +98,15 @@ function renderStrip(tabs: AppTab[], activeId: string | null = tabs[0]?.id ?? nu
   );
 }
 
-const DASHBOARD: AppTab = { id: 't1', href: '/' };
-const API_SESSION: AppTab = { id: 't2', href: '/session?session=abc&dir=%2FUsers%2Fkai%2Fapi' };
-const AGENTS: AppTab = { id: 't3', href: '/team' };
-const GENERAL_CHANNEL: AppTab = { id: 't4', href: '/channels?id=room-1' };
+/** A tab with nothing behind it — the strip reads only `id` and `href`. */
+function tab(id: string, href: string): AppTab {
+  return { id, href, history: [href], cursor: 0 };
+}
+
+const DASHBOARD: AppTab = tab('t1', '/');
+const API_SESSION: AppTab = tab('t2', '/session?session=abc&dir=%2FUsers%2Fkai%2Fapi');
+const AGENTS: AppTab = tab('t3', '/team');
+const GENERAL_CHANNEL: AppTab = tab('t4', '/channels?id=room-1');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -153,7 +158,7 @@ describe('AppTabStrip', () => {
         ? { kind: 'channel', slug: 'general', title: 'General' }
         : undefined
     );
-    renderStrip([{ id: 't9', href: '/channels?community=alpha&id=general' }]);
+    renderStrip([tab('t9', '/channels?community=alpha&id=general')]);
     expect(screen.getByRole('tab', { name: /#general/ })).toBeInTheDocument();
     expect(roomById).not.toHaveBeenCalledWith('general');
     // The same cache key the channel bar reads: keyed by the access fingerprint.
@@ -171,7 +176,7 @@ describe('AppTabStrip', () => {
       slug: 'general',
       title: 'General',
     }));
-    renderStrip([{ id: 't9', href: '/channels?community=alpha&id=general' }]);
+    renderStrip([tab('t9', '/channels?community=alpha&id=general')]);
     expect(screen.queryByRole('tab', { name: /#general/ })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Channels/ })).toBeInTheDocument();
   });
