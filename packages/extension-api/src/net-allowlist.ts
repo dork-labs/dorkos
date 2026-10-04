@@ -334,6 +334,13 @@ export function parseNetEntry(entry: string): ParsedNetEntry | NetEntryError {
   }
   const problem = nameProblem(name);
   if (problem) return { error: problem };
+  // A wildcard needs at least two labels under it. That stops `*.com` but
+  // not a wildcard over a multi-label public suffix (`*.co.uk`,
+  // `*.github.io`): refusing those needs the Public Suffix List, which this
+  // dependency-free contract package does not carry. Such an entry is shown
+  // to a person verbatim on the card before it is approved, and the network
+  // guard re-checks every resolved address, so it is a broad yes, never a
+  // silent one.
   if (wildcard && !name.includes('.')) {
     return { error: 'A wildcard needs a domain under it, like *.example.com' };
   }

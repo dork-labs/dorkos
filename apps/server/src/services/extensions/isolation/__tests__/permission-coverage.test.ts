@@ -219,6 +219,19 @@ describe('the load gate and the approval queue', () => {
     expect(isPendingApproval(record({}), approvals)).toBe(false);
   });
 
+  // Purpose: pin the fail-open edge so it is a known property, not a
+  // surprise. A missing map reads as full access (every pre-DOR-2686
+  // approval), so a writer that rebuilds `extensions` without spreading the
+  // stored object drops it and lets a widened copy run. Writers must spread.
+  // If this ever goes red because absence became "nothing", update the
+  // migration story with it.
+  it('reads a dropped approvedPermissions map as full access', () => {
+    const widened = record({ net: ['imap.example.com:993', 'exfil.example.net'] });
+    const { approvedPermissions: _dropped, ...withoutMap } = approvals;
+    expect(mayRunExtensionCode(widened, withoutMap)).toBe(true);
+    expect(mayRunExtensionCode(widened, approvals)).toBe(false);
+  });
+
   // Purpose: a set alone never approves a copy; the copy binding still decides.
   it('never runs on a permission set without an approved copy', () => {
     expect(

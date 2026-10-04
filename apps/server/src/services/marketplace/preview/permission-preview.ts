@@ -20,6 +20,7 @@ import { describePackageLink, findPackageLinks } from '@dorkos/marketplace/packa
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { declaredSet } from '../../extensions/isolation/permission-coverage.js';
 import { clampSchedulePermissionMode } from '../../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { readNpmDependencies } from '../lib/npm-dependencies.js';
@@ -574,22 +575,14 @@ function collectSecrets(
 }
 
 /**
- * Where one extension runs and what it may reach (DOR-2686), read from its
- * manifest: an in-process extension has full access and empty lists.
+ * Where one extension runs and what it may reach (DOR-2686): the same set an
+ * approval of it would record (`declaredSet`), so the install card and the
+ * approval can never describe two different things.
  */
 function isolationOfManifest(
   manifest: ReturnType<typeof ExtensionManifestSchema.parse>
 ): PreviewExtensionIsolation {
-  const caps = manifest.serverCapabilities;
-  if (caps?.runtime !== 'subprocess') {
-    return { runtime: 'in-process', net: [], run: [], agents: false };
-  }
-  return {
-    runtime: 'subprocess',
-    net: [...(caps.allow?.net ?? [])],
-    run: [...(caps.allow?.run ?? [])],
-    agents: caps.allow?.agents ?? false,
-  };
+  return declaredSet(manifest);
 }
 
 /**

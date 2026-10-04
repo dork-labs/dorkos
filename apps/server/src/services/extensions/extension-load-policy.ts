@@ -209,6 +209,13 @@ export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'so
 export type ExtensionApprovals = Pick<ExtensionsConfig, 'approvedToRun' | 'approvedSources'> &
   Partial<Pick<ExtensionsConfig, 'trustedSources' | 'approvedPermissions'>>;
 
+// FAIL-OPEN BY DESIGN, so every writer must spread: an absent
+// `approvedPermissions` map (or entry) reads as the full in-process set, which
+// is what every approval before DOR-2686 was for. A write to `extensions`
+// that rebuilds the object without spreading the stored one drops the map and
+// silently widens every approval that runs separately. Pinned by
+// `isolation/__tests__/permission-coverage.test.ts`.
+
 /** A copy with the manifest it declares its permission set in. */
 export type ExtensionDeclaringCopy = ExtensionCopy & Pick<ExtensionRecord, 'manifest'>;
 
