@@ -9,6 +9,7 @@ import { useExtensions } from '@/layers/features/extensions';
 import { extensionPageState, type ExtensionPageState } from '../model/extension-page-state';
 import { createPageSearchWriter, pageSearchFrom } from '../model/page-search';
 import { useSettledPageState } from '../model/use-settled-page-state';
+import { DevLinkStrip } from './DevLinkStrip';
 
 /** The answer for `/x/Not_An_Id`: no extension could have that id. */
 const NOT_AN_EXTENSION: ExtensionPageState = { kind: 'not-installed', name: 'This add-on' };
@@ -50,6 +51,8 @@ export function ExtensionPageRoute() {
 
   if (state.kind === 'page') {
     const { page, params } = state.at.match;
+    // The extension behind this page, for the dev-link strip (DOR-2696).
+    const pageRecord = extensions.find((extension) => extension.id === state.at.extensionId);
     const Page = page.component;
     return (
       // Keyed on the page, and reset when the address under it changes, so an
@@ -62,6 +65,7 @@ export function ExtensionPageRoute() {
         {/* The whole content area, scrolled here. Layout and padding are the
             page's own: a lens page and a settings form want different ones. */}
         <div data-testid="extension-page" className="h-full min-h-0 overflow-y-auto">
+          {pageRecord?.devLink && <DevLinkStrip extension={pageRecord} />}
           <Page params={params} search={search} setSearch={setSearch} />
         </div>
       </ErrorBoundary>

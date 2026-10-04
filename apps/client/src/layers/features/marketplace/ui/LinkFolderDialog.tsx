@@ -80,7 +80,8 @@ function refusalOf(err: unknown): { message: string; code?: string } {
 }
 
 /**
- * The "Link a folder" dialog. Opened from the Installed toolbar.
+ * The "Link a folder" dialog. Opened from the Installed toolbar, which mounts
+ * it only while open, so every open starts from an empty form.
  */
 export function LinkFolderDialog({ open, onOpenChange }: LinkFolderDialogProps) {
   const [path, setPath] = useState('');
@@ -104,23 +105,9 @@ export function LinkFolderDialog({ open, onOpenChange }: LinkFolderDialogProps) 
     scope === 'agent-local' ? agents.find((a) => a.id === agentId)?.projectPath : undefined;
   const needsAgent = scope === 'agent-local' && projectPath === undefined;
 
-  function reset() {
-    asked.current += 1;
-    setPath('');
-    setScope('global');
-    setAgentId(undefined);
-    setReplaceTicked(false);
-    setState(NOTHING_CHECKED);
-    setChangedNotice(false);
-    setPendingApproval(null);
-    setLinkError(null);
-    preview.reset();
-    link.reset();
-  }
-
   function close() {
+    asked.current += 1;
     onOpenChange(false);
-    reset();
   }
 
   /**
@@ -413,16 +400,19 @@ export function LinkFolderDialog({ open, onOpenChange }: LinkFolderDialogProps) 
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
 
-      <DirectoryPicker
-        open={browsing}
-        onOpenChange={setBrowsing}
-        initialPath={path.trim() || null}
-        onSelect={(picked) => {
-          setPath(picked);
-          setBrowsing(false);
-          void check({ path: picked });
-        }}
-      />
+      {/* Mounted only while browsing: it reads the disk as soon as it mounts. */}
+      {browsing && (
+        <DirectoryPicker
+          open
+          onOpenChange={setBrowsing}
+          initialPath={path.trim() || null}
+          onSelect={(picked) => {
+            setPath(picked);
+            setBrowsing(false);
+            void check({ path: picked });
+          }}
+        />
+      )}
     </ResponsiveDialog>
   );
 }
