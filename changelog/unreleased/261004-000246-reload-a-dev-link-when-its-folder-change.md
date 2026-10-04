@@ -7,6 +7,7 @@ covers:
   - 'fix(marketplace): reload a dev link only for declarations, and never once its unlink starts (DOR-2696)'
   - "fix(marketplace): keep build-named folders inside declarations, and refresh a project's commands after a dev link projection (DOR-2696)"
   - 'fix(marketplace): watch build-named folders only where a package named them, and leave a folder too big to list to its watch (DOR-2696)'
+  - "test(marketplace): allow the dev link watcher's folder listing in the install-sibling guard (DOR-2696)"
 ---
 
 ### Added
