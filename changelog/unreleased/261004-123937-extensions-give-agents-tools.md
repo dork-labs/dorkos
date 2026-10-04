@@ -24,6 +24,11 @@ covers:
   - "test(cli): a terminal sync keeps a running extension's skills and sweeps them once it stops (DOR-2685)"
   - 'fix(harness): an agent workspace reads the running-skills ledger too (DOR-2685)'
   - 'docs(extensions): document extension skills for authors and people (DOR-2685)'
+  - 'test(marketplace): the skills ledger lists only its own plugin roots (DOR-2685)'
+  - "fix(harness): keep running extensions' skill links when the ledger is missing or unreadable (DOR-2685)"
+  - 'fix(claude-code): build the session plugin list whole so overlapping refreshes never double a root (DOR-2685)'
+  - 'fix(extensions): check the folder of skill plugin roots on every reconcile, never clearing through a link (DOR-2685)'
+  - 'docs(extensions): say how extension skills survive a missing ledger and clash with plugins (DOR-2685)'
 ---
 
 ### Added
