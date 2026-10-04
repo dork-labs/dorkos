@@ -135,7 +135,9 @@ vi.mock('../../../../marketplace/consent/global-plugin-consent.js', () => ({
 // cases move this between refreshes.
 const extensionRoots = vi.hoisted(() => ({ paths: [] as string[] }));
 vi.mock('../../../../extensions/agent-skills/running-skills-ledger.js', () => ({
-  extensionSkillPluginRoots: vi.fn(async () => [...extensionRoots.paths]),
+  extensionSkillPluginRoots: vi.fn(async (_dorkHome: string, _loaded?: ReadonlySet<string>) => [
+    ...extensionRoots.paths,
+  ]),
 }));
 vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
@@ -162,6 +164,7 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
+import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
@@ -1112,6 +1115,7 @@ describe("a running extension's skills root on a warm process (DOR-2685)", () =>
 
   beforeEach(() => {
     optIn.persistentSession = true;
+    vi.mocked(extensionSkillPluginRoots).mockClear();
     vi.mocked(buildClaudeAgentSdkPluginsArray).mockImplementation(async ({ enabledPluginNames }) =>
       enabledPluginNames.map((name) => ({ type: 'local' as const, path: `/h/plugins/${name}` }))
     );
@@ -1135,6 +1139,29 @@ describe("a running extension's skills root on a warm process (DOR-2685)", () =>
       { type: 'local', path: '/h/plugins/kept' },
       { type: 'local', path: `${ROOT}/mail` },
     ]);
+  });
+
+  it('loads each root once when two refreshes overlap, and never mistakes it for a same-named plugin', async () => {
+    // Purpose: boot refreshes and a change delivered right after it can run at
+    // once; each must build its own list and assign it whole.
+    approvedGlobals.names = ['kept'];
+    extensionRoots.paths = [`${ROOT}/mail`];
+    // The first refresh is slow to read the ledger, so the second runs whole
+    // inside it.
+    vi.mocked(extensionSkillPluginRoots).mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return [...extensionRoots.paths];
+    });
+    await Promise.all([runtime.refreshActivatedPlugins(), runtime.refreshActivatedPlugins()]);
+    const sessionId = nextSession();
+    await turn(sessionId);
+    expect(cli.processes[0]!.options.plugins).toEqual([
+      { type: 'local', path: '/h/plugins/kept' },
+      { type: 'local', path: `${ROOT}/mail` },
+    ]);
+    for (const [, loaded] of vi.mocked(extensionSkillPluginRoots).mock.calls) {
+      expect([...(loaded ?? [])]).toEqual(['kept']);
+    }
   });
 
   it('rides the warm process when an extension starts, and relaunches without its root once it stops', async () => {
