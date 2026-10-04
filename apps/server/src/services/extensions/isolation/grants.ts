@@ -84,7 +84,9 @@ export function buildChildEnv(
   electronRunAsNode: boolean = Boolean(process.versions.electron)
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const key of ['NODE_ENV', 'TZ', 'LANG']) {
+  // SystemRoot and windir name the Windows folder, not a secret; without them
+  // Winsock cannot load its providers, so not even an allowed connection works.
+  for (const key of ['NODE_ENV', 'TZ', 'LANG', 'SystemRoot', 'windir']) {
     if (source[key] !== undefined) env[key] = source[key];
   }
   for (const [key, value] of Object.entries(source)) {

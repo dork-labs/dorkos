@@ -19,7 +19,8 @@
  * `--allow-wasi`, `--allow-inspector`. The parent's `execArgv` (tsx loaders in
  * development) is never inherited, and the environment is built from nothing:
  * locale and time zone, `HOME` and the temp variables pointing into the files
- * folder, the extension id, and `ELECTRON_RUN_AS_NODE` inside the desktop app.
+ * folder, the extension id, `SystemRoot`/`windir` on Windows (Winsock needs
+ * them), and `ELECTRON_RUN_AS_NODE` inside the desktop app.
  * No `PATH`, no `NODE_OPTIONS`, no keys, no DorkOS tokens.
  *
  * A grant path containing `,` or `*` is refused before forking: older Node

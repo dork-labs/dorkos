@@ -63,6 +63,13 @@ describe('buildChildEnv', () => {
       DORKOS_EXT_ID: 'mail',
     });
     expect(buildChildEnv('mail', '/d', {}, true).ELECTRON_RUN_AS_NODE).toBe('1');
+    // The Windows folder, which Winsock needs, is the one other thing carried.
+    expect(
+      buildChildEnv('mail', '/d', { SystemRoot: 'C:\\Windows', USERNAME: 'x' }, false)
+    ).toMatchObject({
+      SystemRoot: 'C:\\Windows',
+    });
+    expect(buildChildEnv('mail', '/d', { USERNAME: 'x' }, false).USERNAME).toBeUndefined();
   });
 });
 

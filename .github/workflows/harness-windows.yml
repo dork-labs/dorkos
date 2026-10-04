@@ -1,7 +1,8 @@
 name: harness-windows
 
-# Runs the harness projection engine's own suite, and the CLI's `harness sync`
-# suite, on a REAL Windows runner.
+# Runs the harness projection engine's own suite, the CLI's `harness sync`
+# suite, and the server's isolated-extension suite (DOR-2686, see its step
+# below), on a REAL Windows runner.
 #
 # WHY THIS EXISTS: the engine has a Windows branch nothing has ever executed.
 # `apply/windows-links.ts`'s `symlinkTypeFor()` asks Windows for a real `'dir'`
@@ -310,8 +311,30 @@ jobs:
         if: ${{ github.event_name != 'pull_request' || steps.scope.outputs.run == 'true' }}
         run: pnpm vitest run packages/cli/src/__tests__/harness-sync
 
+      # ISOLATED EXTENSIONS (DOR-2686). The server forks one Node process per
+      # extension that runs separately, with Node's permission model on, and a
+      # network guard inside it. Everything about that is platform-shaped:
+      # permission grants are real paths (drive letters, 8.3 names), the child's
+      # environment is built from nothing (Winsock needs SystemRoot), programs
+      # are resolved through PATHEXT and stopped with taskkill, and the
+      # raw-handle layer of the guard reads pipe handles Windows makes
+      # differently. Every leg of that suite was written against real
+      # processes, and only this job runs it on Windows. The Electron leg runs
+      # too when the runner can start Electron as plain Node (it says which).
+      #
+      # Scope rides the step above: `dorkos` depends on `@dorkos/server`, so a
+      # server change counts as affected, and `dorkos^...` already built the
+      # server's own dependencies. One filter, a directory: a moved suite reds
+      # here rather than silently matching nothing (see the two steps above).
+      #
+      # No Windows user-facing claim follows from a green run (AGENTS.md demo
+      # claim gate): this is a CI runner, not a person's install.
+      - name: Run the isolated-extension suite
+        if: ${{ github.event_name != 'pull_request' || steps.scope.outputs.run == 'true' }}
+        run: pnpm vitest run apps/server/src/services/extensions/isolation
+
       # Says out loud, in the log, that this run tested nothing — so a green
       # check here is never mistaken for a suite that passed.
       - name: Nothing in this pull request can reach the harness engine
         if: ${{ github.event_name == 'pull_request' && steps.scope.outputs.run != 'true' }}
-        run: echo 'No change in @dorkos/harness, dorkos, or anything they depend on. The merge queue runs these suites unconditionally.'
+        run: echo 'No change in @dorkos/harness, dorkos (which includes @dorkos/server), or anything they depend on. The merge queue runs these suites unconditionally.'
