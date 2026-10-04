@@ -33,11 +33,11 @@ import { sessionSearchSchema } from '@/layers/shared/lib/session-link';
  *
  * - `continuedFrom` — the `/clear` "linked back" reference, read off the router
  *   by the surface that draws the link.
- * - the ten `dialogSearchSchema` keys `mergeDialogSearch` folds in
+ * - the eleven `dialogSearchSchema` keys `mergeDialogSearch` folds in
  *   (`settings`, `settingsSection`, `agent`, `agentPath`, `panel`, `hubTab`,
- *   `profile`, `profilePage`, `tasks`, `relay`) — these belong to `useSettingsDeepLink`,
- *   `useProfileDeepLink` and their siblings, which own opening and closing the
- *   dialogs. A session hook forwarding them would invite a second opener.
+ *   `profile`, `profilePage`, `tasks`, `relay`, `inbox`) — these belong to
+ *   `useSettingsDeepLink`, `useProfileDeepLink`, `useInboxDeepLink` and their
+ *   siblings, which own opening and closing the dialogs. A session hook forwarding them would invite a second opener.
  *
  * Adding a key here is a decision, and the point is that it has to be made.
  */
@@ -52,6 +52,7 @@ const DELIBERATELY_NOT_FORWARDED = new Set([
   'profile',
   'profilePage',
   'tasks',
+  'inbox',
   'relay',
 ]);
 

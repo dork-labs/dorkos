@@ -71,7 +71,7 @@ function DecisionFrame({
       data-decision-id={decisionId}
       data-focused={focused ? 'true' : undefined}
       tabIndex={focused ? -1 : undefined}
-      className={focused ? 'ring-ring/50 rounded-md ring-2 outline-none' : undefined}
+      className={focused ? 'ring-ring rounded-md ring-2 outline-none' : undefined}
     >
       {children}
     </div>
