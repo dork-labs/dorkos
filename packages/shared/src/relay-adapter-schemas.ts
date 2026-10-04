@@ -573,7 +573,10 @@ export const BRIDGE_REQUIRES_CHAT_ID_MESSAGE =
  *
  * @param binding - The `bridge` and `chatId` fields to check together.
  */
-export function bridgeAllowsChatId(binding: { bridge: string; chatId?: string | null }): boolean {
+export function bridgeAllowsChatId(binding: {
+  bridge: string;
+  chatId?: string | null | undefined;
+}): boolean {
   return binding.bridge !== 'room' || Boolean(binding.chatId);
 }
 
