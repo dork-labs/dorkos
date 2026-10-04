@@ -218,6 +218,15 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
 
     act(() => pause.open());
     expect(screen.getByRole('dialog', { name: 'Pause' })).toBeInTheDocument();
+
+    // Reopening mounts it fresh behind a new boundary: it renders, throws and is
+    // closed again, rather than staying stuck in the old boundary's fallback.
+    const crashLogs = () =>
+      errors.mock.calls.filter(([msg]) => String(msg).includes('flow:broken crashed')).length;
+    expect(crashLogs()).toBe(1);
+    act(() => broken.open());
+    expect(crashLogs()).toBe(2);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     errors.mockRestore();
   });
 });
