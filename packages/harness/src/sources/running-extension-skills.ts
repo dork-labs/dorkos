@@ -283,18 +283,27 @@ export type ExtensionSkillFolderCheck =
   { ok: true } | { ok: false; code: ExtensionSkillDropCode; reason: string };
 
 /**
- * Check one skill an extension declares against its `skills/` folder, by the
- * same rules a projection applies (DOR-2685). The server runs it at discovery
- * so Settings can say which skill is left out and why before any harness sync.
+ * Check one skill an extension declares, by exactly the rules a projection
+ * applies (DOR-2685): first that `skills/` is the extension's own folder
+ * ({@link ownSkillsFolderProblem}), then the skill's own folder and `SKILL.md`.
+ * The server runs it at discovery so Settings can say which skill is left out
+ * and why before any harness sync.
  *
  * @param skillsDir - the extension's `skills/` folder, absolute.
  * @param name - the declared skill name.
+ * @param owner - the extension whose folder `skillsDir` must belong to.
  * @returns ok, or the code and the full reason it is dropped.
  */
 export function checkExtensionSkillFolder(
   skillsDir: string,
-  name: string
+  name: string,
+  owner: { id: string }
 ): ExtensionSkillFolderCheck {
+  // A missing `skills/` is judged per skill below ("is not there").
+  if (lstatSync(skillsDir, { throwIfNoEntry: false }) !== undefined) {
+    const problem = ownSkillsFolderProblem(owner.id, skillsDir);
+    if (problem !== undefined) return { ok: false, code: 'not-a-folder', reason: problem };
+  }
   const checked = checkExtensionSkill(skillsDir, name, join(skillsDir, name));
   return checked.ok ? { ok: true } : { ok: false, code: checked.code, reason: checked.reason };
 }
@@ -392,24 +401,38 @@ function checkExtensionSkill(skillsDir: string, name: string, sourceDir: string)
  * `.dork/extensions/<id>`, and a verified snapshot of one), and still inside
  * that folder once links are resolved, so a `skills` link out of the extension
  * never becomes a source.
+ *
+ * @returns why it is not, or `undefined` when it is.
  */
-function isOwnSkillsFolder(entry: RunningExtensionSkillsEntry): boolean {
-  const skillsDir = resolve(entry.skillsDir);
+function ownSkillsFolderProblem(id: string, skillsDirIn: string): string | undefined {
+  const skillsDir = resolve(skillsDirIn);
   const extensionDir = dirname(skillsDir);
   if (
     basename(skillsDir) !== 'skills' ||
-    basename(extensionDir) !== entry.id ||
+    basename(extensionDir) !== id ||
     basename(dirname(extensionDir)) !== 'extensions'
   ) {
-    return false;
+    return `${skillsDir} is not the skills folder of the "${id}" extension's own folder`;
   }
   try {
     const real = realpathSync(skillsDir);
     const realExtension = realpathSync(extensionDir);
-    return real !== realExtension && isInside(real, realExtension);
-  } catch {
-    return false;
+    if (real !== realExtension && isInside(real, realExtension)) return undefined;
+    return `${skillsDir} links outside the "${id}" extension's folder`;
+  } catch (err) {
+    return `${skillsDir} could not be read (${messageOf(err)})`;
   }
+}
+
+/** The warning one dropped extension skill earns. */
+function droppedSkillWarning(id: string, name: string, reason: string): ProjectionWarning {
+  return {
+    artifact: 'skill',
+    harness: EXTENSION_WARNING_ATTRIBUTION,
+    harnessAgnostic: true,
+    name: `${id}__${name}`,
+    reason: `the "${id}" extension's skill "${name}" was left out: ${reason}`,
+  };
 }
 
 /**
@@ -429,7 +452,15 @@ function toPackages(
     // A skills folder that is gone contributes nothing, so the next sweep
     // removes its links: the extension stopped, or its files went.
     if (lstatSync(entry.skillsDir, { throwIfNoEntry: false }) === undefined) continue;
-    if (!isOwnSkillsFolder(entry)) continue;
+    // A `skills/` that is not the extension's own folder contributes nothing,
+    // and says so once per declared skill, as discovery does.
+    const folderProblem = ownSkillsFolderProblem(entry.id, entry.skillsDir);
+    if (folderProblem !== undefined) {
+      for (const name of [...entry.skills].sort()) {
+        warnings.push(droppedSkillWarning(entry.id, name, folderProblem));
+      }
+      continue;
+    }
     const skills: InstalledSkill[] = [];
     for (const name of [...entry.skills].sort()) {
       const checked = checkExtensionSkill(entry.skillsDir, name, sourceOf(entry, name));
@@ -437,13 +468,7 @@ function toPackages(
         skills.push(checked.skill);
         continue;
       }
-      warnings.push({
-        artifact: 'skill',
-        harness: EXTENSION_WARNING_ATTRIBUTION,
-        harnessAgnostic: true,
-        name: `${entry.id}__${name}`,
-        reason: `the "${entry.id}" extension's skill "${name}" was left out: ${checked.reason}`,
-      });
+      warnings.push(droppedSkillWarning(entry.id, name, checked.reason));
     }
     if (skills.length === 0) continue;
     packages.push({

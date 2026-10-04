@@ -10,14 +10,18 @@
  * @module services/extensions/agent-skills/skill-checks
  */
 import path from 'path';
-import { checkExtensionSkillFolder, type ExtensionSkillDropCode } from '@dorkos/harness';
+import {
+  checkExtensionSkillFolder,
+  type ExtensionSkillDropCode,
+  type ExtensionSkillFolderCheck,
+} from '@dorkos/harness';
 import type { ExtensionManifest, ExtensionSkillStatus } from '@dorkos/extension-api';
 
 /** The sentence a person reads for each reason a skill is left out. */
 export const SKILL_DROP_REASON: Record<ExtensionSkillDropCode, string> = {
   'invalid-name': 'Its name isn’t a valid skill name.',
   'missing-folder': 'Its folder is missing from skills/.',
-  'not-a-folder': 'Its entry in skills/ isn’t a plain folder.',
+  'not-a-folder': 'It isn’t a plain folder inside the extension’s own skills/ folder.',
   'missing-file': 'Its SKILL.md file is missing.',
   unreadable: 'Its SKILL.md file couldn’t be read.',
   'invalid-file': 'Its SKILL.md file isn’t a valid skill.',
@@ -27,21 +31,34 @@ export const SKILL_DROP_REASON: Record<ExtensionSkillDropCode, string> = {
  * Check every skill a manifest declares against the extension's folder.
  *
  * @param extensionDir - The extension's folder, absolute.
- * @param manifest - Its parsed manifest.
+ * @param manifest - Its parsed manifest; `id` is the folder name `skills/` must sit under.
  * @returns One status per declared skill, in manifest order, or `undefined`
  *   when it declares none.
  */
 export function checkDeclaredSkills(
   extensionDir: string,
-  manifest: Pick<ExtensionManifest, 'skills'>
+  manifest: Pick<ExtensionManifest, 'id' | 'skills'>
 ): ExtensionSkillStatus[] | undefined {
   const declared = manifest.skills ?? [];
   if (declared.length === 0) return undefined;
   const skillsDir = path.join(extensionDir, 'skills');
   return declared.map((name) => {
-    const checked = checkExtensionSkillFolder(skillsDir, name);
-    return checked.ok
-      ? { name, status: 'ok' as const }
-      : { name, status: 'dropped' as const, reason: SKILL_DROP_REASON[checked.code] };
+    return toSkillStatus(name, checkExtensionSkillFolder(skillsDir, name, { id: manifest.id }));
   });
+}
+
+/**
+ * One harness verdict as the status a person reads: the harness's own reason
+ * names absolute paths, so the sentence comes from its code alone.
+ *
+ * @param name - The declared skill name.
+ * @param checked - The harness's verdict on it.
+ */
+export function toSkillStatus(
+  name: string,
+  checked: ExtensionSkillFolderCheck
+): ExtensionSkillStatus {
+  return checked.ok
+    ? { name, status: 'ok' }
+    : { name, status: 'dropped', reason: SKILL_DROP_REASON[checked.code] };
 }

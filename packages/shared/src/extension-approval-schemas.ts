@@ -87,10 +87,12 @@ export const PendingExtensionApprovalSchema = z
     /**
      * The tools it would give agents once it runs, in manifest order, so a
      * person sees each tool and its tier before saying yes (DOR-2685).
+     * Defaults to empty so an older server that never sends it still lists
+     * every waiting extension instead of failing the whole response.
      */
-    agentTools: z.array(ExtensionAgentToolSummarySchema),
-    /** The skills it would give agents once it runs, in manifest order (DOR-2685). */
-    agentSkills: z.array(ExtensionAgentSkillSummarySchema),
+    agentTools: z.array(ExtensionAgentToolSummarySchema).default([]),
+    /** The skills it would give agents once it runs, in manifest order (DOR-2685). Defaults to empty. */
+    agentSkills: z.array(ExtensionAgentSkillSummarySchema).default([]),
   })
   .openapi('PendingExtensionApproval');
 

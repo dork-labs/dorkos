@@ -32,6 +32,8 @@ covers:
   - "feat(extensions): report each extension's agent tools and skills to the approval row and cards (DOR-2685)"
   - 'feat(extensions): show what an extension gives agents on its card, its approval row and tool cards (DOR-2685)'
   - 'docs(extensions): say where people see extension tools and skills, and how the registry layers (DOR-2685)'
+  - 'fix(extensions): one skill check for discovery and projection, and a list that survives an older server (DOR-2685)'
+  - 'fix(extensions): honest gift counts, a subtitle that matches its summary, and review nits (DOR-2685)'
 ---
 
 ### Added

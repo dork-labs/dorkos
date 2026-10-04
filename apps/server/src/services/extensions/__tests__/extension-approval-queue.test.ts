@@ -678,6 +678,25 @@ describe('what it would give agents (DOR-2685)', () => {
     ]);
   });
 
+  it('counts no skill when skills/ links out of the extension, on the row and in Settings', async () => {
+    // Projection never links through such a folder, so neither the row nor
+    // the card (nor list_extensions, which reads the same record) may count it.
+    const fixture = path.resolve(HERE, '../__fixtures__/agent-tools-ext');
+    const dir = path.join(dorkHome, 'extensions', 'agent-tools-ext');
+    fs.cpSync(fixture, dir, { recursive: true });
+    const shared = path.join(dorkHome, 'shared-skills');
+    fs.renameSync(path.join(dir, 'skills'), shared);
+    fs.symlinkSync(shared, path.join(dir, 'skills'));
+    await manager.enable('agent-tools-ext');
+    await queue.sync();
+
+    const reason = 'It isn’t a plain folder inside the extension’s own skills/ folder.';
+    const [approval] = await pending();
+    expect(approval.agentSkills).toEqual([{ name: 'tidy-notes', droppedReason: reason }]);
+    const record = manager.listPublic().find((ext) => ext.id === 'agent-tools-ext');
+    expect(record?.skills).toEqual([{ name: 'tidy-notes', status: 'dropped', reason }]);
+  });
+
   it('says nothing is given when the manifest declares no tools or skills', async () => {
     await installPlugin();
 

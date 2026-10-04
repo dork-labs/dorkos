@@ -7,8 +7,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { checkDeclaredSkills, SKILL_DROP_REASON } from '../skill-checks.js';
+import { checkExtensionSkillFolder } from '@dorkos/harness';
+import { checkDeclaredSkills, SKILL_DROP_REASON, toSkillStatus } from '../skill-checks.js';
 
+let root: string;
 let extensionDir: string;
 
 /** Write `skills/<name>/SKILL.md` with the given body. */
@@ -22,17 +24,20 @@ const VALID = (name: string) =>
   `---\nname: ${name}\ndescription: Use when the person asks for ${name}.\n---\n\nDo the thing.\n`;
 
 beforeEach(() => {
-  extensionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-skill-checks-'));
+  // Where every copy of an extension lives: `…/extensions/<id>`.
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-skill-checks-'));
+  extensionDir = path.join(root, 'extensions', 'mail-app');
+  fs.mkdirSync(extensionDir, { recursive: true });
 });
 
 afterEach(() => {
-  fs.rmSync(extensionDir, { recursive: true, force: true });
+  fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe('checkDeclaredSkills', () => {
   it('reports nothing for a manifest that declares no skills', () => {
-    expect(checkDeclaredSkills(extensionDir, {})).toBeUndefined();
-    expect(checkDeclaredSkills(extensionDir, { skills: [] })).toBeUndefined();
+    expect(checkDeclaredSkills(extensionDir, { id: 'mail-app' })).toBeUndefined();
+    expect(checkDeclaredSkills(extensionDir, { id: 'mail-app', skills: [] })).toBeUndefined();
   });
 
   it('marks a well-formed skill ok, in manifest order beside the dropped ones', () => {
@@ -41,7 +46,10 @@ describe('checkDeclaredSkills', () => {
     writeSkill('broken', 'no frontmatter at all');
 
     expect(
-      checkDeclaredSkills(extensionDir, { skills: ['tidy-notes', 'gone', 'no-file', 'broken'] })
+      checkDeclaredSkills(extensionDir, {
+        id: 'mail-app',
+        skills: ['tidy-notes', 'gone', 'no-file', 'broken'],
+      })
     ).toEqual([
       { name: 'tidy-notes', status: 'ok' },
       { name: 'gone', status: 'dropped', reason: SKILL_DROP_REASON['missing-folder'] },
@@ -57,15 +65,44 @@ describe('checkDeclaredSkills', () => {
       path.join(extensionDir, 'skills', 'linked')
     );
 
-    expect(checkDeclaredSkills(extensionDir, { skills: ['linked'] })).toEqual([
+    expect(checkDeclaredSkills(extensionDir, { id: 'mail-app', skills: ['linked'] })).toEqual([
       { name: 'linked', status: 'dropped', reason: SKILL_DROP_REASON['not-a-folder'] },
     ]);
   });
 
-  it('never puts a path in the sentence a person reads', () => {
-    const reasons = Object.values(SKILL_DROP_REASON);
-    for (const reason of reasons) expect(reason).not.toContain(extensionDir);
-    const [checked] = checkDeclaredSkills(extensionDir, { skills: ['gone'] }) ?? [];
-    expect(checked?.reason).not.toContain(path.sep + 'skills' + path.sep);
+  it('drops every skill when skills/ links out of the extension, as a projection does', () => {
+    // An author points skills/ at a shared folder. Projection never links
+    // through it, so Settings must not count these skills either.
+    const shared = path.join(root, 'shared-skills');
+    fs.mkdirSync(path.join(shared, 'tidy-notes'), { recursive: true });
+    fs.writeFileSync(path.join(shared, 'tidy-notes', 'SKILL.md'), VALID('tidy-notes'));
+    fs.symlinkSync(shared, path.join(extensionDir, 'skills'));
+
+    expect(checkDeclaredSkills(extensionDir, { id: 'mail-app', skills: ['tidy-notes'] })).toEqual([
+      { name: 'tidy-notes', status: 'dropped', reason: SKILL_DROP_REASON['not-a-folder'] },
+    ]);
+  });
+
+  it('drops every skill when the folder is not named after the extension id', () => {
+    writeSkill('tidy-notes', VALID('tidy-notes'));
+
+    expect(checkDeclaredSkills(extensionDir, { id: 'other-id', skills: ['tidy-notes'] })).toEqual([
+      { name: 'tidy-notes', status: 'dropped', reason: SKILL_DROP_REASON['not-a-folder'] },
+    ]);
+  });
+
+  it('never puts the harness path-bearing reason in the sentence a person reads', () => {
+    // The harness reason names the absolute folder; the card must not.
+    const checked = checkExtensionSkillFolder(path.join(extensionDir, 'skills'), 'gone', {
+      id: 'mail-app',
+    });
+    expect(checked.ok).toBe(false);
+    expect(!checked.ok && checked.reason).toContain(root);
+
+    const status = toSkillStatus('gone', checked);
+    expect(status.status).toBe('dropped');
+    expect(status.reason).toBeDefined();
+    expect(status.reason).not.toContain(root);
+    expect(status.reason).not.toContain(path.sep + 'extensions' + path.sep);
   });
 });
