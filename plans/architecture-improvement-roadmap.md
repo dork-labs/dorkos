@@ -8,7 +8,42 @@ The [system architecture atlas](../contributing/system-architecture.md) describe
 
 **Coordination:** [DOR-2344](https://linear.app/dorkspace/issue/DOR-2344/coordinate-the-architecture-improvement-roadmap). The original capture created one tracker idea per workstream; the current disposition below records subsequent delivery. Saving or updating this roadmap does not make remaining work automatically dispatchable. Existing projects remain the delivery homes. There is no new catch-all architecture project.
 
-## Current disposition, 2026-10-01
+## Review documents
+
+These documents remain in the public repository. Start with the atlas for the current system, then the assessment and ranked work below. Earlier ideation and evidence records remain available as dated history.
+
+| Document                                                                                 | Purpose                                                                                                         |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| [System architecture atlas](../contributing/system-architecture.md)                      | Current service boundaries, communication, replaceable interfaces, data authority and rendered diagrams.        |
+| [October 4 assessment](../research/20261004-architecture-assessment.md)                  | Code evidence, strengths, ranked improvements and bounded acceptance criteria.                                  |
+| [Diagram sources and rendering](../contributing/diagrams/architecture/README.md)         | Editable Mermaid sources, generated SVG locations and regeneration procedure.                                   |
+| [Cloud retirement readiness](../research/20260928-cloud-retirement-readiness.md)         | Current forwarding correction, historical evidence and prerequisites for retiring local account implementation. |
+| [Shared design-system ideation](../specs/shared-design-system/01-ideation.md)            | Original brief; current implementation and consumer receipts are linked from its reading-context note.          |
+| [Shutdown/handoff specification](../specs/shutdown-handoff-outcomes/02-specification.md) | Existing design for the first recommended implementation chunk.                                                 |
+
+This roadmap owns priority and scope rationale. Linear owns live assignments and execution state; implementation receipts own delivery evidence.
+
+## Current assessment, 2026-10-04
+
+Public source: `116297e14f7c357d24010ba34b9ceaa1b44aef99`. The [deep assessment](../research/20261004-architecture-assessment.md) and [atlas](../contributing/system-architecture.md) supersede current-state assumptions in the dated snapshots below. Keep local execution, independent Community content authority and optional Cloud control operations as the topology. The main remaining debt is ownership after acceptance: lifetime, revocation, recovery and permission to hand off resources.
+
+Credits selection and all three runtime implementations have shipped under DOR-2623/2633, with advertised-format gating and different payer scopes. Dynamic extension tools/skills and dev links are delivered under DOR-2685/2696. Relay delivery observations are delivered under DOR-2666. Avoid scheduling these as unbuilt features. Isolated extension backends remain active under DOR-2686: foundations are merged, but production activation still refuses at this source. Document delivery is partly wired with later publication/checkbox work active. Managed-browser foundations remain private fixture/research code without production activation.
+
+| Rank | Next architectural outcome                           | First bounded chunk and owner                                                                                                                                                                                                                                                                       |
+| ---- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Safe shutdown, reset and successor handoff           | Select the existing DOR-2482 laboratory. Prove resource-specific permissions with disposable storage and fake destructive effects, then adopt one production cohort with exclusive terminal ownership. DOR-2483 separately preserves the original startup error; DOR-2484 owns retention lifetimes. |
+| 2    | Honest recovery and payer proof                      | DOR-2349 reconciles the existing matrices with nested credits work, absent runtime binaries, move interruption boundaries, erasure reapplication, document dispatch and Relay unknown outcomes. Select narrow missing cases; do not create a second broad suite or change paid gates.               |
+| 3    | One authoritative owner per migrated Cloud route/job | Existing DOR-2348/1798/2442 owners refresh route, compatibility and cron inventories. Account retirement still requires a full production release after handover without rollback. DOR-2086 remains a separate app consumer with enrollment/ingress gates.                                          |
+| 4    | Executable extension and composed delivery ownership | Let active DOR-2686 finish its production context/lifecycle/tool path. Verify actual child termination and contribution removal. Then coordinate a bounded document composition owner and project/recovery enumeration review with their existing owners.                                           |
+| 5    | Smaller contracts for real consumers                 | DOR-2346 shapes turn-lease lifetime independently of response transport. Incrementally extract domain interfaces behind the existing Transport facade; preserve shared runtime conformance, durable work and FSD boundaries.                                                                        |
+
+Source-backed urgency: admin reset/restart still starts a successor after cleanup rejects. Root cleanup releases the instance lock without whole-writer quiescence proof. This is stronger evidence than file length alone. Conversely, response-shaped lock vocabulary is coupling to improve, not evidence that current token-matched locks are broken. Keep those distinctions in future briefs.
+
+The read-only assessment also found source/tracker/receipt differences worth preserving: launch acceptance DOR-2600 is still In Progress with PR #2533 open; the new managed-browser package is not production browser activation; subprocess extension foundations are not completed production isolation. A Done issue does not certify every runtime binary, release or deployment.
+
+The first implementation recommendation is lifecycle laboratory proof. Recovery reconciliation can proceed independently. This review does not claim or ready remaining issues, duplicate active sessions, run paid tests, close the umbrella or authorize a broad rewrite. See the assessment for code evidence, bounded acceptance and current Linear readback.
+
+## Disposition snapshot, 2026-10-01
 
 Reviewed public source: `996161118a84f938fe76b6e569ba077dfb7a574a`. Linear states were read on October 1; they are a snapshot, not dispatch approval. The [review receipt](../research/20261001-architecture-refresh.md) and [architecture atlas](../contributing/system-architecture.md) supersede the current-state assumptions in the historical sections below.
 
