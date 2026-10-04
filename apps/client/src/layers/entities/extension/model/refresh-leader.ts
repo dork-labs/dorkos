@@ -16,28 +16,40 @@
  * @module entities/extension/model/refresh-leader
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 /**
  * Make a hook that tells each mounted copy whether it is the one that refreshes.
  *
  * Call once per refreshing hook, at module scope, so its copies share one
- * roster.
+ * roster. The roster is kept per `QueryClient`: two clients hold two caches,
+ * and a copy under one cannot refresh the other's.
  */
 export function createRefreshLeader(): () => () => boolean {
   // Insertion-ordered, so the first entry is the longest-mounted copy; when it
   // unmounts, the next one takes over without a gap.
-  const mounted = new Set<symbol>();
+  const rosters = new WeakMap<QueryClient, Set<symbol>>();
+  const rosterOf = (client: QueryClient): Set<symbol> => {
+    let roster = rosters.get(client);
+    if (!roster) {
+      roster = new Set();
+      rosters.set(client, roster);
+    }
+    return roster;
+  };
 
   return function useIsRefreshLeader(): () => boolean {
+    const queryClient = useQueryClient();
     const [id] = useState(() => Symbol('refresh-leader'));
 
     useEffect(() => {
-      mounted.add(id);
+      const roster = rosterOf(queryClient);
+      roster.add(id);
       return () => {
-        mounted.delete(id);
+        roster.delete(id);
       };
-    }, [id]);
+    }, [queryClient, id]);
 
-    return useCallback(() => mounted.values().next().value === id, [id]);
+    return useCallback(() => rosterOf(queryClient).values().next().value === id, [queryClient, id]);
   };
 }

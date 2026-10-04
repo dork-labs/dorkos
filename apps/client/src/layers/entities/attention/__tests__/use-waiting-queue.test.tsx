@@ -48,7 +48,7 @@ function setup() {
       </QueryClientProvider>
     );
   }
-  return { transport, wrapper };
+  return { transport, queryClient, wrapper };
 }
 
 beforeEach(() => {
@@ -83,5 +83,21 @@ describe('useWaitingQueue — failed reads', () => {
     await waitFor(() => expect(result.current.isAnyError).toBe(false));
     expect(transport.listPendingInteractions).toHaveBeenCalledTimes(2);
     expect(transport.listPendingApprovals).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves other failed reads under the same key prefix alone', async () => {
+    // `['tasks']` is a prefix of other task reads that are not in this queue.
+    // Seeded defect: drop `exact: true` and this run list is read again too.
+    const { queryClient, wrapper } = setup();
+    const runs = vi.fn().mockRejectedValue(new Error('offline'));
+    await queryClient.prefetchQuery({ queryKey: ['tasks', 'runs'], queryFn: runs });
+    expect(runs).toHaveBeenCalledTimes(1);
+    const { result } = renderHook(() => useWaitingQueue(), { wrapper });
+    await waitFor(() => expect(result.current.isAnyError).toBe(true));
+
+    act(() => result.current.retryFailed());
+
+    await waitFor(() => expect(result.current.isAnyError).toBe(false));
+    expect(runs).toHaveBeenCalledTimes(1);
   });
 });

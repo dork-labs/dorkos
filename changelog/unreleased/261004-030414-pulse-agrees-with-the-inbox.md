@@ -5,6 +5,7 @@ covers:
   - 'fix(client): address review on Pulse and Home agreeing with the Inbox (DOR-2578)'
   - 'fix(client): Pulse hides its Home duplicate only where the panel is docked (DOR-2578)'
   - 'fix(client): keep the waiting queue honest with Tasks off and after back-to-back events (DOR-2578)'
+  - 'fix(client): scope waiting-queue retries and refresh leaders exactly (DOR-2578)'
 ---
 
 ### Fixed

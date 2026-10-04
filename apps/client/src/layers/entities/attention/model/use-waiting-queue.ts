@@ -99,13 +99,15 @@ export interface WaitingQueueState {
 }
 
 /** The five reads the queue is built from, by query key. */
-const WAITING_QUERY_KEYS: readonly QueryKey[] = [
-  PENDING_APPROVALS_QUERY_KEY,
-  PENDING_INTERACTIONS_QUERY_KEY,
-  TASKS_KEY,
-  extensionQueryKeys.pendingApprovals(),
-  extensionDecisionsKey(),
-];
+function waitingQueryKeys(): readonly QueryKey[] {
+  return [
+    PENDING_APPROVALS_QUERY_KEY,
+    PENDING_INTERACTIONS_QUERY_KEY,
+    TASKS_KEY,
+    extensionQueryKeys.pendingApprovals(),
+    extensionDecisionsKey(),
+  ];
+}
 
 /**
  * Everything waiting on the operator: capability approvals, prompts agents are
@@ -152,9 +154,12 @@ export function useWaitingQueue(): WaitingQueueState {
   // Only the reads that failed, and only enabled ones: a disabled query (Tasks
   // switched off) is never refetched by `refetchQueries`.
   const retryFailed = useCallback(() => {
-    for (const queryKey of WAITING_QUERY_KEYS) {
+    for (const queryKey of waitingQueryKeys()) {
       void queryClient.refetchQueries({
         queryKey,
+        // Exact: `['tasks']` is a prefix of other task reads (a run list, say)
+        // that are not part of this queue.
+        exact: true,
         predicate: (query) => query.state.status === 'error',
       });
     }

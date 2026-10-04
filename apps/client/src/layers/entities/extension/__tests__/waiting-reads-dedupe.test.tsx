@@ -151,6 +151,27 @@ describe('extension waiting reads — one read per event', () => {
   });
 });
 
+describe('extension waiting reads — one leader per cache', () => {
+  it('refreshes every QueryClient, not only the one the first copy mounted under', async () => {
+    // Two clients are two caches; a copy under one cannot refresh the other.
+    // Seeded defect: share one roster across clients, and the second cache
+    // never hears the event.
+    const first = makeWrapper();
+    const second = makeWrapper();
+    renderHook(() => useExtensionDecisions(), { wrapper: first.Wrapper });
+    renderHook(() => useExtensionDecisions(), { wrapper: second.Wrapper });
+    await waitFor(() => expect(first.queryClient.isFetching()).toBe(0));
+    await waitFor(() => expect(second.queryClient.isFetching()).toBe(0));
+    expect(reads.get('decisions')).toBe(2);
+
+    act(() => emit('standing_pending', { kind: 'extension.decision' }));
+    await waitFor(() => expect(first.queryClient.isFetching()).toBe(0));
+    await waitFor(() => expect(second.queryClient.isFetching()).toBe(0));
+
+    expect(reads.get('decisions')).toBe(4);
+  });
+});
+
 describe('extension waiting reads — the last event wins', () => {
   it('ends with both decisions when the second arrives mid-read', async () => {
     readMs = 100;
