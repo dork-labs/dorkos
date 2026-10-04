@@ -184,6 +184,19 @@ function installExitHook(): void {
 }
 
 /**
+ * Whether an exit looks like V8's heap-limit abort (SIGABRT on POSIX; a
+ * failing code on Windows), so a child that merely PRINTS the marker and exits
+ * is still reported as a crash.
+ *
+ * @param code - The exit code.
+ * @param signal - The signal, if one ended it.
+ */
+function abortedLike(code: number | null, signal: NodeJS.Signals | null): boolean {
+  if (signal === 'SIGABRT' || signal === 'SIGTRAP' || signal === 'SIGILL') return true;
+  return process.platform === 'win32' && code !== null && code !== 0;
+}
+
+/**
  * The serialized size of a message, as the channel carried it. Measured after
  * Node has already read it (the IPC channel has no limit of its own), so this
  * bounds what the host ACTS on, not what it reads.
@@ -320,7 +333,12 @@ export class IsolatedExtensionHost {
     this.killReason = null;
     this.sawOom = false;
     this.backlog = 0;
-    const child = fork(bootstrapReal, [], {
+    // The data directory rides as the one argument, so the child's self-check
+    // can confirm it CANNOT read it (the grants must not have widened).
+    const dorkHomeReal = await fs
+      .realpath(this.options.dorkHome)
+      .catch(() => path.resolve(this.options.dorkHome));
+    const child = fork(bootstrapReal, [dorkHomeReal], {
       execPath: this.options.execPath ?? process.execPath,
       execArgv,
       env,
@@ -390,7 +408,8 @@ export class IsolatedExtensionHost {
         this.probes.clear();
         const reason: IsolatedExitReason = this.stopRequested
           ? 'stopped'
-          : (this.killReason ?? (this.sawOom ? 'server_out_of_memory' : 'server_crashed'));
+          : (this.killReason ??
+            (this.sawOom && abortedLike(code, signal) ? 'server_out_of_memory' : 'server_crashed'));
         if (phase !== 'running') {
           // The first settlement wins: a refusal already reported stays the reason.
           settleStart(

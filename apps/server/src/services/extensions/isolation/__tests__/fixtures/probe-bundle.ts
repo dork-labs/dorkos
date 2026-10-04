@@ -229,6 +229,17 @@ exports.probes = {
   flood: (n) => { for (let i = 0; i < n; i++) console.log('line ' + i); return n; },
   floodMessages: (n) => { for (let i = 0; i < n; i++) process.send({ type: 'pong', n: i }); return n; },
   sendRaw: (message) => { process.send(message); return true; },
+  sendStdin: (rid, bytes, times) => {
+    for (let i = 0; i < times; i++) process.send({ type: 'run-stdin', rid, chunk: new Uint8Array(bytes) });
+    return times;
+  },
+  fakeOom: () => {
+    setTimeout(() => {
+      process.stderr.write('FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n');
+      setTimeout(() => process.exit(1), 50);
+    }, 10);
+    return 'pretending';
+  },
   sendBig: (bytes) => { process.send({ type: 'run-stdin', rid: 999, chunk: new Uint8Array(bytes) }); return true; },
 };
 `;

@@ -81,6 +81,16 @@ describe('isolated child failures (real child processes)', () => {
     expect((await exited).reason).toBe('server_out_of_memory');
   }, 30_000);
 
+  // Purpose: printing V8's marker and exiting is a crash, not out of memory:
+  // the reason follows how the process actually died.
+  it('does not take a printed marker for out of memory', async () => {
+    const { onExit, exited } = exitOf();
+    const host = makeHost(h, { onExit });
+    await startOk(host);
+    await host.probe('fakeOom');
+    expect((await exited).reason).toBe('server_crashed');
+  });
+
   // Purpose: an abort is a crash, and it ends only the child.
   it('reports an abort as a crash', async () => {
     const { onExit, exited } = exitOf();

@@ -65,7 +65,16 @@ export async function findEscapingLink(assetsReal: string): Promise<string | nul
 export function selfCheckPassed(hello: HelloMessage): boolean {
   const p = hello.permission;
   return (
-    p.present && p.readsBootstrap && !p.fsWriteRoot && !p.child && !p.worker && !p.addon && !p.wasi
+    p.present &&
+    p.readsBootstrap &&
+    !p.fsWriteRoot &&
+    !p.fsReadRoot &&
+    !p.readsDorkHome &&
+    !p.inspector &&
+    !p.child &&
+    !p.worker &&
+    !p.addon &&
+    !p.wasi
   );
 }
 

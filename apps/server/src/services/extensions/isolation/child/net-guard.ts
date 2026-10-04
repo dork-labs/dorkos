@@ -36,7 +36,8 @@
  *    `async_hooks`, which together would open a raw connection that never
  *    passes layer 1. So the handle's own `connect` only proceeds for an
  *    address and port layer 1 or 2 approved in the last few minutes, and
- *    binding or listening is refused outright.
+ *    binding or listening is refused outright. The TCP prototype is guarded
+ *    at install, from a handle the guard makes and closes itself.
  * 4. **DNS** (`dns.*`, `dns.promises.*`, both `Resolver` classes): only names
  *    matching `allow.net` (on any port) are looked up or resolved, which
  *    closes DNS-query exfiltration; `reverse`, `lookupService`, `setServers`
@@ -333,6 +334,24 @@ export function installNetGuard(options: NetGuardOptions): void {
       if (typeof proto[key] === 'function') lock(proto, key, () => EACCES);
     }
   };
+
+  // Layer 3 for TCP, eagerly: guard the native TCP handle's prototype now,
+  // from a handle the guard makes and closes itself (bound to an ephemeral
+  // loopback port, never listening), so its safety never rests on no TCP
+  // handle being reachable before the first connection. The first-sight hook
+  // in layer 1 stays as the fallback where this private helper is missing.
+  const createServerHandle = (net as unknown as Record<string, unknown>)._createServerHandle;
+  if (typeof createServerHandle === 'function') {
+    try {
+      const handle = (createServerHandle as (...a: unknown[]) => unknown)('127.0.0.1', 0, 4);
+      if (typeof handle === 'object' && handle !== null) {
+        guardTcpPrototype(handle);
+        (handle as { close?: () => void }).close?.();
+      }
+    } catch {
+      // Fall back to guarding on first sight.
+    }
+  }
 
   // Layer 1: every outbound TCP connection.
   lock(

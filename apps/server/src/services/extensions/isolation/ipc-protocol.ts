@@ -29,6 +29,12 @@ export interface PermissionReport {
   readsBootstrap: boolean;
   /** Whether the child may write to `/` (must be `false`). */
   fsWriteRoot: boolean;
+  /** Whether the child may read `/` (must be `false`). */
+  fsReadRoot: boolean;
+  /** Whether the child may read DorkOS's data directory (must be `false`). */
+  readsDorkHome: boolean;
+  /** Whether the child may open the inspector (must be `false`). */
+  inspector: boolean;
   /** Whether the child may start processes (must be `false`). */
   child: boolean;
   /** Whether the child may start worker threads (must be `false`). */
@@ -272,9 +278,18 @@ export function isChildMessage(value: unknown): value is ChildMessage {
       return (
         typeof value.node === 'string' &&
         isRecord(p) &&
-        ['present', 'readsBootstrap', 'fsWriteRoot', 'child', 'worker', 'addon', 'wasi'].every(
-          (key) => typeof p[key] === 'boolean'
-        )
+        [
+          'present',
+          'readsBootstrap',
+          'fsWriteRoot',
+          'fsReadRoot',
+          'readsDorkHome',
+          'inspector',
+          'child',
+          'worker',
+          'addon',
+          'wasi',
+        ].every((key) => typeof p[key] === 'boolean')
       );
     }
     case 'loaded':

@@ -5,6 +5,7 @@
  * stops them all when the extension stops. Real processes throughout.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isolatedFilesDir } from '../grants.js';
@@ -34,6 +35,23 @@ function alive(pid: number): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * The `sleep <seconds>` processes this test process started (directly, via
+ * the broker), found by parent id and argument.
+ *
+ * @param seconds - The argument that marks this test's sleepers.
+ */
+function sleepersOf(seconds: string): number[] {
+  try {
+    const out = execFileSync('pgrep', ['-P', String(process.pid), '-f', `sleep ${seconds}`], {
+      encoding: 'utf8',
+    });
+    return out.split('\n').filter(Boolean).map(Number);
+  } catch {
+    return [];
   }
 }
 
@@ -183,6 +201,72 @@ describe('RunBroker (real isolated child)', () => {
     expect(
       h.logs.some((l) => l.level === 'warn' && l.message.includes('allow.run "sh" now resolves to'))
     ).toBe(true);
+  });
+
+  // Purpose: two requests with one id start one program, never two (an
+  // untracked second would outlive the extension's stop and dodge the cap).
+  it.skipIf(!posix)('starts one program for a duplicated request id', async () => {
+    const host = makeHost(h, { run: ['/bin/sleep'] });
+    await startOk(host);
+    const spawnMessage = {
+      type: 'run-spawn',
+      rid: 4242,
+      file: '/bin/sleep',
+      args: ['31'],
+      cwd: null,
+      env: null,
+      stdin: false,
+    };
+    await probe(host, 'sendRaw', spawnMessage);
+    await probe(host, 'sendRaw', spawnMessage);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(sleepersOf('31')).toHaveLength(1);
+    await host.stop();
+    const deadline = Date.now() + 3_000;
+    while (sleepersOf('31').length > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(sleepersOf('31')).toEqual([]);
+  });
+
+  // Purpose: a program that never reads its input cannot grow DorkOS's
+  // memory: past 1 MB held, its input is closed.
+  it.skipIf(!posix)('closes the input of a program that is not reading it', async () => {
+    const host = makeHost(h, { run: ['/bin/sleep'] });
+    await startOk(host);
+    await probe(host, 'sendRaw', {
+      type: 'run-spawn',
+      rid: 77,
+      file: '/bin/sleep',
+      args: ['30'],
+      cwd: null,
+      env: null,
+      stdin: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await probe(host, 'sendStdin', 77, 512 * 1024, 8);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(h.logs.some((l) => l.message.includes('stopped reading its input'))).toBe(true);
+  });
+
+  // Purpose: variables that make any program load other code never reach a
+  // program; ordinary ones do.
+  it.skipIf(!posix)('strips loader variables from a program environment', async () => {
+    const host = makeHost(h, { run: ['/usr/bin/env'] });
+    await startOk(host);
+    const report = await probe(host, 'run', '/usr/bin/env', [], {
+      env: {
+        FOO: 'bar',
+        LD_PRELOAD: '/tmp/x.so',
+        DYLD_INSERT_LIBRARIES: '/tmp/x',
+        NODE_OPTIONS: '-r x',
+      },
+    });
+    const stdout = (report.value as { stdout: string }).stdout;
+    expect(stdout).toContain('FOO=bar');
+    expect(stdout).not.toContain('LD_PRELOAD');
+    expect(stdout).not.toContain('DYLD_INSERT_LIBRARIES');
+    expect(stdout).not.toContain('NODE_OPTIONS');
   });
 
   // Purpose: synchronous forms cannot be brokered and say so exactly.

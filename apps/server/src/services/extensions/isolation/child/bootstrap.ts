@@ -58,6 +58,7 @@ function send(message: ChildMessage): void {
  * could mean the scopes were renamed rather than denied.
  */
 function permissionReport(): PermissionReport {
+  const dorkHome = process.argv[2];
   const permission = (process as unknown as { permission?: PermissionApi }).permission;
   const present = typeof permission?.has === 'function';
   const has = (scope: string, reference?: string): boolean => {
@@ -72,6 +73,12 @@ function permissionReport(): PermissionReport {
     present,
     readsBootstrap: present && has('fs.read', __filename),
     fsWriteRoot: has('fs.write', '/'),
+    fsReadRoot: has('fs.read', '/'),
+    // The host passes its data directory as the one argument; a missing one
+    // reads as readable, so the check fails closed.
+    readsDorkHome:
+      typeof dorkHome !== 'string' || dorkHome.length === 0 || has('fs.read', dorkHome),
+    inspector: has('inspector'),
     child: has('child'),
     worker: has('worker'),
     addon: has('addon'),
