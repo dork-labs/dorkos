@@ -769,6 +769,63 @@ export function withLiveToolSurface(
 }
 
 /**
+ * The plugin paths a running process loaded that `wanted` no longer hands it.
+ *
+ * @param live - What the running process was launched with
+ * @param wanted - What this dispatch would launch with today
+ * @returns The withdrawn plugin paths, in launch order
+ */
+export function withdrawnPluginPaths(live: LaunchFingerprint, wanted: LaunchFingerprint): string[] {
+  const kept = new Set((wanted.live.plugins ?? []).map((plugin) => plugin.path));
+  return (live.live.plugins ?? [])
+    .map((plugin) => plugin.path)
+    .filter((pluginPath) => !kept.has(pluginPath));
+}
+
+/**
+ * Whether a plugin path is a running extension's generated skills root
+ * (`{dorkHome}/cache/extensions/skill-plugins/<id>`, DOR-2685).
+ *
+ * Such a plugin holds skills and nothing else: no hooks, no servers, nothing
+ * that runs. That is what lets a process that still has work in flight keep
+ * one a little longer when its extension stops (see
+ * {@link withLiveSkillPlugins}), where a withdrawn package — which may run code
+ * a person no longer approves — still relaunches at once (DOR-2306).
+ *
+ * @param pluginPath - A plugin path from a launch fingerprint
+ * @param skillPluginsDir - The folder of generated skill roots, absolute
+ * @returns True when the path is one root directly inside that folder
+ */
+export function isExtensionSkillPlugin(pluginPath: string, skillPluginsDir: string): boolean {
+  return path.dirname(path.resolve(pluginPath)) === path.resolve(skillPluginsDir);
+}
+
+/**
+ * `wanted`, with `withdrawn` plugins put back: the comparison a dispatch makes
+ * when it must not relaunch for an extension's skills going away yet.
+ *
+ * An extension stopping is moved from outside the session exactly as a tool-list
+ * change is, so it waits for a process that is still working (a helper agent, a
+ * Monitor, a delivery owed) rather than tear that work down — the DOR-2705 class,
+ * handled like {@link withLiveToolSurface}. The stored fingerprint keeps the old
+ * plugin, so the next dispatch asks again.
+ *
+ * @param wanted - What this dispatch would launch with today
+ * @param withdrawn - The withdrawn skill plugin paths to keep for now
+ * @returns `wanted` with those plugins added back to its live plugin list
+ */
+export function withLiveSkillPlugins(
+  wanted: LaunchFingerprint,
+  withdrawn: readonly string[]
+): LaunchFingerprint {
+  const plugins = [
+    ...(wanted.live.plugins ?? []),
+    ...withdrawn.map((pluginPath) => ({ type: 'local' as const, path: pluginPath })),
+  ];
+  return { ...wanted, live: { ...wanted.live, plugins } };
+}
+
+/**
  * May a dispatch pinned to `wanted` ride a process launched under `live`?
  *
  * The account is answered first and on its own, before any other pin is looked

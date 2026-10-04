@@ -102,6 +102,9 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await manager?.shutdownServer(ID);
+  // The fixture ships a skill, so every change republishes the running-skills
+  // ledger in the background; let it finish before the folder goes.
+  await manager?.whenSkillsSettled();
   await fs.rm(dorkHome, { recursive: true, force: true });
 });
 

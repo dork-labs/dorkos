@@ -347,6 +347,10 @@ export function projectAgentWorkspace(
     const plan = project(agentDir, {
       allowPluginHooks: DENY_ALL_PLUGIN_HOOKS,
       devLinks: readDevLinksSync(dorkHome),
+      // The running extensions' skills are read from the same ledger every
+      // other sync reads (DOR-2685), so this plan and the consent seam's agree
+      // about a workspace an extension runs in. Global plugins stay out.
+      extensionSkillsHome: dorkHome,
     });
     const { applied, conflicts } = applyPlan(agentDir, plan);
 

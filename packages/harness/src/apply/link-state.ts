@@ -17,6 +17,25 @@
  */
 import { lstatSync, readdirSync, statSync } from 'node:fs';
 import type { Dirent } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
+
+/**
+ * A plan path as an absolute path on this machine.
+ *
+ * Nearly every path a project plan carries is repo-relative. A running local
+ * extension's skill source is the one that is not (DOR-2685): its running copy
+ * can be a verified snapshot under `{dorkHome}/extension-snapshots/`, outside
+ * the repository, so its `source` is absolute. `join` would glue the two
+ * together into a path that does not exist; this keeps an absolute path as it
+ * is and resolves a relative one against the repository.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param planPath - a path from the plan, repo-relative or absolute.
+ * @returns the absolute path.
+ */
+export function absolutePlanPath(repoRoot: string, planPath: string): string {
+  return isAbsolute(planPath) ? planPath : join(repoRoot, planPath);
+}
 
 /**
  * What occupies a path.

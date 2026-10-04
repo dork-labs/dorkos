@@ -66,7 +66,7 @@
  * @module apply/gitignore
  */
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './atomic-write.js';
 import type { ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
@@ -521,7 +521,13 @@ function ephemeralPaths(plan: ProjectionPlan, repoRoot: string): EphemeralPath[]
   const paths = new Map<string, LeafKind>();
   for (const action of plan.actions) {
     if (isEphemeralProvenance(action.provenance)) {
-      if (action.source) paths.set(action.source, onDiskKind(repoRoot, action.source, 'file'));
+      // An absolute source is outside the repository (a running extension's
+      // verified snapshot, DOR-2685) or a project's own committed extension
+      // named by its full path: neither is anything for this repo's
+      // `.gitignore` to cover. The link to it still is, below.
+      if (action.source && !isAbsolute(action.source)) {
+        paths.set(action.source, onDiskKind(repoRoot, action.source, 'file'));
+      }
       // A projection is a link or a written file, and git calls both a file —
       // which is what decides whether a `dir/` rule in the repo covers it.
       if (action.target && action.kind !== 'native') paths.set(action.target, 'file');

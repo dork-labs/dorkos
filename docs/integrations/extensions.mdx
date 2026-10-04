@@ -42,9 +42,17 @@ An extension with a server half can give your agents tools while it runs. A mail
 - **Removing an extension clears its tool settings.** If you set one of its tools to Allowed, that choice does not carry over to anything installed later under the same name.
 - **When agents see a new tool.** Codex and OpenCode chats get the new list the next time they ask DorkOS for it. A Claude Code chat gets it with your next message. A reply that is already being written finishes with the tools it started with, and a chat whose helper is still working gets the new list once that work ends.
 
-Extensions can also list skills in their manifest. DorkOS checks those names today, but does not hand the skills to your agents yet.
+## Skills from extensions
 
-For the manifest fields and the `ctx.tools.handle` API, see `contributing/extension-authoring.md`.
+An extension can also bring skills: short guides that teach your agents when and how to use it. A mail extension might bring a "triage inbox" skill that tells an agent how to sort your mail with its tools.
+
+- **They follow the same approval.** An extension's skills reach your agents only while it is turned on and approved to run. Turn it off, stop it or remove it, and its skills go away too.
+- **They land where a plugin's skills land.** A project's own extension adds its skills to that project, as `.claude/skills/<extension>__<skill>` and `.agents/skills/<extension>__<skill>`, so Claude Code, Codex and the other tools DorkOS sets up there all find them. An extension installed for all your projects reaches DorkOS's own Claude Code chats right away, and reaches other tools once you have chosen to share with them and run `dorkos harness sync --global`.
+- **The same answer from the terminal.** `dorkos harness sync` reads the same list DorkOS keeps of running extensions' skills, so it adds the same skills and never removes one that should be there.
+- **A plugin's skill wins a name clash.** If a plugin and an extension bring a skill with the same name, your agents get the plugin's, and `dorkos harness sync --check` says which one was left out.
+- **A chat that is busy finishes first.** When an extension stops, a Claude Code chat drops its skills before your next message, unless a helper in that chat is still working. Then it waits for that work to end.
+
+For the manifest fields, the `ctx.tools.handle` API and how skills are checked, see `contributing/extension-authoring.md`.
 
 ## Testing locally
 

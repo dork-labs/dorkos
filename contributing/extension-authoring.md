@@ -98,7 +98,7 @@ my-extension/
 | `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration).                                                               |
 | `dataProxy`          | No       | Declarative API proxy config. See [Declarative Proxy](#declarative-proxy).                                                                                                                                         |
 | `tools`              | No       | Tools the extension gives the person's agents while it runs. Needs `serverCapabilities`. See [`ctx.tools`](#ctxtools).                                                                                             |
-| `skills`             | No       | Skill folder names under `<extension>/skills/`. See [`ctx.tools`](#ctxtools).                                                                                                                                      |
+| `skills`             | No       | Skill folder names under `<extension>/skills/`. See [Shipping skills](#shipping-skills).                                                                                                                           |
 
 ## Entry Point (`activate`)
 
@@ -1020,7 +1020,29 @@ export default function register(router: Router, ctx: DataProviderContext) {
 - **When agents see them.** Tools join once `register()` finishes and leave when the extension stops. Codex and OpenCode chats see a change the next time they ask DorkOS for its tool list: their tool server is built from the live registry for every request, so even a client that stays connected gets the new list on its next `tools/list`. A Claude Code chat sees it with its next message: a process kept warm between messages compares its tool list (every tool's name, description and input schema) with what a fresh launch would list, and relaunches before that message when they differ. A reply already in progress finishes with the tools it started with, and a chat whose helper agent or Monitor is still working keeps its process, and the old list, until that work ends. The relaunch costs that chat its prompt cache once, so it happens only when the list really changed.
 - **The dev loop.** Editing `server.ts` restarts the extension. Editing only the `tools` or `skills` in `extension.json` restarts it too (the restart key includes a digest of those declarations), so a dev-linked extension picks up a new tool on save. A `server.ts`-only save re-registers the same tools, which leaves the tool list unchanged, so normally no Claude Code chat is relaunched for it.
 
-`skills` lists folder names under `<extension>/skills/`, each holding a `SKILL.md`. The manifest checks the names today; delivering those skills to agents lands in a later phase of DOR-2685.
+#### Shipping skills
+
+An extension can ship skills that teach agents when and how to use it (DOR-2685). List each folder under `<extension>/skills/` in the manifest; each holds a `SKILL.md` whose frontmatter `name` matches the folder:
+
+```jsonc
+{ "id": "mail-app", "skills": ["triage-inbox"] }
+```
+
+```
+mail-app/skills/triage-inbox/SKILL.md
+---
+name: triage-inbox
+description: Sort the person's inbox. Use ext_mail_app__send_message to reply.
+---
+```
+
+- **When they reach agents.** Only while the extension runs: turned on, approved to run, valid, and the copy DorkOS chose for its id. The same approval covers its code and its skills, so an extension with no `server.ts` still needs it. Turning the extension off, stopping it, withdrawing its approval or removing it takes the skills away again. A trusted copy that runs from a verified snapshot ships the snapshot's skills, never the project folder's.
+- **Where they land.** Exactly where a plugin's skills land at the same scope (ADR 260706-192819). A project extension's skills are linked into that project as `.claude/skills/<id>__<skill>` and `.agents/skills/<id>__<skill>`. A global extension's skills go where a global plugin's go: `{dorkHome}/skills` always, the shared user folders only once the person chose to share with those tools (`harness.global`), and DorkOS's own Claude Code chats through a generated plugin. Skills only: an extension projects no commands or hooks.
+- **The ledger.** After every change to which extensions run, the server writes `{dorkHome}/extensions/running-skills.json` (only when it changed), and `dorkos harness sync` reads the same file, so a terminal sync plans the same links and never sweeps a running extension's skills. The file is derived and deleting it is safe: while it is missing or unreadable, a sync keeps every link that points into an extension's folder rather than removing it, and the next change to any extension writes the file again. Code: `services/extensions/agent-skills/running-skills-ledger.ts` writes it, `@dorkos/harness` `sources/running-extension-skills.ts` reads it.
+- **What is refused.** A skill whose folder is missing, is a symbolic link, or resolves outside `skills/`, or whose `SKILL.md` is not a plain file or does not parse, is left out with a warning `dorkos harness sync --check` prints. Folders you did not list are never linked.
+- **Name clashes.** `<id>__<skill>` is the namespace a plugin uses too, so a plugin carrying an extension of its own name (Flow does) can ship one skill name twice. The plugin's skill wins, and the extension's is dropped with a warning naming both. A skill of the project's own with that name wins too. In DorkOS's Claude Code chats, a global extension whose id is the name of a loaded global plugin is left out.
+- **Global extensions in Claude Code chats.** DorkOS writes `{dorkHome}/cache/extensions/skill-plugins/<id>/` (a `.claude-plugin/plugin.json` and one `skills/<name>` link per accepted skill) and hands it to its Claude Code chats as a plugin. A chat launched after the extension starts loads its skills; a chat already open is asked to reload its plugins, the same path a newly installed global package takes to reach it. When an extension stops, a chat kept warm between messages relaunches without it before its next message, unless a helper agent or Monitor is still working, in which case it waits for that work to end.
+- **The dev loop.** Editing a `SKILL.md` needs nothing: the links point at your folder. Adding or removing a skill in `extension.json` re-scans and re-projects. A dev-linked extension's skills are labelled `(dev link: <folder>)` in `dorkos harness sync --check` and on the harness status page.
 
 #### Feature detection
 
