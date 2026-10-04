@@ -138,6 +138,24 @@ describe('GET /api/projects/resolve', () => {
     expect(res.body.message).toContain('https://evil.example');
   });
 
+  it('refuses a cross-site browser request that sends no Origin (an <img> or no-cors fetch)', async () => {
+    const res = await request(server)
+      .get('/api/projects/resolve')
+      .set('sec-fetch-site', 'cross-site')
+      .query({ cwd: worktree });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('project_lookup_person_required');
+    expect(res.body).not.toHaveProperty('project');
+  });
+
+  it('answers the app itself, which a browser marks same-origin', async () => {
+    const res = await request(server)
+      .get('/api/projects/resolve')
+      .set('sec-fetch-site', 'same-origin')
+      .query({ cwd: worktree });
+    expect(res.status).toBe(200);
+  });
+
   it('refuses a caller without a session cookie while login is on', async () => {
     auth.enabled = true;
     try {

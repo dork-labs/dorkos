@@ -16,6 +16,7 @@ import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   AccountNotAllowedError,
   accountEligibility,
+  accountRuleRoots,
   assertAccountEligible,
   describeAccountRefusal,
   warnMalformedAccountRules,
@@ -479,5 +480,29 @@ describe('malformed hand-edited rules', () => {
       quiet
     );
     expect(quiet).not.toHaveBeenCalled();
+  });
+});
+
+describe('accountRuleRoots', () => {
+  it('names every root any account rule names, once each', () => {
+    const roots = accountRuleRoots({
+      accounts: [
+        { id: 'work', onlyProjects: ['/nowhere/client.app', '/nowhere/shared'] },
+        { id: 'free', onlyProjects: null },
+      ],
+      defaultAccountOnlyProjects: ['/nowhere/shared', '/nowhere/main-only'],
+      projectAccounts: { '/nowhere/allow-listed': { allow: ['work'] } },
+    });
+    expect([...roots].sort()).toEqual([
+      '/nowhere/allow-listed',
+      '/nowhere/client.app',
+      '/nowhere/main-only',
+      '/nowhere/shared',
+    ]);
+  });
+
+  it('names nothing for a missing or malformed block', () => {
+    expect(accountRuleRoots(undefined).size).toBe(0);
+    expect(accountRuleRoots({ accounts: 'x', projectAccounts: 3 }).size).toBe(0);
   });
 });

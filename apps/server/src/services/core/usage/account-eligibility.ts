@@ -35,7 +35,8 @@ import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { readProjectRootList } from '@dorkos/shared/config-schema';
 import { ACCOUNT_NOT_ALLOWED_CODE, type ProjectRef } from '@dorkos/shared/project-schemas';
 
-import { projectRegistry, sanitizeNameSegment } from '../../projects/project-registry.js';
+import { projectRegistry } from '../../projects/project-registry.js';
+import { sanitizeNameSegment } from '../../projects/project-names.js';
 
 /** The runtimes that have account rules. */
 export type EligibilityRuntime = 'claude-code';
@@ -160,6 +161,23 @@ export function judgeEligibility(
     }
   }
   return { eligible: true };
+}
+
+/**
+ * Every project root an account rule names: each row's `onlyProjects`, Main's
+ * `defaultAccountOnlyProjects`, and each `projectAccounts` key, canonical. The
+ * project registry keeps these from its lookup cap, so Settings never shows a
+ * rule for a root whose name was freed.
+ *
+ * @param claudeCode - The stored `runtimes.claudeCode` block, or anything.
+ */
+export function accountRuleRoots(claudeCode: unknown): Set<string> {
+  const rules = readEligibilityRules(claudeCode);
+  const roots = new Set<string>(rules.projectAllow.keys());
+  for (const list of [...rules.onlyProjectsById.values(), rules.defaultOnlyProjects]) {
+    for (const root of list ?? []) roots.add(root);
+  }
+  return roots;
 }
 
 /**

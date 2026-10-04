@@ -16,9 +16,18 @@ import {
   MAX_CONCURRENT_ROOT_LOOKUPS,
   MAX_NEGATIVE_ROOT_TTL_MS,
   NEGATIVE_ROOT_TTL_MS,
+  isNotARepository,
   negativeTtl,
   projectRootFromCommonDir,
 } from '../resolve-project-root.js';
+
+/** What the git runner throws when git says the folder is in no repository. */
+function notARepo(): Error {
+  return Object.assign(new Error('Command failed: git rev-parse'), {
+    code: 128,
+    stderr: 'fatal: not a git repository (or any of the parent directories): .git\n',
+  });
+}
 
 function git(cwd: string, ...args: string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
@@ -180,15 +189,15 @@ describe('the cache', () => {
     ]);
   });
 
-  it('starts over at one minute once a folder becomes a repository and stops again', async () => {
+  it('finds a folder that became a repository once its wait runs out', async () => {
     let isRepo = false;
     const fakeGit = vi.fn(async () => {
-      if (!isRepo) throw new Error('not a git repository');
+      if (!isRepo) throw notARepo();
       return '/repos/a/.git\n';
-    }) as unknown as typeof runGit;
+    });
     let clock = 0;
     const resolver = createProjectRootResolver({
-      runGit: fakeGit,
+      runGit: fakeGit as unknown as typeof runGit,
       now: () => clock,
       canonical: (dir) => dir,
     });
@@ -199,6 +208,42 @@ describe('the cache', () => {
     clock += 2 * NEGATIVE_ROOT_TTL_MS;
     expect(await resolver.resolve('/repos/a')).toBe('/repos/a');
     expect(fakeGit).toHaveBeenCalledTimes(3);
+  });
+
+  it('never backs off on a failure that is not git saying "not a repository"', async () => {
+    // A timeout (killed, no stderr), git missing (ENOENT), then the real answer.
+    const timeout = Object.assign(new Error('Command failed'), { killed: true, signal: 'SIGTERM' });
+    const missing = Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' });
+    const failures: unknown[] = [timeout, missing, timeout, notARepo(), timeout];
+    const fakeGit = vi.fn(async () => {
+      throw failures.shift();
+    });
+    let clock = 0;
+    const resolver = createProjectRootResolver({
+      runGit: fakeGit as unknown as typeof runGit,
+      now: () => clock,
+      canonical: (dir) => dir,
+    });
+    for (let i = 0; i < 3; i++) {
+      await resolver.resolve('/repos/flaky');
+      clock += NEGATIVE_ROOT_TTL_MS; // each transient miss is retried after the base minute
+    }
+    expect(fakeGit).toHaveBeenCalledTimes(3);
+    await resolver.resolve('/repos/flaky'); // the first real "not a repository": 1 minute
+    clock += NEGATIVE_ROOT_TTL_MS;
+    await resolver.resolve('/repos/flaky'); // a timeout again: 1 minute, count kept
+    expect(fakeGit).toHaveBeenCalledTimes(5);
+    expect(resolver.peek('/repos/flaky')).toBeNull();
+    clock += NEGATIVE_ROOT_TTL_MS;
+    expect(resolver.peek('/repos/flaky')).toBeUndefined();
+  });
+
+  it('reads git\'s own "not a git repository" as the only answer worth backing off on', () => {
+    expect(isNotARepository(notARepo())).toBe(true);
+    expect(isNotARepository({ stderr: Buffer.from('fatal: not a git repository') })).toBe(true);
+    expect(isNotARepository(new Error('not a git repository'))).toBe(false);
+    expect(isNotARepository({ killed: true, stderr: '' })).toBe(false);
+    expect(isNotARepository(undefined)).toBe(false);
   });
 
   it(`never runs more than ${MAX_CONCURRENT_ROOT_LOOKUPS} git calls at once across cold folders`, async () => {

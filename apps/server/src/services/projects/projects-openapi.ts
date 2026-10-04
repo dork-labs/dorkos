@@ -59,8 +59,10 @@ export function registerProjectsOpenApi(registry: OpenAPIRegistry): void {
       'marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and ' +
       "the repository it belongs to must be inside the server's directory boundary (a worktree " +
       'of an outside repository is refused). Only a person may ask: a caller that names itself ' +
-      'an agent, a request from another site, or (with login on) a caller without a session ' +
-      `cookie is refused. The server keeps at most ${MAX_LOOKUP_ROOTS} roots that only a lookup named, and ` +
+      'an agent, a browser request from another site (a foreign `Origin`, or ' +
+      '`Sec-Fetch-Site: cross-site`), or (with login on) a caller without a session cookie is ' +
+      'refused. With login off, a local caller that is neither is trusted as the person.' +
+      ` The server keeps at most ${MAX_LOOKUP_ROOTS} roots that only a lookup named, and ` +
       'forgets the least recently used one past that.',
     request: { query: ProjectResolveQuerySchema },
     responses: {

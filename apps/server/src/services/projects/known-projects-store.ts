@@ -11,6 +11,7 @@
  * @module services/projects/known-projects-store
  */
 import {
+  and,
   eq,
   knownProjectReporters,
   knownProjects,
@@ -52,10 +53,15 @@ export interface KnownProjectsPort {
    */
   addReporter(reporter: KnownProjectReporter): void;
   /**
-   * Forget a stored project, freeing its name. Its reporter rows go with it.
-   * Only for a root a person merely looked up (the lookup cap evicts it).
+   * Forget a stored project that is still lookup-only, freeing its name: the
+   * row goes only while it is `reported` and no extension has named it, both
+   * checked in the same statement. Another server process on the same
+   * database may have seen it, or an extension reported it, since this one
+   * loaded its rows; that row stays.
+   *
+   * @returns Whether a row was deleted.
    */
-  remove(root: string): void;
+  removeLookupOnly(root: string): boolean;
 }
 
 /** {@link KnownProjectsPort} over the server's SQLite database. */
@@ -120,11 +126,22 @@ export class KnownProjectsStore implements KnownProjectsPort {
   }
 
   /**
-   * Forget a stored project; its reporter rows cascade.
+   * Forget a stored project while it is still lookup-only.
    *
    * @param root - The project's root.
+   * @returns Whether a row was deleted.
    */
-  remove(root: string): void {
-    this.db.delete(knownProjects).where(eq(knownProjects.root, root)).run();
+  removeLookupOnly(root: string): boolean {
+    const result = this.db
+      .delete(knownProjects)
+      .where(
+        and(
+          eq(knownProjects.root, root),
+          eq(knownProjects.source, 'reported'),
+          sql`NOT EXISTS (SELECT 1 FROM ${knownProjectReporters} WHERE ${knownProjectReporters.root} = ${knownProjects.root})`
+        )
+      )
+      .run();
+    return result.changes > 0;
   }
 }

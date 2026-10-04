@@ -16,10 +16,14 @@
  *   that root's name; that is why it runs the person bar
  *   (`refuseIfNotAPerson`) even though it is a GET. The app asks it for the
  *   folder a person picked; an agent has no reason to, and an agent that could
- *   would hold names forever. The bar's documented residual applies: with
- *   login off, a local caller without `X-DorkOS-Agent` passes. The registry's
- *   cap on lookup-only roots (`MAX_LOOKUP_ROOTS`, least recently used
- *   forgotten) bounds what such a caller can record.
+ *   would hold names forever. The bar's `Origin` check alone does not cover a
+ *   GET: a cross-site page can fire one with no `Origin` at all (an `<img>`
+ *   or a no-cors `fetch`), so the route also refuses `Sec-Fetch-Site:
+ *   cross-site`, which browsers send on exactly those requests. The bar's
+ *   documented residual applies: with login off, a local caller without
+ *   `X-DorkOS-Agent` (and not a browser) passes. The registry's cap on
+ *   lookup-only roots (`MAX_LOOKUP_ROOTS`, least recently used forgotten)
+ *   bounds what such a caller can record.
  *
  * @module routes/projects
  */
@@ -55,6 +59,14 @@ router.get('/', async (_req, res) => {
 });
 
 router.get('/resolve', async (req, res) => {
+  if (req.headers['sec-fetch-site'] === 'cross-site') {
+    const from = req.headers.origin ?? req.headers.referer ?? 'another site';
+    return res.status(403).json({
+      error: PROJECT_LOOKUP_BAR.error,
+      code: PROJECT_LOOKUP_BAR.code,
+      message: PROJECT_LOOKUP_BAR.crossSite(from),
+    });
+  }
   if (refuseIfNotAPerson(req, res, PROJECT_LOOKUP_BAR)) return undefined;
   const parsed = ProjectResolveQuerySchema.safeParse(req.query);
   if (!parsed.success) {

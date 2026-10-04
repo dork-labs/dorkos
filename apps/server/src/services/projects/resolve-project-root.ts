@@ -29,11 +29,20 @@
  * A cached lookup runs at most {@link MAX_CONCURRENT_ROOT_LOOKUPS} `git` calls at
  * once; the rest wait their turn. The live session stream asks about every
  * folder it stamps, so a burst across many cold folders would otherwise start
- * one `git` per folder at the same moment. A folder in no repository is asked
+ * one `git` per folder at the same moment. The queue is per resolver and shared
+ * by every caller of the server's one resolver: the stream's background
+ * lookups and a request's lookups (a list route stamping `project`) wait in
+ * the same line, first come first served, so a cold burst can delay a request
+ * by a few `git` calls but never starts more than four at once.
+ *
+ * A folder git says is in no repository ("not a git repository") is asked
  * again after {@link NEGATIVE_ROOT_TTL_MS}, then twice as long after each
- * further "no project", up to {@link MAX_NEGATIVE_ROOT_TTL_MS}, so a folder that
- * is plainly not a repository stops costing a `git` a minute. A folder that
- * becomes one (`git init`) is noticed within that ceiling.
+ * further such answer, up to {@link MAX_NEGATIVE_ROOT_TTL_MS}, so a folder
+ * that is plainly not a repository stops costing a `git` a minute. A folder
+ * that becomes one (`git init`) is noticed within that ceiling. Any other
+ * failure (a timeout, a missing folder, git not installed) still answers "no
+ * project" but is asked again after the base minute, never backed off: it says
+ * nothing about the folder.
  *
  * @module services/projects/resolve-project-root
  */
@@ -84,8 +93,9 @@ export interface ProjectRootDeps {
 export interface ProjectRootResolver {
   /**
    * The main checkout `cwd` belongs to, or `null` when it is in no repository.
-   * Positive answers are cached for the process; `null` for 60 seconds, doubling
-   * after each further miss up to {@link MAX_NEGATIVE_ROOT_TTL_MS}. At most
+   * Positive answers are cached for the process; git's "not a git repository"
+   * for 60 seconds, doubling after each further one up to
+   * {@link MAX_NEGATIVE_ROOT_TTL_MS}; any other failure for 60 seconds. At most
    * {@link MAX_CONCURRENT_ROOT_LOOKUPS} run `git` at once.
    *
    * @param cwd - Any absolute folder.
@@ -106,6 +116,21 @@ export interface ProjectRootResolver {
    * @param cwd - Any absolute folder.
    */
   readUncached(cwd: string): Promise<string | null>;
+}
+
+/**
+ * Whether a failed `git rev-parse` was git saying the folder is in no
+ * repository, as opposed to a timeout, a missing folder or a missing `git`.
+ * Only that answer says something about the folder worth backing off on.
+ *
+ * @param err - What the git runner threw.
+ */
+export function isNotARepository(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const stderr = (err as { stderr?: unknown }).stderr;
+  const text =
+    typeof stderr === 'string' ? stderr : Buffer.isBuffer(stderr) ? stderr.toString() : '';
+  return /not a git repository|cannot use bare repository/i.test(text);
 }
 
 /** One cached lookup. See {@link createProjectRootResolver}. */
@@ -151,11 +176,12 @@ export function createProjectRootResolver(
    */
   const byCwd = new Map<string, RootLookup>();
 
-  async function readUncached(cwd: string): Promise<string | null> {
+  /** The root, and whether git actually answered (so a miss may back off). */
+  async function lookUp(cwd: string): Promise<{ root: string | null; answered: boolean }> {
     const dir = deps.canonical(cwd);
     // A relative folder would be read against the server's own working
     // directory, which is not the folder anybody meant.
-    if (!path.isAbsolute(dir)) return null;
+    if (!path.isAbsolute(dir)) return { root: null, answered: true };
     try {
       const commonDir = await deps.runGit(
         ['rev-parse', '--path-format=absolute', '--git-common-dir'],
@@ -163,10 +189,14 @@ export function createProjectRootResolver(
         { timeoutMs: GIT_TIMEOUT_MS }
       );
       const root = projectRootFromCommonDir(commonDir);
-      return root === null ? null : deps.canonical(root);
-    } catch {
-      return null;
+      return { root: root === null ? null : deps.canonical(root), answered: true };
+    } catch (err) {
+      return { root: null, answered: isNotARepository(err) };
     }
+  }
+
+  async function readUncached(cwd: string): Promise<string | null> {
+    return (await lookUp(cwd)).root;
   }
 
   function live(cwd: string) {
@@ -184,14 +214,14 @@ export function createProjectRootResolver(
     const entry: RootLookup = {
       misses: previousMisses,
       root: lookups
-        .run(() => readUncached(key))
-        .then((root) => {
+        .run(() => lookUp(key))
+        .then(({ root, answered }) => {
           entry.settled = { root };
+          // A found root is kept for the process, so only a miss needs a retry.
           if (root === null) {
-            entry.misses = previousMisses + 1;
-            entry.retryAt = deps.now() + negativeTtl(entry.misses);
-          } else {
-            entry.misses = 0;
+            if (answered) entry.misses = previousMisses + 1;
+            entry.retryAt =
+              deps.now() + (answered ? negativeTtl(entry.misses) : NEGATIVE_ROOT_TTL_MS);
           }
           return root;
         }),
