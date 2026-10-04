@@ -51,7 +51,9 @@
  *   field the config DECLARES, with only the live `instance` dropped — not just
  *   the names and transports, because an `http` server's `headers` and a `stdio`
  *   server's `env` carry that connector's credential and a rotated one must
- *   still reach the warm process.
+ *   still reach the warm process. What an in-process server LISTS is a
+ *   separate pin, `toolSurface`, read from a digest the factory records against
+ *   the instance (DOR-2685); see that pin for why it relaunches.
  *
  * ## Verdict on the SDK's native `WarmQuery` (asked by DOR-1170)
  *
@@ -99,6 +101,7 @@ import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
 import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
 import { grantsFromSettings } from '../messaging/directory-grants.js';
 import { toSdkEffort } from '../messaging/thinking-config.js';
+import { dorkosToolSurfaceOf } from '../mcp-tools/tool-surface.js';
 
 /**
  * Every launch parameter the pin list governs, and what a change to it costs.
@@ -181,6 +184,28 @@ export const PIN_DISPOSITIONS = {
    * steady state costs nothing.
    */
   additionalDirectories: 'relaunch',
+  /**
+   * The tool list each in-process (`sdk`) MCP server would give a fresh
+   * launch: a digest of its tools' names and input JSON Schemas, recorded by
+   * the server factory against the instance (`mcp-tools/tool-surface.ts`). An
+   * extension's tools arriving or leaving, or a permission change hiding or
+   * showing a tool, moves it.
+   *
+   * `relaunch`, not `live`, because no live path is verified. The `mcpServers`
+   * pin compares an `sdk` server by its declared name alone, so `setMcpServers`
+   * never fires for a tool change; and whether the CLI replaces an `sdk`
+   * server's tool list in place when it does fire has never been shown on a
+   * real process. The house rule resolves unverified live behaviour toward
+   * relaunch (`claude-code/NOTES.md`, Verdict 1). Move it to `live` only after
+   * a live test shows a warm process listing the new tools after
+   * `setMcpServers` hands it a server with the same name.
+   *
+   * A relaunch happens at the next dispatch, before its turn opens — never
+   * mid-turn — and costs that conversation's prompt cache once. The digest is
+   * stable across rebuilds of an unchanged tool set, so warmth survives every
+   * dispatch that changes nothing.
+   */
+  toolSurface: 'relaunch',
   /** Swapped on the live query with `setMcpServers`. */
   mcpServers: 'live',
   /** Refreshed on the live query with `reloadPlugins`. */
@@ -471,6 +496,27 @@ function describeMcpServers(
     .join(FIELD_SEP);
 }
 
+/**
+ * The in-process MCP servers' tool surfaces as a comparable descriptor: each
+ * `sdk` server's name and the digest its factory recorded. External servers are
+ * left to the `mcpServers` pin, which compares their declared config and swaps
+ * them live; their tools are listed by the server itself, not by DorkOS.
+ */
+function describeToolSurfaces(
+  servers: Readonly<Record<string, McpServerConfig>> | undefined
+): string {
+  if (!servers) return '';
+  return Object.keys(servers)
+    .sort()
+    .flatMap((name) => {
+      const config = servers[name]!;
+      if (config.type !== 'sdk') return [];
+      const digest = dorkosToolSurfaceOf((config as { instance?: unknown }).instance);
+      return [`${name}:${digest ?? '<unrecorded>'}`];
+    })
+    .join(FIELD_SEP);
+}
+
 /** The activated plugin list as a comparable descriptor. */
 function describePlugins(plugins: readonly SdkPluginConfig[] | undefined): string {
   if (!plugins) return '';
@@ -561,6 +607,7 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
           : false
       ),
       additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
+      toolSurface: describeToolSurfaces(options.mcpServers),
       settingsEnv: digest(
         serializeEnv(
           (typeof options.settings === 'object' && options.settings !== null

@@ -13,6 +13,7 @@ import {
   loadsAgentToAgentTools,
 } from './tool-exposure.js';
 import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
+import { recordToolSurface } from './tool-surface.js';
 import { getCoreTools } from './core-tools.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
@@ -59,6 +60,7 @@ import { logger } from '../../../../lib/logger.js';
 // servers (DOR-499). Production reaches this barrel only for
 // `createDorkOsToolServer`, from `apps/server/src/index.ts`.
 export type { McpToolDeps, McpToolSession } from './types.js';
+export { dorkosToolSurfaceOf, toolSurfaceDigest, type ToolSurfaceEntry } from './tool-surface.js';
 export {
   handlePing,
   handleGetServerInfo,
@@ -428,6 +430,10 @@ export function createDorkOsToolServer(
     // agent uninformed (DOR-1930).
     ...(hold ? { hold } : {}),
   });
+  const listed = [
+    ...hand.tools,
+    ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
+  ].filter((tool) => !hiddenToolNames.has(tool.name));
   const server = createSdkMcpServer({
     // Not a label: Claude Code qualifies every tool on this server as
     // `mcp__<name>__<tool>`, so this string is half of what the model must type
@@ -441,20 +447,26 @@ export function createDorkOsToolServer(
     // which derives it from the approval hold and explains why the old
     // environment floor is gone rather than kept beside it.
     timeout: DORKOS_MCP_TOOL_TIMEOUT_MS,
-    tools: [
-      ...hand.tools,
-      ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
-    ].filter((tool) => !hiddenToolNames.has(tool.name)),
+    tools: listed,
   });
 
-  if (session?.connectorTurn) {
-    registerClaudeConnectorCapabilityTools(
-      server.instance,
-      capabilityRegistry,
-      resolveCapabilityContext,
-      hold
-    );
-  }
+  const connectorTools = session?.connectorTurn
+    ? registerClaudeConnectorCapabilityTools(
+        server.instance,
+        capabilityRegistry,
+        resolveCapabilityContext,
+        hold
+      )
+    : [];
+
+  // What a fresh launch of this server would list, recorded against this
+  // instance so the launch fingerprint's `toolSurface` pin can tell a warm
+  // process that lists something else to relaunch before its next turn
+  // (DOR-2685, `tool-surface.ts`). Nothing new reaches the CLI.
+  recordToolSurface(server.instance, [
+    ...listed.map((definition) => ({ name: definition.name, inputSchema: definition.inputSchema })),
+    ...connectorTools,
+  ]);
 
   // The read-only `dorkos://` resources: the same registration the external
   // `/mcp` server performs, scoped to THIS session's project rather than the
