@@ -332,10 +332,10 @@ describe('an extension that asks to run separately does not run yet', () => {
     await manager.initialize(null);
     const result = await manager.initializeServer('mail-app');
     expect(result.ok).toBe(false);
-    expect(result.error).toBe('Mail needs a newer version of DorkOS to run.');
+    expect(result.error).toBe('Mail needs a newer DorkOS to run its server part.');
     expect(manager.get('mail-app')!.serverError).toEqual({
       code: 'isolation_not_ready',
-      message: 'Mail needs a newer version of DorkOS to run.',
+      message: 'Mail needs a newer DorkOS to run its server part.',
     });
     expect(mockCompileServer).not.toHaveBeenCalled();
     expect(manager.getServerRouter('mail-app')).toBeNull();

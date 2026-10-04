@@ -522,6 +522,34 @@ describe('ExtensionsSettingsTab', () => {
     expect(screen.queryByText(/couldn’t build:/i)).not.toBeInTheDocument();
   });
 
+  /**
+   * An extension that asks to run separately does not run yet (DOR-2686), and
+   * DorkOS stopped any older version, so "the last version still runs" would
+   * be false. Its own sentence is shown, once, with no doubled period.
+   */
+  it('says plainly that an extension waiting on isolation does not run', async () => {
+    const ext = makeExtension({
+      id: 'iso-ext',
+      status: 'compiled',
+      hasServerEntry: true,
+      serverError: {
+        code: 'isolation_not_ready',
+        message: 'Mail needs a newer DorkOS to run its server part.',
+      },
+    });
+    mockFetch({ '/api/extensions': [ext] });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-card-iso-ext')).toBeInTheDocument();
+    });
+    const line = screen.getByText('Mail needs a newer DorkOS to run its server part.');
+    expect(line.textContent).not.toMatch(/\.\./);
+    expect(screen.queryByText(/last version still runs/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t rebuild/i)).not.toBeInTheDocument();
+  });
+
   it('shows global badge for global-scoped extensions', async () => {
     mockFetch({ '/api/extensions': [makeExtension({ scope: 'global' })] });
 

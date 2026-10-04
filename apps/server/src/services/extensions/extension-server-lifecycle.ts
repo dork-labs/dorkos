@@ -283,7 +283,7 @@ export class ExtensionServerLifecycle {
     // old in-process code cannot keep serving under the new promise.
     if (waitsForIsolation(record.manifest)) {
       await this.stop(id);
-      const message = `${record.manifest.name} needs a newer version of DorkOS to run.`;
+      const message = `${record.manifest.name} needs a newer DorkOS to run its server part.`;
       record.serverError = { code: ISOLATION_NOT_READY, message };
       logger.info(`[Extensions] Server init refused for ${id}: ${ISOLATION_NOT_READY}`);
       return { ok: false, error: message };

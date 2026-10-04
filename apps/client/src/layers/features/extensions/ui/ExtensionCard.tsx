@@ -155,7 +155,13 @@ export function ExtensionCard({
               version it already had running. Said beside an otherwise healthy
               extension rather than through the status badge: everything else
               about it — including the part that draws in this window — is fine. */}
-          {serverError && (
+          {/* An extension that asks to run separately does not run yet
+              (DOR-2686, `isolation_not_ready`), and nothing of it is running, so
+              the rebuild sentence below would be false. Its message is complete. */}
+          {serverError?.code === 'isolation_not_ready' && (
+            <p className="text-status-warning-fg text-sm">{serverError.message}</p>
+          )}
+          {serverError && serverError.code !== 'isolation_not_ready' && (
             <p className="text-status-warning-fg text-sm">
               Couldn’t rebuild its server part: {serverError.message}. The last version still runs.
             </p>
