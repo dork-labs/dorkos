@@ -135,6 +135,8 @@ module.exports.probes = {
     if (kind === 'sparse') {
       data = [];
       data.length = 9e7;
+    } else if (kind === 'bytes') {
+      data = { blob: new Uint8Array(1.9e6) };
     } else {
       data = new Array(16000).fill({ t: 'x'.repeat(1.5e6) });
     }

@@ -372,7 +372,7 @@ export class CtxDispatcher {
     if (!this.exposes.has(exposeId)) {
       return Promise.reject(new Error(`${name} removed that handler.`));
     }
-    const problem = wireDataProblem(args);
+    const problem = wireDataProblem(args, { allowBinary: true });
     if (problem)
       return Promise.reject(new Error(`DorkOS couldn't send that to ${name}: ${problem}.`));
     const id = this.nextRcallId++;
@@ -506,6 +506,7 @@ export class CtxDispatcher {
               : wireDataProblem(value, {
                   maxBytes: Number.POSITIVE_INFINITY,
                   maxNodes: Number.POSITIVE_INFINITY,
+                  allowBinary: true,
                 });
           if (bad) {
             this.refuse(
@@ -568,7 +569,8 @@ export class CtxDispatcher {
     const listener = (...args: unknown[]): void => {
       // A listener the child removed, or a child that is gone, hears nothing.
       if (this.closed || !this.subs.has(id)) return;
-      const problem = wireDataProblem(args);
+      // The real ctx's own event payload: host data.
+      const problem = wireDataProblem(args, { allowBinary: true });
       if (problem) {
         this.warn(`didn't forward a ctx.${path} event: ${problem}`);
         return;

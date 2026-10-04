@@ -11,7 +11,8 @@
  *
  * Allowed: `null`, `undefined`, booleans, finite and non-finite numbers,
  * strings, arrays, plain objects (prototype `Object.prototype` or `null`),
- * `Date` and `Uint8Array`. Refused: everything else, any own key named
+ * `Date` (and `Uint8Array` only in data the host itself produced). Refused:
+ * everything else, binary data from the child, any own key named
  * `__proto__` (an `Object.assign` or a `for…in` copy downstream would turn it
  * into a prototype change), nesting deeper than {@link MAX_WIRE_DEPTH}, more
  * than {@link MAX_WIRE_NODES} parts, cycles, arrays with holes, and anything
@@ -53,6 +54,15 @@ export interface WireDataOptions {
   maxBytes?: number;
   /** The parts budget; defaults to {@link MAX_WIRE_NODES}. Same rule as `maxBytes`. */
   maxNodes?: number;
+  /**
+   * Whether a `Uint8Array` is allowed. Defaults to `false`: no ctx member
+   * takes binary data, and `JSON.stringify` (as `storage.saveData` uses it)
+   * writes each byte of one on its own line, so a 4 MB array becomes an
+   * 80-million-character string on the host. The host passes `true` only for
+   * values its own real ctx or core produced. A member that one day needs
+   * bytes gets an explicit base64 path instead.
+   */
+  allowBinary?: boolean;
 }
 
 /**
@@ -72,6 +82,7 @@ export interface WireDataOptions {
 export function wireDataProblem(value: unknown, options: WireDataOptions = {}): string | null {
   const maxBytes = options.maxBytes ?? MAX_WIRE_EXPANDED_BYTES;
   const maxNodes = options.maxNodes ?? MAX_WIRE_NODES;
+  const allowBinary = options.allowBinary ?? false;
   let nodes = 0;
   let bytes = 0;
   const onPath = new Set<object>();
@@ -97,6 +108,9 @@ export function wireDataProblem(value: unknown, options: WireDataOptions = {}): 
     if (v === null) {
       bytes += 8;
       return bytes > maxBytes ? tooLarge : null;
+    }
+    if (ArrayBuffer.isView(v) || v instanceof ArrayBuffer || v instanceof SharedArrayBuffer) {
+      if (!allowBinary || !(v instanceof Uint8Array)) return 'it holds binary data';
     }
     if (v instanceof Date || v instanceof Uint8Array) {
       bytes += 16 + (v instanceof Uint8Array ? v.byteLength : 0);

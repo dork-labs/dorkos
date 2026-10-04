@@ -279,6 +279,7 @@ describe('ctx over the boundary: what only a child can do', () => {
     for (const [id, kind] of [
       [900_013, 'sparse'],
       [900_014, 'dag'],
+      [900_015, 'bytes'],
     ] as const) {
       let worstGapMs = 0;
       let last = performance.now();

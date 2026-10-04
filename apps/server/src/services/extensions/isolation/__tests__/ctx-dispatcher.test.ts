@@ -280,6 +280,41 @@ describe('CtxDispatcher calls', () => {
     expect(t.raw.storage.saveData).not.toHaveBeenCalled();
   });
 
+  // Purpose: no ctx member takes binary data, and storage.saveData's
+  // JSON.stringify writes each byte on its own line (a 4 MB Uint8Array is an
+  // 80-million-character string), so the child may send none: not a
+  // Uint8Array, another typed array, a DataView or an ArrayBuffer.
+  it.each([
+    ['a 1.9 MB Uint8Array', () => new Uint8Array(1.9e6)],
+    ['a typed-array view', () => new Uint16Array(new ArrayBuffer(1024), 8, 4)],
+    ['a DataView', () => new DataView(new ArrayBuffer(16))],
+    ['an ArrayBuffer', () => new ArrayBuffer(16)],
+  ])('refuses %s from the child quickly and reaches nothing', async (_label, build) => {
+    const t = setup();
+    const began = performance.now();
+    const ret = await t.call('storage.saveData', [{ blob: build() }]);
+    expect(performance.now() - began).toBeLessThan(500);
+    expect(ret.ok).toBe(false);
+    expect(ret.error?.message).toContain('binary');
+    expect(t.raw.storage.saveData).not.toHaveBeenCalled();
+    // Nor as an emitted payload or a reverse-call answer.
+    t.handle({ type: 'emit', event: 'bytes', data: build() });
+    expect(t.raw.emit).not.toHaveBeenCalled();
+    t.handle({ type: 'expose', id: 50, path: 'inbox.onAction' });
+    const pending = t.onAction()!({ key: 'k' }) as Promise<unknown>;
+    const rcall = t.sent.find((m) => m.type === 'rcall') as { id: number };
+    t.handle({ type: 'rret', id: rcall.id, ok: true, value: { bytes: build() } });
+    await expect(pending).rejects.toThrow("can't use");
+  });
+
+  // Purpose: bytes the host itself produced still reach the child (only
+  // child-sent data is refused).
+  it('still sends a Uint8Array the real ctx answered with', async () => {
+    const t = setup();
+    t.raw.storage.loadData.mockResolvedValueOnce({ bytes: new Uint8Array(4) } as never);
+    expect((await t.call('storage.loadData', [])).ok).toBe(true);
+  });
+
   // Purpose: the expanded budget also guards what the child answers to a
   // reverse call, and event payloads forwarded to it.
   it('applies the expanded budget to answers and events', async () => {
@@ -307,9 +342,9 @@ describe('CtxDispatcher calls', () => {
 
   // Purpose: plain data that merely uses awkward key names still works, so
   // the rule is about prototypes, not about names.
-  it('accepts plain data with constructor/prototype keys, Dates and bytes', async () => {
+  it('accepts plain data with constructor/prototype keys and Dates', async () => {
     const t = setup();
-    const data = { constructor: 'c', prototype: 1, when: new Date(0), bytes: new Uint8Array(2) };
+    const data = { constructor: 'c', prototype: 1, when: new Date(0) };
     const ret = await t.call('storage.saveData', [data]);
     expect(ret.ok).toBe(true);
     expect(t.raw.storage.saveData).toHaveBeenCalledWith(data);
