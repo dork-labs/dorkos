@@ -28,6 +28,12 @@ END $$;
 
 CREATE UNIQUE INDEX account_provider_account_key ON account("providerId","accountId");
 
+-- The transaction that last cleared every way into the account (password recovery, or a trusted
+-- sign-in taking over a never-confirmed account). A sign-in request that began before that
+-- transaction committed may have checked a password or link the clean-out removed, so the
+-- session it makes is refused and deleted (sign-in/request-start.ts).
+ALTER TABLE "user" ADD COLUMN access_cleared_xid xid8;
+
 CREATE TABLE pending_sign_in_links (
   token_hash text PRIMARY KEY CHECK (token_hash ~ '^[a-f0-9]{64}$'),
   user_id text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,

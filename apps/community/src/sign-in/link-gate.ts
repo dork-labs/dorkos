@@ -8,6 +8,7 @@ import { OIDC_PROVIDER_ID } from '../oidc.js';
 import { hashSecret, randomToken, signValue } from '../security.js';
 import { clearAccountAccess } from './account-access.js';
 import { recordSignInLinked } from './linked.js';
+import { markAccessCleared } from './request-start.js';
 
 /** The cookie that carries a sign-in waiting for the matched account's password. */
 export const PENDING_LINK_COOKIE = 'community_pending_link';
@@ -77,6 +78,34 @@ type CookieOptions = {
 /** The part of Better Auth's endpoint context the gate uses. */
 export interface LinkGateContext {
   setCookie(name: string, value: string, options?: CookieOptions): unknown;
+}
+
+/** The trusted link each request made, waiting for its account row to exist. */
+const linkNotices = new WeakMap<object, LinkGateAccount & { value: string }>();
+
+/**
+ * Once Better Auth has created an account row (`databaseHooks.account.create.after`), tell the
+ * page about the trusted link this request made, if this row is that link.
+ */
+export function settleLinkNotice(
+  created: LinkGateAccount | null,
+  ctx: LinkGateContext | null | undefined,
+  config: CommunityConfig
+): void {
+  const pending = ctx ? linkNotices.get(ctx) : undefined;
+  if (!ctx || !pending || !created) return;
+  linkNotices.delete(ctx);
+  if (
+    created.userId !== pending.userId ||
+    created.providerId !== pending.providerId ||
+    created.accountId !== pending.accountId
+  )
+    return;
+  ctx.setCookie(
+    LINK_NOTICE_COOKIE,
+    signValue(pending.value, config.authSecret),
+    cookieOptions(config, PENDING_LINK_TTL_MS)
+  );
 }
 
 /** An account row Better Auth is about to create. */
@@ -169,7 +198,9 @@ export async function gateAccountLink(
       const again = await signInRefusal(client, account.userId);
       if (again) throw new APIError('FORBIDDEN', { code: SIGN_IN_REFUSED_CODE, message: again });
       const unconfirmed = !user.emailVerified;
-      if (unconfirmed)
+      if (unconfirmed) {
+        // This request's own session, made after the link, is the one the clean-out is for.
+        markAccessCleared(account.userId);
         await clearAccountAccess(
           client,
           account.userId,
@@ -177,6 +208,7 @@ export async function gateAccountLink(
           { password: false, links: false },
           'system'
         );
+      }
       await recordSignInLinked(client, {
         userId: account.userId,
         memberIds,
@@ -186,11 +218,9 @@ export async function gateAccountLink(
       });
       return unconfirmed;
     });
-    ctx.setCookie(
-      LINK_NOTICE_COOKIE,
-      signValue(cleared ? 'linked_cleared' : 'linked', deps.config.authSecret),
-      cookieOptions(deps.config, PENDING_LINK_TTL_MS)
-    );
+    // Said only once Better Auth has inserted the link row (`settleLinkNotice`): an insert that
+    // fails must not leave the page saying "linked".
+    linkNotices.set(ctx, { ...account, value: cleared ? 'linked_cleared' : 'linked' });
     return;
   }
 
@@ -215,4 +245,22 @@ export async function gateAccountLink(
     code: LINK_NEEDS_PASSWORD_CODE,
     message: 'This email already has an account here. Enter its password to link this sign-in.',
   });
+}
+
+/**
+ * Delete waiting sign-ins an hour after they expired or were used. Only their hashes and ids were
+ * ever stored; the hour keeps a just-ended one around long enough to answer `410` rather than
+ * look like it never existed. Returns how many went.
+ */
+export async function prunePendingSignInLinks(
+  pool: Pick<Pool, 'query'>,
+  now: Date = new Date()
+): Promise<number> {
+  const result = await pool.query(
+    `DELETE FROM pending_sign_in_links
+     WHERE expires_at < $1::timestamptz - interval '1 hour'
+        OR consumed_at < $1::timestamptz - interval '1 hour'`,
+    [now]
+  );
+  return result.rowCount ?? 0;
 }

@@ -5,6 +5,7 @@ covers:
   - 'feat(community): link a matching account on sign-in, through one gate'
   - 'feat(community): ask for the account password on the sign-in page'
   - "fix(community): let the link panel's password field take focus normally"
+  - 'fix(community): refuse sessions a sign-in made after its account was cleared'
 ---
 
 ### Added

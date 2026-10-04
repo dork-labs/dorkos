@@ -119,6 +119,7 @@ export function describeSignInError(code: string, signInOnly = false): string {
 const REFUSAL_REASONS = new Set([
   'This account is being deleted.',
   'This account has been closed.',
+  'This account changed while you were signing in. Sign in again.',
 ]);
 
 // Read once, as the page loads: the app may rewrite the address (for example `/` to `/c/<id>`)

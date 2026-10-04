@@ -81,6 +81,7 @@ import {
   registerAccountPasswordRoutes,
 } from './routes/account/account-password.js';
 import { registerSignInLinkRoutes } from './routes/account/sign-in-link.js';
+import { withRequestStart } from './sign-in/request-start.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -123,6 +124,8 @@ export function createCommunityApp({
     afterSignInLinkPasswordCheck?: () => Promise<void>;
     /** Runs after a sign-in link commits, before its session is made. */
     afterSignInLinked?: () => Promise<void>;
+    /** Runs as Better Auth is about to insert a session, after its checks passed. */
+    beforeSessionInsert?: (userId: string) => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -130,7 +133,11 @@ export function createCommunityApp({
   // A notice is queued only where mail is set up and the worker can compose its kind.
   const canSendNotice = (kind: NoticeKind) =>
     config.mail !== null && noticeComposers[kind] !== undefined;
-  const auth = createCommunityAuth(pool, config, { now: hooks?.now, canSendNotice });
+  const auth = createCommunityAuth(pool, config, {
+    now: hooks?.now,
+    canSendNotice,
+    beforeSessionInsert: hooks?.beforeSessionInsert,
+  });
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
@@ -239,6 +246,17 @@ export function createCommunityApp({
   app.use('/api/auth/sign-up/*', async (c, next) => {
     limitAttempts(`signup:${peer(c)}`, config.limits.signupAttemptsPerMinute);
     await next();
+  });
+  // Every auth request that can sign someone in, and the password link route, records the
+  // database snapshot it began with, so a session it makes after a clean-out of the account
+  // committed is refused (sign-in/request-start.ts). Reading a session makes none.
+  app.use('/api/auth/*', async (c, next) => {
+    if (c.req.method === 'GET' && c.req.path === '/api/auth/get-session') return next();
+    await withRequestStart(pool, next);
+  });
+  app.use('/api/v1/sign-in-link', async (c, next) => {
+    if (c.req.method === 'POST') await withRequestStart(pool, next);
+    else await next();
   });
   app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
 

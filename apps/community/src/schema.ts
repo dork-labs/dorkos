@@ -146,6 +146,8 @@ export const users = pgTable('user', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('emailVerified').notNull().default(false),
   image: text('image'),
+  /** The transaction that last cleared every way into the account (0031); see request-start.ts. */
+  accessClearedXid: customType<{ data: string }>({ dataType: () => 'xid8' })('access_cleared_xid'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 });

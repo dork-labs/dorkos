@@ -7,6 +7,8 @@ import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { signInLinkComposers } from '../sign-in/linked.js';
+import { prunePendingSignInLinks } from '../sign-in/link-gate.js';
+import { recoverPassword } from '../recover-password.js';
 import { hashSecret, signValue } from '../security.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 import { startFakeIssuer, type FakeIssuer } from './fake-oidc-issuer.js';
@@ -52,6 +54,7 @@ let untrusted: string;
 const raceHooks: {
   afterSignInLinkPasswordCheck?: () => Promise<void>;
   afterSignInLinked?: () => Promise<void>;
+  beforeSessionInsert?: (userId: string) => Promise<void>;
 } = {};
 
 /** Who GitHub's stand-in vouches for on the next sign-in. */
@@ -67,6 +70,7 @@ async function serveApp(env: Record<string, unknown>): Promise<string> {
       afterSignInLinkPasswordCheck: () =>
         raceHooks.afterSignInLinkPasswordCheck?.() ?? Promise.resolve(),
       afterSignInLinked: () => raceHooks.afterSignInLinked?.() ?? Promise.resolve(),
+      beforeSessionInsert: (userId) => raceHooks.beforeSessionInsert?.(userId) ?? Promise.resolve(),
     },
   });
   const server = serve({ fetch: app.fetch, port: 0 });
@@ -259,6 +263,7 @@ beforeAll(async () => {
 afterEach(() => {
   delete raceHooks.afterSignInLinkPasswordCheck;
   delete raceHooks.afterSignInLinked;
+  delete raceHooks.beforeSessionInsert;
 });
 
 afterAll(async () => {
@@ -737,5 +742,135 @@ describe('linking with the account password', () => {
     expect(cancelled.status).toBe(204);
     expect((await link(cookie)).status).toBe(410);
     expect(await providersOf(userId)).toEqual(['credential']);
+  });
+});
+
+describe('a sign-in under way while the account is cleared', () => {
+  /**
+   * Hold the next session insert for this account (Better Auth's password sign-in has already
+   * checked the password by then; nothing locks between that check and the insert), and return
+   * a promise that settles once it is held, plus the release.
+   */
+  function holdNextSession(userId: string) {
+    let held!: () => void;
+    let release!: () => void;
+    const reached = new Promise<void>((resolve) => (held = resolve));
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    raceHooks.beforeSessionInsert = async (id) => {
+      if (id !== userId) return;
+      delete raceHooks.beforeSessionInsert;
+      held();
+      await gate;
+    };
+    return { reached, release };
+  }
+
+  async function sessionCount(userId: string) {
+    return (
+      await pool.query<{ n: number }>('SELECT count(*)::int AS n FROM session WHERE "userId"=$1', [
+        userId,
+      ])
+    ).rows[0].n;
+  }
+
+  it('refuses the squatter’s password sign-in that the trusted clean-out overtook', async () => {
+    // Purpose: fails if a password sign-in that checked the old password before the clean-out
+    // committed, and made its session after, keeps that session (and so could set a new password
+    // on the now password-less account). The victim's own session must stand.
+    const { userId } = await account('overtaken@example.com');
+    const { reached, release } = holdNextSession(userId);
+    const squatter = passwordSignIn('overtaken@example.com');
+    await reached;
+    identity('overtaken@example.com', 'overtaken-at-issuer');
+    const victim = await providerSignIn(trusted, 'oidc');
+    expect(victim.location.pathname).toBe('/signed-in');
+    release();
+    const refused = await squatter;
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { code: string }).code).toBe('sign_in_refused');
+    const cookie = cookieOf(refused);
+    expect(await whoIs(trusted, cookie)).toBeNull();
+    const setPassword = await call(
+      trusted,
+      '/api/v1/account/password',
+      'POST',
+      { newPassword: 'squatter-new-1234' },
+      cookie
+    );
+    expect(setPassword.status).toBe(401);
+    expect(await providersOf(userId)).toEqual(['oidc']);
+    expect(await sessionCount(userId)).toBe(1);
+    expect(await whoIs(trusted, victim.cookie)).toBe('overtaken@example.com');
+  });
+
+  it('refuses a password sign-in that offline recovery overtook', async () => {
+    // Purpose: fails if a sign-in with the old password, under way when the host recovered the
+    // account, keeps the session it makes once recovery has committed.
+    const { userId } = await account('recovered-race@example.com');
+    const { reached, release } = holdNextSession(userId);
+    const old = passwordSignIn('recovered-race@example.com');
+    await reached;
+    await recoverPassword(pool, 'recovered-race@example.com', 'recovered-password-1');
+    release();
+    const refused = await old;
+    expect(refused.status).toBe(403);
+    expect(await whoIs(trusted, cookieOf(refused))).toBeNull();
+    expect(await sessionCount(userId)).toBe(0);
+    // A sign-in that starts after recovery works.
+    expect(
+      (await passwordSignIn('recovered-race@example.com', 'recovered-password-1')).status
+    ).toBe(200);
+  });
+});
+
+describe('waiting sign-ins and the linked notice', () => {
+  it('prunes waiting sign-ins an hour after they expired or were used', async () => {
+    // Purpose: fails if expired or used waiting sign-ins pile up forever, or a live one goes.
+    const { userId } = await account('prune@example.com');
+    const row = (name: string, expires: string, consumed: string | null) =>
+      pool.query(
+        `INSERT INTO pending_sign_in_links(token_hash,user_id,provider_id,account_id,expires_at,consumed_at)
+         VALUES($1,$2,'google',$3,now()+$4::interval,now()+$5::interval)`,
+        [hashSecret(name), userId, name, expires, consumed]
+      );
+    await row('expired-long-ago', '-2 hours', null);
+    await row('used-long-ago', '5 minutes', '-2 hours');
+    await row('expired-recently', '-30 minutes', null);
+    await row('live', '5 minutes', null);
+    expect(await prunePendingSignInLinks(pool)).toBe(2);
+    const left = await pool.query<{ account_id: string }>(
+      'SELECT account_id FROM pending_sign_in_links WHERE user_id=$1 ORDER BY account_id',
+      [userId]
+    );
+    expect(left.rows.map((r) => r.account_id)).toEqual(['expired-recently', 'live']);
+  });
+
+  it('says nothing about a trusted link whose row could not be inserted', async () => {
+    // Purpose: fails if the page is told "linked" before the link row exists.
+    const { userId } = await account('insert-fails@example.com', { confirmed: true });
+    await pool.query(`CREATE OR REPLACE FUNCTION refuse_test_link() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'refused by test'; END $$ LANGUAGE plpgsql`);
+    await pool.query(
+      `CREATE TRIGGER refuse_test_link BEFORE INSERT ON account FOR EACH ROW
+       WHEN (NEW."userId" = '${userId}' AND NEW."providerId" = 'oidc')
+       EXECUTE FUNCTION refuse_test_link()`
+    );
+    try {
+      identity('insert-fails@example.com');
+      const result = await providerSignIn(trusted, 'oidc');
+      expect(result.location.pathname).toBe('/sign-in-failed');
+      expect(result.cookie).not.toContain('community_link_notice');
+      const notice = await call(
+        trusted,
+        '/api/v1/sign-in-link/notice',
+        'GET',
+        undefined,
+        result.cookie
+      );
+      expect(await notice.json()).toEqual({ state: 'none', provider: null });
+      expect(await providersOf(userId)).toEqual(['credential']);
+    } finally {
+      await pool.query('DROP TRIGGER refuse_test_link ON account');
+    }
   });
 });

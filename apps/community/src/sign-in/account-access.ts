@@ -20,7 +20,10 @@ export interface AccountAccessKeep {
  * - every session;
  * - the connection grants, unfinished pairings and agent credentials of every membership;
  * - the host API keys the account issued, and the invitation links it issued that still work;
- * - its sign-ins waiting to be linked by password.
+ * - its sign-ins waiting to be linked by password;
+ * - any session a sign-in that began before this transaction commits goes on to make: the
+ *   account is stamped with this transaction (`access_cleared_xid`), and the session hooks refuse
+ *   and delete such a session.
  *
  * Removed provider links are audited as `member.sign_in_links_removed` in every community the
  * account is in, and each revoked host key as `api_key.revoke` by the system.
@@ -37,6 +40,11 @@ export async function clearAccountAccess(
   keep: AccountAccessKeep,
   hostActor: 'offline' | 'system'
 ): Promise<string[]> {
+  // Stamped first: a sign-in that began before this transaction commits cannot keep the session
+  // it makes, whatever it read (see sign-in/request-start.ts).
+  await client.query('UPDATE "user" SET access_cleared_xid=pg_current_xact_id() WHERE id=$1', [
+    userId,
+  ]);
   const removed = new Set<string>();
   if (!keep.password || !keep.links) {
     const deleted = await client.query<{ providerId: string }>(

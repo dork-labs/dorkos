@@ -16,7 +16,8 @@ import {
 } from './owner-replacement/admission.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
 import type { NoticeKind } from './mail/outbox.js';
-import { gateAccountLink, SIGN_IN_REFUSED_CODE } from './sign-in/link-gate.js';
+import { gateAccountLink, settleLinkNotice, SIGN_IN_REFUSED_CODE } from './sign-in/link-gate.js';
+import { sessionPredatesClearing } from './sign-in/request-start.js';
 
 /**
  * What let a new account in: an owner grant or an invitation, or only a live claim to replace
@@ -32,6 +33,8 @@ export function createCommunityAuth(
     now?: () => Date;
     /** Whether mail is set up and the worker can compose this kind of notice. None by default. */
     canSendNotice?: (kind: NoticeKind) => boolean;
+    /** Test-only: runs in `session.create.before`, after its checks, before the insert. */
+    beforeSessionInsert?: (userId: string) => Promise<void>;
   } = {}
 ) {
   const now = options.now ?? (() => new Date());
@@ -246,6 +249,10 @@ export function createCommunityAuth(
             });
             return { data: account };
           },
+          // A trusted link tells the page only once its row exists.
+          after: async (account, ctx) => {
+            settleLinkNotice(account, ctx, config);
+          },
         },
       },
       session: {
@@ -258,11 +265,45 @@ export function createCommunityAuth(
             // The code lands a refused provider callback on the sign-in page, not a JSON body.
             if (refusal)
               throw new APIError('FORBIDDEN', { code: SIGN_IN_REFUSED_CODE, message: refusal });
+            // Early answer for a request that began before the account was cleared. The `after`
+            // check below is the one that holds under a race.
+            if (await sessionPredatesClearing(pool, session.userId, { lock: false }))
+              throw clearedRefusal();
+            await options.beforeSessionInsert?.(session.userId);
             return { data: session };
+          },
+          /**
+           * A sign-in reads the password or link it trusts, then makes the session, with no lock
+           * between. A clean-out (`clearAccountAccess`) that commits in between must not leave
+           * that session standing. This runs once the session row is committed:
+           *
+           * - Session committed before the clean-out deletes sessions: the clean-out's
+           *   `DELETE FROM session` removes it. (Inserting a session takes a key-share lock on the
+           *   account row, which waits while a clean-out holds it `FOR UPDATE`, so an insert
+           *   cannot slip in after that DELETE and before the commit.)
+           * - Session committed after the clean-out: `FOR SHARE` waits for a clean-out still
+           *   holding the row, then reads its stamp. If the request's start snapshot cannot see
+           *   the clean-out's transaction, the request may have authenticated with something it
+           *   removed: the session is deleted and the sign-in refused.
+           *
+           * The request that did the clean-out is exempt: its session is the new owner's.
+           */
+          after: async (session) => {
+            if (!(await sessionPredatesClearing(pool, session.userId, { lock: true }))) return;
+            await pool.query('DELETE FROM session WHERE id=$1', [session.id]);
+            throw clearedRefusal();
           },
         },
       },
     },
+  });
+}
+
+/** The refusal a sign-in gets when the account was cleared while it was under way. */
+function clearedRefusal() {
+  return new APIError('FORBIDDEN', {
+    code: SIGN_IN_REFUSED_CODE,
+    message: 'This account changed while you were signing in. Sign in again.',
   });
 }
 

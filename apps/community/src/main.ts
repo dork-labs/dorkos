@@ -28,6 +28,7 @@ import { sweepTakedownEvidence } from './takedown/worker.js';
 import { startMailDelivery, type NoticeComposers } from './mail/worker.js';
 import { ownerReplacementComposers } from './owner-replacement/notices.js';
 import { signInLinkComposers } from './sign-in/linked.js';
+import { prunePendingSignInLinks } from './sign-in/link-gate.js';
 import { startOwnerReplacementTimeline } from './owner-replacement/worker.js';
 import { pruneNoticeOutbox } from './mail/outbox.js';
 
@@ -198,6 +199,12 @@ const cleanup = setInterval(() => {
   void pruneErasureRequests(pool).catch((error: unknown) => {
     console.error(
       'Community erasure record cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
+  void prunePendingSignInLinks(pool).catch((error: unknown) => {
+    console.error(
+      'Community sign-in link cleanup unavailable',
       error instanceof Error ? error.name : 'unknown'
     );
   });
