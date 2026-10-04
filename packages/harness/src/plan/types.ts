@@ -294,6 +294,14 @@ export interface ProjectionPlan {
    * `buildPlan` is the only thing that sets it.
    */
   unreadableSkillRoots?: string[];
+  /**
+   * What the running extensions' skills ledger said when this plan was built
+   * (DOR-2685). Only `read` makes the plan evidence about extension skill
+   * links: an absent or unreadable ledger (or a plan built without one, like an
+   * offline sync) says nothing about which extensions run, so the installed
+   * sweep then keeps every link that points into an extension's folder.
+   */
+  extensionLedger?: 'read' | 'absent' | 'unreadable';
 }
 
 /**

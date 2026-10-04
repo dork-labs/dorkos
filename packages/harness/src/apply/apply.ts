@@ -44,6 +44,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan, SweptPath } from '../plan/types.js';
+import { isExtensionSkillLink } from '../sources/running-extension-skills.js';
 import { explainSweep } from './sweep-reasons.js';
 import { requireActionContent } from '../plan/content-map.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
@@ -402,6 +403,11 @@ function allInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
       if (!isSymlink(abs)) continue; // …but only ever sweep real symlinks, never a hand-authored dir/file
       const rel = `${dir}/${entry}`;
       if (managed.has(rel)) continue; // still projected — keep
+      // A running extension's skill (DOR-2685) is evidence only when the plan
+      // READ the running-skills ledger: a ledger that is missing or garbled says
+      // nothing about which extensions run, and deleting their links for it
+      // would strip a running extension's skills until the server writes again.
+      if (plan.extensionLedger !== 'read' && isExtensionSkillLink(abs)) continue;
       orphans.push(rel);
     }
   }

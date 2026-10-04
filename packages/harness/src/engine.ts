@@ -210,13 +210,11 @@ export function project(
     ...(opts?.devLinks ? { devLinks: opts.devLinks } : {}),
   });
   const ledgerHome = opts?.extensionSkillsHome ?? opts?.dorkHome;
+  const ledger = ledgerHome === undefined ? undefined : readRunningExtensionSkillsSync(ledgerHome);
   const extensions =
-    ledgerHome === undefined
+    ledger === undefined || ledgerHome === undefined
       ? { packages: [], warnings: [] }
-      : localExtensionSkillPackages(readRunningExtensionSkillsSync(ledgerHome), {
-          projectRoot: repoRoot,
-          dorkHome: ledgerHome,
-        });
+      : localExtensionSkillPackages(ledger, { projectRoot: repoRoot, dorkHome: ledgerHome });
   const manifest = loadManifest(repoRoot);
   return buildPlan({
     repoRoot,
@@ -230,6 +228,7 @@ export function project(
     unreadableManifests: installed.unreadableManifests,
     extensionPackages: extensions.packages,
     extensionWarnings: extensions.warnings,
+    ...(ledger !== undefined ? { extensionLedger: ledger.state } : {}),
     // Detection is not a one-shot scaffold question any more. Every plan asks
     // the repo which harnesses it can see, so one added after the manifest was
     // written is reported instead of silently never projected to (TR-11).

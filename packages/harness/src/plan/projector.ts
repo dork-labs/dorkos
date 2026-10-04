@@ -475,6 +475,8 @@ export function buildPlan(input: {
   extensionPackages?: readonly ExtensionSkillPackage[];
   /** What reading the ledger had to say: dropped skills, an unreadable file. */
   extensionWarnings?: readonly ProjectionWarning[];
+  /** The ledger's state, carried onto the plan for the installed sweep. */
+  extensionLedger?: 'read' | 'absent' | 'unreadable';
   allowPluginHooks?: (packageName: string) => boolean;
   /**
    * Everything the repository's source tree holds, by kind — the answer to
@@ -816,6 +818,7 @@ export function buildPlan(input: {
     warnings,
     notEnabled: notEnabledHarnesses(manifest.harnesses, detectedHarnesses, dorkosHarness),
     ...(unreadableSkillRoots.length > 0 ? { unreadableSkillRoots } : {}),
+    ...(input.extensionLedger !== undefined ? { extensionLedger: input.extensionLedger } : {}),
   };
 }
 

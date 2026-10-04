@@ -26,8 +26,8 @@
  *
  * @module sources/running-extension-skills
  */
-import { lstatSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
 import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithinSync } from '@dorkos/shared/bounded-read';
@@ -321,6 +321,33 @@ function checkExtensionSkill(skillsDir: string, name: string, sourceDir: string)
 }
 
 /**
+ * Whether an entry's `skillsDir` is the `skills/` folder of that extension's own
+ * folder: `…/extensions/<id>/skills` lexically (true of every place an
+ * extension lives: `{dorkHome}/extensions/<id>`, a plugin's or a project's
+ * `.dork/extensions/<id>`, and a verified snapshot of one), and still inside
+ * that folder once links are resolved, so a `skills` link out of the extension
+ * never becomes a source.
+ */
+function isOwnSkillsFolder(entry: RunningExtensionSkillsEntry): boolean {
+  const skillsDir = resolve(entry.skillsDir);
+  const extensionDir = dirname(skillsDir);
+  if (
+    basename(skillsDir) !== 'skills' ||
+    basename(extensionDir) !== entry.id ||
+    basename(dirname(extensionDir)) !== 'extensions'
+  ) {
+    return false;
+  }
+  try {
+    const real = realpathSync(skillsDir);
+    const realExtension = realpathSync(extensionDir);
+    return real !== realExtension && isInside(real, realExtension);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Turn ledger entries into packages, checking each skill.
  *
  * @param entries - the entries to read, already narrowed to one plan's scope.
@@ -337,6 +364,7 @@ function toPackages(
     // A skills folder that is gone contributes nothing, so the next sweep
     // removes its links: the extension stopped, or its files went.
     if (lstatSync(entry.skillsDir, { throwIfNoEntry: false }) === undefined) continue;
+    if (!isOwnSkillsFolder(entry)) continue;
     const skills: InstalledSkill[] = [];
     for (const name of [...entry.skills].sort()) {
       const checked = checkExtensionSkill(entry.skillsDir, name, sourceOf(entry, name));
@@ -456,5 +484,31 @@ export function globalExtensionSkillPackages(
   );
   return toPackages(entries, (entry, skill) =>
     join(extensionSkillPluginRoot(dorkHome, entry.id), 'skills', skill)
+  );
+}
+
+/**
+ * Whether a projected link points into an extension's folder: its own text,
+ * resolved lexically against the folder it sits in (never followed), runs
+ * through a `.dork/extensions/` folder or DorkOS's `extension-snapshots/`.
+ *
+ * The project sweep asks this so an absent or unreadable ledger can keep
+ * extension links rather than delete them: a link to a plugin's own skill
+ * never runs through either folder.
+ *
+ * @param absLink - the absolute path of a link in a skills folder.
+ * @returns true when the link's text names an extension's folder.
+ */
+export function isExtensionSkillLink(absLink: string): boolean {
+  let text: string;
+  try {
+    text = readlinkSync(absLink);
+  } catch {
+    return false;
+  }
+  const parts = resolve(dirname(absLink), text).split(sep);
+  return parts.some(
+    (part, i) =>
+      part === 'extension-snapshots' || (part === '.dork' && parts[i + 1] === 'extensions')
   );
 }
