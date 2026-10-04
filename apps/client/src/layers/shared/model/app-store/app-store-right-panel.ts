@@ -18,6 +18,7 @@ import {
   readRightPanelState,
   readRightPanelLayout,
   writeRightPanelLayout,
+  dropLegacyRightPanelLayouts,
 } from './app-store-helpers';
 import type { RightPanelStateEntry } from './app-store-helpers';
 
@@ -129,7 +130,8 @@ export interface RightPanelSlice {
    *
    * Pass the agent's stable key (agent id if registered, else its cwd — resolved
    * by `useRightPanelLayoutPersistence`) to restore that agent's open/active-tab
-   * layout, defaulting to closed for a never-seen agent — unless a link is
+   * layout — a never-seen agent inherits the current open state and tab rather
+   * than starting closed (DOR-2579) — unless a link is
    * pending FOR THAT AGENT ({@link requestedRightPanel}), which outranks it.
    * Pass null on non-session routes to detach: subsequent writes fall back to
    * the global layout and the in-memory open/tab state is left untouched (no
@@ -233,7 +235,14 @@ export const createRightPanelSlice: StateCreator<
     // never-seen agent remembers "closed". That bind is also what SPENDS the
     // mark — it has been answered, so it can never reach a later agent.
     //
-    // No link pending: the stored layout is the whole answer, as always.
+    // No link pending: the stored layout is the answer — and an agent with NO
+    // stored layout inherits the panel you are looking at (DOR-2579). It used to
+    // hydrate as closed, so switching to another project's chat shut the panel
+    // and you reopened your tab on every switch. Nothing is written for it: the
+    // agent only gets a memory of its own once you open, close or pick a tab
+    // there. A carried tab the agent cannot show is the container's auto-select
+    // to resolve (view-only), so the panel falls back to a tab rather than
+    // closing.
     //
     // A link pending for SOMEBODY ELSE — `?panel=profile&agentPath=<Scout>` read
     // inside Warden's session — is neither. This bind is about the session, and
@@ -260,14 +269,17 @@ export const createRightPanelSlice: StateCreator<
       ...(arrivalBind
         ? { requestedRightPanel: { ...requested, shielded: false } }
         : {
-            rightPanelOpen: forThisAgent || (entry?.open ?? false),
-            activeRightPanelTab: forThisAgent ? requested.tabId : (entry?.activeTab ?? null),
+            rightPanelOpen: forThisAgent || (entry?.open ?? get().rightPanelOpen),
+            activeRightPanelTab: forThisAgent
+              ? requested.tabId
+              : (entry?.activeTab ?? get().activeRightPanelTab),
             requestedRightPanel: null,
           }),
     });
   },
 
   loadRightPanelState: () => {
+    dropLegacyRightPanelLayouts();
     const entry = readRightPanelState();
     if (!entry) return;
     // Same rule as the per-agent bind above, for the same reason — but this one

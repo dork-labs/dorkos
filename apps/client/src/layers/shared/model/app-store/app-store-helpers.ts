@@ -171,6 +171,19 @@ export function writeRightPanelState(entry: RightPanelStateEntry): void {
   } catch {}
 }
 
+/** The per-agent layout map's key before DOR-2579 (see `STORAGE_KEYS.RIGHT_PANEL_LAYOUTS`). */
+const LEGACY_RIGHT_PANEL_LAYOUTS_KEY = 'dorkos-right-panel-layouts';
+
+/**
+ * Remove the pre-DOR-2579 per-agent layout map. Idempotent, so it can run on
+ * every mount for as long as the old key might still be in somebody's browser.
+ */
+export function dropLegacyRightPanelLayouts(): void {
+  try {
+    localStorage.removeItem(LEGACY_RIGHT_PANEL_LAYOUTS_KEY);
+  } catch {}
+}
+
 /** A per-agent right panel layout entry (the durable state plus its LRU recency stamp). */
 interface RightPanelLayoutEntry extends RightPanelStateEntry {
   accessedAt: number;

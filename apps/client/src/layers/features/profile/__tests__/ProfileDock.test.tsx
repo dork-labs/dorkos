@@ -350,7 +350,7 @@ describe('a link naming an agent other than the session’s', () => {
     // A shape that spent the mark at that bind closed the panel the link had
     // just opened and cleared its subject with it, so the link opened nothing.
     localStorage.setItem(
-      'dorkos-right-panel-layouts',
+      'dorkos-right-panel-layouts-v2',
       JSON.stringify({ [WARDEN_PATH]: { open: false, activeTab: 'pulse', accessedAt: 1 } })
     );
     useAppStore.setState({ selectedCwd: WARDEN_PATH });
