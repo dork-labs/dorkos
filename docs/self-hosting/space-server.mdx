@@ -45,7 +45,7 @@ Sometimes setup stops without knowing whether it created something, for example 
 - **It finds something it can prove your setup made.** It removes it once you type the id it shows. Then `--resume` carries on.
 - **It finds something it can't prove is yours.** It removes nothing and tells you why. It lists everything your setup made, where each one is, and the command to remove it, since those may cost money until you do.
 
-If you'd rather give up on a stopped setup, remove what it made yourself, then run `--forget <run-id>`. DorkOS checks that each thing is really gone before it stops listing the setup. It changes nothing in your Fly or Neon accounts.
+If you'd rather give up on a stopped setup, remove what it made yourself, then run `--forget <run-id>`. DorkOS checks that each thing is really gone before it stops listing the setup. It changes nothing in your Fly or Neon accounts. If the setup made a storage bucket, removing the bucket leaves its Tigris access key working, so DorkOS shows you how to delete that key too.
 
 If it removes a Tigris bucket, Fly leaves the bucket's access key working in Tigris. DorkOS tells you so and shows you how to delete that key.
 

@@ -200,7 +200,7 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
 3. Expect: the Neon project and the Tigris bucket are created. If Fly asks for Tigris terms, accept them in Fly and type `accept`.
 4. When the launcher prints `Applying private secrets and deploying the pinned Community image…`, press Control-C once while `fly deploy` is running.
 5. Expect: setup stops, saves its state and prints the recovery table and resume command again. Record the journal state and the error code (`CANCELLED` or `CREATION_OUTCOME_UNCERTAIN`).
-   - If Control-C lands just after a create was about to start (for example right after `Checking neon resource identity…`), the table offers no resume. It says `Next: check whether that create landed with: dorkos community deploy --remove-uncertain <run-id>` instead (DOR-2701). Run that. Straight away it says the create could still appear and when to run it again (about 12 minutes after the stop). Run it again then. Expect: "The create never landed", the earlier resources named as kept, and `Continue with:` followed by the full `--resume` command. Run that command and carry on from step 3.
+   - If Control-C lands just after a create was about to start (for example right after `Checking neon resource identity…`), the table offers no resume. It says `Next: check whether that create landed with: dorkos community deploy --remove-uncertain <run-id>` instead (DOR-2701). Run that. Straight away it says the create could still appear and when to run it again (about 12 minutes after the stop, or about 14 for a bucket). Run it again then. Expect: "The create never landed", the earlier resources named as kept, and `Continue with:` followed by the full `--resume` command. Run that command and carry on from step 3.
 6. Run the resume command again. Expect: it finishes the deploy, verifies health, then asks `Open <origin> and copy the one-time setup secret? Type copy:`.
 7. Complete owner setup in the browser, press Enter in the terminal, post one message and upload then download one private file, then type `complete`.
 8. Expect the completion screen: "Community setup is complete", deployment health verified, recovery readiness "not verified". Record it.
@@ -217,7 +217,7 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
 
    Then delete the bucket's access key (named after the bucket, usually `<bucket>_access_key`), which `fly storage destroy` leaves active (see the Tigris access keys exception above).
 
-2. For any run that stopped before it finished, run `dorkos community deploy --forget <run-id>`. Expect: it checks each resource the run made, says they are gone, and `--list-incomplete` stops listing the run. If something is still there, it names it with its remove command and keeps the run. Never delete a journal file by hand.
+2. For any run that stopped before it finished, run `dorkos community deploy --forget <run-id>`. Expect: it checks each resource the run made, says they are gone, and `--list-incomplete` stops listing the run. If something is still there, it names it with its remove command and keeps the run. For a run that made a bucket, expect the access-key steps too, and delete that key. Never delete a journal file by hand.
 3. Take the after inventory and compare, using the exceptions above.
 
 ### L3 revocation (always, even after a failed run)

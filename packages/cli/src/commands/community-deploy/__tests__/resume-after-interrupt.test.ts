@@ -4,223 +4,24 @@
  * between "intent saved" and the request. Before this fix, a run that had made anything earlier
  * could never be resumed, and `--remove-uncertain` left it stuck.
  */
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  CommunityCreationUncertainError,
-  executeCommunityCreationPhase,
-  type CommunityCreationDependencies,
-} from '../execute.js';
-import {
-  deleteLaunchJournal,
-  initializeLaunchJournal,
-  launchJournalPath,
-  readLaunchJournal,
-  writeLaunchJournal,
-  type LaunchJournal,
-} from '../journal.js';
-import { createLaunchPlan } from '../plan.js';
-import { createInitialCommunityLaunchJournal } from '../resume.js';
-import {
-  runUncertainRemoval,
-  type PendingIntent,
-  type ProbeResult,
-  type RemovalProvider,
-  type UncertainResourceProbe,
-} from '../provenance/uncertain-removal.js';
+import { describe, expect, it, vi } from 'vitest';
+import { CommunityCreationUncertainError, executeCommunityCreationPhase } from '../execute.js';
+import { readLaunchJournal, writeLaunchJournal } from '../journal.js';
 import { formatRemovalOutcome } from '../provenance/removal-output.js';
-import { runForgetLaunch, type LaunchResourceChecks } from '../provenance/forget-launch.js';
-import { formatForgetOutcome } from '../provenance/forget-command.js';
-
-const RUN_ID = '802d9149-bbad-4f9e-a949-2058b5e836c4';
-const NAME = 'dor2701-app';
-const STARTED = '2026-10-03T23:10:23.824Z';
-/** Past the create window and its ten-minute margin (DOR-2656's bar). */
-const LATER = '2026-10-03T23:45:00.000Z';
-/** Inside the create window: a cut-off create could still land. */
-const SOON = '2026-10-03T23:11:35.000Z';
-
-const plan = createLaunchPlan({
-  dorkosVersion: '0.96.0',
-  imageDigest: `sha256:${'a'.repeat(64)}`,
-  fly: {
-    organizationId: 'personal',
-    organizationName: 'Personal',
-    appName: NAME,
-    region: 'ord',
-    machineSize: 'shared-cpu-1x',
-  },
-  neon: {
-    organizationId: 'org-old-resonance',
-    organizationName: 'Old Resonance',
-    projectName: NAME,
-    region: 'aws-us-east-2',
-  },
-  tigris: { bucketName: NAME, private: true },
-});
-
-const STEPS = ['fly', 'neon', 'tigris'] as const;
-const DONE = { fly: 'fly_app_created', neon: 'neon_project_created', tigris: 'bucket_created' };
-
-let root: string;
-let journalPath: string;
-
-beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), 'dorkos-resume-after-interrupt-'));
-  journalPath = launchJournalPath(root, RUN_ID);
-  await initializeLaunchJournal(
-    journalPath,
-    createInitialCommunityLaunchJournal(RUN_ID, plan, STARTED)
-  );
-});
-
-afterEach(async () => {
-  await rm(root, { recursive: true, force: true });
-});
-
-const read = async () => (await readLaunchJournal(journalPath))!;
-
-/** Fly, Neon and Tigris as plain records. `interrupt` names the one create that never lands. */
-function services(interrupt?: RemovalProvider) {
-  const world: { fly: string | null; neon: string | null; tigris: string | null } = {
-    fly: null,
-    neon: null,
-    tigris: null,
-  };
-  let flyNetwork: string | null = null;
-  let interrupted = false;
-  const ids = { fly: NAME, neon: 'project-1', tigris: 'addon-1' };
-  const orgs = { fly: 'personal', neon: 'org-old-resonance', tigris: 'personal' };
-  const identity = (service: RemovalProvider) => ({
-    id: ids[service],
-    organizationId: orgs[service],
-    name: NAME,
-    ...(service === 'tigris' ? { bindingId: NAME } : {}),
-    ...(service === 'neon'
-      ? {
-          relatedResources: {
-            neonBranchId: 'branch-1',
-            neonDatabaseId: 'database-1',
-            neonRoleId: 'role-1',
-            neonEndpointId: 'endpoint-1',
-          },
-        }
-      : {}),
-    ...(service === 'fly' && flyNetwork ? { provenance: { flyNetwork } } : {}),
-  });
-  const boundary = (service: RemovalProvider) => ({
-    create: vi.fn(async (marker: string) => {
-      if (service === interrupt && !interrupted) {
-        // The intent is saved; the request never went out.
-        interrupted = true;
-        throw new Error('cancelled');
-      }
-      world[service] = ids[service];
-      if (service === 'fly') flyNetwork = `dorkos-${marker}`;
-      return identity(service);
-    }),
-    inspect: vi.fn(async () => {
-      if (!world[service]) throw new Error('missing');
-      return identity(service);
-    }),
-  });
-  const fly = boundary('fly');
-  const neon = boundary('neon');
-  const tigris = boundary('tigris');
-  const creation: CommunityCreationDependencies = {
-    persist: (next, expected) => writeLaunchJournal(journalPath, next, expected),
-    fly,
-    neon,
-    tigris,
-    now: () => STARTED,
-  };
-  /** The removal probe: absent only when nothing with the name exists. */
-  const probe = (found?: () => ProbeResult): UncertainResourceProbe => ({
-    find: vi.fn(async (intent: PendingIntent): Promise<ProbeResult> =>
-      found ? found() : world[intent.provider] ? unprovedFind(intent.provider) : { kind: 'absent' }
-    ),
-    remove: vi.fn(async () => undefined),
-    isGone: vi.fn(async () => true),
-  });
-  const checks: LaunchResourceChecks = {
-    flyAppGone: async () => world.fly === null,
-    neonProjectGone: async () => world.neon === null,
-    tigrisBucketGone: async () => world.tigris === null,
-    intendedCreateAbsent: async (intent) => world[intent.provider] === null,
-  };
-  return { world, creation, fly, neon, tigris, probe, checks };
-}
-
-/** Something with the run's name that does not carry its marker. */
-function unprovedFind(provider: RemovalProvider): ProbeResult {
-  if (provider === 'fly') {
-    return {
-      kind: 'fly',
-      app: {
-        token: '4817203',
-        name: NAME,
-        organization: 'personal',
-        network: `dorkos-${'0'.repeat(32)}`,
-        createdAt: '2026-10-03T23:10:24Z',
-        machines: 0,
-        volumes: 0,
-        ipAddresses: 0,
-        certificates: 0,
-        secretNames: [],
-      },
-    };
-  }
-  if (provider === 'neon') {
-    return {
-      kind: 'neon',
-      projects: [
-        {
-          token: 'project-9',
-          name: NAME,
-          organization: 'org-old-resonance',
-          region: 'aws-us-east-2',
-          createdAt: '2026-10-03T23:10:24Z',
-          branchCount: 1,
-          defaultBranchCount: 1,
-          roles: [`community_${'0'.repeat(32)}`],
-          databases: ['community'],
-        },
-      ],
-    };
-  }
-  return {
-    kind: 'tigris',
-    facts: {
-      app: { name: NAME, organization: 'personal', network: 'dorkos-elsewhere' },
-      totalCount: 1,
-      addOns: [{ token: 'addon-9', name: NAME, organization: 'personal', createdAt: STARTED }],
-    },
-  };
-}
-
-function removal(probe: UncertainResourceProbe, now: string) {
-  return runUncertainRemoval({
-    readJournal: () => readLaunchJournal(journalPath),
-    persist: (next, expected) => writeLaunchJournal(journalPath, next, expected),
-    discard: (expected) => deleteLaunchJournal(journalPath, expected),
-    probeFor: () => probe,
-    confirm: async () => ({ kind: 'declined' }),
-    now: () => now,
-    sleep: async () => undefined,
-    gate: { fly: true, neon: true },
-  });
-}
-
-/** Run the creation phase until the interrupted step stops it, and return that journal. */
-async function interruptAt(service: RemovalProvider) {
-  const world = services(service);
-  await expect(executeCommunityCreationPhase(plan, await read(), world.creation)).rejects.toEqual(
-    new CommunityCreationUncertainError(service)
-  );
-  return world;
-}
+import {
+  DONE,
+  LATER,
+  NAME,
+  RUN_ID,
+  SOON,
+  STEPS,
+  interruptAt,
+  journalFile,
+  plan,
+  read,
+  removal,
+  unprovedFind,
+} from './resume-after-interrupt-fixtures.js';
 
 describe('a run stopped right after it saved a create intent (DOR-2701)', () => {
   it.each(STEPS)(
@@ -253,7 +54,7 @@ describe('a run stopped right after it saved a create intent (DOR-2701)', () => 
       if (earlier.length === 0) {
         // Nothing else was made, so the run is cleared and a fresh launch starts over (DOR-2656).
         expect(outcome).toEqual({ outcome: 'absent', provider: 'fly', cleared: true });
-        expect(await readLaunchJournal(journalPath)).toBeNull();
+        expect(await readLaunchJournal(journalFile())).toBeNull();
         return;
       }
       expect(outcome).toEqual({
@@ -329,10 +130,15 @@ describe('a run stopped right after it saved a create intent (DOR-2701)', () => 
         recovery: '',
       }).text;
       if (service !== 'fly') {
-        expect(text).toContain('They may incur charges until you remove them:');
+        // Offered as the way to give up, not as the way forward.
+        expect(text).toContain(
+          'If you’d rather give up on this run, remove what it made. These may incur charges until you do:'
+        );
         expect(text).toContain(`Fly app ${NAME}, in Fly organization personal`);
         expect(text).toContain(`Remove: fly apps destroy ${NAME}`);
-        expect(text).toContain(`dorkos community deploy --forget ${RUN_ID}`);
+        expect(text).toContain(
+          `Then stop listing this run: dorkos community deploy --forget ${RUN_ID}`
+        );
       }
       if (service === 'tigris') {
         expect(text).toContain(
@@ -344,91 +150,24 @@ describe('a run stopped right after it saved a create intent (DOR-2701)', () => 
   );
 });
 
-describe('--forget retires a run only when everything it made is gone', () => {
-  it('keeps the run, naming what is left, until the person removes it, then forgets it', async () => {
-    const world = await interruptAt('tigris');
-    const deps = (now: string) => ({
-      readJournal: () => readLaunchJournal(journalPath),
-      discard: (expected: number) => deleteLaunchJournal(journalPath, expected),
-      checks: world.checks,
-      now: () => now,
-    });
-
-    const kept = await runForgetLaunch(deps(LATER));
-    expect(kept).toMatchObject({
-      outcome: 'still-there',
-      remaining: [
-        { provider: 'fly', name: NAME, organization: 'personal', status: 'present' },
-        { provider: 'neon', id: 'project-1', organization: 'org-old-resonance' },
-      ],
-    });
-    const text = formatForgetOutcome(kept, RUN_ID).text;
-    expect(text).toContain('They may incur charges until you remove them:');
-    expect(text).toContain(`Remove: fly apps destroy ${NAME}`);
-    expect(text).toContain('Remove: neonctl projects delete project-1');
-    expect(await readLaunchJournal(journalPath)).not.toBeNull();
-
-    world.world.fly = null;
-    world.world.neon = null;
-    // Even with both gone, a create sent moments ago could still land.
-    expect(await runForgetLaunch(deps(SOON))).toMatchObject({ outcome: 'wait' });
-    expect(await readLaunchJournal(journalPath)).not.toBeNull();
-
-    expect(await runForgetLaunch(deps(LATER))).toMatchObject({ outcome: 'forgotten' });
-    expect(await readLaunchJournal(journalPath)).toBeNull();
-  });
-
-  it('never forgets a run whose resources cannot be read, or whose create may have landed', async () => {
+describe('releasing an intent under a concurrent writer', () => {
+  it('never releases the intent when the journal changed after the verdict was read', async () => {
     const world = await interruptAt('neon');
-    const deps = (checks: Partial<LaunchResourceChecks>) => ({
-      readJournal: () => readLaunchJournal(journalPath),
-      discard: (expected: number) => deleteLaunchJournal(journalPath, expected),
-      checks: { ...world.checks, ...checks },
-      now: () => LATER,
+    const probe = world.probe();
+    vi.mocked(probe.find).mockImplementationOnce(async () => {
+      // A --resume writes between the verdict's read and the release.
+      const current = await read();
+      await writeLaunchJournal(
+        journalFile(),
+        { ...current, revision: current.revision + 1 },
+        current.revision
+      );
+      return { kind: 'absent' };
     });
-    world.world.fly = null;
-    await expect(
-      runForgetLaunch(
-        deps({
-          flyAppGone: async () => {
-            throw new Error('unreadable');
-          },
-        })
-      )
-    ).resolves.toMatchObject({ outcome: 'still-there', remaining: [{ status: 'unreadable' }] });
-    await expect(
-      runForgetLaunch(deps({ intendedCreateAbsent: async () => false }))
-    ).resolves.toEqual({ outcome: 'pending-create', provider: 'neon', status: 'present' });
-    expect(await readLaunchJournal(journalPath)).not.toBeNull();
-  });
-
-  it('leaves a removal in progress and a finished launch alone', async () => {
-    const current = await read();
-    const removing: LaunchJournal = {
-      ...current,
-      revision: current.revision + 1,
-      pendingRemoval: {
-        provider: 'fly',
-        token: '4817203',
-        resourceName: NAME,
-        proof: 'marker',
-        requestedAt: STARTED,
-      },
-    };
-    await writeLaunchJournal(journalPath, removing, current.revision);
-    const deps = {
-      readJournal: () => readLaunchJournal(journalPath),
-      discard: (expected: number) => deleteLaunchJournal(journalPath, expected),
-      checks: services().checks,
-      now: () => LATER,
-    };
-    await expect(runForgetLaunch(deps)).resolves.toEqual({ outcome: 'removal-pending' });
-    await writeLaunchJournal(
-      journalPath,
-      { ...removing, revision: removing.revision + 1, pendingRemoval: null, state: 'complete' },
-      removing.revision
-    );
-    await expect(runForgetLaunch(deps)).resolves.toEqual({ outcome: 'complete' });
-    expect(await readLaunchJournal(journalPath)).not.toBeNull();
+    await expect(removal(probe, LATER)).resolves.toEqual({ outcome: 'changed' });
+    expect(await read()).toMatchObject({
+      state: 'uncertain',
+      pendingIntent: { provider: 'neon' },
+    });
   });
 });

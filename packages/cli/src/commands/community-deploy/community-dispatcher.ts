@@ -47,9 +47,7 @@ import {
 } from './resume.js';
 import { runRemoveUncertainCommand } from './provenance/removal-command.js';
 import { runForgetCommand } from './provenance/forget-command.js';
-import { classifyUncertainJournal } from './provenance/uncertain-verdict.js';
-
-const SERVICE_NAME = { fly: 'Fly app', neon: 'Neon project', tigris: 'Tigris bucket' } as const;
+import { classifyUncertainJournal, SERVICE_LABEL } from './provenance/uncertain-verdict.js';
 import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 
 /** Human-facing help for the guided deployment command. */
@@ -379,7 +377,7 @@ export async function runCommunityDispatcher(
   const unresolved = resumeJournal ? classifyUncertainJournal(resumeJournal) : null;
   if (resumeJournal && unresolved?.shape === 'uncertain-create') {
     throw new Error(
-      `This run stopped while creating a ${SERVICE_NAME[unresolved.intent.provider]}, and DorkOS has not checked whether it landed. Check it first, and the run can continue: dorkos community deploy --remove-uncertain ${resumeJournal.runId}`
+      `This run stopped while creating a ${SERVICE_LABEL[unresolved.intent.provider]}, and DorkOS has not checked whether it landed. Check it first, and the run can continue: dorkos community deploy --remove-uncertain ${resumeJournal.runId}`
     );
   }
   let latest: LaunchJournal | null = resumeJournal;

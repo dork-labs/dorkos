@@ -14,7 +14,8 @@ import {
   type LaunchResourceChecks,
   type RemainingResource,
 } from './forget-launch.js';
-import { formatRunResources, shown, whenClearable } from './removal-output.js';
+import { formatRunResources, shown, tigrisKeyLines, whenClearable } from './removal-output.js';
+import { SERVICE_LABEL } from './uncertain-verdict.js';
 
 /** Everything `--forget` needs from the dispatcher. */
 export interface ForgetCommandInput {
@@ -28,15 +29,13 @@ export interface ForgetCommandInput {
   now?(): string;
 }
 
-const SERVICE = { fly: 'Fly app', neon: 'Neon project', tigris: 'Tigris bucket' } as const;
-
 function remainingLines(remaining: readonly RemainingResource[], runId: string): string[] {
   const unreadable = remaining.filter((resource) => resource.status === 'unreadable');
   return [
-    ...formatRunResources(remaining, runId).slice(0, -1),
+    ...formatRunResources(remaining),
     ...(unreadable.length > 0
       ? [
-          `DorkOS could not check ${unreadable.map((resource) => `${SERVICE[resource.provider]} ${shown(resource.name)}`).join(', ')}. It is safe to run this again.`,
+          `DorkOS could not check ${unreadable.map((resource) => `${SERVICE_LABEL[resource.provider]} ${shown(resource.name)}`).join(', ')}. It is safe to run this again.`,
         ]
       : []),
     `Once they are gone, run this again: dorkos community deploy --forget ${runId}`,
@@ -76,8 +75,8 @@ export function formatForgetOutcome(
       return done(
         [
           outcome.status === 'present'
-            ? `This run may have made a ${SERVICE[outcome.provider]} it never recorded. Nothing was changed.`
-            : `DorkOS could not check whether this run made a ${SERVICE[outcome.provider]}. Nothing was changed.`,
+            ? `This run may have made a ${SERVICE_LABEL[outcome.provider]} it never recorded. Nothing was changed.`
+            : `DorkOS could not check whether this run made a ${SERVICE_LABEL[outcome.provider]}. Nothing was changed.`,
           `Check it first: ${removeUncertain}`,
         ],
         1
@@ -85,7 +84,7 @@ export function formatForgetOutcome(
     case 'pending-create-unprovable':
       return done(
         [
-          `This run stopped while creating a ${SERVICE[outcome.provider]}, before DorkOS recorded when. DorkOS cannot show it never landed, so nothing was changed.`,
+          `This run stopped while creating a ${SERVICE_LABEL[outcome.provider]}, before DorkOS recorded when. DorkOS cannot show it never landed, so nothing was changed.`,
           `Check it first: ${removeUncertain}`,
         ],
         1
@@ -93,7 +92,7 @@ export function formatForgetOutcome(
     case 'wait':
       return done(
         [
-          `This run stopped while creating a ${SERVICE[outcome.provider]} only recently, and it could still appear. Nothing was changed.`,
+          `This run stopped while creating a ${SERVICE_LABEL[outcome.provider]} only recently, and it could still appear. Nothing was changed.`,
           `Run dorkos community deploy --forget ${runId} again ${whenClearable(outcome.clearableAfter, outcome.clearableInMs)}.`,
         ],
         1
@@ -116,9 +115,13 @@ export function formatForgetOutcome(
     case 'forgotten':
       return done([
         outcome.checked.length > 0
-          ? `Checked that everything this run made is gone: ${outcome.checked.map((resource) => `${SERVICE[resource.provider]} ${shown(resource.name)}`).join(', ')}.`
+          ? `Checked that everything this run made is gone: ${outcome.checked.map((resource) => `${SERVICE_LABEL[resource.provider]} ${shown(resource.name)}`).join(', ')}.`
           : 'This run made nothing.',
         'DorkOS removed its saved record, so it no longer shows in --list-incomplete.',
+        // The bucket is gone, but Fly leaves its access key working in Tigris (DOR-2646).
+        ...outcome.checked
+          .filter((resource) => resource.provider === 'tigris')
+          .flatMap((resource) => tigrisKeyLines(resource)),
       ]);
   }
 }

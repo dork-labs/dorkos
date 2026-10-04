@@ -394,20 +394,16 @@ describe("checks that a run's resources are gone (--forget)", () => {
     await expect(checks.tigrisBucketGone('addon-5')).rejects.toThrow();
   });
 
-  it("reads an unresolved create's name in its own organization", async () => {
+  it('reads an unresolved create with the removal probe, and a bucket name globally', async () => {
     mocks.readNeonProjects.mockResolvedValue([{ id: 'project-2', name: 'other' }]);
     await expect(
-      checks.intendedCreateAbsent(
-        { ...intent, provider: 'neon', organizationId: 'org-acme' },
-        journal
-      )
-    ).resolves.toBe(true);
+      checks.findIntended({ ...intent, provider: 'neon', organizationId: 'org-acme' }, journal)
+    ).resolves.toEqual({ kind: 'absent' });
     expect(mocks.readNeonProjects).toHaveBeenCalledWith(options.neon, 'org-acme');
-    mocks.isTigrisNameHeld.mockResolvedValue(true);
-    await expect(
-      checks.intendedCreateAbsent({ ...intent, provider: 'tigris' }, journal)
-    ).resolves.toBe(false);
     mocks.readAppProvenanceOrNotFound.mockResolvedValue(FLY_APP_NOT_FOUND);
-    await expect(checks.intendedCreateAbsent(intent, journal)).resolves.toBe(true);
+    await expect(checks.findIntended(intent, journal)).resolves.toEqual({ kind: 'absent' });
+    mocks.isTigrisNameHeld.mockResolvedValue(true);
+    await expect(checks.tigrisNameHeld('community-acme')).resolves.toBe(true);
+    expect(mocks.isTigrisNameHeld).toHaveBeenCalledWith('community-acme');
   });
 });

@@ -238,14 +238,12 @@ export function createDefaultLaunchResourceChecks(
 ): LaunchResourceChecks {
   const flyAppGone = async (appName: string, organization: string) =>
     (await readFlyAppOrProvedMissing(options, organization, appName)) === null;
-  const neonNamed = async (organization: string, test: (id: string, name: string) => boolean) =>
-    (await readNeonProjects(options.neon, organization)).some((project) =>
-      test(project.id, project.name)
-    );
   return {
     flyAppGone,
     neonProjectGone: async (projectId, organization) =>
-      !(await neonNamed(organization, (id) => id === projectId)),
+      !(await readNeonProjects(options.neon, organization)).some(
+        (project) => project.id === projectId
+      ),
     tigrisBucketGone: async (addOnId) => {
       try {
         await useTigrisClient(options, (client) => client.readTigris(addOnId));
@@ -256,18 +254,9 @@ export function createDefaultLaunchResourceChecks(
         throw error;
       }
     },
-    intendedCreateAbsent: async (intent) => {
-      if (intent.provider === 'fly') return flyAppGone(intent.resourceName, intent.organizationId);
-      if (intent.provider === 'neon') {
-        return !(await neonNamed(
-          intent.organizationId,
-          (_id, name) => name === intent.resourceName
-        ));
-      }
-      // Bucket names are global, and only Fly's exact `NOT_FOUND` for the name means free.
-      return !(await useTigrisClient(options, (client) =>
-        client.isTigrisNameHeld(intent.resourceName)
-      ));
-    },
+    findIntended: (intent, journal) =>
+      createDefaultRemovalProbes(options)(intent.provider).find(intent, journal),
+    tigrisNameHeld: (bucketName) =>
+      useTigrisClient(options, (client) => client.isTigrisNameHeld(bucketName)),
   };
 }

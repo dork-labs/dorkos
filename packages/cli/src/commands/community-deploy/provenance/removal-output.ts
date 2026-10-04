@@ -10,6 +10,7 @@ import { ExternalLabelSchema } from '../provider-contract.js';
 import { tigrisAccessKeySteps } from './tigris-access-key.js';
 import { journalRecordsNoResource, type LaunchJournal } from '../journal.js';
 import { runResources, type RunResource } from './forget-launch.js';
+import { SERVICE_LABEL } from './uncertain-verdict.js';
 import type {
   CandidateSummary,
   ProvedResource,
@@ -30,12 +31,6 @@ export interface RemovalOutputContext {
   /** The existing recovery report for the journal. */
   recovery: string;
 }
-
-const SERVICE: Record<RemovalProvider, string> = {
-  fly: 'Fly app',
-  neon: 'Neon project',
-  tigris: 'Tigris bucket',
-};
 
 const TOKEN_NAME: Record<RemovalProvider, string> = {
   fly: 'internal id',
@@ -111,10 +106,10 @@ export function formatRemovalOffer(
 ): string {
   const requestedAt = context.journal.pendingIntent?.requestedAt;
   const lines = [
-    `Run ${context.runId.slice(0, 8)} stopped while creating a ${SERVICE[target.provider]}. DorkOS can prove that run made it:`,
+    `Run ${context.runId.slice(0, 8)} stopped while creating a ${SERVICE_LABEL[target.provider]}. DorkOS can prove that run made it:`,
     '',
     row(
-      SERVICE[target.provider],
+      SERVICE_LABEL[target.provider],
       `${shown(target.resourceName)}  (${TOKEN_NAME[target.provider]} ${shown(target.token)})`
     ),
     row('Owner', `${OWNER[target.provider]} ${shown(target.organization)}`),
@@ -169,7 +164,7 @@ export function unprovedReasonText(reason: UnprovedReason, provider: RemovalProv
 }
 
 function candidateLine(provider: RemovalProvider, candidate: CandidateSummary): string {
-  return `${SERVICE[provider]} ${shown(candidate.name)} (${TOKEN_NAME[provider]} ${shown(candidate.token)}), ${OWNER[provider]} ${shown(candidate.organization)}, created ${formatCreated(candidate.createdAt, undefined)}: ${unprovedReasonText(candidate.reason, provider)}`;
+  return `${SERVICE_LABEL[provider]} ${shown(candidate.name)} (${TOKEN_NAME[provider]} ${shown(candidate.token)}), ${OWNER[provider]} ${shown(candidate.organization)}, created ${formatCreated(candidate.createdAt, undefined)}: ${unprovedReasonText(candidate.reason, provider)}`;
 }
 
 function manualSteps(provider: RemovalProvider, journal: LaunchJournal): string[] {
@@ -218,14 +213,22 @@ function removeCommand(runId: string, token?: string): string {
 }
 
 /**
- * Every resource a run made, where it lives and how to remove it, for a run DorkOS cannot finish.
+ * Every resource a run made, where it lives and how to remove it. A bucket also gets the steps for
+ * its access key, which Fly leaves working when the bucket goes (DOR-2646).
  *
  * @param resources - The resources to list; nothing is printed for none.
- * @param runId - The run, for the `--forget` command that retires it once they are gone.
+ * @param options - `giveUp` words it as the choice to abandon a run that could still go on.
  */
-export function formatRunResources(resources: readonly RunResource[], runId: string): string[] {
+export function formatRunResources(
+  resources: readonly RunResource[],
+  options: { giveUp?: boolean } = {}
+): string[] {
   if (resources.length === 0) return [];
-  const lines = ['This run made these. They may incur charges until you remove them:'];
+  const lines = [
+    options.giveUp
+      ? 'If you’d rather give up on this run, remove what it made. These may incur charges until you do:'
+      : 'This run made these. They may incur charges until you remove them:',
+  ];
   for (const resource of resources) {
     const name = shown(resource.name);
     const id = shown(resource.id);
@@ -234,27 +237,40 @@ export function formatRunResources(resources: readonly RunResource[], runId: str
       : '';
     if (resource.provider === 'neon') {
       lines.push(
-        `  ${SERVICE.neon} ${name} (project id ${id})${where}`,
+        `  ${SERVICE_LABEL.neon} ${name} (project id ${id})${where}`,
         `    Remove: neonctl projects delete ${id}`
       );
+    } else if (resource.provider === 'fly') {
+      lines.push(`  ${SERVICE_LABEL.fly} ${name}${where}`, `    Remove: fly apps destroy ${name}`);
     } else {
       lines.push(
-        `  ${SERVICE[resource.provider]} ${name}${where}`,
-        resource.provider === 'fly'
-          ? `    Remove: fly apps destroy ${name}`
-          : `    Remove: fly storage destroy ${name}`
+        `  ${SERVICE_LABEL.tigris} ${name}${where}`,
+        `    Remove: fly storage destroy ${name}`,
+        ...tigrisKeyLines(resource).map((line) => `    ${line}`)
       );
     }
   }
-  lines.push(
-    `Once they are gone, stop listing this run: dorkos community deploy --forget ${runId}`
-  );
   return lines;
 }
 
-/** {@link formatRunResources} for every resource the run's journal recorded. */
+/**
+ * The access-key steps for a bucket the run made, by its own name and Fly organization.
+ *
+ * @param resource - A Tigris bucket from {@link runResources}.
+ */
+export function tigrisKeyLines(resource: RunResource): string[] {
+  return tigrisAccessKeySteps(shown(resource.name), shown(resource.organization ?? '<your-org>'));
+}
+
+/**
+ * {@link formatRunResources} for every resource the run's journal recorded, offered as a way to
+ * give up rather than the way forward, and how to stop listing the run afterwards.
+ */
 function madeByRun(context: RemovalOutputContext): string[] {
-  return formatRunResources(runResources(context.journal), context.runId);
+  const lines = formatRunResources(runResources(context.journal), { giveUp: true });
+  return lines.length === 0
+    ? []
+    : [...lines, `Then stop listing this run: dorkos community deploy --forget ${context.runId}`];
 }
 
 function continueWith(context: RemovalOutputContext): string {
@@ -264,7 +280,7 @@ function continueWith(context: RemovalOutputContext): string {
 }
 
 function removedLine(target: RemovalTarget, nameReleased: boolean | null): string {
-  const what = `${SERVICE[target.provider]} ${shown(target.resourceName)} (${TOKEN_NAME[target.provider]} ${shown(target.token)})`;
+  const what = `${SERVICE_LABEL[target.provider]} ${shown(target.resourceName)} (${TOKEN_NAME[target.provider]} ${shown(target.token)})`;
   if (target.provider === 'tigris') {
     return `Removed ${what} and took its access key off app ${shown(target.appName)}.`;
   }
@@ -305,7 +321,7 @@ export function formatRemovalOutcome(
       const absent = `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)}. The create never landed.`;
       if (outcome.released) {
         const kept = runResources(context.journal).map(
-          (resource) => `${SERVICE[resource.provider]} ${shown(resource.name)}`
+          (resource) => `${SERVICE_LABEL[resource.provider]} ${shown(resource.name)}`
         );
         return done([
           absent,
@@ -367,12 +383,12 @@ export function formatRemovalOutcome(
       ]);
     case 'declined':
       return done([
-        `Kept ${SERVICE[outcome.target.provider]} ${shown(outcome.target.resourceName)}. Nothing was changed.`,
+        `Kept ${SERVICE_LABEL[outcome.target.provider]} ${shown(outcome.target.resourceName)}. Nothing was changed.`,
       ]);
     case 'wrong-token':
       return done(
         [
-          `That is not the ${TOKEN_NAME[outcome.target.provider]}. Kept ${SERVICE[outcome.target.provider]} ${shown(outcome.target.resourceName)}. Nothing was changed.`,
+          `That is not the ${TOKEN_NAME[outcome.target.provider]}. Kept ${SERVICE_LABEL[outcome.target.provider]} ${shown(outcome.target.resourceName)}. Nothing was changed.`,
         ],
         1
       );
@@ -407,7 +423,7 @@ export function formatRemovalOutcome(
     case 'removal-uncertain':
       return done(
         [
-          `DorkOS asked to remove ${SERVICE[outcome.target.provider]} ${shown(outcome.target.resourceName)} but could not confirm it is gone. The run stays paused.`,
+          `DorkOS asked to remove ${SERVICE_LABEL[outcome.target.provider]} ${shown(outcome.target.resourceName)} but could not confirm it is gone. The run stays paused.`,
           `It is safe to run this again: ${removeCommand(context.runId)}`,
         ],
         1

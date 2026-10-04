@@ -13,8 +13,11 @@ import { LaunchJournalConflictError, type LaunchJournal } from '../journal.js';
 import {
   absentCreateSettledAt,
   classifyUncertainJournal,
+  evaluateUncertainResource,
   type PendingIntent,
+  type ProbeResult,
   type RemovalProvider,
+  type UnprovedReason,
 } from './uncertain-removal.js';
 
 /** Exact reads of whether a run's resources are gone. Each throws when it cannot tell. */
@@ -25,8 +28,13 @@ export interface LaunchResourceChecks {
   neonProjectGone(projectId: string, organization: string): Promise<boolean>;
   /** Fly answers that this add-on id does not exist, or was deleted. */
   tigrisBucketGone(addOnId: string): Promise<boolean>;
-  /** Nothing with the intended name exists, for a create whose outcome was never known. */
-  intendedCreateAbsent(intent: PendingIntent, journal: LaunchJournal): Promise<boolean>;
+  /**
+   * Read what has the intended name, for a create whose outcome was never known: the same read
+   * `--remove-uncertain` makes for its verdict.
+   */
+  findIntended(intent: PendingIntent, journal: LaunchJournal): Promise<ProbeResult>;
+  /** Whether any bucket anywhere holds this name; only Fly's exact `NOT_FOUND` means free. */
+  tigrisNameHeld(bucketName: string): Promise<boolean>;
 }
 
 /** One resource a run recorded, with what a person needs to find and remove it. */
@@ -74,6 +82,67 @@ export function runResources(journal: LaunchJournal): RunResource[] {
     });
   }
   return resources;
+}
+
+/**
+ * Reasons that show a same-name resource is not this run's: it does not carry the marker this run
+ * recorded before its create and sent with it, or it lives where this run never asked for one.
+ * `outside-window` is deliberately not here: the marker is checked first, so a resource judged
+ * only on its time carries this run's marker, and is this run's create landing late.
+ */
+const NOT_THIS_RUNS: ReadonlySet<UnprovedReason> = new Set([
+  'different-marker',
+  'other-organization',
+  'other-region',
+]);
+
+/**
+ * Whether a create whose outcome was never known can have landed, from one read.
+ *
+ * `not-landed` when nothing has the name, or when every same-name resource is proved not to be
+ * this run's (someone else's project, say). Anything that could be this run's is `may-have-landed`.
+ *
+ * @param journal - The run's journal.
+ * @param intent - Its unresolved creation intent.
+ * @param found - What the read for `intent.provider` found.
+ */
+export function judgeIntendedCreate(
+  journal: LaunchJournal,
+  intent: PendingIntent,
+  found: ProbeResult
+): 'not-landed' | 'may-have-landed' | 'unreadable' {
+  const verdict = evaluateUncertainResource(journal, intent, found);
+  if (verdict.verdict === 'unreachable') return 'unreadable';
+  if (verdict.verdict === 'absent') return 'not-landed';
+  if (
+    verdict.verdict === 'unproved' &&
+    verdict.candidates.length > 0 &&
+    verdict.candidates.every((candidate) => NOT_THIS_RUNS.has(candidate.reason))
+  ) {
+    return 'not-landed';
+  }
+  return 'may-have-landed';
+}
+
+async function intendedCreateState(
+  checks: LaunchResourceChecks,
+  journal: LaunchJournal,
+  intent: PendingIntent
+): Promise<'not-landed' | 'may-have-landed' | 'unreadable'> {
+  let judged: 'not-landed' | 'may-have-landed' | 'unreadable';
+  try {
+    judged = judgeIntendedCreate(journal, intent, await checks.findIntended(intent, journal));
+  } catch {
+    judged = 'unreadable';
+  }
+  if (judged === 'not-landed' || intent.provider !== 'tigris') return judged;
+  // A bucket is read through its app. Once the person has removed that app, the bucket can only be
+  // read by name, and a name nothing holds anywhere cannot be this run's.
+  try {
+    return (await checks.tigrisNameHeld(intent.resourceName)) ? judged : 'not-landed';
+  } catch {
+    return judged;
+  }
 }
 
 /** A recorded resource that is still there, or that could not be checked. */
@@ -143,13 +212,14 @@ export async function runForgetLaunch(
     if (settledAt === null) {
       return { outcome: 'pending-create-unprovable', provider: intent.provider };
     }
-    let absent: boolean;
-    try {
-      absent = await dependencies.checks.intendedCreateAbsent(intent, journal);
-    } catch {
-      return { outcome: 'pending-create', provider: intent.provider, status: 'unreadable' };
+    const state = await intendedCreateState(dependencies.checks, journal, intent);
+    if (state !== 'not-landed') {
+      return {
+        outcome: 'pending-create',
+        provider: intent.provider,
+        status: state === 'unreadable' ? 'unreadable' : 'present',
+      };
     }
-    if (!absent) return { outcome: 'pending-create', provider: intent.provider, status: 'present' };
     const checkedAt = Date.parse(dependencies.now());
     if (checkedAt < settledAt) {
       return {
