@@ -77,9 +77,19 @@ describe('what a person reads when setup stops (DOR-2702)', () => {
       },
     };
     expect(formatCommunityRecovery(withIntent)).toContain('Manual reconciliation required');
+    // The Neon project's id is recorded here, so --resume checks it itself.
+    expect(formatCommunityRecovery(withIntent)).toContain('Resume with:');
     expect(describeStoppedLaunch(withIntent)).toContain(
       'Follow the steps above before you resume.'
     );
+    // With no id recorded, the recovery offers --remove-uncertain and no resume (DOR-2701), and
+    // the stop line must agree with it.
+    const unrecorded = { ...withIntent, resources: { flyAppId: 'app-id' } };
+    expect(formatCommunityRecovery(unrecorded)).not.toContain('Resume with:');
+    expect(describeStoppedLaunch(unrecorded)).toContain(
+      'Run the --remove-uncertain command above: it checks, then tells you how to carry on.'
+    );
+    expect(describeStoppedLaunch(unrecorded)).not.toContain('resume');
 
     expect(formatCommunityRecovery(uncertain)).not.toContain('Manual reconciliation required');
     const noSteps = describeStoppedLaunch(uncertain);

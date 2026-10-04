@@ -219,8 +219,8 @@ describe('an ambiguous create stays uncertain, and --remove-uncertain can clear 
     // Straight away the create could still land, so the run is kept.
     const early = await run(['--remove-uncertain', runId]);
     expect(early.exitCode).toBe(0);
-    expect(early.printed).toContain('The create probably never landed.');
-    expect(early.printed).toContain('DorkOS keeps this run for now');
+    expect(early.printed).toContain('The create was sent recently and could still appear');
+    expect(early.printed).toContain('If it is still missing then, DorkOS clears this run.');
     expect((await run(['--list-incomplete'])).printed).toContain(`${runId}  uncertain`);
 
     // Well past the create window, the same command clears it.
@@ -229,8 +229,12 @@ describe('an ambiguous create stays uncertain, and --remove-uncertain can clear 
     const removal = await run(['--remove-uncertain', runId]);
     vi.useRealTimers();
     expect(removal.exitCode).toBe(0);
-    expect(removal.printed).toContain('The create probably never landed.');
+    expect(removal.printed).toContain('The create never landed.');
     expect(removal.printed).toContain('it no longer shows in --list-incomplete');
+    // The command that moves it forward: a fresh launch with the same choices.
+    expect(removal.printed).toContain(
+      `Start again with: dorkos community deploy --version 0.76.0 --fly-org dork-labs --fly-region ord --neon-org org-dorian --neon-region aws-us-east-2 --app-name ${APP}`
+    );
 
     expect(await journals()).toEqual([]);
     expect((await run(['--list-incomplete'])).printed).toBe(

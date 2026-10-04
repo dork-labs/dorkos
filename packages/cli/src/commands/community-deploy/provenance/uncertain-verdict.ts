@@ -17,6 +17,13 @@ import {
 /** Service whose create an uncertain run left unresolved. */
 export type RemovalProvider = 'fly' | 'neon' | 'tigris';
 
+/** What a person calls the resource each service's create makes. */
+export const SERVICE_LABEL: Readonly<Record<RemovalProvider, string>> = {
+  fly: 'Fly app',
+  neon: 'Neon project',
+  tigris: 'Tigris bucket',
+};
+
 /** The unresolved creation intent a shape-A journal carries. */
 export type PendingIntent = NonNullable<LaunchJournal['pendingIntent']>;
 
