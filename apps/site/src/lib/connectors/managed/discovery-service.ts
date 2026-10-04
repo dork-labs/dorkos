@@ -58,16 +58,31 @@ function parseRequestShape<T>(schema: z.ZodType<T>, rawRequest: unknown): T {
   }
 }
 
+/** The wire's display-name limit, in UTF-16 units. */
+const WIRE_NAME_LIMIT = 200;
+
+/**
+ * A provider name trimmed and capped at the wire limit without splitting a
+ * character, or `undefined` when nothing is left.
+ */
+function wireName(name: string | undefined): string | undefined {
+  let capped = '';
+  for (const char of (name ?? '').trim()) {
+    if (capped.length + char.length > WIRE_NAME_LIMIT) break;
+    capped += char;
+  }
+  return capped.length > 0 ? capped : undefined;
+}
+
 /**
  * Map one provider toolkit onto the strict wire field by field. A provider
  * toolkit carries more than the wire allows (its logo and description), and
  * a spread would forward those and fail the whole page.
  */
 function toWireToolkit(toolkit: ConnectorToolkit): ManagedConnectorToolkit {
-  const trimmed = toolkit.displayName.trim().slice(0, 200);
   return {
     slug: toolkit.slug,
-    displayName: trimmed.length > 0 ? trimmed : toolkit.slug,
+    displayName: wireName(toolkit.displayName) ?? toolkit.slug,
     authKind: toolkit.authKind,
     ...(toolkit.authenticationSetup !== undefined && {
       authenticationSetup: toolkit.authenticationSetup,
@@ -98,6 +113,7 @@ function toWireOperation(
   operation: ConnectorOperationPage['operations'][number],
   hostedRevisionId: string
 ): ManagedConnectorOperation {
+  const displayName = wireName(operation.displayName);
   return {
     hostedRevisionId,
     providerInstanceId: operation.providerInstanceId,
@@ -110,9 +126,9 @@ function toWireOperation(
     // The provider's type is a plain record; the page's own wire parse checks
     // it is JSON before anything leaves this process.
     inputSchema: operation.inputSchema as ManagedConnectorOperation['inputSchema'],
-    // displayName/important stay off the wire until every supported app
-    // accepts them; providerRevisionRef is private upstream identity and never
-    // leaves this process.
+    ...(displayName !== undefined && { displayName }),
+    ...(operation.important !== undefined && { important: operation.important }),
+    // providerRevisionRef is private upstream identity and never leaves this process.
   };
 }
 

@@ -348,7 +348,10 @@ const schema = z.object({
   // accounts:close key cannot quietly lock everyone out.
   COMMUNITY_ACCOUNT_CLOSURES_PER_DAY: integer('COMMUNITY_ACCOUNT_CLOSURES_PER_DAY', 10, 1000),
   COMMUNITY_PORT: integer('COMMUNITY_PORT', 6481, 65535),
+  // Test-only: adds unauthenticated controls under /api/test/. Refused at startup unless
+  // COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT also holds the exact phrase below (DOR-2655).
   COMMUNITY_TEST_RUNTIME: z.enum(['true', 'false']).default('false'),
+  COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT: optionalText,
   COMMUNITY_POSTS_PER_TEN_MINUTES: integer('COMMUNITY_POSTS_PER_TEN_MINUTES', 120, 1000),
   COMMUNITY_AGENTS_PER_OWNER: integer('COMMUNITY_AGENTS_PER_OWNER', 20, 100),
   COMMUNITY_TEXT_BYTES: integer('COMMUNITY_TEXT_BYTES', 16 * 1024, 64 * 1024),
@@ -451,6 +454,14 @@ const schema = z.object({
   ),
 });
 
+/**
+ * The exact value `COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT` must hold before `COMMUNITY_TEST_RUNTIME`
+ * may turn on the test controls, which anyone can call without signing in. A phrase rather than a
+ * boolean so a copied or half-remembered environment cannot turn them on by accident.
+ */
+export const COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE =
+  'I understand this exposes unauthenticated test controls';
+
 /** Validated deployment settings, resolved only when the server starts. */
 export type CommunityConfig = ReturnType<typeof parseConfig>;
 
@@ -462,6 +473,14 @@ export function parseConfig(env: Record<string, unknown>) {
     throw new Error(`Invalid community configuration: ${fields}`);
   }
   const value = result.data;
+  if (
+    value.COMMUNITY_TEST_RUNTIME === 'true' &&
+    value.COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT !== COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE
+  ) {
+    throw new Error(
+      `COMMUNITY_TEST_RUNTIME=true adds routes under /api/test/ that anyone can call without signing in. It is for this repository's own tests only. Leave it unset on a real host; a test run must also set COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT="${COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE}"`
+    );
+  }
   if (
     Boolean(value.COMMUNITY_INVITE_PREVIOUS_KEY_ID) !==
       Boolean(value.COMMUNITY_INVITE_PREVIOUS_SECRET) ||
@@ -625,6 +644,7 @@ export function parseConfig(env: Record<string, unknown>) {
     /** Where takedowns copy removed content, outside the API; null when the host set none. */
     evidence,
     port: value.COMMUNITY_PORT,
+    /** Unauthenticated test controls; only ever true alongside the exact acknowledgement. */
     testRuntime: value.COMMUNITY_TEST_RUNTIME === 'true',
     /** Background exports: segment size, archive lifetime, per-job deadline, jobs per replica. */
     exports: {

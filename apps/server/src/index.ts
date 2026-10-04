@@ -340,7 +340,10 @@ import {
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall/uninstall.js';
-import { DevLinkService } from './services/marketplace/dev-links/index.js';
+import {
+  DevLinkService,
+  hookDecisionConsentStore,
+} from './services/marketplace/dev-links/index.js';
 import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/installer/marketplace-installer.js';
@@ -5347,6 +5350,8 @@ async function start() {
           logConfigWrite('linking a folder', 'extensions', before, configManager.get('extensions'));
         },
       },
+      // The link card's yes for the hooks and programs it showed (task 2.2).
+      consent: hookDecisionConsentStore,
       onPluginsChanged,
       refreshExtensions: () => devLinkExtensions.requestRefresh(),
     });

@@ -49,6 +49,8 @@ If you'd rather give up on a stopped setup, remove what it made yourself, then r
 
 If it removes a Tigris bucket, Fly leaves the bucket's access key working in Tigris. DorkOS tells you so and shows you how to delete that key.
 
+If you press Control-C while setup deploys, you can run the resume command it prints right away. Fly keeps the server locked for a few minutes after a stopped deploy, so setup tells you it is waiting and carries on when Fly lets go. If Fly holds it for longer than about six minutes, setup stops and tells you when to try again.
+
 ## Signing in to Fly and Neon
 
 Setup uses your saved `fly` and `neonctl` sign-ins. If you export `FLY_API_TOKEN` (or `FLY_ACCESS_TOKEN`) or `NEON_API_KEY` first, it uses that token instead. It tells you when it does, and it never writes the token down.
@@ -56,7 +58,7 @@ Setup uses your saved `fly` and `neonctl` sign-ins. If you export `FLY_API_TOKEN
 Setup creates a new Fly app and a new Neon project, so each token has to be allowed to do that:
 
 - For Fly, use an organization token, not a deploy token.
-- For Neon, use an organization key, not a project key.
+- For Neon, use an organization key, not a project key. Neon doesn't let an organization key read its live list of regions, so setup checks `--neon-region` against a saved copy of that list instead. If your region isn't on it, setup says so before it makes anything. Check the region name. If it's a new Neon region, use a personal key or sign in with `neonctl auth`, so setup can read the live list.
 
 If a token can't do what setup needs, setup stops and tells you which token and which organization. It never prints the token. If nothing was made yet, start setup again with a token that can. If something was, resume with the command it prints.
 

@@ -48,6 +48,13 @@ import {
 import { runRemoveUncertainCommand } from './provenance/removal-command.js';
 import { runForgetCommand } from './provenance/forget-command.js';
 import { classifyUncertainJournal, SERVICE_LABEL } from './provenance/uncertain-verdict.js';
+import { tigrisAccessKeyName } from './provenance/tigris-access-key.js';
+import {
+  describeStoppedLaunch,
+  recordLaunchFailure,
+  stopExitCode,
+  type LaunchStopSignal,
+} from './runtime/stop-record.js';
 import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 
 /** Human-facing help for the guided deployment command. */
@@ -166,7 +173,7 @@ export function formatCommunityRecovery(journal: LaunchJournal): string {
       : null,
     journal.resources.tigrisBucketId
       ? selection
-        ? `  Tigris bucket ${journal.resources.tigrisBucketId} — owner ${selection.flyOrganization}; may incur charges; private files may exist.\n    Inspect: fly storage status ${selection.bucketName} --app ${selection.appName}\n    Console: https://fly.io/apps/${selection.appName}`
+        ? `  Tigris bucket ${selection.bucketName} — owner ${selection.flyOrganization}; may incur charges; private files may exist.\n    Inspect: fly storage status ${selection.bucketName} --app ${selection.appName}\n    Console: https://fly.io/apps/${selection.appName}\n    Access key: usually ${tigrisAccessKeyName(selection.bucketName)} in Tigris. Removing the bucket does not remove this key; it keeps working until you remove it in Tigris.`
         : `  Tigris bucket ${journal.resources.tigrisBucketId} — saved owner unavailable; may incur charges; private files may exist.`
       : null,
   ].filter((row): row is string => row !== null);
@@ -405,9 +412,15 @@ export async function runCommunityDispatcher(
   // gh, the clipboard tools and the browser opener never need a Fly or Neon credential.
   const localEnv = withoutCommunityCredentialEnv(childEnv);
   const cancellation = new AbortController();
-  const cancel = () => cancellation.abort();
-  process.once('SIGINT', cancel);
-  process.once('SIGTERM', cancel);
+  let stopSignal: LaunchStopSignal = 'SIGINT';
+  const cancelOn = (signal: LaunchStopSignal) => () => {
+    if (!cancellation.signal.aborted) stopSignal = signal;
+    cancellation.abort();
+  };
+  const onSigint = cancelOn('SIGINT');
+  const onSigterm = cancelOn('SIGTERM');
+  process.once('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
   const serviceOptions = {
     fly: {
       executable: 'fly',
@@ -590,15 +603,31 @@ export async function runCommunityDispatcher(
       await writeLaunchJournal(journalPath, cancelled, latest.revision).catch(() => undefined);
       latest = cancelled;
     }
+    // Any other failure saves its code, which the terminal no longer prints (DOR-2702).
+    const failed =
+      latest && !cancellation.signal.aborted && !(error instanceof CommunityCreationRefusedError)
+        ? recordLaunchFailure(latest, error, new Date().toISOString())
+        : null;
+    if (latest && failed) {
+      const previous: LaunchJournal = latest;
+      await writeLaunchJournal(journalPath, failed, previous.revision).catch(() => undefined);
+      latest = failed;
+    }
     if (error instanceof CommunityCreationRefusedError && latest) {
       await stopForRefusedCreate(error, latest, journalPath, childEnv, formatCommunityRecovery);
     }
     if (latest) {
       process.stderr.write(`Space setup stopped.\n${formatCommunityRecovery(latest)}\n`);
+      // A stop is not a failure: say what happened in the words the journal just saved, instead
+      // of the interrupted command's own error code, and exit as the signal would (DOR-2702).
+      if (cancellation.signal.aborted && !latest.pendingRemoval) {
+        process.stderr.write(`${describeStoppedLaunch(latest)}\n`);
+        return stopExitCode(stopSignal);
+      }
     }
     throw error;
   } finally {
-    process.removeListener('SIGINT', cancel);
-    process.removeListener('SIGTERM', cancel);
+    process.removeListener('SIGINT', onSigint);
+    process.removeListener('SIGTERM', onSigterm);
   }
 }

@@ -79,6 +79,13 @@ export interface CommunityDeployPhaseDependencies {
   /** Deploy the immutable image with one Machine and a generated config. */
   deploy(imageReference: string): Promise<void>;
   /**
+   * Wait, bounded and with a progress line, until no earlier deploy holds a lease on these
+   * Machines. A deploy stopped with Control-C leaves its lease for up to five minutes (DOR-2702).
+   */
+  waitForMachineLeases(machineIds: readonly string[]): Promise<void>;
+  /** The error to report for a failed deploy: a plain "Fly is still busy" when a lease is held. */
+  explainDeployFailure(error: unknown, machineIds: readonly string[]): Promise<unknown>;
+  /**
    * The digest Fly will report for the attested release: its linux/amd64 manifest, not the index
    * that is deployed (DOR-2586).
    */
@@ -271,8 +278,16 @@ export async function executeCommunityDeployPhase(
     const settled = platformDigest;
     /** Deploy the pinned image and prove a new, complete release runs it with these secrets. */
     const deployAndVerify = async () => {
-      const previous = (await dependencies.readRuntime()).releases;
-      await dependencies.deploy(`${plan.imageDigest}`);
+      const before = await dependencies.readRuntime();
+      const previous = before.releases;
+      // A resume right after a stopped deploy finds its Machine still leased; flyctl would give up.
+      const machineIds = before.machines.map((machine) => machine.id);
+      await dependencies.waitForMachineLeases(machineIds);
+      try {
+        await dependencies.deploy(`${plan.imageDigest}`);
+      } catch (error) {
+        throw await dependencies.explainDeployFailure(error, machineIds);
+      }
       const afterSecrets = exactSecretDigests(await dependencies.readSecrets(), 'Deployed');
       if (!sameDigests(afterSecrets, expectedDigests)) {
         throw new ProviderMutationError('INVALID_RESPONSE');
