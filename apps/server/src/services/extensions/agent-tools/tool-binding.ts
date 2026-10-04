@@ -91,9 +91,12 @@ const CLAUSE_END = /["'`\n<>|]|[,;:)] |\s\(/;
  * A path may hold spaces (`/Users/ana lee/My Documents/x`), so each one is
  * redacted through the last word of its clause that still holds a slash or
  * backslash. That errs toward hiding a word too many rather than leaving the
- * end of a path behind.
+ * end of a path behind. Also used for errors sent to an isolated extension's
+ * child (`isolation/ctx-dispatcher.ts`).
+ *
+ * @param message - Text that may name files on this machine.
  */
-function redactPaths(message: string): string {
+export function redactPaths(message: string): string {
   let out = '';
   let cursor = 0;
   PATH_START.lastIndex = 0;

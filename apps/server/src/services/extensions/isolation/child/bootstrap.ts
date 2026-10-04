@@ -15,11 +15,15 @@
  * 3. **Guards.** Install the network guard, the process guard (signals only
  *    to itself), and build the `child_process` shim.
  * 4. **Load the bundle** with the injected `require`.
+ * 5. **register(router, ctx)** with the proxy ctx (`proxy-ctx.ts`), whose
+ *    every member is decided by the protocol table; report `registered`. The
+ *    host measures how long it takes.
  *
- * Exporting `register` and carrying `ctx` across the boundary arrive in a
- * later phase. Until then, a test seam (`init.testSeams`) lets the host call
- * the bundle's exported `probes` so the enforcement suites can drive a real
- * child.
+ * On `stop`: run the cleanup `register()` returned, cancel every scheduled
+ * task, then exit. The router is not reachable yet (requests arrive in a
+ * later phase). A test seam (`init.testSeams`) lets the host call the
+ * bundle's exported `probes`, so the suites can drive a real child; with it, a
+ * bundle without `register` still starts.
  *
  * Standard output and error are left to the host, which forwards them to its
  * log with a rate cap.
@@ -32,6 +36,7 @@ import * as extensionApi from '@dorkos/extension-api';
 import * as extensionServerApi from '@dorkos/extension-api/server';
 import type { ChildMessage, HostMessage, InitMessage, PermissionReport } from '../ipc-protocol.js';
 import { createChildProcessShim } from './child-process-shim.js';
+import { createProxyCtx, type ProxyCtx } from './proxy-ctx.js';
 import { createInjectedRequire, loadBundle } from './load-bundle.js';
 import { installNetGuard } from './net-guard.js';
 import { installProcessGuard } from './process-guard.js';
@@ -131,6 +136,9 @@ function main(): void {
   let started = false;
   let receiveRun: ((message: HostMessage) => void) | null = null;
   let probes: Record<string, (...args: unknown[]) => unknown> | null = null;
+  let proxy: ProxyCtx | null = null;
+  let cleanup: (() => unknown) | null = null;
+  let stopping = false;
 
   // A lost parent means DorkOS stopped: stop too, never linger.
   process.on('disconnect', () => process.exit(0));
@@ -162,8 +170,9 @@ function main(): void {
       },
       __filename
     );
+    let exported: Record<string, unknown> | null;
     try {
-      const exported = loadBundle(init.bundlePath, injected) as Record<string, unknown> | null;
+      exported = loadBundle(init.bundlePath, injected) as Record<string, unknown> | null;
       const found = exported?.probes;
       if (init.testSeams && found && typeof found === 'object') {
         probes = found as Record<string, (...args: unknown[]) => unknown>;
@@ -171,7 +180,73 @@ function main(): void {
       send({ type: 'loaded', ok: true });
     } catch (err) {
       send({ type: 'loaded', ok: false, error: describe(err).message });
+      return;
     }
+
+    proxy = createProxyCtx({
+      send,
+      init,
+      errors: {
+        AgentSendError: extensionServerApi.AgentSendError as never,
+        InboxLimitError: extensionServerApi.InboxLimitError as never,
+        InboxLinkError: extensionServerApi.InboxLinkError as never,
+        StartWorkError: extensionServerApi.StartWorkError as never,
+      },
+    });
+    // As in-process: `module.exports = register` or `export default register`.
+    const candidate = (exported?.default ?? exported) as unknown;
+    if (typeof candidate !== 'function') {
+      send(
+        init.testSeams
+          ? { type: 'registered', ok: true, hasCleanup: false, handledTools: [] }
+          : {
+              type: 'registered',
+              ok: false,
+              hasCleanup: false,
+              handledTools: [],
+              error: 'Server entry does not export a register function',
+            }
+      );
+      return;
+    }
+    const router = express.Router();
+    const ctx = proxy.ctx;
+    Promise.resolve()
+      .then(() => (candidate as (r: unknown, c: unknown) => unknown)(router, ctx))
+      .then(
+        (result) => {
+          cleanup = typeof result === 'function' ? (result as () => unknown) : null;
+          send({ type: 'registered', ok: true, hasCleanup: cleanup !== null, handledTools: [] });
+        },
+        (err: unknown) =>
+          send({
+            type: 'registered',
+            ok: false,
+            hasCleanup: false,
+            handledTools: [],
+            error: describe(err).message,
+          })
+      );
+  };
+
+  /** Stop: the extension's cleanup, then its scheduled tasks, then exit. */
+  const stop = (): void => {
+    if (stopping) return;
+    stopping = true;
+    const exit = () => process.exit(0);
+    // The host kills the child after its own grace period; this keeps a
+    // cleanup that never settles from holding the exit until then.
+    setTimeout(exit, 2_000).unref();
+    let pending: unknown;
+    try {
+      pending = cleanup?.();
+    } catch (err) {
+      console.error(`[ext:${process.env.DORKOS_EXT_ID ?? '?'}] Cleanup error:`, err);
+    }
+    proxy?.stop();
+    Promise.resolve(pending)
+      .catch((err: unknown) => console.error('Cleanup error:', err))
+      .finally(exit);
   };
 
   process.on('message', (raw: unknown) => {
@@ -189,7 +264,7 @@ function main(): void {
         send({ type: 'pong', n: message.n });
         break;
       case 'stop':
-        process.exit(0);
+        stop();
         break;
       case 'probe': {
         const probe = probes?.[message.name];
@@ -212,6 +287,7 @@ function main(): void {
         break;
       }
       default:
+        if (proxy?.receive(message)) break;
         receiveRun?.(message);
     }
   });

@@ -10,9 +10,11 @@
  * {@link isChildMessage} before the host reads a field, and every field is
  * re-checked where it is used. A message that does not parse is dropped.
  *
- * Phase 3 carries the lifecycle (`hello`, `init`, `loaded`, `ping`, `stop`),
- * the program broker (`run-*`) and a test-only `probe`. The `ctx` calls and
- * the HTTP byte streams join in later phases.
+ * It carries the lifecycle (`hello`, `init`, `loaded`, `registered`, `ping`,
+ * `stop`), the program broker (`run-*`), `ctx` over the boundary (`call`,
+ * `ret`, `emit`, `sub`/`unsub`/`evt`, `expose`/`unexpose`, `rcall`/`rret`/
+ * `cancel`; spec §5.2, routed by `ctx-protocol.ts`) and a test-only `probe`.
+ * The HTTP byte streams join in a later phase.
  *
  * @module services/extensions/isolation/ipc-protocol
  */
@@ -68,6 +70,89 @@ export interface LoadedMessage {
   error?: string;
 }
 
+/**
+ * The extension's `register()` finished (or failed). Sent once, after
+ * {@link LoadedMessage}; the host measures how long it took.
+ */
+export interface RegisteredMessage {
+  type: 'registered';
+  ok: boolean;
+  /** Whether `register()` returned a cleanup function. */
+  hasCleanup: boolean;
+  /** The tools it bound (always empty until tools cross the boundary). */
+  handledTools: string[];
+  /** Why it failed, when it did. */
+  error?: string;
+}
+
+/**
+ * An error as it crosses the channel: never a stack, never a class instance.
+ * `props` holds the error's own primitive fields (such as `limit` on an
+ * `InboxLimitError`), already filtered by the side that sent it.
+ */
+export interface WireError {
+  name: string;
+  message: string;
+  code?: string;
+  props?: Record<string, string | number | boolean | null>;
+}
+
+/** Call a `call` member of the extension's real ctx (`path` like `inbox.raise`). */
+export interface CallMessage {
+  type: 'call';
+  id: number;
+  path: string;
+  /** Checked by the dispatcher: an array of plain data. */
+  args: unknown;
+}
+
+/** `ctx.emit(event, data)`. */
+export interface EmitMessage {
+  type: 'emit';
+  event: string;
+  data: unknown;
+}
+
+/** Register a listener on a `subscribe` member; events arrive as {@link EvtMessage}. */
+export interface SubMessage {
+  type: 'sub';
+  id: number;
+  path: string;
+}
+
+/** Remove a listener registered with {@link SubMessage}. */
+export interface UnsubMessage {
+  type: 'unsub';
+  id: number;
+}
+
+/**
+ * The child holds a function the host should call (`reverse` members:
+ * the account advisor, the inbox action handler). `methods` lists an
+ * advisor's methods.
+ */
+export interface ExposeMessage {
+  type: 'expose';
+  id: number;
+  path: string;
+  methods?: unknown;
+}
+
+/** Remove a function registered with {@link ExposeMessage}. */
+export interface UnexposeMessage {
+  type: 'unexpose';
+  id: number;
+}
+
+/** The child's answer to an {@link RcallMessage}. */
+export interface RretMessage {
+  type: 'rret';
+  id: number;
+  ok: boolean;
+  value?: unknown;
+  error?: unknown;
+}
+
 /** Answer to a {@link PingMessage}. */
 export interface PongMessage {
   type: 'pong';
@@ -109,10 +194,22 @@ export interface ProbeResultMessage {
   error?: { code?: string; message: string };
 }
 
+/** The `ctx` messages a child may send. */
+export type CtxChildMessage =
+  | CallMessage
+  | EmitMessage
+  | SubMessage
+  | UnsubMessage
+  | ExposeMessage
+  | UnexposeMessage
+  | RretMessage;
+
 /** Every message a child may send. */
 export type ChildMessage =
   | HelloMessage
   | LoadedMessage
+  | RegisteredMessage
+  | CtxChildMessage
   | PongMessage
   | RunSpawnMessage
   | RunStdinMessage
@@ -133,6 +230,52 @@ export interface InitMessage {
   dorkosPort: number;
   /** Whether the test-only `probe` message is answered. */
   testSeams: boolean;
+  /** The `const` members of `ctx`, copied into the child. */
+  ctx: {
+    extensionDir: string;
+    dorkHome: string;
+    filesDir: string;
+  };
+  /** The extension's display name, for messages the child builds itself. */
+  displayName: string;
+  /**
+   * Whether the manifest says `allow.agents: true`. The child uses it only to
+   * refuse early with the same words; the host enforces it on every call.
+   */
+  allowAgents: boolean;
+}
+
+/** The host's answer to a {@link CallMessage}, or a refusal of a `sub` or `expose`. */
+export interface RetMessage {
+  type: 'ret';
+  id: number;
+  ok: boolean;
+  value?: unknown;
+  error?: WireError;
+}
+
+/** A listener registered with {@link SubMessage} fired. */
+export interface EvtMessage {
+  type: 'evt';
+  id: number;
+  args: unknown[];
+}
+
+/** The host calls a function the child exposed. */
+export interface RcallMessage {
+  type: 'rcall';
+  id: number;
+  /** The `expose` id. */
+  handler: number;
+  /** Which function: an advisor method name, or `onAction`. */
+  method: string;
+  args: unknown[];
+}
+
+/** The host gave up on an {@link RcallMessage}; its answer is no longer wanted. */
+export interface CancelMessage {
+  type: 'cancel';
+  id: number;
 }
 
 /** Liveness check; the child answers with a {@link PongMessage}. */
@@ -194,6 +337,10 @@ export type HostMessage =
   | RunDataMessage
   | RunExitMessage
   | RunErrorMessage
+  | RetMessage
+  | EvtMessage
+  | RcallMessage
+  | CancelMessage
   | ProbeMessage;
 
 /** Limits on the channel and on the child (spec §9). */
@@ -305,6 +452,29 @@ export function isChildMessage(value: unknown): value is ChildMessage {
         typeof value.ok === 'boolean' &&
         (value.error === undefined || typeof value.error === 'string')
       );
+    case 'registered':
+      return (
+        typeof value.ok === 'boolean' &&
+        typeof value.hasCleanup === 'boolean' &&
+        Array.isArray(value.handledTools) &&
+        value.handledTools.every((t) => typeof t === 'string') &&
+        (value.error === undefined || typeof value.error === 'string')
+      );
+    // The ctx messages are checked for shape only; their meaning (whether a
+    // path is a table entry, whether the arguments are plain data) is the
+    // dispatcher's question, so it can answer a bad call instead of dropping
+    // it and leaving the child waiting.
+    case 'call':
+    case 'sub':
+    case 'expose':
+      return isId(value.id) && typeof value.path === 'string';
+    case 'unsub':
+    case 'unexpose':
+      return isId(value.id);
+    case 'emit':
+      return typeof value.event === 'string';
+    case 'rret':
+      return isId(value.id) && typeof value.ok === 'boolean';
     case 'pong':
       return isId(value.n);
     case 'run-spawn':

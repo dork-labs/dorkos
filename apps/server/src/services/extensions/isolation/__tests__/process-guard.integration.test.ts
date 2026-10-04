@@ -41,7 +41,7 @@ if (mode === 'control') {
   });
   child.on('message', (m) => {
     if (m.type === 'hello') {
-      child.send({ type: 'init', extensionId: 'sig', bundlePath: bundle, allowNet: [], allowRun: [], dorkosPort: 1, testSeams: true });
+      child.send({ type: 'init', extensionId: 'sig', bundlePath: bundle, allowNet: [], allowRun: [], dorkosPort: 1, testSeams: true, ctx: { extensionDir: dorkHome, dorkHome, filesDir: dorkHome }, displayName: 'Sig', allowAgents: false });
     } else if (m.type === 'loaded') {
       child.send({ type: 'probe', id: 1, name: probeName, args: arg ? [arg] : [] });
     } else if (m.type === 'probe-result') {
