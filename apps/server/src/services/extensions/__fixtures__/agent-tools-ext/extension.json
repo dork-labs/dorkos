@@ -1,0 +1,48 @@
+{
+  "id": "agent-tools-ext",
+  "name": "Agent Tools Fixture",
+  "version": "1.0.0",
+  "description": "A test fixture that gives agents one tool per tier and one skill.",
+  "serverCapabilities": { "serverEntry": "./server.ts" },
+  "tools": [
+    {
+      "name": "echo",
+      "title": "Echo a message",
+      "description": "Returns the message it is given. Use it to check the extension answers.",
+      "tier": "observe",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "message": { "type": "string", "maxLength": 200 } },
+        "required": ["message"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "bump_counter",
+      "title": "Add to the counter",
+      "description": "Adds a number to the extension's counter and returns the new total.",
+      "tier": "act",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "by": { "type": "integer", "minimum": 1, "maximum": 100, "default": 1 } },
+        "additionalProperties": false
+      },
+      "approvalDisplayFields": ["by"],
+      "timeoutSeconds": 5
+    },
+    {
+      "name": "delete_note",
+      "title": "Delete a note",
+      "description": "Deletes one note by its id. Pretends to: nothing is stored.",
+      "tier": "destructive",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "noteId": { "type": "string", "minLength": 1 } },
+        "required": ["noteId"],
+        "additionalProperties": false
+      },
+      "approvalDisplayFields": ["noteId"]
+    }
+  ],
+  "skills": ["tidy-notes"]
+}

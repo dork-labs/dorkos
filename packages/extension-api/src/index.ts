@@ -75,6 +75,8 @@ export type {
   ExtensionRecordPublic,
   ExtensionModule,
   ExtensionOrigin,
+  ExtensionToolCheckSummary,
+  ExtensionToolStatus,
 } from './types.js';
 export type {
   SecretStore,

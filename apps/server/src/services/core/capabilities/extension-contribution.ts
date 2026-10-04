@@ -37,6 +37,7 @@ import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 
 import type { CapabilityDefinition } from './capability-definition.js';
+import { portableInputShape } from './portable-input-shape.js';
 import type { CapabilityHandlerContext } from './registry.js';
 
 /**
@@ -225,11 +226,53 @@ function openSchemaKeyword(node: unknown): string | undefined {
 }
 
 /**
- * Check that an input schema renders as closed JSON Schema.
+ * The first open-ended or self-referencing schema anywhere inside `schema`:
+ * a `z.record` (which one tool would use to empty the whole `dorkos` tool list
+ * on the current Claude SDK, `tool-exposure.ts`) or a `z.lazy`. Walks the Zod
+ * tree itself rather than its JSON rendering, so a record the renderer happened
+ * to spell some other way is still found.
+ *
+ * @returns `record` or `lazy`, or `undefined` when there is neither.
+ */
+function openZodNode(schema: unknown, seen = new Set<unknown>()): string | undefined {
+  if (!schema || typeof schema !== 'object' || seen.has(schema)) return undefined;
+  seen.add(schema);
+  if (schema instanceof z.ZodRecord) return 'record';
+  if (schema instanceof z.ZodLazy) return 'lazy';
+  const def = (schema as { _zod?: { def?: unknown } })._zod?.def;
+  const children: unknown[] = [];
+  const collect = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(collect);
+    else if (value && typeof value === 'object') {
+      if ('_zod' in value) children.push(value);
+      else if (Object.getPrototypeOf(value) === Object.prototype) {
+        Object.values(value).forEach(collect);
+      }
+    }
+  };
+  if (def && typeof def === 'object') Object.values(def).forEach(collect);
+  for (const child of children) {
+    const found = openZodNode(child, seen);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Check that an input schema renders as closed JSON Schema, and that the exact
+ * field map an agent tool list advertises renders too.
  *
  * Rendering here, once, is what keeps one tool from breaking everyone else's:
  * the catalog renders every capability's schema on every read, and an
- * unrepresentable type (`z.date()`, a `.transform()`) throws there.
+ * unrepresentable type (`z.date()`, a `.transform()`) throws there. The second
+ * rendering is of the field map the MCP projection hands a tool list
+ * ({@link portableInputShape}), so a schema accepted here is one the in-session
+ * server can list.
+ *
+ * The one implementation for every caller: the registry runs it at contribute
+ * time, and discovery runs it (through {@link checkExtensionContribution}) on
+ * every tool an `extension.json` declares, so a manifest that loads names no
+ * tool `contribute` would refuse.
  */
 function checkSchema(name: string, input: z.ZodObject): string | undefined {
   let rendered: unknown;
@@ -240,9 +283,17 @@ function checkSchema(name: string, input: z.ZodObject): string | undefined {
     return `tool "${name}" input cannot be written as JSON Schema: ${why}`;
   }
   const keyword = openSchemaKeyword(rendered);
-  return keyword
-    ? `tool "${name}" input uses ${keyword}, which agent tool lists cannot carry`
-    : undefined;
+  if (keyword) return `tool "${name}" input uses ${keyword}, which agent tool lists cannot carry`;
+  const node = openZodNode(input);
+  if (node)
+    return `tool "${name}" input uses a ${node} schema, which agent tool lists cannot carry`;
+  try {
+    z.toJSONSchema(z.object(portableInputShape(input.shape)));
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    return `tool "${name}" input can't be listed: ${why}`;
+  }
+  return undefined;
 }
 
 /**
