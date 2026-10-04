@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   useAppStore,
   useIsBelowDesktop,
-  useIsMobile,
   usePendingRead,
   useSafePathname,
 } from '@/layers/shared/model';
@@ -66,24 +65,21 @@ const staggerContainer = {
  * draws nothing.** Home's pinned triage header is this same list, from this
  * same model, at full size — and a teaser of what is already on screen beside
  * it is a quarter of the panel spent saying nothing (DOR-1759). That condition
- * is geometry, not just route: on a narrow viewport the panel is a slide-over
+ * is geometry, not just route: below desktop width the panel is a slide-over
  * Sheet that COVERS Home rather than sitting beside it (`RightPanelContainer`),
  * so there the duplicate is not on screen and the section still draws — the
- * mobile person closing the sheet would otherwise find nothing told them
+ * person closing the sheet would otherwise find nothing told them
  * anything needed them.
  */
 export function PulseAttentionSection() {
   const navigate = useNavigate();
   const pathname = useSafePathname();
-  // The de-dup below only holds when the panel is actually DOCKED beside the
-  // page it is de-duping — on a narrow viewport it is a slide-over Sheet that
-  // covers Home instead (`RightPanelContainer`), so the duplicate condition
-  // never applies there.
-  const isMobile = useIsMobile();
   const { schedules, errors, activity, isLoading: isFetchingRows, total } = useAttentionRows();
   const waitingQueue = useWaitingQueue();
   // The panel is a modal sheet everywhere below desktop width
-  // (`RightPanelContainer`), not only on a phone.
+  // (`RightPanelContainer`), not only on a phone. Two rules below read it: the
+  // Home de-dup only holds where the panel is DOCKED beside the page, and the
+  // Inbox door has to close a sheet before opening over it.
   const panelIsSheet = useIsBelowDesktop();
   // A paused read during the boot-cache restore is not an empty list (DOR-1914).
   // Why `isLoading` cannot answer that on its own is in `usePendingRead`.
@@ -97,12 +93,12 @@ export function PulseAttentionSection() {
   const settlingSchedules = useScheduleApprovalCards(schedules);
 
   // Beside home's own triage header, this section is that header again. Say
-  // nothing — but only where the panel is genuinely BESIDE it: on mobile the
-  // panel is a Sheet that covers Home instead, so the header underneath is not
+  // nothing — but only where the panel is genuinely BESIDE it: below desktop
+  // width (tablet included) the panel is a Sheet that covers Home instead, so the header underneath is not
   // on screen and there is no duplicate to avoid. (Hooks above run either
   // way — the queries are shared with the header, so this costs no extra
   // fetch.)
-  const duplicatesHomeHeader = pathname === '/' && !isMobile;
+  const duplicatesHomeHeader = pathname === '/' && !panelIsSheet;
   // One cap across all three groups, spent in draw order.
   const shownSchedules = settlingSchedules.slice(0, PULSE_ATTENTION_CAP);
   const shownErrors = errors.slice(0, PULSE_ATTENTION_CAP - shownSchedules.length);

@@ -534,6 +534,20 @@ describe('PulsePanel', () => {
     expect(screen.getByRole('button', { name: 'Open activity →' })).toBeInTheDocument();
   });
 
+  it('keeps the attention section on home wherever the panel is a sheet over it', () => {
+    // Below desktop width — tablet included, not only phones — the panel is a
+    // modal sheet that COVERS Home, so the header it would duplicate is not on
+    // screen. Seeded defect: gate the de-dup on `useIsMobile` instead.
+    mockPathname = '/';
+    mockBelowDesktop = true;
+    mockAttentionItems = makeAttention(2);
+
+    render(<PulsePanel />);
+
+    expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('attention-row')).toHaveLength(2);
+  });
+
   it('drops the activity section on /activity, which already shows it', () => {
     mockPathname = '/activity';
     mockAttentionItems = makeAttention(2);
