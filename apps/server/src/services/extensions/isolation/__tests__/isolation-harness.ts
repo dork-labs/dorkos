@@ -38,6 +38,7 @@ export interface Harness {
   hosts: IsolatedExtensionHost[];
   controls: ChildProcess[];
   servers: net.Server[];
+  sockets: Set<net.Socket>;
 }
 
 /** A probe's report (see the fixture). */
@@ -61,7 +62,17 @@ export async function createHarness(): Promise<Harness> {
   const bundle = path.join(tmp, 'bundles', 'probes.js');
   await fs.mkdir(path.dirname(bundle), { recursive: true });
   await fs.writeFile(bundle, PROBE_BUNDLE_SOURCE);
-  return { tmp, dorkHome, bootstrap, bundle, logs: [], hosts: [], controls: [], servers: [] };
+  return {
+    tmp,
+    dorkHome,
+    bootstrap,
+    bundle,
+    logs: [],
+    hosts: [],
+    controls: [],
+    servers: [],
+    sockets: new Set(),
+  };
 }
 
 /** Options for {@link makeHost}. */
@@ -200,6 +211,8 @@ export async function countingServer(h: Harness): Promise<CountingServer> {
   let accepted = 0;
   const server = net.createServer((socket) => {
     accepted++;
+    h.sockets.add(socket);
+    socket.on('close', () => h.sockets.delete(socket));
     socket.on('error', () => {});
     socket.end('HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n');
   });
@@ -225,6 +238,7 @@ export async function cleanup(h: Harness): Promise<void> {
   for (const child of h.controls) {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   }
+  for (const socket of h.sockets) socket.destroy();
   await Promise.all(h.servers.map((s) => new Promise((resolve) => s.close(resolve))));
   await fs.rm(h.tmp, { recursive: true, force: true });
 }

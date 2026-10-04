@@ -137,9 +137,9 @@ exports.probes = {
         })
     ),
   // Rewrite the prototypes a naive guard would lean on, then connect anyway.
-  tamperThenConnect: (host, port) => {
+  tamperThenConnect: (host, port, lowerAs) => {
     String.prototype.endsWith = () => true;
-    String.prototype.toLowerCase = function () { return 'localhost'; };
+    String.prototype.toLowerCase = function () { return lowerAs; };
     String.prototype.slice = function () { return ''; };
     Array.prototype.some = () => true;
     Array.prototype.includes = () => true;
