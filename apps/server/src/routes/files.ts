@@ -224,7 +224,7 @@ router.put('/content', async (req, res) => {
   // Identical content — nothing to write, but report success so the client's
   // save state settles (avoids spurious failures on no-op flushes).
   if (newHash === currentHash) {
-    return res.json({ ok: true, hash: currentHash });
+    return res.json({ ok: true, hash: currentHash, effect: 'no_op' });
   }
 
   // Atomic write: a uniquely-named temp file in the same directory, renamed over
@@ -242,7 +242,7 @@ router.put('/content', async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 
-  return res.json({ ok: true, hash: newHash });
+  return res.json({ ok: true, hash: newHash, effect: 'changed' });
 });
 
 /**

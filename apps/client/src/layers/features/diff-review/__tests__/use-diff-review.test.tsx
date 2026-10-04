@@ -33,7 +33,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe('useDiffReview', () => {
   beforeEach(() => {
     readDiffBaseline.mockReset().mockResolvedValue(BASELINE);
-    writeFile.mockReset().mockResolvedValue({ ok: true, hash: 'newhash' });
+    writeFile.mockReset().mockResolvedValue({ ok: true, hash: 'newhash', effect: 'changed' });
     advanceDiffBaseline.mockReset().mockResolvedValue(undefined);
   });
 
@@ -146,7 +146,7 @@ describe('useDiffReview', () => {
 
   it('a later successful write clears the failure notice', async () => {
     writeFile.mockRejectedValueOnce(new Error('flaky'));
-    writeFile.mockResolvedValue({ ok: true, hash: 'newhash' });
+    writeFile.mockResolvedValue({ ok: true, hash: 'newhash', effect: 'changed' });
     const { result } = renderHook(() => useDiffReview(ARGS), { wrapper });
     await waitFor(() => expect(result.current.data).toBeDefined());
 

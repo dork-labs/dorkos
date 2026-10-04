@@ -82,7 +82,7 @@ vi.mock('@/layers/shared/model', async () => {
       docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
     useIsMobile: () => false,
     useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
-    useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x' }) }),
+    useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x', effect: 'changed' }) }),
     // The browser document mounts the DevTools bridge, which asks `useSessionId`
     // which conversation is open — and that reads the route's search params. No
     // conversation is open in these tests, which is what an empty search means.
