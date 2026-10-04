@@ -6,7 +6,9 @@
  * an agent restores the panel the way you left it, instead of dragging one
  * global layout across every agent. The active agent is selected by
  * `rightPanelLayoutKey`; when it is null (initial mount, non-session routes) the
- * slice falls back to the global layout, preserving the pre-DOR-227 behavior.
+ * slice falls back to the global layout, which also mirrors the last layout you
+ * looked at on any agent, so a reload restores it (DOR-2579). An agent with no
+ * stored layout inherits the panel you are looking at instead of closing it.
  * The per-agent map is LRU-capped and stored in localStorage (see
  * `readRightPanelLayout`/`writeRightPanelLayout` in app-store-helpers.ts).
  *
@@ -18,6 +20,8 @@ import {
   readRightPanelState,
   readRightPanelLayout,
   writeRightPanelLayout,
+  writeRightPanelState,
+  migrateLegacyRightPanelLayouts,
 } from './app-store-helpers';
 import type { RightPanelStateEntry } from './app-store-helpers';
 
@@ -125,11 +129,20 @@ export interface RightPanelSlice {
    */
   rightPanelLayoutKey: string | null;
   /**
+   * The tab carried into an agent that has no stored layout, or null.
+   *
+   * The container may swap it for a fallback the agent can show, but only on
+   * screen (view-only). Opening or closing the panel there saves this tab, not
+   * the fallback, so the tab you were using is the one remembered (DOR-2579).
+   */
+  inheritedRightPanelTab: string | null;
+  /**
    * Bind the panel to an agent and hydrate its layout.
    *
    * Pass the agent's stable key (agent id if registered, else its cwd — resolved
    * by `useRightPanelLayoutPersistence`) to restore that agent's open/active-tab
-   * layout, defaulting to closed for a never-seen agent — unless a link is
+   * layout — a never-seen agent inherits the current open state and tab rather
+   * than starting closed (DOR-2579) — unless a link is
    * pending FOR THAT AGENT ({@link requestedRightPanel}), which outranks it.
    * Pass null on non-session routes to detach: subsequent writes fall back to
    * the global layout and the in-memory open/tab state is left untouched (no
@@ -139,10 +152,23 @@ export interface RightPanelSlice {
    * @param agentPath - The directory that key was resolved from, which is what a
    *   pending link named itself against. Omitted only by callers that have no
    *   directory to give, in which case a pending link cannot match.
+   * @param options - `inherit: false` makes an agent with no stored layout start
+   *   closed instead of inheriting the current panel. Used below desktop width,
+   *   where the panel is a sheet over the chat you just switched to.
    */
-  loadRightPanelForAgent: (agentKey: string | null, agentPath?: string | null) => void;
-  /** Load the persisted global right panel state from localStorage (initial mount). */
-  loadRightPanelState: () => void;
+  loadRightPanelForAgent: (
+    agentKey: string | null,
+    agentPath?: string | null,
+    options?: { inherit?: boolean }
+  ) => void;
+  /**
+   * Load the persisted global right panel state from localStorage (initial mount).
+   *
+   * @param options - `restoreOpen: false` restores the tab but not the open
+   *   state, unless a link is pending. Used below desktop width, where reopening
+   *   the panel on load would cover the page with a sheet.
+   */
+  loadRightPanelState: (options?: { restoreOpen?: boolean }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,8 +192,10 @@ export const createRightPanelSlice: StateCreator<
       // in-memory tab may have been changed by the container's view-only
       // auto-select (DOR-227), which must never overwrite the stored preference.
       // Fall back to the in-memory tab only when the agent has no stored entry.
+      // An agent that only inherited its layout has no entry yet; its carried
+      // tab stands in for one, so a fallback shown in its place is not saved.
       const stored = readLayoutForKey(s.rightPanelLayoutKey);
-      const activeTab = stored?.activeTab ?? s.activeRightPanelTab;
+      const activeTab = stored?.activeTab ?? s.inheritedRightPanelTab ?? s.activeRightPanelTab;
       writeRightPanelLayout(s.rightPanelLayoutKey, { open, activeTab });
       return { rightPanelOpen: open, ...answered };
     }),
@@ -183,7 +211,11 @@ export const createRightPanelSlice: StateCreator<
       // Picking a tab yourself answers a pending link the same way closing the
       // panel does — including the pick a URL-driven open makes on its way
       // through, which is why `requestRightPanel` marks it AFTER this runs.
-      return { activeRightPanelTab: tabId, requestedRightPanel: null };
+      return {
+        activeRightPanelTab: tabId,
+        inheritedRightPanelTab: null,
+        requestedRightPanel: null,
+      };
     }),
   setActiveRightPanelTabView: (tabId) => set({ activeRightPanelTab: tabId }),
 
@@ -210,14 +242,13 @@ export const createRightPanelSlice: StateCreator<
     }),
 
   rightPanelLayoutKey: null,
-  loadRightPanelForAgent: (agentKey, agentPath) => {
+  inheritedRightPanelTab: null,
+  loadRightPanelForAgent: (agentKey, agentPath, options) => {
     if (agentKey === null) {
       // Detach to global scope without re-hydrating — leaving a session must not
-      // flash the panel or clobber the just-shown layout. Consequence (bounded,
-      // intentional): the first global write after leaving /session inherits the
-      // last agent's in-memory tab — the panel still shows that layout, so
-      // persisting what the user is looking at is the honest snapshot.
-      set({ rightPanelLayoutKey: null });
+      // flash the panel or clobber the just-shown layout. The global layout
+      // already mirrors what the agent was showing, so there is nothing to load.
+      set({ rightPanelLayoutKey: null, inheritedRightPanelTab: null });
       return;
     }
     const entry = readRightPanelLayout(agentKey);
@@ -233,7 +264,15 @@ export const createRightPanelSlice: StateCreator<
     // never-seen agent remembers "closed". That bind is also what SPENDS the
     // mark — it has been answered, so it can never reach a later agent.
     //
-    // No link pending: the stored layout is the whole answer, as always.
+    // No link pending: the stored layout is the answer — and an agent with NO
+    // stored layout inherits the panel you are looking at (DOR-2579). It used to
+    // hydrate as closed, so switching to another project's chat shut the panel
+    // and you reopened your tab on every switch. No per-agent entry is written
+    // for it: the agent only gets a memory of its own once you open, close or
+    // pick a tab there. Below desktop width the caller passes `inherit: false`,
+    // because there the panel is a sheet that would cover the chat you opened. A carried tab the agent cannot show is the container's auto-select
+    // to resolve (view-only), so the panel falls back to a tab rather than
+    // closing.
     //
     // A link pending for SOMEBODY ELSE — `?panel=profile&agentPath=<Scout>` read
     // inside Warden's session — is neither. This bind is about the session, and
@@ -255,19 +294,54 @@ export const createRightPanelSlice: StateCreator<
     const forThisAgent =
       requested !== null && (requested.agentPath === null || requested.agentPath === agentPath);
     const arrivalBind = requested !== null && !forThisAgent && requested.shielded;
+    if (arrivalBind) {
+      set({
+        rightPanelLayoutKey: agentKey,
+        inheritedRightPanelTab: null,
+        requestedRightPanel: { ...requested, shielded: false },
+      });
+      return;
+    }
+    let open: boolean;
+    let activeTab: string | null;
+    let inherited: string | null = null;
+    if (forThisAgent) {
+      open = true;
+      activeTab = requested.tabId;
+    } else if (entry) {
+      open = entry.open;
+      activeTab = entry.activeTab;
+    } else if (options?.inherit ?? true) {
+      // Nothing stored: inherit the panel you are looking at (DOR-2579). Except
+      // its tab when that was a link for somebody else being spent here — the
+      // other agent's profile has no business following you into this project,
+      // so the container picks this agent's own default tab instead.
+      open = get().rightPanelOpen;
+      // The carried tab, not a fallback the previous agent showed in its place:
+      // passing through a project that cannot show your tab must not lose it.
+      activeTab =
+        requested !== null ? null : (get().inheritedRightPanelTab ?? get().activeRightPanelTab);
+      inherited = activeTab;
+    } else {
+      open = false;
+      activeTab = null;
+    }
+    // The global layout is the last one you looked at, so a reload on this
+    // agent restores it even when the agent has nothing stored (DOR-2579).
+    // Never runs before `loadRightPanelState`: that hydrate reads this same key
+    // on mount, and a bind ahead of it would overwrite the layout it restores.
+    writeRightPanelState({ open, activeTab });
     set({
       rightPanelLayoutKey: agentKey,
-      ...(arrivalBind
-        ? { requestedRightPanel: { ...requested, shielded: false } }
-        : {
-            rightPanelOpen: forThisAgent || (entry?.open ?? false),
-            activeRightPanelTab: forThisAgent ? requested.tabId : (entry?.activeTab ?? null),
-            requestedRightPanel: null,
-          }),
+      rightPanelOpen: open,
+      activeRightPanelTab: activeTab,
+      inheritedRightPanelTab: inherited,
+      requestedRightPanel: null,
     });
   },
 
-  loadRightPanelState: () => {
+  loadRightPanelState: (options) => {
+    migrateLegacyRightPanelLayouts();
     const entry = readRightPanelState();
     if (!entry) return;
     // Same rule as the per-agent bind above, for the same reason — but this one
@@ -276,7 +350,7 @@ export const createRightPanelSlice: StateCreator<
     // `/session` is the one that decides whether the link was about that agent.
     const requested = get().requestedRightPanel;
     set({
-      rightPanelOpen: requested !== null || entry.open,
+      rightPanelOpen: requested !== null || ((options?.restoreOpen ?? true) && entry.open),
       activeRightPanelTab: requested?.tabId ?? entry.activeTab,
     });
   },
