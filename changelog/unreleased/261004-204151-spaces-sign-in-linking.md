@@ -7,6 +7,7 @@ covers:
   - "fix(community): let the link panel's password field take focus normally"
   - 'fix(community): refuse sessions a sign-in made after its account was cleared'
   - 'fix(community): say how sign-in linking meets an email someone else used'
+  - 'fix(community): record a trusted link only once its row exists'
 ---
 
 ### Added

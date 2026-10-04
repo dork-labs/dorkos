@@ -81,30 +81,46 @@ export interface LinkGateContext {
 }
 
 /** The trusted link each request made, waiting for its account row to exist. */
-const linkNotices = new WeakMap<object, LinkGateAccount & { value: string }>();
+const trustedLinks = new WeakMap<object, LinkGateAccount & { cleared: boolean }>();
 
 /**
- * Once Better Auth has created an account row (`databaseHooks.account.create.after`), tell the
- * page about the trusted link this request made, if this row is that link.
+ * Once Better Auth has created an account row (`databaseHooks.account.create.after`), finish the
+ * trusted link this request made, if this row is that link: audit it as `member.sign_in_linked`
+ * in every community the account is in, queue its notice, and tell the page. Done only here, so
+ * an insert that fails leaves no "linked" audit, mail or page notice. (The clean-out before it
+ * did happen, and its own audit rows stay.)
  */
-export function settleLinkNotice(
+export async function settleTrustedLink(
   created: LinkGateAccount | null,
   ctx: LinkGateContext | null | undefined,
-  config: CommunityConfig
-): void {
-  const pending = ctx ? linkNotices.get(ctx) : undefined;
+  deps: LinkGateDeps
+): Promise<void> {
+  const pending = ctx ? trustedLinks.get(ctx) : undefined;
   if (!ctx || !pending || !created) return;
-  linkNotices.delete(ctx);
   if (
     created.userId !== pending.userId ||
     created.providerId !== pending.providerId ||
     created.accountId !== pending.accountId
   )
     return;
+  trustedLinks.delete(ctx);
+  await transaction(deps.pool, async (client) => {
+    const members = await client.query<{ id: string }>(
+      'SELECT id FROM members WHERE user_id=$1 ORDER BY community_id,id',
+      [pending.userId]
+    );
+    await recordSignInLinked(client, {
+      userId: pending.userId,
+      memberIds: members.rows.map((row) => row.id),
+      changedFields: pending.cleared ? [pending.providerId, 'cleared'] : [pending.providerId],
+      notice: deps.canSendNotice('account.sign_in_linked'),
+      now: deps.now(),
+    });
+  });
   ctx.setCookie(
     LINK_NOTICE_COOKIE,
-    signValue(pending.value, config.authSecret),
-    cookieOptions(config, PENDING_LINK_TTL_MS)
+    signValue(pending.cleared ? 'linked_cleared' : 'linked', deps.config.authSecret),
+    cookieOptions(deps.config, PENDING_LINK_TTL_MS)
   );
 }
 
@@ -157,8 +173,8 @@ async function lockAccount(client: PoolClient, userId: string) {
  * - **trusted**: refuse first if the account may not sign in at all. Then, in one transaction,
  *   lock the account and re-read whether its email was ever confirmed. Never confirmed means
  *   anyone could have made it with this email, so every way into it from before (password,
- *   sessions, other sign-in links, derived credentials) is cleared first. The link is audited and
- *   noticed, and the page is told what happened. The clean-out commits before Better Auth inserts
+ *   sessions, other sign-in links, derived credentials) is cleared first. Once the link row exists
+ *   it is audited and noticed, and the page is told what happened (`settleTrustedLink`). The clean-out commits before Better Auth inserts
  *   the link row: should that insert fail, the person is locked out of a squatted account, never
  *   the reverse.
  * - **password**: nothing is linked and no session is made. A single-use pending link is stored
@@ -209,18 +225,11 @@ export async function gateAccountLink(
           'system'
         );
       }
-      await recordSignInLinked(client, {
-        userId: account.userId,
-        memberIds,
-        changedFields: unconfirmed ? [account.providerId, 'cleared'] : [account.providerId],
-        notice: deps.canSendNotice('account.sign_in_linked'),
-        now: deps.now(),
-      });
       return unconfirmed;
     });
-    // Said only once Better Auth has inserted the link row (`settleLinkNotice`): an insert that
-    // fails must not leave the page saying "linked".
-    linkNotices.set(ctx, { ...account, value: cleared ? 'linked_cleared' : 'linked' });
+    // Audited, mailed and told to the page only once Better Auth has inserted the link row
+    // (`settleTrustedLink`): an insert that fails must not leave anything saying "linked".
+    trustedLinks.set(ctx, { ...account, cleared });
     return;
   }
 

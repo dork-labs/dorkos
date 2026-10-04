@@ -846,8 +846,9 @@ describe('waiting sign-ins and the linked notice', () => {
   });
 
   it('says nothing about a trusted link whose row could not be inserted', async () => {
-    // Purpose: fails if the page is told "linked" before the link row exists.
-    const { userId } = await account('insert-fails@example.com', { confirmed: true });
+    // Purpose: fails if the page, the audit log or a queued mail says "linked" before the link
+    // row exists.
+    const { userId, memberId } = await account('insert-fails@example.com', { confirmed: true });
     await pool.query(`CREATE OR REPLACE FUNCTION refuse_test_link() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION 'refused by test'; END $$ LANGUAGE plpgsql`);
     await pool.query(
@@ -869,6 +870,11 @@ describe('waiting sign-ins and the linked notice', () => {
       );
       expect(await notice.json()).toEqual({ state: 'none', provider: null });
       expect(await providersOf(userId)).toEqual(['credential']);
+      expect(await audit(memberId, 'member.sign_in_linked')).toEqual([]);
+      expect(
+        (await pool.query('SELECT 1 FROM notice_outbox WHERE recipient_user_id=$1', [userId]))
+          .rowCount
+      ).toBe(0);
     } finally {
       await pool.query('DROP TRIGGER refuse_test_link ON account');
     }

@@ -16,7 +16,7 @@ import {
 } from './owner-replacement/admission.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
 import type { NoticeKind } from './mail/outbox.js';
-import { gateAccountLink, settleLinkNotice, SIGN_IN_REFUSED_CODE } from './sign-in/link-gate.js';
+import { gateAccountLink, settleTrustedLink, SIGN_IN_REFUSED_CODE } from './sign-in/link-gate.js';
 import { sessionPredatesClearing } from './sign-in/request-start.js';
 
 /**
@@ -249,9 +249,9 @@ export function createCommunityAuth(
             });
             return { data: account };
           },
-          // A trusted link tells the page only once its row exists.
+          // A trusted link is audited, mailed and shown only once its row exists.
           after: async (account, ctx) => {
-            settleLinkNotice(account, ctx, config);
+            await settleTrustedLink(account, ctx, { pool, config, canSendNotice, now });
           },
         },
       },
