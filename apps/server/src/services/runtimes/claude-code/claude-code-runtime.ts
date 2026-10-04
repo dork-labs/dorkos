@@ -778,12 +778,33 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // cooldown) and let the broadcast below trigger a re-warm with the merged
     // per-cwd plugins. Runs AFTER the live-session reload, which would
     // otherwise repopulate the cache from a session still holding the old set.
-    if (changedProjectPath) {
-      this.cache.clearSdkCommands(changedProjectPath);
-      this.warmFailedAt.delete(changedProjectPath);
-    }
+    if (changedProjectPath) this.forgetProjectCommands(changedProjectPath);
 
     this.broadcastCommandsChanged();
+  }
+
+  /**
+   * Tell the command palette a project's commands changed, without touching
+   * any session's plugins: drop that cwd's cached command list (and any
+   * warm-probe cooldown) so the next fetch re-warms it, then broadcast
+   * `commands_changed`.
+   *
+   * For a change that reaches a project as projected files (a project dev
+   * link's edit, DOR-2696). A project package is not an SDK plugin, so live
+   * sessions have nothing to reload; only the cached list is stale, and it
+   * would otherwise stay stale until a restart.
+   *
+   * @param projectPath - The project whose commands changed.
+   */
+  refreshProjectCommands(projectPath: string): void {
+    this.forgetProjectCommands(projectPath);
+    this.broadcastCommandsChanged();
+  }
+
+  /** Drop a cwd's cached command list and its warm-probe cooldown. */
+  private forgetProjectCommands(projectPath: string): void {
+    this.cache.clearSdkCommands(projectPath);
+    this.warmFailedAt.delete(projectPath);
   }
 
   /**

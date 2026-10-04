@@ -15,6 +15,8 @@ export {
   type DevUnlinkRequest,
   type DevUnlinkResult,
 } from './dev-link-service.js';
+export { devLinkExtensionsOf } from './dev-link-extensions.js';
+export { DevLinkWatcher } from './dev-link-watcher.js';
 export { hookDecisionConsentStore, type DevLinkConsentStore } from './consent.js';
 export { DevLinkError, packageIsDevLinked } from './errors.js';
 export {
