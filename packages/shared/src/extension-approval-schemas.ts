@@ -20,6 +20,42 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 extendZodWithOpenApiOnce();
 
+/** Where an extension runs and what it may reach, as an approval card shows it (DOR-2686). */
+export const ExtensionApprovalPermissionsSchema = z
+  .object({
+    /** `in-process`: inside DorkOS with full access. `subprocess`: limited to the lists below. */
+    runtime: z.enum(['in-process', 'subprocess']),
+    /** Hosts it may connect to (`allow.net`), as declared. */
+    net: z.array(z.string()),
+    /** Programs it may start (`allow.run`), and whether each was found on this computer. */
+    run: z.array(z.object({ name: z.string(), found: z.boolean() })),
+    /** Whether it may message agents and start agent sessions (`allow.agents`). */
+    agents: z.boolean(),
+    /** Whether it has screens (a client bundle), which run in DorkOS with your access. */
+    hasPage: z.boolean(),
+  })
+  .openapi('ExtensionApprovalPermissions');
+
+/** Where an extension runs and what it may reach, as an approval card shows it. */
+export type ExtensionApprovalPermissions = z.infer<typeof ExtensionApprovalPermissionsSchema>;
+
+/** What an extension asks for that its last approval did not cover (DOR-2686). */
+export const ExtensionApprovalAdditionsSchema = z
+  .object({
+    /** Hosts not covered before. */
+    net: z.array(z.string()),
+    /** Programs not approved before. */
+    run: z.array(z.string()),
+    /** Whether agent access is new. */
+    agents: z.boolean(),
+    /** Whether it now asks to run inside DorkOS, with full access. */
+    runtime: z.boolean(),
+  })
+  .openapi('ExtensionApprovalAdditions');
+
+/** What an extension asks for that its last approval did not cover. */
+export type ExtensionApprovalAdditions = z.infer<typeof ExtensionApprovalAdditionsSchema>;
+
 /** One extension waiting for a person to allow it to run. */
 export const PendingExtensionApprovalSchema = z
   .object({
@@ -48,6 +84,21 @@ export const PendingExtensionApprovalSchema = z
     since: z.string(),
     /** The second line: what happens and why, derived from the manifest by the server. */
     why: z.string(),
+    /**
+     * Where it runs and what it may reach (DOR-2686), so the card can state
+     * its access level: `in-process` is inside DorkOS with full access (the
+     * lists are empty); `subprocess` is limited to the lists. `run` says, per
+     * program, whether it was found on this computer. `hasPage` says it has
+     * screens, which run in DorkOS with the person's access either way.
+     * `null` only when DorkOS has no record of what it declares.
+     */
+    permissions: ExtensionApprovalPermissionsSchema.nullable(),
+    /**
+     * What it asks for that the person's last approval of this copy did not
+     * cover (DOR-2686), so a re-ask card leads with what changed. `null` on a
+     * first ask, or when nothing in the permission set changed.
+     */
+    added: ExtensionApprovalAdditionsSchema.nullable(),
   })
   .openapi('PendingExtensionApproval');
 

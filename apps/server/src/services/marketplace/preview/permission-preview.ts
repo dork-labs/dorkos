@@ -28,7 +28,12 @@ import { readPackageHooks } from '../lib/declarations/package-hooks.js';
 import { readPackagePrograms } from '../lib/declarations/package-programs.js';
 import { readPackageSkills } from '../lib/declarations/package-skills.js';
 import { packageSchedules, scheduleDisplayName } from '../lib/declarations/package-schedules.js';
-import type { ConflictReport, PermissionPreview, PreviewSchedule } from '../types.js';
+import type {
+  ConflictReport,
+  PermissionPreview,
+  PreviewExtensionIsolation,
+  PreviewSchedule,
+} from '../types.js';
 
 /** Directory names ignored when walking the package contents. */
 const IGNORED_DIRECTORIES = new Set(['node_modules', '.git', 'dist']);
@@ -413,8 +418,9 @@ export class PermissionPreviewBuilder {
    *   destination resolved against `dorkHome` (or the project-local install
    *   root) per package type.
    * - `extensions` — every `.dork/extensions/<id>/extension.json` discovered
-   *   in the package, expanded into `{ id, slots }` where `slots` are the
-   *   extension's enabled `contributions` keys.
+   *   in the package, expanded into `{ id, slots, isolation }` where `slots`
+   *   are the extension's enabled `contributions` keys and `isolation` is where
+   *   it runs and what it may reach (DOR-2686).
    * - `hooks` — every shell command declared in the package's
    *   `hooks/hooks.json` and plugin.json `hooks` (`lib/declarations/package-hooks.ts`),
    *   flattened to `{ event, matcher?, command }` with the command verbatim,
@@ -441,7 +447,8 @@ export class PermissionPreviewBuilder {
    *   chased. `node_modules` stays out of `fileChanges` as it always has —
    *   listing thousands of vendored files would bury the package's own.
    * - `externalHosts` — hosts sourced from each extension manifest's
-   *   `serverCapabilities.externalHosts` array (deduplicated). The
+   *   `serverCapabilities.externalHosts` array, plus the `allow.net` hosts of
+   *   each extension that runs separately (deduplicated). The
    *   marketplace manifest schema does not currently expose a top-level
    *   `externalHosts` field, so package-level hosts are not surfaced here.
    * - `requires` — `manifest.requires` declarations resolved against the
@@ -489,6 +496,7 @@ export class PermissionPreviewBuilder {
     preview.extensions = extensionManifests.map(({ id, manifest: extManifest }) => ({
       id,
       slots: extractSlots(extManifest.contributions),
+      isolation: isolationOfManifest(extManifest),
     }));
 
     Object.assign(
@@ -566,7 +574,27 @@ function collectSecrets(
 }
 
 /**
- * Collapse all extension `externalHosts` into a single deduplicated list,
+ * Where one extension runs and what it may reach (DOR-2686), read from its
+ * manifest: an in-process extension has full access and empty lists.
+ */
+function isolationOfManifest(
+  manifest: ReturnType<typeof ExtensionManifestSchema.parse>
+): PreviewExtensionIsolation {
+  const caps = manifest.serverCapabilities;
+  if (caps?.runtime !== 'subprocess') {
+    return { runtime: 'in-process', net: [], run: [], agents: false };
+  }
+  return {
+    runtime: 'subprocess',
+    net: [...(caps.allow?.net ?? [])],
+    run: [...(caps.allow?.run ?? [])],
+    agents: caps.allow?.agents ?? false,
+  };
+}
+
+/**
+ * Collapse all extension `externalHosts`, and the `allow.net` hosts of each
+ * extension that runs separately (DOR-2686), into a single deduplicated list,
  * preserving first-seen order.
  */
 function collectExternalHosts(
@@ -575,7 +603,11 @@ function collectExternalHosts(
   const seen = new Set<string>();
   const ordered: string[] = [];
   for (const { manifest } of extensions) {
-    const hosts = manifest.serverCapabilities?.externalHosts ?? [];
+    const caps = manifest.serverCapabilities;
+    const hosts = [
+      ...(caps?.externalHosts ?? []),
+      ...(caps?.runtime === 'subprocess' ? (caps.allow?.net ?? []) : []),
+    ];
     for (const host of hosts) {
       if (seen.has(host)) continue;
       seen.add(host);

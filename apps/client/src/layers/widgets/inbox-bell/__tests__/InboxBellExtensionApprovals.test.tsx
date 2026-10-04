@@ -53,6 +53,8 @@ const FLOW: PendingExtensionApproval = {
   adds: 'It adds a Flow tab',
   since: '2026-09-28T12:00:00.000Z',
   why: 'You installed the flow plugin. This adds a Flow tab that shows what your agents are working on. It runs as you.',
+  permissions: { runtime: 'in-process', net: [], run: [], agents: false, hasPage: true },
+  added: null,
 };
 
 /** What the fake server holds and what it was asked. */

@@ -557,8 +557,21 @@ export interface PreviewNpmDependency {
 export interface PermissionPreview {
   /** Files that will be created, modified, or deleted. */
   fileChanges: { path: string; action: 'create' | 'modify' | 'delete' }[];
-  /** Extensions that will be registered. */
-  extensions: { id: string; slots: string[] }[];
+  /**
+   * Extensions that will be registered. `isolation` says where each runs and
+   * what it may reach (DOR-2686): `in-process` is inside DorkOS with full
+   * access and empty lists; `subprocess` is limited to the lists.
+   */
+  extensions: {
+    id: string;
+    slots: string[];
+    isolation?: {
+      runtime: 'in-process' | 'subprocess';
+      net: string[];
+      run: string[];
+      agents: boolean;
+    };
+  }[];
   /** Shell hooks the package registers with the harness, commands verbatim. */
   hooks: PreviewHook[];
   /** Hook declarations the package ships that could not be read. */
