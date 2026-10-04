@@ -490,6 +490,31 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   // ---------------------------------------------------------------------------
 
   /**
+   * The registered agent a session's connector tools act for, when this
+   * runtime has the connector boundary at all (DOR-2685).
+   *
+   * One answer for the per-turn connector context in {@link sendMessage} and
+   * for whether the in-session server lists the connector tools, so the two
+   * cannot disagree, and a stage that warms a process builds the same list as
+   * the turn after it.
+   *
+   * @param cwdKey - The folder the turn or stage runs in
+   * @param turnAgent - The agent a turn is dispatched as, when it names one
+   * @returns The agent's home and its registry entry, or `undefined`
+   */
+  private connectorAgentFor(
+    cwdKey: string,
+    turnAgent?: string
+  ):
+    | { agentPath: string; meshAgent: NonNullable<ReturnType<AgentRegistryPort['getByPath']>> }
+    | undefined {
+    if (!this.connectorRuntimeTools) return undefined;
+    const agentPath = homeOf(resolveAgentHome(cwdKey, turnAgent));
+    const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+    return agentPath && meshAgent ? { agentPath, meshAgent } : undefined;
+  }
+
+  /**
    * Assemble the runtime ports one turn (or one staged warm-up) launches with.
    *
    * Extracted from {@link sendMessage} so {@link deliverIntoTurn}'s `stage` path
@@ -500,11 +525,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param sessionId - The id this call was asked with (a hint the store resolves)
    * @param session - The resolved session record
    * @param cwdKey - The working directory the caches and command list key on
+   * @param turnAgent - The agent a turn is dispatched as, when it names one
    */
   private buildSenderOpts(
     sessionId: string,
     session: AgentSession,
-    cwdKey: string
+    cwdKey: string,
+    turnAgent?: string
   ): MessageSenderOpts {
     // Resolve the selected model's capabilities once: thinking config + whether it
     // supports auto permission mode (undefined when the model isn't cached yet).
@@ -521,6 +548,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       bindingStore: this.bindingStore,
       adapterManager: this.adapterManager,
       mcpServerFactory: this.mcpServerFactory,
+      // The same answer for a turn and for a stage that warms the process the
+      // turn will ride, so the two build the same tool list (DOR-2685).
+      connectorTools: this.connectorAgentFor(cwdKey, turnAgent) !== undefined,
       ...cacheCallbacks,
       // Composed over the cache's own handler rather than replacing it: the
       // per-turn status snapshot is one observation with two readers — the
@@ -582,15 +612,15 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // `core/agent-identity/agent-home.ts`). The same answer the launch resolves
     // its token from, so the connections below and the token cannot name two
     // different agents.
-    const agentPath = homeOf(resolveAgentHome(cwdKey, turnAgentOf(opts)));
-    const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+    const connectorAgent = this.connectorAgentFor(cwdKey, turnAgentOf(opts));
+    const meshAgent = connectorAgent?.meshAgent;
 
     const connectorTurn =
-      this.connectorRuntimeTools && meshAgent && agentPath
+      this.connectorRuntimeTools && connectorAgent
         ? new ClaudeConnectorTurnContext({
             tools: this.connectorRuntimeTools,
             canonicalSessionId: () => session.sdkSessionId || sessionId,
-            agentPath,
+            agentPath: connectorAgent.agentPath,
             cwd: cwdKey,
           })
         : undefined;
@@ -623,7 +653,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let observedEvent = false;
     let sawRuntimeError = false;
     try {
-      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
+      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey, turnAgentOf(opts));
       const stream = this.persistent.shouldDispatch(sessionId)
         ? this.persistent.dispatch({
             sessionId,

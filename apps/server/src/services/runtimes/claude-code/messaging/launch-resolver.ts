@@ -698,6 +698,7 @@ export async function resolveLaunch(args: {
     sdkOptions.mcpServers = opts.mcpServerFactory(session, sessionId, {
       hiddenToolNames: toolVisibility.hiddenToolNames,
       identity: toolIdentity,
+      ...(opts.connectorTools !== undefined ? { connectorTools: opts.connectorTools } : {}),
     });
   }
 

@@ -166,8 +166,11 @@ spelled so no secret lands in the fingerprint.
 Because `mcpServers` drops `instance`, an in-process (`sdk`) server compares by its name alone,
 so its tool list never reached a warm process: an extension's tools arriving or leaving, or a
 permission change hiding a tool, rode the process that listed the old set. The factory now
-records a digest of the list it built (each tool's name and input JSON Schema, sorted;
-`mcp-tools/tool-surface.ts`) against the instance, and the `toolSurface` pin compares it.
+records a digest of the list it built (each tool's name, description and input JSON Schema,
+sorted; `mcp-tools/tool-surface.ts`) against the instance, and the `toolSurface` pin compares it.
+The five connector tools count, listed on a session-long fact (the runtime has the connector
+boundary and the agent is registered) rather than on the per-turn connector context, so a process
+warmed for a staged note lists what the turn after it lists.
 
 **LIVE-VERIFY, resolved toward relaunch.** `setMcpServers` handed an `sdk` server under the
 SAME name might replace its tool list in place, but no run has shown the CLI doing that, and
@@ -176,11 +179,21 @@ differing surface therefore reaps the process at its next dispatch, before the t
 mid-turn (`persistent-dispatch.test.ts` pins both). Move the pin to `live` only once a live test
 shows a warm process listing a new tool after `setMcpServers`.
 
+**It waits for a working process.** Every other relaunch pin moves because this session's own
+settings did. This one moves from outside: an extension installed or turned on, a permission
+changed, a dev-link save. So when it is the reason to relaunch and `quietness()` says the process
+is still working (a helper agent, a Monitor, a delivery owed, a person being asked), the dispatch
+rides it with the old surface kept in the stored fingerprint (`withLiveToolSurface`), applies any
+live changes, and asks again at the next dispatch. A tool-list change never tears down background
+work; another pin that moved at the same time still relaunches as it always did.
+
 The cost is one prompt-cache loss per change per warm session. Changes are rare: an extension
 installed, updated, turned on or off, or a dev-link save that edits its tool declarations. The
-digest is a pure function of names and schemas, so two builds of an unchanged list compare equal
-(`mcp-tools/__tests__/tool-surface.test.ts`) and a `server.ts`-only extension restart, which
-re-registers the same declarations, does not relaunch anything.
+digest is a pure function of names, descriptions and schemas, so two builds of an unchanged list
+compare equal (`mcp-tools/__tests__/tool-surface.test.ts`), and a `server.ts`-only extension
+restart, which re-registers the same declarations, normally relaunches nothing. The exception is
+a dispatch that lands in the moment between the restart's remove and its re-register, which sees
+the tools gone and then back: two relaunches, costing cache only.
 
 ### The agent identity token is pinned by IDENTITY, not by value
 

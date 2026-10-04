@@ -84,7 +84,8 @@ function createFullDeps(): McpToolDeps {
 function surfaceOf(
   registry: CapabilityRegistry,
   hidden: ReadonlySet<string> = new Set(),
-  session?: Parameters<typeof createDorkOsToolServer>[1]
+  session?: Parameters<typeof createDorkOsToolServer>[1],
+  connectorTools?: boolean
 ): string {
   const server = createDorkOsToolServer(
     createFullDeps(),
@@ -92,7 +93,9 @@ function surfaceOf(
     undefined,
     undefined,
     registry,
-    hidden
+    hidden,
+    undefined,
+    connectorTools
   );
   const digest = dorkosToolSurfaceOf(server.instance);
   expect(digest).toMatch(/^[0-9a-f]{64}$/);
@@ -162,11 +165,11 @@ describe('the dorkos tool-surface digest', () => {
     expect(surfaceOf(registry, new Set(['not_a_tool']))).toBe(surfaceOf(registry));
   });
 
-  it('does not move with the per-turn connector tools', () => {
-    // Purpose: those five follow per-turn state (`connectorTurn`), which a
-    // process warmed for a staged note launches without. Counting them would
-    // relaunch that process at its first real turn, and with it the note it
-    // was warmed to receive, for no change an extension or permission made.
+  it('counts the connector tools on the launch’s answer, not on the turn context', () => {
+    // Purpose: a process warmed for a staged note is built with no turn
+    // context, and the turn after it with one. The launch decides from facts
+    // that hold for the whole session, so both list the same tools and the
+    // turn does not relaunch the process the note was staged into.
     const registry = composeDorkOsCapabilityRegistry({
       logger: noopLogger,
       connectorExecutionDeps: {
@@ -176,7 +179,7 @@ describe('the dorkos tool-surface digest', () => {
         requests: { create: vi.fn(), getForRuntime: vi.fn(), waitForResolution: vi.fn() } as never,
       },
     });
-    const connectorSession = {
+    const turnSession = {
       cwd: '/agents/alpha',
       eventQueue: [],
       connectorTurn: {
@@ -185,17 +188,18 @@ describe('the dorkos tool-surface digest', () => {
         resolvePrincipal: vi.fn(),
       },
     } as unknown as Parameters<typeof createDorkOsToolServer>[1];
-    const plainSession = { cwd: '/agents/alpha', eventQueue: [] } as unknown as Parameters<
+    const stagedSession = { cwd: '/agents/alpha', eventQueue: [] } as unknown as Parameters<
       typeof createDorkOsToolServer
     >[1];
-    expect(surfaceOf(registry, new Set(), connectorSession)).toBe(
-      surfaceOf(registry, new Set(), plainSession)
-    );
+    const atTurn = surfaceOf(registry, new Set(), turnSession, true);
+    expect(surfaceOf(registry, new Set(), stagedSession, true)).toBe(atTurn);
+    // And they are counted: a session without them lists something else.
+    expect(surfaceOf(registry, new Set(), stagedSession, false)).not.toBe(atTurn);
   });
 });
 
 describe('toolSurfaceDigest', () => {
-  it('ignores order and handlers, and reads names and input schemas', () => {
+  it('ignores order and handlers, and reads names, descriptions and input schemas', () => {
     // Purpose: the digest is a pure function of what the model can see.
     const a = { name: 'a', inputSchema: { x: z.string() } };
     const b = { name: 'b', inputSchema: {} };
@@ -204,6 +208,10 @@ describe('toolSurfaceDigest', () => {
       toolSurfaceDigest([{ ...a, inputSchema: { x: z.number() } }, b])
     );
     expect(toolSurfaceDigest([a, b])).not.toBe(toolSurfaceDigest([{ ...a, name: 'c' }, b]));
+    // The description tells the model when to use a tool, so it counts too.
+    expect(toolSurfaceDigest([{ ...a, description: 'Sends it.' }, b])).not.toBe(
+      toolSurfaceDigest([{ ...a, description: 'Sends it now.' }, b])
+    );
   });
 
   it('digests a schema that cannot be listed instead of throwing', () => {

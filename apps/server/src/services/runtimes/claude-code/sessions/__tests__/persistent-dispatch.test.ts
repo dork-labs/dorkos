@@ -164,6 +164,10 @@ import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
 import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
 import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 
 const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
@@ -1105,15 +1109,60 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     optIn.persistentSession = true;
     listed = ['ping', 'relay_send'];
     // A fresh instance per launch, as the real factory builds, recording the
-    // tool surface the real factory would record for it.
-    runtime.setMcpServerFactory(() => {
+    // tool surface the real factory would record for it — the connector tools
+    // included on the same rule (`createDorkOsToolServer`'s `connectorTools`).
+    runtime.setMcpServerFactory((session, _sessionId, launch) => {
       const instance = {};
+      const connectorTools = launch?.connectorTools ?? session.connectorTurn !== undefined;
       recordToolSurface(
         instance,
-        listed.map((name) => ({ name, inputSchema: {} }))
+        [...listed, ...(connectorTools ? ['connectors.execute_read'] : [])].map((name) => ({
+          name,
+          inputSchema: {},
+        }))
       );
       return { dorkos: { type: 'sdk', name: 'dorkos', instance } as never };
     });
+  });
+
+  it('lists the same tools for a staged warm-up and the turn after it', async () => {
+    // Purpose: a note staged into a cold session boots the process the next
+    // turn rides. The turn holds a connector context the stage never had, so
+    // if the connector tools followed that context, the turn would relaunch
+    // the process the note was staged into.
+    registerTestHomes([CWD]);
+    try {
+      runtime.setMeshCore({
+        getByPath: () => ({ id: 'agent-1', name: 'agent' }),
+        listWithPaths: () => [],
+        updateLastSeen: () => undefined,
+      } as never);
+      runtime.setConnectorRuntimeTools({
+        principals: {
+          openTurn: vi.fn(),
+          renew: vi.fn(),
+          resolve: vi.fn(),
+          revoke: vi.fn().mockResolvedValue(undefined),
+        },
+        listenerUrl: 'http://127.0.0.1:1/mcp',
+        isConnectorCapabilityId: () => false,
+        accessSnapshot: vi.fn().mockResolvedValue({ accountCount: 0, revision: 'r' }),
+      } as never);
+      const sessionId = nextSession();
+      const receipt = await runtime.deliverIntoTurn(sessionId, 'a note first', {
+        mode: 'stage',
+        messageId: 'stage-1',
+      });
+      expect(receipt).toEqual({ delivered: true });
+      expect(cli.launches).toBe(1);
+
+      await turn(sessionId, 'then the turn');
+      expect(cli.launches).toBe(1);
+      expect(cli.processes[0]!.ended).toBe(false);
+      expect(cli.processes[0]!.staged.map((m) => m.uuid)).toEqual(['stage-1']);
+    } finally {
+      clearTestHomes();
+    }
   });
 
   it('rides the warm process while the list stays the same', async () => {

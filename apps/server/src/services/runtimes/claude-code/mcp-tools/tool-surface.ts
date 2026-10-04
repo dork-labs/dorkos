@@ -10,8 +10,8 @@
  * permission change hiding a tool, never reached a warm process.
  *
  * The factory therefore records, per server instance, a digest of the tool
- * list a fresh launch would see: every tool's name and its input JSON Schema,
- * sorted by name. The `toolSurface` launch pin reads it back from the instance
+ * list a fresh launch would see: every tool's name, description and input JSON
+ * Schema, sorted by name. The `toolSurface` launch pin reads it back from the instance
  * in the launch options, so nothing new is sent to the CLI.
  *
  * ## The digest must be stable, or every warm process relaunches every turn
@@ -20,10 +20,10 @@
  * builds of an unchanged tool set would relaunch every warm process on every
  * message. Three things keep it stable: tools are sorted by name, so the
  * order domains were assembled in does not count; each schema is serialized
- * with its keys sorted (`stableStringify`); and only the schema is hashed, never
- * the handler, the description or the loading hints, none of which change what
- * a tool takes. `tool-surface.test.ts` builds the real server twice and asserts
- * equal digests.
+ * with its keys sorted (`stableStringify`); and only what the model reads is
+ * hashed (name, description, schema), never the handler or the loading hints.
+ * No description is built from runtime data: `tool-surface.test.ts` builds the
+ * real server twice and asserts equal digests.
  *
  * @module services/runtimes/claude-code/mcp-tools/tool-surface
  */
@@ -35,6 +35,8 @@ import { stableStringify } from '@dorkos/shared/capabilities';
 export interface ToolSurfaceEntry {
   /** The tool name on the server, unqualified. */
   readonly name: string;
+  /** The tool's model-facing description, which tells the model when to use it. */
+  readonly description?: string;
   /** The advertised input: a Zod field map, or a whole object schema. */
   readonly inputSchema: z.ZodRawShape | z.ZodType;
 }
@@ -57,15 +59,20 @@ function inputJsonSchema(input: ToolSurfaceEntry['inputSchema']): unknown {
 
 /**
  * Digest a tool list: sha256 over the canonical JSON of the name-sorted
- * `{ name, inputJsonSchema }` pairs.
+ * `{ name, description, inputJsonSchema }` entries.
  *
  * @param entries - Every tool the server lists, in any order
- * @returns A hex digest equal for any two lists with the same names and schemas
+ * @returns A hex digest equal for any two lists with the same names,
+ *   descriptions and schemas
  */
 export function toolSurfaceDigest(entries: readonly ToolSurfaceEntry[]): string {
   const surface = [...entries]
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map((entry) => ({ name: entry.name, inputJsonSchema: inputJsonSchema(entry.inputSchema) }));
+    .map((entry) => ({
+      name: entry.name,
+      description: entry.description ?? '',
+      inputJsonSchema: inputJsonSchema(entry.inputSchema),
+    }));
   return createHash('sha256').update(stableStringify(surface)).digest('hex');
 }
 

@@ -352,6 +352,9 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  * @param launchIdentity - Whose identity this session carries, as the launch resolved
  *   it (DOR-2091). Defaults to the anchor of `session.cwd`, which is right for
  *   every caller that is not a turn's launch.
+ * @param connectorTools - Whether to list the five connector tools, decided by
+ *   the launch from session-long facts (DOR-2685). Defaults to whether the
+ *   session holds a turn's connector context, for callers that are not a launch.
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
@@ -361,7 +364,8 @@ export function createDorkOsToolServer(
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry,
   hiddenToolNames: ReadonlySet<string> = new Set(),
-  launchIdentity?: HomeResolution
+  launchIdentity?: HomeResolution,
+  connectorTools: boolean = session?.connectorTurn !== undefined
 ) {
   const identity = launchIdentity ?? resolveAgentHome(session?.cwd);
   // Operator + marketplace + self-description tools, all generated from the
@@ -450,30 +454,31 @@ export function createDorkOsToolServer(
     tools: listed,
   });
 
-  if (session?.connectorTurn) {
-    registerClaudeConnectorCapabilityTools(
-      server.instance,
-      capabilityRegistry,
-      resolveCapabilityContext,
-      hold
-    );
-  }
+  // Listed on a launch's session-long answer, not on whether THIS build sees a
+  // turn's connector context: a process warmed for a staged note is built with
+  // none, and the turn after it with one, and the two must list the same
+  // tools. Each call still resolves the turn's context when it runs.
+  const connectorEntries = connectorTools
+    ? registerClaudeConnectorCapabilityTools(
+        server.instance,
+        capabilityRegistry,
+        resolveCapabilityContext,
+        hold
+      )
+    : [];
 
   // What a fresh launch of this server would list, recorded against this
   // instance so the launch fingerprint's `toolSurface` pin can tell a warm
   // process that lists something else to relaunch before its next turn
   // (DOR-2685, `tool-surface.ts`). Nothing new reaches the CLI.
-  //
-  // The five connector tools above are left out on purpose. They are a fixed
-  // set no extension or permission changes, and whether they are registered
-  // follows per-turn state: `sendMessage` sets `connectorTurn` for a turn, but
-  // a process warmed to receive a staged note launches without one. Counting
-  // them would relaunch that process at its first real turn for no change in
-  // what an extension or a permission offers.
-  recordToolSurface(
-    server.instance,
-    listed.map((definition) => ({ name: definition.name, inputSchema: definition.inputSchema }))
-  );
+  recordToolSurface(server.instance, [
+    ...listed.map((definition) => ({
+      name: definition.name,
+      description: definition.description,
+      inputSchema: definition.inputSchema,
+    })),
+    ...connectorEntries,
+  ]);
 
   // The read-only `dorkos://` resources: the same registration the external
   // `/mcp` server performs, scoped to THIS session's project rather than the
