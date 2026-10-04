@@ -21,6 +21,15 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => router,
 }));
 
+// `isMac` is a module constant; switched through the barrel per test.
+let mockIsMac = true;
+vi.mock('@/layers/shared/lib', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
+  get isMac() {
+    return mockIsMac;
+  },
+}));
+
 // Rows name pages through the same live queries as the tab strip; pinned here
 // so the assertions are about the controls, not about fetch timing.
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({
@@ -59,6 +68,7 @@ function renderControls() {
 }
 
 beforeEach(() => {
+  mockIsMac = true;
   navigate.mockClear();
   sessionStorage.clear();
   enterDesktopShell();
@@ -88,6 +98,15 @@ describe('TabHistoryControls', () => {
     act(() => useAppTabsStore.getState().goToHistoryIndex(1));
     expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Forward' })).toBeDisabled();
+  });
+
+  it('names Alt+Arrow beside the chord off a Mac', async () => {
+    // Purpose: off a Mac, the tooltip teaches both keys that go back.
+    mockIsMac = false;
+    setHistory(['/', '/team']);
+    renderControls();
+    await userEvent.hover(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Back (CTRL+[ or ALT+←)');
   });
 
   it('Back moves the tab and navigates to the page before', async () => {

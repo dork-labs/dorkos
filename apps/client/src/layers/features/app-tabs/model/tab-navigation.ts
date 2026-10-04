@@ -48,8 +48,15 @@ export function goToActiveTab(router: TabRouter): void {
   const { tabs, activeTabId } = useAppTabsStore.getState();
   const active = tabs.find((tab) => tab.id === activeTabId);
   if (!active) return;
-  void router.navigate({ href: active.href }).then(() => {
-    useAppTabsStore.getState().syncLocation(router.state.location.href, { replace: true });
+  const { id, href } = active;
+  void router.navigate({ href }).then(() => {
+    // Only for the tab and page this navigation was for. If the person switched
+    // tabs or went somewhere else while it settled, the location belongs to
+    // that later move, and writing it here would overwrite the wrong entry.
+    const now = useAppTabsStore.getState();
+    const still = now.tabs.find((tab) => tab.id === now.activeTabId);
+    if (still?.id !== id || still.href !== href) return;
+    now.syncLocation(router.state.location.href, { replace: true });
   });
 }
 

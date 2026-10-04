@@ -58,8 +58,12 @@
  * `history` and a `cursor` into it, with `history[cursor] === href` always.
  * Only rule 3 writes to it: a new entry (PUSH) drops anything ahead of the
  * cursor and appends, like a browser forgetting Forward; a REPLACE (a loader
- * redirect, a search-param update) rewrites the current entry in place. Rules 1
- * and 2 and tab switches record nothing. Back, Forward and the History menu
+ * redirect, a search-param update) rewrites the current entry in place, and so
+ * does opening or closing a URL-backed dialog (`?settings=`, `?tasks=`, …),
+ * which changes what is over the page, not the page. Two identical entries are
+ * never left side by side. A traversal no sibling tab answers (the app calling
+ * `history.back()` itself) steps the cursor when it lands on a neighbouring
+ * entry. Rules 1 and 2 and tab switches record nothing. Back, Forward and the History menu
  * move the cursor here first ({@link AppTabsState.goToHistoryIndex}) and then
  * navigate, so the sync that follows hits rule 1.
  *
@@ -79,6 +83,7 @@
  */
 import { create } from 'zustand';
 import { classifyLink } from '../../lib/link-navigation';
+import { DIALOG_SEARCH_KEYS } from '../dialog-search-schema';
 
 /** One tab: a stable client id, the location it holds, and where it has been. */
 export interface AppTab {
@@ -136,6 +141,68 @@ function replaceEntry(tab: AppTab, href: string): AppTab {
   const history = [...tab.history];
   history[tab.cursor] = href;
   return { ...tab, href, history };
+}
+
+/**
+ * Fold the current entry into an identical neighbour. Two equal entries side by
+ * side make Back or Forward a press that visibly does nothing, and list one page
+ * twice in the History menu — a replace that lands on the page before (a
+ * redirect back to where you were) is the usual way to get them.
+ */
+function collapseDuplicates(tab: AppTab): AppTab {
+  const history = [...tab.history];
+  let cursor = tab.cursor;
+  // Both sides, in turn: a replace in the middle of `[a, b, a]` with `a`
+  // matches each neighbour, and folding only one would leave `[a, a]`.
+  if (history[cursor + 1] === tab.href) history.splice(cursor + 1, 1);
+  if (cursor > 0 && history[cursor - 1] === tab.href) {
+    history.splice(cursor, 1);
+    cursor -= 1;
+  }
+  return history.length === tab.history.length ? tab : { ...tab, history, cursor };
+}
+
+/** Absolute base used only to make relative hrefs parseable. Never navigated to. */
+const PARSE_BASE = 'http://tab.local';
+
+/** An href with every dialog-modifier search param removed, search sorted. */
+function withoutDialogParams(href: string): string | null {
+  try {
+    const url = new URL(href, PARSE_BASE);
+    for (const key of DIALOG_SEARCH_KEYS) url.searchParams.delete(key);
+    url.searchParams.sort();
+    return `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether two hrefs are the same page with a different dialog over it
+ * (`/` and `/?settings=open`). Opening or closing Settings is not going
+ * anywhere, so it must not leave a Back press that reopens it.
+ */
+function differsOnlyByDialog(a: string, b: string): boolean {
+  const bare = withoutDialogParams(a);
+  return bare !== null && bare === withoutDialogParams(b);
+}
+
+/**
+ * How the active tab takes on a location it does not hold — rule 3. A
+ * traversal onto a neighbouring entry (a `router.history.back()` the app made
+ * itself) moves the cursor; a replace, or a dialog opening or closing, rewrites
+ * the current entry; anything else is a new page.
+ */
+function adoptLocation(tab: AppTab, href: string, traversal: boolean, replace: boolean): AppTab {
+  if (traversal && tab.history[tab.cursor - 1] === href) {
+    return { ...tab, href, cursor: tab.cursor - 1 };
+  }
+  if (traversal && tab.history[tab.cursor + 1] === href) {
+    return { ...tab, href, cursor: tab.cursor + 1 };
+  }
+  const moved =
+    replace || differsOnlyByDialog(tab.href, href) ? replaceEntry(tab, href) : pushEntry(tab, href);
+  return collapseDuplicates(moved);
 }
 
 /**
@@ -322,7 +389,7 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
       }
 
       if (active) {
-        const moved = replace ? replaceEntry(active, href) : pushEntry(active, href);
+        const moved = adoptLocation(active, href, traversal, replace);
         return { tabs: state.tabs.map((t) => (t.id === active.id ? moved : t)) };
       }
 

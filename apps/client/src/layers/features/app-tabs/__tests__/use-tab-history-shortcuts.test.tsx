@@ -110,6 +110,25 @@ describe('useTabHistoryShortcuts — keys', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it('leaves a key alone while an IME composition is open', () => {
+    // Purpose: a composing keystroke belongs to the input method.
+    renderHook(() => useTabHistoryShortcuts());
+
+    expect(press({ key: '[', code: 'BracketLeft', metaKey: true, isComposing: true })).toBe(false);
+    expect(activeHref()).toBe('/team');
+  });
+
+  it.each(['dialog', 'alertdialog', 'menu'])('does nothing from inside an open %s', (role) => {
+    // Purpose: an open overlay owns the keyboard; the page must not move under it.
+    renderHook(() => useTabHistoryShortcuts());
+    const overlay = document.body.appendChild(document.createElement('div'));
+    overlay.setAttribute('role', role);
+    const button = overlay.appendChild(document.createElement('button'));
+
+    expect(press({ key: '[', code: 'BracketLeft', metaKey: true }, button)).toBe(false);
+    expect(activeHref()).toBe('/team');
+  });
+
   it('leaves Shift+Cmd+[ to the tab-switching shortcut', () => {
     // Purpose: Previous tab and Back must never fire on the same press.
     renderHook(() => useTabHistoryShortcuts());

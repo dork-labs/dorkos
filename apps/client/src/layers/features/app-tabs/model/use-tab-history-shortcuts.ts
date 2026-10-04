@@ -9,7 +9,7 @@
  * **Desktop shell only**, like the tabs they drive. In a browser the page's
  * own history is the browser's to walk, and these keys already do that there.
  *
- * Three choices that keep it out of the way:
+ * Four choices that keep it out of the way:
  *
  * - **An editor that used the key keeps it.** Bubble phase on `document`, and
  *   an event something already handled (`defaultPrevented`) is left alone —
@@ -18,6 +18,7 @@
  *   it to move by word. The bracket chords do, as in a browser: a plain text
  *   field does nothing with them.
  * - **Not `Option+Arrow` on a Mac**, which moves by word in every text field.
+ * - **Not from inside an open dialog or menu**, nor mid-composition in an IME.
  *
  * @module features/app-tabs/model/use-tab-history-shortcuts
  */
@@ -37,6 +38,18 @@ function isTextField(target: EventTarget | null): boolean {
   // `isContentEditable` is the real answer but jsdom does not implement it; the
   // attribute check is what it resolves to for every editor we ship.
   return target.closest('[contenteditable]:not([contenteditable="false"])') !== null;
+}
+
+/**
+ * Whether `target` sits inside an open dialog or menu. Those own the keyboard
+ * while they are up: going back underneath one would move the page out from
+ * under the thing you are looking at.
+ */
+function isInOverlay(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest('[role="dialog"], [role="alertdialog"], [role="menu"]') !== null
+  );
 }
 
 /**
@@ -74,7 +87,9 @@ export function useTabHistoryShortcuts(): void {
       direction === 'back' ? goBack(router) : goForward(router);
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      // An IME composition owns its keys until it commits.
+      if (event.defaultPrevented || event.isComposing) return;
+      if (isInOverlay(event.target)) return;
       const direction = keyDirection(event);
       if (!direction) return;
       event.preventDefault();

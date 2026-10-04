@@ -141,14 +141,36 @@ describe('goToHistoryEntry', () => {
   it('rewrites the entry when the redirect lands where the router already was', async () => {
     // Purpose: no location change fires here, so only the post-navigation
     // reconcile sees the redirect — and it must replace, not push, or the
-    // jump would wipe Forward and leave the transient href behind.
+    // jump would leave the transient href behind. The rewritten entry now
+    // equals the one after it, so the two fold into one.
     const resolved = '/session?session=abc&dir=%2Fapi';
-    setHistory(['/', '/session?dir=%2Fapi', resolved]);
+    setHistory(['/', '/team', '/session?dir=%2Fapi', resolved]);
     redirects['/session?dir=%2Fapi'] = resolved;
     navigate.mockImplementationOnce(async () => {});
-    goToHistoryEntry(router, 1);
+    goToHistoryEntry(router, 2);
     await settle();
-    expect(trail()).toEqual(['/', `[${resolved}]`, resolved]);
+    expect(trail()).toEqual(['/', '/team', `[${resolved}]`]);
+  });
+
+  it('leaves the store alone if you moved on before the navigation settled', async () => {
+    // Purpose: the post-navigation reconcile is for the tab and page it was
+    // started for; a later tab switch must not get that location written over it.
+    const a = { id: 'a', href: '/team', history: ['/', '/team'], cursor: 1 };
+    const b = { id: 'b', href: '/tasks', history: ['/tasks'], cursor: 0 };
+    useAppTabsStore.setState({ tabs: [a, b], activeTabId: 'a' });
+    locationHref = '/team';
+    let settleNavigation = () => {};
+    navigate.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (settleNavigation = resolve))
+    );
+
+    goBack(router);
+    act(() => useAppTabsStore.getState().selectTab('b'));
+    await act(async () => settleNavigation());
+
+    const tabs = useAppTabsStore.getState().tabs;
+    expect(tabs[1]).toEqual(b);
+    expect(tabs[0]).toMatchObject({ href: '/', cursor: 0, history: ['/', '/team'] });
   });
 });
 
@@ -175,6 +197,21 @@ describe('useAppTabsSync — how the location changed decides how history record
     });
     commit('/tasks', 'PUSH');
     expect(trail()).toEqual(['/', '/team', '[/tasks]']);
+  });
+
+  it('treats a redirect that landed before it subscribed as a replace', () => {
+    // Purpose: on first paint a loader can redirect before the history
+    // listener attaches; that is the same page, not a new entry.
+    const tab = {
+      id: 'tab-0',
+      href: '/session?dir=%2Fapi',
+      history: ['/', '/session?dir=%2Fapi'],
+      cursor: 1,
+    };
+    useAppTabsStore.setState({ tabs: [tab], activeTabId: tab.id });
+    locationHref = '/session?session=abc&dir=%2Fapi';
+    renderHook(() => useAppTabsSync());
+    expect(trail()).toEqual(['/', '[/session?session=abc&dir=%2Fapi]']);
   });
 
   it('still treats a traversal as focus-only, recording nothing', () => {

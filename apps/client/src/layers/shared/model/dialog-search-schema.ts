@@ -51,6 +51,13 @@ export const dialogSearchSchema = z.object({
 export type DialogSearch = z.infer<typeof dialogSearchSchema>;
 
 /**
+ * Every dialog-modifier search param, read from the schema so the list cannot
+ * drift. The desktop tab history (DOR-2107) treats a location change that only
+ * touches these as the same page, so opening a dialog never adds a Back step.
+ */
+export const DIALOG_SEARCH_KEYS: readonly string[] = Object.keys(dialogSearchSchema.shape);
+
+/**
  * Merge dialog search params into a route's existing search schema.
  *
  * @example

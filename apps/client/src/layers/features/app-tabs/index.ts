@@ -18,8 +18,6 @@ export { TabHistoryControls } from './ui/TabHistoryControls';
 export { useAppTabsSync } from './model/use-app-tabs-sync';
 export { useAppTabShortcuts } from './model/use-app-tab-shortcuts';
 export { useTabHistoryShortcuts } from './model/use-tab-history-shortcuts';
-export { goBack, goForward, goToHistoryEntry } from './model/tab-history';
-export { useTabTarget, type TabTargetView } from './model/use-tab-target';
 export { useAppTabActions, NEW_TAB_HREF, type AppTabActions } from './model/use-app-tab-actions';
 export { openTabAt, goToActiveTab, type TabRouter } from './model/tab-navigation';
 export { parseTabHref, fallbackTabLabel, projectName, type TabTarget } from './lib/tab-target';

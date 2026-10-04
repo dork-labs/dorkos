@@ -46,7 +46,10 @@ export function useAppTabsSync(): void {
   const traversed = useRef(false);
   // Same lifecycle as `traversed`, for a location that took the current one's
   // place in history rather than adding an entry after it.
-  const replaced = useRef(false);
+  // Starts `true`: a location that differs from the active tab before any
+  // notification has arrived is a loader redirect on first paint, landed before
+  // this hook subscribed — the same page, not a new one.
+  const replaced = useRef(true);
 
   useEffect(() => {
     if (!isDesktopShell()) return;

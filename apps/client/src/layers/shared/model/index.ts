@@ -9,9 +9,7 @@ export {
   useAppTabsStore,
   useAppTabs,
   useActiveTabHistory,
-  MAX_TAB_HISTORY,
   type AppTab,
-  type ActiveTabHistory,
 } from './app-tabs/app-tabs-store';
 export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';

@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { ArrowLeft, ArrowRight, Check, History } from 'lucide-react';
 import { useRouter } from '@tanstack/react-router';
-import { cn, formatShortcutKey, isDesktopShell, SHORTCUTS } from '@/layers/shared/lib';
+import { cn, formatShortcutKey, isDesktopShell, isMac, SHORTCUTS } from '@/layers/shared/lib';
 import { useActiveTabHistory } from '@/layers/shared/model';
 import {
   Button,
@@ -16,6 +16,18 @@ import {
 import { goBack, goForward, goToHistoryEntry } from '../model/tab-history';
 import { useTabTarget } from '../model/use-tab-target';
 import { TabTargetIcon } from './TabTargetIcon';
+
+/**
+ * The tooltip's key hint. Off a Mac, Alt+Arrow works too and is the one many
+ * people reach for, so it is named beside the registry chord.
+ *
+ * @param chord - The registry chord (`mod+[` or `mod+]`).
+ * @param arrow - The matching arrow glyph.
+ */
+function keyHint(chord: string, arrow: string): string {
+  const primary = formatShortcutKey(chord);
+  return isMac ? primary : `${primary} or ${formatShortcutKey(`alt+${arrow}`)}`;
+}
 
 /** Matches `SidebarTrigger`, which sits immediately to the left. */
 const BUTTON_CLASS = 'size-7';
@@ -97,7 +109,7 @@ export function TabHistoryControls() {
 
   return (
     <div className="flex items-center">
-      <WithTooltip label="Back" keys={formatShortcutKey(SHORTCUTS.HISTORY_BACK)}>
+      <WithTooltip label="Back" keys={keyHint(SHORTCUTS.HISTORY_BACK.key, '←')}>
         <Button
           variant="ghost"
           size="icon-md"
@@ -109,7 +121,7 @@ export function TabHistoryControls() {
           <ArrowLeft />
         </Button>
       </WithTooltip>
-      <WithTooltip label="Forward" keys={formatShortcutKey(SHORTCUTS.HISTORY_FORWARD)}>
+      <WithTooltip label="Forward" keys={keyHint(SHORTCUTS.HISTORY_FORWARD.key, '→')}>
         <Button
           variant="ghost"
           size="icon-md"

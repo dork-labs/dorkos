@@ -9,6 +9,7 @@ import {
   MAX_TAB_HISTORY,
   type AppTab,
 } from '../app-tabs/app-tabs-store';
+import { DIALOG_SEARCH_KEYS } from '../dialog-search-schema';
 
 const STORAGE_KEY = 'dork.app-tabs';
 
@@ -56,6 +57,12 @@ function expectInvariant(): void {
     expect(tab.history.length).toBeLessThanOrEqual(MAX_TAB_HISTORY);
     expect(tab.history[tab.cursor]).toBe(tab.href);
   }
+}
+
+/** Seed one active tab with an explicit history and cursor. */
+function setHistory(history: string[], cursor = history.length - 1): void {
+  const tab = { id: 'tab-0', href: history[cursor], history, cursor };
+  useAppTabsStore.setState({ tabs: [tab], activeTabId: tab.id });
 }
 
 beforeEach(() => {
@@ -369,6 +376,82 @@ describe('per-tab history (DOR-2107)', () => {
     useAppTabsStore.setState({ tabs: [], activeTabId: null });
     useAppTabsStore.getState().syncLocation('/activity');
     expect(trail()).toEqual(['[/activity]']);
+  });
+});
+
+describe('per-tab history — a dialog is not a page', () => {
+  it('records nothing when a URL-backed dialog opens and closes', () => {
+    // Purpose: Back must not reopen Settings, and History must not list `/` twice.
+    setTabs(['/'], 0);
+    visit('/?settings=open');
+    expect(trail()).toEqual(['[/?settings=open]']);
+    visit('/');
+    expect(trail()).toEqual(['[/]']);
+  });
+
+  it('treats every dialog param in the shared schema as a modifier', () => {
+    // Purpose: the list comes from `dialogSearchSchema`, so each of its params counts.
+    setTabs(['/'], 0);
+    visit('/team');
+    for (const key of DIALOG_SEARCH_KEYS) {
+      visit(`/team?${key}=x`);
+      visit('/team');
+    }
+    visit('/team?settings=tools&settingsSection=mcp');
+    expect(trail()).toEqual(['/', '[/team?settings=tools&settingsSection=mcp]']);
+  });
+
+  it('still records a change to any other search param as a new page', () => {
+    // Purpose: only dialog params are modifiers; `?view=` is a different page.
+    setTabs(['/team'], 0);
+    visit('/team?view=table');
+    expect(trail()).toEqual(['/team', '[/team?view=table]']);
+  });
+});
+
+describe('per-tab history — no two identical entries side by side', () => {
+  it('folds a replace that lands on the entry before it', () => {
+    // Purpose: a redirect back to the previous page must not make Back a dead press.
+    setHistory(['/a', '/b']);
+    useAppTabsStore.getState().syncLocation('/a', { replace: true });
+    expect(trail()).toEqual(['[/a]']);
+  });
+
+  it('folds a replace that lands on the entry after it', () => {
+    // Purpose: same for Forward.
+    setHistory(['/a', '/x', '/b'], 1);
+    useAppTabsStore.getState().syncLocation('/b', { replace: true });
+    expect(trail()).toEqual(['/a', '[/b]']);
+  });
+
+  it('folds both neighbours when both match', () => {
+    // Purpose: folding one side only would leave `[a, a]`.
+    setHistory(['/a', '/x', '/a'], 1);
+    useAppTabsStore.getState().syncLocation('/a', { replace: true });
+    expect(trail()).toEqual(['[/a]']);
+  });
+});
+
+describe('per-tab history — a traversal the app made itself', () => {
+  it('steps the cursor back when it lands on the entry before', () => {
+    // Purpose: `router.history.back()` must not push, leaving `[a, b, a]`.
+    setHistory(['/', '/team', '/tasks']);
+    useAppTabsStore.getState().syncLocation('/team', { traversal: true });
+    expect(trail()).toEqual(['/', '[/team]', '/tasks']);
+  });
+
+  it('steps the cursor forward when it lands on the entry after', () => {
+    // Purpose: the mirror case for `history.forward()`.
+    setHistory(['/', '/team', '/tasks', '/activity'], 1);
+    useAppTabsStore.getState().syncLocation('/tasks', { traversal: true });
+    expect(trail()).toEqual(['/', '/team', '[/tasks]', '/activity']);
+  });
+
+  it('pushes a traversal that lands on no neighbour', () => {
+    // Purpose: anything else is still somewhere new for this tab.
+    setHistory(['/', '/team']);
+    useAppTabsStore.getState().syncLocation('/activity', { traversal: true });
+    expect(trail()).toEqual(['/', '/team', '[/activity]']);
   });
 });
 
