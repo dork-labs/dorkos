@@ -180,7 +180,7 @@ describe('preflight reads report the same failure whatever order they finish in 
       provider: 'neon',
       code: 'KEY_KIND_UNSUPPORTED',
       message:
-        "The Neon key in NEON_API_KEY is a kind of key Neon won't take for a read setup needs. Use a personal key or sign in with neonctl auth, then retry. https://neon.com/docs/reference/cli-auth",
+        'Neon turned down one of the reads setup needs because of the kind of key in NEON_API_KEY. Setup works with an organization key, a personal key, or a neonctl auth sign-in. https://neon.com/docs/reference/cli-auth',
     });
     expect((error as Error).message).not.toContain("can't read organization");
   });
@@ -265,9 +265,33 @@ describe('preflight reads report the same failure whatever order they finish in 
     expect(error).toMatchObject({ provider: 'neon', code: 'ACCESS_DENIED' });
   });
 
+  // A missing CLI is the first thing to fix, so it outranks a refusal. Catches the two ranks
+  // being swapped, in either completion order.
+  it.each([
+    ['missing CLI first', true],
+    ['refusal first', false],
+  ])('names a missing Fly CLI before a Neon refusal, %s', async (_label, missingFirst) => {
+    const fly: [ReadName, (read: Deferred) => void][] = [
+      ['readFlyOrganizations', fails(new ProviderCommandError('SPAWN'))],
+      ['readFlyRegions', fails(new ProviderCommandError('SPAWN'))],
+      ['readFlyApps', fails(new ProviderCommandError('SPAWN'))],
+    ];
+    const neon: [ReadName, (read: Deferred) => void][] = [
+      ['readNeonOrganizations', ok()],
+      ['readNeonRegionsForKey', ok()],
+      ['readNeonProjects', fails(neonExit(NEON_SCOPE_OUTPUT))],
+    ];
+    const error = await preflightFailure(missingFirst ? [...fly, ...neon] : [...neon, ...fly]);
+    expect(error).toMatchObject({ provider: 'fly', code: 'CLI_NOT_FOUND' });
+  });
+
   it('returns every inventory when every read answers', async () => {
     const outcome = readDefaultCommunityPreflight(options, selection);
-    for (const [name, read] of Object.entries(pending)) read.resolve([name]);
+    for (const [name, read] of Object.entries(pending)) {
+      read.resolve(
+        name === 'readNeonRegionsForKey' ? { regions: [name], savedList: false } : [name]
+      );
+    }
     await expect(outcome).resolves.toEqual({
       flyOrganizations: ['readFlyOrganizations'],
       flyRegions: ['readFlyRegions'],

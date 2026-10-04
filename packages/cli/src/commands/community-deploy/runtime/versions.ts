@@ -67,7 +67,9 @@ export class CommunityProviderPreflightError extends Error {
       code === 'CLI_NOT_FOUND'
         ? `${provider === 'fly' ? 'Fly CLI' : 'Neon CLI'} is required. Install it from ${help.install}`
         : code === 'KEY_KIND_UNSUPPORTED' && access
-          ? `${describeCommunityCredential(provider, access.env)} is a kind of key ${provider === 'fly' ? 'Fly' : 'Neon'} won't take for a read setup needs. Use a personal key or sign in with ${help.command}, then retry. ${help.auth}`
+          ? // Only Neon answers this way (`isProviderKeyKindLimit`). It names the key's kind, not
+            // the organization, so the message names the kinds that work instead.
+            `Neon turned down one of the reads setup needs because of the kind of key ${access.env.NEON_API_KEY ? 'in NEON_API_KEY' : 'your Neon sign-in uses'}. Setup works with an organization key, a personal key, or a ${help.command} sign-in. ${help.auth}`
           : code === 'ACCESS_DENIED' && access
             ? provider === 'fly'
               ? // Fly answers `unauthorized` both for a token without access and for one that has
@@ -112,7 +114,7 @@ function describeCommunityProviderPreflightFailure(
     if (error.refused && access) {
       return new CommunityProviderPreflightError(provider, 'ACCESS_DENIED', access);
     }
-    if (error.keyKindLimited && access) {
+    if (error.keyKindLimited && access && provider === 'neon') {
       return new CommunityProviderPreflightError(provider, 'KEY_KIND_UNSUPPORTED', access);
     }
   }

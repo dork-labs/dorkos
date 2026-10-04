@@ -11,7 +11,8 @@ import {
   readNeonProjects,
   readNeonRegions,
   readNeonRegionsForKey,
-  NEON_PUBLISHED_REGION_IDS,
+  NEON_REGIONS_SNAPSHOT,
+  NEON_REGIONS_SNAPSHOT_DATE,
   readNeonDirectConnection,
   readNeonEndpoints,
   verifyNeonDirectEndpoint,
@@ -76,22 +77,43 @@ cat "$FIXTURE_PATH"
 
     // Neon answers an organization key this way, and setup's other reads accept that key.
     // Catches the key the docs recommend being stopped by the region read.
-    it('uses the list the Neon CLI publishes when Neon says this kind of key may not read it', async () => {
+    it('uses the saved snapshot when Neon says this kind of key may not read the list', async () => {
       const executable = await answering(NEON_ORG_KEY_OUTPUT);
-      const regions = await readNeonRegionsForKey(options(executable));
-      expect(regions.map(({ id }) => id)).toEqual([...NEON_PUBLISHED_REGION_IDS]);
+      const { regions, savedList } = await readNeonRegionsForKey(options(executable));
+      expect(savedList).toBe(true);
+      expect(regions.map(({ id }) => id)).toEqual([...NEON_REGIONS_SNAPSHOT]);
       expect(regions.filter(({ isDefault }) => isDefault).map(({ id }) => id)).toEqual([
+        'aws-us-east-1',
+      ]);
+    });
+
+    // The snapshot goes stale silently: Neon adds regions and nothing here would notice. This
+    // pins what it is and when it was taken, so refreshing it is a deliberate, visible change.
+    it('pins the snapshot to the live read it came from', () => {
+      expect(NEON_REGIONS_SNAPSHOT_DATE).toBe('2026-10-03');
+      expect([...NEON_REGIONS_SNAPSHOT]).toEqual([
+        'aws-us-east-1',
         'aws-us-east-2',
+        'aws-us-west-2',
+        'aws-eu-central-1',
+        'aws-eu-west-2',
+        'aws-ap-southeast-1',
+        'aws-ap-southeast-2',
+        'aws-sa-east-1',
+        'azure-eastus2',
+        'azure-westus3',
+        'azure-gwc',
       ]);
     });
 
     it('reads the live list whenever the key may', async () => {
       const executable = await fakeNeon(`cat "$FIXTURE_PATH"`);
-      const regions = await readNeonRegionsForKey(
+      const { regions, savedList } = await readNeonRegionsForKey(
         options(executable, {
           FIXTURE_PATH: fileURLToPath(new URL('./fixtures/neon/regions.json', import.meta.url)),
         })
       );
+      expect(savedList).toBe(false);
       expect(regions.map(({ id }) => id)).toEqual(['aws-us-east-2', 'aws-fixture-unknown-1']);
     });
 

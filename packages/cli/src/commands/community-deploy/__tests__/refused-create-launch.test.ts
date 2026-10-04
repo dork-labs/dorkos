@@ -309,14 +309,19 @@ describe('a Neon organization key, the kind the docs recommend (DOR-2700)', () =
     });
   });
 
-  // Catches the fallback waving any region through: a region outside the list Neon's CLI
-  // publishes stops before consent and makes nothing.
+  // Catches the fallback waving any region through, and a raw code reaching the person: a
+  // region outside the saved list stops before consent, makes nothing, and says why.
   it('still refuses a region it cannot vouch for, before making anything', async () => {
     const { launch, journals, state } = await harness({ neonKey: 'organization' }, ORG_KEY);
 
     const result = await launch('aws-moon-1');
 
-    expect(result.failure?.message).toContain('NEON_REGION_UNAVAILABLE');
+    expect(result.failure?.message).toBe(
+      "This Neon key can't read Neon's live list of regions, so setup checked aws-moon-1 " +
+        "against a saved list, and it isn't there. Check the region name. If it's a new Neon " +
+        'region, use a personal key or sign in with neonctl auth, so setup can read the live list.'
+    );
+    expect(result.printed).not.toContain('NEON_REGION_UNAVAILABLE');
     expect((await state()).flyApp).toBeNull();
     expect((await state()).neonProject).toBeNull();
     expect(await journals()).toEqual([]);

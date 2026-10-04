@@ -116,8 +116,16 @@ export async function readDefaultCommunityPreflight(
     ),
   ]);
   const [flyOrganizations, flyRegions, flyApps] = flyInventory;
-  const [neonOrganizations, neonRegions, neonProjects] = neonInventory;
-  return { flyOrganizations, flyRegions, flyApps, neonOrganizations, neonRegions, neonProjects };
+  const [neonOrganizations, { regions: neonRegions, savedList }, neonProjects] = neonInventory;
+  return {
+    flyOrganizations,
+    flyRegions,
+    flyApps,
+    neonOrganizations,
+    neonRegions,
+    ...(savedList ? { neonRegionsFromSavedList: true } : {}),
+    neonProjects,
+  };
 }
 
 async function exactFlyApp(
