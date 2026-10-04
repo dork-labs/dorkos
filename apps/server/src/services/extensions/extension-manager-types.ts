@@ -147,6 +147,7 @@ export function toPublic(
     ...(record.sourcePlugin ? { sourcePlugin: record.sourcePlugin } : {}),
     error: record.error,
     serverError: record.serverError,
+    restartingAt: record.restartingAt ?? null,
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,
@@ -155,6 +156,7 @@ export function toPublic(
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
     ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),
     ...(tools ? { tools } : {}),
+    isolation: record.isolation ?? null,
     ...(record.skillChecks ? { skills: record.skillChecks.map((skill) => ({ ...skill })) } : {}),
   };
 }

@@ -25,6 +25,27 @@ export {
 } from './lib/agent-gifts';
 export { ExtensionAgentGifts, type ExtensionAgentGiftsProps } from './ui/ExtensionAgentGifts';
 export {
+  approvedSetOf,
+  extensionPermissionLines,
+  permissionLineText,
+  permissionsAddedSince,
+  permissionViewFromApproval,
+  permissionViewFromRecord,
+  runsAnyProgram,
+  type ExtensionPermissionAdditions,
+  type ExtensionPermissionLine,
+  type ExtensionPermissionPart,
+  type ExtensionPermissionSet,
+  type ExtensionPermissionProgram,
+  type ExtensionPermissionTone,
+  type ExtensionPermissionView,
+} from './lib/permission-lines';
+export { useSeenBeforeStaleStore, useAddedSinceSeen } from './model/seen-before-stale-store';
+export {
+  ExtensionPermissionLines,
+  type ExtensionPermissionLinesProps,
+} from './ui/ExtensionPermissionLines';
+export {
   parseExtensionApprovalSubject,
   canTurnOnInPlace,
   type ExtensionApprovalSubject,

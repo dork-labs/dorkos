@@ -870,6 +870,33 @@ export function seedExtensionsDismissedApprovals(store: {
 }
 
 /**
+ * Migration body: seed `extensions.approvedPermissions: {}` for configs
+ * persisted before an approval recorded the permission set it covers
+ * (DOR-2686).
+ *
+ * Seeds the map empty, and that is not a loss of anything: a missing entry
+ * means the full in-process set, which is exactly what every earlier approval
+ * was given for, so every extension approved before keeps running. Additive
+ * and idempotent: writes only when `approvedPermissions` is not already an
+ * object, and never touches the other `extensions` members. A config with no
+ * `extensions` key is skipped (the schema default supplies the object on
+ * read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedExtensionsApprovedPermissions(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (!ext || typeof ext !== 'object' || Array.isArray(ext)) return;
+  const permissions = (ext as { approvedPermissions?: unknown }).approvedPermissions;
+  if (permissions && typeof permissions === 'object' && !Array.isArray(permissions)) return;
+  store.set('extensions', { ...(ext as Record<string, unknown>), approvedPermissions: {} });
+}
+
+/**
  * Migration body: seed `extensions.trustedSources: []` for configs persisted
  * before a person could trust a code source outright (spec `flow-multiproject`
  * §9.3).
@@ -4748,6 +4775,20 @@ export const CONFIG_MIGRATIONS = {
     // one offer a computer linked before credits were a choice is owed (ADR
     // 261001-000811). See `seedCloudCreditsChoices`.
     seedCloudCreditsChoices(store);
+  },
+  // v0.97.0 is tagged, so 0.98.0 is the next key. Frozen from merge, for the
+  // reason `'0.60.0'` above states; anything further opens `'0.99.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `extensions`, beside `approvedSources`, which `'0.86.0'` writes and this
+  // body preserves.
+  '0.98.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `extensions.approvedPermissions` — the permission set each extension
+    // approval covers (DOR-2686). See `seedExtensionsApprovedPermissions`.
+    seedExtensionsApprovedPermissions(store);
   },
 } as const;
 

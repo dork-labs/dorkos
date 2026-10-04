@@ -29,6 +29,10 @@
       "types": "./src/extension-approval-schemas.ts",
       "default": "./dist/extension-approval-schemas.js"
     },
+    "./extension-server-status": {
+      "types": "./src/extension-server-status.ts",
+      "default": "./dist/extension-server-status.js"
+    },
     "./notification-schemas": {
       "types": "./src/notification-schemas.ts",
       "default": "./dist/notification-schemas.js"

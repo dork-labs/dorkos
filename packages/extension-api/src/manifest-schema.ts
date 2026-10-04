@@ -9,6 +9,8 @@ import {
 import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
 import { validateSlug } from '@dorkos/skills/slug';
 import { EXTENSION_EVENT_DECLARATIONS } from './extension-events.js';
+import { formatNetEntry, isNetEntryError, parseNetEntry } from './net-allowlist.js';
+import { runEntryProblem } from './run-allowlist.js';
 
 /**
  * Declares which host events an extension may subscribe to via
@@ -84,17 +86,174 @@ const DataProxySchema = z.object({
   pathRewrite: z.record(z.string(), z.string()).optional(),
 });
 
-/** Server-side capability declarations for data-provider extensions. */
-const ServerCapabilitiesSchema = z.object({
-  /** Path to the server entry point relative to extension directory. */
-  serverEntry: z.string().default('./server.ts'),
-  /** Allowlisted external hosts this extension will contact. */
-  externalHosts: z.array(z.string().url()).optional(),
-  /** Secrets this extension requires (drives auto-generated settings UI). */
-  secrets: z.array(SecretDeclarationSchema).optional(),
-  /** Non-secret configuration fields (drives auto-generated settings UI). */
-  settings: z.array(SettingDeclarationSchema).optional(),
+/** The refusal for `runtime: "worker"`, which is reserved (DOR-2686, Decision for Dorian 1). */
+export const WORKER_RUNTIME_REFUSAL = 'Use "subprocess": a worker can\'t be given its own limits.';
+
+/** The refusal for `allow` or `limits` on an extension that runs inside DorkOS. */
+export const ALLOW_NEEDS_SUBPROCESS =
+  'allow and limits only apply to an extension that runs separately';
+
+/** The refusal for `externalHosts` on an extension that runs separately. */
+export const EXTERNAL_HOSTS_NEED_ALLOW_NET = 'Use allow.net for an extension that runs separately';
+
+/** The refusal for `runtime: "subprocess"` on an extension with no server code. */
+export const NO_SERVER_CODE_TO_ISOLATE = 'There is no server code to run separately';
+
+/** The most `allow.net` entries a manifest may declare. */
+export const ALLOW_NET_MAX = 64;
+
+/** The most `allow.run` entries a manifest may declare. */
+export const ALLOW_RUN_MAX = 16;
+
+/** The smallest, largest and default heap for an extension that runs separately, in MB. */
+export const ISOLATION_MEMORY_MB = { min: 64, max: 1024, default: 256 } as const;
+
+/**
+ * Where an extension's server half runs (DOR-2686):
+ *
+ * - `in-process` (the default): inside the DorkOS server, with its full access.
+ * - `subprocess`: in its own Node process, limited to what `allow` declares.
+ *
+ * `"worker"` is reserved and refused: a worker thread shares DorkOS's process
+ * and its permissions, so it could not be given limits of its own.
+ */
+const IsolationRuntimeSchema = z.enum(['in-process', 'subprocess'], {
+  error: (issue) => (issue.input === 'worker' ? WORKER_RUNTIME_REFUSAL : undefined),
 });
+
+/**
+ * What an extension that runs separately may reach beyond its own files.
+ * Each list is shown to a person before they approve it, and an approval
+ * covers exactly the lists they saw: adding to one asks again.
+ */
+const ExtensionAllowSchema = z
+  .object({
+    /**
+     * Hosts it may connect to, each `host[:port]`: a lowercase name (a leading
+     * `*.` matches names below it), an IPv4 address, or a bracketed IPv6
+     * address. A local address needs a port. See `net-allowlist.ts`.
+     */
+    net: z
+      .array(z.string())
+      .max(ALLOW_NET_MAX)
+      .default(() => []),
+    /**
+     * Programs it may start, each a bare name found on this computer's `PATH`
+     * (`git`) or an absolute path. No arguments. See `run-allowlist.ts`.
+     */
+    run: z
+      .array(z.string())
+      .max(ALLOW_RUN_MAX)
+      .default(() => []),
+    /** Whether it may message agents and start agent sessions. */
+    agents: z.boolean().default(false),
+  })
+  .strict();
+
+/** Limits for an extension that runs separately. */
+const ExtensionLimitsSchema = z
+  .object({
+    /** Its JavaScript heap, in MB (64 to 1024, default 256). */
+    memoryMb: z
+      .number()
+      .int()
+      .min(ISOLATION_MEMORY_MB.min)
+      .max(ISOLATION_MEMORY_MB.max)
+      .default(ISOLATION_MEMORY_MB.default),
+  })
+  .strict();
+
+/** Server-side capability declarations for data-provider extensions. */
+const ServerCapabilitiesSchema = z
+  .object({
+    /** Path to the server entry point relative to extension directory. */
+    serverEntry: z.string().default('./server.ts'),
+    /**
+     * Where the server half runs. Omitted means `in-process`, inside DorkOS
+     * with its full access. `subprocess` runs it in its own process, limited
+     * to what {@link ExtensionAllowSchema | allow} declares.
+     */
+    runtime: IsolationRuntimeSchema.optional(),
+    /** What an extension that runs separately may reach. Only with `runtime: "subprocess"`. */
+    allow: ExtensionAllowSchema.optional(),
+    /** Limits for an extension that runs separately. Only with `runtime: "subprocess"`. */
+    limits: ExtensionLimitsSchema.optional(),
+    /**
+     * External hosts an in-process extension says it contacts. Informational:
+     * nothing enforces it. An extension that runs separately uses `allow.net`.
+     */
+    externalHosts: z.array(z.string().url()).optional(),
+    /** Secrets this extension requires (drives auto-generated settings UI). */
+    secrets: z.array(SecretDeclarationSchema).optional(),
+    /** Non-secret configuration fields (drives auto-generated settings UI). */
+    settings: z.array(SettingDeclarationSchema).optional(),
+  })
+  .superRefine(checkIsolationDeclarations);
+
+/**
+ * Check the rules for `runtime`, `allow` and `limits`: the lists only with
+ * `subprocess`, every `allow.net` and `allow.run` entry well formed and
+ * listed once, and no `externalHosts` beside `allow.net`.
+ */
+function checkIsolationDeclarations(
+  caps: {
+    runtime?: 'in-process' | 'subprocess';
+    allow?: z.infer<typeof ExtensionAllowSchema>;
+    limits?: z.infer<typeof ExtensionLimitsSchema>;
+    externalHosts?: string[];
+  },
+  ctx: z.RefinementCtx
+): void {
+  const isolated = caps.runtime === 'subprocess';
+  if (!isolated) {
+    if (caps.allow)
+      ctx.addIssue({ code: 'custom', path: ['allow'], message: ALLOW_NEEDS_SUBPROCESS });
+    if (caps.limits) {
+      ctx.addIssue({ code: 'custom', path: ['limits'], message: ALLOW_NEEDS_SUBPROCESS });
+    }
+    return;
+  }
+  if (caps.externalHosts) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['externalHosts'],
+      message: EXTERNAL_HOSTS_NEED_ALLOW_NET,
+    });
+  }
+  const seenNet = new Set<string>();
+  (caps.allow?.net ?? []).forEach((entry, index) => {
+    const parsed = parseNetEntry(entry);
+    if (isNetEntryError(parsed)) {
+      ctx.addIssue({ code: 'custom', path: ['allow', 'net', index], message: parsed.error });
+      return;
+    }
+    const canonical = formatNetEntry(parsed);
+    if (seenNet.has(canonical)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['allow', 'net', index],
+        message: `"${entry}" is listed more than once`,
+      });
+    }
+    seenNet.add(canonical);
+  });
+  const seenRun = new Set<string>();
+  (caps.allow?.run ?? []).forEach((entry, index) => {
+    const problem = runEntryProblem(entry);
+    if (problem) {
+      ctx.addIssue({ code: 'custom', path: ['allow', 'run', index], message: problem });
+      return;
+    }
+    if (seenRun.has(entry)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['allow', 'run', index],
+        message: `"${entry}" is listed more than once`,
+      });
+    }
+    seenRun.add(entry);
+  });
+}
 
 /**
  * One forward-only schema migration for an extension's database.
@@ -340,3 +499,9 @@ export type ExtensionCapabilities = z.infer<typeof ExtensionCapabilitiesSchema>;
 export type StorageMigration = z.infer<typeof StorageMigrationSchema>;
 export type StorageDeclaration = z.infer<typeof StorageDeclarationSchema>;
 export type ExtensionToolDeclaration = z.infer<typeof ExtensionToolDeclarationSchema>;
+/** Where an extension's server half runs. */
+export type IsolationRuntime = z.infer<typeof IsolationRuntimeSchema>;
+/** What an extension that runs separately may reach, defaults filled. */
+export type ExtensionAllow = z.infer<typeof ExtensionAllowSchema>;
+/** Limits for an extension that runs separately, defaults filled. */
+export type ExtensionLimits = z.infer<typeof ExtensionLimitsSchema>;

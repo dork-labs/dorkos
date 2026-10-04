@@ -6981,6 +6981,21 @@
       ]
     },
     {
+      "id": "261004-192123",
+      "slug": "per-tab-navigation-history-in-the-client",
+      "title": "Keep navigation history per desktop tab, in the client tab store",
+      "status": "draft",
+      "created": "2026-10-04",
+      "extractedFrom": "desktop-tab-history",
+      "specSlug": "desktop-tab-history",
+      "supersedes": null,
+      "affects": [
+        "apps/client/src/layers/shared/model/app-tabs/",
+        "apps/client/src/layers/features/app-tabs/",
+        "apps/client/src/AppShell.tsx"
+      ]
+    },
+    {
       "id": "261004-200411",
       "slug": "link-matching-account-on-trusted-verified-sign-in",
       "title": "Link a matching Community account on a trusted, verified sign-in, or with its password",
@@ -6991,8 +7006,7 @@
       "supersedes": null,
       "affects": [
         "apps/community/src/auth.ts",
-        "apps/community/src/sign-in-link.ts",
-        "apps/community/src/account-access.ts",
+        "apps/community/src/sign-in/",
         "apps/community/src/recover-password.ts",
         "apps/community/src/browser/sign-up/"
       ]

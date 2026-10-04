@@ -542,6 +542,12 @@ DorkOS records only your **deviations** from each extension's default state, acr
       type: 'object',
       default: '{}',
     },
+    'extensions.approvedPermissions': {
+      description:
+        'What each extension you allowed may reach, as it asked when you said yes. If a later version asks for more, it waits for you again. Only you can change it.',
+      type: 'object',
+      default: '{}',
+    },
     'extensions.dismissedApprovals': {
       description:
         'Extensions you said "Not now" to in the Activity inbox, with the folder and version you declined. The inbox asks again when either changes. Only you can change it.',

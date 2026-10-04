@@ -490,3 +490,125 @@ describe('PermissionPreviewSection', () => {
     expect(screen.queryByText('Dependencies')).not.toBeInTheDocument();
   });
 });
+
+describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)', () => {
+  afterEach(cleanup);
+
+  const REACH = 'What its extensions can reach';
+
+  // Purpose: an isolated extension shows the same lines its approval card
+  // will, open by default, with its hosts in full.
+  it('lists what an isolated extension can reach', () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          extensions: [
+            {
+              id: 'mail',
+              slots: [],
+              isolation: {
+                runtime: 'subprocess',
+                net: ['imap.fastmail.com'],
+                run: ['git'],
+                agents: true,
+              },
+            },
+          ],
+          externalHosts: ['imap.fastmail.com'],
+        })}
+      />
+    );
+    expect(isOpen(REACH)).toBe(true);
+    const lines = screen.getByTestId('preview-extension-reach-mail');
+    expect(lines).toHaveTextContent('Its server part can’t run in this version yet.');
+    expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+    expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com');
+    expect(lines).toHaveTextContent('Can run: git');
+    expect(lines).toHaveTextContent('Can message your agents and start chats.');
+    // Nobody has looked for programs before install, so none is called missing.
+    expect(lines).not.toHaveTextContent('isn’t on this computer');
+  });
+
+  // Purpose: an in-process extension states full access; its declared hosts
+  // stay in the existing External hosts group.
+  it('states full access for an in-process extension and keeps its host list', async () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          extensions: [
+            {
+              id: 'plain',
+              slots: [],
+              isolation: { runtime: 'in-process', net: [], run: [], agents: false },
+            },
+          ],
+          externalHosts: ['api.example.com'],
+        })}
+      />
+    );
+    expect(screen.getByTestId('preview-extension-reach-plain')).toHaveTextContent(
+      'Runs inside DorkOS with full access to this computer.'
+    );
+    await openSection('External hosts');
+    expect(screen.getByText('api.example.com')).toBeInTheDocument();
+  });
+
+  // Purpose: a package with both kinds shows one entry each, counted.
+  it('shows each extension of a package with both kinds', () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          extensions: [
+            {
+              id: 'plain',
+              slots: [],
+              isolation: { runtime: 'in-process', net: [], run: [], agents: false },
+            },
+            {
+              id: 'mail',
+              slots: [],
+              isolation: { runtime: 'subprocess', net: [], run: [], agents: false },
+            },
+          ],
+        })}
+      />
+    );
+    expect(sectionTrigger(REACH)).toHaveTextContent('2');
+    expect(screen.getByTestId('preview-extension-reach-plain')).toHaveTextContent(
+      'Runs inside DorkOS'
+    );
+    expect(screen.getByTestId('preview-extension-reach-mail')).toHaveTextContent(
+      'Can’t connect to the internet.'
+    );
+  });
+
+  // Purpose: an extension with only screens is never described as having
+  // full access to the computer.
+  it('says screens only for an extension with no server half', () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          extensions: [
+            {
+              id: 'panel',
+              slots: [],
+              isolation: { runtime: 'in-process', net: [], run: [], agents: false },
+              hasServer: false,
+            },
+          ],
+        })}
+      />
+    );
+    const lines = screen.getByTestId('preview-extension-reach-panel');
+    expect(lines).toHaveTextContent('Its screens run in DorkOS with your access.');
+    expect(lines).not.toHaveTextContent('full access');
+  });
+
+  // Purpose: an older server sends no isolation; the section is left out.
+  it('leaves the section out when the server says nothing about where they run', () => {
+    render(
+      <PermissionPreviewSection preview={makePreview({ extensions: [{ id: 'old', slots: [] }] })} />
+    );
+    expect(screen.queryByText(REACH)).not.toBeInTheDocument();
+  });
+});

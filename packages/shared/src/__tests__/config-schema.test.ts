@@ -169,6 +169,7 @@ describe('UserConfigSchema', () => {
         disabled: [],
         approvedToRun: [],
         approvedSources: {},
+        approvedPermissions: {},
         dismissedApprovals: {},
         trustedSources: [],
       },
@@ -558,6 +559,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         disabled: [],
         approvedToRun: [],
         approvedSources: {},
+        approvedPermissions: {},
         dismissedApprovals: {},
         trustedSources: [],
       },
@@ -1935,6 +1937,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: [],
       approvedToRun: [],
       approvedSources: {},
+      approvedPermissions: {},
       dismissedApprovals: {},
       trustedSources: [],
     });
@@ -1950,6 +1953,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: [],
       approvedToRun: [],
       approvedSources: {},
+      approvedPermissions: {},
       dismissedApprovals: {},
       trustedSources: [],
     });
@@ -1965,6 +1969,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: ['marketplace'],
       approvedToRun: [],
       approvedSources: {},
+      approvedPermissions: {},
       dismissedApprovals: {},
       trustedSources: [],
     });
@@ -1980,6 +1985,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: ['marketplace'],
       approvedToRun: [],
       approvedSources: {},
+      approvedPermissions: {},
       dismissedApprovals: {},
       trustedSources: [],
     });
@@ -2015,6 +2021,7 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       disabled: [],
       approvedToRun: ['my-ext'],
       approvedSources: {},
+      approvedPermissions: {},
       dismissedApprovals: {},
       trustedSources: [],
     });

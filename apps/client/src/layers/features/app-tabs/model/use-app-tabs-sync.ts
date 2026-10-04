@@ -14,7 +14,9 @@
  * pathname teleports you into that tab, and opening a tab on an agent another
  * tab already shows strands the new one. The router's own history reports the
  * action type, so this reads it from the source rather than inferring it from
- * hrefs.
+ * hrefs. The same subscriber also reports a `REPLACE` — a loader redirect, a
+ * search-param update — so the active tab rewrites its current history entry
+ * instead of adding one (DOR-2107).
  *
  * **Desktop shell only** (DOR-568). Tabs are a desktop feature — a browser
  * already has tabs — so outside the shell there is no tab set to reconcile and
@@ -42,6 +44,12 @@ export function useAppTabsSync(): void {
   // notification, so a traversal that lands on the href we are already on
   // cannot leave a stale `true` for the next push to trip over.
   const traversed = useRef(false);
+  // Same lifecycle as `traversed`, for a location that took the current one's
+  // place in history rather than adding an entry after it.
+  // Starts `true`: a location that differs from the active tab before any
+  // notification has arrived is a loader redirect on first paint, landed before
+  // this hook subscribed — the same page, not a new one.
+  const replaced = useRef(true);
 
   useEffect(() => {
     if (!isDesktopShell()) return;
@@ -54,15 +62,18 @@ export function useAppTabsSync(): void {
       // old location. Only PUSH and REPLACE create a new entry; everything
       // else, present or future, moved through history.
       traversed.current = action.type !== 'PUSH' && action.type !== 'REPLACE';
+      replaced.current = action.type === 'REPLACE';
     });
   }, [router]);
 
   useEffect(() => {
     if (!isDesktopShell()) return;
     const traversal = traversed.current;
+    const replace = replaced.current;
     traversed.current = false;
+    replaced.current = false;
     // Read imperatively: this hook only writes, so subscribing to the store
     // would re-render the shell on every tab change for nothing.
-    useAppTabsStore.getState().syncLocation(href, { traversal });
+    useAppTabsStore.getState().syncLocation(href, { traversal, replace });
   }, [href]);
 }

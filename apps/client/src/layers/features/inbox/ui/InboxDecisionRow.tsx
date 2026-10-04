@@ -81,6 +81,12 @@ export interface InboxDecisionRowProps {
    * short fact about what is asked ("Would give agents 3 tools and 1 skill").
    */
   meta?: string;
+  /**
+   * Lines read before the answer, drawn under `meta`: what an extension can
+   * reach ("Runs separately from DorkOS.", "Can connect to: …"). Kept on the
+   * row, never behind ⓘ, because a yes has to be given to what it lists.
+   */
+  details?: ReactNode;
   /** A line that needs the reader: "The agent couldn't go ahead. It needs you." */
   notice?: string;
   /**
@@ -296,6 +302,7 @@ export function InboxDecisionRow({
   why,
   sourceLine,
   meta,
+  details,
   notice,
   trail,
   more,
@@ -404,6 +411,7 @@ export function InboxDecisionRow({
             </p>
           )}
           {meta && <p className="text-muted-foreground mt-0.5 text-[11px]">{meta}</p>}
+          {details && <div className="mt-1">{details}</div>}
           {watchLine && <p className="mt-0.5 text-[11px]">{watchLine}</p>}
           {sourceLine && (
             <p className="text-muted-foreground mt-0.5 truncate font-mono text-[11px]">

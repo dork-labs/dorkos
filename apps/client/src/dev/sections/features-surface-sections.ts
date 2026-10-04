@@ -84,6 +84,22 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['inbox', 'notification', 'row', 'unread', 'read', 'activity', 'history'],
   },
   {
+    id: 'extension-permission-lines',
+    title: 'Extension permission lines',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: [
+      'extension',
+      'permission',
+      'isolation',
+      'runs separately',
+      'connect',
+      'hosts',
+      'approval',
+      're-ask',
+    ],
+  },
+  {
     id: 'inbox-decision-row',
     title: 'Inbox decision row',
     page: 'home-inbox',

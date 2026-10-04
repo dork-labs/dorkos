@@ -1,23 +1,16 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { MessageSquare, X } from 'lucide-react';
-import { cn, getAgentDisplayName } from '@/layers/shared/lib';
-import { useExtensionPageAtPath, type AppTab } from '@/layers/shared/model';
+import { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
+import { cn } from '@/layers/shared/lib';
+import type { AppTab } from '@/layers/shared/model';
 import {
-  ContributedIcon,
   statusDotClass,
   type RovingTabProps,
   type StatusSignal,
   type TabActivationSource,
 } from '@/layers/shared/ui';
-import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
-import { roomDisplayTitle, useRoom } from '@/layers/entities/room';
-import {
-  communityAccessState,
-  useCommunityConnections,
-  useRemoteCommunityRoom,
-} from '@/layers/entities/community';
 import { useSessionBorderState, type SessionBorderKind } from '@/layers/entities/session';
-import { extensionPageTab, fallbackTabLabel, parseTabHref, ROUTE_ICONS } from '../lib/tab-target';
+import { useTabTarget } from '../model/use-tab-target';
+import { TabTargetIcon } from './TabTargetIcon';
 
 /** DOM id of the routed content region the active tab controls. */
 export const APP_TAB_PANEL_ID = 'app-tab-panel';
@@ -54,55 +47,20 @@ interface AppTabItemProps {
 /**
  * One tab in the window's tab strip.
  *
- * Derives everything it shows from the tab's href: the route's name, or — for a
- * chat tab — the agent that lives in that project, with its emoji and a live
- * status dot, or — for a channel tab — the room it has open, read as it is
- * spoken (`#general`, or a DM's title). The dot reads {@link useSessionBorderState},
+ * Derives everything it shows from the tab's href through {@link useTabTarget}:
+ * the route's name, or — for a chat tab — the agent that lives in that project,
+ * with its emoji and a live status dot, or — for a channel tab — the room it
+ * has open, read as it is spoken (`#general`, or a DM's title). The History
+ * menu names pages through the same hook. The dot reads {@link useSessionBorderState},
  * which merges the global session-list stream in, so a tab in the background
  * still lights up when its agent starts working or needs an answer, even though
  * only the active tab holds a session stream.
- *
- * Both the agent and the room queries share their cache entry with the rest of
- * the app ({@link useCurrentAgent}, {@link useRoom}), so a rename anywhere else
- * — the team page, the channel bar — updates this label too, and a tab reads
- * its route's own name until that data resolves rather than flashing a wrong
- * one.
  */
 export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTabItemProps) {
-  const target = useMemo(() => parseTabHref(tab.href), [tab.href]);
+  const view = useTabTarget(tab.href);
+  const { target, label } = view;
   const isSession = target.pathname === '/session';
-  const isChannel = target.pathname === '/channels';
-
-  const { data: agent } = useCurrentAgent(isSession ? target.dir : null);
-  const visual = useAgentVisual(agent ?? null, target.dir ?? '');
   const status = useSessionBorderState(target.sessionId ?? '');
-  // A community channel's id is that community's, not a local room's: asking
-  // the local rooms route for it answers 404 and names the tab "Channels".
-  const community = isChannel ? target.community : null;
-  const { data: localRoom } = useRoom(isChannel && !community ? target.roomId : null);
-  // Read under the connection's verified access, exactly as the channel bar
-  // does: the tab shares its cache entry, and a revoked community's title
-  // clears instead of lingering on a tab.
-  const connections = useCommunityConnections(community !== null);
-  const access = communityAccessState(
-    connections.data?.find((item) => item.ref === community)?.access
-  );
-  const { data: communityRoom } = useRemoteCommunityRoom(
-    community ?? '',
-    target.roomId ?? '',
-    community !== null && target.roomId !== null && access.capabilities.read,
-    access.fingerprint
-  );
-  const room = community ? communityRoom : localRoom;
-  // An extension page names itself (spec `flow-multiproject` §6.5).
-  const extensionTab = extensionPageTab(useExtensionPageAtPath(target.pathname));
-
-  const label = agent
-    ? getAgentDisplayName(agent)
-    : room
-      ? roomDisplayTitle(room)
-      : (extensionTab?.label ?? fallbackTabLabel(target));
-  const Icon = ROUTE_ICONS[target.pathname] ?? MessageSquare;
   const signal = isSession ? DOT_SIGNAL[status.kind] : undefined;
 
   // Keep the tab you switched to on screen once the strip overflows. Arrow-key
@@ -135,16 +93,7 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
             : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
         )}
       >
-        {agent ? (
-          <span aria-hidden="true" className="shrink-0 text-sm leading-none">
-            {visual.emoji}
-          </span>
-        ) : extensionTab ? (
-          // An extension's icon, guarded: a bad one costs the glyph, not the strip.
-          <ContributedIcon icon={extensionTab.icon} className="size-3.5 shrink-0" />
-        ) : (
-          <Icon className="size-3.5 shrink-0" />
-        )}
+        <TabTargetIcon view={view} />
         <span className="truncate font-medium">{label}</span>
         {signal && (
           <>

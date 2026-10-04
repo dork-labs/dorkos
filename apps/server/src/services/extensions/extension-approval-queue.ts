@@ -48,10 +48,13 @@
  *
  * @module services/extensions/extension-approval-queue
  */
+import fs from 'fs/promises';
 import path from 'path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
   extensionApprovalSubjectId,
+  type ExtensionApprovalAdditions,
+  type ExtensionApprovalPermissions,
   type PendingExtensionApproval,
 } from '@dorkos/shared/extension-approval-schemas';
 import { configManager } from '../core/config-manager.js';
@@ -69,10 +72,13 @@ import { broadcastStandingResolved, raiseStanding } from '../notifications/stand
 import type { ExtensionManager } from './extension-manager.js';
 import type { ExtensionsConfig } from './extension-enable-resolution.js';
 import {
+  isApprovedCopy,
   isDismissedCopy,
   mayRunExtensionCode,
   type ExtensionApprovals,
 } from './extension-load-policy.js';
+import { addedSince, declaredSet } from './isolation/permission-coverage.js';
+import { PROGRAM_NOT_FOUND } from './isolation/resolve-program.js';
 
 /** The longest the second line of an approval row may be. */
 export const APPROVAL_WHY_MAX_LENGTH = 300;
@@ -101,7 +107,8 @@ export type ApprovalQueueSource = Pick<ExtensionManager, 'listRecords' | 'onChan
  */
 interface ApprovalFacts extends PendingExtensionApproval {
   path: string;
-  added: string | null;
+  /** What it added, past tense, for the history row's `added` field. */
+  addedNouns: string | null;
 }
 
 /**
@@ -357,9 +364,11 @@ async function describeCopy(record: ExtensionRecord, dorkHome: string): Promise<
     sourceLabel: sourceLabelOf(record, provenance),
     runsInServer: record.hasServerEntry || record.hasDataProxy,
     adds: nouns.length > 0 ? `It adds ${joinPlainly(nouns.map((noun) => `a ${noun}`))}` : null,
-    added: nouns.length > 0 ? `${joinPlainly(nouns)} added` : null,
+    addedNouns: nouns.length > 0 ? `${joinPlainly(nouns)} added` : null,
     since,
     why: whyLine(record, name, nouns, provenance),
+    permissions: await permissionsOf(record),
+    added: addedSinceApproval(record, configManager.get('extensions')),
     ...agentGiftsOf(record),
   };
 }
@@ -387,6 +396,67 @@ function agentGiftsOf(
       ...(skill.status === 'dropped' && skill.reason ? { droppedReason: skill.reason } : {}),
     })),
   };
+}
+
+/**
+ * Where a copy runs and what it may reach, for the card (DOR-2686). Read
+ * from discovery's isolation view and the copy's own folder.
+ *
+ * @param record - The extension record.
+ */
+async function permissionsOf(record: ExtensionRecord): Promise<ExtensionApprovalPermissions> {
+  const hasPage = await hasClientEntry(record.runPath ?? record.path);
+  const isolation = record.isolation;
+  if (!isolation) return { runtime: 'in-process', net: [], run: [], agents: false, hasPage };
+  return {
+    runtime: 'subprocess',
+    net: [...isolation.net],
+    run: isolation.resolvedRun.map((program) => ({
+      name: program.name,
+      found: program.path !== null,
+      // A program that is merely missing says so through `found`; one DorkOS
+      // found and refused carries why, so the card never lists it as runnable.
+      ...(program.path === null && program.reason && program.reason !== PROGRAM_NOT_FOUND
+        ? { refusedReason: program.reason }
+        : {}),
+    })),
+    agents: isolation.agents,
+    hasPage,
+  };
+}
+
+/**
+ * Whether a copy has a client bundle to compile: the entry the compiler
+ * looks for, `index.js` or `index.ts`.
+ *
+ * @param dir - The folder it runs from.
+ */
+async function hasClientEntry(dir: string): Promise<boolean> {
+  for (const name of ['index.js', 'index.ts']) {
+    try {
+      await fs.access(path.join(dir, name));
+      return true;
+    } catch {
+      // Try the next one.
+    }
+  }
+  return false;
+}
+
+/**
+ * What a copy asks for that its approval does not cover: only for a copy the
+ * person already approved (it waits because it widened), never on a first
+ * ask, where there is nothing to compare against (DOR-2686).
+ *
+ * @param record - The extension record.
+ * @param extensions - `config.extensions`.
+ */
+function addedSinceApproval(
+  record: ExtensionRecord,
+  extensions: ExtensionApprovals
+): ExtensionApprovalAdditions | null {
+  if (!isApprovedCopy(record, extensions)) return null;
+  return addedSince(declaredSet(record.manifest), extensions.approvedPermissions?.[record.id]);
 }
 
 /** Oldest first, then by id, so the order is stable. */
@@ -439,7 +509,7 @@ export async function listPendingExtensionApprovals(
   options: { forPerson: boolean } = { forPerson: true }
 ): Promise<PendingExtensionApproval[]> {
   const { pending } = await readCopies(source);
-  return pending.map(({ added: _added, path: copyPath, ...approval }) =>
+  return pending.map(({ addedNouns: _addedNouns, path: copyPath, ...approval }) =>
     options.forPerson
       ? { ...approval, path: copyPath }
       : {
@@ -469,7 +539,7 @@ function payloadOf(
     why: facts.why,
     runsInServer: facts.runsInServer,
     adds: facts.adds,
-    added: facts.added,
+    added: facts.addedNouns,
     ...(answer ? { answer } : {}),
   };
 }

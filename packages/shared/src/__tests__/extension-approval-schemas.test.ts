@@ -29,6 +29,15 @@ describe('PendingExtensionApprovalsResponseSchema', () => {
     expect(parsed.approvals[0]).toMatchObject({ id: 'flow', agentTools: [], agentSkills: [] });
   });
 
+  it('reads a row from a server that sends no permissions as unknown, not an error (DOR-2686)', () => {
+    // Purpose: `permissions` and `added` are new; a missing one must not throw
+    // and empty the inbox. It reads as null: nothing known, nothing added.
+    const parsed = PendingExtensionApprovalsResponseSchema.parse({
+      approvals: [OLDER_SERVER_ROW],
+    });
+    expect(parsed.approvals[0]).toMatchObject({ permissions: null, added: null });
+  });
+
   it('keeps what a current server sends', () => {
     const parsed = PendingExtensionApprovalsResponseSchema.parse({
       approvals: [

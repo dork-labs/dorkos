@@ -28,11 +28,11 @@
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { renderHook, render, cleanup } from '@testing-library/react';
-import { SHORTCUTS, getShortcutsGrouped, type ShortcutDef } from '@/layers/shared/lib';
+import { SHORTCUTS, getShortcutsGrouped, isMac, type ShortcutDef } from '@/layers/shared/lib';
 import { useRightPanelShortcut } from '@/layers/features/right-panel';
 import { useProfileShortcut } from '@/layers/features/profile';
 import { useAskShortcut } from '@/layers/features/ask';
-import { useAppTabShortcuts } from '@/layers/features/app-tabs';
+import { useAppTabShortcuts, useTabHistoryShortcuts } from '@/layers/features/app-tabs';
 import { useSessionPopoverShortcut } from '@/layers/features/status';
 import {
   useNewSessionShortcut,
@@ -149,6 +149,25 @@ const PROVED: Record<string, Prover> = {
   'next-tab': () => {
     renderHook(() => useAppTabShortcuts());
     return press({ key: '}', code: 'BracketRight', metaKey: true, shiftKey: true });
+  },
+  // The active tab's own Back/Forward (DOR-2107). `mod` is Cmd on a Mac and
+  // Ctrl elsewhere, and this hook takes only the platform's own modifier, so
+  // the chord is pressed with whichever one this runner's platform means.
+  'history-back': () => {
+    renderHook(() => useTabHistoryShortcuts());
+    return press({
+      key: '[',
+      code: 'BracketLeft',
+      ...(isMac ? { metaKey: true } : { ctrlKey: true }),
+    });
+  },
+  'history-forward': () => {
+    renderHook(() => useTabHistoryShortcuts());
+    return press({
+      key: ']',
+      code: 'BracketRight',
+      ...(isMac ? { metaKey: true } : { ctrlKey: true }),
+    });
   },
 };
 

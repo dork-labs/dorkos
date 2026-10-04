@@ -83,7 +83,7 @@ account: {
 
 With `trustedProviders: []`, Better Auth still refuses any implicit link whose identity's email is not verified (`account_not_linked`), before our hook runs. Every implicit link it would make now passes through **one gate**: `databaseHooks.account.create.before`.
 
-**The gate** (new `src/sign-in-link.ts`, called from `account.create.before`). For an account row being created, decide in this order:
+**The gate** (`src/sign-in/link-gate.ts`, called from `account.create.before`). For an account row being created, decide in this order:
 
 1. `providerId === 'credential'` → allow (password sign-up, set-password, recovery).
 2. The request is creating a user (sign-up) → allow, after the existing named-claim subject check. Marked in `user.create.before` with a `WeakSet<ctx>`, like `namedSubjects`: Better Auth writes the user and its account row in one transaction and defers every `create.after` hook until it commits, so an `after` hook would be too late (review finding 1).
@@ -99,7 +99,7 @@ With `trustedProviders: []`, Better Auth still refuses any implicit link whose i
 
 Ordering is fail-safe: the clean-out commits before the link row is inserted. If the insert then fails, the old password is gone but the identity is not linked: the person is locked out of a squatted account, never the reverse.
 
-**Shared clean-out** (`src/account-access.ts`, extracted from `recover-password.ts`; `recoverPassword` calls it so the two can never drift): under row locks, for one user id, in the caller's transaction:
+**Shared clean-out** (`src/sign-in/account-access.ts`, extracted from `recover-password.ts`; `recoverPassword` calls it so the two can never drift): under row locks, for one user id, in the caller's transaction:
 
 - delete every `account` row except the one being kept (`credential` in recovery; none in the link, so the password row goes too);
 - delete every session;

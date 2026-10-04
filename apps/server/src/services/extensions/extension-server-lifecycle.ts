@@ -29,6 +29,8 @@ import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import { RunningExtensionTools } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
+import { isolationKeyOf, waitsForIsolation } from './isolation/isolation-view.js';
+import { extensionServerErrorCopy } from '@dorkos/shared/extension-server-status';
 
 const require = createRequire(import.meta.url);
 
@@ -69,9 +71,17 @@ function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null
     serverEntryPath: record.serverEntryPath ?? null,
     dataProxy: record.manifest.dataProxy ?? null,
     declarations: extensionDeclarationDigest(record.manifest),
+    isolation: isolationKeyOf(record),
     serverSourceHash,
   });
 }
+
+/**
+ * The code a `runtime: "subprocess"` extension is refused with until DorkOS
+ * can run it in its own process (DOR-2686 phase 1; the phase that starts
+ * isolated extensions deletes this and its one use).
+ */
+export const ISOLATION_NOT_READY = 'isolation_not_ready';
 
 /**
  * How long an extension's server `register()` may take to finish.
@@ -264,6 +274,20 @@ export class ExtensionServerLifecycle {
           `(${EXTENSION_NOT_APPROVED_CODE})`
       );
       return { ok: false, error: describeExtensionLoadRefusal(id) };
+    }
+
+    // An extension that asks to run separately does not run at all until
+    // DorkOS can start it in its own process with its limits confirmed
+    // (DOR-2686, D7). Never in-process instead: its card promises limits that
+    // nothing here would keep. Anything still running for this id (a version
+    // that ran inside DorkOS before its manifest moved) is stopped, so the
+    // old in-process code cannot keep serving under the new promise.
+    if (waitsForIsolation(record.manifest)) {
+      await this.stop(id);
+      const message = extensionServerErrorCopy(ISOLATION_NOT_READY, record.manifest.name)!;
+      record.serverError = { code: ISOLATION_NOT_READY, message };
+      logger.info(`[Extensions] Server init refused for ${id}: ${ISOLATION_NOT_READY}`);
+      return { ok: false, error: message };
     }
 
     // Proxy-only (dataProxy without server.ts) — no compilation needed
