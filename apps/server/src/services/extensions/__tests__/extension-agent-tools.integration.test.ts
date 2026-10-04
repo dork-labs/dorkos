@@ -276,6 +276,70 @@ describe('extension agent tools through the real lifecycle', () => {
     expect(registry.get('ext_agent_tools_ext.echo')?.title).toBe('Echo it back');
   }, 30_000);
 
+  /** A server.ts that counts starts and stops, and waits on a gate the test opens. */
+  const COUNTING_SERVER = `export default async function register(_r, ctx) {
+    const g = globalThis;
+    g.__dor2685_starts = (g.__dor2685_starts ?? 0) + 1;
+    ctx.tools.handle('echo', (i) => i);
+    ctx.tools.handle('bump_counter', () => 1);
+    ctx.tools.handle('delete_note', () => 1);
+    if (g.__dor2685_gate) await g.__dor2685_gate;
+    return () => { g.__dor2685_stops = (g.__dor2685_stops ?? 0) + 1; };
+  }`;
+
+  /** Reset the counting server's globals, with a gate the test opens. */
+  function countingGlobals(): { g: Record<string, unknown>; open: () => void } {
+    const g = globalThis as Record<string, unknown>;
+    let open: () => void = () => undefined;
+    g.__dor2685_gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    g.__dor2685_starts = 0;
+    g.__dor2685_stops = 0;
+    return { g, open };
+  }
+
+  it('leaves no live instance or tools after two overlapping starts and a stop', async () => {
+    // Purpose: every tab asks for a start on load. Two at once must not leave
+    // a first instance nobody can stop, with its tools still callable.
+    await install(COUNTING_SERVER);
+    const { g, open } = countingGlobals();
+    manager = new ExtensionManager(dorkHome, []);
+    manager.attachAgentTools({ registry, forgetToolPermissions: forget });
+    const booting = manager.initialize(null);
+    await vi.waitFor(() => expect(g.__dor2685_starts).toBe(1), { timeout: 20_000 });
+    const a = manager.initializeServer(ID);
+    const b = manager.initializeServer(ID);
+    open();
+    await Promise.all([booting, a, b]);
+    await manager.shutdownServer(ID);
+    expect(registered()).toEqual([]);
+    expect(g.__dor2685_stops).toBe(g.__dor2685_starts);
+    delete g.__dor2685_gate;
+  }, 30_000);
+
+  it('leaves no tools when the extension is turned off while register() runs', async () => {
+    // Purpose: a turn-off that lands mid-start wins; the instance that was
+    // starting is released and never offers its tools.
+    await install(COUNTING_SERVER);
+    const { g, open } = countingGlobals();
+    manager = new ExtensionManager(dorkHome, []);
+    manager.attachAgentTools({ registry, forgetToolPermissions: forget });
+    const booting = manager.initialize(null);
+    await vi.waitFor(() => expect(g.__dor2685_starts).toBe(1), { timeout: 20_000 });
+    const changes: number[] = [];
+    registry.onChange((v) => changes.push(v));
+    const disabling = manager.disable(ID);
+    open();
+    await Promise.all([booting, disabling]);
+    expect(registered()).toEqual([]);
+    // Never offered at all, not offered and then taken back.
+    expect(changes).toEqual([]);
+    expect(manager.getServerRouter(ID)).toBeNull();
+    expect(g.__dor2685_stops).toBe(g.__dor2685_starts);
+    delete g.__dor2685_gate;
+  }, 30_000);
+
   it('clears the extension’s tool permission settings on uninstall only', async () => {
     // Purpose: a standing Allowed must not carry over to whatever is installed
     // under the same id next.

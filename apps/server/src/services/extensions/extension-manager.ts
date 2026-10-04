@@ -845,7 +845,11 @@ export class ExtensionManager {
       return null;
     }
 
-    await this.serverLifecycle.shutdown(id);
+    // Marked off BEFORE the stop: a start already under way checks this
+    // record again before it stores its instance, so it leaves nothing
+    // running, and the stop queued behind it releases anything it did start
+    // (DOR-2685 review).
+    record.status = 'disabled';
 
     // Route through the deviation-list resolver so the correct list is mutated.
     const before = configManager.get('extensions');
@@ -853,7 +857,8 @@ export class ExtensionManager {
     configManager.set('extensions', next);
     logConfigWrite('the extensions manager', 'extensions', before, configManager.get('extensions'));
 
-    record.status = 'disabled';
+    await this.serverLifecycle.shutdown(id);
+
     record.bundleReady = false;
     record.error = undefined;
 

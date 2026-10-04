@@ -118,6 +118,45 @@ export class ExtensionServerLifecycle {
   ) {}
 
   /**
+   * The tail of each extension's start/stop queue. `initialize` and
+   * `shutdown` for one id run one at a time, in the order they were asked
+   * for (DOR-2685 review). Without it, two starts racing (every tab asks for
+   * one on load) could each store an instance, the first never stopped and
+   * its tools left callable; and a stop arriving while `register()` ran found
+   * nothing to stop, so the instance stored after it lived on.
+   */
+  private readonly queues = new Map<string, Promise<unknown>>();
+
+  /** Run `job` after every start or stop of `id` asked for before it. */
+  private exclusive<T>(id: string, job: () => Promise<T>): Promise<T> {
+    const previous = this.queues.get(id) ?? Promise.resolve();
+    const next = previous.then(job, job);
+    const tail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    this.queues.set(id, tail);
+    void tail.then(() => {
+      if (this.queues.get(id) === tail) this.queues.delete(id);
+    });
+    return next;
+  }
+
+  /**
+   * Whether `record` may still start right now: its status still says on
+   * (`disable` marks it off before it stops anything), and it is still
+   * approved to run. Asked again after every wait inside a start, so a
+   * turn-off or a revoke that lands while `register()` runs leaves nothing
+   * running.
+   */
+  private stillWanted(record: ExtensionRecord): boolean {
+    return (
+      ['enabled', 'compiled', 'active'].includes(record.status) &&
+      mayRunExtensionCode(record, configManager.get('extensions'))
+    );
+  }
+
+  /**
    * Give the lifecycle the live capability registry, so running extensions'
    * tools reach agents (DOR-2685). Boot starts extensions before the registry
    * is composed, so every instance already running hands its tools over now;
@@ -199,7 +238,15 @@ export class ExtensionServerLifecycle {
    * @param record - The extension's discovery record
    * @returns Result with ok flag and optional error message
    */
-  async initialize(id: string, record: ExtensionRecord): Promise<{ ok: boolean; error?: string }> {
+  initialize(id: string, record: ExtensionRecord): Promise<{ ok: boolean; error?: string }> {
+    return this.exclusive(id, () => this.start(id, record));
+  }
+
+  /** The body of {@link initialize}, run inside the id's queue. */
+  private async start(
+    id: string,
+    record: ExtensionRecord
+  ): Promise<{ ok: boolean; error?: string }> {
     const active = this.serverExtensions.get(id);
     const hasServerCapability = record.hasServerEntry || record.hasDataProxy;
     if (!hasServerCapability || !['enabled', 'compiled', 'active'].includes(record.status)) {
@@ -227,7 +274,7 @@ export class ExtensionServerLifecycle {
         return { ok: true };
       }
 
-      await this.shutdown(id);
+      await this.stop(id);
       const proxyRouter = createProxyRouter(id, record.manifest.dataProxy!, this.dorkHome);
       this.serverExtensions.set(id, {
         extensionId: id,
@@ -265,6 +312,11 @@ export class ExtensionServerLifecycle {
       return { ok: false, error: compiled.error.message };
     }
 
+    // Compiling waited; a turn-off or revoke meanwhile wins.
+    if (!this.stillWanted(record)) {
+      return { ok: false, error: 'Extension was turned off while it was starting' };
+    }
+
     const sourceKey = buildSourceKey(record, compiled.sourceHash);
     if (active?.sourceKey === sourceKey) {
       logger.debug(`[Extensions] Server for ${id} is already running, unchanged`);
@@ -272,7 +324,7 @@ export class ExtensionServerLifecycle {
     }
 
     // Shut down the stale instance before its replacement takes over
-    await this.shutdown(id);
+    await this.stop(id);
 
     // Write temp file for require()
     const tempDir = path.join(this.dorkHome, 'cache', 'extensions', 'server', '_run');
@@ -369,6 +421,28 @@ export class ExtensionServerLifecycle {
         router.use(proxyRouter);
       }
 
+      // Asked again now that register() has run: a turn-off or revoke that
+      // arrived meanwhile wins, and this instance is released, not stored.
+      if (!this.stillWanted(record)) {
+        tools.close();
+        dispose();
+        registered = undefined;
+        if (cleanup) {
+          try {
+            cleanup();
+          } catch (err) {
+            logger.warn(`[Extensions] Cleanup error for ${id}:`, err);
+          }
+        }
+        // Started (above) lifted the stop on its messages; nothing runs now.
+        getAgentSendService()?.extensionStopped(id);
+        logger.info(`[Extensions] ${id} was turned off or stopped while starting; left off`);
+        return { ok: false, error: 'Extension was turned off while it was starting' };
+      }
+      // One instance per id, ever: anything still stored is stopped before
+      // this one takes its place.
+      await this.stop(id);
+
       this.serverExtensions.set(id, {
         extensionId: id,
         router,
@@ -413,7 +487,12 @@ export class ExtensionServerLifecycle {
    *
    * @param id - Extension identifier
    */
-  async shutdown(id: string): Promise<void> {
+  shutdown(id: string): Promise<void> {
+    return this.exclusive(id, () => this.stop(id));
+  }
+
+  /** The body of {@link shutdown}, run inside the id's queue. */
+  private async stop(id: string): Promise<void> {
     const active = this.serverExtensions.get(id);
     if (!active) return;
 
