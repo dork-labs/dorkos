@@ -125,6 +125,18 @@ module.exports.probes = {
       return true;
     }),
   toolsHandle: () => attempt(() => ctx.tools.handle('anything', async () => 1)),
+  // A hostile payload built here (so only its structured-clone form crosses):
+  // small on the channel, huge once expanded.
+  hostileSave: (kind, id) => {
+    let data;
+    if (kind === 'sparse') {
+      data = [];
+      data.length = 9e7;
+    } else {
+      data = new Array(16000).fill({ t: 'x'.repeat(1.5e6) });
+    }
+    return module.exports.probes.raw({ type: 'call', id, path: 'storage.saveData', args: [data] });
+  },
   // A hostile extension: a raw message straight onto the channel, around the
   // proxy. Only meaningful in a child (in-process there is no channel).
   raw: (message) =>

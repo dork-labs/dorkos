@@ -270,6 +270,28 @@ describe('ctx over the boundary: what only a child can do', () => {
     const notArray = await raw({ type: 'call', id: 900_012, path: 'secrets.get', args: 'k' });
     expect(notArray).toMatchObject({ answered: true, ok: false });
 
+    // Small on the wire, huge once expanded (review blocker): refused at
+    // once, and the host's event loop stays free throughout.
+    for (const [id, kind] of [
+      [900_013, 'sparse'],
+      [900_014, 'dag'],
+    ] as const) {
+      let worstGapMs = 0;
+      let last = performance.now();
+      const ticker = setInterval(() => {
+        const now = performance.now();
+        worstGapMs = Math.max(worstGapMs, now - last);
+        last = now;
+      }, 10);
+      const answer = (await host.probe('hostileSave', kind, id)) as {
+        answered: boolean;
+        ok?: boolean;
+      };
+      clearInterval(ticker);
+      expect(answer, kind).toMatchObject({ answered: true, ok: false });
+      expect(worstGapMs, kind).toBeLessThan(500);
+    }
+
     expect(host.ctxDispatchCounts()).toEqual({ 'secrets.set': 1, 'secrets.get': 1 });
   });
 });

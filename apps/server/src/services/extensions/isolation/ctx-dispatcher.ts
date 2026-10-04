@@ -482,7 +482,15 @@ export class CtxDispatcher {
       .then(
         (value) => {
           if (this.closed) return;
-          const bad = value === undefined ? null : wireDataProblem(value);
+          // The host's own answer: no size budgets (an extension may keep more
+          // than 4 MB in storage, as in-process), but the same shape rules.
+          const bad =
+            value === undefined
+              ? null
+              : wireDataProblem(value, {
+                  maxBytes: Number.POSITIVE_INFINITY,
+                  maxNodes: Number.POSITIVE_INFINITY,
+                });
           if (bad) {
             this.refuse(
               id,

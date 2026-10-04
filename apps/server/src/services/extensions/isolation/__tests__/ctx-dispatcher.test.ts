@@ -246,6 +246,65 @@ describe('CtxDispatcher calls', () => {
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
+  // Purpose: shapes that are tiny on the channel but huge once the host uses
+  // them (review blocker): a sparse array with a 90-million length, and one
+  // 1.5 MB string shared by 16,000 references (3 MB on the wire, 48 GB of
+  // JSON). Each is refused fast, before the real method (whose
+  // JSON.stringify would block the host for seconds) is reached.
+  it.each([
+    [
+      'a sparse array',
+      () => {
+        const a: unknown[] = [];
+        a.length = 9e7;
+        return [a];
+      },
+    ],
+    [
+      'an array with one hole',
+      () => {
+        const a: unknown[] = [1, 2, 3];
+        delete a[1];
+        return [a];
+      },
+    ],
+    ['a shared-reference DAG', () => [new Array(16_000).fill({ t: 'x'.repeat(1.5e6) })]],
+    ['a long dense array', () => [new Array(60_000).fill(0)]],
+  ])('refuses %s quickly and reaches nothing', async (_label, build) => {
+    const t = setup();
+    const args = build();
+    const began = performance.now();
+    const ret = await t.call('storage.saveData', args);
+    expect(performance.now() - began).toBeLessThan(500);
+    expect(ret.ok).toBe(false);
+    expect(t.raw.storage.saveData).not.toHaveBeenCalled();
+  });
+
+  // Purpose: the expanded budget also guards what the child answers to a
+  // reverse call, and event payloads forwarded to it.
+  it('applies the expanded budget to answers and events', async () => {
+    const t = setup();
+    t.handle({ type: 'expose', id: 1, path: 'inbox.onAction' });
+    const pending = t.onAction()!({ key: 'a' }) as Promise<unknown>;
+    const rcall = t.sent.find((m) => m.type === 'rcall') as { id: number };
+    const shared = { t: 'x'.repeat(1.5e6) };
+    t.handle({ type: 'rret', id: rcall.id, ok: true, value: new Array(16_000).fill(shared) });
+    await expect(pending).rejects.toThrow("can't use");
+    t.handle({ type: 'sub', id: 2, path: 'accounts.onUsage' });
+    t.fire('accounts.onUsage', new Array(16_000).fill(shared));
+    expect(t.sent.filter((m) => m.type === 'evt')).toEqual([]);
+  });
+
+  // Purpose: the host's OWN answer has no size budget, as in-process (an
+  // extension may keep more than 4 MB in storage); only the child's data does.
+  it('sends a large answer the real ctx produced', async () => {
+    const t = setup();
+    const big = { blob: 'y'.repeat(3e6), rows: new Array(60_000).fill(1) };
+    t.raw.storage.loadData.mockResolvedValueOnce(big as never);
+    const ret = await t.call('storage.loadData', []);
+    expect(ret.ok).toBe(true);
+  });
+
   // Purpose: plain data that merely uses awkward key names still works, so
   // the rule is about prototypes, not about names.
   it('accepts plain data with constructor/prototype keys, Dates and bytes', async () => {
