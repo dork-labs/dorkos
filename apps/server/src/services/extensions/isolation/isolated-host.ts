@@ -191,7 +191,7 @@ function installExitHook(): void {
 
 /**
  * Whether an exit looks like V8's heap-limit abort (SIGABRT on POSIX; a
- * failing code on Windows), so a child that merely PRINTS the marker and exits
+ * normalized abort code on Windows), so a child that merely PRINTS the marker and exits
  * is still reported as a crash.
  *
  * @param code - The exit code.
@@ -199,7 +199,9 @@ function installExitHook(): void {
  */
 function abortedLike(code: number | null, signal: NodeJS.Signals | null): boolean {
   if (signal === 'SIGABRT' || signal === 'SIGTRAP' || signal === 'SIGILL') return true;
-  return process.platform === 'win32' && code !== null && code !== 0;
+  // Node normalizes its Windows ABORT path to kAbort (134), not any nonzero exit.
+  // https://github.com/nodejs/node/blob/v22.x/src/node_exit_code.h
+  return process.platform === 'win32' && code === 134;
 }
 
 /**
