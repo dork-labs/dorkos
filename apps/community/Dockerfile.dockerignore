@@ -10,6 +10,8 @@
 !packages/shared/**
 !packages/ui
 !packages/ui/**
+!packages/icons
+!packages/icons/**
 !packages/cloud-api
 !packages/cloud-api/**
 !packages/eslint-config

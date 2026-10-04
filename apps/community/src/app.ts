@@ -495,7 +495,7 @@ export function createCommunityApp({
     json(c, CommunityWireAuthOptionsSchema, {
       google: Boolean(config.oauth.google),
       github: Boolean(config.oauth.github),
-      oidc: config.oidc ? { label: config.oidc.label } : null,
+      oidc: config.oidc ? { label: config.oidc.label, mark: config.oidc.mark } : null,
       minimumAge: config.minimumAge,
     })
   );

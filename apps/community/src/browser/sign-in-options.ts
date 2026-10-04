@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   hasCommunitySingleSignOnHint,
   type CommunityWireAuthOptions,
+  type CommunityWireSignInMark,
 } from '@dorkos/shared/community-wire';
 import { request } from './api.js';
 
@@ -64,10 +65,12 @@ export function useSignInOptions(): CommunityWireAuthOptions {
 export function singleSignOnLead(
   search: string,
   state: SignInOptionsState
-): { label: string } | 'loading' | null {
+): { label: string; mark: CommunityWireSignInMark | null } | 'loading' | null {
   if (!hasCommunitySingleSignOnHint(search)) return null;
   if (!state.loaded) return 'loading';
-  return state.options.oidc ? { label: state.options.oidc.label } : null;
+  const oidc = state.options.oidc;
+  // An older server sends no mark; it reads as none.
+  return oidc ? { label: oidc.label, mark: oidc.mark ?? null } : null;
 }
 
 const MESSAGES: Record<string, string> = {

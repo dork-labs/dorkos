@@ -160,7 +160,7 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
     expect(await options.json()).toEqual({
       google: false,
       github: false,
-      oidc: { label: 'Example sign-in' },
+      oidc: { label: 'Example sign-in', mark: null },
       minimumAge: null,
     });
     expect(issuer.requests).toEqual([]);

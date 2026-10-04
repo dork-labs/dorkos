@@ -7,6 +7,7 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/relay/package.json packages/relay/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/ui/package.json packages/ui/package.json
+COPY packages/icons/package.json packages/icons/package.json
 COPY packages/test-utils/package.json packages/test-utils/package.json
 COPY packages/cloud-api/package.json packages/cloud-api/package.json
 COPY packages/eslint-config/package.json packages/eslint-config/package.json
@@ -14,6 +15,7 @@ COPY packages/typescript-config/package.json packages/typescript-config/package.
 RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY packages/shared packages/shared
 COPY packages/ui packages/ui
+COPY packages/icons packages/icons
 COPY packages/cloud-api packages/cloud-api
 COPY packages/typescript-config packages/typescript-config
 COPY apps/community apps/community

@@ -407,6 +407,9 @@ importers:
       '@dork-labs/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@dorkos/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
       '@dorkos/shared':
         specifier: workspace:*
         version: link:../../packages/shared

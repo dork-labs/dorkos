@@ -12,6 +12,7 @@ import { FocusDialog } from '../components/CommunityAdministration.js';
 import { HostPolicyLinks } from '../components/HostLinks.js';
 import { rememberCommunity } from '../remembered-community.js';
 import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
+import { ProviderButton } from '../sign-up/ProviderButton.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 import { replacementDate } from './copy.js';
@@ -310,16 +311,14 @@ export function OwnerReplacementClaim() {
               />
             )}
             {providers.oidc ? (
-              <Button
-                variant="default"
-                className="w-full"
-                type="button"
+              <ProviderButton
+                provider="oidc"
+                label={providers.oidc.label}
+                mark={providers.oidc.mark ?? null}
                 // A new account must confirm the host's minimum age first, as on the owner claim.
                 disabled={busy || (minimumAge !== null && !ageConfirmed)}
                 onClick={() => void social('oidc', minimumAge !== null)}
-              >
-                Continue with {providers.oidc.label}
-              </Button>
+              />
             ) : (
               <p role="status" className="mb-0">
                 Loading sign-in…

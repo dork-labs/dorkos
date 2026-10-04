@@ -124,7 +124,9 @@ test.describe('Community pairing approval @smoke', () => {
     const { pairingId, approvalUrl } = await pairing('Social sign-in install', communityId);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.route('**/auth-options', (route) =>
-      route.fulfill({ json: { google: true, github: true, oidc: { label: 'Team SSO' } } })
+      route.fulfill({
+        json: { google: true, github: true, oidc: { label: 'Team SSO', mark: null } },
+      })
     );
     const handoffs: { provider: string; callbackURL: string; errorCallbackURL: string }[] = [];
     await page.route('**/api/auth/sign-in/social', async (route) => {
