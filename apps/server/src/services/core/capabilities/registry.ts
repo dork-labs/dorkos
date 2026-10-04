@@ -20,6 +20,9 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
+  EXTENSION_TOOL_UNAVAILABLE_CODE,
+  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
+  isExtensionCapabilityId,
   stableStringify,
   type CapabilityCatalog,
   type McpServerId,
@@ -53,10 +56,7 @@ import {
   buildExtensionDefinitions,
   checkExtensionContribution,
   EXTENSION_DOMAIN_PREFIX,
-  EXTENSION_TOOL_UNAVAILABLE_CODE,
-  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
   EXTENSION_TOOLS_AREA,
-  isExtensionCapabilityId,
   type ExtensionContribution,
 } from './extension-contribution.js';
 
@@ -673,6 +673,11 @@ export function composeRegistry(
     );
     // Check every claim before adding anything, so a refusal leaves the
     // registry exactly as it was: all of one extension's tools, or none.
+    // While the id and tool-name rules hold, an extension's names cannot clash
+    // with another extension's (the mapping is injective) and its ids cannot
+    // clash with the core's (the `ext_` prefix is reserved); a core MCP tool
+    // name, which is free-form, can. Every table is still consulted, so that
+    // loosening a rule later fails closed instead of shadowing a tool.
     for (const definition of definitions) {
       if (lookup(definition.id)) {
         return { ok: false, reason: `"${definition.id}" is already registered` };
@@ -901,7 +906,21 @@ export function composeRegistry(
     },
     catalog() {
       if (!serializedCache) {
-        const serialized = capabilities.map(serializeCapability);
+        // One entry that cannot be serialized is left out and logged rather
+        // than throwing the whole catalog for everyone. `contribute` already
+        // refuses an extension schema that cannot render; this is the second
+        // wall, so no future entry can take discovery down either.
+        const serialized = capabilities.flatMap((capability) => {
+          try {
+            return [serializeCapability(capability)];
+          } catch (err) {
+            deps.logger.error('[capabilities] a capability could not be serialized; left out', {
+              capabilityId: capability.id,
+              err: err instanceof Error ? err.message : String(err),
+            });
+            return [];
+          }
+        });
         serializedCache = {
           capabilities: serialized,
           catalogVersion: computeCatalogVersion(serialized),

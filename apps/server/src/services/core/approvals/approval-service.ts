@@ -55,7 +55,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import { isExtensionCapabilityId, type CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
@@ -580,6 +580,10 @@ type ApprovalRow = typeof approvals.$inferSelect;
  * the promise of those cards is that a person sees every such change before it
  * happens, and a standing yes would let the next change through unseen.
  *
+ * Nor does a card for an extension's destructive tool (DOR-2685): every call
+ * asks, because the tool's tier is its author's to change and a standing yes
+ * keyed by its id would outlive the version it was given for.
+ *
  * @param row - The stored approval.
  */
 export function isAlwaysOffered(row: {
@@ -587,13 +591,16 @@ export function isAlwaysOffered(row: {
   area: string | null;
   authorityBindingDigest: string | null;
   detail?: string | null;
+  capabilityId?: string;
+  tier?: string;
 }): boolean {
   return (
     row.requestedByPath !== null &&
     row.area !== null &&
     !isFloorArea(row.area) &&
     row.authorityBindingDigest === null &&
-    (row.detail ?? null) === null
+    (row.detail ?? null) === null &&
+    !(row.tier === 'destructive' && isExtensionCapabilityId(row.capabilityId ?? ''))
   );
 }
 

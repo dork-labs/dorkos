@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { noopLogger } from '@dorkos/shared/logger';
-import type { SerializedCapability } from '@dorkos/shared/capabilities';
+import {
+  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
+  type SerializedCapability,
+} from '@dorkos/shared/capabilities';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { createCapabilityAuthorityBinding } from '../../../connectors/principal/capability-authority-binding.js';
 
@@ -20,7 +23,6 @@ import {
   buildExtensionDefinitions,
   checkExtensionContribution,
   extensionDomainName,
-  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
 } from '../extension-contribution.js';
 
 const deps: CapabilityDeps = { logger: noopLogger };
@@ -605,24 +607,32 @@ describe('extension layer — contribute and remove (DOR-2685)', () => {
     expect(registry.catalog().catalogVersion).toBe(before);
   });
 
-  it('refuses a tool name another contribution claims, adding nothing from the second', () => {
-    // `a--b` + `c` and `a` + `b__c` both project to `ext_a__b__c`: different
-    // ids, one MCP name. The first keeps it; the second adds none of its tools.
+  it('refuses any name that would make ext_<id>__<tool> readable two ways', () => {
+    // `a--b` + `c` and `a` + `b__c` would both project to `ext_a__b__c`, so
+    // whichever extension started first would own the other's name. Neither
+    // half is allowed: no `--` or trailing `-` in the id, no `__` in a tool.
     const registry = composeRegistry([configDomain], deps);
-    expect(registry.contribute(contribution('a--b', [extensionTool('c')])).ok).toBe(true);
+    expect(registry.contribute(contribution('a--b', [extensionTool('c')])).ok).toBe(false);
+    expect(registry.contribute(contribution('a-', [extensionTool('c')])).ok).toBe(false);
+    for (const name of ['b__c', 'b_', '_b', 'b_c_']) {
+      expect(registry.contribute(contribution('a', [extensionTool(name)])).ok, name).toBe(false);
+    }
+    expect(registry.capabilities.map((c) => c.id)).toEqual(['config.get', 'config.patch']);
+    expect(registry.contribute(contribution('a-b', [extensionTool('c_d')])).ok).toBe(true);
+  });
 
-    const second = registry.contribute(
-      contribution('a', [extensionTool('first_ok'), extensionTool('b__c')])
+  it('refuses a tool whose MCP name would pass the 64-character limit with its prefix', () => {
+    // A harness sends `mcp__dorkos__<name>`; one name over 64 fails every turn
+    // of every session that lists it, so the cap sits on `ext_<id>__<tool>`.
+    const registry = composeRegistry([configDomain], deps);
+    const owner = 'mail';
+    const room = 51 - 'ext_mail__'.length;
+    expect(registry.contribute(contribution(owner, [extensionTool('a'.repeat(room + 1))])).ok).toBe(
+      false
     );
-
-    expect(second).toEqual({ ok: false, reason: expect.stringContaining('ext_a__b__c') });
-    expect(registry.get('ext_a.first_ok')).toBeUndefined();
-    expect(registry.get('ext_a.b__c')).toBeUndefined();
-    expect(registry.capabilities.map((c) => c.id)).toEqual([
-      'config.get',
-      'config.patch',
-      'ext_a__b.c',
-    ]);
+    const fits = registry.contribute(contribution(owner, [extensionTool('a'.repeat(room))]));
+    expect(fits.ok).toBe(true);
+    expect(`mcp__dorkos__${registry.capabilities.at(-1)!.surfaces.mcp!.toolName}`).toHaveLength(64);
   });
 
   it('refuses a malformed contribution whole, even when only one tool is wrong', () => {
@@ -862,5 +872,161 @@ describe('extension layer — host-built definitions carry no privileged fields 
     expect(registry.contribute(null as unknown as ExtensionContribution).ok).toBe(false);
     expect(registry.contribute(contribution('Bad_Id')).ok).toBe(false);
     expect(registry.contribute(contribution('mail-app', [])).ok).toBe(false);
+  });
+});
+
+describe('extension layer — schemas every tool list can carry (DOR-2685 review)', () => {
+  /** Whether a one-tool contribution with this input is accepted. */
+  function accepts(input: z.ZodObject): boolean {
+    return checkExtensionContribution(
+      contribution('mail-app', [
+        extensionTool('send', { tier: 'observe', input, approvalDisplayFields: undefined }),
+      ])
+    ).ok;
+  }
+
+  it('refuses an input that cannot be written as JSON Schema', () => {
+    // The catalog renders every schema on every read; one of these would
+    // throw it for everyone until the extension stopped.
+    expect(accepts(z.object({ when: z.date() }))).toBe(false);
+    expect(accepts(z.object({ to: z.string().transform((v) => v.trim()) }))).toBe(false);
+  });
+
+  it('refuses records, z.json and open objects', () => {
+    // One record anywhere in any in-session tool's input empties the whole
+    // dorkos tool list on the current Claude SDK (tool-exposure.ts).
+    expect(accepts(z.object({ headers: z.record(z.string(), z.string()) }))).toBe(false);
+    expect(accepts(z.object({ nested: z.array(z.record(z.string(), z.number())) }))).toBe(false);
+    expect(accepts(z.object({ payload: z.json() }))).toBe(false);
+    expect(accepts(z.object({ to: z.string() }).catchall(z.string()))).toBe(false);
+    expect(accepts(z.object({ to: z.string() }).loose())).toBe(false);
+  });
+
+  it('accepts an ordinary closed schema', () => {
+    expect(
+      accepts(
+        z.object({
+          to: z.string(),
+          cc: z.array(z.string()).optional(),
+          mode: z.enum(['now', 'later']),
+          when: z.object({ hour: z.number().int() }).optional(),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('leaves one unserializable entry out of the catalog instead of throwing it', () => {
+    // The second wall: a capability whose schema cannot render never takes
+    // discovery down for every other capability.
+    const broken = defineCapability({
+      id: 'probe.broken',
+      title: 'Broken',
+      description: 'Its input cannot be written as JSON Schema.',
+      tier: 'observe',
+      area: null,
+      input: z.object({ when: z.date() }),
+      output: z.unknown(),
+      surfaces: {},
+      invoke: async () => ({}),
+    });
+    const errors: unknown[] = [];
+    const registry = composeRegistry([configDomain, { name: 'probe', capabilities: [broken] }], {
+      logger: { ...noopLogger, error: (...args: unknown[]) => void errors.push(args) },
+    });
+    expect(registry.catalog().capabilities.map((c) => c.id)).toEqual([
+      'config.get',
+      'config.patch',
+    ]);
+    expect(errors).toHaveLength(1);
+  });
+});
+
+describe('extension layer — author text on cards (DOR-2685 review)', () => {
+  it('refuses a title or display name that could forge card text', () => {
+    // A quote closes the card's quoted title; a newline fakes a second line;
+    // an endless title crowds out the arguments a person has to read.
+    for (const title of ['Archive" with to: "me@x.com', 'Two\nlines', 'x'.repeat(81), ' padded']) {
+      expect(
+        checkExtensionContribution(contribution('mail-app', [extensionTool('send', { title })])).ok,
+        JSON.stringify(title)
+      ).toBe(false);
+    }
+    for (const displayName of ['Mail"', 'Mail\u0007', 'm'.repeat(41)]) {
+      expect(
+        checkExtensionContribution({ ...contribution('mail-app'), displayName }).ok,
+        JSON.stringify(displayName)
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a display name that claims to be DorkOS', () => {
+    // A row reading "From DorkOS" would say the tool is DorkOS's own.
+    for (const displayName of ['DorkOS', 'dorkos', 'Dork OS', 'DorkBot']) {
+      expect(
+        checkExtensionContribution({ ...contribution('mail-app'), displayName }).ok,
+        displayName
+      ).toBe(false);
+    }
+    expect(
+      checkExtensionContribution({ ...contribution('mail-app'), displayName: 'Mail' }).ok
+    ).toBe(true);
+  });
+});
+
+describe('extension layer — what an approval card shows (DOR-2685 review)', () => {
+  it('requires card fields on act and destructive tools, as conformance does for core', () => {
+    const check = (overrides: Partial<ExtensionToolSpec>) =>
+      checkExtensionContribution(contribution('mail-app', [extensionTool('send', overrides)])).ok;
+    // A card with no declaration shows every field; a destructive card with
+    // none shows nothing for an irreversible action.
+    expect(check({ tier: 'act', approvalDisplayFields: undefined })).toBe(false);
+    expect(check({ tier: 'act', approvalDisplayFields: [] })).toBe(false);
+    expect(check({ tier: 'destructive', approvalDisplayFields: undefined })).toBe(false);
+    expect(check({ tier: 'destructive', approvalDisplayFields: [] })).toBe(false);
+    expect(check({ tier: 'destructive', input: z.object({}), approvalDisplayFields: [] })).toBe(
+      false
+    );
+    // An act tool that takes no arguments has nothing to show.
+    expect(check({ tier: 'act', input: z.object({}), approvalDisplayFields: [] })).toBe(true);
+    expect(check({ tier: 'observe', approvalDisplayFields: undefined })).toBe(true);
+  });
+});
+
+describe('extension layer — the handler sees a narrowed call (DOR-2685 review)', () => {
+  it('hands the handler who and where, never a proof object', async () => {
+    // Trusted markers, principals, spent approvals and preflight bindings are
+    // proofs other DorkOS code acts on; none of them reaches extension code.
+    const seen: Record<string, unknown>[] = [];
+    const checked = checkExtensionContribution(
+      contribution('mail-app', [
+        extensionTool('send', {
+          invoke: async (_input, ctx) => {
+            seen.push({ ...ctx });
+            return {};
+          },
+        }),
+      ])
+    );
+    if (!checked.ok) throw new Error(checked.reason);
+    const [definition] = buildExtensionDefinitions(checked.value, 'extensions');
+    const signal = new AbortController().signal;
+    const full = {
+      identity: { agentPath: '/agents/mailer', displayName: 'Mailer', createdAt: 'x' },
+      sessionId: 's-1',
+      cwd: '/work',
+      signal,
+      trusted: { marker: true },
+      serverPrincipal: { principal: true },
+      approval: { via: 'approval' },
+      preflight: { authorityBinding: {} },
+      approvalToken: 'secret-token',
+      handTools: { has: () => true },
+      userId: 'u-1',
+    };
+    await definition!.invoke(deps, { to: 'a' }, full as never);
+
+    expect(seen).toEqual([
+      { agent: { path: '/agents/mailer', name: 'Mailer' }, sessionId: 's-1', cwd: '/work', signal },
+    ]);
   });
 });

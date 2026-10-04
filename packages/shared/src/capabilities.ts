@@ -156,6 +156,33 @@ export interface CapabilitySource {
 }
 
 /**
+ * The prefix every extension tool's capability id starts with (`ext_<id>.<tool>`,
+ * DOR-2685). No DorkOS capability may use it.
+ */
+export const EXTENSION_CAPABILITY_ID_PREFIX = 'ext_';
+
+/**
+ * What a caller is told when it names an extension tool that is not registered
+ * right now: its extension stopped, is restarting, or never ran. One sentence for
+ * every surface — the in-session tool, `POST /api/capabilities/:id/invoke` and
+ * `dorkos call` — so a caller reads the same answer wherever it asked.
+ */
+export const EXTENSION_TOOL_UNAVAILABLE_MESSAGE =
+  "That tool isn't available right now: its extension is stopped or restarting.";
+
+/** The machine-readable code carried beside {@link EXTENSION_TOOL_UNAVAILABLE_MESSAGE}. */
+export const EXTENSION_TOOL_UNAVAILABLE_CODE = 'EXTENSION_TOOL_UNAVAILABLE';
+
+/**
+ * Whether a capability id is in the extension namespace, registered or not.
+ *
+ * @param id - A capability id.
+ */
+export function isExtensionCapabilityId(id: string): boolean {
+  return id.startsWith(EXTENSION_CAPABILITY_ID_PREFIX);
+}
+
+/**
  * A single capability as it appears in the serialized catalog: everything from
  * its runtime definition except the handler, with the Zod input/output schemas
  * converted to JSON Schema.

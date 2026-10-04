@@ -4,6 +4,7 @@
  *
  * @module services/core/permissions
  */
+import { isAlwaysAskingExtensionTool } from '../capabilities/extension-contribution.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AgentPermissions } from '@dorkos/shared/permissions';
 
@@ -71,7 +72,9 @@ export function permissionActions(
     tier: cap.tier,
     area: cap.area,
     ...(cap.surfaces.mcp ? { toolName: cap.surfaces.mcp.toolName } : {}),
-    ...(cap.describeApprovalChange ? { alwaysAsks: true as const } : {}),
+    ...(cap.describeApprovalChange || isAlwaysAskingExtensionTool(cap)
+      ? { alwaysAsks: true as const }
+      : {}),
     ...(cap.source ? { source: cap.source } : {}),
   }));
   const tools: PermissionActionInfo[] = Object.entries(

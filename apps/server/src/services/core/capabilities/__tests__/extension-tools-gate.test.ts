@@ -14,10 +14,14 @@ import type { AgentPermissions, PermissionPreset } from '@dorkos/shared/permissi
 
 import { defineCapability } from '../capability-definition.js';
 import { composeRegistry, type CapabilityRegistry } from '../registry.js';
-import { initCapabilityTierGate, resetCapabilityTierGate } from '../tier-enforcement.js';
+import {
+  describeGatedAttempt,
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+} from '../tier-enforcement.js';
 import { initPermissionGate, resetPermissionGate } from '../permission-enforcement.js';
 import type { ExtensionToolSpec } from '../extension-contribution.js';
-import { ApprovalService } from '../../approvals/index.js';
+import { ApprovalService, isAlwaysOffered } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { permissionActions } from '../../permissions/index.js';
 import { MCP_TOOL_TIERS } from '../../mcp-tool-tiers.js';
@@ -166,6 +170,53 @@ describe('extension tools at the gate (DOR-2685)', () => {
     expect(ran).toEqual([]);
   });
 
+  it('asks for a destructive extension tool even when that one tool is set to Allowed', async () => {
+    // A core destructive action set to Allowed on its own runs: its tier is
+    // fixed in DorkOS's source. An extension's tier is its author's to change,
+    // so a stored Allowed (an old Always allow, say, from when the tool was
+    // `act`, or from another extension under the same id) never reaches it.
+    preset = 'full';
+    agent = { actions: { 'ext_mail_app.wipe': 'allowed', 'probe.wipe': 'allowed' } };
+    expect(await call('ext_mail_app.wipe')).toMatchObject({ status: 'approval_required' });
+    expect(await call('probe.wipe')).toBe('ran');
+    expect(ran).toEqual(['probe.wipe']);
+  });
+
+  it('never offers Always allow on a destructive extension tool card', () => {
+    // The grant route answers `always` by the same rule, from the same row.
+    const row = {
+      requestedByPath: '/agents/mailer',
+      area: 'extensions',
+      authorityBindingDigest: null,
+      detail: null,
+    };
+    expect(
+      isAlwaysOffered({ ...row, capabilityId: 'ext_mail_app.wipe', tier: 'destructive' })
+    ).toBe(false);
+    expect(isAlwaysOffered({ ...row, capabilityId: 'ext_mail_app.send', tier: 'act' })).toBe(true);
+    expect(isAlwaysOffered({ ...row, capabilityId: 'probe.wipe', tier: 'destructive' })).toBe(true);
+  });
+
+  it('quotes an extension title on the card and names the extension', () => {
+    // The title is the author's text: even one that slipped past `contribute`
+    // cannot close the quote and forge a field after it.
+    const summary = describeGatedAttempt(
+      {
+        id: 'ext_mail_app.wipe',
+        title: 'Archive" with to: "me@x.com',
+        tier: 'destructive',
+        area: 'extensions',
+        approvalDisplayFields: ['to'],
+        source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+      },
+      INPUT,
+      AGENT
+    );
+    expect(summary).toBe(
+      '"Mailer" wants to run "Archive\\" with to: \\"me@x.com" from "Mail" with to: "ana@example.com"'
+    );
+  });
+
   it('lists each extension tool for the permission pages with its extension named', () => {
     // The permission pages and the tool-list builders read this one list; the
     // source is how a row says which extension a tool belongs to.
@@ -176,6 +227,10 @@ describe('extension tools at the gate (DOR-2685)', () => {
       source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
     });
     expect(actions.find((a) => a.id === 'probe.send')).not.toHaveProperty('source');
+    // A destructive extension tool always asks, so its row offers no Allowed.
+    expect(actions.find((a) => a.id === 'ext_mail_app.wipe')).toMatchObject({ alwaysAsks: true });
+    expect(actions.find((a) => a.id === 'ext_mail_app.send')).not.toHaveProperty('alwaysAsks');
+    expect(actions.find((a) => a.id === 'probe.wipe')).not.toHaveProperty('alwaysAsks');
   });
 
   it('hides a Blocked extension tool from the tool list, and only while it is registered', () => {

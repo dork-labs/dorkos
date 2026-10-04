@@ -22,6 +22,10 @@ import { ApiError, apiCall } from '../lib/api-client.js';
 import { fetchFullCatalog, type FullCatalog } from '../lib/capability-catalog.js';
 import { printJson } from '../lib/operator-output.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
+import {
+  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
+  isExtensionCapabilityId,
+} from '@dorkos/shared/capabilities';
 
 /** Help text for `dorkos call` (`--help`), rendered by the `cli.ts` interceptor. */
 export const CALL_HELP = `Usage: dorkos call <capability-id> [options]
@@ -149,6 +153,12 @@ export async function runCall(args: CallArgs): Promise<number> {
     return 1;
   }
   if (!catalog.capabilities.some((c) => c.id === args.id)) {
+    // An extension's tool is listed only while its extension runs (DOR-2685);
+    // say that, in the server's own words, rather than "unknown".
+    if (isExtensionCapabilityId(args.id)) {
+      console.error(`Error: ${EXTENSION_TOOL_UNAVAILABLE_MESSAGE}`);
+      return 1;
+    }
     console.error(
       `Error: unknown capability '${args.id}'. Run 'dorkos capabilities' to list valid ids.`
     );

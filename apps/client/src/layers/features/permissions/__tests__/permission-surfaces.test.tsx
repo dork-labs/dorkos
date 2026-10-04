@@ -353,6 +353,32 @@ describe('individual actions', () => {
     expect(within(row).getByText(/From Mail/)).toBeInTheDocument();
   });
 
+  it('offers no individual actions for an area with none, like Extension tools today (DOR-2685)', async () => {
+    // Until an extension adds a tool, its area has nothing to open.
+    const { transport, wrapper } = wrap();
+    const overview = withActions({
+      id: 'tasks.create',
+      title: 'Create a schedule',
+      tier: 'act',
+      resolved: { area: 'tasks', state: 'allowed', source: 'preset', layer: 'default' },
+    });
+    overview.areas = [
+      {
+        ...overview.areas[0]!,
+        id: 'extensions',
+        label: 'Extension tools',
+        description: 'Use tools that installed extensions add',
+        actions: [],
+      },
+    ];
+    vi.mocked(transport.getPermissions).mockResolvedValue(overview);
+    render(<PermissionList scope={{ kind: 'default' }} />, { wrapper });
+
+    expect(await screen.findByText('Extension tools')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show individual actions' })).toBeNull();
+    expect(screen.queryByTestId('permission-actions-extensions')).toBeNull();
+  });
+
   it('shows a default action change while collapsed, with a Reset', async () => {
     const { transport, wrapper } = wrap();
     vi.mocked(transport.getPermissions).mockResolvedValue(
