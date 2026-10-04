@@ -228,6 +228,8 @@ describe('private browser package boundaries', () => {
             'lifecycle/acquisition.ts',
             'lifecycle/close.ts',
           ],
+          // Exact native Proxy rejection for owner-private final binding checks.
+          'node:util': ['lifecycle/input-owner.ts'],
           'node:os': ['runtime/host-identity.ts'],
           'node:module': ['runtime/public-library.ts'],
           'node:http': ['network/fixture-proxy.ts'],

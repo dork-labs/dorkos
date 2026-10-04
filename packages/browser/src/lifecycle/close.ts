@@ -4,7 +4,16 @@ import type { EngineConfiguration, ProcessIdentity } from '../configuration.js';
 import type { BrowserRecord, CloseOutcome } from './records.js';
 import { completeInventory } from './inventory.js';
 import { until, pause } from './deadline.js';
-import { ownOperation, closeOwned } from './ownership.js';
+import {
+  ownOperation,
+  closeOwned,
+  fenceOrdinary,
+  snapshotRetirementOwners,
+  drainRetirement,
+  aggregateRetirement,
+  finishRetirement,
+} from './ownership.js';
+import type { RetirementSlot, AggregateCleanup } from './ownership.js';
 import { closeInput, inputsSettled } from './input-owner.js';
 
 const PARENT_CLOSE_MS = 5000;
@@ -22,17 +31,16 @@ async function snapshot(
   if (!record.root || !record.rootAttributed) throw new Error();
   const abort = new AbortController();
   try {
-    const tree = await until(
-      ownOperation(record, () => {
-        const observe = config.processes.descendants;
-        if (performance.now() >= end) throw new Error();
-        return Reflect.apply(observe, config.processes, [record.root, abort.signal]) as ReturnType<
-          typeof observe
-        >;
-      }),
-      end,
-      'PROCESS_OBSERVATION_UNAVAILABLE'
-    );
+    const observation = ownOperation(record, () => {
+      const observe = config.processes.descendants;
+      if (performance.now() >= end) throw new Error();
+      return Reflect.apply(observe, config.processes, [record.root, abort.signal]) as ReturnType<
+        typeof observe
+      >;
+    });
+    // An expired wait still owns rejection custody; await the original operation below.
+    void observation.catch(() => {});
+    const tree = await until(observation, end, 'PROCESS_OBSERVATION_UNAVAILABLE');
     const current = completeInventory(tree, record.root);
     const unique = new Map<string, ProcessIdentity>();
     for (const identity of [...record.identities, ...current])
@@ -207,7 +215,7 @@ async function performClose(
   return Object.freeze(outcome);
 }
 
-/** Preregister one terminal promise/end before any reentrant callback; never renew late custody. */
+/** Terminal retirement does not renew an existing parent or child wait end. */
 export function closeRecord(
   config: EngineConfiguration,
   record: BrowserRecord,
@@ -218,26 +226,86 @@ export function closeRecord(
   record.closePromise = new Promise((done) => {
     resolve = done;
   });
-  record.status = 'stopping';
   const owner = record.lifetime;
-  if (!owner) {
+  // This synchronous fence precedes even the clock getter/callback.
+  const slot = owner && fenceOrdinary(record, 'explicitStop');
+  record.status = 'stopping';
+  if (!owner || !slot) {
+    if (owner) owner.uncertain = true;
     record.status = 'uncertain';
     resolve(unavailable);
     return record.closePromise;
   }
-  const entry = performance.now();
-  owner.parentEnd = Math.min(entry + PARENT_CLOSE_MS, callerEnd ?? Infinity);
-  owner.inputEnd = Math.min(owner.parentEnd, entry + INPUT_WAIT_MS);
-  owner.gate.stop();
-  for (const tab of record.tabs.values()) {
-    tab.pointer.invalidate();
-    tab.diagnostics.discard();
+  try {
+    snapshotRetirementOwners(record, slot);
+    const entry = performance.now();
+    if (!Number.isFinite(entry) || entry < 0) throw new Error('RETIREMENT_CLOCK_UNAVAILABLE');
+    const proposed = Math.min(entry + PARENT_CLOSE_MS, callerEnd ?? Infinity);
+    if (!Number.isFinite(proposed)) throw new Error('RETIREMENT_CLOCK_UNAVAILABLE');
+    owner.parentEnd ??= proposed;
+    owner.inputEnd ??= Math.min(owner.parentEnd, entry + INPUT_WAIT_MS);
+    slot.end = owner.parentEnd;
+    slot.inputEnd = owner.inputEnd;
+  } catch {
+    owner.uncertain = true;
+    slot.coverageUnavailable = true;
+    // No additional deadline and no cleanup permit. Available terminal closes still enter.
+    owner.parentEnd ??= 0;
+    owner.inputEnd ??= 0;
+    slot.end = owner.parentEnd;
+    slot.inputEnd = owner.inputEnd;
   }
-  for (const tab of record.tabs.values()) tab.stopped = true;
-  void performClose(config, record).then(resolve, () => {
+  void retireThenClose(config, record, slot).then(resolve, () => {
     owner.uncertain = true;
     record.status = 'uncertain';
+    const aggregate = aggregateRetirement(record, slot);
+    finishRetirement(record, slot, aggregate, unavailable);
     resolve(unavailable);
   });
   return record.closePromise;
+}
+
+/** All exact cleanup owners enter before the first wait; terminal cleanup follows even on refusal. */
+async function retireThenClose(
+  config: EngineConfiguration,
+  record: BrowserRecord,
+  slot: RetirementSlot
+): Promise<CloseOutcome> {
+  const owner = record.lifetime;
+  let aggregate: AggregateCleanup;
+  const draining = drainRetirement(record, slot);
+  try {
+    aggregate = await until(draining, owner.inputEnd!, 'RETIREMENT_DRAIN_UNAVAILABLE');
+  } catch {
+    owner.uncertain = true;
+    aggregate = aggregateRetirement(record, slot);
+  }
+  if (aggregate.state !== 'settled') owner.uncertain = true;
+  // Attempt every local terminal invalidation; one throwing callback cannot suppress its peers.
+  slot.terminalEntered = true;
+  try {
+    owner.gate.stop();
+  } catch {
+    owner.uncertain = true;
+  }
+  for (const tab of record.tabs.values()) {
+    for (const local of [() => tab.pointer.invalidate(), () => tab.diagnostics.discard()]) {
+      try {
+        local();
+      } catch {
+        owner.uncertain = true;
+      }
+    }
+    tab.stopped = true;
+  }
+  let terminal: CloseOutcome;
+  try {
+    terminal = await performClose(config, record);
+  } catch {
+    owner.uncertain = true;
+    record.status = 'uncertain';
+    terminal = unavailable;
+  }
+  finishRetirement(record, slot, aggregate, terminal);
+  return terminal;
 }

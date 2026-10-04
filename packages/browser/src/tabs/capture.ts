@@ -1,4 +1,5 @@
 import { readJpegRaster } from './raster.js';
+import { ordinaryRecord } from '../lifecycle/ownership.js';
 import type { EngineConfiguration } from '../configuration.js';
 import { advanceCounter } from '../counters.js';
 import { parseBrowserResult, type BrowserBinding, type BrowserResult } from '../contracts.js';
@@ -39,6 +40,7 @@ export async function captureTab(
   record: BrowserRecord,
   command: CaptureCommand
 ): Promise<BrowserCapture> {
+  if (!ordinaryRecord(record)) throw new BrowserLifecycleError('STALE_BINDING');
   const tab = record.tabs.get(command.binding.tabId);
   if (!tab || tab.pending >= 2)
     throw new BrowserLifecycleError(tab ? 'CAPTURE_QUEUE_FULL' : 'STALE_BINDING');
@@ -71,6 +73,7 @@ function currentCapture(
   page: TabRecord['page']
 ): boolean {
   return (
+    ordinaryRecord(record) &&
     record.status === 'running' &&
     !record.lifetime.gate.stopped &&
     record.tabs.get(command.binding.tabId) === tab &&
@@ -135,12 +138,10 @@ async function acquire(
   try {
     sequence = advanceCounter(tab.captureSequence);
   } catch {
-    tab.stopped = true;
-    try {
-      void tab.page.close().catch(() => {});
-    } catch {
-      // Cleanup observation/invocation cannot replace the terminal cause or suppress retirement.
-    }
+    // Fence the genuine whole-browser cell before any cleanup observer or native close.
+    // The captured parent driver retains the original ends and owns exact cleanup once.
+    record.lifetime.uncertain = true;
+    record.lifetime.requestRetirement('engineFault');
     throw new BrowserLifecycleError('COUNTER_EXHAUSTED');
   }
   const receipt = parseBrowserResult({
