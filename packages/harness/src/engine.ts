@@ -19,11 +19,17 @@ import { CLAUDE_COMMANDS_DIR, CLAUDE_SKILLS_DIR } from './plan/installed-project
 import type { ClaudeOnlySkillLocation, ProjectionPlan } from './plan/types.js';
 import type { ClaudeHooksConfig } from './generate/hooks.js';
 import { scanInstalledSources } from './sources/installed.js';
+import type { DevLinkRecord } from '@dorkos/shared/marketplace-schemas';
 import { inventorySourceTree } from './inventory/index.js';
 import { detectHarnessFootprints } from './scaffold/manifest.js';
 
 /**
  * Read and validate `.agents/harness.manifest.json` for a repository.
+ *
+ * `opts.devLinks` pins which registered dev links a symlinked plugin slot may
+ * be followed for. Omitted, they are read from `opts.dorkHome`'s registry (no
+ * home, none). A caller that keeps the global scope out by passing no home but
+ * still wants the project's own dev links passes them here (DOR-2696).
  *
  * @param repoRoot - absolute path to the repository root.
  * @returns the validated harness manifest.
@@ -181,11 +187,13 @@ export function project(
     allowPluginHooks?: (packageName: string) => boolean;
     dorkosHarness?: HarnessId;
     sharedWithTools?: boolean;
+    devLinks?: readonly DevLinkRecord[];
   }
 ): ProjectionPlan {
   const installed = scanInstalledSources({
     dorkHome: opts?.dorkHome,
     projectRoot: repoRoot,
+    ...(opts?.devLinks ? { devLinks: opts.devLinks } : {}),
   });
   const manifest = loadManifest(repoRoot);
   return buildPlan({
