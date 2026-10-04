@@ -17,6 +17,8 @@ const FLOW: PendingExtensionApproval = {
   adds: null,
   since: '2026-09-28T12:00:00.000Z',
   why: 'You installed the flow plugin. It runs as you.',
+  agentTools: [],
+  agentSkills: [],
 };
 
 describe('deriveWaitingItems — extensions waiting to be turned on', () => {

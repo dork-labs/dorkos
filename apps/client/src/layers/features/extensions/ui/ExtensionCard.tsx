@@ -3,7 +3,12 @@ import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Badge, Button, Card, DevLinkPath, DevLinkTag, Switch } from '@/layers/shared/ui';
 import { cn, openLink } from '@/layers/shared/lib';
-import { EXTENSION_TRUST_COPY, extensionConsentCopy } from '@/layers/entities/extension';
+import {
+  EXTENSION_TRUST_COPY,
+  ExtensionAgentGifts,
+  agentGiftsFromRecord,
+  extensionConsentCopy,
+} from '@/layers/entities/extension';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -115,6 +120,13 @@ export function ExtensionCard({
           {manifest.description && (
             <p className="text-muted-foreground text-sm">{manifest.description}</p>
           )}
+
+          {/* The tools and skills it gives agents (DOR-2685), each with what
+              its tier means, and the reason for any DorkOS left out. */}
+          <ExtensionAgentGifts
+            gifts={agentGiftsFromRecord(extension)}
+            data-testid={`extension-agent-gifts-${extension.id}`}
+          />
 
           {/* Incompatible message */}
           {isIncompatible && manifest.minHostVersion && (

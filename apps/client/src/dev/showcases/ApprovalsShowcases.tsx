@@ -230,6 +230,21 @@ export function ApprovalCardShowcase() {
         />
       </ShowcaseDemo>
 
+      <ShowcaseLabel>An extension&apos;s tool names its extension (DOR-2685)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            sample({
+              approvalId: '01JZ0000000000000000000013',
+              capabilityId: 'ext_mail_app.delete_message',
+              capabilityTitle: 'Delete an email',
+              summary: 'DorkBot wants to run "Delete an email" from "Mail" with id: 4821',
+              source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
       <ShowcaseLabel>What it would act on (DOR-1929)</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <ApprovalList

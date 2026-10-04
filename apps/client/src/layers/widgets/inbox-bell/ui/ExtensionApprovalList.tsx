@@ -7,6 +7,9 @@ import { Puzzle } from 'lucide-react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   EXTENSION_TRUST_COPY,
+  ExtensionAgentGifts,
+  agentGiftsFromApproval,
+  agentGiftsLine,
   extensionConsentCopy,
   useExtensionApprovalActions,
   type ExtensionAnswerInput,
@@ -55,44 +58,52 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
 
   return (
     <div data-slot="extension-approval-list" className="mt-2 flex flex-col gap-1">
-      {approvals.map((approval) => (
-        <InboxDecisionRow
-          key={`${approval.id}:${approval.path}:${approval.version}`}
-          icon={Puzzle}
-          title={`Turn on ${approval.name}?`}
-          why={approval.why}
-          sourceLine={approval.sourceLabel}
-          more={
-            <>
-              <p>{extensionConsentCopy(approval.runsInServer)}</p>
-              <p>{EXTENSION_TRUST_COPY}</p>
-              <p>
-                <button
-                  type="button"
-                  onClick={onOpenSettings}
-                  className="text-foreground underline underline-offset-2"
-                >
-                  See it in Settings → Extensions
-                </button>
-              </p>
-            </>
-          }
-          actions={{
-            kind: 'yes-no',
-            approveLabel: 'Turn it on',
-            rejectLabel: 'Not now',
-            onApprove: () => approve(copyOf(approval)),
-            onReject: () => dismiss(copyOf(approval)),
-          }}
-          pending={
-            pending?.id === approval.id
-              ? pending.action === 'approve'
-                ? 'approve'
-                : 'reject'
-              : null
-          }
-        />
-      ))}
+      {approvals.map((approval) => {
+        const gifts = agentGiftsFromApproval(approval);
+        const giftsLine = agentGiftsLine(gifts);
+        return (
+          <InboxDecisionRow
+            key={`${approval.id}:${approval.path}:${approval.version}`}
+            icon={Puzzle}
+            title={`Turn on ${approval.name}?`}
+            why={approval.why}
+            // What it gives agents, on the row itself, so it is read before the
+            // yes; each tool and its tier is in the ⓘ panel (DOR-2685).
+            {...(giftsLine ? { meta: giftsLine } : {})}
+            sourceLine={approval.sourceLabel}
+            more={
+              <>
+                <ExtensionAgentGifts gifts={gifts} variant="list" />
+                <p>{extensionConsentCopy(approval.runsInServer)}</p>
+                <p>{EXTENSION_TRUST_COPY}</p>
+                <p>
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="text-foreground underline underline-offset-2"
+                  >
+                    See it in Settings → Extensions
+                  </button>
+                </p>
+              </>
+            }
+            actions={{
+              kind: 'yes-no',
+              approveLabel: 'Turn it on',
+              rejectLabel: 'Not now',
+              onApprove: () => approve(copyOf(approval)),
+              onReject: () => dismiss(copyOf(approval)),
+            }}
+            pending={
+              pending?.id === approval.id
+                ? pending.action === 'approve'
+                  ? 'approve'
+                  : 'reject'
+                : null
+            }
+          />
+        );
+      })}
     </div>
   );
 }
