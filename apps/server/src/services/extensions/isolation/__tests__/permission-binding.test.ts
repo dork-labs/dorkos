@@ -238,6 +238,62 @@ describe('an approval covers the permission set it was given for', () => {
     expect(mayRunExtensionCode(moved, stored.value)).toBe(true);
   });
 
+  // Purpose: the ratchet. An approval that recorded no set is full access, so
+  // the first move to subprocess asks nothing — but it is pinned to that
+  // declared set on first sight, so a later version that adds a host, a
+  // program or agent access waits for a card instead of riding on full access.
+  it('pins a full-access approval to the set it first declares, then asks on widening', async () => {
+    stored.value = {
+      enabled: ['mail-app'],
+      disabled: [],
+      approvedToRun: ['mail-app'],
+      approvedSources: { 'mail-app': { path: PATH } },
+    };
+    mockDiscover.mockResolvedValue([makeRecord({})]);
+    await manager.initialize(null);
+
+    // v2: moves to subprocess with one host. A narrowing: runs, no card.
+    mockDiscover.mockResolvedValue([makeRecord(isolated({ net: ['a.example.com'] }))]);
+    await manager.reload();
+    expect(stored.value.approvedPermissions).toEqual({
+      'mail-app': { runtime: 'subprocess', net: ['a.example.com'], run: [], agents: false },
+    });
+    const v2 = manager.get('mail-app')!;
+    expect(mayRunExtensionCode(v2, stored.value)).toBe(true);
+    expect(isPendingApproval(v2, stored.value)).toBe(false);
+
+    // v3: each kind of widening now waits for a person.
+    for (const allow of [
+      { net: ['a.example.com', 'b.example.com'] },
+      { net: ['a.example.com'], run: ['sh'] },
+      { net: ['a.example.com'], agents: true },
+    ]) {
+      mockDiscover.mockResolvedValue([makeRecord(isolated(allow))]);
+      await manager.reload();
+      const v3 = manager.get('mail-app')!;
+      expect(mayRunExtensionCode(v3, stored.value)).toBe(false);
+      expect(isPendingApproval(v3, stored.value)).toBe(true);
+    }
+  });
+
+  // Purpose: the ratchet never touches a copy nobody approved, nor an
+  // in-process copy (still full access, nothing to pin).
+  it('ratchets only approved copies that run separately', async () => {
+    stored.value = { enabled: ['mail-app'], disabled: [], approvedToRun: [] };
+    mockDiscover.mockResolvedValue([makeRecord(isolated({ net: ['a.example.com'] }))]);
+    await manager.initialize(null);
+    expect(stored.value.approvedPermissions).toBeUndefined();
+    stored.value = {
+      enabled: ['mail-app'],
+      disabled: [],
+      approvedToRun: ['mail-app'],
+      approvedSources: { 'mail-app': { path: PATH } },
+    };
+    mockDiscover.mockResolvedValue([makeRecord({})]);
+    await manager.reload();
+    expect(stored.value.approvedPermissions).toBeUndefined();
+  });
+
   // Purpose: withdrawing an approval forgets its set too, so nothing stale is
   // read against whatever is approved next.
   it('forgets the set with the approval', async () => {
@@ -286,15 +342,18 @@ describe('an extension that asks to run separately does not run yet', () => {
   });
 
   // Purpose: a running in-process extension whose manifest moves to
-  // subprocess is stopped, not left serving its old code.
+  // subprocess is stopped by the start itself, not left serving its old code.
+  // The record is swapped in place, with no re-scan, so nothing else (the
+  // re-scan's own shutdown) could be what stopped it.
   it('stops an in-process instance when the manifest moves to subprocess', async () => {
     mockDiscover.mockResolvedValue([makeRecord({})]);
     await manager.initialize(null);
     expect(manager.getServerRouter('mail-app')).not.toBeNull();
 
-    mockDiscover.mockResolvedValue([makeRecord(isolated({}))]);
-    await manager.reload();
-    await manager.initializeServer('mail-app');
+    const record = manager.get('mail-app')!;
+    record.manifest = makeRecord(isolated({})).manifest;
+    const result = await manager.initializeServer('mail-app');
+    expect(result.ok).toBe(false);
     expect(manager.getServerRouter('mail-app')).toBeNull();
   });
 });

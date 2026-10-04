@@ -468,6 +468,7 @@ export class ExtensionManager {
       this.extensions.set(rec.id, rec);
     }
     this.bindUnsourcedApprovals(records);
+    this.ratchetFullAccessApprovals(records);
     await this.placeSnapshots(records);
 
     await this.compileEnabled();
@@ -924,6 +925,49 @@ export class ExtensionManager {
     });
     logConfigWrite(
       'recording which copy an earlier extension approval was for',
+      'extensions',
+      before,
+      configManager.get('extensions')
+    );
+  }
+
+  /**
+   * Pin an approval that still stands for full access to the narrower set its
+   * copy now declares, the first time that copy is seen running separately
+   * (DOR-2686).
+   *
+   * An approval given before permission sets were recorded (no entry), or to
+   * a copy that ran inside DorkOS (an `in-process` entry), covers anything, so
+   * moving the copy to `subprocess` is a narrowing that asks nothing. Left at
+   * full access, though, the next version could add hosts, programs or agent
+   * access without a card, which is the widening the set exists to catch. So
+   * on first sight the record is ratcheted down to what is declared: still no
+   * card now, a card for any later widening. Only for a copy approved on its
+   * own: a copy that runs because its source is trusted is not held to a set.
+   * Applies to dev links made before sets were recorded too.
+   *
+   * @param records - The records this discovery pass produced.
+   */
+  private ratchetFullAccessApprovals(records: readonly ExtensionRecord[]): void {
+    const before = configManager.get('extensions');
+    const permissions = before.approvedPermissions ?? {};
+    const additions: Record<string, ApprovedPermissionSet> = {};
+    for (const record of records) {
+      if (record.origin !== 'user' || record.status === 'invalid') continue;
+      const declared = declaredSet(record.manifest);
+      if (declared.runtime !== 'subprocess') continue;
+      const stored = permissions[record.id];
+      if (stored && stored.runtime !== 'in-process') continue;
+      if (!isApprovedCopy(record, before)) continue;
+      additions[record.id] = declared;
+    }
+    if (Object.keys(additions).length === 0) return;
+    configManager.set('extensions', {
+      ...before,
+      approvedPermissions: { ...permissions, ...additions },
+    });
+    logConfigWrite(
+      'recording what an extension approved for full access now declares',
       'extensions',
       before,
       configManager.get('extensions')
