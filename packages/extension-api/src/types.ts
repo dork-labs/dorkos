@@ -70,11 +70,18 @@ export interface ExtensionResolvedProgram {
    * the extension: a bare name looked up on the server's `PATH` (absolute
    * `PATH` folders only, and `PATHEXT` on Windows), an absolute path kept as
    * written. `null` when no runnable file was found on this computer, or when
-   * the file sits where an extension can write (its own data folder), which
-   * the approval card shows and the program broker refuses. Found by looking
+   * the file sits in extension files (its own folder, package, run folder,
+   * dev link, or any extension data folder), which the approval card shows
+   * and the program broker refuses. Found by looking
    * at the disk only: nothing is run.
    */
   path: string | null;
+  /**
+   * Why `path` is `null`, in a plain sentence: not found here, a Windows
+   * script that needs a shell, or a file inside extension files (which an
+   * update could change without asking). Absent when a program was found.
+   */
+  reason?: string;
 }
 
 /**

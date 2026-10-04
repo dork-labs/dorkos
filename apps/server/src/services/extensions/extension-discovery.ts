@@ -622,7 +622,10 @@ export class ExtensionDiscovery {
       }
       // Where it runs and what it may reach, with each `allow.run` entry
       // resolved to the program it means here. Looking only: nothing runs.
-      const isolation = await isolationOf(manifest, { dorkHome: this.dorkHome });
+      const isolation = await isolationOf(manifest, {
+        dorkHome: this.dorkHome,
+        extensionDir: extDir,
+      });
 
       return {
         id: manifest.id,

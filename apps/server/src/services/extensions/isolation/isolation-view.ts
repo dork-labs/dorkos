@@ -12,7 +12,37 @@ import {
   type ExtensionManifest,
   type ExtensionRecord,
 } from '@dorkos/extension-api';
+import fs from 'fs/promises';
+import path from 'path';
 import { resolveProgram, type ResolveProgramOptions } from './resolve-program.js';
+
+/**
+ * The folders an extension ships in, as named and as they really are: its own
+ * folder and, when it sits at `<root>/.dork/extensions/<id>`, the whole
+ * package `<root>` (a plugin, a dev-linked working folder, or a project).
+ * Programs inside them are refused (`resolve-program.ts`).
+ *
+ * @param extensionDir - The extension's folder.
+ */
+async function ownFoldersOf(extensionDir: string, dorkHome: string): Promise<string[]> {
+  const named = path.resolve(extensionDir);
+  const real = await fs.realpath(named).catch(() => named);
+  const homes = new Set([
+    path.resolve(dorkHome),
+    await fs.realpath(dorkHome).catch(() => dorkHome),
+  ]);
+  const folders = new Set<string>([named, real]);
+  for (const dir of [named, real]) {
+    const dotDork = path.dirname(path.dirname(dir));
+    // `{dorkHome}/extensions/<id>` is installed directly: DorkOS's data
+    // directory is not a package, and the folder above it is not either.
+    if (homes.has(dotDork)) continue;
+    if (path.basename(path.dirname(dir)) === 'extensions' && path.basename(dotDork) === '.dork') {
+      folders.add(path.dirname(dotDork));
+    }
+  }
+  return [...folders];
+}
 
 /**
  * Build the isolation view for a validated manifest.
@@ -23,14 +53,23 @@ import { resolveProgram, type ResolveProgramOptions } from './resolve-program.js
  */
 export async function isolationOf(
   manifest: ExtensionManifest,
-  options: ResolveProgramOptions
+  options: ResolveProgramOptions & { extensionDir?: string }
 ): Promise<ExtensionIsolation | null> {
   const caps = manifest.serverCapabilities;
   if (caps?.runtime !== 'subprocess') return null;
   const net = [...(caps.allow?.net ?? [])];
   const run = [...(caps.allow?.run ?? [])];
+  const refusedRoots = [
+    ...(options.refusedRoots ?? []),
+    ...(options.extensionDir ? await ownFoldersOf(options.extensionDir, options.dorkHome) : []),
+  ];
   const resolvedRun = await Promise.all(
-    run.map(async (name) => ({ name, path: await resolveProgram(name, options) }))
+    run.map(async (name) => {
+      const found = await resolveProgram(name, { ...options, refusedRoots });
+      return found.path === null
+        ? { name, path: null, reason: found.reason }
+        : { name, path: found.path };
+    })
   );
   return {
     runtime: 'subprocess',
