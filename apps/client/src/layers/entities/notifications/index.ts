@@ -18,7 +18,12 @@ export { useNotifications, useUnreadCount } from './model/use-notifications';
 export type { NotificationsState } from './model/use-notifications';
 export { useMarkRead, useMarkAllRead } from './model/use-mark-read';
 export type { MarkReadMutation, MarkAllReadMutation } from './model/use-mark-read';
-export { requestInbox, useInboxRequest, clearInboxRequest } from './model/inbox-request-store';
+export {
+  requestInbox,
+  useInboxRequest,
+  settleInboxRequest,
+  clearInboxRequest,
+} from './model/inbox-request-store';
 export type { InboxRequestOptions } from './model/inbox-request-store';
 export { useInboxDeepLink } from './model/use-inbox-deep-link';
 export {

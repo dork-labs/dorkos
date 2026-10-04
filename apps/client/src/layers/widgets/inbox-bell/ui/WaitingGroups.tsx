@@ -54,6 +54,8 @@ export interface WaitingGroupsProps {
    * that matches no row singles out nothing.
    */
   focusId?: string;
+  /** Focus left the singled-out row: the link is spent. */
+  onFocusSpent?: () => void;
   /** Session id → what to call its agent. */
   agentNames?: Readonly<Record<string, string>>;
   /** Open a session, closing the Inbox. */
@@ -85,6 +87,7 @@ export function WaitingGroups({
   decisions,
   schedules,
   focusId,
+  onFocusSpent,
   agentNames,
   onOpenSession,
   onNavigate,
@@ -177,6 +180,7 @@ export function WaitingGroups({
             onNavigate={onNavigate}
             onWatch={onOpenSession}
             focusId={focusId}
+            onFocusSpent={onFocusSpent}
             flush
           />
         </div>

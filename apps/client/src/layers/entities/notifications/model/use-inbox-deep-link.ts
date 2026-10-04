@@ -38,16 +38,19 @@ const INBOX_OPEN = 'open';
 export function useInboxDeepLink(): void {
   const raw = useSafeSearch()[INBOX_SEARCH_PARAM];
   const inPlaceNavigate = useInPlaceNavigate();
+  const present = raw !== undefined;
   // `String` because the app's search parser turns a number-looking value
-  // into a number; an id is still an id.
-  const target = raw === undefined || raw === null ? '' : String(raw).trim();
+  // into a number; an id is still an id. A bare `?inbox` reads as empty.
+  const target = raw === null || raw === undefined ? '' : String(raw).trim();
 
   useEffect(() => {
-    if (!target || !inPlaceNavigate) return;
-    requestInbox(undefined, target === INBOX_OPEN ? undefined : { focus: target });
+    if (!present || !inPlaceNavigate) return;
+    // An empty `?inbox=` names nothing, so it opens nothing, but it is still
+    // taken out of the address like any other.
+    if (target) requestInbox(undefined, target === INBOX_OPEN ? undefined : { focus: target });
     inPlaceNavigate({
       search: (prev) => ({ ...prev, [INBOX_SEARCH_PARAM]: undefined }),
       replace: true,
     });
-  }, [target, inPlaceNavigate]);
+  }, [present, target, inPlaceNavigate]);
 }

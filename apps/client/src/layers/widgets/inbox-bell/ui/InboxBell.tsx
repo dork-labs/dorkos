@@ -14,6 +14,7 @@ import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
 import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
+  settleInboxRequest,
   useInboxRequest,
   useMarkAllRead,
   useNotifications,
@@ -281,8 +282,8 @@ export function InboxBell() {
   // a filter nobody can see is a filter that makes the next open look broken.
   const [lens, setLens] = useState<NotificationLens | undefined>(undefined);
   // The one waiting item a link asked to single out (`?inbox=<id>`, DOR-2577):
-  // its row takes focus and a ring while the panel is open. Dropped on close,
-  // for the same reason as the lens.
+  // its row takes focus and a ring. Dropped when focus leaves that row, and on
+  // close for the same reason as the lens.
   const [focusId, setFocusId] = useState<string | undefined>(undefined);
 
   // Somebody pressed the shortcut, or a session asked for its own notifications,
@@ -301,13 +302,24 @@ export function InboxBell() {
     setFocusId(undefined);
     setOpen(true);
   }
-  const [seenInboxRequest, setSeenInboxRequest] = useState(inboxRequest.openRequest);
+  // A request still pending when this bell mounts was made before it existed
+  // (a cold-load `?inbox=` link read while the shell was loading), so it starts
+  // out unseen and opens on the first render. One already answered by an
+  // earlier bell starts out seen.
+  const [seenInboxRequest, setSeenInboxRequest] = useState<number | null>(
+    inboxRequest.pending ? null : inboxRequest.openRequest
+  );
   if (seenInboxRequest !== inboxRequest.openRequest) {
     setSeenInboxRequest(inboxRequest.openRequest);
     setLens(inboxRequest.lens);
     setFocusId(inboxRequest.focus);
     setOpen(true);
   }
+
+  // Opened for it: tell the store, so a bell mounted later does not open again.
+  useEffect(() => {
+    if (seenInboxRequest !== null) settleInboxRequest();
+  }, [seenInboxRequest]);
 
   // A parked schedule counts toward the number on the badge — it is a
   // request for a decision just like a capability approval — but the SENTENCE
@@ -461,6 +473,7 @@ export function InboxBell() {
                     decisions={extensionDecisions}
                     schedules={shownSchedules}
                     focusId={focusId}
+                    onFocusSpent={() => setFocusId(undefined)}
                     agentNames={agentNames}
                     onOpenSession={(sessionId) => {
                       setOpen(false);

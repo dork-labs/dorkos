@@ -127,6 +127,13 @@ describe('useInboxDeepLink', () => {
     expect(view.result.current.focus).toBe('b');
   });
 
+  it('takes an empty ?inbox= out of the address without opening anything', async () => {
+    const { router, view } = mount('/activity?inbox=&since=today');
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ since: 'today' }));
+    expect(view.result.current.openRequest).toBe(0);
+  });
+
   it('does nothing without the param', async () => {
     const { router, view } = mount('/activity?since=today');
 

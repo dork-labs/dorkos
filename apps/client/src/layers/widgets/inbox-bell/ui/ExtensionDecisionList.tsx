@@ -36,6 +36,8 @@ export interface ExtensionDecisionListProps {
   flush?: boolean;
   /** The decision a link asked to single out: focused and ringed. */
   focusId?: string;
+  /** Focus left the singled-out row: the link is spent. */
+  onFocusSpent?: () => void;
 }
 
 /**
@@ -47,22 +49,45 @@ export interface ExtensionDecisionListProps {
  * open (it is portalled), and a decision fetched after a cold load arrives
  * later still. Focusing first also keeps the panel's own autofocus off it,
  * since that only moves focus that is not already inside.
+ *
+ * A row that arrives once the person is already somewhere in the panel (a
+ * field, a button) scrolls into view and takes the ring, but leaves focus
+ * where they put it. Focus leaving the row spends the link: the ring goes, so
+ * the same link again focuses it again.
  */
 function DecisionFrame({
   decisionId,
+  title,
   focused,
+  onFocusSpent,
   children,
 }: {
   decisionId: string;
+  title: string;
   focused: boolean;
+  onFocusSpent?: () => void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Whether this row has ever been drawn NOT singled out. Until it has, it is
+  // a row that arrived singled out. A ref rather than a mount flag so React's
+  // development double-run of effects reads the same answer twice.
+  const everPlain = useRef(false);
   useEffect(() => {
     const frame = ref.current;
-    if (!focused || !frame) return;
+    if (!focused) {
+      everPlain.current = true;
+      return;
+    }
+    if (!frame) return;
     // Optional: jsdom has no layout, so no `scrollIntoView`.
     frame.scrollIntoView?.({ block: 'nearest' });
+    // Only a row that ARRIVES singled out defers to where the person already
+    // is. One already on screen was asked for again, so it takes focus.
+    const panel = frame.closest<HTMLElement>('[role="dialog"]');
+    const active = document.activeElement;
+    const busyInPanel = !!panel && !!active && active !== panel && panel.contains(active);
+    if (!everPlain.current && busyInPanel) return;
     frame.focus({ preventScroll: true });
   }, [focused]);
   return (
@@ -70,8 +95,22 @@ function DecisionFrame({
       ref={ref}
       data-decision-id={decisionId}
       data-focused={focused ? 'true' : undefined}
+      // A named group, so when the frame itself holds focus a screen reader
+      // says which ask it is.
+      role="group"
+      aria-label={title}
       tabIndex={focused ? -1 : undefined}
       className={focused ? 'ring-ring rounded-md ring-2 outline-none' : undefined}
+      onBlur={
+        focused
+          ? (event) => {
+              // Focus moving onto the row's own buttons is still on the row.
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                onFocusSpent?.();
+              }
+            }
+          : undefined
+      }
     >
       {children}
     </div>
@@ -103,6 +142,7 @@ export function ExtensionDecisionList({
   onWatch,
   flush = false,
   focusId,
+  onFocusSpent,
 }: ExtensionDecisionListProps) {
   const { answer, pendingFor } = useExtensionDecisionActions();
   const listRef = useRef<HTMLDivElement>(null);
@@ -199,7 +239,13 @@ export function ExtensionDecisionList({
       className={flush ? 'flex flex-col gap-1' : 'mt-2 flex flex-col gap-1'}
     >
       {decisions.map((decision) => (
-        <DecisionFrame key={decision.id} decisionId={decision.id} focused={decision.id === focusId}>
+        <DecisionFrame
+          key={decision.id}
+          decisionId={decision.id}
+          title={decision.title}
+          focused={decision.id === focusId}
+          onFocusSpent={onFocusSpent}
+        >
           <InboxDecisionRow
             icon={MessageCircleQuestion}
             title={decision.title}

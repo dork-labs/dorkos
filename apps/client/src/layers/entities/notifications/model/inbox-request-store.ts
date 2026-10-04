@@ -26,6 +26,14 @@ interface InboxRequestState {
   lens: NotificationLens | undefined;
   /** The waiting item to bring into view and focus, or `undefined` for none. */
   focus: string | undefined;
+  /**
+   * True from a {@link requestInbox} until the bell says it opened for it
+   * ({@link settleInboxRequest}). A request can be made before any bell is
+   * mounted (a cold-load link, read while the shell is still loading); this is
+   * what lets the bell that mounts later still answer it, while a remounted
+   * bell does not reopen for a request an earlier one already answered.
+   */
+  pending: boolean;
 }
 
 /** What else a {@link requestInbox} can ask for besides a lens. */
@@ -42,6 +50,7 @@ const useInboxRequestStore = create<InboxRequestState>(() => ({
   openRequest: 0,
   lens: undefined,
   focus: undefined,
+  pending: false,
 }));
 
 /**
@@ -55,19 +64,26 @@ export function requestInbox(lens?: NotificationLens, options?: InboxRequestOpti
     openRequest: state.openRequest + 1,
     lens,
     focus: options?.focus,
+    pending: true,
   }));
+}
+
+/** The bell opened for the current request: a bell mounted later must not reopen for it. */
+export function settleInboxRequest(): void {
+  if (useInboxRequestStore.getState().pending) useInboxRequestStore.setState({ pending: false });
 }
 
 /**
  * The current request — subscribe to it to open the Inbox when it changes.
  *
- * @returns A counter that increases on each {@link requestInbox}, and the lens
- * and focus asked for with it.
+ * @returns A counter that increases on each {@link requestInbox}, the lens and
+ * focus asked for with it, and whether no bell has answered it yet.
  */
 export function useInboxRequest(): {
   openRequest: number;
   lens: NotificationLens | undefined;
   focus: string | undefined;
+  pending: boolean;
 } {
   return useInboxRequestStore((state) => state);
 }
@@ -78,5 +94,10 @@ export function useInboxRequest(): {
  * @internal Exported for testing only.
  */
 export function clearInboxRequest(): void {
-  useInboxRequestStore.setState({ openRequest: 0, lens: undefined, focus: undefined });
+  useInboxRequestStore.setState({
+    openRequest: 0,
+    lens: undefined,
+    focus: undefined,
+    pending: false,
+  });
 }

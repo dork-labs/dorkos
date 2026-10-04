@@ -510,12 +510,101 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
     act(() => requestInbox(undefined, { focus: QUESTION_ID }));
     await screen.findByText('Activity');
     expect(screen.queryByText('Which way should the migration go?')).not.toBeInTheDocument();
+    // Focus on the panel itself, where opening leaves it: nobody is busy yet.
+    act(() => screen.getByRole('dialog').focus());
 
     decisions = [shipDecision({ id: QUESTION_ID, title: 'Which way should the migration go?' })];
     await act(() => queryClient.invalidateQueries());
 
     await screen.findByText('Which way should the migration go?');
     await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
+  });
+
+  it('rings a late decision but leaves focus where the person already is in the panel', async () => {
+    decisions = [];
+    historyRows = [historyRow('01JOLD', 'An older ask, answered')];
+    const { queryClient } = renderBell();
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    const older = (await screen.findByText('An older ask, answered')).closest(
+      'button, a, [tabindex]'
+    ) as HTMLElement;
+    act(() => older.focus());
+    expect(older).toHaveFocus();
+
+    decisions = [shipDecision({ id: QUESTION_ID, title: 'Which way should the migration go?' })];
+    await act(() => queryClient.invalidateQueries());
+
+    await screen.findByText('Which way should the migration go?');
+    await waitFor(() =>
+      expect(frameOf('Which way should the migration go?')).toHaveAttribute('data-focused', 'true')
+    );
+    expect(older).toHaveFocus();
+  });
+
+  it('names the focused row for a screen reader by its ask', async () => {
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+
+    const group = await screen.findByRole('group', { name: 'Which way should the migration go?' });
+    await waitFor(() => expect(group).toHaveFocus());
+  });
+
+  it('keeps the ring while focus moves onto the row’s own buttons, and drops it once focus leaves', async () => {
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    const frame = await screen.findByRole('group', { name: 'Which way should the migration go?' });
+    await waitFor(() => expect(frame).toHaveFocus());
+
+    act(() => within(frame).getByRole('button', { name: 'Forward only' }).focus());
+    expect(frameOf('Which way should the migration go?')).toHaveAttribute('data-focused', 'true');
+
+    act(() => within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it').focus());
+    await waitFor(() => expect(document.querySelector('[data-focused]')).toBeNull());
+  });
+
+  it('focuses the row again when the same link is followed again while the Inbox is open', async () => {
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    const frame = await screen.findByRole('group', { name: 'Which way should the migration go?' });
+    await waitFor(() => expect(frame).toHaveFocus());
+    const shipIt = within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it');
+    act(() => shipIt.focus());
+    await waitFor(() => expect(document.querySelector('[data-focused]')).toBeNull());
+
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+
+    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
+  });
+
+  it('opens for a link read before the bell was on screen', async () => {
+    // The shell reads a cold-load `?inbox=` while it is still loading, before
+    // any bell exists.
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+
+    renderBell();
+
+    await screen.findByText('Which way should the migration go?');
+    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
+  });
+
+  it('does not reopen for a link an earlier bell already opened for', async () => {
+    const first = renderBell();
+    await screen.findByTestId('inbox-bell');
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    await screen.findByText('Which way should the migration go?');
+    first.unmount();
+
+    renderBell();
+
+    // Loaded, so a panel that was going to open would be open by now.
+    const bell = await screen.findByTestId('inbox-bell');
+    await waitFor(() => expect(bell).toHaveAccessibleName(/2 decisions/));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Which way should the migration go?')).not.toBeInTheDocument();
   });
 
   it('opens the whole Inbox, nothing singled out, for an id that names nothing waiting', async () => {
