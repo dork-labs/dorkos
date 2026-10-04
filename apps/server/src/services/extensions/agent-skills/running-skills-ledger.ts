@@ -289,15 +289,42 @@ async function removeEntry(p: string): Promise<void> {
 }
 
 /**
- * Make the folder of plugin roots a real folder DorkOS owns.
+ * Make sure the folder of plugin roots is the real folder DorkOS owns, before
+ * anything is written into it OR listed and removed from it.
  *
- * A link standing where it belongs is removed rather than followed: writing
- * through it would put generated plugin roots wherever it points.
+ * Asked on every reconcile, including one with no roots to write: that is the
+ * one that lists the folder and removes whatever is in it, and listing through
+ * a link standing where the folder belongs would delete the contents of
+ * wherever it points. A link (or a file) there is removed, never followed. A
+ * folder whose real path is not `{dorkHome}/cache/extensions/skill-plugins` —
+ * reached through a link higher up, at `cache/` or `cache/extensions/` — is
+ * left alone, and the reconcile fails loudly instead.
+ *
+ * @param dorkHome - DorkOS's data directory.
+ * @param create - Whether to create the folder when it is not there.
+ * @returns Whether the folder may be used, and whether anything was removed.
  */
-async function ensureRootsDir(dir: string): Promise<void> {
-  const stats = await fs.lstat(dir).catch(() => undefined);
-  if (stats && !stats.isDirectory()) await removeEntry(dir);
-  await fs.mkdir(dir, { recursive: true });
+async function prepareRootsDir(
+  dorkHome: string,
+  create: boolean
+): Promise<{ usable: boolean; changed: boolean }> {
+  const dir = extensionSkillPluginsDir(dorkHome);
+  let changed = false;
+  let stats = await fs.lstat(dir).catch(() => undefined);
+  if (stats && !stats.isDirectory()) {
+    await removeEntry(dir); // a link or a file: the entry goes, its target is untouched
+    changed = true;
+    stats = undefined;
+  }
+  if (!stats) {
+    if (!create) return { usable: false, changed };
+    await fs.mkdir(dir, { recursive: true });
+  }
+  const expected = path.join(await fs.realpath(dorkHome), 'cache', 'extensions', 'skill-plugins');
+  if ((await fs.realpath(dir)) !== expected) {
+    throw new Error(`${dir} is reached through a link to somewhere else, so DorkOS left it alone`);
+  }
+  return { usable: true, changed };
 }
 
 /**
@@ -312,8 +339,9 @@ async function syncPluginRoots(
   specs: readonly PluginRootSpec[]
 ): Promise<boolean> {
   const dir = extensionSkillPluginsDir(dorkHome);
-  let changed = false;
-  if (specs.length > 0) await ensureRootsDir(dir);
+  const prepared = await prepareRootsDir(dorkHome, specs.length > 0);
+  if (!prepared.usable) return prepared.changed;
+  let changed = prepared.changed;
   for (const spec of specs) {
     const root = extensionSkillPluginRoot(dorkHome, spec.id);
     if (await rootMatches(root, spec)) continue;
@@ -339,6 +367,10 @@ async function syncPluginRoots(
       throw err;
     }
   }
+  // Everything else here goes, a crash-left `.staging-*` included. This
+  // assumes one server per data directory: reconciles are serialized within a
+  // server, but two servers sharing one could remove each other's staging
+  // folder mid-build, which fails that reconcile (logged) and loses nothing.
   const wanted = new Set(specs.map((spec) => spec.id));
   const present = await fs.readdir(dir).catch((): string[] => []);
   for (const name of present) {

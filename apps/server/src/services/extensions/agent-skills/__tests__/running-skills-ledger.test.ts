@@ -274,6 +274,40 @@ describe('the generated plugin root of a global extension', () => {
     expect(await fs.readdir(elsewhere)).toEqual([]);
   });
 
+  it('never clears through a link standing where the folder of roots belongs', async () => {
+    // Purpose: with no global extension left, the reconcile lists the folder
+    // and removes what is in it; through a link, that would empty its target.
+    const outside = path.join(project, 'outside');
+    await fs.mkdir(outside, { recursive: true });
+    await fs.writeFile(path.join(outside, 'keep.txt'), 'mine');
+    const rootsDir = path.join(dorkHome, 'cache', 'extensions', 'skill-plugins');
+    await fs.mkdir(path.dirname(rootsDir), { recursive: true });
+    await fs.symlink(outside, rootsDir);
+
+    const change = await reconcileRunningSkills([], {
+      dorkHome,
+      config: approving('mail', '/none'),
+      core,
+    });
+    expect(change.globalChanged).toBe(true);
+    expect(await fs.readdir(outside)).toEqual(['keep.txt']);
+    await expect(fs.lstat(rootsDir)).rejects.toThrow();
+  });
+
+  it('refuses a folder of roots reached through a link higher up', async () => {
+    const dir = path.join(dorkHome, 'extensions', 'mail');
+    await writeSkill(dir, 'triage-inbox');
+    const outside = path.join(project, 'outside-cache');
+    await fs.mkdir(path.join(outside, 'skill-plugins', 'other'), { recursive: true });
+    await fs.mkdir(path.join(dorkHome, 'cache'), { recursive: true });
+    await fs.symlink(outside, path.join(dorkHome, 'cache', 'extensions'));
+
+    await expect(
+      reconcileRunningSkills([record(dir)], { dorkHome, config: approving('mail', dir), core })
+    ).rejects.toThrow(/link/);
+    expect(await fs.readdir(path.join(outside, 'skill-plugins'))).toEqual(['other']);
+  });
+
   it('rebuilds a root whose links were tampered with', async () => {
     const dir = path.join(dorkHome, 'extensions', 'mail');
     await writeSkill(dir, 'triage-inbox');
