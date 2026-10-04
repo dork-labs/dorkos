@@ -122,11 +122,14 @@ describe('the permission upgrade', () => {
     });
     expect(onDisk('granted')).not.toHaveProperty('enabledToolGroups');
     expect(onDisk('refused').permissions).toEqual({ areas: { rooms: 'blocked' } });
+    // An observe ceiling blocks every state area, Extension tools (DOR-2685)
+    // included: a capped agent must not gain extension tools by default.
     expect(onDisk('capped').permissions.areas).toMatchObject({
       rooms: 'blocked',
+      extensions: 'blocked',
       reach: 'blocked',
     });
-    expect(Object.keys(onDisk('capped').permissions.areas)).toHaveLength(10);
+    expect(Object.keys(onDisk('capped').permissions.areas)).toHaveLength(11);
     expect(onDisk('capped')).not.toHaveProperty('tierCeiling');
     // An agent that never held a retired field is left exactly as it was.
     expect(onDisk('plain').permissions).toBeUndefined();
@@ -143,7 +146,7 @@ describe('the permission upgrade', () => {
     }
     const capped = world.events.find((e) => e.resourceLabel === 'capped')!;
     expect(capped.metadata).toMatchObject({ note: OBSERVE_CEILING_NOTE });
-    expect((capped.metadata as { changes: unknown[] }).changes).toHaveLength(10);
+    expect((capped.metadata as { changes: unknown[] }).changes).toHaveLength(11);
   });
 
   it('keeps going past an agent whose file cannot be read, and says so', async () => {

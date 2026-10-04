@@ -139,6 +139,23 @@ export interface CapabilitySurfaces {
 }
 
 /**
+ * Where a capability came from, when DorkOS itself did not declare it.
+ *
+ * Today the only other origin is a running extension (DOR-2685): its tools
+ * join the live registry while it runs and leave when it stops. The catalog,
+ * the permissions pages and approval cards read this to say which extension a
+ * tool belongs to. A core capability carries no source at all.
+ */
+export interface CapabilitySource {
+  /** The kind of origin. Only extensions contribute capabilities today. */
+  kind: 'extension';
+  /** The extension's id, e.g. `mail-app`. */
+  id: string;
+  /** The extension's display name, e.g. `Mail`. */
+  name: string;
+}
+
+/**
  * A single capability as it appears in the serialized catalog: everything from
  * its runtime definition except the handler, with the Zod input/output schemas
  * converted to JSON Schema.
@@ -169,6 +186,11 @@ export interface SerializedCapability {
    * contract and must not narrow ahead of the server.
    */
   area: string | null;
+  /**
+   * Where the capability came from, present only for one a running extension
+   * contributed. Core capabilities omit it. See {@link CapabilitySource}.
+   */
+  source?: CapabilitySource;
 }
 
 /**
