@@ -5,6 +5,7 @@ covers:
   - 'feat(marketplace): Dev Playground showcase for dev links (DOR-2696)'
   - 'test(e2e): link a folder, see the dev link badge, unlink (DOR-2696)'
   - 'docs(marketplace): guide to developing a package with a dev link (DOR-2696)'
+  - 'fix(marketplace): drop a stale dev link reload, match project links by folder, and honest approval copy (DOR-2696)'
 ---
 
 ### Added
