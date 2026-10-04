@@ -23,7 +23,7 @@ import {
   clearTestHomes,
   registerEveryFolderAsHome,
 } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
-import { checkDeclaredTools } from '../tool-schema.js';
+import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import {
   createToolBinding,
   EXTENSION_TOOL_RESULT_MAX_BYTES,

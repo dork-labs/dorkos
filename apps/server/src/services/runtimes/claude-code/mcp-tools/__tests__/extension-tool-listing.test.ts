@@ -36,7 +36,7 @@ import { composeCapabilityRegistryForDocs } from '../../../../core/self-descript
 import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
-import { checkDeclaredTools } from '../../../../extensions/agent-tools/tool-schema.js';
+import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,

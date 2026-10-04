@@ -1,10 +1,10 @@
 /**
- * The advertised form of a capability's input field map (DOR-2053), in its own
- * module so the extension contribution check can run exactly the conversion
- * the MCP projection runs without importing the projection (which imports the
- * permission gate, which imports the contribution check).
+ * The advertised form of a capability's input field map (DOR-2053). Shared so
+ * the server's MCP projection and the extension tool check (in
+ * `@dorkos/extension-api`, also run by `dorkos marketplace validate`) render
+ * exactly the same field map.
  *
- * @module services/core/capabilities/portable-input-shape
+ * @module @dorkos/shared/portable-input-shape
  */
 import { z } from 'zod';
 

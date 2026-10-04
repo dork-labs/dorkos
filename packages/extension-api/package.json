@@ -12,6 +12,14 @@
     "./server": {
       "types": "./src/server-extension-api.ts",
       "default": "./dist/server-extension-api.js"
+    },
+    "./manifest": {
+      "types": "./src/manifest-schema.ts",
+      "default": "./dist/manifest-schema.js"
+    },
+    "./tool-check": {
+      "types": "./src/tool-check.ts",
+      "default": "./dist/tool-check.js"
     }
   },
   "scripts": {

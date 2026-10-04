@@ -38,7 +38,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../lib/logger.js';
 import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.js';
-import type { ExtensionToolCheck } from './agent-tools/tool-schema.js';
+import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;

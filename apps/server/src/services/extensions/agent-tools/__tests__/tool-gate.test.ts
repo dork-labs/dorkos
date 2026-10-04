@@ -38,7 +38,7 @@ import { ApprovalService } from '../../../core/approvals/index.js';
 import { eventFanOut } from '../../../core/event-fan-out.js';
 import { permissionActions } from '../../../core/permissions/index.js';
 import type { AgentIdentity } from '../../../core/agent-identity/agent-identity-service.js';
-import { checkDeclaredTools } from '../tool-schema.js';
+import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import { createToolBinding, RunningExtensionTools } from '../tool-binding.js';
 
 const FIXTURE = path.resolve(

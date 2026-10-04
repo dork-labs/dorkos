@@ -39,7 +39,7 @@ import type {
 } from '../../core/capabilities/extension-contribution.js';
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { logger } from '../../../lib/logger.js';
-import type { AcceptedExtensionTool, ExtensionToolCheck } from './tool-schema.js';
+import type { AcceptedExtensionTool, ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
 
 /**
  * The largest result, serialized, an agent is handed. A tool result lands in

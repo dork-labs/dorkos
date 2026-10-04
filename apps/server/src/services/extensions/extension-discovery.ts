@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
-import { checkDeclaredTools, summarizeToolCheck } from './agent-tools/tool-schema.js';
+import { checkDeclaredTools, summarizeToolCheck } from '@dorkos/extension-api/tool-check';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { ExtensionRecord, ExtensionManifest } from '@dorkos/extension-api';
 import {

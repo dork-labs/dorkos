@@ -31,7 +31,7 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import { capabilityInputObject } from './input-projection.js';
-import { portableInputShape } from './portable-input-shape.js';
+import { portableInputShape } from '@dorkos/shared/portable-input-shape';
 import type { CapabilityDefinition } from './capability-definition.js';
 import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
 import { CapabilityImageResult, CapabilityToolError } from './mcp-envelope.js';

@@ -26,7 +26,7 @@ import { getExtensionInbox } from './inbox/extension-inbox.js';
 import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
 import type { CapabilityRegistry } from '../core/capabilities/registry.js';
-import { checkDeclaredTools } from './agent-tools/tool-schema.js';
+import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import { RunningExtensionTools } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 

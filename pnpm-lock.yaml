@@ -1587,6 +1587,9 @@ importers:
 
   packages/marketplace:
     dependencies:
+      '@dorkos/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@dorkos/skills':
         specifier: workspace:*
         version: link:../skills

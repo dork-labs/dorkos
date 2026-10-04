@@ -1,5 +1,7 @@
 /**
- * Which declared tool input schemas DorkOS accepts (DOR-2685, task 2.2).
+ * Which declared tool input schemas DorkOS accepts (DOR-2685, task 2.2). The
+ * agreement with the server's `registry.contribute` is pinned in
+ * `apps/server/src/services/extensions/agent-tools/__tests__/tool-check-agreement.test.ts`.
  *
  * The property under test: a tool accepted here is a tool the registry's
  * `contribute` accepts and every agent tool list can render, and a schema that
@@ -7,11 +9,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { ExtensionManifestSchema, type ExtensionManifest } from '@dorkos/extension-api';
-import { noopLogger } from '@dorkos/shared/logger';
+import { ExtensionManifestSchema, type ExtensionManifest } from '../manifest-schema.js';
 
-import { checkDeclaredTools, checkToolInputSchema, plainReason } from '../tool-schema.js';
-import { composeRegistry } from '../../../core/capabilities/registry.js';
+import { checkDeclaredTools, checkToolInputSchema, plainReason } from '../tool-check.js';
 
 /** A closed object schema around the given properties. */
 function closed(properties: Record<string, unknown>, extra: Record<string, unknown> = {}) {
@@ -80,6 +80,22 @@ describe('checkToolInputSchema', () => {
       /reserved property name/,
     ],
     ['an unknown type', closed({ a: { type: 'date' } }), /unknown type/],
+    // An untyped node converts to "anything": an open hole in a closed schema.
+    ['an untyped node', closed({ a: {} }), /must say its type/],
+    ['an array with no items', closed({ a: { type: 'array' } }), /must describe its items/],
+    // The converter passes a default through untouched, straight to the handler.
+    [
+      'a default that breaks its own schema',
+      closed({ n: { type: 'integer', default: 'rm -rf /' } }),
+      /default that does not fit its own schema/,
+    ],
+    [
+      'an object default that breaks additionalProperties',
+      closed({
+        o: closed({ a: { type: 'string' } }, { default: { a: 'x', extra: true } }),
+      }),
+      /default that does not fit its own schema/,
+    ],
   ])('refuses %s, naming why', (_label, schema, why) => {
     // Purpose: each construct that converts to a record (or worse), or that
     // the subset does not cover, is refused with a sentence an author can act
@@ -184,36 +200,6 @@ describe('checkDeclaredTools', () => {
       ok: false,
       reason: expect.stringMatching(/may not call itself/),
     });
-  });
-
-  it('agrees with registry.contribute on every tool it accepts', () => {
-    // Purpose: the agreement property itself. Every accepted tool, handed to a
-    // real registry exactly as the lifecycle will hand it, is accepted.
-    const checks = checkDeclaredTools(
-      manifestWith([
-        observeTool('list_inbox', closed({ limit: { type: 'integer', default: 20 } })),
-        {
-          ...observeTool('send', closed({ to: { type: 'string' } }, { required: ['to'] })),
-          tier: 'act',
-          approvalDisplayFields: ['to'],
-        },
-        {
-          ...observeTool('purge', closed({ folder: { type: 'string' } })),
-          tier: 'destructive',
-          approvalDisplayFields: ['folder'],
-        },
-      ])
-    );
-    const accepted = checks.filter((c) => c.ok);
-    expect(accepted).toHaveLength(3);
-    const registry = composeRegistry([], { logger: noopLogger });
-    const result = registry.contribute({
-      owner: 'mail-app',
-      displayName: 'Mail',
-      tools: accepted.map((tool) => ({ ...tool, invoke: async () => 'ok' })),
-    });
-    expect(result).toMatchObject({ ok: true });
-    expect(registry.get('ext_mail_app.purge')?.tier).toBe('destructive');
   });
 
   it('caps the timeout it hands the lifecycle', () => {
