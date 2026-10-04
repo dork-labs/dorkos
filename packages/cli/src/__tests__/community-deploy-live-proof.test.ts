@@ -15,7 +15,7 @@ function harness(
     corruptFile?: boolean;
     publicFile?: boolean;
     failSetup?: boolean;
-    oidc?: { label: string };
+    oidc?: { label: string; mark: 'dorkos' | null };
   } = {}
 ) {
   let stored = new Uint8Array();

@@ -11,6 +11,7 @@ covers:
   - 'fix(community): drop account rows a request wrote after its account was cleared'
   - 'fix(community): refuse member and host writes that began before their account was cleared'
   - 'fix(community): take the account lock first in grant checks and account erasure'
+  - "fix(cli): type the live-proof test's sign-on options with the new mark"
 ---
 
 ### Added
