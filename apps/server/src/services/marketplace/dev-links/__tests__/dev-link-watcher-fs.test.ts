@@ -11,9 +11,10 @@
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { DevLinkRecord, DevLinkReloadedEvent } from '@dorkos/shared/marketplace-schemas';
-import { DevLinkWatcher, type DevLinkExtensions } from '../dev-link-watcher.js';
+import type { DevLinkExtensions } from '../dev-link-extensions.js';
+import { DevLinkWatcher, type DevLinkWatcherDeps } from '../dev-link-watcher.js';
 import { updateDevLinks } from '../registry.js';
 
 let base: string;
@@ -22,7 +23,7 @@ let work: string;
 let watcher: DevLinkWatcher | undefined;
 let events: DevLinkReloadedEvent[];
 let reload: ReturnType<typeof vi.fn<DevLinkExtensions['reload']>>;
-let refreshPlugins: ReturnType<typeof vi.fn>;
+let refreshPlugins: Mock<DevLinkWatcherDeps['refreshPlugins']>;
 
 /** Write a plugin folder carrying one extension. */
 async function writePackage(dir: string): Promise<void> {
@@ -74,7 +75,7 @@ beforeEach(async () => {
   await updateDevLinks(home, () => [record], { replaceUnreadable: true });
   events = [];
   reload = vi.fn<DevLinkExtensions['reload']>(async () => ({ outcome: 'reloaded' }));
-  refreshPlugins = vi.fn();
+  refreshPlugins = vi.fn<DevLinkWatcherDeps['refreshPlugins']>();
   watcher = new DevLinkWatcher({
     dorkHome: home,
     extensions: {

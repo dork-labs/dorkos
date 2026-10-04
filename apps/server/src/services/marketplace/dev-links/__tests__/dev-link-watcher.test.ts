@@ -10,18 +10,23 @@
 import { mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { DevLinkRecord, DevLinkReloadedEvent } from '@dorkos/shared/marketplace-schemas';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
   classifyDevLinkChanges,
-  devLinkExtensionsOf,
-  DevLinkWatcher,
   isIgnoredDevLinkPath,
   type DevLinkChange,
   type DevLinkChangeKind,
+} from '../dev-link-changes.js';
+import {
+  devLinkExtensionsOf,
   type DevLinkExtensionManager,
   type DevLinkExtensions,
+} from '../dev-link-extensions.js';
+import {
+  DevLinkWatcher,
+  type DevLinkWatcherDeps,
   type DevLinkWatchFactory,
   type DevLinkWatchListeners,
 } from '../dev-link-watcher.js';
@@ -216,8 +221,8 @@ async function eventually(check: () => void, timeoutMs = 3_000): Promise<void> {
 describe('DevLinkWatcher', () => {
   let watches: ReturnType<typeof fakeWatches>;
   let events: DevLinkReloadedEvent[];
-  let refreshPlugins: ReturnType<typeof vi.fn>;
-  let reproject: ReturnType<typeof vi.fn>;
+  let refreshPlugins: Mock<DevLinkWatcherDeps['refreshPlugins']>;
+  let reproject: Mock<DevLinkWatcherDeps['reproject']>;
   let watcher: DevLinkWatcher | undefined;
 
   function build(extensions?: DevLinkExtensions, quietMs = 40): DevLinkWatcher {
@@ -246,8 +251,8 @@ describe('DevLinkWatcher', () => {
     await writePackage(work);
     watches = fakeWatches();
     events = [];
-    refreshPlugins = vi.fn();
-    reproject = vi.fn(async () => undefined);
+    refreshPlugins = vi.fn<DevLinkWatcherDeps['refreshPlugins']>();
+    reproject = vi.fn<DevLinkWatcherDeps['reproject']>(async () => undefined);
   });
 
   afterEach(async () => {

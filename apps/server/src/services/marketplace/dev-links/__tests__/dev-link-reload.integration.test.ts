@@ -48,7 +48,8 @@ import { ExtensionManager } from '../../../extensions/extension-manager.js';
 import { mayRunExtensionCode } from '../../../extensions/extension-load-policy.js';
 import { runAutoProjection } from '../../../harness/auto-project.js';
 import { DevLinkService } from '../dev-link-service.js';
-import { DevLinkWatcher, devLinkExtensionsOf } from '../dev-link-watcher.js';
+import { devLinkExtensionsOf } from '../dev-link-extensions.js';
+import { DevLinkWatcher } from '../dev-link-watcher.js';
 import { memoryConsentStore } from './memory-consent-store.js';
 
 const PLUGIN = 'flow';

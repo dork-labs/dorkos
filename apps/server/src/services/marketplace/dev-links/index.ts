@@ -18,14 +18,12 @@ export {
 } from './dev-link-service.js';
 export {
   classifyDevLinkChanges,
-  DevLinkWatcher,
-  devLinkExtensionsOf,
   isIgnoredDevLinkPath,
   type DevLinkChange,
-  type DevLinkExtensions,
   type DevLinkReloadPlan,
-  type DevLinkWatcherDeps,
-} from './dev-link-watcher.js';
+} from './dev-link-changes.js';
+export { devLinkExtensionsOf, type DevLinkExtensions } from './dev-link-extensions.js';
+export { DevLinkWatcher, type DevLinkWatcherDeps } from './dev-link-watcher.js';
 export { hookDecisionConsentStore, type DevLinkConsentStore } from './consent.js';
 export { DevLinkError, packageIsDevLinked } from './errors.js';
 export {
