@@ -41,7 +41,7 @@ afterEach(() => {
 
 /** A fresh real directory (canonical, so `/var` vs `/private/var` never matters). */
 function tempDir(prefix: string): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
   made.push(dir);
   return dir;
 }
