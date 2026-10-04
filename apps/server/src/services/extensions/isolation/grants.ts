@@ -21,6 +21,38 @@ export function isolatedFilesDir(dorkHome: string, extensionId: string): string 
 }
 
 /**
+ * The folder an extension's child reads its code and assets from, staged
+ * fresh at every start. Host-owned: the child can read it, never write it.
+ *
+ * @param dorkHome - DorkOS's data directory.
+ * @param extensionId - The extension id.
+ */
+export function isolatedRunDir(dorkHome: string, extensionId: string): string {
+  return path.join(dorkHome, 'cache', 'extensions', 'isolated', extensionId);
+}
+
+/**
+ * Every folder above any of the given paths, up to and including the root,
+ * without duplicates. The child's self-check must find each one unreadable.
+ *
+ * @param paths - Absolute paths (the grants).
+ */
+export function ancestorsOf(paths: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const p of paths) {
+    let dir = path.dirname(p);
+    for (;;) {
+      out.add(dir);
+      const up = path.dirname(dir);
+      if (up === dir) break;
+      dir = up;
+    }
+  }
+  for (const p of paths) out.delete(p);
+  return [...out];
+}
+
+/**
  * Whether `child` is `root` or inside it.
  *
  * @param root - A folder.
@@ -70,6 +102,7 @@ export function selfCheckPassed(hello: HelloMessage): boolean {
     !p.fsWriteRoot &&
     !p.fsReadRoot &&
     !p.readsDorkHome &&
+    p.readableAncestors.length === 0 &&
     !p.inspector &&
     !p.child &&
     !p.worker &&

@@ -33,6 +33,12 @@ export interface PermissionReport {
   fsReadRoot: boolean;
   /** Whether the child may read DorkOS's data directory (must be `false`). */
   readsDorkHome: boolean;
+  /**
+   * The folders above its grants (passed by the host) the child CAN read.
+   * Must be empty: Node's permission tree has had bugs that made a shared
+   * parent of two grants readable.
+   */
+  readableAncestors: string[];
   /** Whether the child may open the inspector (must be `false`). */
   inspector: boolean;
   /** Whether the child may start processes (must be `false`). */
@@ -289,7 +295,9 @@ export function isChildMessage(value: unknown): value is ChildMessage {
           'worker',
           'addon',
           'wasi',
-        ].every((key) => typeof p[key] === 'boolean')
+        ].every((key) => typeof p[key] === 'boolean') &&
+        Array.isArray(p.readableAncestors) &&
+        p.readableAncestors.every((a) => typeof a === 'string')
       );
     }
     case 'loaded':

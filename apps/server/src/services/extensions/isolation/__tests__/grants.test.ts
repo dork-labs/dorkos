@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { buildChildEnv, selfCheckPassed } from '../grants.js';
+import { ancestorsOf, buildChildEnv, selfCheckPassed } from '../grants.js';
 import { isChildMessage, type PermissionReport } from '../ipc-protocol.js';
 import { unpackedPath } from '../child-entry.js';
 
@@ -18,6 +18,7 @@ const PASSING: PermissionReport = {
   fsReadRoot: false,
   readsDorkHome: false,
   inspector: false,
+  readableAncestors: [],
   child: false,
   worker: false,
   addon: false,
@@ -30,9 +31,27 @@ describe('selfCheckPassed', () => {
   it('requires every field', () => {
     expect(selfCheckPassed({ type: 'hello', node: 'v24', permission: PASSING })).toBe(true);
     for (const key of Object.keys(PASSING) as (keyof PermissionReport)[]) {
+      if (key === 'readableAncestors') continue;
       const flipped = { ...PASSING, [key]: !PASSING[key] };
       expect(selfCheckPassed({ type: 'hello', node: 'v24', permission: flipped })).toBe(false);
     }
+    // One readable folder above a grant fails it too.
+    expect(
+      selfCheckPassed({
+        type: 'hello',
+        node: 'v24',
+        permission: { ...PASSING, readableAncestors: ['/'] },
+      })
+    ).toBe(false);
+  });
+});
+
+describe('ancestorsOf', () => {
+  // Purpose: every folder above every grant, the root included, once each,
+  // and never a grant itself.
+  it('lists each folder above the grants once', () => {
+    expect(ancestorsOf(['/a/b/run', '/a/c/files']).sort()).toEqual(['/', '/a', '/a/b', '/a/c']);
+    expect(ancestorsOf(['/a/b', '/a/b/c'])).not.toContain('/a/b');
   });
 });
 

@@ -81,6 +81,11 @@ function permissionReport(): PermissionReport {
     readsDorkHome:
       typeof dorkHome !== 'string' || dorkHome.length === 0 || has('fs.read', dorkHome),
     inspector: has('inspector'),
+    // Every folder above a grant (the host passes them after the data
+    // directory): any one readable is a widened grant, so the check fails.
+    readableAncestors: process.argv
+      .slice(3)
+      .filter((dir) => typeof dir === 'string' && has('fs.read', dir)),
     child: has('child'),
     worker: has('worker'),
     addon: has('addon'),

@@ -9,8 +9,11 @@
  * grants, every path passed through `realpath` (grants must be real paths; on
  * macOS `/tmp` is `/private/tmp`):
  *
- * - read: the bootstrap, the compiled bundle, the extension's `assets/` (when
- *   present), and its own files folder;
+ * - read: its run folder (`{dorkHome}/cache/extensions/isolated/<id>`, staged
+ *   fresh at every start with a copy of the bootstrap, the compiled bundle and
+ *   the extension's `assets/`), and its own files folder. Exactly two read
+ *   grants, on purpose: see step 3 of `start()` for the Node bug three or more
+ *   would hit;
  * - write: its own files folder (`{dorkHome}/extension-data/<id>/files`);
  * - a V8 heap cap from `limits.memoryMb` (`--max-old-space-size`; Buffers and
  *   native memory are not counted).
@@ -31,8 +34,9 @@
  *
  * The child's first message reports what the permission model allows. Unless
  * the model is on, the child can read its own bootstrap (the control proving
- * the report is truthful), and writing `/`, child processes, workers, addons
- * and WASI are all off, the child is killed and the start is refused with
+ * the report is truthful), it can read neither `/`, the data directory nor any
+ * folder above a grant, and writing `/`, child processes, workers, addons,
+ * WASI and the inspector are all off, the child is killed and the start is refused with
  * `isolation_unavailable`. There is no fallback to running in-process.
  *
  * ## Running
@@ -65,10 +69,13 @@ import {
   type ChildMessage,
   type HostMessage,
 } from './ipc-protocol.js';
+import { CHILD_ENTRY_FILE } from './child-entry.js';
 import {
+  ancestorsOf,
   buildChildEnv,
   findEscapingLink,
   isolatedFilesDir,
+  isolatedRunDir,
   isWithin,
   selfCheckPassed,
 } from './grants.js';
@@ -284,10 +291,27 @@ export class IsolatedExtensionHost {
       }
     }
 
-    // 3. The grants, as real paths.
-    const bootstrapReal = await fs.realpath(this.options.bootstrapPath);
-    const bundleReal = await fs.realpath(this.options.bundlePath);
-    const reads = [bootstrapReal, bundleReal, ...(assetsReal ? [assetsReal] : []), filesReal];
+    // 3. Stage what the child may read into ONE run folder, and grant just
+    //    that and the files folder. Node's permission tree (22.x and 24.x)
+    //    has a bug: once two grants split at a shared folder, any later grant
+    //    passing through that split marks the folder itself readable, so with
+    //    three or more grants `/` (or the data directory) could be listed
+    //    (`fs.readdirSync('/')` succeeds). Two grants never pass through a
+    //    split, and the self-check below proves no ancestor is readable.
+    const runDir = isolatedRunDir(this.options.dorkHome, this.options.extensionId);
+    await fs.rm(runDir, { recursive: true, force: true });
+    await fs.mkdir(runDir, { recursive: true });
+    const runReal = await fs.realpath(runDir);
+    const bootstrapReal = path.join(runReal, CHILD_ENTRY_FILE);
+    const bundleReal = path.join(runReal, `${this.options.extensionId}.js`);
+    await fs.copyFile(this.options.bootstrapPath, bootstrapReal);
+    await fs.copyFile(this.options.bundlePath, bundleReal);
+    if (assetsReal) {
+      // Copied with links resolved: the scan above proved every link stays
+      // inside assets/, and a copy carries no link out of the run folder.
+      await fs.cp(assetsReal, path.join(runReal, 'assets'), { recursive: true, dereference: true });
+    }
+    const reads = [runReal, filesReal];
     if (reads.some((p) => p.includes(',') || p.includes('*'))) {
       this.options.logger.warn(
         `[Extensions] ${this.options.extensionId}: a folder name holds "," or "*", which Node's permission flags can't express safely`
@@ -320,12 +344,13 @@ export class IsolatedExtensionHost {
     this.killReason = null;
     this.sawOom = false;
     this.backlog = 0;
-    // The data directory rides as the one argument, so the child's self-check
-    // can confirm it CANNOT read it (the grants must not have widened).
+    // The data directory, then every folder above a grant, ride as arguments
+    // so the child's self-check can confirm it can read NONE of them (the
+    // grants must not have widened, by a Node bug or anything else).
     const dorkHomeReal = await fs
       .realpath(this.options.dorkHome)
       .catch(() => path.resolve(this.options.dorkHome));
-    const child = fork(bootstrapReal, [dorkHomeReal], {
+    const child = fork(bootstrapReal, [dorkHomeReal, ...ancestorsOf(reads)], {
       execPath: this.options.execPath ?? process.execPath,
       execArgv,
       env,

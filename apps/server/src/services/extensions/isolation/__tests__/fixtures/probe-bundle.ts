@@ -53,6 +53,17 @@ function tcpConnect(host, port, extra) {
 
 exports.probes = {
   readFile: (p) => attempt(() => fs.readFileSync(p, 'utf8')),
+  readdirMany: (dirs) =>
+    attempt(() =>
+      dirs.filter((d) => {
+        try {
+          fs.readdirSync(d);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+    ),
   writeFile: (p, text) => attempt(() => { fs.writeFileSync(p, text); return true; }),
   // The real module, reached around the shim: only Node's permission model stops it.
   realExecSync: () =>

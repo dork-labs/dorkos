@@ -17,7 +17,7 @@ import { IsolatedExtensionHost } from '../../server/src/services/extensions/isol
  *
  * - the self-check to pass (the permission model on, the positive control
  *   true, and child processes, workers, addons, WASI and writing `/` off);
- * - a read of DorkOS's data directory to be denied by Node;
+ * - a read of DorkOS's data directory, and a listing of `/`, to be denied;
  * - a connection to a listening but undeclared port to be refused by the
  *   network guard, with the server seeing no connection.
  *
@@ -41,6 +41,7 @@ async function attempt(fn) {
 exports.probes = {
   versions: () => attempt(() => ({ node: process.versions.node, electron: process.versions.electron || null })),
   readFile: (p) => attempt(() => fs.readFileSync(p, 'utf8')),
+  readdir: (p) => attempt(() => fs.readdirSync(p).length),
   fetch: (url) => attempt(async () => (await fetch(url)).status),
 };
 `;
@@ -147,13 +148,19 @@ export async function assertExtensionIsolation(appPath: string): Promise<string>
     if (read.ok || read.code !== 'ERR_ACCESS_DENIED') {
       throw new Error(`Reading DorkOS's data directory was not denied: ${JSON.stringify(read)}`);
     }
+    // Node's permission tree once exposed '/' to three grants across roots
+    // (this smoke found it); the run-folder layout keeps it shut.
+    const root = (await host.probe('readdir', '/')) as Report;
+    if (root.ok || root.code !== 'ERR_ACCESS_DENIED') {
+      throw new Error(`Listing / was not denied: ${JSON.stringify(root)}`);
+    }
     const fetched = (await host.probe('fetch', `http://127.0.0.1:${port}/`)) as Report;
     if (fetched.ok || fetched.code !== 'ERR_EXTENSION_NET_DENIED' || accepted !== 0) {
       throw new Error(
         `An undeclared connection was not refused: ${JSON.stringify(fetched)}, ${accepted} accepted`
       );
     }
-    return `Electron ${electron.electron} (Node ${electron.node}) on ${path.basename(helper)}: self-check passed, data dir read denied, undeclared connection refused`;
+    return `Electron ${electron.electron} (Node ${electron.node}) on ${path.basename(helper)}: self-check passed, data dir read and / listing denied, undeclared connection refused`;
   } finally {
     await host.stop();
     await new Promise((resolve) => server.close(resolve));

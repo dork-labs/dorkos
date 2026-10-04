@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { isolatedFilesDir } from '../grants.js';
+import { isolatedFilesDir, isolatedRunDir } from '../grants.js';
 import {
   cleanup,
   createHarness,
@@ -155,7 +155,9 @@ describe('IsolatedExtensionHost (real child processes)', () => {
     await fs.symlink(path.join(extDir, 'assets', 'a.txt'), path.join(extDir, 'assets', 'inside'));
     const inside = makeHost(h, { id: 'linky', extensionDir: extDir });
     await startOk(inside);
-    expect(await probe(inside, 'readFile', path.join(extDir, 'assets', 'a.txt'))).toMatchObject({
+    // Assets are read from the run folder's copy, never from the extension's own folder.
+    const runAssets = path.join(isolatedRunDir(h.dorkHome, 'linky'), 'assets', 'a.txt');
+    expect(await probe(inside, 'readFile', runAssets)).toMatchObject({
       ok: true,
       value: 'a',
     });
