@@ -34,7 +34,16 @@ interface InboxRequestState {
    * bell does not reopen for a request an earlier one already answered.
    */
   pending: boolean;
+  /** When the current request was made (`Date.now()`), so a stale one can expire. */
+  requestedAt: number;
 }
+
+/**
+ * How long a request may wait for a bell. A link read during a slow load
+ * should still open the Inbox when the app appears; one from minutes ago,
+ * after the person has started on something else, should not.
+ */
+export const INBOX_REQUEST_TTL_MS = 30_000;
 
 /** What else a {@link requestInbox} can ask for besides a lens. */
 export interface InboxRequestOptions {
@@ -51,6 +60,7 @@ const useInboxRequestStore = create<InboxRequestState>(() => ({
   lens: undefined,
   focus: undefined,
   pending: false,
+  requestedAt: 0,
 }));
 
 /**
@@ -65,10 +75,14 @@ export function requestInbox(lens?: NotificationLens, options?: InboxRequestOpti
     lens,
     focus: options?.focus,
     pending: true,
+    requestedAt: Date.now(),
   }));
 }
 
-/** The bell opened for the current request: a bell mounted later must not reopen for it. */
+/**
+ * No bell should open for the current request any more: one just did, or the
+ * screen it would open over is gone (first-run onboarding took the window).
+ */
 export function settleInboxRequest(): void {
   if (useInboxRequestStore.getState().pending) useInboxRequestStore.setState({ pending: false });
 }
@@ -84,6 +98,7 @@ export function useInboxRequest(): {
   lens: NotificationLens | undefined;
   focus: string | undefined;
   pending: boolean;
+  requestedAt: number;
 } {
   return useInboxRequestStore((state) => state);
 }
@@ -99,5 +114,6 @@ export function clearInboxRequest(): void {
     lens: undefined,
     focus: undefined,
     pending: false,
+    requestedAt: 0,
   });
 }

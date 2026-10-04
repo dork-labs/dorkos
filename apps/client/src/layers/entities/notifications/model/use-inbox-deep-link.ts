@@ -23,7 +23,7 @@
  */
 import { useEffect } from 'react';
 import { useInPlaceNavigate, useSafeSearch } from '@/layers/shared/model';
-import { requestInbox } from './inbox-request-store';
+import { requestInbox, settleInboxRequest } from './inbox-request-store';
 
 /** The search param that opens the Inbox. */
 const INBOX_SEARCH_PARAM = 'inbox';
@@ -31,11 +31,23 @@ const INBOX_SEARCH_PARAM = 'inbox';
 /** The `?inbox=` value that opens the whole Inbox with nothing singled out. */
 const INBOX_OPEN = 'open';
 
+/** Options for {@link useInboxDeepLink}. */
+export interface InboxDeepLinkOptions {
+  /**
+   * True while something has taken the whole window (first-run onboarding).
+   * A link read meanwhile is still taken out of the address, but no bell opens
+   * for it afterwards: by then the person has moved on.
+   */
+  blocked?: boolean;
+}
+
 /**
  * Answer `?inbox=` on whatever route the shell is showing. Mount once, at the
  * shell, so a link works from every page.
+ *
+ * @param options - Whether the window is taken by something else right now.
  */
-export function useInboxDeepLink(): void {
+export function useInboxDeepLink({ blocked = false }: InboxDeepLinkOptions = {}): void {
   const raw = useSafeSearch()[INBOX_SEARCH_PARAM];
   const inPlaceNavigate = useInPlaceNavigate();
   const present = raw !== undefined;
@@ -53,4 +65,10 @@ export function useInboxDeepLink(): void {
       replace: true,
     });
   }, [present, target, inPlaceNavigate]);
+
+  // Declared after the effect above, so a link read in the same commit is
+  // made first and then dropped.
+  useEffect(() => {
+    if (blocked) settleInboxRequest();
+  }, [blocked]);
 }

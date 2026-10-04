@@ -291,9 +291,6 @@ export function AppShell() {
   // has to work when the profile is not already what you are looking at.
   useLegacyProfileLinkRedirect();
   useProfileDockDeepLink();
-  // `?inbox=` on any route opens the Inbox over it (DOR-2577), so a link from
-  // an extension page or a notification lands where the open ask is.
-  useInboxDeepLink();
   useRightPanelPersistence();
   // In-window tabs (DOR-540). The sync hook is the single reconciliation point
   // between the router's location and the tab set — every navigation, whatever
@@ -394,6 +391,8 @@ export function AppShell() {
     done: isOnboardingComplete || isOnboardingDismissed,
     overlayVisible: showOnboarding,
   });
+  // `?inbox=` opens the Inbox on any route (DOR-2577), but not over onboarding.
+  useInboxDeepLink({ blocked: showOnboarding });
 
   // **A failed config read is not a slow one, and the gate below cannot tell.**
   // `isLoading` is `isPending && isFetching`, so the moment the read ERRORS it

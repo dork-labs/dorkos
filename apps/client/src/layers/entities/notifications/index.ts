@@ -23,9 +23,11 @@ export {
   useInboxRequest,
   settleInboxRequest,
   clearInboxRequest,
+  INBOX_REQUEST_TTL_MS,
 } from './model/inbox-request-store';
 export type { InboxRequestOptions } from './model/inbox-request-store';
 export { useInboxDeepLink } from './model/use-inbox-deep-link';
+export type { InboxDeepLinkOptions } from './model/use-inbox-deep-link';
 export {
   NOTIFICATIONS_QUERY_KEY,
   notificationsQueryKey,

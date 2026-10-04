@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -505,13 +505,14 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
 
   it('focuses a decision that arrives after the Inbox opened, as on a cold load', async () => {
     decisions = [];
+    // Something tabbable in the panel, so the popover's own autofocus lands
+    // on a button the way it does in the app.
+    historyRows = [historyRow('01JOLD', 'An older ask, answered')];
     const { queryClient } = renderBell();
-    // Nothing waiting yet: the bell is quiet until somebody asks for it.
     act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    await screen.findByText('Activity');
-    expect(screen.queryByText('Which way should the migration go?')).not.toBeInTheDocument();
-    // Focus on the panel itself, where opening leaves it: nobody is busy yet.
-    act(() => screen.getByRole('dialog').focus());
+    await screen.findByText('An older ask, answered');
+    const panel = screen.getByRole('dialog');
+    await waitFor(() => expect(panel.contains(document.activeElement)).toBe(true));
 
     decisions = [shipDecision({ id: QUESTION_ID, title: 'Which way should the migration go?' })];
     await act(() => queryClient.invalidateQueries());
@@ -520,7 +521,7 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
     await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
   });
 
-  it('rings a late decision but leaves focus where the person already is in the panel', async () => {
+  it('still takes focus from a button or history row the person is on', async () => {
     decisions = [];
     historyRows = [historyRow('01JOLD', 'An older ask, answered')];
     const { queryClient } = renderBell();
@@ -535,10 +536,62 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
     await act(() => queryClient.invalidateQueries());
 
     await screen.findByText('Which way should the migration go?');
+    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
+  });
+
+  it('rings a late decision but leaves focus in a field the person is typing in', async () => {
+    decisions = [
+      shipDecision({
+        title: 'Which branch should it start from?',
+        actions: {
+          kind: 'choice',
+          choices: [
+            { id: 'a', label: 'main' },
+            { id: 'b', label: 'release' },
+          ],
+          allowReply: true,
+        },
+      }),
+    ];
+    const { queryClient } = renderBell();
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    await screen.findByText('Which branch should it start from?');
+    const user = userEvent.setup();
+    await user.click(
+      within(rowOf('Which branch should it start from?')).getByRole('button', { name: 'Reply…' })
+    );
+    const field = await within(rowOf('Which branch should it start from?')).findByRole('textbox');
+    await waitFor(() => expect(field).toHaveFocus());
+    await user.type(field, 'from the');
+
+    decisions = [
+      ...decisions,
+      shipDecision({
+        id: QUESTION_ID,
+        key: 'question:DOR-2400',
+        title: 'Which way should the migration go?',
+      }),
+    ];
+    await act(() => queryClient.invalidateQueries());
+
+    await screen.findByText('Which way should the migration go?');
     await waitFor(() =>
       expect(frameOf('Which way should the migration go?')).toHaveAttribute('data-focused', 'true')
     );
-    expect(older).toHaveFocus();
+    expect(field).toHaveFocus();
+  });
+
+  it('expires a link that waited too long for a bell', async () => {
+    const realNow = Date.now();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(realNow - 31_000);
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    now.mockRestore();
+
+    renderBell();
+
+    const bell = await screen.findByTestId('inbox-bell');
+    await waitFor(() => expect(bell).toHaveAccessibleName(/2 decisions/));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('names the focused row for a screen reader by its ask', async () => {
@@ -563,6 +616,19 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
 
     act(() => within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it').focus());
     await waitFor(() => expect(document.querySelector('[data-focused]')).toBeNull());
+  });
+
+  it('keeps the ring when the whole window loses focus', async () => {
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    const frame = await screen.findByRole('group', { name: 'Which way should the migration go?' });
+    await waitFor(() => expect(frame).toHaveFocus());
+
+    // Switching apps: a blur with nowhere next.
+    fireEvent.blur(frame, { relatedTarget: null });
+
+    expect(frameOf('Which way should the migration go?')).toHaveAttribute('data-focused', 'true');
   });
 
   it('focuses the row again when the same link is followed again while the Inbox is open', async () => {

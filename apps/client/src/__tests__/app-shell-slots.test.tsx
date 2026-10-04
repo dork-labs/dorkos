@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { act, render, screen, cleanup, within, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, cleanup, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -10,6 +10,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-banner';
 import { InboxBell } from '@/layers/widgets/inbox-bell';
+import { clearInboxRequest, requestInbox, useInboxRequest } from '@/layers/entities/notifications';
 
 // ── Route-aware mock: control the pathname returned by useRouterState ──
 
@@ -1094,6 +1095,23 @@ describe('AppShell slot integration', () => {
       await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Inbox links during first-run onboarding (DOR-2577)', () => {
+    afterEach(() => {
+      mockOnboardingOverlayVisible = false;
+      clearInboxRequest();
+    });
+
+    it('drops an `?inbox=` request made while onboarding is up, so it cannot pop open later', async () => {
+      requestInbox(undefined, { focus: '01J0000000000000000000000D' });
+      mockOnboardingOverlayVisible = true;
+
+      renderAppShell();
+
+      const { result } = renderHook(() => useInboxRequest());
+      await waitFor(() => expect(result.current.pending).toBe(false));
     });
   });
 

@@ -4,7 +4,7 @@
  *
  * @module widgets/inbox-bell/ui/ExtensionDecisionList
  */
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { MessageCircleQuestion } from 'lucide-react';
 import type {
   DecisionActionRequest,
@@ -50,25 +50,26 @@ export interface ExtensionDecisionListProps {
  * later still. Focusing first also keeps the panel's own autofocus off it,
  * since that only moves focus that is not already inside.
  *
- * A row that arrives once the person is already somewhere in the panel (a
- * field, a button) scrolls into view and takes the ring, but leaves focus
- * where they put it. Focus leaving the row spends the link: the ring goes, so
- * the same link again focuses it again.
+ * A row that arrives while the person is typing in the panel (a reply, a
+ * note) scrolls into view and takes the ring, but leaves focus in the field.
+ * Focus on a button does not count: the popover puts it there on its own.
+ * Focus leaving the row spends the link: the ring goes, so the same link
+ * again focuses it again. A row ringed but never focused keeps its ring until
+ * the Inbox closes, as the mark of what the link was for.
  */
 function DecisionFrame({
   decisionId,
-  title,
   focused,
   onFocusSpent,
   children,
 }: {
   decisionId: string;
-  title: string;
   focused: boolean;
   onFocusSpent?: () => void;
-  children: ReactNode;
+  children: (titleId: string) => ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   // Whether this row has ever been drawn NOT singled out. Until it has, it is
   // a row that arrived singled out. A ref rather than a mount flag so React's
   // development double-run of effects reads the same answer twice.
@@ -84,10 +85,16 @@ function DecisionFrame({
     frame.scrollIntoView?.({ block: 'nearest' });
     // Only a row that ARRIVES singled out defers to where the person already
     // is. One already on screen was asked for again, so it takes focus.
+    // Typing, not merely being somewhere: on a desktop cold load the popover
+    // has already moved focus to its first button, and that is not the person.
     const panel = frame.closest<HTMLElement>('[role="dialog"]');
     const active = document.activeElement;
-    const busyInPanel = !!panel && !!active && active !== panel && panel.contains(active);
-    if (!everPlain.current && busyInPanel) return;
+    const typingInPanel =
+      !!panel &&
+      active instanceof HTMLElement &&
+      panel.contains(active) &&
+      (active.matches('input, textarea') || active.isContentEditable);
+    if (!everPlain.current && typingInPanel) return;
     frame.focus({ preventScroll: true });
   }, [focused]);
   return (
@@ -95,24 +102,24 @@ function DecisionFrame({
       ref={ref}
       data-decision-id={decisionId}
       data-focused={focused ? 'true' : undefined}
-      // A named group, so when the frame itself holds focus a screen reader
-      // says which ask it is.
+      // A group named by its title, so when the frame itself holds focus a
+      // screen reader says which ask it is (once: labelled-by, not a copy).
       role="group"
-      aria-label={title}
+      aria-labelledby={titleId}
       tabIndex={focused ? -1 : undefined}
       className={focused ? 'ring-ring rounded-md ring-2 outline-none' : undefined}
       onBlur={
         focused
           ? (event) => {
-              // Focus moving onto the row's own buttons is still on the row.
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                onFocusSpent?.();
-              }
+              // Focus moving onto the row's own buttons is still on the row,
+              // and the window losing focus (no next target) is not a move.
+              const next = event.relatedTarget as Node | null;
+              if (next !== null && !event.currentTarget.contains(next)) onFocusSpent?.();
             }
           : undefined
       }
     >
-      {children}
+      {children(titleId)}
     </div>
   );
 }
@@ -242,31 +249,33 @@ export function ExtensionDecisionList({
         <DecisionFrame
           key={decision.id}
           decisionId={decision.id}
-          title={decision.title}
           focused={decision.id === focusId}
           onFocusSpent={onFocusSpent}
         >
-          <InboxDecisionRow
-            icon={MessageCircleQuestion}
-            title={decision.title}
-            why={decision.why}
-            sourceLine={decision.extensionName}
-            meta={sinceLine(decision.since, decision.raisedAt, now) ?? undefined}
-            notice={decision.needsYou ? NEEDS_YOU : undefined}
-            more={decision.detail ? <p className="break-words">{decision.detail}</p> : undefined}
-            onOpen={decision.link ? () => onNavigate(decision.link as string) : undefined}
-            watch={
-              decision.watch
-                ? {
-                    label: decision.watch.label,
-                    onWatch: () => onWatch(decision.watch!.sessionId),
-                  }
-                : null
-            }
-            actions={actionsOf(decision)}
-            pending={pendingFor(decision.id)}
-            draftKey={decision.id}
-          />
+          {(titleId) => (
+            <InboxDecisionRow
+              icon={MessageCircleQuestion}
+              title={decision.title}
+              why={decision.why}
+              sourceLine={decision.extensionName}
+              meta={sinceLine(decision.since, decision.raisedAt, now) ?? undefined}
+              notice={decision.needsYou ? NEEDS_YOU : undefined}
+              more={decision.detail ? <p className="break-words">{decision.detail}</p> : undefined}
+              onOpen={decision.link ? () => onNavigate(decision.link as string) : undefined}
+              watch={
+                decision.watch
+                  ? {
+                      label: decision.watch.label,
+                      onWatch: () => onWatch(decision.watch!.sessionId),
+                    }
+                  : null
+              }
+              actions={actionsOf(decision)}
+              pending={pendingFor(decision.id)}
+              draftKey={decision.id}
+              titleId={titleId}
+            />
+          )}
         </DecisionFrame>
       ))}
     </div>

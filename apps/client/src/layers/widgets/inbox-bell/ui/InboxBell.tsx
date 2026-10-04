@@ -14,6 +14,7 @@ import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
 import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
+  INBOX_REQUEST_TTL_MS,
   settleInboxRequest,
   useInboxRequest,
   useMarkAllRead,
@@ -305,9 +306,11 @@ export function InboxBell() {
   // A request still pending when this bell mounts was made before it existed
   // (a cold-load `?inbox=` link read while the shell was loading), so it starts
   // out unseen and opens on the first render. One already answered by an
-  // earlier bell starts out seen.
-  const [seenInboxRequest, setSeenInboxRequest] = useState<number | null>(
-    inboxRequest.pending ? null : inboxRequest.openRequest
+  // earlier bell, or older than the TTL, starts out seen.
+  const [seenInboxRequest, setSeenInboxRequest] = useState<number | null>(() =>
+    inboxRequest.pending && Date.now() - inboxRequest.requestedAt < INBOX_REQUEST_TTL_MS
+      ? null
+      : inboxRequest.openRequest
   );
   if (seenInboxRequest !== inboxRequest.openRequest) {
     setSeenInboxRequest(inboxRequest.openRequest);

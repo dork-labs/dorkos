@@ -243,7 +243,7 @@ DorkOS dialogs (Settings, Agent, Tasks, Relay, Mesh) are URL-addressable via sea
 
 `RegistryDialog` reads BOTH the URL signal and the existing store flag (`storeOpen || urlSignal.isOpen`) so legacy store-based opens continue to work. Closing the dialog clears both signals. Use the URL hooks for any new cross-page open.
 
-The Inbox popover answers `?inbox=` on every route the same way, with one difference: it is one-shot. `useInboxDeepLink()` (`entities/notifications`, mounted in `AppShell`) reads `?inbox=open` or `?inbox=<waiting item id>`, asks the bell to open through `requestInbox`, and removes the param in place, so a reload or Back does not reopen it. An id names an extension decision; the bell focuses that row, or nothing when it is no longer waiting.
+The Inbox popover answers `?inbox=` on every route the same way, with one difference: it is one-shot. `useInboxDeepLink()` (`entities/notifications`, mounted in `AppShell`) reads `?inbox=open` or `?inbox=<waiting item id>`, asks the bell to open through `requestInbox`, and removes the param in place, so a reload or Back does not reopen it. An id names an extension decision; the bell focuses that row, or nothing when it is no longer waiting. A request made before the bell mounts (a cold load) stays pending for 30 seconds so the bell still opens for it; one read while first-run onboarding is up is dropped.
 
 ## Namespace compounds (`Composer`, `Conversation`)
 

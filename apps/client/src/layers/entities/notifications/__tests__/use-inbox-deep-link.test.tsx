@@ -66,11 +66,11 @@ function buildHarness(initialUrl: string) {
 }
 
 /** Mount the deep link and read the request it makes. */
-function mount(initialUrl: string) {
+function mount(initialUrl: string, blocked = false) {
   const harness = buildHarness(initialUrl);
   const view = renderHook(
     () => {
-      useInboxDeepLink();
+      useInboxDeepLink({ blocked });
       return useInboxRequest();
     },
     { wrapper: harness.Wrapper }
@@ -132,6 +132,14 @@ describe('useInboxDeepLink', () => {
 
     await waitFor(() => expect(router.state.location.search).toEqual({ since: 'today' }));
     expect(view.result.current.openRequest).toBe(0);
+  });
+
+  it('takes a link read during onboarding out of the address, and leaves no bell to open for it', async () => {
+    const { router, view } = mount('/x/flow?inbox=01J0000000000000000000000D', true);
+
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(view.result.current.openRequest).toBe(1);
+    expect(view.result.current.pending).toBe(false);
   });
 
   it('does nothing without the param', async () => {
