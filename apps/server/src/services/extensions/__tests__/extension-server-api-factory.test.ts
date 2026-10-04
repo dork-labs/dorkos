@@ -75,6 +75,25 @@ describe('createDataProviderContext', () => {
     });
   });
 
+  describe('filesDir', () => {
+    // Purpose: one writable folder per extension at the documented place,
+    // existing before register() could use it (DOR-2686 task 4.2).
+    it('is {dorkHome}/extension-data/<id>/files and exists once the ctx is built', async () => {
+      const { ctx } = buildCtx();
+      expect(ctx.filesDir).toBe(path.join(tmpDir, 'extension-data', extensionId, 'files'));
+      const stat = await fs.stat(ctx.filesDir);
+      expect(stat.isDirectory()).toBe(true);
+    });
+
+    // Purpose: no drift from the folder an isolated child is granted write
+    // access to; both read the same helper.
+    it('is the folder the isolated runtime grants', async () => {
+      const { isolatedFilesDir } = await import('../isolation/grants.js');
+      const { ctx } = buildCtx();
+      expect(ctx.filesDir).toBe(isolatedFilesDir(tmpDir, extensionId));
+    });
+  });
+
   describe('secrets', () => {
     it('provides an ExtensionSecretStore with the correct extensionId', async () => {
       const { ctx } = buildCtx();

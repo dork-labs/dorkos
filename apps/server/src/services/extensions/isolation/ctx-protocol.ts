@@ -178,6 +178,7 @@ export const CTX_PROTOCOL = {
   extensionId: konst,
   extensionDir: konst,
   dorkHome: konst,
+  filesDir: konst,
   accounts: {
     kind: 'object',
     members: {

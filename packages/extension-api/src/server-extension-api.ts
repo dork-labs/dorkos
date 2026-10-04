@@ -290,6 +290,12 @@ export interface DataProviderContext {
    * can keep a file other tools also read, such as `<dorkHome>/flow/fleet.json`.
    */
   readonly dorkHome: string;
+  /**
+   * A folder only this extension writes to: `{dorkHome}/extension-data/<id>/files`.
+   * DorkOS creates it before the extension starts. In an isolated extension
+   * (`serverCapabilities.runtime: "subprocess"`) it is the only place it can write.
+   */
+  readonly filesDir: string;
   /** The agent accounts DorkOS knows, their usage, and the account advisor seam. */
   readonly accounts: AccountsApi;
   /**
