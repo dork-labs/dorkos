@@ -296,6 +296,8 @@ destructive (asks every call). \`inputSchema\`: closed JSON Schema; every object
 tools need \`approvalDisplayFields\`. \`timeoutSeconds\`: 1-300, default 60. A throw becomes a tool
 error prefixed with the extension's name; results are plain JSON up to 256 KB; \`call.signal\` aborts
 on timeout or stop. \`list_extensions\` shows each tool's status and why one was refused.
+\`skills\`: folders under \`skills/\`, each a SKILL.md whose \`name\` matches; while the extension
+runs they reach agents as \`<id>__<skill>\`, as a plugin's skills do (a plugin's same name wins).
 `;
 
 /**
