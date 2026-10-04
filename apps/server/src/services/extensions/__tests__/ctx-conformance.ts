@@ -29,7 +29,7 @@ import { AgentSendError } from '@dorkos/extension-api/server';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { TOOLS_REFUSAL } from '../isolation/ctx-protocol.js';
-import { isolatedFilesDir } from '../isolation/grants.js';
+import { isolatedFilesDir, isolatedRunDir } from '../isolation/grants.js';
 import { AGENTS_REFUSAL } from '../isolation/ctx-dispatcher.js';
 import { setAgentSendService, type AgentSendService } from '../agent-send/agent-send.js';
 import { setStartWorkService, type StartWorkService } from '../start-work.js';
@@ -170,6 +170,13 @@ export function describeCtxConformance(label: string, runtime: () => CtxRuntime)
       const expected = isolatedFilesDir(rt.dorkHome(), t.extensionId);
       expect(consts).toMatchObject({ extensionId: t.extensionId, filesDir: expected });
       expect(consts.dorkHome).toBe(rt.dorkHome());
+      if (t.runtime === 'isolated') {
+        // The run folder the child reads its code and assets/ from, never
+        // the extension's source folder (which it cannot read).
+        expect(consts.extensionDir).toBe(
+          await fs.realpath(isolatedRunDir(rt.dorkHome(), t.extensionId))
+        );
+      }
       const wrote = await t.probe<Attempt>('writeFile', 'note.txt', 'hello');
       expect(wrote.ok).toBe(true);
       expect(await fs.readFile(path.join(expected, 'note.txt'), 'utf8')).toBe('hello');

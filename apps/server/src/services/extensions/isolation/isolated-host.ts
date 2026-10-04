@@ -528,11 +528,16 @@ export class IsolatedExtensionHost {
           dorkosPort: this.options.dorkosPort,
           testSeams: this.options.testSeams?.probes === true,
           ctx: {
-            extensionDir: this.options.extensionDir,
+            // The run folder: the one place the child can read its own
+            // assets/ (and its bundle) from. The extension's source folder
+            // is not readable to it, so naming that here would mislead.
+            extensionDir: runReal,
             dorkHome: this.options.dorkHome,
-            // The configured path, as createDataProviderContext names it; the
-            // write grant above is its real path (the same folder).
-            filesDir: this.filesDir,
+            // The real path, exactly as granted: Node's permission model
+            // compares path strings, so a write through a symlinked spelling
+            // of the same folder (macOS /tmp) would be refused. The same
+            // folder createDataProviderContext names, by one helper.
+            filesDir: filesReal,
           },
           displayName: name,
           allowAgents: this.options.isolation.agents,
