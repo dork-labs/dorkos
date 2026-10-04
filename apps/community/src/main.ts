@@ -27,6 +27,7 @@ import { createEvidenceSink, tidyEvidenceSink } from './takedown/evidence/sink.j
 import { sweepTakedownEvidence } from './takedown/worker.js';
 import { startMailDelivery, type NoticeComposers } from './mail/worker.js';
 import { ownerReplacementComposers } from './owner-replacement/notices.js';
+import { signInLinkComposers } from './sign-in/linked.js';
 import { startOwnerReplacementTimeline } from './owner-replacement/worker.js';
 import { pruneNoticeOutbox } from './mail/outbox.js';
 
@@ -56,7 +57,10 @@ await tidyEvidenceSink(evidenceSink);
 // may ask to replace an owner who has left: the owner is told by email, in the community, and on
 // their DorkOS connection, and can keep ownership from any of them. Without mail every request is
 // refused, because the owner could not be told.
-const noticeComposers: NoticeComposers = { ...ownerReplacementComposers(config) };
+const noticeComposers: NoticeComposers = {
+  ...ownerReplacementComposers(config),
+  ...signInLinkComposers(config),
+};
 const app = createCommunityApp({
   config,
   pool,

@@ -53,6 +53,7 @@ import { registerHostOwnerReplacementRoutes } from './routes/host/host-owner-rep
 import { registerOwnerReplacementLinkRoutes } from './routes/account/owner-replacements.js';
 import { registerOwnerReplacementRoutes } from './routes/community/owner-replacement.js';
 import type { NoticeComposers } from './mail/worker.js';
+import type { NoticeKind } from './mail/outbox.js';
 import { registerTakedownNoticeRoutes } from './routes/community/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host/host-links.js';
 import {
@@ -74,11 +75,12 @@ import { createBlobStore, type BlobStore } from './storage/index.js';
 import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
 import { resolveCommunityContext } from './tenant-context.js';
-import { createPasswordConfirmation } from './password-confirmation.js';
+import { createAccountPasswordCheck, createPasswordConfirmation } from './password-confirmation.js';
 import {
   accountHasPassword,
   registerAccountPasswordRoutes,
 } from './routes/account/account-password.js';
+import { registerSignInLinkRoutes } from './routes/account/sign-in-link.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -117,11 +119,18 @@ export function createCommunityApp({
     afterTakedownSnapshot?: () => Promise<void>;
     /** Runs inside a takedown reversal after the community and takedown are locked. */
     afterTakedownReverseLock?: () => Promise<void>;
+    /** Runs after a sign-in link's password checks out, before the link transaction. */
+    afterSignInLinkPasswordCheck?: () => Promise<void>;
+    /** Runs after a sign-in link commits, before its session is made. */
+    afterSignInLinked?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
   const app = new Hono();
-  const auth = createCommunityAuth(pool, config, { now: hooks?.now });
+  // A notice is queued only where mail is set up and the worker can compose its kind.
+  const canSendNotice = (kind: NoticeKind) =>
+    config.mail !== null && noticeComposers[kind] !== undefined;
+  const auth = createCommunityAuth(pool, config, { now: hooks?.now, canSendNotice });
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
@@ -434,7 +443,7 @@ export function createCommunityApp({
     now,
     confirmPassword,
     // Mail is set up and the worker can compose this kind of notice.
-    canSendNotice: (kind) => config.mail !== null && noticeComposers[kind] !== undefined,
+    canSendNotice,
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   registerOwnerReplacementLinkRoutes(hostApi, {
@@ -455,6 +464,23 @@ export function createCommunityApp({
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
+  registerSignInLinkRoutes(hostApi, {
+    pool,
+    auth,
+    config,
+    now,
+    checkPassword: createAccountPasswordCheck({
+      auth,
+      ceiling: config.limits.reauthAttemptsPerMinute,
+      spend: limitAttempts,
+      refund: refundAttempt,
+    }),
+    canSendNotice,
+    hooks: {
+      afterPasswordCheck: hooks?.afterSignInLinkPasswordCheck,
+      afterLinked: hooks?.afterSignInLinked,
+    },
+  });
   app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();

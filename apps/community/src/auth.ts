@@ -15,6 +15,8 @@ import {
   type OwnerReplacementAdmission,
 } from './owner-replacement/admission.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
+import type { NoticeKind } from './mail/outbox.js';
+import { gateAccountLink, SIGN_IN_REFUSED_CODE } from './sign-in/link-gate.js';
 
 /**
  * What let a new account in: an owner grant or an invitation, or only a live claim to replace
@@ -26,9 +28,14 @@ type Admission = { by: 'grant' } | ({ by: 'owner_replacement' } & OwnerReplaceme
 export function createCommunityAuth(
   pool: Pool,
   config: CommunityConfig,
-  options: { now?: () => Date } = {}
+  options: {
+    now?: () => Date;
+    /** Whether mail is set up and the worker can compose this kind of notice. None by default. */
+    canSendNotice?: (kind: NoticeKind) => boolean;
+  } = {}
 ) {
   const now = options.now ?? (() => new Date());
+  const canSendNotice = options.canSendNotice ?? (() => false);
   /**
    * With a minimum age set, refuse to create an account unless this browser confirmed it first
    * (`POST /api/v1/age-confirmation`). A provider callback carries the same cookie, so password,
@@ -92,6 +99,13 @@ export function createCommunityAuth(
    * which rolls the new user back with it.
    */
   const namedSubjects = new WeakMap<object, string>();
+  /**
+   * The Better Auth requests that created a user. Its account row comes next, in the same
+   * transaction, and is a sign-up, not a link to an existing account. Marked in
+   * `user.create.before`: the `after` hooks run only once that transaction commits, too late
+   * for the account hook (and a write through the pool there would wait on the uncommitted user).
+   */
+  const creatingUser = new WeakSet<object>();
 
   return betterAuth({
     database: pool,
@@ -114,9 +128,20 @@ export function createCommunityAuth(
         : {}),
       ...(config.oauth.github ? { github: config.oauth.github } : {}),
     },
-    // An OIDC or social identity whose email matches an existing account is refused, never
-    // silently attached; a person links one from their account page after signing in.
-    account: { accountLinking: { disableImplicitLinking: true } },
+    // A provider sign-in whose email matches an existing account may link to it, but only an
+    // identity whose email the provider verified (no provider is trusted by name), and only
+    // through the one gate in `databaseHooks.account.create.before` (sign-in/link-gate.ts): the
+    // host's trusted OIDC issuer links at once, every other provider needs the account's
+    // password first. The local email's state is the gate's to judge, not a blanket refusal.
+    account: {
+      accountLinking: {
+        enabled: true,
+        disableImplicitLinking: false,
+        requireLocalEmailVerified: false,
+        trustedProviders: [],
+        allowDifferentEmails: false,
+      },
+    },
     // The host's optional OpenID Connect sign-in. Unset, nothing is registered or fetched.
     plugins: config.oidc ? [communityOidc(config.oidc, { now: options.now })] : [],
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
@@ -182,6 +207,7 @@ export function createCommunityAuth(
               namedSubjects.set(ctx, admission.claimant.subject);
             }
             refuseUnconfirmedAge(ctx?.headers?.get('cookie') ?? null);
+            if (ctx) creatingUser.add(ctx);
             return { data: user };
           },
           // One confirmation makes one account: clear it, so the next person to sign up in this
@@ -200,8 +226,8 @@ export function createCommunityAuth(
       },
       account: {
         create: {
-          // The account row of a sign-up a named claim admitted must be the named identity.
           before: async (account, ctx) => {
+            // The account row of a sign-up a named claim admitted must be the named identity.
             const subject = ctx ? namedSubjects.get(ctx) : undefined;
             if (
               subject !== undefined &&
@@ -211,6 +237,13 @@ export function createCommunityAuth(
                 code: 'claim_account_mismatch',
                 message: 'Sign in with the account named in the request, then try again.',
               });
+            // Every implicit link to an existing account passes this one gate.
+            await gateAccountLink(account, ctx, ctx ? creatingUser.has(ctx) : false, {
+              pool,
+              config,
+              canSendNotice,
+              now,
+            });
             return { data: account };
           },
         },
@@ -222,7 +255,9 @@ export function createCommunityAuth(
           // account, refuses them all at once.
           before: async (session) => {
             const refusal = await signInRefusal(pool, session.userId);
-            if (refusal) throw new APIError('FORBIDDEN', { message: refusal });
+            // The code lands a refused provider callback on the sign-in page, not a JSON body.
+            if (refusal)
+              throw new APIError('FORBIDDEN', { code: SIGN_IN_REFUSED_CODE, message: refusal });
             return { data: session };
           },
         },

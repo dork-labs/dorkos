@@ -196,9 +196,10 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
     expect(await userIdFor('unverified@example.com')).toBeNull();
   });
 
-  it('refuses an identity matching an existing password account, and links nothing', async () => {
+  it('holds an identity matching an existing password account for its password, and links nothing', async () => {
     // Purpose: fails if implicit linking lets whoever controls an issuer account with the same
-    // email take over an existing Community account.
+    // email take over an existing Community account, on a host that does not trust its issuer:
+    // the sign-in must wait for the account's own password, with no session made.
     issuer.identity = {
       sub: 'owner-lookalike',
       email: 'owner@example.com',
@@ -207,8 +208,10 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
     };
     const result = await oidcSignIn(await invitation());
     expect(result.location.pathname).toBe('/sign-in-failed');
-    expect(result.location.searchParams.get('error')).toBe('account_not_linked');
+    expect(result.location.searchParams.get('error')).toBe('link_needs_password');
     expect(await providersOf('owner@example.com')).toEqual(['credential']);
+    const session = await call('/api/auth/get-session', 'GET', undefined, result.cookie);
+    expect(await session.json()).toBeNull();
   });
 
   it('admits an invited person, who can then set a password and use it while the issuer is down', async () => {

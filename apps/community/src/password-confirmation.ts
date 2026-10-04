@@ -60,3 +60,50 @@ export function createPasswordConfirmation(deps: {
     refund(key);
   };
 }
+
+/** Check one account's password against a hash already read, outside any session. */
+export type CheckAccountPassword = (input: {
+  accountId: string;
+  /** The account's stored password hash. */
+  hash: string;
+  password: string;
+  /** Runs, before the `429`, when the budget is already spent. */
+  onLimited?: () => Promise<void>;
+}) => Promise<void>;
+
+/**
+ * Build the password check for a person who is not signed in yet but has already proven, through
+ * a provider, that they hold the account's email: linking that sign-in to the account
+ * (`POST /sign-in-link`). It spends from the very same per-account budget as
+ * {@link createPasswordConfirmation} (`reauth-account:<accountId>`), with the same spend-first,
+ * refund-on-success rule, so guesses never add up across routes. It verifies with Better Auth's
+ * own password hasher. A wrong password is `403 REAUTH_FAILED`; a spent budget is `429` with
+ * `Retry-After`.
+ */
+export function createAccountPasswordCheck(deps: {
+  auth: CommunityAuth;
+  ceiling: number;
+  /** Spend one attempt, or throw `RateLimited` when the budget is already spent. Must not await. */
+  spend: (key: string, ceiling: number) => void;
+  /** Give back one attempt spent by `spend`. */
+  refund: (key: string) => void;
+}): CheckAccountPassword {
+  const { auth, ceiling, spend, refund } = deps;
+  return async ({ accountId, hash, password, onLimited }) => {
+    const key = `reauth-account:${accountId}`;
+    try {
+      spend(key, ceiling);
+    } catch (cause) {
+      if (!(cause instanceof RateLimited)) throw cause;
+      await onLimited?.();
+      throw new RateLimited(
+        'Too many wrong passwords. Wait a minute, then sign in again.',
+        cause.retryAfterSeconds
+      );
+    }
+    const context = await auth.$context;
+    if (!(await context.password.verify({ hash, password })))
+      throw new ApiError(403, 'REAUTH_FAILED', 'That password is not right.');
+    refund(key);
+  };
+}
