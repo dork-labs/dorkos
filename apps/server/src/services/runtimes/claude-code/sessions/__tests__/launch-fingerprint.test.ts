@@ -15,6 +15,7 @@ import {
   accountsMatch,
   captureLaunchFingerprint,
   compareLaunchFingerprints,
+  withLiveToolSurface,
   type LaunchParams,
 } from '../launch-fingerprint.js';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
@@ -769,6 +770,17 @@ describe('the tool-surface pin (DOR-2685)', () => {
       ])
     );
     expect(decision.action === 'relaunch' && decision.changed).toEqual(['toolSurface']);
+  });
+
+  it('compares as unchanged when the live surface is kept, and nothing else is hidden', () => {
+    // Purpose: the hold a busy process gets. Only the tool surface is taken
+    // from the live process; another pin that moved still relaunches.
+    const live = launchListing(core);
+    const wanted = launchListing([...core, extensionTool]);
+    expect(compareLaunchFingerprints(live, withLiveToolSurface(live, wanted)).action).toBe('reuse');
+    const movedCwd = launchListing([...core, extensionTool], { cwd: '/elsewhere' });
+    const decision = compareLaunchFingerprints(live, withLiveToolSurface(live, movedCwd));
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['cwd']);
   });
 
   it('leaves external servers to the mcpServers pin and unrecorded sdk servers equal', () => {

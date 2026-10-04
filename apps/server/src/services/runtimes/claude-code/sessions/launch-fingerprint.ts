@@ -745,6 +745,30 @@ function reasoningChanged(
 }
 
 /**
+ * `wanted`, with its tool surface left at what `live` lists: the comparison a
+ * dispatch makes when it must not relaunch for a tool-list change yet.
+ *
+ * A tool-list change is the one relaunch pin a person's own session settings
+ * do not move: installing an extension, turning one on, a permission change or
+ * a dev-link save all move it from outside the session. So it waits for a
+ * process that is still working (a helper agent, a Monitor, a delivery owed)
+ * rather than tear that work down (`persistent-dispatch.ts`). Every other pin
+ * is compared as it is, so a change that relaunches anyway still relaunches,
+ * and the stored fingerprint keeps the old surface, so the next dispatch asks
+ * again.
+ *
+ * @param live - What the running process was launched with
+ * @param wanted - What this dispatch would launch with today
+ * @returns `wanted` with `pins.toolSurface` taken from `live`
+ */
+export function withLiveToolSurface(
+  live: LaunchFingerprint,
+  wanted: LaunchFingerprint
+): LaunchFingerprint {
+  return { ...wanted, pins: { ...wanted.pins, toolSurface: live.pins.toolSurface } };
+}
+
+/**
  * May a dispatch pinned to `wanted` ride a process launched under `live`?
  *
  * The account is answered first and on its own, before any other pin is looked

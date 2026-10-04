@@ -167,6 +167,7 @@ import { isPersistentSessionEnabled } from '../persistent-session-optin.js';
 import {
   AccountPinViolationError,
   captureLaunchFingerprint,
+  withLiveToolSurface,
   type LaunchFingerprint,
 } from './launch-fingerprint.js';
 import { createPumpLauncher, decideProcessReuse, type PumpLaunchPlan } from './pump-launch.js';
@@ -595,7 +596,28 @@ export class PersistentDispatch {
     // dispatch back to ask again, and `onPluginReloadHeld` is what stops that
     // asking going on for ever.
     const contextTokens = conversationTokens(session);
-    const reuse = decideProcessReuse(bundle.fingerprint, plan.fingerprint, {
+    // A changed tool list (an extension started or stopped, a permission that
+    // hides a tool) is moved from outside this session, so it never tears down
+    // a process that is still working: a helper agent, a Monitor, a delivery
+    // owed (DOR-2685; the DOR-2705 class). It waits, and the stored fingerprint
+    // keeps the old list, so the next dispatch asks again. Any other pin that
+    // moved still relaunches as it always did.
+    const live = bundle.fingerprint;
+    const busy =
+      live !== undefined && live.pins.toolSurface !== plan.fingerprint.pins.toolSurface
+        ? bundle.pump.quietness()
+        : undefined;
+    const compared =
+      live !== undefined && busy !== undefined && !busy.quiet
+        ? withLiveToolSurface(live, plan.fingerprint)
+        : plan.fingerprint;
+    if (busy !== undefined && !busy.quiet) {
+      logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
+        session: sessionId,
+        because: busy.because,
+      });
+    }
+    const reuse = decideProcessReuse(bundle.fingerprint, compared, {
       holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),
       sessionId,
       ...(contextTokens !== undefined ? { contextTokens } : {}),

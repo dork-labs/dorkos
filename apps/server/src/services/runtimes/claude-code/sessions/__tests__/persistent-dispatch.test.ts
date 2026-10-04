@@ -1161,6 +1161,50 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     expect(cli.launches).toBe(2);
   });
 
+  it('holds the relaunch while a helper is still working, then relaunches once quiet', async () => {
+    // Purpose: a tool-list change comes from outside the session (an extension
+    // turned on, a permission changed). It must never tear down a process
+    // whose background helper is still working (the DOR-2705 class); it waits,
+    // and the next dispatch after the work ends relaunches.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    await turn(sessionId, 'while the helper works');
+    expect(cli.launches).toBe(1);
+    expect(process.ended).toBe(false);
+
+    // Still held on a second message: the stored fingerprint kept the old list.
+    await turn(sessionId, 'still working');
+    expect(cli.launches).toBe(1);
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
+    await turn(sessionId, 'after the helper finished');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
+  it('still applies a live change while the relaunch is held', async () => {
+    // Purpose: holding the tool list must not hold anything else. A permission
+    // mode changed at the same time reaches the busy process live.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'monitor-1', task_type: 'monitor' }]);
+    await vi.waitFor(() => expect(process.received.length).toBeGreaterThan(0));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+    await turn(sessionId, 'with the monitor running');
+
+    expect(cli.launches).toBe(1);
+    expect(process.liveSets).toContain('setPermissionMode:acceptEdits');
+  });
+
   it('never relaunches mid-turn: a change during a running turn waits for it to end', async () => {
     // Purpose: the relaunch is decided at dispatch, so a turn already running
     // finishes on the process it started on.
