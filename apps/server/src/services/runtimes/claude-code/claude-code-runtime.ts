@@ -793,6 +793,24 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // may hold one nobody approves any more.
       this.activatedPlugins = [];
     }
+    // Running global extensions' skills (DOR-2685), each from its generated
+    // plugin root. Already consented: the extension's approval to run is the
+    // consent, and the root holds skills only. Asked separately, so a ledger
+    // that cannot be read loads no extension skills and leaves the packages
+    // above as they are.
+    try {
+      const { resolveDorkHome } = await import('../../../lib/dork-home.js');
+      const { extensionSkillPluginRoots } =
+        await import('../../extensions/agent-skills/running-skills-ledger.js');
+      const loaded = new Set(this.activatedPlugins.map((plugin) => path.basename(plugin.path)));
+      const roots = await extensionSkillPluginRoots(resolveDorkHome(), loaded);
+      this.activatedPlugins = [
+        ...this.activatedPlugins,
+        ...roots.map((root) => ({ type: 'local' as const, path: root })),
+      ];
+    } catch {
+      // Best-effort: no extension skills this time; the next refresh asks again.
+    }
 
     // Hot-reload every live session so its cached command list reflects the
     // new plugin set instantly, then tell clients to re-fetch. Isolated from

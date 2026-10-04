@@ -51,6 +51,10 @@ import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { logger } from '../../lib/logger.js';
 import { collectSnapshots, ensureSnapshot } from './extension-snapshots.js';
 import { installRootOf } from './extension-trusted-origin.js';
+import {
+  reconcileRunningSkills,
+  type RunningSkillsChange,
+} from './agent-skills/running-skills-ledger.js';
 
 /**
  * How long discovery waits for a burst of project changes to settle before it
@@ -136,6 +140,46 @@ function applyCompileResult(
 }
 
 /**
+ * What {@link ExtensionManager.attachSkillDelivery} does with a change to the
+ * running extensions' skills (DOR-2685).
+ */
+export interface ExtensionSkillDelivery {
+  /**
+   * Project one project again: its local extension skills changed. `remaining`
+   * is false when no extension's skills are left there, so a caller can skip a
+   * project that has nothing to add and no harness set up.
+   */
+  projectChanged(project: { root: string; ids: string[]; remaining: boolean }): unknown;
+  /** The global extension skills changed: refresh the plugins sessions load. */
+  globalChanged(): unknown;
+}
+
+/**
+ * Two undelivered changes as one: every project either named, and a global
+ * change if either had one.
+ */
+function mergeSkillChanges(
+  a: RunningSkillsChange | null,
+  b: RunningSkillsChange
+): RunningSkillsChange {
+  if (!a) return b;
+  const projects = new Map(a.projects.map((p) => [p.root, p]));
+  for (const p of b.projects) {
+    const prior = projects.get(p.root);
+    projects.set(p.root, {
+      root: p.root,
+      ids: [...new Set([...(prior?.ids ?? []), ...p.ids])].sort(),
+      remaining: p.remaining,
+    });
+  }
+  return {
+    ledgerChanged: a.ledgerChanged || b.ledgerChanged,
+    projects: [...projects.values()],
+    globalChanged: a.globalChanged || b.globalChanged,
+  };
+}
+
+/**
  * Facade for the extension system.
  */
 export class ExtensionManager {
@@ -173,6 +217,12 @@ export class ExtensionManager {
   private projectRoots: ((cwd: string | null) => Promise<readonly string[]>) | null = null;
   /** Tells connected clients which extensions changed under them. */
   private announceReloaded: ((ids: string[]) => void) | null = null;
+  /** Delivers running extensions' skills; see {@link attachSkillDelivery}. */
+  private skillDelivery: ExtensionSkillDelivery | null = null;
+  /** The tail of the skills reconcile queue: one at a time, in order. */
+  private skillsReconcile: Promise<void> = Promise.resolve();
+  /** What changed while nothing was attached to deliver it (boot). */
+  private undeliveredSkills: RunningSkillsChange | null = null;
   /** Clears an uninstalled extension's tool permission settings; see {@link attachAgentTools}. */
   private forgetToolPermissions:
     ((extensionId: string, extensionName: string) => Promise<unknown>) | null = null;
@@ -237,6 +287,74 @@ export class ExtensionManager {
   }): void {
     this.forgetToolPermissions = wiring.forgetToolPermissions ?? null;
     this.serverLifecycle.attachCapabilityRegistry(wiring.registry);
+  }
+
+  /**
+   * Connect running extensions' skills to the rest of DorkOS (DOR-2685).
+   *
+   * Every change to which extensions run — a scan, turning one on or off, an
+   * approval or its withdrawal, an uninstall, a reload — republishes the
+   * running-skills ledger (`running-skills-ledger.ts`) and hands what changed
+   * to `delivery`: each project whose local extension skills changed is
+   * projected again, and a change to the global ones refreshes the plugins
+   * Claude Code sessions load. Changes made before this is attached (the boot
+   * scan) are delivered as soon as it is.
+   *
+   * @param delivery - What to do with a change. Its failures are logged and
+   *   never reach the change that caused them.
+   */
+  attachSkillDelivery(delivery: ExtensionSkillDelivery): void {
+    this.skillDelivery = delivery;
+    const pending = this.undeliveredSkills;
+    this.undeliveredSkills = null;
+    if (pending) this.deliverSkills(pending);
+  }
+
+  /** Resolves once every skills reconcile asked for so far has finished. */
+  whenSkillsSettled(): Promise<void> {
+    return this.skillsReconcile;
+  }
+
+  /**
+   * Republish the running-skills ledger after the change that just happened,
+   * one reconcile at a time and off the caller's path. Best-effort: a failure
+   * is logged, and the next change tries again from the disk as it is.
+   */
+  private scheduleSkillsReconcile(): void {
+    this.skillsReconcile = this.skillsReconcile
+      .then(async () => {
+        const change = await reconcileRunningSkills(this.listRecords(), {
+          dorkHome: this.dorkHome,
+          config: configManager.get('extensions'),
+          core: this.coreExtensions,
+        });
+        if (change.projects.length === 0 && !change.globalChanged) return;
+        if (this.skillDelivery) this.deliverSkills(change);
+        else this.undeliveredSkills = mergeSkillChanges(this.undeliveredSkills, change);
+      })
+      .catch((err) => {
+        logger.warn('[Extensions] Could not publish the running extensions\u2019 skills', err);
+      });
+  }
+
+  /** Hand a change to the delivery, isolating each step's failure. */
+  private deliverSkills(change: RunningSkillsChange): void {
+    const delivery = this.skillDelivery;
+    if (!delivery) return;
+    for (const project of change.projects) {
+      void Promise.resolve()
+        .then(() => delivery.projectChanged(project))
+        .catch((err) => {
+          logger.warn(`[Extensions] Projecting extension skills into ${project.root} failed`, err);
+        });
+    }
+    if (change.globalChanged) {
+      void Promise.resolve()
+        .then(() => delivery.globalChanged())
+        .catch((err) => {
+          logger.warn('[Extensions] Refreshing global extension skills failed', err);
+        });
+    }
   }
 
   /**
@@ -534,6 +652,9 @@ export class ExtensionManager {
 
   /** Tell every {@link onChange} listener, isolating each one's failure. */
   private emitChanged(): void {
+    // Every change that can move an extension into or out of the running set
+    // passes through here, so this is where its skills are republished.
+    this.scheduleSkillsReconcile();
     for (const listener of this.changeListeners) {
       try {
         listener();
@@ -596,6 +717,9 @@ export class ExtensionManager {
         logger.warn(`[Extensions] Server reload failed for ${id}: ${serverResult.error}`);
       }
     }
+    // A declared skill whose `SKILL.md` just appeared (a dev link's save) joins
+    // the ledger now rather than at the next scan.
+    this.scheduleSkillsReconcile();
 
     return { id, status: 'compiled', bundleReady: true, sourceHash: record.sourceHash };
   }
