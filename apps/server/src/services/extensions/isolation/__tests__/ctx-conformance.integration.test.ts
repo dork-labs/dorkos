@@ -96,20 +96,24 @@ describeCtxConformance('in-process', () => ({
       extensionName: 'Conformance',
     });
     const fixture = loadInProcess();
-    const cleanupFn = (await fixture.register({}, built.ctx)) as (() => void) | undefined;
+    const cleanupFn = (await fixture.register({}, built.ctx)) as (() => Promise<void>) | undefined;
     let stopped = false;
     const t: CtxUnderTest = {
       runtime: 'in-process',
       extensionId,
       probe: async <T>(name: string, ...args: unknown[]) =>
         (await fixture.probes[name]!(...args)) as T,
-      // The lifecycle's shutdown order: cleanup, scheduled cancels, listeners.
+      // The lifecycle's shutdown order: scheduled cancels, cleanup, listeners.
       async stop() {
         if (stopped) return;
         stopped = true;
-        cleanupFn?.();
         for (const cancel of built.getScheduledCleanups()) cancel();
+        // Called without waiting, as the lifecycle does; its async tail
+        // still uses ctx. Awaited only after releaseListeners, so a test's
+        // temporary folder is not removed under its last writes.
+        const tail = cleanupFn?.();
         built.releaseListeners();
+        await tail;
       },
       dispatched: () => null,
     };

@@ -27,6 +27,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentSendError } from '@dorkos/extension-api/server';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { TOOLS_REFUSAL } from '../isolation/ctx-protocol.js';
 import { isolatedFilesDir, isolatedRunDir } from '../isolation/grants.js';
@@ -457,8 +458,14 @@ export function describeCtxConformance(label: string, runtime: () => CtxRuntime)
       expect(broadcasts(t, 'tick')).toHaveLength(0);
       await until(() => broadcasts(t, 'tick').length >= 1, 2_500);
       await t.stop();
-      // The extension's cleanup ran on stop, in either runtime.
+      // The extension's async cleanup ran to the end on stop, in either
+      // runtime: both of its ctx writes landed, then its last emit arrived.
       await until(() => broadcasts(t, 'cleanup').length === 1);
+      const dataPath = path.join(rt.dorkHome(), 'extension-data', t.extensionId, 'data.json');
+      expect(JSON.parse(await fs.readFile(dataPath, 'utf8'))).toEqual({ cleanup: 'first' });
+      expect(await new ExtensionSettingsStore(rt.dorkHome(), t.extensionId).get('cleanup')).toBe(
+        'second'
+      );
       const ticks = broadcasts(t, 'tick').length;
       await new Promise((r) => setTimeout(r, 5_500));
       expect(broadcasts(t, 'tick')).toHaveLength(ticks);

@@ -9,8 +9,9 @@
  * - `subscribe`: a `sub` message and a local listener; returns a function that
  *   sends `unsub`. Events arrive as `evt`.
  * - `reverse`: the function stays here under an id (`expose`); the host calls
- *   it with `rcall` and this answers with `rret`. A `cancel` aborts that call's
- *   `AbortController` and drops its answer.
+ *   it with `rcall` and this answers with `rret`. A `cancel` drops that call's
+ *   answer. (Its `AbortController` is aborted too, but no handler receives the
+ *   signal yet: the advisor and the action handler take none. Tools will.)
  * - `local`: `schedule` (the same 5-second floor as in-process; every cancel
  *   runs on stop) and `requirePerson`, which refuses every request until the
  *   host's verdict header reaches the child (a later phase): fail closed.
@@ -73,6 +74,8 @@ export interface ProxyCtx {
    * @returns `true` when it was one.
    */
   receive(message: HostMessage): boolean;
+  /** Cancel every scheduled task (the first step of a stop). */
+  cancelScheduled(): void;
   /** Stop: cancel every scheduled task and refuse every later call. */
   stop(): void;
 }
@@ -449,9 +452,7 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
     }
   };
 
-  const stop = (): void => {
-    if (stopped) return;
-    stopped = true;
+  const cancelScheduled = (): void => {
     for (const cancel of [...scheduled]) {
       try {
         cancel();
@@ -459,11 +460,17 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
         /* swallow cancellation errors, as in-process */
       }
     }
+  };
+
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    cancelScheduled();
     for (const [, call] of calls) call.reject(new Error('The extension stopped.'));
     calls.clear();
     for (const [, controller] of running) controller.abort();
     running.clear();
   };
 
-  return { ctx, receive, stop };
+  return { ctx, receive, cancelScheduled, stop };
 }

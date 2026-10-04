@@ -37,6 +37,7 @@ import * as extensionServerApi from '@dorkos/extension-api/server';
 import type { ChildMessage, HostMessage, InitMessage, PermissionReport } from '../ipc-protocol.js';
 import { createChildProcessShim } from './child-process-shim.js';
 import { createProxyCtx, type ProxyCtx } from './proxy-ctx.js';
+import { createTrackedSend } from './tracked-send.js';
 import { createInjectedRequire, loadBundle } from './load-bundle.js';
 import { installNetGuard } from './net-guard.js';
 import { installProcessGuard } from './process-guard.js';
@@ -49,13 +50,18 @@ interface PermissionApi {
 /** `process.send`, captured before any extension code could replace it. */
 const sendRaw = process.send?.bind(process);
 
+/** Counted, so a stop exits only once everything sent has been written. */
+const tracked = sendRaw
+  ? createTrackedSend((message, callback) => sendRaw(message as never, callback))
+  : null;
+
 /**
  * Send one message to the host.
  *
  * @param message - The message.
  */
 function send(message: ChildMessage): void {
-  sendRaw?.(message);
+  tracked?.send(message);
 }
 
 /**
@@ -229,24 +235,28 @@ function main(): void {
       );
   };
 
-  /** Stop: the extension's cleanup, then its scheduled tasks, then exit. */
+  /**
+   * Stop, in the in-process order (`extension-server-lifecycle.ts` shutdown):
+   * cancel scheduled tasks, run the cleanup `register()` returned and wait for
+   * it (an async cleanup may still use ctx, as in-process), then refuse
+   * further calls, then exit once every message sent has been written. The
+   * 2 s fallback bounds a cleanup that never settles; the host kills the
+   * child after its own grace period anyway.
+   */
   const stop = (): void => {
     if (stopping) return;
     stopping = true;
     const exit = () => process.exit(0);
-    // The host kills the child after its own grace period; this keeps a
-    // cleanup that never settles from holding the exit until then.
     setTimeout(exit, 2_000).unref();
-    let pending: unknown;
-    try {
-      pending = cleanup?.();
-    } catch (err) {
-      console.error('Cleanup error:', err);
-    }
-    proxy?.stop();
-    Promise.resolve(pending)
+    proxy?.cancelScheduled();
+    Promise.resolve()
+      .then(() => cleanup?.())
       .catch((err: unknown) => console.error('Cleanup error:', err))
-      .finally(exit);
+      .then(() => {
+        proxy?.stop();
+        return tracked?.whenDrained();
+      })
+      .then(exit, exit);
   };
 
   process.on('message', (raw: unknown) => {

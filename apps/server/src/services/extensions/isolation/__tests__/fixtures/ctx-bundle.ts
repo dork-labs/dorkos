@@ -55,8 +55,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 module.exports = function register(router, c) {
   ctx = c;
-  return () => {
-    // The cleanup a stop runs; observable on the host as an event.
+  // An async cleanup that uses ctx twice, then says so: a stop must let all
+  // of it finish before refusing calls or exiting.
+  return async () => {
+    await ctx.storage.saveData({ cleanup: 'first' });
+    await ctx.settings.set('cleanup', 'second');
     ctx.emit('cleanup', { ran: true });
   };
 };
