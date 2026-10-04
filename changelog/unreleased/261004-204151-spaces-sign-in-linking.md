@@ -10,6 +10,7 @@ covers:
   - 'fix(community): record a trusted link only once its row exists'
   - 'fix(community): drop account rows a request wrote after its account was cleared'
   - 'fix(community): refuse member and host writes that began before their account was cleared'
+  - 'fix(community): take the account lock first in grant checks and account erasure'
 ---
 
 ### Added

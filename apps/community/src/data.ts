@@ -219,6 +219,9 @@ export async function assertConnectionGrantCurrent(
     !(isReadOnlyLifecycle(lifecycle) && scope === 'read')
   )
     throw lifecycleError(lifecycle ?? 'unavailable');
+  // The account row before the member row, the order a clean-out takes them: a caller that goes
+  // on to `requireLiveRole` then finds "user" already checked, never locks it after members.
+  await refuseIfClearedSinceStart(client, await memberUserId(client, memberId));
   const owner = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
     [memberId, communityId]
