@@ -334,6 +334,14 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
       serverStatus: manager.getServerRouter(ext.id) ? ('active' as const) : ('inactive' as const),
       ...(ext.manifest.description && { description: ext.manifest.description }),
       ...(ext.error && { error: ext.error }),
+      // What it gives agents, and why a tool is not offered (DOR-2685).
+      ...(ext.tools && {
+        tools: ext.tools.map((tool) => ({
+          name: tool.name,
+          status: tool.status,
+          ...(tool.reason ? { reason: tool.reason } : {}),
+        })),
+      }),
     }));
     return jsonContent({ extensions, count: extensions.length });
   };
