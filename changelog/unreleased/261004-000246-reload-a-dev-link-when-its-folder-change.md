@@ -3,6 +3,7 @@ covers:
   - 'feat(marketplace): reload a dev link when its folder changes (DOR-2696)'
   - "test(marketplace): pin the dev link watcher's classification, gate and sweep (DOR-2696)"
   - 'test(marketplace): prove the hot-reload Done when end to end, and the unlink hold (DOR-2696)'
+  - "refactor(marketplace): split the dev link watcher's classification and extension seams into their own modules (DOR-2696)"
 ---
 
 ### Added
