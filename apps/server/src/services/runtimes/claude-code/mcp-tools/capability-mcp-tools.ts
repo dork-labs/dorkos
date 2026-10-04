@@ -16,7 +16,6 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { searchHintFrom, toolExposure } from './tool-exposure.js';
-import type { ToolSurfaceEntry } from './tool-surface.js';
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import type {
@@ -155,8 +154,6 @@ function strictConnectorInputSchema(registry: CapabilityRegistry, capabilityId: 
  * @param registry - The composed capability registry containing the exact five ids.
  * @param resolveContext - Per-call resolver that mints the current turn's principal.
  * @param hold - Optional in-session approval hold for destructive execution.
- * @returns Each registered tool's name and input schema, for the server's tool
- *   surface digest (`tool-surface.ts`).
  */
 export function registerClaudeConnectorCapabilityTools(
   server: McpServer,
@@ -166,21 +163,18 @@ export function registerClaudeConnectorCapabilityTools(
     signal?: AbortSignal
   ) => Promise<CapabilityInvocationContext | undefined>,
   hold?: InSessionCapabilityHold
-): ToolSurfaceEntry[] {
-  const registered: ToolSurfaceEntry[] = [];
+): void {
   for (const capabilityId of CONNECTOR_RUNTIME_CAPABILITY_IDS) {
     const capability = registry.get(capabilityId);
     if (!capability) {
       throw new Error(`Connector runtime capability '${capabilityId}' is not registered.`);
     }
     const searchHint = searchHintFrom(capability.title ?? capability.description);
-    const inputSchema = strictConnectorInputSchema(registry, capabilityId);
-    registered.push({ name: capability.id, inputSchema });
     server.registerTool(
       capability.id,
       {
         description: capability.description,
-        inputSchema,
+        inputSchema: strictConnectorInputSchema(registry, capabilityId),
         annotations: deriveMcpAnnotations(capability),
         ...(searchHint ? { _meta: { 'anthropic/searchHint': searchHint } } : {}),
       },
@@ -204,5 +198,4 @@ export function registerClaudeConnectorCapabilityTools(
       }
     );
   }
-  return registered;
 }

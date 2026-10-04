@@ -60,7 +60,7 @@ import { logger } from '../../../../lib/logger.js';
 // servers (DOR-499). Production reaches this barrel only for
 // `createDorkOsToolServer`, from `apps/server/src/index.ts`.
 export type { McpToolDeps, McpToolSession } from './types.js';
-export { dorkosToolSurfaceOf, toolSurfaceDigest, type ToolSurfaceEntry } from './tool-surface.js';
+export { dorkosToolSurfaceOf } from './tool-surface.js';
 export {
   handlePing,
   handleGetServerInfo,
@@ -450,23 +450,30 @@ export function createDorkOsToolServer(
     tools: listed,
   });
 
-  const connectorTools = session?.connectorTurn
-    ? registerClaudeConnectorCapabilityTools(
-        server.instance,
-        capabilityRegistry,
-        resolveCapabilityContext,
-        hold
-      )
-    : [];
+  if (session?.connectorTurn) {
+    registerClaudeConnectorCapabilityTools(
+      server.instance,
+      capabilityRegistry,
+      resolveCapabilityContext,
+      hold
+    );
+  }
 
   // What a fresh launch of this server would list, recorded against this
   // instance so the launch fingerprint's `toolSurface` pin can tell a warm
   // process that lists something else to relaunch before its next turn
   // (DOR-2685, `tool-surface.ts`). Nothing new reaches the CLI.
-  recordToolSurface(server.instance, [
-    ...listed.map((definition) => ({ name: definition.name, inputSchema: definition.inputSchema })),
-    ...connectorTools,
-  ]);
+  //
+  // The five connector tools above are left out on purpose. They are a fixed
+  // set no extension or permission changes, and whether they are registered
+  // follows per-turn state: `sendMessage` sets `connectorTurn` for a turn, but
+  // a process warmed to receive a staged note launches without one. Counting
+  // them would relaunch that process at its first real turn for no change in
+  // what an extension or a permission offers.
+  recordToolSurface(
+    server.instance,
+    listed.map((definition) => ({ name: definition.name, inputSchema: definition.inputSchema }))
+  );
 
   // The read-only `dorkos://` resources: the same registration the external
   // `/mcp` server performs, scoped to THIS session's project rather than the

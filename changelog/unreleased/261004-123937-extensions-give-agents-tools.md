@@ -13,6 +13,7 @@ covers:
   - 'test(claude-code): pin the warm-process tool-surface relaunch through dispatch (DOR-2685)'
   - 'test(extensions): guard extension tools in every agent tool list (DOR-2685)'
   - 'docs(extensions): say when each agent sees an extension tool change (DOR-2685)'
+  - 'fix(claude-code): leave the per-turn connector tools out of the tool-surface digest (DOR-2685)'
 ---
 
 ### Added

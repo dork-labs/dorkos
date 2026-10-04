@@ -35,10 +35,7 @@ import { stableStringify } from '@dorkos/shared/capabilities';
 export interface ToolSurfaceEntry {
   /** The tool name on the server, unqualified. */
   readonly name: string;
-  /**
-   * The advertised input: a Zod field map (`tool()` definitions) or a whole
-   * object schema (the connector tools registered on the server directly).
-   */
+  /** The advertised input: a Zod field map, or a whole object schema. */
   readonly inputSchema: z.ZodRawShape | z.ZodType;
 }
 

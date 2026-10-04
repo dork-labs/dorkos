@@ -162,9 +162,11 @@ describe('the dorkos tool-surface digest', () => {
     expect(surfaceOf(registry, new Set(['not_a_tool']))).toBe(surfaceOf(registry));
   });
 
-  it('counts the connector tools registered on the server directly', () => {
-    // Purpose: those five are added after the tools array, on the instance,
-    // and a digest over the array alone would miss them.
+  it('does not move with the per-turn connector tools', () => {
+    // Purpose: those five follow per-turn state (`connectorTurn`), which a
+    // process warmed for a staged note launches without. Counting them would
+    // relaunch that process at its first real turn, and with it the note it
+    // was warmed to receive, for no change an extension or permission made.
     const registry = composeDorkOsCapabilityRegistry({
       logger: noopLogger,
       connectorExecutionDeps: {
@@ -186,7 +188,7 @@ describe('the dorkos tool-surface digest', () => {
     const plainSession = { cwd: '/agents/alpha', eventQueue: [] } as unknown as Parameters<
       typeof createDorkOsToolServer
     >[1];
-    expect(surfaceOf(registry, new Set(), connectorSession)).not.toBe(
+    expect(surfaceOf(registry, new Set(), connectorSession)).toBe(
       surfaceOf(registry, new Set(), plainSession)
     );
   });
