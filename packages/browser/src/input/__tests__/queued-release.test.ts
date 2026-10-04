@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { BrowserBinding } from '../../contracts.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
-import { createTabInput, type InputPorts, type NativeInputStep } from '../index.js';
+import { type NativeInputStep } from '../index.js';
+import {
+  createOwnedFixtureInput as createTabInput,
+  settleFixtureRetirement,
+  type FixtureInputPorts as InputPorts,
+} from '../../__tests__/parent-fixture.js';
 
 type Step = NativeInputStep | { kind: 'click'; x: number; y: number; button: 'left' };
 function deferred() {
@@ -52,7 +57,7 @@ function fixture() {
     native,
     stopGate,
   };
-  const input = createTabInput(ports);
+  const input = createTabInput(ports, () => binding);
   const command = (steps: Step[]) => ({
     kind: 'input',
     requestId: 'request_subject_A_00000000000000',
@@ -142,6 +147,7 @@ describe('cancelled queued releases (modeled native state, not physical input)',
     expect(h.native.dispatch.mock.calls.filter(([step]) => step.kind === 'text')).toEqual([]);
     expect(successorResult.outcome).toBe('rejected');
     await tick();
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
     expect(h.effects).toEqual([]);
     expect(h.native.cancelComposition).toHaveBeenCalledTimes(1);
@@ -203,6 +209,7 @@ describe('cancelled queued releases (modeled native state, not physical input)',
     await active;
     expect((await release).outcome).toBe('rejected');
     await tick();
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
     expect(h.calls).toEqual([{ kind: 'keyDown', key: 'Shift' }]);
     expect(h.native.cancelDrag).not.toHaveBeenCalled();

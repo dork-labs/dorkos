@@ -1,8 +1,18 @@
+import {
+  tabFixture as ownedQueueFixture,
+  configuration as queueConfiguration,
+  retirementFixture as queueRetirement,
+  createOwnedFixtureCohort,
+  settleFixtureRetirement,
+  type FixtureInputPorts,
+} from '../../__tests__/parent-fixture.js';
+import { composeInput as composeQueueOwner } from '../../lifecycle/input-owner.js';
+import { submitInput as submitQueueOwner } from '../../lifecycle/parent-actions.js';
 import { describe, expect, it, vi } from 'vitest';
 import { parseBrowserResult, type BrowserBinding } from '../../contracts.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
-import { createTabInput, type InputPorts, type NativeInputStep } from '../index.js';
+import type { NativeInputStep } from '../index.js';
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -16,7 +26,7 @@ function deferred<T = void>() {
 const tick = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
 };
-function harness() {
+function harness(withSibling = false) {
   let binding: BrowserBinding = {
     browserId: parseBrowserId('browser_subject_A_000000000000000'),
     browserGeneration: 0,
@@ -35,7 +45,7 @@ function harness() {
     cancelComposition: vi.fn(async () => {}),
     cancelDrag: vi.fn(async () => {}),
   };
-  const ports: InputPorts = {
+  const ports: FixtureInputPorts = {
     readBinding: () => binding,
     publishResetBinding: (next) => {
       binding = next;
@@ -44,9 +54,31 @@ function harness() {
     native,
     stopGate,
   };
-  const input = createTabInput(ports);
+  let siblingBinding = { ...binding, tabId: parseTabId('canonical_tab_B_00000000000000000') };
+  const siblingPorts: FixtureInputPorts = {
+    ...ports,
+    native: {
+      dispatch: vi.fn(async () => {}),
+      cancelComposition: vi.fn(async () => {}),
+      cancelDrag: vi.fn(async () => {}),
+    },
+    readBinding: () => siblingBinding,
+    publishResetBinding: (next) => {
+      siblingBinding = next;
+    },
+  };
+  const members = [{ ports, readCanonicalBinding: () => binding }];
+  if (withSibling)
+    members.push({ ports: siblingPorts, readCanonicalBinding: () => siblingBinding });
+  const cohort = createOwnedFixtureCohort(members);
+  const input = cohort[0].input;
   return {
     input,
+    sibling: withSibling ? cohort[1].input : undefined,
+    get siblingBinding() {
+      return siblingBinding;
+    },
+    owned: cohort[0],
     ports,
     native,
     calls,
@@ -126,7 +158,10 @@ describe('trusted native input leaf (transport doubles, not native IME observati
       h.binding = { ...h.binding, navigationGeneration: 1 };
     });
     const result = await h.input.submit(h.command([{ kind: 'click', x: 1, y: 2, button: 'left' }]));
-    expect(result).toMatchObject({ outcome: 'aborted', reason: 'staleBinding' });
+    expect(result).toMatchObject({ outcome: 'uncertain', reason: 'dispatchFailed' });
+    expect(h.owned.slot.uncertain).toBe(true);
+    expect(h.calls).toEqual([{ kind: 'mouseMove', x: 1, y: 2 }]);
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
     expect(h.calls).toEqual([{ kind: 'mouseMove', x: 1, y: 2 }]);
   });
 
@@ -236,7 +271,7 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     expect(h.calls).toEqual([{ kind: 'text', text: 'CANONICAL-A' }]);
   });
 
-  it('invalidates queued release immediately and resets already-dispatched Shift/button before successor', async () => {
+  it('invalidates queued release and refuses old native ACK authority after reset generation advance', async () => {
     const h = harness();
     await h.input.submit(
       h.command([
@@ -262,7 +297,7 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     expect((await h.input.submit(h.command())).outcome).toBe('rejected');
     held.resolve();
     expect((await active).outcome).toBe('uncertain');
-    expect(await reset).toMatchObject({ status: 'ready' });
+    expect(await reset).toMatchObject({ status: 'stopped' });
     expect(h.calls.slice(-2)).toEqual([
       { kind: 'mouseUp', button: 'left' },
       { kind: 'keyUp', key: 'Shift' },
@@ -270,9 +305,12 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     expect(h.native.cancelComposition).toHaveBeenCalledTimes(1);
     expect(h.native.cancelDrag).toHaveBeenCalledTimes(1);
     expect((await h.input.submit(h.command([{ kind: 'text', text: 'SUCCESSOR' }]))).outcome).toBe(
-      'completed'
+      'rejected'
     );
     expect((await h.input.submit({ ...h.command(), binding: old })).outcome).toBe('rejected');
+    await settleFixtureRetirement(h.input);
+    expect(h.stopGate.stopped).toBe(true);
+    expect(h.owned.slot.uncertain).toBe(true);
   });
 
   it('tracks attempted held state before a native rejection and retains no raw error/text', async () => {
@@ -281,11 +319,14 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     const result = await h.input.submit(h.command([{ kind: 'keyDown', key: 'Shift' }]));
     expect(result).toMatchObject({ outcome: 'uncertain', reason: 'dispatchFailed' });
     expect(JSON.stringify(result)).not.toContain('SECRET');
+    expect(h.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
   });
 
   it('attempts every held release and both cancellation ports despite one failure, stops all sibling tabs', async () => {
-    const h = harness();
+    const h = harness(true);
     await h.input.submit(
       h.command([
         { kind: 'keyDown', key: 'Shift' },
@@ -293,8 +334,8 @@ describe('trusted native input leaf (transport doubles, not native IME observati
         { kind: 'mouseDown', button: 'left' },
       ])
     );
-    const siblingBinding = { ...h.binding, tabId: parseTabId('canonical_tab_B_00000000000000000') };
-    const sibling = createTabInput({ ...h.ports, readBinding: () => siblingBinding });
+    const siblingBinding = h.siblingBinding;
+    const sibling = h.sibling!;
     h.native.dispatch.mockRejectedValueOnce(new Error('private release failure'));
     expect(await h.input.reset()).toMatchObject({ status: 'stopped' });
     expect(h.native.dispatch).toHaveBeenCalledTimes(6);
@@ -304,6 +345,8 @@ describe('trusted native input leaf (transport doubles, not native IME observati
       outcome: 'rejected',
       reason: 'stopped',
     });
+    expect(h.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.accepts(siblingBinding)).toBe(false);
   });
 
@@ -323,6 +366,8 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     blocked.resolve();
     await tick();
     expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+    expect(h.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
   });
 
@@ -348,9 +393,12 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     h.native.dispatch.mockImplementationOnce(() => blocked.promise);
     const result = await h.input.submit(h.command());
     expect(result).toMatchObject({ outcome: 'uncertain', reason: 'deadline' });
-    expect(h.stopGate.stopped).toBe(true);
+    expect(h.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
     blocked.resolve();
     await tick();
+    await settleFixtureRetirement(h.input);
+    expect(h.stopGate.stopped).toBe(true);
     expect((await h.input.submit(h.command())).outcome).toBe('rejected');
   });
 
@@ -379,6 +427,9 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     h.binding = { ...h.binding, navigationGeneration: 1 };
     cancel.resolve();
     expect((await first).status).toBe('stopped');
+    expect(h.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
   });
 
@@ -417,7 +468,12 @@ describe('trusted native input leaf (transport doubles, not native IME observati
       };
     });
     const result = await h.input.submit(h.command());
-    expect(result.outcome).toBe('aborted');
+    expect(result).toMatchObject({ outcome: 'uncertain', reason: 'dispatchFailed' });
+    expect(h.owned.slot.uncertain).toBe(true);
+    expect(h.native.dispatch).toHaveBeenCalledTimes(1);
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+    expect(h.native.dispatch).toHaveBeenCalledTimes(1);
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
     expect(JSON.stringify(result)).not.toContain('SECRET');
   });
@@ -426,12 +482,18 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     const h = harness();
     h.ports.publishResetBinding = () => {};
     expect((await h.input.reset()).status).toBe('stopped');
+    expect(h.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
     const other = harness();
     other.ports.publishResetBinding = () => {
       throw new Error('SECRET_PUBLICATION');
     };
     expect((await other.input.reset()).status).toBe('stopped');
+    expect(other.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    expect((await other.input.submit(other.command())).outcome).toBe('rejected');
+    await settleFixtureRetirement(other.input);
     expect(other.stopGate.stopped).toBe(true);
   });
 
@@ -440,19 +502,30 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     h.ports.readBinding = () => null;
     expect((await h.input.reset()).status).toBe('stopped');
     h.ports.readBinding = () => h.binding;
+    expect(h.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
     expect((await h.input.submit(h.command())).outcome).toBe('rejected');
   });
 
   it('explicit stop uses the browser gate and stops a sibling plus unseen tab admission', async () => {
-    const h = harness();
-    const siblingBinding = { ...h.binding, tabId: parseTabId('canonical_tab_B_00000000000000000') };
-    const sibling = createTabInput({ ...h.ports, readBinding: () => siblingBinding });
+    const h = harness(true);
+    const siblingBinding = h.siblingBinding;
+    const sibling = h.sibling!;
+    const cancellation = deferred<void>();
+    h.native.cancelComposition.mockImplementation(() => cancellation.promise);
     h.input.stop();
-    expect(h.stopGate.stopped).toBe(true);
+    expect(h.owned.record.lifetime.ordinary.phase).toBe('retiring');
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
     expect((await sibling.submit({ ...h.command(), binding: siblingBinding })).outcome).toBe(
       'rejected'
     );
+    expect(h.native.cancelComposition).toHaveBeenCalledTimes(1);
+    expect(h.stopGate.stopped).toBe(false);
+    cancellation.resolve();
+    await settleFixtureRetirement(h.input);
+    expect(h.stopGate.stopped).toBe(true);
     expect(h.stopGate.register(siblingBinding, () => {})).toBeNull();
   });
 
@@ -491,7 +564,66 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     expect((await h.input.reset()).status).toBe('stopped');
     expect(h.binding.epoch).toBe(Number.MAX_SAFE_INTEGER);
     expect(h.native.dispatch).not.toHaveBeenCalled();
+    expect(h.owned.record.lifetime.ordinary.phase).not.toBe('ordinary');
+    expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+    await settleFixtureRetirement(h.input);
     expect(h.stopGate.stopped).toBe(true);
+  });
+
+  it('a delayed cleanup caller observation cannot release held input after the original end', async () => {
+    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
+    try {
+      const h = harness();
+      await h.input.submit(h.command([{ kind: 'keyDown', key: 'Shift' }]));
+      const dispatch = h.native.dispatch;
+      let captured = false,
+        delayed = false;
+      Object.defineProperty(h.native, 'dispatch', {
+        get: () => {
+          captured = true;
+          return dispatch;
+        },
+      });
+      h.ports.readBinding = () => {
+        if (captured && !delayed && h.owned.record.lifetime.ordinary.phase === 'retiring') {
+          delayed = true;
+          vi.advanceTimersByTime(2001);
+        }
+        return h.binding;
+      };
+      h.input.stop();
+      const terminal = settleFixtureRetirement(h.input);
+      await vi.advanceTimersByTimeAsync(5000);
+      await terminal;
+      expect(delayed).toBe(true);
+      expect(h.calls).toEqual([{ kind: 'keyDown', key: 'Shift' }]);
+      expect(h.owned.slot.uncertain).toBe(true);
+      expect(h.owned.record.lifetime.inputEnd).toBe(2000);
+      expect(h.owned.record.lifetime.parentEnd).toBe(5000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a stable cleanup caller observation releases exact held input before the original end', async () => {
+    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
+    try {
+      const h = harness();
+      await h.input.submit(h.command([{ kind: 'keyDown', key: 'Shift' }]));
+      h.input.stop();
+      await settleFixtureRetirement(h.input);
+      expect(h.calls).toEqual([
+        { kind: 'keyDown', key: 'Shift' },
+        { kind: 'keyUp', key: 'Shift' },
+      ]);
+      expect(h.native.cancelComposition).toHaveBeenCalledTimes(1);
+      expect(h.native.cancelDrag).toHaveBeenCalledTimes(1);
+      expect(h.owned.slot.uncertain).toBe(false);
+      expect(h.owned.record.lifetime.inputEnd).toBe(2000);
+      expect(h.owned.record.lifetime.parentEnd).toBe(5000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('browser stop rejects unseen late Page registration and tombstones all known tabs despite callback throw', () => {
@@ -512,4 +644,25 @@ describe('trusted native input leaf (transport doubles, not native IME observati
     ).toBeNull();
     expect(h.stopGate.accepts(h.binding)).toBe(false);
   });
+});
+
+it('candidate: cleanup uses existing held ledger while ordinary admission remains fenced', async () => {
+  const h = ownedQueueFixture();
+  const owner = composeQueueOwner(queueConfiguration(), h.record, h.tab);
+  await owner.readiness;
+  expect(
+    (
+      await submitQueueOwner(h.record, {
+        ...h.command(),
+        steps: [{ kind: 'mouseDown' as const, button: 'left' as const }],
+      })
+    ).outcome
+  ).toBe('completed');
+  const end = performance.now() + 2000;
+  queueRetirement(h.record, end);
+  const first = owner.handle!.retire(end);
+  expect(owner.handle!.retire(end + 1000)).toBe(first);
+  expect(await first).toMatchObject({ state: 'settled' });
+  expect(h.raw.mouse.up.mock.calls).toEqual([[{ button: 'left' }]]);
+  expect((await submitQueueOwner(h.record, h.command())).outcome).toBe('rejected');
 });
