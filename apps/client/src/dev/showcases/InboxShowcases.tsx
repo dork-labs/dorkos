@@ -369,6 +369,7 @@ function InboxRowsShowcase() {
 
 /** What a mail extension would give agents, with one refusal and one skill left out. */
 const MAIL_GIFTS: AgentGifts = {
+  running: false,
   tools: [
     { name: 'list_inbox', title: 'List your inbox', tier: 'observe' },
     { name: 'send_message', title: 'Send an email', tier: 'act' },
@@ -440,7 +441,7 @@ function DecisionRowShowcase() {
       <ShowcaseLabel>The same list as the Settings card draws it, closed until asked</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-[min(30rem,100%)]">
-          <ExtensionAgentGifts gifts={MAIL_GIFTS} />
+          <ExtensionAgentGifts gifts={{ ...MAIL_GIFTS, running: true }} />
         </div>
       </ShowcaseDemo>
 

@@ -73,7 +73,7 @@ function GiftRows({ gifts }: { gifts: AgentGifts }) {
 }
 
 /**
- * "Gives agents 3 tools and 1 skill", and under it each tool's title with
+ * "Gives agents 3 tools and 1 skill" (or "Would give" while it does not run), and under it each tool's title with
  * what its tier means ("Reads", "Acts", "Asks you first") and each skill's
  * name. A tool DorkOS refused, or a skill it left out, is listed with the
  * reason in muted text and never counted. Draws nothing for an extension that

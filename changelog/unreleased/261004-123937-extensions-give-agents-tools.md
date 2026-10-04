@@ -39,8 +39,8 @@ covers:
 ### Added
 
 - Extensions can now give your agents tools and skills. An extension you approved offers them while it runs, and they go away when you turn it off, stop it or remove it (DOR-2685)
-- You see what an extension gives your agents before you turn it on. Its Activity inbox row says, for example, "Gives agents 3 tools and 1 skill", and lists each tool as **Reads**, **Acts** or **Asks you first**. Its card in **Settings → Extensions** shows the same list, and says why a tool or skill was left out (DOR-2685)
-- Each tool sits in the **Extension tools** permission area, where you can block every extension's tools at once or one at a time. A tool that deletes something asks you every time, and its approval card says which extension it is from (DOR-2685)
+- You see what an extension gives your agents before you turn it on. Its Activity inbox row says, for example, "Would give agents 3 tools and 1 skill", and lists each tool as **Reads**, **Acts** or **Asks you first**. Its card in **Settings → Extensions** shows the same list, and says why a tool or skill was left out (DOR-2685)
+- An approval card for an extension's tool says which extension it is from (DOR-2685)
 - Codex and OpenCode chats get new tools the next time they ask DorkOS for its tool list, and a Claude Code chat gets them with your next message (DOR-2685)
 - Skills are short guides that teach an agent when and how to use the extension. They land where a plugin's skills land: in the project for a project's own extension, and in DorkOS's own Claude Code chats for one installed for all your projects. `dorkos harness sync` from a terminal keeps exactly the same skills (DOR-2685)
 - Removing an extension clears any permission you set for its tools, so a choice like Allowed never carries over to something installed later under the same name (DOR-2685)

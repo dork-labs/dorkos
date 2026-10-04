@@ -89,7 +89,11 @@ export type {
   ApprovalConsumeOptions,
   ApprovalConsumptionSettlement,
 } from './approval-consumption.js';
-import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js';
+import {
+  extensionSourcePhrase,
+  redactSecretsInText,
+  renderRequesterLabel,
+} from './approval-summary.js';
 
 /**
  * How long an operator has to decide before a token stops being honored.
@@ -646,10 +650,12 @@ function toPendingApproval(
       : null
     : undefined;
   // Only an extension's tool names a source, and only while it runs: the card
-  // then says which extension it is from. Read live, like the room above.
-  const source = isExtensionCapabilityId(row.capabilityId)
-    ? sourceOf?.(row.capabilityId)
-    : undefined;
+  // then says which extension it is from. Read live, like the room above, and
+  // shown only while it is the extension the stored summary named, so the
+  // subtitle never contradicts the sentence under it (a rename or a reinstall
+  // under the same id drops it).
+  const live = isExtensionCapabilityId(row.capabilityId) ? sourceOf?.(row.capabilityId) : undefined;
+  const source = live && row.summary.includes(extensionSourcePhrase(live.name)) ? live : undefined;
   return {
     approvalId: row.id,
     capabilityId: row.capabilityId,

@@ -205,7 +205,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       renderBell();
       const { row } = await openRow();
 
-      expect(within(row).getByText('Gives agents 2 tools and 1 skill')).toBeInTheDocument();
+      // Nothing runs before the yes, so the row says what it WOULD give.
+      expect(within(row).getByText('Would give agents 2 tools and 1 skill')).toBeInTheDocument();
     });
 
     it('lists each tool with its tier, each skill, and any refusal in ⓘ', async () => {
@@ -230,7 +231,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       renderBell();
       const { row } = await openRow();
 
-      expect(within(row).queryByText(/Gives agents/)).not.toBeInTheDocument();
+      expect(within(row).queryByText(/give agents|Gives agents/)).not.toBeInTheDocument();
     });
   });
 

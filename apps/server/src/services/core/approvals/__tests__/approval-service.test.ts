@@ -463,6 +463,19 @@ describe('ApprovalService', () => {
       });
     });
 
+    it('leaves it off when the running extension is not the one the summary named', () => {
+      // A rename or a reinstall under the same id: the subtitle must never
+      // say "From Mail Pro" over a summary that says from "Mail".
+      const service = described();
+      service.request({
+        capabilityId: 'ext_mail_app.delete_message',
+        inputHash: BINDING.inputHash,
+        summary: 'wants to run "Delete an email" from "Old Mail"',
+      });
+
+      expect(service.listPending()[0]?.source).toBeUndefined();
+    });
+
     it('leaves it off once the extension stops, and off every DorkOS action', () => {
       const service = described();
       const ext = service.request({

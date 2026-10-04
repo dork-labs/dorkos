@@ -128,6 +128,28 @@ describe('ExtensionCard: what it gives agents', () => {
     expect(screen.queryByText('Take "anything"')).not.toBeInTheDocument();
   });
 
+  it('says what it would give, not what it gives, while the extension does not run', () => {
+    // Off, or waiting for approval: agents have none of it right now.
+    renderCard(
+      makeExtension({
+        status: 'disabled',
+        tools: [
+          { name: 'list_inbox', title: 'List your inbox', tier: 'observe', status: 'inactive' },
+        ],
+      })
+    );
+    expect(screen.getByRole('button', { name: 'Would give agents 1 tool' })).toBeInTheDocument();
+    cleanup();
+
+    renderCard(
+      makeExtension({
+        approvedToRun: false,
+        skills: [{ name: 'triage-inbox', status: 'ok' }],
+      })
+    );
+    expect(screen.getByRole('button', { name: 'Would give agents 1 skill' })).toBeInTheDocument();
+  });
+
   it('says no tools or skills reach agents when every one was left out', () => {
     renderCard(
       makeExtension({

@@ -10900,13 +10900,15 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtensionAgentToolSummary"
-            }
+            },
+            "default": []
           },
           "agentSkills": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
-            }
+            },
+            "default": []
           }
         },
         "required": [
@@ -10918,9 +10920,7 @@
           "runsInServer",
           "adds",
           "since",
-          "why",
-          "agentTools",
-          "agentSkills"
+          "why"
         ]
       },
       "ExtensionAgentToolSummary": {

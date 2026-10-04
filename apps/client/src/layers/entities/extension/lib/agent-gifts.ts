@@ -39,7 +39,15 @@ export interface AgentGiftSkill {
 export interface AgentGifts {
   tools: AgentGiftTool[];
   skills: AgentGiftSkill[];
+  /**
+   * Whether the extension runs now, so its agents have these. When it does
+   * not (off, waiting for approval, broken), the line says "Would give".
+   */
+  running: boolean;
 }
+
+/** Statuses of an extension whose code is running or on its way to running. */
+const RUNNING_STATUSES = new Set(['enabled', 'compiled', 'active']);
 
 /** What each tier means for a person, as one word or phrase. */
 export const AGENT_TOOL_TIER_LABEL: Record<AgentToolTier, string> = {
@@ -54,9 +62,10 @@ export const AGENT_TOOL_TIER_LABEL: Record<AgentToolTier, string> = {
  * @param extension - The public record.
  */
 export function agentGiftsFromRecord(
-  extension: Pick<ExtensionRecordPublic, 'tools' | 'skills'>
+  extension: Pick<ExtensionRecordPublic, 'tools' | 'skills' | 'status' | 'approvedToRun'>
 ): AgentGifts {
   return {
+    running: extension.approvedToRun && RUNNING_STATUSES.has(extension.status),
     tools: (extension.tools ?? []).map((tool) => ({
       name: tool.name,
       title: tool.title,
@@ -81,6 +90,8 @@ export function agentGiftsFromApproval(
   approval: Pick<PendingExtensionApproval, 'agentTools' | 'agentSkills'>
 ): AgentGifts {
   return {
+    // Waiting for a yes, so none of it runs yet.
+    running: false,
     tools: approval.agentTools.map((tool) => ({
       name: tool.name,
       title: tool.title,
@@ -100,21 +111,23 @@ function counted(count: number, noun: string): string {
 }
 
 /**
- * The one line that sums it up: "Gives agents 3 tools and 1 skill". Counts
- * only what reaches agents; a refused tool or a skill left out is listed with
- * its reason, never counted.
+ * The one line that sums it up: "Gives agents 3 tools and 1 skill" while the
+ * extension runs, "Would give agents …" while it does not. Counts only what
+ * reaches agents; a refused tool or a skill left out is listed with its
+ * reason, never counted.
  *
- * @param gifts - What the extension declares.
+ * @param gifts - What the extension declares, and whether it runs.
  * @returns The line, or `null` when it declares no tools and no skills.
  */
 export function agentGiftsLine(gifts: AgentGifts): string | null {
   if (gifts.tools.length === 0 && gifts.skills.length === 0) return null;
+  const verb = gifts.running ? 'Gives agents' : 'Would give agents';
   const tools = gifts.tools.filter((tool) => tool.leftOutReason === undefined).length;
   const skills = gifts.skills.filter((skill) => skill.leftOutReason === undefined).length;
-  if (tools === 0 && skills === 0) return 'Gives agents no tools or skills';
+  if (tools === 0 && skills === 0) return `${verb} no tools or skills`;
   const parts = [
     ...(tools > 0 ? [counted(tools, 'tool')] : []),
     ...(skills > 0 ? [counted(skills, 'skill')] : []),
   ];
-  return `Gives agents ${parts.join(' and ')}`;
+  return `${verb} ${parts.join(' and ')}`;
 }
