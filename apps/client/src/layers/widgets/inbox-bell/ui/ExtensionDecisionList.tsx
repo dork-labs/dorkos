@@ -4,7 +4,7 @@
  *
  * @module widgets/inbox-bell/ui/ExtensionDecisionList
  */
-import { useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { MessageCircleQuestion } from 'lucide-react';
 import type {
   DecisionActionRequest,
@@ -34,6 +34,48 @@ export interface ExtensionDecisionListProps {
   onWatch: (sessionId: string) => void;
   /** Drawn as part of a longer list, which spaces it: no margin of its own. */
   flush?: boolean;
+  /** The decision a link asked to single out: focused and ringed. */
+  focusId?: string;
+}
+
+/**
+ * One decision's frame: the `data-decision-id` the focus rules find rows by,
+ * and, for the decision a link asked for (`?inbox=<id>`), focus and a ring.
+ *
+ * The row focuses ITSELF when it mounts singled out, rather than the bell
+ * reaching in after opening: the panel's content arrives a commit after the
+ * open (it is portalled), and a decision fetched after a cold load arrives
+ * later still. Focusing first also keeps the panel's own autofocus off it,
+ * since that only moves focus that is not already inside.
+ */
+function DecisionFrame({
+  decisionId,
+  focused,
+  children,
+}: {
+  decisionId: string;
+  focused: boolean;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const frame = ref.current;
+    if (!focused || !frame) return;
+    // Optional: jsdom has no layout, so no `scrollIntoView`.
+    frame.scrollIntoView?.({ block: 'nearest' });
+    frame.focus({ preventScroll: true });
+  }, [focused]);
+  return (
+    <div
+      ref={ref}
+      data-decision-id={decisionId}
+      data-focused={focused ? 'true' : undefined}
+      tabIndex={focused ? -1 : undefined}
+      className={focused ? 'ring-ring/50 rounded-md ring-2 outline-none' : undefined}
+    >
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -60,6 +102,7 @@ export function ExtensionDecisionList({
   onNavigate,
   onWatch,
   flush = false,
+  focusId,
 }: ExtensionDecisionListProps) {
   const { answer, pendingFor } = useExtensionDecisionActions();
   const listRef = useRef<HTMLDivElement>(null);
@@ -156,7 +199,7 @@ export function ExtensionDecisionList({
       className={flush ? 'flex flex-col gap-1' : 'mt-2 flex flex-col gap-1'}
     >
       {decisions.map((decision) => (
-        <div key={decision.id} data-decision-id={decision.id}>
+        <DecisionFrame key={decision.id} decisionId={decision.id} focused={decision.id === focusId}>
           <InboxDecisionRow
             icon={MessageCircleQuestion}
             title={decision.title}
@@ -178,7 +221,7 @@ export function ExtensionDecisionList({
             pending={pendingFor(decision.id)}
             draftKey={decision.id}
           />
-        </div>
+        </DecisionFrame>
       ))}
     </div>
   );

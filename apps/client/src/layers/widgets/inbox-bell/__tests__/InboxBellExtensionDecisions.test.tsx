@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -25,6 +25,8 @@ import type {
 import { createMockTransport } from '@dorkos/test-utils';
 
 const mockNavigate = vi.fn();
+/** Below 768px the Inbox is a bottom sheet rather than a popover. */
+let mockIsMobile = false;
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>();
@@ -38,7 +40,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     useEventSubscription: vi.fn(),
     useEventStream: () => ({ subscribe: vi.fn(), connectionState: 'connected', failedAttempts: 0 }),
     useSafeNavigate: () => mockNavigate,
-    useIsMobile: () => false,
+    useIsMobile: () => mockIsMobile,
   };
 });
 
@@ -49,6 +51,7 @@ vi.mock('sonner', () => {
 
 import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
+import { clearInboxRequest, requestInbox } from '@/layers/entities/notifications';
 import { InboxBell } from '../ui/InboxBell';
 
 const DORKOS = { root: '/repos/dorkos', name: 'dorkos' };
@@ -172,7 +175,7 @@ function renderBell(approvals: PendingApproval[] = []) {
       </QueryClientProvider>
     );
   }
-  return render(<InboxBell />, { wrapper: Wrapper });
+  return { ...render(<InboxBell />, { wrapper: Wrapper }), queryClient };
 }
 
 async function openBell() {
@@ -208,6 +211,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  clearInboxRequest();
+  mockIsMobile = false;
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
@@ -445,5 +450,99 @@ describe('what extensions ask, in the bell', () => {
     const { user } = await openBell();
     await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ href: '/x/flow/p/dorkos' }));
+  });
+});
+
+describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
+  const QUESTION_ID = '01J0000000000000000000000Q';
+
+  beforeEach(() => {
+    decisions = [
+      shipDecision(),
+      shipDecision({
+        id: QUESTION_ID,
+        key: 'question:DOR-2400',
+        title: 'Which way should the migration go?',
+        actions: {
+          kind: 'choice',
+          choices: [
+            { id: 'a', label: 'Forward only' },
+            { id: 'b', label: 'Both ways' },
+          ],
+        },
+      }),
+    ];
+  });
+
+  /** The frame of one decision's row: what takes focus and the ring. */
+  function frameOf(title: string): HTMLElement {
+    return screen.getByText(title).closest('[data-decision-id]') as HTMLElement;
+  }
+
+  it('opens the Inbox with that decision focused and ringed', async () => {
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+
+    await screen.findByText('Which way should the migration go?');
+    const frame = frameOf('Which way should the migration go?');
+    await waitFor(() => expect(frame).toHaveFocus());
+    expect(frame).toHaveAttribute('data-focused', 'true');
+    expect(frameOf('Ship the new out-of-usage banner?')).not.toHaveAttribute('data-focused');
+  });
+
+  it('does the same in the phone’s bottom sheet', async () => {
+    mockIsMobile = true;
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+
+    await screen.findByText('Which way should the migration go?');
+    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
+  });
+
+  it('focuses a decision that arrives after the Inbox opened, as on a cold load', async () => {
+    decisions = [];
+    const { queryClient } = renderBell();
+    // Nothing waiting yet: the bell is quiet until somebody asks for it.
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    await screen.findByText('Activity');
+    expect(screen.queryByText('Which way should the migration go?')).not.toBeInTheDocument();
+
+    decisions = [shipDecision({ id: QUESTION_ID, title: 'Which way should the migration go?' })];
+    await act(() => queryClient.invalidateQueries());
+
+    await screen.findByText('Which way should the migration go?');
+    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
+  });
+
+  it('opens the whole Inbox, nothing singled out, for an id that names nothing waiting', async () => {
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+
+    act(() => requestInbox(undefined, { focus: 'already-answered' }));
+
+    await screen.findByText('Which way should the migration go?');
+    expect(screen.getByText('Ship the new out-of-usage banner?')).toBeInTheDocument();
+    expect(document.querySelector('[data-focused]')).toBeNull();
+  });
+
+  it('drops the ring once the Inbox closes', async () => {
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
+
+    const user = userEvent.setup();
+    await user.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(screen.queryByText('Which way should the migration go?')).not.toBeInTheDocument()
+    );
+    await openBell();
+
+    await screen.findByText('Which way should the migration go?');
+    expect(document.querySelector('[data-focused]')).toBeNull();
   });
 });

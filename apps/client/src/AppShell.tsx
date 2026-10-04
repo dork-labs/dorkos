@@ -46,6 +46,7 @@ import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useTasksSync } from '@/layers/entities/tasks';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
+import { useInboxDeepLink } from '@/layers/entities/notifications';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'motion/react';
 import { routedPageKey, shouldFadeRoute } from './app/route-fade';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
@@ -290,6 +291,9 @@ export function AppShell() {
   // has to work when the profile is not already what you are looking at.
   useLegacyProfileLinkRedirect();
   useProfileDockDeepLink();
+  // `?inbox=` on any route opens the Inbox over it (DOR-2577), so a link from
+  // an extension page or a notification lands where the open ask is.
+  useInboxDeepLink();
   useRightPanelPersistence();
   // In-window tabs (DOR-540). The sync hook is the single reconciliation point
   // between the router's location and the tab set — every navigation, whatever

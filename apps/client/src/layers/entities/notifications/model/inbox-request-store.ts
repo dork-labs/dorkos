@@ -24,29 +24,51 @@ interface InboxRequestState {
   openRequest: number;
   /** The slice to show, or `undefined` for all of it. */
   lens: NotificationLens | undefined;
+  /** The waiting item to bring into view and focus, or `undefined` for none. */
+  focus: string | undefined;
+}
+
+/** What else a {@link requestInbox} can ask for besides a lens. */
+export interface InboxRequestOptions {
+  /**
+   * The id of one waiting item to bring into view and focus: an extension
+   * decision's id, the one `ExtensionDecisionView.id` carries. An id that
+   * names nothing waiting opens the Inbox as usual, with nothing singled out.
+   */
+  focus?: string;
 }
 
 const useInboxRequestStore = create<InboxRequestState>(() => ({
   openRequest: 0,
   lens: undefined,
+  focus: undefined,
 }));
 
 /**
- * Ask the bell to open, optionally filtered.
+ * Ask the bell to open, optionally filtered, optionally on one waiting item.
  *
  * @param lens - The slice to show. Omit for the whole Inbox.
+ * @param options - The waiting item to focus, if any.
  */
-export function requestInbox(lens?: NotificationLens): void {
-  useInboxRequestStore.setState((state) => ({ openRequest: state.openRequest + 1, lens }));
+export function requestInbox(lens?: NotificationLens, options?: InboxRequestOptions): void {
+  useInboxRequestStore.setState((state) => ({
+    openRequest: state.openRequest + 1,
+    lens,
+    focus: options?.focus,
+  }));
 }
 
 /**
  * The current request — subscribe to it to open the Inbox when it changes.
  *
  * @returns A counter that increases on each {@link requestInbox}, and the lens
- * asked for with it.
+ * and focus asked for with it.
  */
-export function useInboxRequest(): { openRequest: number; lens: NotificationLens | undefined } {
+export function useInboxRequest(): {
+  openRequest: number;
+  lens: NotificationLens | undefined;
+  focus: string | undefined;
+} {
   return useInboxRequestStore((state) => state);
 }
 
@@ -56,5 +78,5 @@ export function useInboxRequest(): { openRequest: number; lens: NotificationLens
  * @internal Exported for testing only.
  */
 export function clearInboxRequest(): void {
-  useInboxRequestStore.setState({ openRequest: 0, lens: undefined });
+  useInboxRequestStore.setState({ openRequest: 0, lens: undefined, focus: undefined });
 }

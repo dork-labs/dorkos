@@ -424,6 +424,23 @@ describe('createExtensionAPI', () => {
     expect(deps.navigate).toHaveBeenCalledWith({ to: '/session?dir=%2Ftmp' });
   });
 
+  // How an extension opens the Inbox on one of its decisions (DOR-2577): a
+  // search-only path keeps the person on the page they are on.
+  it('navigate opens the Inbox over the current page for a search-only ?inbox=', () => {
+    window.history.replaceState(null, '', '/x/my-ext/p/dorkos?tab=runs');
+    try {
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      api.navigate('?inbox=01J0000000000000000000000D');
+
+      expect(deps.navigate).toHaveBeenCalledWith({
+        to: '/x/my-ext/p/dorkos?tab=runs&inbox=01J0000000000000000000000D',
+      });
+    } finally {
+      window.history.replaceState(null, '', '/');
+    }
+  });
+
   // 9. getState
   describe('getState', () => {
     it('projects selectedCwd and sessionId from the app store', () => {

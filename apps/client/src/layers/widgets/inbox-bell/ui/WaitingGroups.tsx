@@ -49,6 +49,11 @@ export interface WaitingGroupsProps {
   decisions: readonly ExtensionDecisionDTO[];
   /** Parked schedules to draw, answered ones still settling included. */
   schedules: readonly Task[];
+  /**
+   * The id of the one decision a link asked to single out, or undefined. An id
+   * that matches no row singles out nothing.
+   */
+  focusId?: string;
   /** Session id → what to call its agent. */
   agentNames?: Readonly<Record<string, string>>;
   /** Open a session, closing the Inbox. */
@@ -79,6 +84,7 @@ export function WaitingGroups({
   approvals,
   decisions,
   schedules,
+  focusId,
   agentNames,
   onOpenSession,
   onNavigate,
@@ -170,6 +176,7 @@ export function WaitingGroups({
             decisions={[decision]}
             onNavigate={onNavigate}
             onWatch={onOpenSession}
+            focusId={focusId}
             flush
           />
         </div>

@@ -280,6 +280,10 @@ export function InboxBell() {
   // a filtered Inbox (a session's menu), and dropped when the panel closes —
   // a filter nobody can see is a filter that makes the next open look broken.
   const [lens, setLens] = useState<NotificationLens | undefined>(undefined);
+  // The one waiting item a link asked to single out (`?inbox=<id>`, DOR-2577):
+  // its row takes focus and a ring while the panel is open. Dropped on close,
+  // for the same reason as the lens.
+  const [focusId, setFocusId] = useState<string | undefined>(undefined);
 
   // Somebody pressed the shortcut, or a session asked for its own notifications,
   // with nothing on screen to jump to. Opening here is the whole of "opens
@@ -294,12 +298,14 @@ export function InboxBell() {
   if (seenRequest !== trayRequest) {
     setSeenRequest(trayRequest);
     setLens(undefined);
+    setFocusId(undefined);
     setOpen(true);
   }
   const [seenInboxRequest, setSeenInboxRequest] = useState(inboxRequest.openRequest);
   if (seenInboxRequest !== inboxRequest.openRequest) {
     setSeenInboxRequest(inboxRequest.openRequest);
     setLens(inboxRequest.lens);
+    setFocusId(inboxRequest.focus);
     setOpen(true);
   }
 
@@ -370,6 +376,7 @@ export function InboxBell() {
             setOpen(next);
             if (!next) {
               setLens(undefined);
+              setFocusId(undefined);
               // A one-time "Next time, trust …?" offer ends with the bell
               // (spec `flow-multiproject` §9.3): it never waits for later.
               withdrawTrustOffers();
@@ -453,6 +460,7 @@ export function InboxBell() {
                     approvals={shownApprovals}
                     decisions={extensionDecisions}
                     schedules={shownSchedules}
+                    focusId={focusId}
                     agentNames={agentNames}
                     onOpenSession={(sessionId) => {
                       setOpen(false);

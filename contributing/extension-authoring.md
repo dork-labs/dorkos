@@ -169,6 +169,8 @@ api.setTabMarker(tabId: string, marker: 'attention' | null): void
 
 **`navigate`** takes a core route (`/team`, `/session?dir=…`) or one of **your own** pages (`/x/<your-id>/p/dorkos?view=list`). Anything else is refused with a console warning: another extension's page, another origin (`https://…`, `//host`), or a scheme like `javascript:`.
 
+To send a person to one of your open asks, open the Inbox over the page they are on rather than navigating away: `api.navigate('?inbox=' + encodeURIComponent(view.id))`, where `view` is the row from `api.listDecisions()` (`view.id` is core's id, not your key). The Inbox opens with that row focused, a bottom sheet on a phone. An id that is no longer waiting opens the Inbox with nothing singled out; `?inbox=open` opens it plain. This needs a DorkOS that answers `?inbox=`, so raise your `minHostVersion` when you adopt it.
+
 **`setTabMarker`** marks a tab you registered with `registerComponent('right-panel', tabId, …)`. Core draws a small amber dot after the tab's label and adds "something needs you" to its accessible name ("Flow, something needs you"). You choose only whether the tab is marked; you cannot change how the dot looks. Marking a tab you did not register does nothing and logs a warning. Marks clear when your extension deactivates. Use it for "something here needs the person", not for "something changed": no counts, and clear it once the person has seen what needed them.
 
 ```typescript
