@@ -14,6 +14,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { gitProtectionCheck } from '@dorkos/shared/git-hardening';
 import type { CheckResult } from '@dorkos/shared/health-schemas';
+import {
+  DEV_LINKS_FILE,
+  isActiveDevLink,
+  judgeDevLinks,
+  parseDevLinksFile,
+  type DevLinkRecord,
+  type DevLinkState,
+} from '@dorkos/shared/marketplace-schemas';
 import { checkNodeVersion } from '../startup-diagnostics.js';
 import { checkCoreExtensions } from '../check-core-extensions.js';
 import { checkExtensionCompilation } from '../check-extension-compilation.js';
@@ -279,6 +287,83 @@ export function checkFileDescriptors(softLimit: number | null): CheckResult {
       `${FILE_DESCRIPTOR_FLOOR} it starts failing in ways that never mention files.`,
     fix: `Raise it for this shell, then start DorkOS again:\n  ulimit -n ${FILE_DESCRIPTOR_FLOOR}`,
   };
+}
+
+/**
+ * The packages that run straight from a folder on this computer (DOR-2696),
+ * read from the dev-link registry directly, so it answers with DorkOS stopped.
+ *
+ * A `pass` with none, or when every one is in use (each named with its
+ * folder); a `warn` naming each one that is not, with the unlink command that
+ * switches it back; a `warn` when the registry cannot be read, since then no
+ * package runs from a folder at all. The verdict itself is `judgeDevLinks`,
+ * which `GET /api/health/deep` returns too, without the paths.
+ *
+ * @param dorkHome - The resolved DorkOS data directory.
+ */
+export function checkDevLinks(dorkHome: string): CheckResult {
+  const file = path.join(dorkHome, DEV_LINKS_FILE);
+  let text: string;
+  try {
+    text = fs.readFileSync(file, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return judgeDevLinks({ entries: [] }, { paths: true });
+    }
+    return judgeDevLinks({ unreadable: true, file }, { paths: true });
+  }
+  const parsed = parseDevLinksFile(text);
+  if (parsed === 'unreadable') return judgeDevLinks({ unreadable: true, file }, { paths: true });
+  return judgeDevLinks(
+    {
+      entries: parsed.links.map((record) => ({
+        name: record.name,
+        scope: record.scope,
+        ...(record.projectPath !== undefined && { projectPath: record.projectPath }),
+        target: record.target,
+        state: devLinkStateSync(record),
+      })),
+    },
+    { paths: true }
+  );
+}
+
+/**
+ * The state of one recorded dev link on disk now: the synchronous twin of the
+ * server's `devLinkStateOf` (`services/marketplace/dev-links/registry.ts`),
+ * which the CLI cannot import. Reads only; never repairs.
+ */
+function devLinkStateSync(
+  record: Pick<DevLinkRecord, 'slot' | 'target'>
+): DevLinkState | 'slot-unreadable' {
+  let lstatIsLink = false;
+  let present = false;
+  try {
+    lstatIsLink = fs.lstatSync(record.slot).isSymbolicLink();
+    present = true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // Only "not there" means not there. A permission error says nothing about
+    // whether the link exists, so it is not reported as removed.
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') return 'slot-unreadable';
+  }
+  let realpathOfSlot: string | null = null;
+  try {
+    realpathOfSlot = fs.realpathSync(record.slot);
+  } catch {
+    // Missing or dangling.
+  }
+  if (isActiveDevLink(record, { lstatIsLink, realpathOfSlot })) return 'active';
+  if (!present) return 'link-missing';
+  if (lstatIsLink && realpathOfSlot === null) {
+    try {
+      const text = fs.readlinkSync(record.slot);
+      if (path.resolve(path.dirname(record.slot), text) === record.target) return 'folder-missing';
+    } catch {
+      // Unreadable link text: counted as replaced below.
+    }
+  }
+  return 'link-replaced';
 }
 
 /**

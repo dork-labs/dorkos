@@ -121,7 +121,7 @@ describe('runDeepHealthChecks', () => {
 
     const results = await runDeepHealthChecks(healthyDeps(agentDir));
 
-    expect(results).toHaveLength(7);
+    expect(results).toHaveLength(8);
     expect(results.every((r) => r.status === 'pass')).toBe(true);
   });
 
@@ -149,11 +149,17 @@ describe('runDeepHealthChecks', () => {
       // Git too old to refuse a git-shaped folder (DOR-2326).
       gitProtection: () => Promise.resolve(gitProtectionCheck('git version 2.30.0\n')),
     };
+    // A dev-link registry nobody can parse (DOR-2696).
+    fs.mkdirSync(path.join(tmpHome, 'marketplace'), { recursive: true });
+    fs.writeFileSync(path.join(tmpHome, 'marketplace', 'dev-links.json'), '{ torn');
 
     const results = await runDeepHealthChecks(deps);
     const statuses = results.map((r) => r.status);
 
-    expect(statuses).toEqual(['warn', 'fail', 'warn', 'warn', 'warn', 'warn', 'warn']);
+    expect(statuses).toEqual(['warn', 'fail', 'warn', 'warn', 'warn', 'warn', 'warn', 'warn']);
+    expect(results[7]?.label).toBe("Dev links can't be read");
+    // Content-free: the registry's path stays off the response.
+    expect(JSON.stringify(results[7])).not.toContain(tmpHome);
     expect(results[6]?.fix).toContain('2.38');
   });
 
@@ -176,9 +182,12 @@ describe('runDeepHealthChecks', () => {
   it('reports info, not failure, for subsystems that were never turned on', async () => {
     const results = await runDeepHealthChecks({ dorkHome: tmpHome });
 
-    expect(results).toHaveLength(7);
-    expect(results.every((r) => r.status === 'info')).toBe(true);
-    expect(results.every((r) => r.detail?.startsWith('Skipped'))).toBe(true);
+    expect(results).toHaveLength(8);
+    const subsystems = results.slice(0, 7);
+    expect(subsystems.every((r) => r.status === 'info')).toBe(true);
+    expect(subsystems.every((r) => r.detail?.startsWith('Skipped'))).toBe(true);
+    // Dev links need no subsystem: the registry file is read directly.
+    expect(results[7]).toEqual({ label: 'No dev links', status: 'pass' });
   });
 
   it('tells a subsystem that failed to start apart from one that was never on', async () => {
@@ -215,13 +224,13 @@ describe('runDeepHealthChecks', () => {
       },
     });
 
-    expect(results).toHaveLength(7);
+    expect(results).toHaveLength(8);
     expect(results[1]?.status).toBe('warn');
     expect(results[1]?.label).toContain('Could not run the check');
     // Content-free: the thrown error's path must not ride along.
     expect(JSON.stringify(results[1])).not.toContain('/Users/someone');
     // The others are untouched.
-    for (const index of [0, 2, 3, 4, 5, 6]) {
+    for (const index of [0, 2, 3, 4, 5, 6, 7]) {
       expect(results[index]?.status).toBe('pass');
     }
   });
@@ -258,5 +267,39 @@ describe('runDeepHealthChecks', () => {
 
     expect(results[0]?.status).toBe('info');
     expect(results[0]?.label).toContain('Could not check');
+  });
+
+  // DOR-2696: the same verdict `dorkos doctor` gives, without any path, so a
+  // folder name never leaves the machine through this endpoint.
+  it('names dev links that need a look, with no folder or project path', async () => {
+    const home = fs.realpathSync(tmpHome);
+    const live = path.join(home, 'work', 'flow');
+    const gone = path.join(home, 'work', 'fmt');
+    fs.mkdirSync(live, { recursive: true });
+    fs.mkdirSync(path.join(home, 'plugins'), { recursive: true });
+    fs.symlinkSync(live, path.join(home, 'plugins', 'flow'));
+    fs.symlinkSync(gone, path.join(home, 'plugins', 'fmt'));
+    const record = (name: string, target: string) => ({
+      name,
+      type: 'plugin',
+      scope: 'global',
+      slot: path.join(home, 'plugins', name),
+      target,
+      linkedAt: '2026-10-03T00:00:00.000Z',
+      linkedVia: 'terminal',
+    });
+    fs.mkdirSync(path.join(home, 'marketplace'), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, 'marketplace', 'dev-links.json'),
+      JSON.stringify({ version: 1, links: [record('flow', live), record('fmt', gone)] })
+    );
+
+    const results = await runDeepHealthChecks({ dorkHome: home });
+
+    expect(results[7]?.status).toBe('warn');
+    expect(results[7]?.label).toBe('1 dev link needs a look');
+    expect(results[7]?.detail).toBe('fmt: its folder is gone');
+    expect(results[7]?.fix).toContain('dorkos marketplace unlink fmt');
+    expect(JSON.stringify(results[7])).not.toContain(home);
   });
 });

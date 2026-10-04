@@ -25,6 +25,13 @@ import { DEV_LINK_PATH_MAX } from '../../services/marketplace-mcp/tool-link.js';
 /** The folder field: required, and capped like the capability's own input. */
 const PathField = z.string().min(1).max(DEV_LINK_PATH_MAX);
 
+/**
+ * The longest `expectedChange` accepted. Deliberately far above what one card
+ * holds, so a folder that runs too much is refused by its own sentence
+ * (`dev_link_card_too_long`) rather than a bare validation failure.
+ */
+const EXPECTED_CHANGE_MAX = 65_536;
+
 /** Where a link goes: every session, or one project. */
 const ScopeFields = {
   scope: z.enum(['global', 'project']),
@@ -38,7 +45,12 @@ function scopeIsConsistent(body: { scope: 'global' | 'project'; projectPath?: st
 
 /** Body schema for `POST /api/marketplace/dev-links/preview`. */
 export const DevLinkPreviewBodySchema = z
-  .object({ path: PathField, ...ScopeFields })
+  .object({
+    path: PathField,
+    ...ScopeFields,
+    /** Describe the link as setting an installed copy aside, as the link would. */
+    replaceInstalled: z.boolean().optional(),
+  })
   .strict()
   .refine(scopeIsConsistent, {
     message: 'projectPath is required for, and only for, scope project',
@@ -52,6 +64,12 @@ export const DevLinkCreateBodySchema = z
     replaceInstalled: z.boolean().optional(),
     /** Where the person is linking from, for the record. Ignored for an agent. */
     via: z.enum(['app', 'terminal']).optional(),
+    /**
+     * The preview's `change` text the person said yes to. Linking is refused
+     * with `dev_link_changed` when the folder no longer describes the same
+     * way. Ignored for an agent: its yes is bound by the approval card.
+     */
+    expectedChange: z.string().min(1).max(EXPECTED_CHANGE_MAX).optional(),
   })
   .strict()
   .refine(scopeIsConsistent, {
@@ -122,6 +140,7 @@ export function mountDevLinkRoutes(
           path: body.path,
           scope: body.scope,
           ...(confined.projectPath ? { projectPath: confined.projectPath } : {}),
+          ...(body.replaceInstalled ? { replaceInstalled: true } : {}),
         })
       );
     } catch (err) {
@@ -169,7 +188,11 @@ export function mountDevLinkRoutes(
       const status = await devLinks.link({
         ...target,
         via: person ? (body.via ?? 'app') : 'agent-card',
-        expectedChange: change,
+        // A person's yes was given to the preview they read, possibly long
+        // before this request, so it binds to that text. An agent's yes is the
+        // card the gate just honoured, bound to `change`; what an agent sends
+        // here never replaces it.
+        expectedChange: person && body.expectedChange !== undefined ? body.expectedChange : change,
       });
       return res.status(201).json(status);
     } catch (err) {

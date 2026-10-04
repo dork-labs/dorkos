@@ -31342,6 +31342,12 @@
                       "app",
                       "terminal"
                     ]
+                  },
+                  "expectedChange": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 65536,
+                    "description": "The preview's `change` the person said yes to; a mismatch is refused with `dev_link_changed`. Ignored for an agent, whose yes is the approval card."
                   }
                 },
                 "required": [
@@ -31551,6 +31557,10 @@
                     "type": "string",
                     "minLength": 1,
                     "description": "Required for, and only for, scope project."
+                  },
+                  "replaceInstalled": {
+                    "type": "boolean",
+                    "description": "Describe the link as setting an installed copy aside."
                   }
                 },
                 "required": [
@@ -31862,6 +31872,10 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "change": {
+                      "type": "string",
+                      "description": "The approval text for this folder as it reads now. Send it back as `expectedChange` when linking, so a folder that changed meanwhile is refused."
                     }
                   },
                   "required": [
@@ -31872,7 +31886,8 @@
                     "slot",
                     "replaces",
                     "effects",
-                    "extensions"
+                    "extensions",
+                    "change"
                   ]
                 }
               }
@@ -32038,6 +32053,13 @@
                     },
                     "parkedLeftAt": {
                       "type": "string"
+                    },
+                    "leftInPlace": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ],
+                      "description": "Set when something else had already taken the link's place; it was left as it is."
                     }
                   },
                   "required": [

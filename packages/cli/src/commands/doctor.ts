@@ -43,6 +43,7 @@ import {
   checkClaudeAuth,
   checkRuntimeAuth,
   checkExtensions,
+  checkDevLinks,
   checkAuthConfig,
   checkTunnelConfig,
   checkFileDescriptors,
@@ -277,6 +278,7 @@ async function gatherResults(dorkHome: string, store: ConfigStore | null): Promi
       opencodeProvider: readString(store, 'runtimes.opencode.provider'),
     }),
     await checkExtensions(),
+    checkDevLinks(dorkHome),
     checkAuthConfig({
       authEnabled: readBool(store, 'auth.enabled', false),
       secretFileExists: fs.existsSync(path.join(dorkHome, SECRET_FILE_NAME)),
