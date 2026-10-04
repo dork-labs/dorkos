@@ -1042,6 +1042,14 @@
       ]
     },
     {
+      "doc": "docs/marketplace/dev-links.mdx",
+      "description": "Dev links: run a plugin or skill pack from your own folder, reload, switch back",
+      "patterns": [
+        "services/marketplace/dev-links/",
+        "features/marketplace/ui/LinkFolderDialog"
+      ]
+    },
+    {
       "doc": "docs/getting-started/desktop-app.mdx",
       "description": "Desktop app: tabs, background running + tray, the stable address, deep links, auto-update",
       "patterns": [
