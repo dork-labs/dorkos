@@ -155,5 +155,6 @@ export function toPublic(
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
     ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),
     ...(tools ? { tools } : {}),
+    isolation: record.isolation ?? null,
   };
 }

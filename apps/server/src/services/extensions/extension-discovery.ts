@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
-import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { ExtensionManifestSchema, NO_SERVER_CODE_TO_ISOLATE } from '@dorkos/extension-api';
 import { checkDeclaredTools, summarizeToolCheck } from '@dorkos/extension-api/tool-check';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { ExtensionRecord, ExtensionManifest } from '@dorkos/extension-api';
@@ -21,6 +21,7 @@ import {
 } from './extension-trusted-origin.js';
 import { activeDevLinks, canonicalSlotPath } from '../marketplace/dev-links/registry.js';
 import { logger } from '../../lib/logger.js';
+import { isolationOf } from './isolation/isolation-view.js';
 import {
   satisfiesMinHostVersion,
   RUNNING_HOST_VERSION,
@@ -597,6 +598,32 @@ export class ExtensionDiscovery {
         ? checkDeclaredTools(manifest).map(summarizeToolCheck)
         : undefined;
 
+      // An extension asking to run separately needs server code to run
+      // (DOR-2686). The schema cannot see the disk, so the check is here: a
+      // dataProxy-only folder declaring it would otherwise be "isolated" with
+      // nothing in it.
+      if (manifest.serverCapabilities?.runtime === 'subprocess' && !hasServerEntry) {
+        return {
+          id: manifest.id,
+          manifest,
+          status: 'invalid',
+          scope,
+          path: extDir,
+          error: {
+            code: 'invalid_manifest',
+            message: 'Manifest validation failed',
+            details: NO_SERVER_CODE_TO_ISOLATE,
+          },
+          bundleReady: false,
+          hasServerEntry: false,
+          hasDataProxy,
+          isolation: null,
+        };
+      }
+      // Where it runs and what it may reach, with each `allow.run` entry
+      // resolved to the program it means here. Looking only: nothing runs.
+      const isolation = await isolationOf(manifest, { dorkHome: this.dorkHome });
+
       return {
         id: manifest.id,
         manifest,
@@ -608,6 +635,7 @@ export class ExtensionDiscovery {
         hasDataProxy,
         serverEntryPath: hasServerEntry ? resolvedPath : undefined,
         ...(toolChecks ? { toolChecks } : {}),
+        isolation,
       };
     } catch (err) {
       return {

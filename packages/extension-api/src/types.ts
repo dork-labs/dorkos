@@ -61,6 +61,42 @@ export interface ExtensionToolStatus {
   reason?: string;
 }
 
+/** One `allow.run` entry and the program it names on this computer. */
+export interface ExtensionResolvedProgram {
+  /** The entry as the manifest wrote it: a bare name (`git`) or an absolute path. */
+  name: string;
+  /**
+   * The absolute path of the program DorkOS found for it when it discovered
+   * the extension: a bare name looked up on the server's `PATH` (absolute
+   * `PATH` folders only, and `PATHEXT` on Windows), an absolute path kept as
+   * written. `null` when no runnable file was found on this computer, or when
+   * the file sits where an extension can write (its own data folder), which
+   * the approval card shows and the program broker refuses. Found by looking
+   * at the disk only: nothing is run.
+   */
+  path: string | null;
+}
+
+/**
+ * How an extension that runs separately (`serverCapabilities.runtime:
+ * "subprocess"`, DOR-2686) is limited, normalized from its manifest so every
+ * consumer — the lifecycle, the approval queue, the app — reads one view.
+ */
+export interface ExtensionIsolation {
+  /** Always `subprocess`: an in-process extension has no isolation view. */
+  runtime: 'subprocess';
+  /** The `allow.net` entries, as written. */
+  net: string[];
+  /** The `allow.run` entries, as written. */
+  run: string[];
+  /** Each `allow.run` entry with the program it names here. */
+  resolvedRun: ExtensionResolvedProgram[];
+  /** Whether it may message agents and start agent sessions (`allow.agents`). */
+  agents: boolean;
+  /** Its heap limit in MB (`limits.memoryMb`, default 256). */
+  memoryMb: number;
+}
+
 /** Server-side record for a discovered extension. */
 export interface ExtensionRecord {
   id: string;
@@ -162,6 +198,12 @@ export interface ExtensionRecord {
    * code ran (DOR-2685). Absent when the manifest declares none.
    */
   toolChecks?: ExtensionToolCheckSummary[];
+  /**
+   * How it is limited when it runs separately (DOR-2686). `null` (or absent,
+   * for a record built before discovery filled it) means it runs inside
+   * DorkOS with full access.
+   */
+  isolation?: ExtensionIsolation | null;
 }
 
 /** The subset of ExtensionRecord sent to the client (excludes server-internal fields). */
@@ -221,6 +263,11 @@ export interface ExtensionRecordPublic {
    * Absent when its manifest declares none.
    */
   tools?: ExtensionToolStatus[];
+  /**
+   * How it is limited when it runs separately (DOR-2686); `null` means it
+   * runs inside DorkOS with full access. See {@link ExtensionRecord.isolation}.
+   */
+  isolation?: ExtensionIsolation | null;
 }
 
 /** The interface an extension module must export. */

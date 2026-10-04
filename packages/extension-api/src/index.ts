@@ -98,6 +98,8 @@ export type {
   ExtensionOrigin,
   ExtensionToolCheckSummary,
   ExtensionToolStatus,
+  ExtensionIsolation,
+  ExtensionResolvedProgram,
 } from './types.js';
 export type {
   SecretStore,
