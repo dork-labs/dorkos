@@ -20,7 +20,12 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { NotifyPluginsChanged } from '../../types.js';
 import { MARKETPLACE_DEVLINK_PARKED_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { lex } from '../../../../../../../scripts/lib/code-only.mjs';
-import { DevLinkService, type DevLinkApprovals, type DevLinkFs } from '../dev-link-service.js';
+import {
+  DevLinkService,
+  type DevLinkApprovals,
+  type DevLinkFs,
+  type DevLinkReloads,
+} from '../dev-link-service.js';
 import { DevLinkError } from '../errors.js';
 import { readDevLinks, updateDevLinks } from '../registry.js';
 import { memoryConsentStore } from './memory-consent-store.js';
@@ -61,7 +66,7 @@ async function writePackage(
   return dir;
 }
 
-function service(fs: Partial<DevLinkFs> = {}): DevLinkService {
+function service(fs: Partial<DevLinkFs> = {}, reloads?: DevLinkReloads): DevLinkService {
   return new DevLinkService({
     consent: memoryConsentStore(),
     dorkHome: home,
@@ -75,6 +80,7 @@ function service(fs: Partial<DevLinkFs> = {}): DevLinkService {
     refreshExtensions,
     boundary: () => base,
     fs,
+    ...(reloads && { reloads }),
   });
 }
 
@@ -688,5 +694,86 @@ describe('DevLinkService.list', () => {
       links: [],
       registryUnreadable: expect.any(String),
     });
+  });
+});
+
+describe('DevLinkService and the hot-reload watcher', () => {
+  /** A watcher stand-in that records the order of calls and what the slot held at each. */
+  function recordingReloads() {
+    const calls: string[] = [];
+    const reloads: DevLinkReloads = {
+      sync: vi.fn(async () => {
+        calls.push(
+          `sync:${await readDevLinks(home).then((r) => ('links' in r ? r.links.length : -1))}`
+        );
+      }),
+      hold: vi.fn(async () => {
+        const linked = await lstat(globalSlot()).then(
+          (st) => st.isSymbolicLink(),
+          () => false
+        );
+        calls.push(`hold:${linked ? 'linked' : 'gone'}`);
+      }),
+      release: vi.fn(async () => {
+        const linked = await lstat(globalSlot()).then(
+          (st) => st.isSymbolicLink(),
+          () => false
+        );
+        calls.push(`release:${linked ? 'linked' : 'gone'}`);
+      }),
+      lastReloadAt: vi.fn(() => '2026-10-03T12:00:00.000Z'),
+    };
+    return { calls, reloads };
+  }
+
+  it('starts watching once the link is recorded, and reports when it last reloaded', async () => {
+    // Purpose: the first edit after linking must reload, so the watch opens
+    // only after the record exists; the listing carries the last reload time.
+    const { calls, reloads } = recordingReloads();
+    const status = await service({}, reloads).link({ path: work, scope: 'global', via: 'app' });
+    expect(calls).toEqual(['sync:1']);
+    expect(status.lastReloadAt).toBe('2026-10-03T12:00:00.000Z');
+    expect((await service({}, reloads).list()).links[0]?.lastReloadAt).toBe(
+      '2026-10-03T12:00:00.000Z'
+    );
+  });
+
+  it('leaves lastReloadAt out until something reloaded', async () => {
+    // Purpose: an absent time means "not yet", never an empty string.
+    const { reloads } = recordingReloads();
+    vi.mocked(reloads.lastReloadAt).mockReturnValue(undefined);
+    const status = await service({}, reloads).link({ path: work, scope: 'global', via: 'app' });
+    expect('lastReloadAt' in status).toBe(false);
+  });
+
+  it('holds reloads before the link is removed, and releases after', async () => {
+    // Purpose: nothing may rebuild from the folder while its link and
+    // approvals are being taken away.
+    const { calls, reloads } = recordingReloads();
+    await service({}, reloads).link({ path: work, scope: 'global', via: 'app' });
+    calls.length = 0;
+    await service({}, reloads).unlink({ name: 'flow', scope: 'global' });
+    expect(calls).toEqual(['hold:linked', 'release:gone']);
+    expect(reloads.hold).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'flow', scope: 'global' })
+    );
+  });
+
+  it('releases even when the unlink fails, so the link is not left deaf', async () => {
+    // Purpose: a failed unlink leaves the dev link in force; it must be
+    // watched again rather than stay held until a restart.
+    const { calls, reloads } = recordingReloads();
+    await service({}, reloads).link({ path: work, scope: 'global', via: 'app' });
+    calls.length = 0;
+    const svc = service(
+      {
+        unlink: async () => {
+          throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+        },
+      },
+      reloads
+    );
+    await expect(svc.unlink({ name: 'flow', scope: 'global' })).rejects.toThrow('EBUSY');
+    expect(calls).toEqual(['hold:linked', 'release:linked']);
   });
 });
