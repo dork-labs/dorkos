@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { describeCancelledLaunch, formatCommunityRecovery } from '../community-dispatcher.js';
+import { formatCommunityRecovery } from '../community-dispatcher.js';
 import { createLaunchPlan } from '../plan.js';
 import { ProviderMutationError } from '../provider-mutation.js';
 import { createInitialCommunityLaunchJournal } from '../resume.js';
+import {
+  describeStoppedLaunch,
+  recordLaunchFailure,
+  stopExitCode,
+} from '../runtime/stop-record.js';
 
 const plan = createLaunchPlan({
   dorkosVersion: '0.96.0',
@@ -42,21 +47,48 @@ const stopped = {
 };
 
 describe('what a person reads when setup stops (DOR-2702)', () => {
-  it('says a Control-C stop resumes as is, in words that match the journal', () => {
-    const line = describeCancelledLaunch(stopped);
+  it('says a stop resumes as is, in words that match the journal and not its cause', () => {
+    const line = describeStoppedLaunch(stopped);
     expect(line).toBe(
-      'Setup stopped when you interrupted it. What it made so far is kept: run the resume command above to carry on.'
+      'Setup was stopped. What it made so far is kept: run the resume command above to carry on.'
     );
     expect(line).not.toMatch(/[A-Z]{3,}_[A-Z]/u);
+    // SIGTERM takes the same path as Control-C, so the line names neither.
+    expect(line).not.toMatch(/Control-C|you /u);
+    expect(stopExitCode('SIGINT')).toBe(130);
+    expect(stopExitCode('SIGTERM')).toBe(143);
+  });
 
-    // A stop in the middle of a create is the journal's uncertain state, and says so.
-    const uncertain = describeCancelledLaunch({
+  it('points at reconciliation steps only when the recovery prints them', () => {
+    const uncertain = {
       ...stopped,
-      state: 'uncertain',
-      lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
-    });
-    expect(uncertain).toContain('cannot tell yet whether that change happened');
-    expect(uncertain).not.toContain('CREATION_OUTCOME_UNCERTAIN');
+      state: 'uncertain' as const,
+      lastSafeError: {
+        category: 'uncertain' as const,
+        code: 'CREATION_OUTCOME_UNCERTAIN' as const,
+      },
+    };
+    const withIntent = {
+      ...uncertain,
+      pendingIntent: {
+        provider: 'neon' as const,
+        organizationId: 'org-dorian',
+        resourceName: 'dor2170-v96d-d172',
+      },
+    };
+    expect(formatCommunityRecovery(withIntent)).toContain('Manual reconciliation required');
+    expect(describeStoppedLaunch(withIntent)).toContain(
+      'Follow the steps above before you resume.'
+    );
+
+    expect(formatCommunityRecovery(uncertain)).not.toContain('Manual reconciliation required');
+    const noSteps = describeStoppedLaunch(uncertain);
+    expect(noSteps).toContain('cannot tell yet whether that change happened');
+    expect(noSteps).not.toContain('steps above');
+    expect(noSteps).toContain(
+      'Check the resources listed above, then run the resume command above.'
+    );
+    expect(noSteps).not.toContain('CREATION_OUTCOME_UNCERTAIN');
   });
 
   it('never prints a raw provider error code', () => {
@@ -72,6 +104,17 @@ describe('what a person reads when setup stops (DOR-2702)', () => {
       expect(error.message).not.toContain(code);
       expect(error.message).not.toContain('Provider mutation failed');
     }
+    // True also for a command that finished with an error, and points at the way forward.
+    const uncertain = new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN').message;
+    expect(uncertain).toContain('did not finish cleanly');
+    expect(uncertain).toContain('run the resume command printed above');
+    expect(uncertain).not.toContain('run setup again');
+    // An exported token is not a "signed-in account": every credential it could be is named.
+    const denied = new ProviderMutationError('ACCESS_DENIED').message;
+    expect(denied).not.toContain('signed-in account');
+    for (const name of ['FLY_API_TOKEN', 'FLY_ACCESS_TOKEN', 'NEON_API_KEY', 'saved sign-in']) {
+      expect(denied).toContain(name);
+    }
   });
 
   it('names the bucket by its name and mentions the access key Tigris keeps', () => {
@@ -81,5 +124,41 @@ describe('what a person reads when setup stops (DOR-2702)', () => {
     expect(recovery).toContain(
       'Access key: usually dor2170-v96d-d172_access_key in Tigris. Removing the bucket does not remove this key'
     );
+  });
+
+  it('saves a failure code in the journal, never over a more specific one', () => {
+    const now = '2026-10-03T23:18:32.000Z';
+    // The live run: a resume failed after an earlier Control-C, and the journal kept CANCELLED.
+    const failed = recordLaunchFailure(
+      stopped,
+      new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN'),
+      now
+    );
+    expect(failed).toMatchObject({
+      revision: stopped.revision + 1,
+      state: 'secrets_staged',
+      pendingIntent: null,
+      resources: stopped.resources,
+      lastSafeError: { category: 'uncertain', code: 'CREATION_OUTCOME_UNCERTAIN' },
+      updatedAt: now,
+    });
+    expect(
+      recordLaunchFailure({ ...stopped, lastSafeError: null }, { code: 'ACCESS_DENIED' }, now)
+        ?.lastSafeError
+    ).toEqual({ category: 'authorization', code: 'ACCESS_DENIED' });
+
+    const specific = {
+      ...stopped,
+      lastSafeError: {
+        category: 'invalid-response' as const,
+        code: 'MISSING_TIGRIS_SECRETS' as const,
+      },
+    };
+    expect(recordLaunchFailure(specific, { code: 'INVALID_RESPONSE' }, now)).toBeNull();
+    expect(recordLaunchFailure(stopped, new Error('no code'), now)).toBeNull();
+    expect(recordLaunchFailure(stopped, { code: 'not-a-journal-code' }, now)).toBeNull();
+    expect(
+      recordLaunchFailure({ ...stopped, state: 'complete' }, { code: 'EXIT' }, now)
+    ).toBeNull();
   });
 });

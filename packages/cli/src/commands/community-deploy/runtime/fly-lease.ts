@@ -91,8 +91,9 @@ export async function readFlyMachineLease(
 }
 
 /**
- * Fly is still finishing an earlier deploy of the app, so setup will not deploy over it yet. Says
- * when to try again; names only the app, never the lease's owner.
+ * Fly still holds one of the app's Machines for another deploy, so setup will not deploy over it
+ * yet. Says when to try again; names only the app, never the lease's owner. The holder is usually
+ * the deploy a person just stopped, but may be one still running, so the text does not say which.
  */
 export class FlyMachineBusyError extends ProviderMutationError {
   /**
@@ -105,7 +106,7 @@ export class FlyMachineBusyError extends ProviderMutationError {
     super('PROVIDER_UNAVAILABLE');
     this.name = 'FlyMachineBusyError';
     this.message =
-      `Fly is still finishing an earlier deploy of ${appName}, so setup did not deploy over it. ` +
+      `Fly is still holding the Machine of ${appName} for another deploy, so setup did not deploy over it. ` +
       (minutes === null
         ? 'Wait a few minutes, then run the resume command above again.'
         : `Wait about ${minutesText(minutes)}, then run the resume command above again.`);
@@ -168,20 +169,23 @@ export async function waitForFlyMachineLeases(options: FlyLeaseWaitOptions): Pro
     }
     if (now >= deadline) throw new FlyMachineBusyError(options.appName, null);
     if (lastProgress === null) {
+      // Usually the deploy that was just stopped, but it may be one still running: say neither.
       options.progress(
-        `Fly is still finishing the deploy that was stopped on ${options.appName}. ` +
+        `Fly is still holding the Machine of ${options.appName} for another deploy. ` +
           (ends === null
-            ? 'Waiting for it to let go of the Machine…'
-            : `Waiting up to about ${minutesText(minutesUntil(ends, now))} for it to let go of the Machine…`)
+            ? 'Waiting for Fly to let go of it…'
+            : `Waiting up to about ${minutesText(minutesUntil(ends, now))} for Fly to let go of it…`)
       );
       lastProgress = now;
     } else if (now - lastProgress >= PROGRESS_EVERY_MS) {
       options.progress('Still waiting for Fly to let go of the Machine…');
       lastProgress = now;
     }
-    // Read again just after the lease should end, and never sleep past the limit.
+    // Read again just after the lease should end, at least a second apart, never past the limit.
     const untilEnd = ends === null ? FLY_LEASE_POLL_MS : ends - now + 2_000;
-    await options.sleep(Math.max(1_000, Math.min(untilEnd, FLY_LEASE_POLL_MS, deadline - now)));
+    await options.sleep(
+      Math.min(deadline - now, Math.max(1_000, Math.min(untilEnd, FLY_LEASE_POLL_MS)))
+    );
   }
 }
 

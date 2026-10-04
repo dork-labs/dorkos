@@ -47,6 +47,12 @@ import {
 } from './resume.js';
 import { runRemoveUncertainCommand } from './provenance/removal-command.js';
 import { tigrisAccessKeyName } from './provenance/tigris-access-key.js';
+import {
+  describeStoppedLaunch,
+  recordLaunchFailure,
+  stopExitCode,
+  type LaunchStopSignal,
+} from './runtime/stop-record.js';
 import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 
 /** Human-facing help for the guided deployment command. */
@@ -133,18 +139,6 @@ export function formatIncompleteLaunches(journals: readonly LaunchJournal[]): st
         `${journal.runId}  ${journal.pendingRemoval ? 'removal pending' : journal.state}  updated ${journal.updatedAt}  confirmed ${Object.keys(journal.resources).length}`
     )
     .join('\n')}\n`;
-}
-
-/**
- * The last line after a Control-C, matching what the journal saved: a clean stop resumes as is,
- * while a stop in the middle of a create needs the reconciliation steps above first.
- *
- * @param journal - The journal as saved after the cancellation.
- */
-export function describeCancelledLaunch(journal: LaunchJournal): string {
-  return journal.lastSafeError?.code === 'CANCELLED'
-    ? 'Setup stopped when you interrupted it. What it made so far is kept: run the resume command above to carry on.'
-    : 'Setup stopped while a change was still in progress, so it cannot tell yet whether that change happened. Follow the steps above before you resume.';
 }
 
 /** Render resource ownership, possible charges/data, read-only inspection, and exact resume. */
@@ -368,9 +362,15 @@ export async function runCommunityDispatcher(
   // gh, the clipboard tools and the browser opener never need a Fly or Neon credential.
   const localEnv = withoutCommunityCredentialEnv(childEnv);
   const cancellation = new AbortController();
-  const cancel = () => cancellation.abort();
-  process.once('SIGINT', cancel);
-  process.once('SIGTERM', cancel);
+  let stopSignal: LaunchStopSignal = 'SIGINT';
+  const cancelOn = (signal: LaunchStopSignal) => () => {
+    if (!cancellation.signal.aborted) stopSignal = signal;
+    cancellation.abort();
+  };
+  const onSigint = cancelOn('SIGINT');
+  const onSigterm = cancelOn('SIGTERM');
+  process.once('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
   const serviceOptions = {
     fly: {
       executable: 'fly',
@@ -553,21 +553,31 @@ export async function runCommunityDispatcher(
       await writeLaunchJournal(journalPath, cancelled, latest.revision).catch(() => undefined);
       latest = cancelled;
     }
+    // Any other failure saves its code, which the terminal no longer prints (DOR-2702).
+    const failed =
+      latest && !cancellation.signal.aborted && !(error instanceof CommunityCreationRefusedError)
+        ? recordLaunchFailure(latest, error, new Date().toISOString())
+        : null;
+    if (latest && failed) {
+      const previous: LaunchJournal = latest;
+      await writeLaunchJournal(journalPath, failed, previous.revision).catch(() => undefined);
+      latest = failed;
+    }
     if (error instanceof CommunityCreationRefusedError && latest) {
       await stopForRefusedCreate(error, latest, journalPath, childEnv, formatCommunityRecovery);
     }
     if (latest) {
       process.stderr.write(`Space setup stopped.\n${formatCommunityRecovery(latest)}\n`);
-      // An interruption is not a failure: say what happened in the words the journal just saved,
-      // instead of the interrupted command's own error code (DOR-2702).
+      // A stop is not a failure: say what happened in the words the journal just saved, instead
+      // of the interrupted command's own error code, and exit as the signal would (DOR-2702).
       if (cancellation.signal.aborted && !latest.pendingRemoval) {
-        process.stderr.write(`${describeCancelledLaunch(latest)}\n`);
-        return 130;
+        process.stderr.write(`${describeStoppedLaunch(latest)}\n`);
+        return stopExitCode(stopSignal);
       }
     }
     throw error;
   } finally {
-    process.removeListener('SIGINT', cancel);
-    process.removeListener('SIGTERM', cancel);
+    process.removeListener('SIGINT', onSigint);
+    process.removeListener('SIGTERM', onSigterm);
   }
 }

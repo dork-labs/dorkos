@@ -16,10 +16,13 @@ const PLAIN_MESSAGES: Record<ProviderMutationError['code'], string> = {
     'Fly, Neon or Tigris answered in a way setup could not check, so setup stopped to stay safe.',
   PROVIDER_UNAVAILABLE:
     'Setup could not reach Fly, Neon or the image registry. Check your connection and that fly and neonctl are installed, then try again.',
+  // The error does not know which credential acted, so it names every one it could be, the way
+  // `describeCommunityCredential` does; the create path names the exact one (refused-create.ts).
   ACCESS_DENIED:
-    'Fly or Neon refused the signed-in account. Sign in with one that can create these resources.',
+    'Fly or Neon refused the credential setup used: FLY_API_TOKEN, FLY_ACCESS_TOKEN or NEON_API_KEY if set, otherwise your saved sign-in. Use one that can create these resources.',
+  // Also true for a command that ran to the end and failed, such as a deploy whose check failed.
   CREATION_OUTCOME_UNCERTAIN:
-    'A Fly, Neon or Tigris command did not finish, so setup cannot tell whether that change happened. Check what exists before you run setup again.',
+    'A Fly, Neon or Tigris step did not finish cleanly, so setup cannot be sure what it changed. Its progress is saved: run the resume command printed above (dorkos community deploy --list-incomplete finds the run).',
 };
 
 /** Stable, secret-free failure from a provider mutation boundary. */
