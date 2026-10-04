@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Trash2,
   RefreshCw,
@@ -8,21 +8,25 @@ import {
   AlertTriangle,
   ShieldAlert,
   FileCheck2,
+  FolderPlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   disclosesAnything,
+  type AggregatedPackage,
   type InstallIntegrity,
   type InstalledPackage,
 } from '@dorkos/shared/marketplace-schemas';
 import {
   useApplyingInstallPaths,
+  useDevLinks,
   useInstalledIntegrity,
   useInstalledPackages,
+  useMarketplacePackages,
   useReviewHeldBackPackage,
 } from '@/layers/entities/marketplace';
 import { useShapes } from '@/layers/entities/shapes';
-import { Badge, Button } from '@/layers/shared/ui';
+import { Badge, Button, DevLinkTag, Notice } from '@/layers/shared/ui';
 import { humanizePackageName } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
@@ -47,6 +51,10 @@ import { InstallationUpdateStatus } from './InstallationUpdateStatus';
 import { ConfirmUpdatesDialog } from './ConfirmUpdatesDialog';
 import { canCheckFiles, InstallationIntegrityNote } from './InstallationIntegrityNote';
 import { KeepFilesDialog, type UnprovenFiles } from './KeepFilesDialog';
+import { LinkFolderDialog } from './LinkFolderDialog';
+import { UnlinkDialog } from './UnlinkDialog';
+import { DevLinkActionButtons, DevLinkDetails } from './DevLinkRow';
+import { useDevLinkActions } from '../model/use-dev-link-actions';
 
 /** The kept files an installation's integrity lists, if any (DOR-2322). */
 function unprovenOf(integrity: InstallIntegrity | undefined): UnprovenFiles | undefined {
@@ -84,6 +92,12 @@ interface PackageRowProps {
   onReviewClick: () => void;
   /** True while that card is being raised. */
   isRaisingReview: boolean;
+  /** For a dev link: the package as a marketplace lists it, when one does. */
+  published?: AggregatedPackage;
+  /** For a dev link: open the unlink dialog ("Use installed copy" or "Unlink"). */
+  onUnlinkClick: () => void;
+  /** For a dev link: unlink, then open the install dialog for the published package. */
+  onInstallPublishedClick: (published: AggregatedPackage) => void;
 }
 
 /**
@@ -186,10 +200,16 @@ function PackageRow({
   onUninstallClick,
   onReviewClick,
   isRaisingReview,
+  published,
+  onUnlinkClick,
+  onInstallPublishedClick,
 }: PackageRowProps) {
   const { name, version, type, scope, installedFrom, installedAt, adapterType } = installation;
   const dependencyWarnings = installation.dependencyWarnings ?? [];
   const isShape = type === 'shape';
+  // A dev link runs from the person's folder: no update to check, no files to
+  // verify, and it is switched off by unlinking, never uninstalled (DOR-2696).
+  const isDevLink = installation.devLink !== undefined;
   // The installed record ships only a slug (no `displayName`), so humanize it
   // for the row title and every action label that names the package.
   const displayName = humanizePackageName(name);
@@ -215,6 +235,7 @@ function PackageRow({
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold">{displayName}</span>
           <PackageTypeBadge type={type} adapterType={adapterType} />
+          {isDevLink && <DevLinkTag />}
           {installation.heldBack && (
             <Badge
               variant="outline"
@@ -253,14 +274,18 @@ function PackageRow({
           )}
           {formattedDate && <span>Installed {formattedDate}</span>}
         </div>
-        <div
-          ref={rescueTarget}
-          tabIndex={-1}
-          data-testid="installation-update-status"
-          className="focus-visible:ring-ring mt-1.5 rounded-sm outline-none focus-visible:ring-2"
-        >
-          <InstallationUpdateStatus state={updateState} />
-        </div>
+        {isDevLink ? (
+          <DevLinkDetails installation={installation} />
+        ) : (
+          <div
+            ref={rescueTarget}
+            tabIndex={-1}
+            data-testid="installation-update-status"
+            className="focus-visible:ring-ring mt-1.5 rounded-sm outline-none focus-visible:ring-2"
+          >
+            <InstallationUpdateStatus state={updateState} />
+          </div>
+        )}
         {installation.heldBack && (
           <HeldBackNotice
             heldBack={installation.heldBack}
@@ -269,16 +294,18 @@ function PackageRow({
             isRaisingReview={isRaisingReview}
           />
         )}
-        <InstallationIntegrityNote
-          integrity={integrity}
-          updateAvailable={
-            updateState.kind === 'update-available' || updateState.kind === 'applying'
-          }
-          label={label}
-          onCheckFiles={onCheckFilesClick}
-          isCheckingFiles={isCheckingFiles}
-          onKeepFiles={onKeepFilesClick}
-        />
+        {!isDevLink && (
+          <InstallationIntegrityNote
+            integrity={integrity}
+            updateAvailable={
+              updateState.kind === 'update-available' || updateState.kind === 'applying'
+            }
+            label={label}
+            onCheckFiles={onCheckFilesClick}
+            isCheckingFiles={isCheckingFiles}
+            onKeepFiles={onKeepFilesClick}
+          />
+        )}
         {/* A package whose npm libraries did not install is on disk and usable
             but incomplete, and that outlives the toast the person dismissed at
             install time. The note carries its own remedy, so it is shown in
@@ -316,7 +343,17 @@ function PackageRow({
             they are checked against the version installed (DOR-2320). Offered
             only when that can help: not for a package installed from a folder,
             and not once its files were found to differ (the note says why). */}
-        {canCheckFiles(integrity) && (
+        {isDevLink && (
+          <DevLinkActionButtons
+            installation={installation}
+            published={published}
+            label={label}
+            onUnlink={onUnlinkClick}
+            onInstallPublished={onInstallPublishedClick}
+          />
+        )}
+
+        {!isDevLink && canCheckFiles(integrity) && (
           <Button
             size="sm"
             variant="outline"
@@ -331,28 +368,32 @@ function PackageRow({
           </Button>
         )}
 
-        <UpdateButton
-          state={updateState}
-          label={label}
-          onClick={onUpdateClick}
-          focusProps={rescueProps}
-        />
+        {!isDevLink && (
+          <UpdateButton
+            state={updateState}
+            label={label}
+            onClick={onUpdateClick}
+            focusProps={rescueProps}
+          />
+        )}
 
-        <Button
-          size="sm"
-          variant={isConfirmingUninstall ? 'destructive' : 'ghost'}
-          onClick={onUninstallClick}
-          disabled={isUninstalling}
-          aria-label={
-            isConfirmingUninstall
-              ? `Uninstall ${displayName}${agent ? ` from ${agent}` : ''} now`
-              : `Uninstall ${displayName}${agent ? ` from ${agent}` : ''}`
-          }
-          className={isConfirmingUninstall ? '' : 'text-destructive hover:text-destructive'}
-        >
-          <Trash2 className="mr-1 size-3" aria-hidden />
-          {isUninstalling ? 'Removing…' : isConfirmingUninstall ? 'Uninstall now' : 'Uninstall'}
-        </Button>
+        {!isDevLink && (
+          <Button
+            size="sm"
+            variant={isConfirmingUninstall ? 'destructive' : 'ghost'}
+            onClick={onUninstallClick}
+            disabled={isUninstalling}
+            aria-label={
+              isConfirmingUninstall
+                ? `Uninstall ${displayName}${agent ? ` from ${agent}` : ''} now`
+                : `Uninstall ${displayName}${agent ? ` from ${agent}` : ''}`
+            }
+            className={isConfirmingUninstall ? '' : 'text-destructive hover:text-destructive'}
+          >
+            <Trash2 className="mr-1 size-3" aria-hidden />
+            {isUninstalling ? 'Removing…' : isConfirmingUninstall ? 'Uninstall now' : 'Uninstall'}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -419,21 +460,54 @@ export function InstalledPackagesView() {
   // version runs something), snapshotted when the dialog opens, so a check
   // that lands meanwhile cannot change what the person confirms.
   const [confirmingUpdate, setConfirmingUpdate] = useState<StaleInstallation[] | null>(null);
+  // Dev links (DOR-2696): the "Link a folder" dialog, the unlink dialog, and
+  // whether the record file of dev links can be read at all.
+  const [linking, setLinking] = useState(false);
+  const devLinkActions = useDevLinkActions();
+  const { data: devLinks } = useDevLinks();
+  // "Install published version" is offered only for a package a marketplace
+  // lists, so the catalog is read only when a dev link has no installed copy
+  // set aside.
+  const needsCatalog = (installed ?? []).some((p) => p.devLink && !p.devLink.parked);
+  const { data: catalog } = useMarketplacePackages(undefined, { enabled: needsCatalog });
+
+  // The toolbar and the dev-link dialogs sit around every state below, so a
+  // folder can be linked from an empty list too.
+  const frame = (body: ReactNode) => (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" onClick={() => setLinking(true)}>
+          <FolderPlus className="mr-1 size-3" aria-hidden />
+          Link a folder
+        </Button>
+      </div>
+      {devLinks?.registryUnreadable && (
+        <Notice tone="error">Dev links can’t be read right now.</Notice>
+      )}
+      {body}
+      <LinkFolderDialog open={linking} onOpenChange={setLinking} />
+      <UnlinkDialog
+        target={devLinkActions.target}
+        onClose={devLinkActions.close}
+        onUnlinked={devLinkActions.onUnlinked}
+      />
+    </div>
+  );
 
   // ---------------------------------------------------------------------------
   // Guards
   // ---------------------------------------------------------------------------
 
   if (isLoading) {
-    return <PackageLoadingSkeleton count={3} />;
+    return frame(<PackageLoadingSkeleton count={3} />);
   }
 
   if (error) {
-    return <PackageErrorState error={error} onRetry={() => void refetch()} />;
+    return frame(<PackageErrorState error={error} onRetry={() => void refetch()} />);
   }
 
   if (!installed || installed.length === 0) {
-    return (
+    return frame(
       <PackageEmptyState
         title="No packages installed"
         description="Browse the marketplace to find one."
@@ -518,8 +592,8 @@ export function InstalledPackagesView() {
 
   const flags = { isChecking: updates.isChecking, applying };
 
-  return (
-    <div className="space-y-3">
+  return frame(
+    <>
       <InstalledUpdatesSummary
         summary={updates.summary}
         isChecking={updates.isChecking}
@@ -560,6 +634,11 @@ export function InstalledPackagesView() {
                 onUninstallClick={() => handleUninstallClick(pkg)}
                 onReviewClick={() => handleReview(pkg)}
                 isRaisingReview={review.isPending && review.variables === pkg.name}
+                published={catalog?.find((p) => p.name === pkg.name)}
+                onUnlinkClick={() => devLinkActions.askUnlink(pkg)}
+                onInstallPublishedClick={(published) =>
+                  devLinkActions.askInstallPublished(pkg, published)
+                }
               />
             </div>
           );
@@ -582,6 +661,6 @@ export function InstalledPackagesView() {
           setKeeping(null);
         }}
       />
-    </div>
+    </>
   );
 }

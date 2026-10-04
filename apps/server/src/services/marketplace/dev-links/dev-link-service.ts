@@ -41,7 +41,9 @@ import {
   type DevLinkPreviewResponse,
   type DevLinkRecord,
   type DevLinkState,
+  type DevLinkListing,
   type DevLinkStatus,
+  type DevUnlinkResult,
 } from '@dorkos/shared/marketplace-schemas';
 import { getBoundary, isContained } from '../../../lib/boundary.js';
 import { readRunnableDeclarations } from '../preview/permission-preview.js';
@@ -163,30 +165,9 @@ export interface DevUnlinkRequest {
   projectPath?: string;
 }
 
-/** What unlink did. */
-export interface DevUnlinkResult {
-  /** `installed` when the set-aside copy is back, `removed` when the package is gone. */
-  restored: 'installed' | 'removed';
-  /**
-   * Set when an installed copy was set aside but could not be put back,
-   * because something else now holds the slot: where it still is.
-   */
-  parkedLeftAt?: string;
-  /**
-   * Set when the link had already been replaced by something else in its
-   * place (a real folder, or a link elsewhere). That was left as it is: only
-   * the record of the dev link was dropped.
-   */
-  leftInPlace?: true;
-}
-
-/** The listing: every recorded dev link and its state. */
-export interface DevLinkListing {
-  /** One entry per record. */
-  links: DevLinkStatus[];
-  /** Set when the registry file cannot be read; no slot counts as dev-linked then. */
-  registryUnreadable?: string;
-}
+// What unlink did and the listing are the wire contract the app and the CLI
+// read too, so they live in the shared schemas.
+export type { DevLinkListing, DevUnlinkResult };
 
 /** Everything validation worked out about a link, before anything changes. */
 interface LinkPlan {

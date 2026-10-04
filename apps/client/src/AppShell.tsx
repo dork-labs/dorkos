@@ -41,6 +41,7 @@ import { useConfig, useConfigSync } from '@/layers/entities/config';
 import { useAgentsSync } from '@/layers/entities/mesh';
 import { useConnectorAgentRequestsSync } from '@/layers/entities/connectors';
 import { useCommandsSync } from '@/layers/entities/command';
+import { useDevLinkReloadSync } from '@/layers/entities/marketplace';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
@@ -316,6 +317,10 @@ export function AppShell() {
   // marketplace install/uninstall, so the command palette stays an honest
   // mirror of what the runtime recognizes (UX-12).
   useCommandsSync();
+  // An edit in a dev-linked folder was acted on: keep what it reported (so
+  // the Installed row says when it reloaded, or that it couldn't) and refresh
+  // the lists it changed (DOR-2696).
+  useDevLinkReloadSync();
   // Keep integration state live across clients/tabs: invalidate bindings and adapter
   // status when the server signals a change, instead of relying on local
   // mutations and slow polling.

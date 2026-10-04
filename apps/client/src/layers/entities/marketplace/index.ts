@@ -47,6 +47,13 @@ export { useHeldBackPackages } from './model/use-held-back-packages';
 export { useKeepPackageFiles } from './model/use-keep-package-files';
 export type { KeepPackageFilesArgs } from './model/use-keep-package-files';
 
+// --- Dev links (DOR-2696) ---
+export { useDevLinks } from './model/use-dev-links';
+export { usePreviewDevLink, useLinkFolder, useUnlinkDevLink } from './model/use-dev-link-mutations';
+export type { UnlinkDevLinkArgs } from './model/use-dev-link-mutations';
+export { useDevLinkReloadSync } from './model/use-dev-link-reload-sync';
+export { useDevLinkReloadStore, devLinkKey } from './model/dev-link-reload-store';
+
 export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 
 export { useRemoveMarketplaceSource } from './model/use-remove-marketplace-source';

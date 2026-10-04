@@ -172,6 +172,13 @@ import type {
   KeepFilesOptions,
   KeepFilesResult,
   HeldBackPackage,
+  DevLinkCreateInput,
+  DevLinkListing,
+  DevLinkPreviewInput,
+  DevLinkPreviewResponse,
+  DevLinkScopeInput,
+  DevLinkStatus,
+  DevUnlinkResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -375,6 +382,15 @@ export interface CapabilityApprovalRequired {
     instructions: string;
   };
 }
+
+/**
+ * Result of {@link Transport.linkDevLink}: the link was made, or the caller is
+ * one the tier gate wants a person to approve first. The app is a trusted
+ * caller, so it expects `linked`; the other branch is handled, not assumed away.
+ */
+export type DevLinkCreateResult =
+  | { status: 'linked'; link: DevLinkStatus }
+  | { status: 'approval_required'; approval: CapabilityApprovalRequired };
 
 /** Input for {@link Transport.addAgentMcpServer}. */
 export interface AddAgentMcpServerInput {
@@ -2419,6 +2435,41 @@ export interface Transport
    * @param name - The held-back package's name.
    */
   reviewHeldBackPackage(name: string): Promise<void>;
+
+  /**
+   * Every dev link and whether it is in force (`GET /api/marketplace/dev-links`,
+   * DOR-2696). `registryUnreadable` is set when the record file can't be read.
+   */
+  listDevLinks(): Promise<DevLinkListing>;
+
+  /**
+   * Say what linking a folder would do, changing nothing
+   * (`POST /api/marketplace/dev-links/preview`). Rejects with the refusal's
+   * `code` and sentence when the folder can't be linked.
+   *
+   * @param input - The folder, where it goes, and the explicit switch.
+   */
+  previewDevLink(input: DevLinkPreviewInput): Promise<DevLinkPreviewResponse>;
+
+  /**
+   * Run a package from a folder (`POST /api/marketplace/dev-links`). The app
+   * sends the preview's `change` back as `expectedChange`, so a folder that
+   * changed since the person read the dialog is refused with `dev_link_changed`.
+   * A caller the tier gate wants a person to approve gets `approval_required`.
+   *
+   * @param input - What the person approved.
+   */
+  linkDevLink(input: DevLinkCreateInput): Promise<DevLinkCreateResult>;
+
+  /**
+   * Stop running a package from a folder
+   * (`POST /api/marketplace/dev-links/:name/unlink`): put the installed copy
+   * back, or remove the package. The person's folder is never touched.
+   *
+   * @param name - The package name. Will be URL-encoded.
+   * @param input - Which dev link: its scope and project.
+   */
+  unlinkDevLink(name: string, input: DevLinkScopeInput): Promise<DevUnlinkResult>;
 
   /**
    * List installed marketplace packages.

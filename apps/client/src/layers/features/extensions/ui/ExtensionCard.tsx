@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide-react';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { Badge, Button, Card, Switch } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { Badge, Button, Card, DevLinkPath, DevLinkTag, Switch } from '@/layers/shared/ui';
+import { cn, openLink } from '@/layers/shared/lib';
 import { EXTENSION_TRUST_COPY, extensionConsentCopy } from '@/layers/entities/extension';
 
 interface ExtensionCardProps {
@@ -19,6 +19,9 @@ interface ExtensionCardProps {
 }
 
 const TERMINAL_STATUSES = new Set(['disabled', 'discovered', 'incompatible', 'invalid']);
+
+/** Where a dev link is switched or unlinked: the Marketplace's Installed list (DOR-2696). */
+const INSTALLED_LINK = '/marketplace?view=installed';
 
 /** Per-extension card in the Extensions settings tab. */
 export function ExtensionCard({
@@ -87,7 +90,26 @@ export function ExtensionCard({
 
             <span className="font-medium">{manifest.name}</span>
             <span className="text-muted-foreground text-sm">v{manifest.version}</span>
+            {extension.devLink && <DevLinkTag />}
           </div>
+
+          {/* Runs from a folder the person linked (DOR-2696). The switch back
+              lives on the package's Installed row, which this links to. */}
+          {extension.devLink && (
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1"
+              data-testid={`extension-dev-link-${extension.id}`}
+            >
+              <DevLinkPath path={extension.devLink.path} className="min-w-0" />
+              <button
+                type="button"
+                onClick={() => void openLink(INSTALLED_LINK)}
+                className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+              >
+                Unlink or switch
+              </button>
+            </div>
+          )}
 
           {/* Description */}
           {manifest.description && (
@@ -178,7 +200,9 @@ export function ExtensionCard({
                   >
                     {extension.originProblem === 'changed'
                       ? 'Its files changed after install, so DorkOS can’t vouch for it. Look it over first.'
-                      : 'Its plugin links to files elsewhere, so DorkOS can’t vouch for its source.'}
+                      : extension.originProblem === 'dev-link'
+                        ? 'It runs from your folder, so DorkOS can’t vouch for its source.'
+                        : 'Its plugin links to files elsewhere, so DorkOS can’t vouch for its source.'}
                   </p>
                 )}
                 {/* The consent sentence and the trust warning are shared with
