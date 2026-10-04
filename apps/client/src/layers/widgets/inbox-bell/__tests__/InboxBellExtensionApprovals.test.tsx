@@ -53,6 +53,8 @@ const FLOW: PendingExtensionApproval = {
   adds: 'It adds a Flow tab',
   since: '2026-09-28T12:00:00.000Z',
   why: 'You installed the flow plugin. This adds a Flow tab that shows what your agents are working on. It runs as you.',
+  agentTools: [],
+  agentSkills: [],
 };
 
 /** What the fake server holds and what it was asked. */
@@ -178,6 +180,59 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(within(row).getByText('Turn it on only if you trust its source.')).toBeInTheDocument();
     await user.click(within(row).getByRole('button', { name: 'See it in Settings → Extensions' }));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/', search: { settings: 'extensions' } });
+  });
+
+  describe('what it would give agents (DOR-2685)', () => {
+    // A person says yes on this row, so each tool and its tier must be
+    // readable here, before the extension has run once.
+    const WITH_TOOLS: PendingExtensionApproval = {
+      ...FLOW,
+      agentTools: [
+        { name: 'list_items', title: 'List work items', tier: 'observe' },
+        { name: 'close_item', title: 'Close a work item', tier: 'destructive' },
+        {
+          name: 'open_ended',
+          title: 'Take anything',
+          tier: 'act',
+          refusedReason: 'Its input must list every field.',
+        },
+      ],
+      agentSkills: [{ name: 'triage-board' }],
+    };
+
+    it('sums it up on the row itself', async () => {
+      waiting = [WITH_TOOLS];
+      renderBell();
+      const { row } = await openRow();
+
+      // Nothing runs before the yes, so the row says what it WOULD give.
+      expect(within(row).getByText('Would give agents 2 tools and 1 skill')).toBeInTheDocument();
+    });
+
+    it('lists each tool with its tier, each skill, and any refusal in ⓘ', async () => {
+      waiting = [WITH_TOOLS];
+      renderBell();
+      const { user, row } = await openRow();
+
+      await user.click(within(row).getByRole('button', { name: 'More about this' }));
+
+      const items = within(row)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent);
+      expect(items).toEqual([
+        'List work itemsReads',
+        'Close a work itemAsks you first',
+        'open_endedLeft out: Its input must list every field.',
+        'triage-boardSkill',
+      ]);
+    });
+
+    it('adds no line for an extension that gives agents nothing', async () => {
+      renderBell();
+      const { row } = await openRow();
+
+      expect(within(row).queryByText(/give agents|Gives agents/)).not.toBeInTheDocument();
+    });
   });
 
   it('turns it on from 👍, and the row leaves', async () => {

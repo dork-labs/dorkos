@@ -131,6 +131,7 @@ import {
   redactSecretsInText,
   renderRequesterLabel,
   joinSummaryFields,
+  extensionSourcePhrase,
   summaryFieldsNamingSubject,
   type ApprovalConsumeResult,
   type ApprovalConnectorAuthority,
@@ -699,8 +700,8 @@ export function describeGatedAttempt(
   // the secret sweep either way, because this string is broadcast.
   if (action.source) {
     return redactSecretsInText(
-      `${who}wants to run ${JSON.stringify(action.title)} from ` +
-        `${JSON.stringify(action.source.name)}${detail}`
+      `${who}wants to run ${JSON.stringify(action.title)}` +
+        `${extensionSourcePhrase(action.source.name)}${detail}`
     );
   }
   return redactSecretsInText(`${who}wants to run "${action.title}"${detail}`);

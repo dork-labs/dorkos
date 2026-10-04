@@ -115,6 +115,28 @@ describe('list_extensions handler', () => {
     expect(data.extensions[1]).not.toHaveProperty('tools');
   });
 
+  it('shows each skill and why one is left out', async () => {
+    // Purpose: the API reference sends an author here for a skill that never
+    // reached agents, with the same plain reason Settings shows.
+    const manager = createMockManager({
+      listPublic: vi.fn(() => [
+        makePublicRecord('mail', {
+          skills: [
+            { name: 'triage-inbox', status: 'ok' },
+            { name: 'gone', status: 'dropped', reason: 'Its folder is missing from skills/.' },
+          ],
+        }),
+        makePublicRecord('plain'),
+      ]),
+    });
+    const data = parseResponse(await createListExtensionsHandler(createDeps(manager))());
+    expect(data.extensions[0].skills).toEqual([
+      { name: 'triage-inbox', status: 'ok' },
+      { name: 'gone', status: 'dropped', reason: 'Its folder is missing from skills/.' },
+    ]);
+    expect(data.extensions[1]).not.toHaveProperty('skills');
+  });
+
   it('returns extensions with count when manager is available', async () => {
     const manager = createMockManager({
       listPublic: vi.fn(() => [

@@ -424,6 +424,77 @@ describe('ApprovalService', () => {
     });
   });
 
+  describe('an extension tool names its extension (DOR-2685)', () => {
+    /** A registry with one running extension tool and one core action that claims a source. */
+    let live: boolean;
+    const described = () =>
+      new ApprovalService(db, {
+        describeCapability: (id) =>
+          id === 'ext_mail_app.delete_message' && live
+            ? {
+                title: 'Delete an email',
+                tier: 'destructive',
+                source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+              }
+            : id === 'tasks.delete'
+              ? {
+                  title: 'Delete a task',
+                  tier: 'destructive',
+                  source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+                }
+              : undefined,
+      });
+
+    beforeEach(() => {
+      live = true;
+    });
+
+    it('puts the running extension on the card, beside the tool title', () => {
+      const service = described();
+      service.request({
+        capabilityId: 'ext_mail_app.delete_message',
+        inputHash: BINDING.inputHash,
+        summary: 'wants to run "Delete an email" from "Mail"',
+      });
+
+      expect(service.listPending()[0]).toMatchObject({
+        capabilityTitle: 'Delete an email',
+        source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+      });
+    });
+
+    it('leaves it off when the running extension is not the one the summary named', () => {
+      // A rename or a reinstall under the same id: the subtitle must never
+      // say "From Mail Pro" over a summary that says from "Mail".
+      const service = described();
+      service.request({
+        capabilityId: 'ext_mail_app.delete_message',
+        inputHash: BINDING.inputHash,
+        summary: 'wants to run "Delete an email" from "Old Mail"',
+      });
+
+      expect(service.listPending()[0]?.source).toBeUndefined();
+    });
+
+    it('leaves it off once the extension stops, and off every DorkOS action', () => {
+      const service = described();
+      const ext = service.request({
+        capabilityId: 'ext_mail_app.delete_message',
+        inputHash: BINDING.inputHash,
+        summary: 'wants to run "Delete an email" from "Mail"',
+      });
+      const core = service.request({
+        capabilityId: 'tasks.delete',
+        inputHash: BINDING.inputHash,
+        summary: 'Delete a task',
+      });
+      live = false;
+
+      expect(service.getPending(ext.approvalId)?.source).toBeUndefined();
+      expect(service.getPending(core.approvalId)?.source).toBeUndefined();
+    });
+  });
+
   describe('listPending', () => {
     it('lists what is waiting, oldest first, without token material', () => {
       const first = requestOne();

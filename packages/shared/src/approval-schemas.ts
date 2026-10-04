@@ -333,6 +333,13 @@ export const PendingApprovalSchema = z
      * room turn. The room shows the card in its own timeline, to the owner only.
      */
     roomId: z.string().optional(),
+    /**
+     * The running extension the requested tool comes from (DOR-2685), so the
+     * card can say "from Mail" under the tool's title. Read from the live
+     * registry when the card is read; absent for DorkOS's own actions and for
+     * a tool whose extension has since stopped.
+     */
+    source: z.object({ kind: z.literal('extension'), id: z.string(), name: z.string() }).optional(),
     /** When the request was made. ISO 8601 UTC. */
     requestedAt: z.string(),
     /** When the request stops being honored. ISO 8601 UTC. */

@@ -61,6 +61,20 @@ export interface ExtensionToolStatus {
   reason?: string;
 }
 
+/**
+ * Whether one skill an extension declares can reach agents, checked against
+ * its `skills/` folder when the extension is found (DOR-2685). `reason` is a
+ * short sentence for a person, with no paths in it.
+ */
+export interface ExtensionSkillStatus {
+  /** The skill's folder name under `skills/`. */
+  name: string;
+  /** Whether it is shipped (`ok`) or left out (`dropped`). */
+  status: 'ok' | 'dropped';
+  /** Why it was left out, when it was. */
+  reason?: string;
+}
+
 /** Server-side record for a discovered extension. */
 export interface ExtensionRecord {
   id: string;
@@ -162,6 +176,11 @@ export interface ExtensionRecord {
    * code ran (DOR-2685). Absent when the manifest declares none.
    */
   toolChecks?: ExtensionToolCheckSummary[];
+  /**
+   * What discovery found for each skill the manifest declares (DOR-2685).
+   * Absent when the manifest declares none.
+   */
+  skillChecks?: ExtensionSkillStatus[];
 }
 
 /** The subset of ExtensionRecord sent to the client (excludes server-internal fields). */
@@ -221,6 +240,11 @@ export interface ExtensionRecordPublic {
    * Absent when its manifest declares none.
    */
   tools?: ExtensionToolStatus[];
+  /**
+   * The skills this extension ships to agents and whether each made it
+   * (DOR-2685). Absent when its manifest declares none.
+   */
+  skills?: ExtensionSkillStatus[];
 }
 
 /** The interface an extension module must export. */

@@ -20,6 +20,42 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 extendZodWithOpenApiOnce();
 
+/**
+ * One tool an extension would give agents, as the approval row lists it
+ * (DOR-2685). Built by the server from discovery's check of the manifest.
+ */
+export const ExtensionAgentToolSummarySchema = z
+  .object({
+    /** The tool's name inside the extension, e.g. `send_message`. Lowercase words and underscores. */
+    name: z.string().min(1),
+    /**
+     * The title a person reads, e.g. "Send an email". Checked to one safe line
+     * only when the tool was accepted, so a surface shows `name` for a refused one.
+     */
+    title: z.string().min(1),
+    /** Its permission tier, which picks the row's label ("Reads", "Acts", "Asks you first"). */
+    tier: z.enum(['observe', 'act', 'destructive']),
+    /** Why DorkOS refused it, when it did. A refused tool never reaches an agent. */
+    refusedReason: z.string().optional(),
+  })
+  .openapi('ExtensionAgentToolSummary');
+
+/** One tool an extension would give agents. */
+export type ExtensionAgentToolSummary = z.infer<typeof ExtensionAgentToolSummarySchema>;
+
+/** One skill an extension would give agents, as the approval row lists it (DOR-2685). */
+export const ExtensionAgentSkillSummarySchema = z
+  .object({
+    /** The skill's folder name, e.g. "tidy-notes". */
+    name: z.string().min(1),
+    /** Why it is left out, when it is. A dropped skill never reaches an agent. */
+    droppedReason: z.string().optional(),
+  })
+  .openapi('ExtensionAgentSkillSummary');
+
+/** One skill an extension would give agents. */
+export type ExtensionAgentSkillSummary = z.infer<typeof ExtensionAgentSkillSummarySchema>;
+
 /** One extension waiting for a person to allow it to run. */
 export const PendingExtensionApprovalSchema = z
   .object({
@@ -48,6 +84,15 @@ export const PendingExtensionApprovalSchema = z
     since: z.string(),
     /** The second line: what happens and why, derived from the manifest by the server. */
     why: z.string(),
+    /**
+     * The tools it would give agents once it runs, in manifest order, so a
+     * person sees each tool and its tier before saying yes (DOR-2685).
+     * Defaults to empty so an older server that never sends it still lists
+     * every waiting extension instead of failing the whole response.
+     */
+    agentTools: z.array(ExtensionAgentToolSummarySchema).default([]),
+    /** The skills it would give agents once it runs, in manifest order (DOR-2685). Defaults to empty. */
+    agentSkills: z.array(ExtensionAgentSkillSummarySchema).default([]),
   })
   .openapi('PendingExtensionApproval');
 

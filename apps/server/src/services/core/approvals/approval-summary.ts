@@ -271,3 +271,15 @@ export function summaryFieldsNamingSubject(
       : pair
   );
 }
+
+/**
+ * How a gated attempt's summary names the extension a tool comes from:
+ * ` from "Mail"`, JSON-quoted because the name is its author's text
+ * (DOR-2685). One definition, so the approval card can tell whether the
+ * extension running now is the one the stored summary named.
+ *
+ * @param name - The extension's display name.
+ */
+export function extensionSourcePhrase(name: string): string {
+  return ` from ${JSON.stringify(name)}`;
+}

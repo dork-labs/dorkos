@@ -295,7 +295,7 @@ destructive (asks every call). \`inputSchema\`: closed JSON Schema; every object
 \`"additionalProperties": false\`; no patternProperties, propertyNames, $ref. Act and destructive
 tools need \`approvalDisplayFields\`. \`timeoutSeconds\`: 1-300, default 60. A throw becomes a tool
 error prefixed with the extension's name; results are plain JSON up to 256 KB; \`call.signal\` aborts
-on timeout or stop. \`list_extensions\` shows each tool's status and why one was refused.
+on timeout or stop. \`list_extensions\` shows each tool's and skill's status and why one was left out.
 \`skills\`: folders under \`skills/\`, each a SKILL.md whose \`name\` matches; while the extension
 runs they reach agents as \`<id>__<skill>\`, as a plugin's skills do (a plugin's same name wins).
 `;
@@ -342,6 +342,14 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
           name: tool.name,
           status: tool.status,
           ...(tool.reason ? { reason: tool.reason } : {}),
+        })),
+      }),
+      // Its skills, and why one is left out, so an author sees it here too.
+      ...(ext.skills && {
+        skills: ext.skills.map((skill) => ({
+          name: skill.name,
+          status: skill.status,
+          ...(skill.reason ? { reason: skill.reason } : {}),
         })),
       }),
     }));
