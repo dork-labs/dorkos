@@ -17,7 +17,7 @@
 import path from 'path';
 import type { Router } from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
-import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
+import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
@@ -55,6 +55,8 @@ import {
   reconcileRunningSkills,
   type RunningSkillsChange,
 } from './agent-skills/running-skills-ledger.js';
+import { declaredSet, isSamePermissionSet } from './isolation/permission-coverage.js';
+import { isolationKeyOf } from './isolation/isolation-view.js';
 
 /**
  * How long discovery waits for a burst of project changes to settle before it
@@ -81,6 +83,11 @@ export interface ExpectedCopy {
   path?: string;
   version: string;
   plugin?: string | null;
+  /**
+   * The permission set the person was shown (DOR-2686); absent means "not
+   * compared". Compared as a set against what the copy declares now.
+   */
+  permissions?: ApprovedPermissionSet;
 }
 
 /**
@@ -98,6 +105,12 @@ export function isExpectedCopy(record: ExtensionRecord, expected: ExpectedCopy):
   }
   if (expected.version !== record.manifest.version) return false;
   if (expected.plugin !== undefined && expected.plugin !== (record.sourcePlugin ?? null)) {
+    return false;
+  }
+  if (
+    expected.permissions !== undefined &&
+    !isSamePermissionSet(declaredSet(record.manifest), expected.permissions)
+  ) {
     return false;
   }
   return true;
@@ -583,6 +596,7 @@ export class ExtensionManager {
           runPath: rec.runPath ?? null,
           runs: mayRunExtensionCode(rec, configManager.get('extensions')),
           declarations: extensionDeclarationDigest(rec.manifest),
+          isolation: JSON.stringify(isolationKeyOf(rec)),
         },
       ])
     );
@@ -600,7 +614,10 @@ export class ExtensionManager {
         // A running copy whose manifest now declares different tools or
         // skills restarts, so the tools agents see match its manifest
         // (DOR-2685).
-        (runs && prior.declarations !== extensionDeclarationDigest(rec.manifest));
+        (runs && prior.declarations !== extensionDeclarationDigest(rec.manifest)) ||
+        // Where it runs, or what it may reach, changed while it still may
+        // run: restart it under the new declaration (DOR-2686).
+        (runs && prior.isolation !== JSON.stringify(isolationKeyOf(rec)));
       if (!switched) continue;
       changed.push(rec.id);
       if (prior) await this.serverLifecycle.shutdown(rec.id);
@@ -822,11 +839,16 @@ export class ExtensionManager {
     if (!trusted.some((entry) => entry.source === source)) return false;
     const approvedToRun = [...before.approvedToRun];
     const approvedSources = { ...(before.approvedSources ?? {}) };
+    const approvedPermissions = { ...(before.approvedPermissions ?? {}) };
     for (const rec of this.extensions.values()) {
       if (rec.origin !== 'user' || rec.trustedOrigin?.source !== source) continue;
       if (isApprovedCopy(rec, before)) continue;
       if (!isEnabled(rec.id, before, this.coreExtensions)) continue;
       if (!approvedToRun.includes(rec.id)) approvedToRun.push(rec.id);
+      // What it declares now, so it keeps running exactly as it is and a
+      // later widening asks (DOR-2686). An entry left from another copy could
+      // be narrower and stop it, which "nothing stops" rules out.
+      approvedPermissions[rec.id] = declaredSet(rec.manifest);
       // Pinned to this copy's files alone: no origin, so a newer copy from the
       // source does not ride on it, and its digest, so it keeps running from
       // the verified snapshot of exactly those files and any change asks again.
@@ -839,6 +861,7 @@ export class ExtensionManager {
       ...before,
       approvedToRun,
       approvedSources,
+      approvedPermissions,
       trustedSources: trusted.filter((entry) => entry.source !== source),
     });
     logConfigWrite(
@@ -1023,7 +1046,13 @@ export class ExtensionManager {
       record.pinnedDigest = record.currentDigest;
     }
     const dismissed = extensions.dismissedApprovals ?? {};
-    if (!isApprovedCopy(record, extensions) || dismissed[id]) {
+    // The yes covers the permission set it declares right now and nothing
+    // wider (DOR-2686): recorded beside the copy, so a later version that
+    // asks for more waits for the person again.
+    const declared = declaredSet(record.manifest);
+    const permissions = extensions.approvedPermissions ?? {};
+    const permissionsChanged = !isSamePermissionSet(declared, permissions[id]);
+    if (!isApprovedCopy(record, extensions) || dismissed[id] || permissionsChanged) {
       // A "Not now" for this id is answered by the approval, so it goes too
       // (DOR-2517): a later withdrawal plus reinstall asks again rather than
       // staying silenced by a decline the person has since reversed.
@@ -1033,6 +1062,7 @@ export class ExtensionManager {
           ? extensions.approvedToRun
           : [...extensions.approvedToRun, id],
         approvedSources: { ...(extensions.approvedSources ?? {}), [id]: source },
+        approvedPermissions: { ...permissions, [id]: declared },
       };
       if (dismissed[id]) {
         const remainingDismissals = { ...dismissed };
@@ -1223,13 +1253,19 @@ export class ExtensionManager {
       );
       return;
     }
-    if (extensions.approvedToRun.includes(id) || sources[id]) {
+    const permissions = extensions.approvedPermissions ?? {};
+    if (extensions.approvedToRun.includes(id) || sources[id] || permissions[id]) {
       const remainingSources = { ...sources };
       delete remainingSources[id];
+      // The permission set goes with the approval it described (DOR-2686): a
+      // set left behind would be read against whatever is approved next.
+      const remainingPermissions = { ...permissions };
+      delete remainingPermissions[id];
       configManager.set('extensions', {
         ...extensions,
         approvedToRun: extensions.approvedToRun.filter((eid) => eid !== id),
         approvedSources: remainingSources,
+        approvedPermissions: remainingPermissions,
       });
       logConfigWrite(
         'withdrawing an extension run approval',

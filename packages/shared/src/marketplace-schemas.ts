@@ -26,7 +26,7 @@
  * @module shared/marketplace-schemas
  */
 import { z } from 'zod';
-import { ExtensionApprovedSourceSchema } from './config-schema.js';
+import { ApprovedPermissionSetSchema, ExtensionApprovedSourceSchema } from './config-schema.js';
 import type { PermissionMode } from './schemas.js';
 import type { CheckResult } from './health-schemas.js';
 
@@ -1743,6 +1743,13 @@ export const DevLinkRecordSchema = z
         extensions: z.record(z.string(), ExtensionApprovedSourceSchema).optional(),
         /** Which of those ids were approved to run then; the rest only had a source. */
         runIds: z.array(z.string()).optional(),
+        /**
+         * The permission sets recorded with those approvals (DOR-2686), by
+         * extension id. An id with a replaced approval but no entry here had
+         * none, which means the full in-process set, so unlink restores it by
+         * leaving no entry.
+         */
+        permissions: z.record(z.string(), ApprovedPermissionSetSchema).optional(),
         /** Stored global-activation entries (`<name>@global-<digest>`) of the parked copy. */
         globalActivation: z.array(z.string()).optional(),
       })

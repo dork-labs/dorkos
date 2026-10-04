@@ -32,7 +32,10 @@ import {
   unlink,
 } from 'node:fs/promises';
 import path from 'node:path';
-import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
+import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/shared/config-schema';
+import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
+import { declaredSet } from '../../extensions/isolation/permission-coverage.js';
 import {
   DevLinkPackageNameSchema,
   disclosesAnything,
@@ -67,6 +70,11 @@ export interface DevLinkApprovals {
   approvedToRun: string[];
   /** The copy each approval is for. */
   approvedSources: Record<string, ExtensionApprovedSource>;
+  /**
+   * The permission set each approval covers (DOR-2686). Absent, and an
+   * absent entry, mean the full in-process set.
+   */
+  approvedPermissions?: Record<string, ApprovedPermissionSet>;
 }
 
 /** Where a dev link records the person's yes for the extensions it carries. */
@@ -331,6 +339,9 @@ export class DevLinkService {
                 extensions: captured.extensions,
               }),
               ...(captured.runIds.length > 0 && { runIds: captured.runIds }),
+              ...(Object.keys(captured.permissions).length > 0 && {
+                permissions: captured.permissions,
+              }),
               ...(consent.capturedGlobal.length > 0 && {
                 globalActivation: consent.capturedGlobal,
               }),
@@ -346,7 +357,7 @@ export class DevLinkService {
         );
         applyLinkConsent(this.deps.consent, record, consent);
         undo.push(async () => forgetLinkConsent(this.deps.consent, record, true));
-        this.approveExtensions(preview);
+        await this.approveExtensions(preview);
         this.notify(preview.name, projectPath, 'install');
         // Edits reload from now on. After everything else, so the first event
         // it could act on finds the link recorded and approved.
@@ -677,17 +688,22 @@ export class DevLinkService {
   private capturedApprovals(preview: DevLinkPreview): {
     extensions: Record<string, ExtensionApprovedSource>;
     runIds: string[];
+    permissions: Record<string, ApprovedPermissionSet>;
   } {
     const current = this.deps.approvals.read();
     const extensions: Record<string, ExtensionApprovedSource> = {};
     const runIds: string[] = [];
+    const permissions: Record<string, ApprovedPermissionSet> = {};
     for (const id of preview.extensions) {
       const source = current.approvedSources[id];
       if (!source) continue;
       extensions[id] = source;
       if (current.approvedToRun.includes(id)) runIds.push(id);
+      // The set that approval covered goes back with it on unlink (DOR-2686).
+      const set = current.approvedPermissions?.[id];
+      if (set) permissions[id] = set;
     }
-    return { extensions, runIds };
+    return { extensions, runIds, permissions };
   }
 
   /**
@@ -696,11 +712,16 @@ export class DevLinkService {
    *
    * @internal
    */
-  private approveExtensions(preview: DevLinkPreview): void {
+  private async approveExtensions(preview: DevLinkPreview): Promise<void> {
     if (preview.extensions.length === 0) return;
+    // Read before the approvals, so no other write can land between the read
+    // of the current approvals and the write below.
+    const sets = new Map<string, ApprovedPermissionSet>();
+    for (const id of preview.extensions) sets.set(id, await declaredSetIn(preview.path, id));
     const current = this.deps.approvals.read();
     const approvedToRun = [...current.approvedToRun];
     const approvedSources = { ...current.approvedSources };
+    const approvedPermissions = { ...(current.approvedPermissions ?? {}) };
     for (const id of preview.extensions) {
       if (!approvedToRun.includes(id)) approvedToRun.push(id);
       approvedSources[id] = {
@@ -708,8 +729,11 @@ export class DevLinkService {
         plugin: preview.name,
         devLink: preview.path,
       };
+      // The yes covers what the folder declares now, beside the dev-link
+      // binding, so an edit that widens it waits for the person (DOR-2686).
+      approvedPermissions[id] = sets.get(id)!;
     }
-    this.deps.approvals.write({ approvedToRun, approvedSources });
+    this.deps.approvals.write({ approvedToRun, approvedSources, approvedPermissions });
   }
 
   /**
@@ -744,20 +768,29 @@ export class DevLinkService {
       roots.get(source.path) ?? path.resolve(source.path);
     const restore = record.restoreApprovals?.extensions ?? {};
     const runIds = new Set(record.restoreApprovals?.runIds ?? []);
+    const restorePermissions = record.restoreApprovals?.permissions ?? {};
     let approvedToRun = [...current.approvedToRun];
     const approvedSources = { ...current.approvedSources };
+    const approvedPermissions = { ...(current.approvedPermissions ?? {}) };
     let changed = false;
     for (const [id, source] of Object.entries(current.approvedSources)) {
       if (!isLinkApproval(source, record, rootOf)) continue;
       changed = true;
       const previous = restore[id];
       delete approvedSources[id];
+      // The link's permission set goes with its approval (DOR-2686), so it
+      // can never be read against the copy that comes back.
+      delete approvedPermissions[id];
       approvedToRun = approvedToRun.filter((approved) => approved !== id);
       if (!previous || !stillMeaningful(previous, record, installedBack, others, rootOf)) continue;
       approvedSources[id] = previous;
+      // The set the replaced approval had, or none (the full in-process set)
+      // when it had none.
+      const previousSet = restorePermissions[id];
+      if (previousSet) approvedPermissions[id] = previousSet;
       if (runIds.has(id)) approvedToRun.push(id);
     }
-    if (changed) this.deps.approvals.write({ approvedToRun, approvedSources });
+    if (changed) this.deps.approvals.write({ approvedToRun, approvedSources, approvedPermissions });
   }
 
   /**
@@ -884,6 +917,38 @@ async function carriedExtensions(folder: string): Promise<string[]> {
     if (await exists(path.join(dir, entry.name, 'extension.json'))) ids.push(entry.name);
   }
   return ids.sort();
+}
+
+/**
+ * The permission set one extension in a linked folder declares now
+ * (DOR-2686), read inside the folder and never through a link out of it. A
+ * manifest that cannot be read or does not parse declares nothing DorkOS can
+ * vouch for, so it is recorded as the narrowest set: whatever it declares
+ * once fixed is then compared against nothing and asks again, rather than
+ * riding on a yes recorded as full access.
+ *
+ * @param folder - The linked folder (its real path).
+ * @param id - The extension's folder name under `.dork/extensions`.
+ */
+async function declaredSetIn(folder: string, id: string): Promise<ApprovedPermissionSet> {
+  const narrowest: ApprovedPermissionSet = {
+    runtime: 'subprocess',
+    net: [],
+    run: [],
+    agents: false,
+  };
+  try {
+    const raw = await readPackageFileWithin(
+      folder,
+      path.join(EXTENSIONS_DIR, id, 'extension.json'),
+      PACKAGE_TEXT_MAX_BYTES,
+      "The extension's extension.json"
+    );
+    const parsed = ExtensionManifestSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? declaredSet(parsed.data) : narrowest;
+  } catch {
+    return narrowest;
+  }
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   ISOLATION_MEMORY_MB,
   type ExtensionIsolation,
   type ExtensionManifest,
+  type ExtensionRecord,
 } from '@dorkos/extension-api';
 import { resolveProgram, type ResolveProgramOptions } from './resolve-program.js';
 
@@ -38,5 +39,33 @@ export async function isolationOf(
     resolvedRun,
     agents: caps.allow?.agents ?? false,
     memoryMb: caps.limits?.memoryMb ?? ISOLATION_MEMORY_MB.default,
+  };
+}
+
+/**
+ * Where the extension runs and what it may reach, as part of what a running
+ * instance was built from (DOR-2686): a manifest-only change to `runtime`,
+ * `allow` or `limits` restarts it (narrower) or, once the approval no longer
+ * covers it, leaves it waiting (wider).
+ *
+ * @param record - The extension's discovery record.
+ */
+export function isolationKeyOf(
+  record: Pick<ExtensionRecord, 'isolation'>
+): {
+  runtime: 'subprocess';
+  net: string[];
+  run: string[];
+  agents: boolean;
+  memoryMb: number;
+} | null {
+  const isolation = record.isolation;
+  if (!isolation) return null;
+  return {
+    runtime: isolation.runtime,
+    net: isolation.net,
+    run: isolation.run,
+    agents: isolation.agents,
+    memoryMb: isolation.memoryMb,
   };
 }

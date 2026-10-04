@@ -126,6 +126,21 @@ export const ApproveExtensionRequestSchema = z
     version: z.string().min(1),
     /** The plugin that carried it, or `null` for a direct install. Compared when sent. */
     plugin: z.string().min(1).nullable().optional(),
+    /**
+     * The permission set the card showed (DOR-2686): where it runs and the
+     * hosts, programs and agent access it declared. Compared when sent, as a
+     * set, so a manifest that changed what it asks for while the card was on
+     * screen is refused with `409 stale_approval` instead of being approved
+     * on a yes given to the old lists.
+     */
+    permissions: z
+      .object({
+        runtime: z.enum(['in-process', 'subprocess']),
+        net: z.array(z.string()).max(64),
+        run: z.array(z.string()).max(16),
+        agents: z.boolean(),
+      })
+      .optional(),
   })
   .openapi('ApproveExtensionRequest');
 

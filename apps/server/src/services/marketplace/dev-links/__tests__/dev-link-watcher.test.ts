@@ -1101,12 +1101,14 @@ describe('devLinkExtensionsOf', () => {
     path: '/home/.dork/plugins/flow/.dork/extensions/dash',
     sourcePlugin: 'flow',
     devLink: { path: folder },
+    manifest: { id: 'dash', name: 'Dash', version: '1.0.0' },
   } as unknown as ExtensionRecord;
   const installedRecord = {
     id: 'other',
     origin: 'user',
     path: '/home/.dork/plugins/other/.dork/extensions/other',
     sourcePlugin: 'other',
+    manifest: { id: 'other', name: 'Other', version: '1.0.0' },
   } as unknown as ExtensionRecord;
 
   function manager(status: 'compiled' | 'compile_error' = 'compiled') {
