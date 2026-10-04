@@ -189,6 +189,13 @@ interface LinkPlan {
    * when it does.
    */
   declarationsReadable: boolean;
+  /**
+   * The permission set each carried extension declares now (DOR-2686), read
+   * once per plan: the card text lists it and the yes records exactly it, so
+   * a folder that widens between the card and the click describes
+   * differently and is asked about again.
+   */
+  permissions: Record<string, ApprovedPermissionSet>;
 }
 
 /** The folder a package carries its extensions in. */
@@ -224,8 +231,11 @@ export class DevLinkService {
   async preview(
     target: DevLinkTarget & { replaceInstalled?: boolean }
   ): Promise<DevLinkPreviewResponse> {
-    const { preview } = await this.plan(target);
-    return { ...preview, change: describePlan(preview, target.replaceInstalled === true) };
+    const { preview, permissions } = await this.plan(target);
+    return {
+      ...preview,
+      change: describePlan(preview, target.replaceInstalled === true, permissions),
+    };
   }
 
   /**
@@ -245,7 +255,11 @@ export class DevLinkService {
   async describeApproval(request: DevLinkTarget & { replaceInstalled?: boolean }): Promise<string> {
     const plan = await this.plan(request);
     if (plan.slotHolds === 'installed' && !request.replaceInstalled) throw slotTaken(plan.preview);
-    const description = describePlan(plan.preview, request.replaceInstalled === true);
+    const description = describePlan(
+      plan.preview,
+      request.replaceInstalled === true,
+      plan.permissions
+    );
     // A card stores at most this much. Cutting the text would bind the
     // approval to only part of what the folder runs, and anything added past
     // the cut would ride in on it, so a folder that does not fit is refused.
@@ -278,7 +292,8 @@ export class DevLinkService {
       }
       if (
         request.expectedChange !== undefined &&
-        describePlan(plan.preview, request.replaceInstalled === true) !== request.expectedChange
+        describePlan(plan.preview, request.replaceInstalled === true, plan.permissions) !==
+          request.expectedChange
       ) {
         throw new DevLinkError(
           'dev_link_changed',
@@ -357,7 +372,7 @@ export class DevLinkService {
         );
         applyLinkConsent(this.deps.consent, record, consent);
         undo.push(async () => forgetLinkConsent(this.deps.consent, record, true));
-        await this.approveExtensions(preview);
+        await this.approveExtensions(preview, plan.permissions);
         this.notify(preview.name, projectPath, 'install');
         // Edits reload from now on. After everything else, so the first event
         // it could act on finds the link recorded and approved.
@@ -575,7 +590,9 @@ export class DevLinkService {
       effects: disclosedEffectsOf({ ...declared, schedules: [] }),
       extensions: await carriedExtensions(folder),
     };
-    return { preview, projectPath, slotHolds, declarationsReadable };
+    const permissions: Record<string, ApprovedPermissionSet> = {};
+    for (const id of preview.extensions) permissions[id] = await declaredSetIn(folder, id);
+    return { preview, projectPath, slotHolds, declarationsReadable, permissions };
   }
 
   /**
@@ -712,12 +729,14 @@ export class DevLinkService {
    *
    * @internal
    */
-  private async approveExtensions(preview: DevLinkPreview): Promise<void> {
+  private async approveExtensions(
+    preview: DevLinkPreview,
+    sets: Record<string, ApprovedPermissionSet>
+  ): Promise<void> {
     if (preview.extensions.length === 0) return;
-    // Read before the approvals, so no other write can land between the read
-    // of the current approvals and the write below.
-    const sets = new Map<string, ApprovedPermissionSet>();
-    for (const id of preview.extensions) sets.set(id, await declaredSetIn(preview.path, id));
+    // `sets` is what the card listed and the yes was bound to (read with the
+    // plan, before the approvals), so what is recorded is exactly what was
+    // shown, and no other write lands between the read below and the write.
     const current = this.deps.approvals.read();
     const approvedToRun = [...current.approvedToRun];
     const approvedSources = { ...current.approvedSources };
@@ -731,7 +750,7 @@ export class DevLinkService {
       };
       // The yes covers what the folder declares now, beside the dev-link
       // binding, so an edit that widens it waits for the person (DOR-2686).
-      approvedPermissions[id] = sets.get(id)!;
+      approvedPermissions[id] = sets[id]!;
     }
     this.deps.approvals.write({ approvedToRun, approvedSources, approvedPermissions });
   }
@@ -994,10 +1013,31 @@ function stillMeaningful(
 }
 
 /**
+ * One extension's permission set as a card line: where it runs, then every
+ * host, program and agent grant, never a count.
+ *
+ * @param set - What it declares.
+ */
+function describePermissionSet(set: ApprovedPermissionSet): string {
+  if (set.runtime === 'in-process') return 'runs inside DorkOS with full access to this computer';
+  const parts = [
+    'runs separately',
+    set.net.length > 0 ? `connects to ${set.net.join(', ')}` : 'no internet',
+    ...(set.run.length > 0 ? [`runs ${set.run.join(', ')}`] : []),
+    ...(set.agents ? ['messages your agents'] : []),
+  ];
+  return parts.join('; ');
+}
+
+/**
  * The approval card text for a planned link. Deterministic, so the same folder
  * describes the same way at the card and at the retry.
  */
-function describePlan(preview: DevLinkPreview, replaceInstalled: boolean): string {
+function describePlan(
+  preview: DevLinkPreview,
+  replaceInstalled: boolean,
+  permissions: Readonly<Record<string, ApprovedPermissionSet>>
+): string {
   const lines = [
     `Folder: ${preview.path}`,
     `Package: ${preview.name} (${preview.type})`,
@@ -1011,6 +1051,13 @@ function describePlan(preview: DevLinkPreview, replaceInstalled: boolean): strin
   lines.push(
     `Extensions it may run: ${preview.extensions.length > 0 ? preview.extensions.join(', ') : 'none'}`
   );
+  // What each may reach, in full (DOR-2686): the yes records exactly these
+  // sets, and is bound to this text, so a folder that widens one before the
+  // click describes differently and is asked about again.
+  for (const id of preview.extensions) {
+    const set = permissions[id];
+    if (set) lines.push(`${id}: ${describePermissionSet(set)}`);
+  }
   // Every hook, server and program in full, never a count: the yes records
   // approval for exactly these (the global-activation and hook decisions,
   // `consent.ts`), and the approval is bound to this text, so a hook moved to

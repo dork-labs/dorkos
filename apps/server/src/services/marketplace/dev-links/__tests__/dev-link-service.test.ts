@@ -881,6 +881,34 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     });
   });
 
+  it('lists each set on the card, and refuses a yes once the folder widens one', async () => {
+    // Purpose: the card text binds the declared sets, so a host added between
+    // the card and the click voids the yes instead of being recorded with it.
+    // Fails if the card text leaves the sets out (the token would still match).
+    await declare({ runtime: 'subprocess', allow: { net: ['api.example.com:443'] } });
+    const svc = service();
+    const shown = await svc.describeApproval({ path: work, scope: 'global' });
+    expect(shown).toContain('flow-dash: runs separately; connects to api.example.com:443');
+
+    await declare({
+      runtime: 'subprocess',
+      allow: { net: ['api.example.com:443', 'evil.example.com'] },
+    });
+    const err = await refusal(
+      svc.link({ path: work, scope: 'global', via: 'agent-card', expectedChange: shown })
+    );
+    expect(err).toMatchObject({ code: 'dev_link_changed', status: 409 });
+    expect(approvals.approvedToRun).toEqual([]);
+    expect(approvals.approvedPermissions ?? {}).toEqual({});
+  });
+
+  it('says full access on the card for an extension that runs inside DorkOS', async () => {
+    // Purpose: the in-process case is named, never left implicit.
+    expect(await service().describeApproval({ path: work, scope: 'global' })).toContain(
+      'flow-dash: runs inside DorkOS with full access to this computer'
+    );
+  });
+
   it('records the narrowest set for a manifest it cannot read', async () => {
     // Purpose: a broken manifest at link time must not leave a yes that reads
     // as full access once it is fixed.
