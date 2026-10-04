@@ -51,6 +51,12 @@
  * - **The channel.** Every child message is checked for shape
  *   (`isChildMessage`), size (4 MB) and rate before it is read; at most 256
  *   requests may wait on the host at once.
+ * - **ctx.** Given the extension's real ctx, the host routes every ctx message
+ *   through a fresh `CtxDispatcher` per child, and closes it when the child's
+ *   process ends, so nothing the child registered outlives it.
+ * - **register().** After loading the bundle the child runs `register(router,
+ *   ctx)` and reports `registered`; the host's load timer (measured here, not
+ *   in the child) covers loading and `register()` together.
  * - **Output.** Forwarded to DorkOS's log, capped (`LogForwarder`).
  *
  * Only the child this host forked, and the programs its broker spawned, are
@@ -63,6 +69,8 @@ import { fork, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ExtensionIsolation } from '@dorkos/extension-api';
+import type { DataProviderContext } from '@dorkos/extension-api/server';
+import { CtxDispatcher } from './ctx-dispatcher.js';
 import {
   ISOLATION_LIMITS,
   isChildMessage,
@@ -137,6 +145,12 @@ export interface IsolatedHostOptions {
   logger: HostLogger;
   /** Called once when a running child exits, for any reason. */
   onExit?: (exit: IsolatedExit) => void;
+  /**
+   * The extension's REAL ctx (`createDataProviderContext`), which every ctx
+   * message from the child is dispatched into. Without it, every ctx message
+   * is refused.
+   */
+  ctx?: DataProviderContext;
   /** Project roots the broker may run programs in. */
   projectRoots?: () => Promise<readonly string[]>;
   /** The Node binary to fork with; `process.execPath` by default. */
@@ -228,6 +242,9 @@ export class IsolatedExtensionHost {
   >();
   private readonly timings: IsolatedHostTimings;
   private readonly filesDir: string;
+  private dispatcher: CtxDispatcher | null = null;
+  private lastDispatchCounts: Record<string, number> = {};
+  private registeredCleanup = false;
 
   /**
    * Prepare a host; nothing starts until {@link IsolatedExtensionHost.start}.
@@ -247,6 +264,24 @@ export class IsolatedExtensionHost {
   /** Whether a child is running. */
   get running(): boolean {
     return this.child !== null;
+  }
+
+  /** Whether the running child's `register()` returned a cleanup function. */
+  get hasCleanup(): boolean {
+    return this.registeredCleanup;
+  }
+
+  /**
+   * How many times each ctx member was reached through the real ctx by the
+   * current child (or the last one, once it has exited).
+   */
+  ctxDispatchCounts(): Record<string, number> {
+    return this.dispatcher?.dispatchCounts() ?? { ...this.lastDispatchCounts };
+  }
+
+  /** Listeners and reverse handlers the current child holds on the real ctx (0 once it exits). */
+  get ctxRegistrations(): number {
+    return this.dispatcher?.registrations ?? 0;
   }
 
   /**
@@ -391,7 +426,7 @@ export class IsolatedExtensionHost {
     const started = new Promise<IsolatedStartResult>((resolve) => {
       settleStart = resolve;
     });
-    let phase: 'hello' | 'load' | 'running' = 'hello';
+    let phase: 'hello' | 'load' | 'register' | 'running' = 'hello';
     const timer = setTimeout(() => {
       if (phase === 'hello') {
         this.options.logger.warn(
@@ -406,6 +441,13 @@ export class IsolatedExtensionHost {
     this.exitPromise = new Promise<void>((resolve) => {
       // 'close', not 'exit': stderr is fully read by then, so the OOM marker is seen.
       child.once('close', (code, signal) => {
+        // First: nothing the child registered on the real ctx outlives it.
+        if (this.dispatcher) {
+          this.lastDispatchCounts = this.dispatcher.dispatchCounts();
+          this.dispatcher.close();
+          this.dispatcher = null;
+        }
+        this.registeredCleanup = false;
         clearTimeout(timer);
         if (loadTimer) clearTimeout(loadTimer);
         this.stopWatchdog();
@@ -457,6 +499,26 @@ export class IsolatedExtensionHost {
           return;
         }
         phase = 'load';
+        if (this.options.ctx) {
+          this.dispatcher = new CtxDispatcher({
+            extensionId: this.options.extensionId,
+            displayName: name,
+            ctx: this.options.ctx,
+            allowAgents: this.options.isolation.agents,
+            send: (m) => this.send(m),
+            slots: {
+              acquire: () => {
+                if (this.outstanding >= ISOLATION_LIMITS.maxOutstandingCalls) return false;
+                this.outstanding++;
+                return true;
+              },
+              release: () => {
+                this.outstanding = Math.max(0, this.outstanding - 1);
+              },
+            },
+            logger: this.options.logger,
+          });
+        }
         this.send({
           type: 'init',
           extensionId: this.options.extensionId,
@@ -465,9 +527,23 @@ export class IsolatedExtensionHost {
           allowRun: [...this.options.isolation.run],
           dorkosPort: this.options.dorkosPort,
           testSeams: this.options.testSeams?.probes === true,
+          ctx: {
+            // The run folder: the one place the child can read its own
+            // assets/ (and its bundle) from. The extension's source folder
+            // is not readable to it, so naming that here would mislead.
+            extensionDir: runReal,
+            dorkHome: this.options.dorkHome,
+            // The real path, exactly as granted: Node's permission model
+            // compares path strings, so a write through a symlinked spelling
+            // of the same folder (macOS /tmp) would be refused. The same
+            // folder createDataProviderContext names, by one helper.
+            filesDir: filesReal,
+          },
+          displayName: name,
+          allowAgents: this.options.isolation.agents,
         });
         loadTimer = setTimeout(() => {
-          if (phase !== 'load') return;
+          if (phase !== 'load' && phase !== 'register') return;
           this.killNow();
           settleStart({
             ok: false,
@@ -477,10 +553,11 @@ export class IsolatedExtensionHost {
         }, this.timings.loadTimeoutMs);
         return;
       }
+      if (this.routeCtx(message)) return;
       if (phase === 'load') {
         if (message.type !== 'loaded') return;
-        if (loadTimer) clearTimeout(loadTimer);
         if (!message.ok) {
+          if (loadTimer) clearTimeout(loadTimer);
           this.options.logger.warn(
             `[Extensions] ${this.options.extensionId}: couldn't load: ${message.error ?? 'unknown error'}`
           );
@@ -492,6 +569,25 @@ export class IsolatedExtensionHost {
           });
           return;
         }
+        phase = 'register';
+        return;
+      }
+      if (phase === 'register') {
+        if (message.type !== 'registered') return;
+        if (loadTimer) clearTimeout(loadTimer);
+        if (!message.ok) {
+          this.options.logger.warn(
+            `[Extensions] ${this.options.extensionId}: register() failed: ${message.error ?? 'unknown error'}`
+          );
+          this.killNow();
+          settleStart({
+            ok: false,
+            code: 'server_start_failed',
+            message: `${name} couldn't start: ${message.error ?? 'its server part failed to start'}.`,
+          });
+          return;
+        }
+        this.registeredCleanup = message.hasCleanup;
         phase = 'running';
         this.startWatchdog();
         settleStart({ ok: true });
@@ -549,8 +645,53 @@ export class IsolatedExtensionHost {
           code: 'ERR_EXTENSION_IPC_TOO_LARGE',
           message: 'That message is too large.',
         });
+      } else if (raw.type === 'call' || raw.type === 'sub' || raw.type === 'expose') {
+        // Answered, so the child's request settles instead of waiting forever.
+        this.send({
+          type: 'ret',
+          id: raw.id,
+          ok: false,
+          error: {
+            name: 'Error',
+            message: 'That message is too large.',
+            code: 'ERR_EXTENSION_IPC_TOO_LARGE',
+          },
+        });
       }
       return false;
+    }
+    return true;
+  }
+
+  /**
+   * Route a ctx message to the dispatcher (any phase after the self-check:
+   * `register()` uses ctx before the child is running).
+   *
+   * @param message - A checked message.
+   * @returns `true` when it was a ctx message (handled or refused).
+   */
+  private routeCtx(message: ChildMessage): boolean {
+    switch (message.type) {
+      case 'call':
+      case 'emit':
+      case 'sub':
+      case 'unsub':
+      case 'expose':
+      case 'unexpose':
+      case 'rret':
+        break;
+      default:
+        return false;
+    }
+    if (this.dispatcher) {
+      this.dispatcher.handle(message);
+    } else if (message.type === 'call' || message.type === 'sub' || message.type === 'expose') {
+      this.send({
+        type: 'ret',
+        id: message.id,
+        ok: false,
+        error: { name: 'Error', message: 'This extension has no ctx here.' },
+      });
     }
     return true;
   }

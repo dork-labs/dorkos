@@ -35,10 +35,12 @@ import {
   createRequirePerson,
 } from './inbox/extension-inbox-context.js';
 import fs from 'fs/promises';
+import { mkdirSync } from 'fs';
 import path from 'path';
 import { logger } from '../../lib/logger.js';
 import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.js';
 import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
+import { isolatedFilesDir } from './isolation/grants.js';
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;
@@ -247,6 +249,7 @@ interface CreateContextDeps {
  * - Interval-based scheduler with a 5-second minimum floor
  * - SSE event emitter via EventFanOut with `ext:{id}:{event}` namespace
  * - The resolved DorkOS data directory (`dorkHome`)
+ * - `filesDir`: the one folder the extension writes to, created here
  * - `accounts`: the agent accounts, their usage, and the account advisor seam
  * - `projects`: the projects core knows, scoped to this extension
  * - `inbox`: decisions in the Activity inbox (spec `flow-multiproject` §7)
@@ -292,6 +295,16 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   const settings = new ExtensionSettingsStore(dorkHome, extensionId);
 
   const dataPath = path.join(dorkHome, 'extension-data', extensionId, 'data.json');
+
+  // The one folder the extension writes to. The same helper names the folder
+  // an isolated child is granted write access to, so the two cannot drift.
+  // Made here (synchronously) so it exists before register() runs.
+  const filesDir = isolatedFilesDir(dorkHome, extensionId);
+  try {
+    mkdirSync(filesDir, { recursive: true });
+  } catch (err) {
+    logger.warn(`[ext:${extensionId}] couldn't create its files folder:`, err);
+  }
 
   const storage = {
     async loadData<T = unknown>(): Promise<T | null> {
@@ -383,6 +396,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     extensionId,
     extensionDir,
     dorkHome,
+    filesDir,
     accounts: guardedAccounts,
     projects: guardedProjects,
     inbox: guardedInbox,

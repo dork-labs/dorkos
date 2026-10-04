@@ -551,7 +551,10 @@ abort composition, 256 KB result cap, error copy. Only "look up the live handler
 `shutdown(id)` keeps its order (inbox `markStopped`, agent-send `extensionStopped`, scheduled
 cancels, cleanup, `releaseListeners`) and for an isolated extension: sends `stop`; the child runs its
 cleanup and schedule cancels and exits; after 3 s the host sends `SIGKILL`; every program the broker
-started is killed; open virtual connections get 503; pending `call`s and `rcall`s are rejected.
+started is killed; open virtual connections get 503; pending `call`s and `rcall`s are rejected. An
+UNEXPECTED exit runs the same bookkeeping, `markStopped` and `extensionStopped` included: closing
+the ctx dispatcher removes only what the child registered, not calls already running in the real
+ctx.
 
 **Watchdog.** The host sends `ping` every 5 s; no `pong` within 15 s kills the child as
 `server_unresponsive` — which also closes DOR-2685's leftover ("a synchronous hang is DOR-2686's to

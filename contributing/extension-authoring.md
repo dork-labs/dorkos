@@ -763,6 +763,10 @@ ctx.extensionDir; // "/Users/kai/.dork/extensions/my-extension" — absolute pat
 
 The resolved DorkOS data directory (`~/.dork` in production, `apps/server/.temp/.dork` in dev, or whatever `DORK_HOME` names). Use it for a file another tool also reads, such as the Flow extension's `<dorkHome>/flow/fleet.json`. A project-local extension's `extensionDir` is not under it, so never derive it from `extensionDir`. Data only your extension reads belongs in `ctx.storage`.
 
+#### `ctx.filesDir`
+
+A folder only your extension writes to: `{dorkHome}/extension-data/<id>/files`. DorkOS creates it before `register()` runs. Put files you write yourself (downloads, caches, a SQLite file of your own) here rather than next to your code. An extension that runs separately (`serverCapabilities.runtime: "subprocess"`) can write nowhere else. In such an extension, an account advisor's methods are fixed when `registerAdvisor` is called: DorkOS calls only the methods the advisor had then, so add every method before registering it.
+
 #### `ctx.accounts`
 
 Read access to the agent accounts DorkOS knows, and the account advisor seam (spec `claude-account-fleet` §6 X1-X3). Every type is exported from `@dorkos/extension-api/server`.
