@@ -8,16 +8,19 @@ This file holds no secret and no real provider identifier. Every `<angle-bracket
 
 Some steps depend on work that is not on `main` yet. Do not start a run until everything it needs is in this table as done. The table is part of the checklist: update it in the same PR that lands each item.
 
-| Needed by  | What                                                                                                          | Where it comes from                                  | Status on 2026-10-01                     |
-| ---------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------- |
-| L2, L3, L4 | A published release at or after the one containing #2372, #2373, #2374 and #2378                              | the release session                                  | done: v0.94.0                            |
-| L2, L3, L4 | DOR-2169's published-release live gate PASS, recorded in `specs/community-self-host-launcher/`                | DOR-2169 task 4.3                                    | done: receipt `dorkos-gate-854ea55f80a0` |
-| L2         | The gate's hold arm `DORKOS_COMMUNITY_LIVE_HOLD_MINUTES`, the second-person proof, `handoff.json`             | task 1.1 (DOR-2591)                                  | done: in v0.94.0                         |
-| L2         | The driver's remote mode, `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF`                                              | task 1.2 (DOR-2592)                                  | done: in v0.94.0                         |
-| L2         | The no-DorkOS-host guard, `dorkosHostsContacted` and the single-sign-on check in the gate receipt             | task 1.3 (DOR-2593)                                  | done: in v0.94.0                         |
-| L2         | `apps/community/FLY.md` "Back up and upgrade a community made with guided setup"                              | task 1.4 (DOR-2594, PR #2384)                        | done: merged                             |
-| L4         | The draft guide `docs/self-hosting/community.mdx`                                                             | task 1.6 (DOR-2596)                                  | pending: PR open, on `hold`              |
-| L3         | A confirmed way to hand the launcher a restricted Neon credential (see [L3 preconditions](#l3-preconditions)) | this checklist, proved by a dry run before any spend | pending: not yet proved                  |
+| Needed by  | What                                                                                                                             | Where it comes from                          | Status on 2026-10-04                                             |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------- |
+| L2, L3, L4 | A published release at or after the one containing #2372, #2373, #2374 and #2378                                                 | the release session                          | done: v0.97.0 is the latest. L2 passed on v0.96.0, L3 on v0.97.0 |
+| L2, L3, L4 | DOR-2169's published-release live gate PASS, recorded in `specs/community-self-host-launcher/`                                   | DOR-2169 task 4.3                            | done: receipt `dorkos-gate-854ea55f80a0`                         |
+| L2         | The gate's hold arm `DORKOS_COMMUNITY_LIVE_HOLD_MINUTES`, the second-person proof, `handoff.json`                                | task 1.1 (DOR-2591)                          | done: in v0.94.0                                                 |
+| L2         | The driver's remote mode, `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF`                                                                 | task 1.2 (DOR-2592)                          | done: in v0.94.0; step 15 and 17 fixes in v0.96.0 (#2476)        |
+| L2         | The no-DorkOS-host guard, `dorkosHostsContacted` and the single-sign-on check in the gate receipt                                | task 1.3 (DOR-2593)                          | done: in v0.94.0                                                 |
+| L2         | `apps/community/FLY.md` "Back up and upgrade a community made with guided setup"                                                 | task 1.4 (DOR-2594, PR #2384)                | done: merged                                                     |
+| L3         | Restricted credentials reach the launcher through `FLY_API_TOKEN` and `NEON_API_KEY` (see [L3 preconditions](#l3-preconditions)) | DOR-2602                                     | done: in v0.94.0                                                 |
+| L3         | A plain refusal for a Fly token or Neon key that can't create, and a Neon organization key that passes setup                     | DOR-2656, DOR-2657 (#2447); DOR-2700 (#2526) | done: in v0.96.0 and v0.97.0                                     |
+| L3         | Resuming right after a stopped `fly deploy` waits for Fly's Machine lease                                                        | DOR-2702 (#2529)                             | done: in v0.97.0                                                 |
+| L3         | Resuming after a Control-C that lands right after a create intent (the (c) sub-case)                                             | DOR-2701 (#2528)                             | pending: PR open, in no release                                  |
+| L4         | The draft guide `docs/self-hosting/community.mdx`                                                                                | task 1.6 (DOR-2596, PR #2387)                | pending: PR open, on `hold`                                      |
 
 ## Rules for every run
 
@@ -57,16 +60,16 @@ fly storage list --org <fly-org>                     # live Tigris buckets
 fly storage dashboard --org <fly-org>                # opens the Tigris console: look for buckets named <name>_deleted_<suffix>
 fly wireguard list <fly-org> --json                  # WireGuard peers
 neonctl projects list --org-id <neon-org-id> --output json
-tigris access-keys list                              # Tigris access keys (see below for sign-in)
+tigris access-keys list --json                       # Tigris access keys (see below for sign-in)
 ```
 
-The last line needs the Tigris command-line tool (`npm install -g @tigrisdata/cli`) and a Tigris sign-in through Fly: run `tigris login oauth` once and choose "Sign in with Fly". The gate cannot read access keys itself: nothing it holds reaches Tigris's key list (DOR-2646).
+The last line needs the Tigris command-line tool (`npm install -g @tigrisdata/cli`) and a Tigris sign-in through Fly: run `tigris login oauth` once and choose "Sign in with Fly". The gate cannot read access keys itself: nothing it holds reaches Tigris's key list (DOR-2646). Use `--json`: the plain table cuts ids short, and you need the full id to delete a key (`.items[].id`).
 
 What counts as a match, and the named exceptions:
 
 - **Fly apps and live buckets:** identical before and after.
 - **Soft-deleted Tigris buckets.** Fly keeps a deleted bucket's record under the name `<name>_deleted_<suffix>`, and `fly storage list` no longer shows it (see the note in `packages/cli/src/commands/community-deploy/fly-graphql-contract.ts`). After cleanup, check the Tigris console for one per bucket the run made. Record whether it is there and whether the console shows it holding objects. A soft-deleted bucket is expected, not a mismatch. Any object still in one is a stop: ask the operator.
-- **Tigris access keys.** Fly makes one access key per bucket, named after the bucket (seen as `<bucket>_access_key` when the bucket shares the app's name; unconfirmed for a custom `--bucket-name`), and deleting the bucket does not delete it (DOR-2646; `fly storage destroy` leaves it too). So after cleanup, expect one active key named after each bucket the run made. It is a known leftover, not a mismatch, but it still works, so delete it before you finish: `tigris access-keys delete <id>` (the id starts with `tid_`), or `fly storage dashboard --org <fly-org>` and delete it under Access Keys. Then list again: the after list must match the before list. The gate receipt names the key under `cleanup.accessKeyLeftAtTigris`, kept apart from `cleanup.retained` (which lists only resources cleanup should have removed and did not), and the gate prints these steps once the bucket is gone, whether the run then passes or fails. Any other new key is a stop.
+- **Tigris access keys.** Fly makes one access key per bucket, named after the bucket (seen as `<bucket>_access_key` when the bucket shares the app's name; unconfirmed for a custom `--bucket-name`), and deleting the bucket does not delete it (DOR-2646; `fly storage destroy` leaves it too). So after cleanup, expect one active key named after each bucket the run made. It is a known leftover, not a mismatch, but it still works, so delete it before you finish: `tigris access-keys delete <id>` with the full id from `tigris access-keys list --json` (it starts with `tid_`; the plain table cuts it short), or `fly storage dashboard --org <fly-org>` and delete it under Access Keys. Then list again: the after list must match the before list. The gate receipt names the key under `cleanup.accessKeyLeftAtTigris`, kept apart from `cleanup.retained` (which lists only resources cleanup should have removed and did not), and the gate prints these steps once the bucket is gone, whether the run then passes or fails. Any other new key is a stop.
 - **WireGuard peers:** identical before and after. A new peer means something in the run opened a private tunnel into the org. Record its name, remove it with `fly wireguard remove <fly-org> <peer-name>`, and note which step created it. A known source: the DOR-2169 published-release gate's own `sshOnCustomNetwork` provenance probe runs `fly ssh console --command true`, which can create (or reuse) an interactive peer — seen on receipt `dorkos-gate-854ea55f80a0`. Remove it the same way after a gate run that shows one.
 - **Custom private network.** When the release includes DOR-2238's provenance markers, each launched app gets its own private network, and Fly keeps that network after the app is destroyed (`specs/launcher-uncertain-create-cleanup/02-specification.md`, Decision 1). Record the network name from `fly apps list --json` before cleanup. After cleanup the app is gone but the network may remain: record it as the expected leftover. flyctl has no command that lists networks on their own, so this check reads the app listing taken before cleanup. When the release does not include those markers, the app must show no network name at all.
 - **Neon projects:** identical before and after.
@@ -160,6 +163,7 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
   Keep the token in a password manager. Record only the token's name.
 
 - [ ] **Operator only:** a Neon project-scoped API key, made in the Neon console for a throwaway project in the designated org. It must not be able to create projects. Record only the key's name.
+- [ ] **Operator only:** a Neon organization API key for the designated org (`neonctl api-keys create --org-id <neon-org-id> --name dor-2170-l3-org`). Steps (b2) and (c) use it. Record only the key's name.
 - [ ] **Operator only:** read-only, note which Fly org roles and which Neon org roles can create resources, from each console's members page. Record the role names, not member names.
 - [ ] **How the restricted credentials reach the launcher.** Export them. Since DOR-2602 (v0.94.0), the launcher hands a non-empty `FLY_API_TOKEN` (or `FLY_ACCESS_TOKEN`) and `NEON_API_KEY` to `fly` and `neonctl` unchanged, and prints one line naming which variable it uses. Prove each first: `FLY_API_TOKEN=<token> fly orgs list` shows only the designated org, and `NEON_API_KEY=<key> neonctl projects list` shows only the throwaway project. The earlier `FLY_CONFIG_DIR` and config-folder workarounds are no longer needed.
 - [ ] Before inventory saved.
@@ -180,38 +184,54 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
    **Watch for:** if the read-only token already fails a read-only check (the org listing, regions, or the app-name lookup), setup stops before consent. Record the message. That is not an A4(a) pass: A4(a) needs consent, then a refusal at the first write. Stop and ask the operator how to proceed.
 
 3. Run it again without `--dry-run`. Type `<app-a>` at the consent prompt and `COPY TEST` at the clipboard check.
-4. Expect: the first write (the Fly app create) is refused with a clear permission message naming `FLY_API_TOKEN` and the org, and setup stops with no resume command (DOR-2656). `--list-incomplete` does not list the run. Record the exact message.
+4. Expect: the first write (the Fly app create) is refused with a clear permission message naming `FLY_API_TOKEN` and the org, and setup stops with no resume command (DOR-2656). On v0.97.0 it reads `Space setup failed: Fly refused to create app <app-a> in organization <fly-org>. The Fly token in FLY_API_TOKEN can't create apps there. Use a token or sign-in that can, then run setup again. Nothing was created, so there is nothing to clean up.` `--list-incomplete` prints `No incomplete space server launches were found.` Record the exact message.
 5. Inventory: nothing new in Fly or Neon. If a resource exists, that is a defect (rule 5).
 6. `unset FLY_API_TOKEN`.
 
-**(b) Neon credential that cannot create projects, after the Fly app exists.**
+**(b) Neon credential that cannot create projects.**
 
-1. Normal Fly sign-in. `export NEON_API_KEY=<restricted key>`.
-2. Dry run with `--app-name <app-b>`. **Watch for:** if the restricted key already fails the read-only preflight (it may not be able to read the org or its regions), setup stops before consent. Record the message. That is a pass for "refused with zero resources" but not for A4(b), which needs the refusal after the Fly app exists. Stop and ask the operator how to proceed.
-3. Run without `--dry-run`. Type `<app-b>` and `COPY TEST`.
-4. Expect: the Fly app is created and verified; the Neon project create is refused; setup stops.
-5. Check the printed recovery table line by line against the real inventory: it lists exactly the Fly app, its owner (the Fly org), "may incur charges", the inspect command `fly machine list --app <app-b> --json`, the console link, "Automatic cleanup was not attempted", and a complete `--resume <run-id>` command with every flag. Record any difference.
-6. `dorkos community deploy --list-incomplete` lists the run id with its state. Record it.
+A project-scoped key cannot read the org, so it cannot pass setup's read-only checks. Setup stops before consent, before the Fly app exists. The operator decided this early stop is the A4(b) result: before consent, zero resources, and a clear message that names `NEON_API_KEY` and the org. The recovery table check (A3) moved to step (c).
 
-**(c) Resume, interrupt during the deploy, resume again.**
+1. Normal Fly sign-in. `export NEON_API_KEY=<project-scoped key>`.
+2. Dry run with `--app-name <app-b>`, five times. Expect the same two lines every time (DOR-2700 made the message steady):
 
-1. `unset NEON_API_KEY`, so `neonctl` uses the operator's normal sign-in.
-2. Run the exact resume command step (b) printed.
-3. Expect: the Neon project and the Tigris bucket are created. If Fly asks for Tigris terms, accept them in Fly and type `accept`.
-4. When the launcher prints `Applying private secrets and deploying the pinned Community image…`, press Control-C once while `fly deploy` is running.
-5. Expect: setup stops, saves its state and prints the recovery table and resume command again, then one plain last line with no error code (DOR-2702). Record the journal state and the journal's `lastSafeError` code (`CANCELLED` or `CREATION_OUTCOME_UNCERTAIN`), and check the last line matches it: `CANCELLED` says what was made is kept and to resume; `CREATION_OUTCOME_UNCERTAIN` says setup cannot tell yet whether a change happened. The process exits 130.
-6. Run the resume command again straight away. Expect: if Fly still holds the Machine for the stopped deploy (up to five minutes after it began), a line says setup is waiting for Fly to let go of it, then it carries on by itself. It finishes the deploy, verifies health, then asks `Open <origin> and copy the one-time setup secret? Type copy:`. Record how long it waited.
-7. Complete owner setup in the browser, press Enter in the terminal, post one message and upload then download one private file, then type `complete`.
-8. Expect the completion screen: "Community setup is complete", deployment health verified, recovery readiness "not verified". Record it.
+   ```
+   Using the Neon key in NEON_API_KEY from your environment, not your saved sign-in.
+   Space setup failed: The Neon key in NEON_API_KEY can't read organization <neon-org-id>. Setup needs a key or sign-in that can create projects in it.
+   ```
+
+3. Run without `--dry-run`. Expect the same two lines, before the consent prompt.
+4. Check: no journal written, `--list-incomplete` lists nothing, no new Fly app, and no new Neon project apart from the key's own throwaway one. Record the message and how many runs showed it.
+5. `unset NEON_API_KEY`.
+
+**(b2) Neon organization key.**
+
+1. `export NEON_API_KEY=<organization key>`.
+2. Dry run with `--app-name <app-c>`. Expect: it passes the checks and prints the full plan, with readiness `unknown`.
+3. Optional: dry run with a made-up `--neon-region`. Expect a stop before consent that says this key can't read Neon's live list of regions, that the region isn't on the saved list, and what to do instead.
+4. Keep the organization key exported for (c).
+
+**(c) Interrupt during the deploy, resume, finish.**
+
+1. Keep the organization key from (b2) in `NEON_API_KEY`, or `unset NEON_API_KEY` to use the operator's normal `neonctl` sign-in. The organization key proves that key shape end to end.
+2. Run without `--dry-run`, with `--app-name <app-c>`. Type `<app-c>` and `COPY TEST`.
+3. Expect: the Fly app, the Neon project and the Tigris bucket are created. If Fly asks for Tigris terms, accept them in Fly and type `accept`.
+4. When the launcher prints `Applying private secrets and deploying the pinned space server image…`, press Control-C once while `fly deploy` is running.
+5. Expect: setup stops, saves its state and prints the recovery table and resume command again, then one plain last line with no error code (DOR-2702). Record the journal state and the journal's `lastSafeError` code (`CANCELLED` or `CREATION_OUTCOME_UNCERTAIN`), and check the last line matches it: `CANCELLED` says what was made is kept and to resume (`Setup was stopped. What it made so far is kept: run the resume command above to carry on.`); `CREATION_OUTCOME_UNCERTAIN` says setup cannot tell yet whether a change happened. The process exits 130.
+   - **Sub-case: Control-C right after a create intent (DOR-2701).** Run this only on a release that contains #2528; v0.97.0 does not. If Control-C lands just after a create was about to start (for example right after `Checking neon resource identity…`), the table offers no resume. It says `Next: check whether that create landed with: dorkos community deploy --remove-uncertain <run-id>` instead, and the last line points at that command rather than a resume. Run that. Straight away it says the create could still appear and when to run it again (about 12 minutes after the stop, or about 14 for a bucket). Run it again then. Expect: "The create never landed", the earlier resources named as kept, and `Continue with:` followed by the full `--resume` command. Run that command and carry on from step 3.
+6. **Check the recovery table (A3).** Take an inventory straight away and compare it with the table line by line. It must list exactly the Fly app, the Neon project and the Tigris bucket (by its name), each with its owner, "may incur charges", a working inspect command and a console link; the access-key note for the bucket; `Automatic cleanup was not attempted.`; and a complete `--resume <run-id>` command with every flag. The deploy may already have started a Machine: the app line and its inspect command cover it. Record any difference. Then `dorkos community deploy --list-incomplete` must list the run id with its state. Record it.
+7. Run the resume command straight away. Expect: if Fly still holds the Machine for the stopped deploy (up to five minutes after it began), a line says `Fly is still holding the Machine of <app-c> for another deploy. Waiting up to about 5 minutes for Fly to let go of it…`, with `Still waiting…` lines, then it carries on by itself. It finishes the deploy, verifies health, then asks `Open <origin> and copy the one-time setup secret? Type copy:`. Record how long it waited.
+8. Complete owner setup in the browser, press Enter in the terminal, post one message and upload then download one private file, then type `complete`.
+9. Expect the completion screen: "Space setup is complete at `<origin>`", deployment health verified, recovery readiness "not verified". `--list-incomplete` then lists nothing. Record it.
 
 **(d) Clean up and compare.**
 
 1. For each resource the run made, check its name and org first, then delete it:
 
    ```sh
-   fly storage destroy <bucket> --app <app-b>
+   fly storage destroy <bucket> --app <app-c>
    neonctl projects delete <neon-project-id> --output json
-   fly apps destroy <app-b>
+   fly apps destroy <app-c>
    ```
 
    Then delete the bucket's access key (named after the bucket, usually `<bucket>_access_key`), which `fly storage destroy` leaves active (see the Tigris access keys exception above).
@@ -221,16 +241,17 @@ Covers A2 (interruption and resume during provisioning), A3 (failed provisioning
 ### L3 revocation (always, even after a failed run)
 
 - [ ] `fly tokens list --org <fly-org>`, then `fly tokens revoke <token-id>` for `dor-2170-l3`.
-- [ ] Delete the Neon project-scoped key in the Neon console, and delete its throwaway project if one was made for it.
+- [ ] Delete the Neon project-scoped key and the organization key in the Neon console, and delete the throwaway project made for the project-scoped key.
 - [ ] Stop the Fly agent that ran with the read-only token, so no background process keeps it: `FLY_API_TOKEN=<read-only token> fly agent stop`.
-- [ ] Record that both are revoked, with the time.
+- [ ] Record that all three are revoked, with the time.
 
 ### L3 pass criteria
 
 - (a) Refused at the first write, with a clear message, and zero resources. (A4a)
-- (b) Fly app made, Neon create refused, recovery table matches the real inventory, `--list-incomplete` lists the run. (A3, A4b)
-- (c) Resume after a refusal and after Control-C both finish; owner setup and one post work. (A2)
-- (d) Inventories match; both credentials revoked.
+- (b) Stopped before consent, with the clear message naming `NEON_API_KEY` and the org every time, and zero resources. (A4b, by the operator's decision)
+- (b2) The organization key passes setup's checks.
+- (c) After Control-C, the recovery table matches the real inventory and `--list-incomplete` lists the run (A3); the resume finishes, and owner setup and one post work (A2). The DOR-2701 sub-case is still owed on a release with #2528.
+- (d) Inventories match; all three credentials revoked.
 
 ## L4: fresh accounts (operator only)
 
@@ -289,8 +310,8 @@ Every acceptance row has a step here that produces its evidence.
 | --- | ------------------------------------------------------------------ |
 | A1  | L4, all steps                                                      |
 | A2  | L3 (c)                                                             |
-| A3  | L3 (b), the recovery-table comparison                              |
-| A4  | L3 (a) and (b)                                                     |
+| A3  | L3 (c) step 6, the recovery-table comparison after Control-C       |
+| A4  | L3 (a) and (b), by the operator's decision on (b)                  |
 | A5  | L2 steps 1 (second-person proof) and 3 (driver, including step 22) |
 | A6  | L2 steps 4 to 6                                                    |
 | A7  | L2 step 3 (driver steps 17 and 18, phone-width screenshots)        |
