@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(cli): let setup resume right after an interrupted deploy (DOR-2702)'
+  - 'fix(cli): address review on the interrupted-deploy resume (DOR-2702)'
 ---
 
 ### Fixed
