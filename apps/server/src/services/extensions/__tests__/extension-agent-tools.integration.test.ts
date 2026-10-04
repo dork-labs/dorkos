@@ -51,7 +51,7 @@ let dorkHome: string;
 let extDir: string;
 let manager: ExtensionManager;
 let registry: CapabilityRegistry;
-let forget: ReturnType<typeof vi.fn>;
+let forget: ReturnType<typeof vi.fn<(id: string, name: string) => Promise<unknown>>>;
 
 /** Copy the fixture in, optionally replacing its server.ts or editing its manifest. */
 async function install(serverTs?: string, editManifest?: (m: Record<string, unknown>) => void) {
@@ -97,7 +97,7 @@ beforeEach(async () => {
     approvedSources: { [ID]: { path: extDir } },
   };
   registry = composeRegistry([], { logger: noopLogger });
-  forget = vi.fn(async () => []);
+  forget = vi.fn<(id: string, name: string) => Promise<unknown>>(async () => []);
 });
 
 afterEach(async () => {
@@ -309,7 +309,8 @@ describe('extensionDeclarationDigest', () => {
     const digest = (m: unknown) => extensionDeclarationDigest(ExtensionManifestSchema.parse(m));
     const original = digest(base);
     expect(digest({ ...base, description: 'other words' })).toBe(original);
-    expect(digest({ tools: base.tools, ...base })).toBe(original);
+    const { tools, ...rest } = base;
+    expect(digest({ tools, ...rest })).toBe(original);
     expect(digest({ ...base, skills: ['tidy-notes'] })).not.toBe(original);
     expect(
       digest({ ...base, tools: [{ ...base.tools[0], tier: 'act', approvalDisplayFields: [] }] })

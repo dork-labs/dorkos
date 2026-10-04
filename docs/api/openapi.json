@@ -11773,7 +11773,8 @@
               "origin": {
                 "type": "string",
                 "enum": [
-                  "arrival-screen"
+                  "arrival-screen",
+                  "extension-removed"
                 ]
               },
               "note": {

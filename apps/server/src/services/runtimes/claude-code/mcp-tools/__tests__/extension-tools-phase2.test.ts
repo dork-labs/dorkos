@@ -65,15 +65,17 @@ function parseResponse(result: {
 // --- Phase 2 supplementary tests ---
 
 describe('get_extension_api handler (Phase 2 constraints)', () => {
-  it('response is under 8KB to stay within MCP response limits', async () => {
+  it('response is under 10KB to stay within MCP response limits', async () => {
     const handler = createGetExtensionApiHandler(createDeps(undefined));
 
     const result = await handler();
 
     const text = result.content[0].text;
     const sizeBytes = new TextEncoder().encode(text).byteLength;
-    // Increased from 4KB to 8KB to accommodate server-side API documentation
-    expect(sizeBytes).toBeLessThan(8192);
+    // Increased from 4KB to 8KB to accommodate server-side API documentation,
+    // then to 10KB for the tools and skills manifest fields (DOR-2685): the
+    // reference sat within 60 bytes of 8KB before them.
+    expect(sizeBytes).toBeLessThan(10240);
   });
 
   it('contains all ExtensionPointId slot names', async () => {
