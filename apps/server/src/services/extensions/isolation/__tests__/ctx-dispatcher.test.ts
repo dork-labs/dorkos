@@ -183,7 +183,7 @@ describe('CtxDispatcher calls', () => {
     expect(ret.ok).toBe(false);
     expect(ret.error?.code).toBe('ERR_EXTENSION_CTX_UNKNOWN');
     // The child's path is never echoed back.
-    expect(ret.error?.message).not.toContain(p === 'storage' ? '#' : p);
+    expect(ret.error?.message).toBe("That isn't something an isolated extension's ctx can do.");
     expect(t.keysSpy).not.toHaveBeenCalled();
     expect(t.dispatcher.dispatchCounts()).toEqual({});
   });
@@ -521,6 +521,21 @@ describe('CtxDispatcher reverse calls', () => {
     t.dispatcher.close();
     await expect(pending).rejects.toThrow('Ext A stopped.');
     expect(t.advisor()).toBeNull();
+    expect(t.onAction()).toBeNull();
+  });
+
+  // Purpose: re-registering a replacing member (an advisor, an action
+  // handler) frees the replaced entry, so it cannot exhaust the limit, and
+  // the newest registration stays live on the real ctx.
+  it('forgets replaced reverse handlers', () => {
+    const t = setup();
+    for (let i = 1; i <= MAX_CHILD_REGISTRATIONS + 10; i++) {
+      t.handle({ type: 'expose', id: i, path: 'inbox.onAction' });
+    }
+    expect(t.dispatcher.registrations).toBe(1);
+    expect(t.onAction()).not.toBeNull();
+    expect(t.sent.filter((m) => m.type === 'ret')).toEqual([]);
+    t.handle({ type: 'unexpose', id: MAX_CHILD_REGISTRATIONS + 10 });
     expect(t.onAction()).toBeNull();
   });
 

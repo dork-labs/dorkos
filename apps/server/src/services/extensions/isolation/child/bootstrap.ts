@@ -241,7 +241,7 @@ function main(): void {
     try {
       pending = cleanup?.();
     } catch (err) {
-      console.error(`[ext:${process.env.DORKOS_EXT_ID ?? '?'}] Cleanup error:`, err);
+      console.error('Cleanup error:', err);
     }
     proxy?.stop();
     Promise.resolve(pending)

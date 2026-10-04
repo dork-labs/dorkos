@@ -255,6 +255,8 @@ export class CtxDispatcher {
   private closed = false;
   private readonly subs = new Map<number, () => void>();
   private readonly exposes = new Map<number, () => void>();
+  /** Which reverse member each expose id is bound to. */
+  private readonly exposePaths = new Map<number, string>();
   private readonly rcalls = new Map<number, PendingRcall>();
   private nextRcallId = 1;
   private readonly counts = new Map<string, number>();
@@ -330,6 +332,7 @@ export class CtxDispatcher {
       }
       map.clear();
     }
+    this.exposePaths.clear();
     for (const [, pending] of this.rcalls) {
       clearTimeout(pending.timer);
       pending.reject(new Error(`${this.options.displayName} stopped.`));
@@ -587,6 +590,15 @@ export class CtxDispatcher {
     }
     this.count(path);
     this.exposes.set(id, result);
+    this.exposePaths.set(id, path);
+    // Both reverse members replace: a second advisor or action handler takes
+    // the first one's place on the real ctx. Forget the replaced entries, so
+    // re-registering cannot use up the child's registration limit. Their
+    // unregister functions are safe to call now: each removes only its own
+    // registration, which the new one already replaced.
+    for (const [other, otherPath] of this.exposePaths) {
+      if (other !== id && otherPath === path) this.release(this.exposes, other);
+    }
   }
 
   /** An `rret`: settle the reverse call it answers. Unknown or late ids are ignored. */
@@ -615,6 +627,7 @@ export class CtxDispatcher {
     const unregister = map.get(id);
     if (!unregister) return;
     map.delete(id);
+    if (map === this.exposes) this.exposePaths.delete(id);
     try {
       unregister();
     } catch (err) {
