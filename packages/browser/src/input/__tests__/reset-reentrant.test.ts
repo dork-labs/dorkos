@@ -2,7 +2,12 @@ import { expect, it, vi } from 'vitest';
 import type { BrowserBinding } from '../../contracts.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
-import { createTabInput, type InputPorts } from '../index.js';
+
+import {
+  createOwnedFixtureInput as createTabInput,
+  settleFixtureRetirement,
+  type FixtureInputPorts as InputPorts,
+} from '../../__tests__/parent-fixture.js';
 
 function fixture(reentry: 'publish' | 'release' | 'none') {
   let binding: BrowserBinding = {
@@ -44,7 +49,7 @@ function fixture(reentry: 'publish' | 'release' | 'none') {
       cancelDrag: async () => {},
     },
   };
-  const input = createTabInput(ports);
+  const input = createTabInput(ports, () => binding);
   return {
     input,
     ports,
@@ -137,7 +142,7 @@ it.each(['cancelComposition', 'cancelDrag'] as const)(
     expect(h.releases).toBe(1);
   }
 );
-it('publication error after one-shot reentry settles the shared stopped handle without cleanup or readiness', async () => {
+it('publication error after one-shot reentry stops readiness but permits exact parent-owned held release', async () => {
   const h = fixture('none');
   expect((await h.down()).outcome).toBe('completed');
   let nested: ReturnType<typeof h.input.reset> | null = null;
@@ -148,7 +153,11 @@ it('publication error after one-shot reentry settles the shared stopped handle w
   const outer = h.input.reset();
   expect(nested).toBe(outer);
   expect((await outer).status).toBe('stopped');
-  expect(h.releases).toBe(0);
+  expect(h.published).toBe(0);
+  expect(h.binding.epoch).toBe(0);
+  await settleFixtureRetirement(h.input);
+  expect(h.releases).toBe(1);
+  expect(h.ports.native.dispatch).toHaveBeenCalledTimes(2);
   expect((await h.input.reset()).status).toBe('stopped');
 });
 it.each(['missing', 'throw', 'stop'] as const)(

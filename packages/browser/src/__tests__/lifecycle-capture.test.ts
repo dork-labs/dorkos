@@ -1,4 +1,5 @@
-import { fakeJPEG } from './parent-fixture.js';
+import { fakeJPEG, registerFixtureRecord, configuration, requestId } from './parent-fixture.js';
+import { closeRecord } from '../lifecycle/close.js';
 import { createPointerLedger } from '../tabs/pointer.js';
 import { unavailableDiagnostics } from '../tabs/diagnostics.js';
 import { createDiagnosticsBudget } from '../tabs/diagnostics-budget.js';
@@ -11,10 +12,9 @@ import { BrowserLifecycleError } from '../lifecycle/errors.js';
 import { captureTab } from '../tabs/capture.js';
 import type { BrowserRecord, TabRecord } from '../lifecycle/records.js';
 import { parseBrowserId, parseTabId } from '../ids.js';
-import { configuration, requestId } from './lifecycle-fixture.js';
 
 async function setup(screenshot: () => Promise<Uint8Array>) {
-  const config = await configuration('/tmp/browser-test-not-created', 'http://127.0.0.1:9001');
+  const config = configuration();
   const tab: TabRecord = {
     pointer: createPointerLedger(() => (tab.stopped ? null : tab.binding)),
     diagnostics: unavailableDiagnostics,
@@ -51,6 +51,7 @@ async function setup(screenshot: () => Promise<Uint8Array>) {
     status: 'running',
     tabs: new Map([[tab.binding.tabId, tab]]),
   };
+  registerFixtureRecord(record, () => closeRecord(config, record));
   return {
     config,
     tab,
@@ -109,19 +110,49 @@ it.each(['policy', 'screenshot'] as const)(
   }
 );
 
-it('refuses counter exhaustion without wrapping or leaving its canonical Page active', async () => {
+it('counter exhaustion joins owned-context retirement without certifying its missing input owner', async () => {
   const owned = await setup(async () => fakeJPEG(10, 10));
-  const close = vi.fn(async () => {});
-  owned.tab.page.close = close;
-  owned.tab.captureSequence = Number.MAX_SAFE_INTEGER;
-  await expect(captureTab(owned.config, owned.record, owned.command)).rejects.toMatchObject({
-    code: 'COUNTER_EXHAUSTED',
+  const pageClose = vi.fn(async () => {});
+  owned.tab.page.close = pageClose;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
   });
-  expect(owned.tab.captureSequence).toBe(Number.MAX_SAFE_INTEGER);
+  const contextClose = vi.fn(function (this: unknown) {
+    expect(this).toBe(context);
+    expect(owned.record.lifetime.ordinary.phase).toBe('retiring');
+    return held;
+  });
+  const context = { close: contextClose } as unknown as NonNullable<BrowserRecord['context']>;
+  owned.record.context = context;
+  owned.tab.captureSequence = Number.MAX_SAFE_INTEGER;
+  try {
+    await expect(captureTab(owned.config, owned.record, owned.command)).rejects.toMatchObject({
+      code: 'COUNTER_EXHAUSTED',
+    });
+    expect(owned.record.lifetime.ordinary.phase).toBe('retiring');
+    expect(owned.tab.captureSequence).toBe(Number.MAX_SAFE_INTEGER);
+    expect(owned.tab.pending).toBe(0);
+    expect(owned.record.lifetime.inputs.has(owned.tab)).toBe(false);
+    const parent = owned.record.closePromise!;
+    const parentEnd = owned.record.lifetime.parentEnd;
+    const inputEnd = owned.record.lifetime.inputEnd;
+    expect(closeRecord(owned.config, owned.record, performance.now() + 100)).toBe(parent);
+    expect(owned.record.lifetime.parentEnd).toBe(parentEnd);
+    expect(owned.record.lifetime.inputEnd).toBe(inputEnd);
+    expect(pageClose).not.toHaveBeenCalled();
+  } finally {
+    release();
+  }
+  const terminal = await owned.record.closePromise;
+  expect(terminal).toMatchObject({ cleanup: 'unverified' });
+  expect(owned.record.lifetime.ordinary.phase).toBe('terminal');
+  expect(owned.record.lifetime.uncertain).toBe(true);
+  expect(owned.record.lifetime.ordinary.retirement.result!.cleanup.state).toBe('unverified');
   expect(owned.tab.stopped).toBe(true);
-  expect(close).toHaveBeenCalledOnce();
+  expect(contextClose).toHaveBeenCalledTimes(1);
+  expect(pageClose).not.toHaveBeenCalled();
 });
-
 it('bounds and freezes public fixed error codes even for caller-created lifecycle errors', () => {
   const error = new BrowserLifecycleError('PRIVATE-SECRET', 'OTHER-SECRET');
   expect(error.code).toBe('OPERATION_FAILED');

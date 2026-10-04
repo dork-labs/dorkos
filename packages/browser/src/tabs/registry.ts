@@ -1,4 +1,5 @@
 import { createPointerLedger } from './pointer.js';
+import { ordinaryRecord } from '../lifecycle/ownership.js';
 import { createDiagnosticsOwner, unavailableDiagnostics } from './diagnostics.js';
 import { randomBytes } from 'node:crypto';
 import type { Page } from 'playwright-core';
@@ -13,10 +14,12 @@ export function trackPage(
   origin: string,
   now: () => number
 ): TabRecord {
+  if (!ordinaryRecord(record)) throw new Error('PAGE_REGISTRATION_REFUSED');
   const prior = [...record.tabs.values()].find((tab) => tab.page === page);
   if (prior) return prior;
   const currentBinding = () =>
     tab &&
+    ordinaryRecord(record) &&
     record.tabs.get(tab.binding.tabId) === tab &&
     !tab.stopped &&
     !record.lifetime.gate.stopped
@@ -48,17 +51,22 @@ export function trackPage(
     now,
   });
   const retire = () => {
-    tab.pointer.invalidate();
-    tab.diagnostics.discard();
+    // Local changed-target refusal precedes cohort capture; no shared terminal gate yet.
     tab.stopped = true;
-    record.lifetime.gate.stop();
-    record.lifetime.retire?.();
+    record.lifetime.requestRetirement('engineFault');
+    for (const invalidate of [() => tab.pointer.invalidate(), () => tab.diagnostics.discard()]) {
+      try {
+        invalidate();
+      } catch {
+        record.lifetime.uncertain = true;
+      }
+    }
   };
   record.lifetime.gate.register(tab.binding, () => {
     tab.pointer.invalidate();
     tab.diagnostics.discard();
     tab.stopped = true;
-    record.lifetime.retire?.();
+    record.lifetime.requestRetirement('engineFault');
   });
   if (tab.stopped || record.lifetime.gate.stopped) {
     tab.diagnostics.discard();
@@ -66,7 +74,10 @@ export function trackPage(
   }
   try {
     const active = () =>
-      record.tabs.get(tab.binding.tabId) === tab && !tab.stopped && !record.lifetime.gate.stopped;
+      ordinaryRecord(record) &&
+      record.tabs.get(tab.binding.tabId) === tab &&
+      !tab.stopped &&
+      !record.lifetime.gate.stopped;
     tab.diagnostics.install(page);
     if (!active()) return tab;
     const timeout = page.setDefaultTimeout;
@@ -84,7 +95,11 @@ export function trackPage(
       'framenavigated',
       (frame: import('playwright-core').Frame) => {
         if (frame !== page.mainFrame()) return;
-        if (record.tabs.get(tab.binding.tabId) !== tab || record.lifetime.gate.stopped) {
+        if (
+          !ordinaryRecord(record) ||
+          record.tabs.get(tab.binding.tabId) !== tab ||
+          record.lifetime.gate.stopped
+        ) {
           retire();
           return;
         }

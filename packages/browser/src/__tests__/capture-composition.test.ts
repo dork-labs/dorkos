@@ -1,3 +1,5 @@
+import { retirementFixture as captureRetirement } from './parent-fixture.js';
+import { captureTab as retirementCapture } from '../tabs/capture.js';
 import { it, expect, vi } from 'vitest';
 import { composeInput } from '../lifecycle/input-owner.js';
 import { submitInput, resetInput } from '../lifecycle/parent-actions.js';
@@ -161,6 +163,9 @@ it('failed composed reset closes diagnostic ownership without ready revival', as
   h.event('request', { method: () => 'GET', resourceType: () => 'fetch' });
   h.raw.keyboard.up.mockRejectedValueOnce(Error('RELEASE_FAILURE'));
   expect((await resetInput(h.record, { ...h.tab.binding })).status).toBe('stopped');
+  expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
+  expect((await submitInput(h.record, h.command())).outcome).toBe('rejected');
+  await h.record.lifetime.ordinary.retirement.promise;
   expect(h.record.lifetime.gate.stopped).toBe(true);
   expect(h.tab.diagnostics.read()).toBe(null);
   expect(h.record.diagnosticsBudget.snapshot()).toMatchObject({
@@ -456,4 +461,18 @@ it('engine stable outer-await retains exact Page and publishes genuine capture o
   expect(fixture.h.raw.screenshot).toHaveBeenCalledTimes(1);
   expect(result.bytes).toEqual(fakeJPEG());
   await fixture.engine.shutdown();
+});
+
+it('candidate: a known ordinary fence refuses capture before screenshot observation', async () => {
+  const h = tabFixture(),
+    c = configuration();
+  captureRetirement(h.record, performance.now() + 2000);
+  await expect(
+    retirementCapture(c, h.record, {
+      kind: 'capture',
+      requestId: h.command().requestId,
+      binding: h.tab.binding,
+    })
+  ).rejects.toThrow();
+  expect(h.raw.screenshot).toHaveBeenCalledTimes(0);
 });

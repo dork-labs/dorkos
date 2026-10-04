@@ -1,7 +1,9 @@
+import { registerFixtureRecord, fakePage } from './parent-fixture.js';
+import { composeInput } from '../lifecycle/input-owner.js';
 import { createPointerLedger } from '../tabs/pointer.js';
 import { unavailableDiagnostics } from '../tabs/diagnostics.js';
 import { createDiagnosticsBudget } from '../tabs/diagnostics-budget.js';
-import { createBrowserLifetime } from '../lifecycle/ownership.js';
+import { createBrowserLifetime, fenceOrdinary, ordinaryRecord } from '../lifecycle/ownership.js';
 import { it, expect, vi } from 'vitest';
 import type { BrowserContext } from 'playwright-core';
 import type { EngineConfiguration } from '../configuration.js';
@@ -47,7 +49,7 @@ function config(): EngineConfiguration {
   };
 }
 function record(): BrowserRecord {
-  return {
+  const owned: BrowserRecord = {
     diagnosticsBudget: createDiagnosticsBudget(),
     lifetime: createBrowserLifetime('browser_0123456789abcdef0123456789ab', 0),
     browserId: parseBrowserId('browser_0123456789abcdef0123456789ab'),
@@ -63,6 +65,8 @@ function record(): BrowserRecord {
     tabs: new Map(),
     context: { close: vi.fn(async () => {}) } as unknown as BrowserContext,
   };
+  registerFixtureRecord(owned, () => closeRecord(config(), owned));
+  return owned;
 }
 it('parent engine implements private input and reset seams without activation', () => {
   const engine = createBrowserEngine(config());
@@ -100,43 +104,112 @@ it('terminal promise exists before observer callback entry', async () => {
 });
 
 // Read only the controlled source literal. Never collect or execute the native fixture body.
-function currentCleanupTab(r: BrowserRecord): TabRecord {
+function currentCleanupTab(r: BrowserRecord, pageFixture = fakePage()): TabRecord {
   const source = readFileSync(new URL('./lifecycle-cleanup.test.ts', import.meta.url), 'utf8');
   const literal = /record\.tabs\.set\(tabId, ([\s\S]*?)\);/.exec(source)?.[1];
   expect(literal).toBeDefined();
   const code = transpileModule(`return (${literal});`, {
     compilerOptions: { target: 9 },
   }).outputText;
-  return new Function('record', 'tabId', 'createPointerLedger', 'unavailableDiagnostics', code)(
+  return new Function(
+    'record',
+    'tabId',
+    'createPointerLedger',
+    'unavailableDiagnostics',
+    'pageFixture',
+    code
+  )(
     r,
     parseTabId('tab_0123456789abcdef0123456789abcdef'),
     createPointerLedger,
-    unavailableDiagnostics
+    unavailableDiagnostics,
+    pageFixture
   ) as TabRecord;
 }
 
-it('the actual cleanup fixture literal reaches observed cleanup with its settled tab ledger', async () => {
-  const r = record(),
-    tab = currentCleanupTab(r);
-  expect(tab.pending).toBe(0);
-  await expect(tab.tail).resolves.toBeUndefined();
-  r.tabs.set(tab.binding.tabId, tab);
-  const close = r.context!.close;
-  expect(await closeRecord(config(), r)).toEqual({ cleanup: 'observed' });
-  expect(close).toHaveBeenCalledTimes(1);
-  expect(r.tabs.size).toBe(0);
-  expect(r.context).toBeUndefined();
-});
+it.each([false, true])(
+  'the actual cleanup fixture literal preserves healthy-vs-fault terminal custody fault=%s',
+  async (fault) => {
+    const r = record(),
+      page = fakePage(),
+      tab = currentCleanupTab(r, page);
+    expect(tab.pending).toBe(0);
+    await expect(tab.tail).resolves.toBeUndefined();
+    r.tabs.set(tab.binding.tabId, tab);
+    const owner = composeInput(config(), r, tab);
+    await owner.readiness;
+    expect(page.context.newCDPSession).toHaveBeenCalledTimes(1);
+    const context = r.context!,
+      close = context.close;
+    if (fault)
+      page.page.off = () => {
+        throw Error('CONTROLLED_LISTENER_REMOVAL_FAULT');
+      };
+    const outcome = await closeRecord(config(), r);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(page.session.detach).toHaveBeenCalledTimes(1);
+    expect(page.session.send.mock.calls.length).toBeGreaterThan(0);
+    expect(owner.handle!.custody()).toMatchObject({
+      acquisitionPending: false,
+      nativePending: 0,
+      detachPending: false,
+    });
+    if (fault) {
+      expect(outcome).toEqual({ cleanup: 'unverified', reason: 'observationUnavailable' });
+      expect(owner.handle!.custody().uncertain).toBe(true);
+      expect(r.tabs.get(tab.binding.tabId)).toBe(tab);
+      expect(r.context).toBe(context);
+      expect(r.root).toBe(identity);
+    } else {
+      expect(outcome).toEqual({ cleanup: 'observed' });
+      expect(owner.uncertain).toBe(false);
+      expect(owner.handle!.custody().uncertain).toBe(false);
+      expect(r.tabs.size).toBe(0);
+      expect(r.context).toBeUndefined();
+      expect(r.root).toBeUndefined();
+    }
+    expect((await owner.handle!.reset()).status).toBe('stopped');
+  }
+);
 
 it('the cleanup fixture cannot erase a nonzero pending tab ledger', async () => {
   const r = record(),
     tab = currentCleanupTab(r);
   tab.pending = 1;
   r.tabs.set(tab.binding.tabId, tab);
+  await composeInput(config(), r, tab).readiness;
   expect(await closeRecord(config(), r)).toEqual({
     cleanup: 'unverified',
     reason: 'observationUnavailable',
   });
   expect(r.tabs.get(tab.binding.tabId)).toBe(tab);
   expect(r.context).toBeDefined();
+});
+
+it('candidate: ordinary fence is irreversible and shared before any cleanup callback', () => {
+  const owned = record();
+  expect(ordinaryRecord(owned)).toBe(true);
+  const first = fenceOrdinary(owned, 'authorityRevoked');
+  expect(first).toBe(owned.lifetime.ordinary.retirement);
+  expect(ordinaryRecord(owned)).toBe(false);
+  expect(fenceOrdinary(owned, 'explicitStop')).toBe(first);
+  expect(first?.firstCause).toBe('authorityRevoked');
+  expect(owned.lifetime.gate.stopped).toBe(false);
+});
+
+it('an actual canonical Page without an input owner cannot certify complete retirement', async () => {
+  const r = record();
+  const tab = currentCleanupTab(r);
+  r.tabs.set(tab.binding.tabId, tab);
+  const context = r.context!;
+  expect(r.lifetime.inputs.size).toBe(0);
+  expect(await closeRecord(config(), r)).toEqual({
+    cleanup: 'unverified',
+    reason: 'observationUnavailable',
+  });
+  expect(context.close).toHaveBeenCalledTimes(1);
+  expect(r.lifetime.ordinary.retirement.coverageUnavailable).toBe(true);
+  expect(r.tabs.get(tab.binding.tabId)).toBe(tab);
+  expect(r.context).toBe(context);
+  expect(r.lifetime.ordinary.phase).toBe('terminal');
 });

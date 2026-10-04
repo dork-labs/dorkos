@@ -1,3 +1,4 @@
+import { ordinaryRecord } from './ownership.js';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { EngineConfiguration } from '../configuration.js';
@@ -76,7 +77,11 @@ export async function acquireBrowser(
     throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
   if (!record.diagnosticsBudget) throw new Error('DIAGNOSTIC_OWNERSHIP_UNAVAILABLE');
   const diagnosticNow = config.clock.monotonicNow.bind(config.clock);
-  const stopped = () => cancelled() || record.status !== 'opening' || record.lifetime.gate.stopped;
+  const stopped = () =>
+    !ordinaryRecord(record) ||
+    cancelled() ||
+    record.status !== 'opening' ||
+    record.lifetime.gate.stopped;
   const chromium = await deadline(
     ownOperation(record, () => verifiedLibrary(config.runtime)),
     10_000,
@@ -185,18 +190,22 @@ export async function acquireBrowser(
       Reflect.apply(on, context, [event, callback]);
     });
   await register('page', (page: import('playwright-core').Page) => {
+    if (!ordinaryRecord(record)) {
+      // Context custody still owns this late Page. No ordinary registration or completeness claim.
+      record.lifetime.uncertain = true;
+      return;
+    }
     const tab = trackPage(record, page, config.network.origin, diagnosticNow);
-    if (record.status === 'running' && !record.lifetime.gate.stopped) {
+    if (ordinaryRecord(record) && record.status === 'running' && !record.lifetime.gate.stopped) {
       try {
         composeInput(config, record, tab);
       } catch {
-        record.lifetime.retire?.();
+        record.lifetime.requestRetirement('engineFault');
       }
     }
   });
   await register('close', () => {
-    record.lifetime.gate.stop();
-    record.lifetime.retire?.();
+    record.lifetime.requestRetirement('engineFault');
   });
   const pages = await ownOperation(record, () => {
     const list = context.pages;
