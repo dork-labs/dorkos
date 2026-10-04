@@ -3547,6 +3547,14 @@
       "created": "2026-10-01",
       "status": "specified",
       "linearIssue": "DOR-2662"
+    },
+    {
+      "id": "261004-200007",
+      "slug": "community-sign-in-linking",
+      "title": "Spaces sign-in: provider buttons, and linking a matching account instead of refusing",
+      "created": "2026-10-04",
+      "status": "specified",
+      "linearIssue": "DOR-2709"
     }
   ]
 }
