@@ -91,8 +91,10 @@ import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
+  TabHistoryControls,
   useAppTabsSync,
   useAppTabShortcuts,
+  useTabHistoryShortcuts,
 } from '@/layers/features/app-tabs';
 import { CommandPaletteDialog, MessageSearchDialog } from '@/layers/features/command-palette';
 import { CreateAgentDialog } from '@/layers/features/agent-creation';
@@ -297,9 +299,11 @@ export function AppShell() {
   // In-window tabs (DOR-540). The sync hook is the single reconciliation point
   // between the router's location and the tab set — every navigation, whatever
   // started it, lands here. Both no-op outside the desktop shell, where the
-  // strip does not exist (DOR-568).
+  // strip does not exist (DOR-568). Each tab's own Back/Forward keys and mouse
+  // buttons (DOR-2107) are desktop-only for the same reason.
   useAppTabsSync();
   useAppTabShortcuts();
+  useTabHistoryShortcuts();
   useElectronNavigate();
   // Desktop Cmd+W → close a tab, not the window. No-op without the bridge, and
   // deliberately silent on the last tab so the window still closes.
@@ -802,6 +806,9 @@ export function AppShell() {
                       {!isMobile && (
                         <>
                           <SidebarTrigger className="-ml-0.5" />
+                          {/* Renders nothing outside the desktop app, where the
+                              browser's own Back and History do this job. */}
+                          <TabHistoryControls />
                           <Separator orientation="vertical" className="mr-1 h-4" />
                         </>
                       )}

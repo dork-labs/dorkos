@@ -152,6 +152,25 @@ export const SHORTCUTS = {
     group: 'navigation',
     desktopOnly: true,
   },
+  // The active tab's own Back and Forward (DOR-2107), registered by
+  // `useTabHistoryShortcuts`. Desktop only: in a browser these keys and the
+  // browser's own Back button already walk the page's history. Alt+Left/Right
+  // and the mouse side buttons do the same on desktop; the panel lists the
+  // chord every platform shares.
+  HISTORY_BACK: {
+    id: 'history-back',
+    key: 'mod+[',
+    label: 'Go back',
+    group: 'navigation',
+    desktopOnly: true,
+  },
+  HISTORY_FORWARD: {
+    id: 'history-forward',
+    key: 'mod+]',
+    label: 'Go forward',
+    group: 'navigation',
+    desktopOnly: true,
+  },
 
   // Chat (composer + interactive tool shortcuts)
   NEW_LINE: { id: 'new-line', key: 'shift+enter', label: 'New line', group: 'chat' },

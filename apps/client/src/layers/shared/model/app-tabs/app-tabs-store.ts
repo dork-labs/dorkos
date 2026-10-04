@@ -52,10 +52,16 @@
  * ever written into the URL — a link you copy addresses a session, never a
  * window layout.
  *
- * Two consequences of every tab sharing one history stack, both inherent and
- * both worth knowing: each tab switch pushes an entry, so Back after twenty
- * switches takes twenty presses; and Back after closing a tab makes the
- * surviving tab adopt the closed tab's last location.
+ * **Each tab keeps its own history** (DOR-2107). The window has one browser
+ * history stack shared by every tab, so exposing it as Back would walk through
+ * tab switches and into closed tabs' pasts. Instead every tab carries
+ * `history` and a `cursor` into it, with `history[cursor] === href` always.
+ * Only rule 3 writes to it: a new entry (PUSH) drops anything ahead of the
+ * cursor and appends, like a browser forgetting Forward; a REPLACE (a loader
+ * redirect, a search-param update) rewrites the current entry in place. Rules 1
+ * and 2 and tab switches record nothing. Back, Forward and the History menu
+ * move the cursor here first ({@link AppTabsState.goToHistoryIndex}) and then
+ * navigate, so the sync that follows hits rule 1.
  *
  * **Only the active tab holds a session stream.** Background tabs are inert
  * href records: `StreamManager` attaches exactly one foreground session (plus an
@@ -74,13 +80,24 @@
 import { create } from 'zustand';
 import { classifyLink } from '../../lib/link-navigation';
 
-/** One tab: a stable client id and the location it holds. */
+/** One tab: a stable client id, the location it holds, and where it has been. */
 export interface AppTab {
   /** Stable client-side id. Never leaves the renderer. */
   id: string;
   /** Router-relative location, e.g. `/session?session=abc&dir=%2Ftmp`. */
   href: string;
+  /** Pages this tab has shown, oldest first. Always holds `href` at `cursor`. */
+  history: string[];
+  /** Index into `history` of the page the tab shows now. */
+  cursor: number;
 }
+
+/**
+ * Most pages one tab remembers. Past this, the oldest entry is dropped. Fifty
+ * short strings per tab is nothing to persist, and nobody presses Back fifty
+ * times.
+ */
+export const MAX_TAB_HISTORY = 50;
 
 /** The persisted shape — the tab list plus which one is active. */
 interface PersistedTabs {
@@ -100,10 +117,55 @@ function newTabId(): string {
   return crypto.randomUUID();
 }
 
+/** A brand-new tab at `href`, with that one page as its whole history. */
+function mintTab(href: string): AppTab {
+  return { id: newTabId(), href, history: [href], cursor: 0 };
+}
+
+/**
+ * Move a tab somewhere new: drop every entry ahead of the cursor (Forward is
+ * forgotten, as in a browser), append, and trim the oldest past the cap.
+ */
+function pushEntry(tab: AppTab, href: string): AppTab {
+  const history = [...tab.history.slice(0, tab.cursor + 1), href].slice(-MAX_TAB_HISTORY);
+  return { ...tab, href, history, cursor: history.length - 1 };
+}
+
+/** Rewrite the tab's current entry in place — a redirect, not a new page. */
+function replaceEntry(tab: AppTab, href: string): AppTab {
+  const history = [...tab.history];
+  history[tab.cursor] = href;
+  return { ...tab, href, history };
+}
+
+/**
+ * A stored tab, made whole. An entry from before per-tab history (`{ id, href }`)
+ * or one whose history is malformed keeps its tab and restarts its history at
+ * its current page — losing someone's Back stack is a shrug, losing their tab
+ * is not. Returns `null` only when there is no tab to keep (no id or href).
+ */
+function repairTab(raw: unknown): AppTab | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { id, href, history, cursor } = raw as Partial<Record<keyof AppTab, unknown>>;
+  if (typeof id !== 'string' || typeof href !== 'string' || href.length === 0) return null;
+  const historyIsSound =
+    Array.isArray(history) &&
+    history.length > 0 &&
+    history.length <= MAX_TAB_HISTORY &&
+    history.every((entry) => typeof entry === 'string') &&
+    Number.isInteger(cursor) &&
+    (cursor as number) >= 0 &&
+    (cursor as number) < history.length &&
+    history[cursor as number] === href;
+  if (!historyIsSound) return { id, href, history: [href], cursor: 0 };
+  return { id, href, history: [...(history as string[])], cursor: cursor as number };
+}
+
 /**
  * Read the persisted tabs, or `null` when there is nothing usable — absent or
- * blocked storage (private mode), corrupt JSON, a shape from an older build. An
- * `activeTabId` that no longer names a tab falls back to the first.
+ * blocked storage (private mode), corrupt JSON, a shape with no usable tab. An
+ * `activeTabId` that no longer names a tab falls back to the first. A tab whose
+ * history is missing or broken is repaired, never dropped.
  *
  * @internal Exported for testing only.
  */
@@ -115,14 +177,7 @@ export function readPersistedTabs(): PersistedTabs | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
     const { tabs, activeTabId } = parsed as { tabs?: unknown; activeTabId?: unknown };
     const clean = Array.isArray(tabs)
-      ? tabs.filter(
-          (tab): tab is AppTab =>
-            typeof tab === 'object' &&
-            tab !== null &&
-            typeof (tab as AppTab).id === 'string' &&
-            typeof (tab as AppTab).href === 'string' &&
-            (tab as AppTab).href.length > 0
-        )
+      ? tabs.map(repairTab).filter((tab): tab is AppTab => tab !== null)
       : [];
     if (clean.length === 0) return null;
     const active =
@@ -150,7 +205,7 @@ export function readPersistedTabs(): PersistedTabs | null {
 export function seedTabsFromLocation(): PersistedTabs {
   if (typeof window === 'undefined') return { tabs: [], activeTabId: null };
   const link = classifyLink(window.location.href);
-  const tab: AppTab = { id: newTabId(), href: link.kind === 'internal' ? link.path : '/' };
+  const tab = mintTab(link.kind === 'internal' ? link.path : '/');
   return { tabs: [tab], activeTabId: tab.id };
 }
 
@@ -166,7 +221,7 @@ function writePersistedTabs(state: PersistedTabs): void {
   }
 }
 
-/** Tab list state and the four transitions that can change it. */
+/** Tab list state and the transitions that can change it. */
 interface AppTabsState extends PersistedTabs {
   /**
    * Open `href` in a new tab, immediately to the right of the active one
@@ -207,9 +262,22 @@ interface AppTabsState extends PersistedTabs {
    *   somewhere new. It is the only thing that lets focus move to another tab;
    *   see the module doc for why nothing else may. Defaults to `false`, so a
    *   caller that cannot tell gets the safe answer — the active tab keeps
-   *   focus and adopts.
+   *   focus and adopts. `replace` marks a location that took the place of the
+   *   current one (a router `REPLACE`: a loader redirect, a search-param
+   *   update), so the adopting tab rewrites its current history entry rather
+   *   than adding one. Defaults to `false`: a new entry.
    */
-  syncLocation: (href: string, options?: { traversal?: boolean }) => void;
+  syncLocation: (href: string, options?: { traversal?: boolean; replace?: boolean }) => void;
+  /**
+   * Move the active tab to entry `index` of its own history — the store half of
+   * Back, Forward and the History menu. Sets the cursor and the href together,
+   * so the navigation that follows finds the tab already there (rule 1) and
+   * records nothing. An index out of range, or the one the tab is already on,
+   * changes nothing.
+   *
+   * @param index - Position in the active tab's `history`, oldest first.
+   */
+  goToHistoryIndex: (index: number) => void;
 }
 
 /**
@@ -221,7 +289,7 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
 
   openTab: (href) =>
     set((state) => {
-      const tab: AppTab = { id: newTabId(), href };
+      const tab = mintTab(href);
       const activeIndex = state.tabs.findIndex((t) => t.id === state.activeTabId);
       const tabs = [...state.tabs];
       tabs.splice(activeIndex >= 0 ? activeIndex + 1 : tabs.length, 0, tab);
@@ -243,7 +311,7 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
   selectTab: (id) =>
     set((state) => (state.tabs.some((t) => t.id === id) ? { activeTabId: id } : state)),
 
-  syncLocation: (href, { traversal = false } = {}) =>
+  syncLocation: (href, { traversal = false, replace = false } = {}) =>
     set((state) => {
       const active = state.tabs.find((t) => t.id === state.activeTabId) ?? null;
       if (active?.href === href) return state;
@@ -254,11 +322,21 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
       }
 
       if (active) {
-        return { tabs: state.tabs.map((t) => (t.id === active.id ? { ...t, href } : t)) };
+        const moved = replace ? replaceEntry(active, href) : pushEntry(active, href);
+        return { tabs: state.tabs.map((t) => (t.id === active.id ? moved : t)) };
       }
 
-      const tab: AppTab = { id: newTabId(), href };
+      const tab = mintTab(href);
       return { tabs: [...state.tabs, tab], activeTabId: tab.id };
+    }),
+
+  goToHistoryIndex: (index) =>
+    set((state) => {
+      const active = state.tabs.find((t) => t.id === state.activeTabId);
+      if (!active || !Number.isInteger(index)) return state;
+      if (index < 0 || index >= active.history.length || index === active.cursor) return state;
+      const moved: AppTab = { ...active, href: active.history[index], cursor: index };
+      return { tabs: state.tabs.map((t) => (t.id === active.id ? moved : t)) };
     }),
 }));
 
@@ -270,4 +348,37 @@ useAppTabsStore.subscribe((state) => writePersistedTabs(state));
 /** Subscribe to the ordered tab list. */
 export function useAppTabs(): AppTab[] {
   return useAppTabsStore((s) => s.tabs);
+}
+
+/** The active tab's history, as Back, Forward and the History menu read it. */
+export interface ActiveTabHistory {
+  /** Pages the active tab has shown, oldest first. Empty with no active tab. */
+  entries: string[];
+  /** Index into `entries` of the page on screen. */
+  cursor: number;
+  /** Whether there is an entry behind the cursor. */
+  canGoBack: boolean;
+  /** Whether there is an entry ahead of the cursor. */
+  canGoForward: boolean;
+}
+
+/** Shared empty answer, so a window with no active tab re-renders nothing. */
+const NO_HISTORY: string[] = [];
+
+/**
+ * Subscribe to the active tab's history. Selects the history array and the
+ * cursor separately — both keep their identity until that tab moves — so a
+ * change to any other tab re-renders nothing.
+ */
+export function useActiveTabHistory(): ActiveTabHistory {
+  const entries = useAppTabsStore(
+    (s) => s.tabs.find((t) => t.id === s.activeTabId)?.history ?? NO_HISTORY
+  );
+  const cursor = useAppTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.cursor ?? 0);
+  return {
+    entries,
+    cursor,
+    canGoBack: cursor > 0,
+    canGoForward: cursor < entries.length - 1,
+  };
 }
