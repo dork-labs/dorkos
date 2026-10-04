@@ -41,6 +41,37 @@ let mockActivity: { groups: { label: string; items: MockActivityItem[] }[]; isLo
   isLoading: false,
 };
 
+/**
+ * What the Inbox's waiting queue holds — the queue the bell's pill counts.
+ * `items` is derived by the real `deriveWaitingItems` in the mock below, so this
+ * suite counts exactly what the pill counts rather than a hand-kept number.
+ */
+let mockWaiting: {
+  approvals: unknown[];
+  asks: unknown[];
+  schedules: unknown[];
+  extensionApprovals: unknown[];
+  extensionDecisions: unknown[];
+  isLoading: boolean;
+  isAnyError: boolean;
+} = emptyWaiting();
+/** Whether the panel is a modal sheet (below desktop width) in this case. */
+let mockBelowDesktop = false;
+const mockRequestInbox = vi.fn();
+const mockRetryFailed = vi.fn();
+
+function emptyWaiting() {
+  return {
+    approvals: [],
+    asks: [],
+    schedules: [],
+    extensionApprovals: [],
+    extensionDecisions: [],
+    isLoading: false,
+    isAnyError: false,
+  };
+}
+
 const mockNavigate = vi.fn();
 // Current route the sections read to hide their self-referential overflow link.
 // Default to a neutral route so both "View all" links render unless a test opts in.
@@ -55,6 +86,37 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: mockPathname } }),
+}));
+
+// Only the viewport question is stubbed; the app store and the rest are real,
+// so a case can read `rightPanelOpen` back out of the store it wrote to.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return { ...actual, useIsBelowDesktop: () => mockBelowDesktop };
+});
+
+// The waiting queue is the bell's own hook. Stubbed at its data, but its `items`
+// come from the real derivation and the sentence from the real describer, so a
+// kind the bell counts cannot be forgotten here without this suite noticing.
+vi.mock('@/layers/entities/attention', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/attention')>();
+  const { deriveWaitingItems } =
+    await import('@/layers/entities/attention/model/derive-waiting-items');
+  return {
+    ...actual,
+    useWaitingQueue: () => ({
+      ...mockWaiting,
+      decisionOffers: [],
+      items: deriveWaitingItems(mockWaiting as Parameters<typeof deriveWaitingItems>[0]),
+      isError: false,
+      retryFailed: mockRetryFailed,
+      retry: () => {},
+    }),
+  };
+});
+
+vi.mock('@/layers/entities/notifications', () => ({
+  requestInbox: () => mockRequestInbox(),
 }));
 
 // dashboard-attention: stub the composed model + faithful rows that surface
@@ -118,6 +180,7 @@ vi.mock('@/layers/features/activity-feed-page', () => ({
   ),
 }));
 
+import { useAppStore } from '@/layers/shared/model';
 import { PulsePanel } from '../ui/PulsePanel';
 
 function makeAttention(n: number): MockAttentionItem[] {
@@ -150,6 +213,8 @@ beforeEach(() => {
   mockAttentionLoading = false;
   mockActivity = { groups: [], isLoading: false };
   mockPathname = '/team';
+  mockWaiting = emptyWaiting();
+  mockBelowDesktop = false;
 });
 
 describe('PulsePanel', () => {
@@ -237,6 +302,147 @@ describe('PulsePanel', () => {
 
     expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
     expect(screen.getByTestId('schedule-row')).toBeInTheDocument();
+  });
+
+  it('does not say nothing needs you while an extension decision waits in the Inbox', () => {
+    // DOR-2578: the pill read "1 waiting" while this section said all quiet.
+    // Seeded defect: drop `&& waitingCount === 0` from the `empty` gate.
+    mockWaiting = { ...emptyWaiting(), extensionDecisions: [{ id: 'dec-1' }] };
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.getByText('1 decision is waiting on you.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Inbox' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['a capability approval', { approvals: [{ approvalId: 'a1' }] }],
+    [
+      'a question an agent is parked on',
+      { asks: [{ interaction: { id: 'i1', type: 'question' } }] },
+    ],
+    [
+      'an extension waiting to be turned on',
+      { extensionApprovals: [{ id: 'flow', plugin: null, path: '/p', version: '1.0.0' }] },
+    ],
+  ])('counts %s the bell counts, so it never says all quiet over it', (_label, queue) => {
+    mockWaiting = { ...emptyWaiting(), ...queue };
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Inbox' })).toBeInTheDocument();
+  });
+
+  it("names every waiting kind in the bell's own sentence", () => {
+    mockWaiting = {
+      ...emptyWaiting(),
+      approvals: [{ approvalId: 'a1' }],
+      extensionDecisions: [{ id: 'dec-1' }],
+    };
+
+    render(<PulsePanel />);
+
+    expect(screen.getByText('1 request and 1 decision are waiting on you.')).toBeInTheDocument();
+  });
+
+  it('draws a parked schedule as its card only, not again in the waiting line', () => {
+    // The bell counts the schedule too, but here it already has a card, and a
+    // line saying so above that card says it twice.
+    mockSchedules = [{ id: 'task-1', displayName: 'Nightly sweep' }];
+    mockWaiting = { ...emptyWaiting(), schedules: [{ id: 'task-1' }] };
+
+    render(<PulsePanel />);
+
+    expect(screen.getByTestId('schedule-row')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open Inbox' })).not.toBeInTheDocument();
+  });
+
+  it('opens the Inbox from the waiting line', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    mockWaiting = { ...emptyWaiting(), extensionDecisions: [{ id: 'dec-1' }] };
+
+    render(<PulsePanel />);
+
+    await user.click(screen.getByRole('button', { name: 'Open Inbox' }));
+    expect(mockRequestInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the panel before opening the Inbox wherever the panel is a sheet', async () => {
+    // Below desktop width the panel is a modal sheet (tablet included, not only
+    // phones), and the Inbox would open under its overlay — the first click on
+    // it would just close the sheet. Seeded defect: gate on `useIsMobile`.
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    mockBelowDesktop = true;
+    useAppStore.getState().setRightPanelOpen(true);
+    mockWaiting = { ...emptyWaiting(), extensionDecisions: [{ id: 'dec-1' }] };
+
+    render(<PulsePanel />);
+
+    await user.click(screen.getByRole('button', { name: 'Open Inbox' }));
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(mockRequestInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a docked panel open when it opens the Inbox', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    useAppStore.getState().setRightPanelOpen(true);
+    mockWaiting = { ...emptyWaiting(), extensionDecisions: [{ id: 'dec-1' }] };
+
+    render(<PulsePanel />);
+
+    await user.click(screen.getByRole('button', { name: 'Open Inbox' }));
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+  });
+
+  it('names the parked schedules the cap pushed off, so none shows nowhere', () => {
+    // Seven parked, five cards: the other two have no card, so the line has
+    // to name them. Seeded defect: leave every schedule out of the line.
+    const parked = Array.from({ length: 7 }, (_, i) => ({ id: `task-${i}`, displayName: `S${i}` }));
+    mockSchedules = parked;
+    mockWaiting = { ...emptyWaiting(), schedules: parked };
+
+    render(<PulsePanel />);
+
+    expect(screen.getAllByTestId('schedule-row')).toHaveLength(5);
+    expect(
+      screen.getByText('2 schedules want your approval. Nothing runs until you decide.')
+    ).toBeInTheDocument();
+  });
+
+  it('says it could not check, never all quiet, when a waiting read failed', () => {
+    // A failed read answers with an empty list. Seeded defect: drop
+    // `&& !unreadable` from the `empty` gate and the all-clear is drawn over it.
+    mockWaiting = { ...emptyWaiting(), isAnyError: true };
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.getByText('Couldn’t check everything waiting on you.')).toBeInTheDocument();
+  });
+
+  it('offers to try the failed reads again', async () => {
+    // Seeded defect: render the line without its button.
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    mockWaiting = { ...emptyWaiting(), isAnyError: true };
+
+    render(<PulsePanel />);
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(mockRetryFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not flash the all-clear while the waiting queue is still loading', () => {
+    mockWaiting = { ...emptyWaiting(), isLoading: true };
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
   });
 
   it('collapses activity to a calm all-clear line when there is nothing recent', () => {
@@ -340,6 +546,20 @@ describe('PulsePanel', () => {
     // Activity is not duplicated here, so it still draws — with its link.
     expect(screen.getByRole('heading', { name: 'Activity' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open activity →' })).toBeInTheDocument();
+  });
+
+  it('keeps the attention section on home wherever the panel is a sheet over it', () => {
+    // Below desktop width — tablet included, not only phones — the panel is a
+    // modal sheet that COVERS Home, so the header it would duplicate is not on
+    // screen. Seeded defect: gate the de-dup on `useIsMobile` instead.
+    mockPathname = '/';
+    mockBelowDesktop = true;
+    mockAttentionItems = makeAttention(2);
+
+    render(<PulsePanel />);
+
+    expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('attention-row')).toHaveLength(2);
   });
 
   it('drops the activity section on /activity, which already shows it', () => {

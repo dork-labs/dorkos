@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { act, render, screen, cleanup, within, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, cleanup, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -10,6 +10,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-banner';
 import { InboxBell } from '@/layers/widgets/inbox-bell';
+import { clearInboxRequest, requestInbox, useInboxRequest } from '@/layers/entities/notifications';
 
 // ── Route-aware mock: control the pathname returned by useRouterState ──
 
@@ -303,7 +304,10 @@ let mockPendingApprovals: Array<{ approvalId: string }> = [];
 let mockApprovalsError = false;
 // The queue itself is an ENTITY now, so its stub lives on the entity — the
 // approvals feature owns the cards it is rendered into and nothing else.
-vi.mock('@/layers/entities/attention', () => ({
+vi.mock('@/layers/entities/attention', async () => ({
+  // Pure: the sentence the pill's popover says about the queue, kept real.
+  describeWaitingQueue: (await import('@/layers/entities/attention/model/describe-waiting-queue'))
+    .describeWaitingQueue,
   // Nothing waiting on anybody, and nothing on its way out: the tray and the
   // pill both read these now.
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
@@ -330,6 +334,7 @@ vi.mock('@/layers/entities/attention', () => ({
       id: `approval:${a.approvalId}`,
       kind: 'permission-prompt' as const,
     })),
+    isLoading: false,
     isError: mockApprovalsError,
     retry: vi.fn(),
   }),
@@ -433,6 +438,13 @@ vi.mock('@/layers/entities/command', async (importOriginal) => {
     useCommandsSync: () => {},
   };
 });
+
+// AppShell keeps dev links current from the event stream (DOR-2696); this
+// test provides no EventStreamProvider, so the subscription is stubbed.
+vi.mock('@/layers/entities/marketplace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/marketplace')>()),
+  useDevLinkReloadSync: () => {},
+}));
 
 vi.mock('@/layers/widgets/pulse', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/widgets/pulse')>();
@@ -1101,6 +1113,23 @@ describe('AppShell slot integration', () => {
       await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Inbox links during first-run onboarding (DOR-2577)', () => {
+    afterEach(() => {
+      mockOnboardingOverlayVisible = false;
+      clearInboxRequest();
+    });
+
+    it('drops an `?inbox=` request made while onboarding is up, so it cannot pop open later', async () => {
+      requestInbox(undefined, { focus: '01J0000000000000000000000D' });
+      mockOnboardingOverlayVisible = true;
+
+      renderAppShell();
+
+      const { result } = renderHook(() => useInboxRequest());
+      await waitFor(() => expect(result.current.pending).toBe(false));
     });
   });
 

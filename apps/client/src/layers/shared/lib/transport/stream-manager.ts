@@ -326,9 +326,10 @@ export const GENERIC_EVENTS = [
   'community_connections_changed',
   // An edit in a dev-linked folder was acted on (DOR-2696, spec
   // `marketplace-dev-link` §6): which package, what reloaded, and any build
-  // error. Allowlisted so the event reaches the client; nothing in the app
-  // shows it yet. ADDRESSED like `config_changed`: it names folders, so no
-  // agent receives it.
+  // error. `useDevLinkReloadSync` (entities/marketplace) keeps it for the
+  // Installed row ("Reloaded 4s ago", or that it couldn't reload) and refreshes
+  // the installed, dev link and extension lists. ADDRESSED like
+  // `config_changed`: it names folders, so no agent receives it.
   'marketplace_dev_link_reloaded',
 ] as const;
 

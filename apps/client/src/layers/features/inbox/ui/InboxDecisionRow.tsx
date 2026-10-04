@@ -107,6 +107,8 @@ export interface InboxDecisionRowProps {
    * survive the row being drawn again, e.g. when the inbox regroups by project.
    */
   draftKey?: string;
+  /** An id for the title's text, so a container can name itself after it. */
+  titleId?: string;
 }
 
 /** Drafts typed into a row's fields, kept across a row being drawn again. */
@@ -301,6 +303,7 @@ export function InboxDecisionRow({
   followUp,
   unread = false,
   draftKey,
+  titleId,
 }: InboxDecisionRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [answering, setAnswering] = useState<'note' | 'word' | 'reply' | null>(null);
@@ -326,10 +329,10 @@ export function InboxDecisionRow({
       onClick={onOpen}
       className="hover:text-foreground focus-visible:ring-ring rounded-sm text-left outline-none hover:underline focus-visible:ring-2"
     >
-      <bdi>{title}</bdi>
+      <bdi id={titleId}>{title}</bdi>
     </button>
   ) : (
-    <bdi>{title}</bdi>
+    <bdi id={titleId}>{title}</bdi>
   );
 
   const watchLine = watch ? (

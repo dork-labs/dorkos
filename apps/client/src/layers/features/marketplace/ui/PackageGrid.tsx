@@ -80,6 +80,10 @@ export function PackageGrid() {
   }, [data, type, categories, sources, search, sort]);
 
   const installedNames = useMemo(() => new Set((installed ?? []).map((p) => p.name)), [installed]);
+  const devLinkedNames = useMemo(
+    () => new Set((installed ?? []).filter((p) => p.devLink).map((p) => p.name)),
+    [installed]
+  );
 
   if (isLoading) return <PackageLoadingSkeleton />;
   if (error) return <PackageErrorState error={error as Error} onRetry={() => void refetch()} />;
@@ -158,6 +162,7 @@ export function PackageGrid() {
             <PackageCard
               pkg={pkg}
               installed={installedNames.has(pkg.name)}
+              devLinked={devLinkedNames.has(pkg.name)}
               onClick={() => openDetail(pkg.name)}
               onInstallClick={() => requestInstall(pkg)}
             />

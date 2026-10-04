@@ -240,6 +240,18 @@ An AGENT's HTTP install of a global package of an activated type that runs anyth
 
 The update flow never changes an installed package on its own. Anything that mutates installed state lives inside the installer's transaction. A check may stage a new version into the package cache, as the per-package advisory always has.
 
+### Dev links (`dev-links/`, DOR-2696)
+
+A dev link runs a plugin or skill pack straight from a folder on the owner's computer, reloading on every edit. It is its own install kind, not an install: nothing is staged, recorded in an installed-files record, or counted in telemetry.
+
+- **What it is on disk.** A symlink (a junction on Windows) in the package's normal slot (`{dorkHome}/plugins/<name>` or `<project>/.dork/plugins/<name>`), plus a record in `{dorkHome}/marketplace/dev-links.json` (`DevLinksFileSchema`) that DorkOS writes only on a person's yes. A slot counts as dev-linked only while the record exists, the slot is a link, and its realpath equals the recorded target (`isActiveDevLink`). A link nobody recorded is a **hand-built linked install** (DOR-2194, the record's `linked: true`) and keeps its old behaviour; the two are never set together.
+- **The installed copy is set aside, never deleted.** Linking over an installed copy needs `replaceInstalled: true` (the app's "Use my folder instead of the installed copy" tick, the CLI's `--replace-installed`). The copy is renamed to `<slot>.dorkos-devlink-parked` (`MARKETPLACE_DEVLINK_PARKED_MARKER`), its approvals captured in the record, and both come back on unlink. Every scanner skips the parked sibling.
+- **Guards.** Install, update and uninstall refuse a registered dev link with `package_is_dev_linked` ("Unlink it first"). The update check reports it as unchecked, and the Installed view leaves it out of the update summary.
+- **Trust.** A dev-linked copy never has a trusted origin (`originProblem: 'dev-link'`), and its approvals carry `devLink: <realpath>`, so no approval crosses between it and an installed copy at the same path.
+- **One door, gated.** Linking is the `marketplace.link` capability (destructive, no permission area): the app and the terminal run it, an agent gets an approval card naming the folder. `POST /dev-links` binds a person's yes to the preview text they read: the app and the CLI send the preview's `change` back as `expectedChange`, and a folder that describes differently by then is refused with `dev_link_changed`. Unlinking is the person's only (`trustedCaller`); its answer says exactly what happened (`restored`, and `parkedLeftAt` or `leftInPlace` when the installed copy could not come back or something else had taken the slot).
+- **Reload.** `DevLinkWatcher` debounces edits in the folder and drives the existing seams (extension reload, harness re-projection, plugin refresh), then broadcasts `marketplace_dev_link_reloaded` to the operator on the global stream.
+- **In the app.** The Installed toolbar's "Link a folder" opens `LinkFolderDialog` (features/marketplace). Dev-linked rows, the package sheet, the browse card, Settings → Extensions (`ExtensionCard`) and the `/x/<id>` page strip (`widgets/extension-page/ui/DevLinkStrip.tsx`) show the `DevLinkTag` and `DevLinkPath` primitives from `shared/ui`. `useDevLinkReloadSync` (entities/marketplace, mounted by the app shell) keeps the last reload event per link, so a row can say "Reloaded 4s ago" or that a build failed, and refreshes the installed, dev link and extension lists.
+
 ## 5. Transaction lifecycle
 
 One primitive, one file: `services/marketplace/transaction.ts`. Every install flow (and the update-apply path, which delegates to the installer) runs through it; the uninstall flow uses its own staging + restore path. The engine is file-scoped and git-free (see [ADR-0304](../decisions/0304-file-scoped-rollback-for-marketplace-installs.md), which supersedes ADR-0231's git backup-branch rollback).
@@ -874,7 +886,7 @@ The manifest at `apps/server/src/core-extensions/marketplace/extension.json` is 
 The Marketplace UI follows the standard FSD layout under `apps/client/src/`:
 
 - `layers/entities/marketplace/` — TanStack Query hooks (list, detail, permission preview, install, uninstall, update, sources) plus the `marketplaceKeys` cache-key factory in `api/query-keys.ts`.
-- `layers/features/marketplace/` — UI components: `Marketplace`, `PackageGrid`, `PackageCard`, `PackageDetailSheet`, `PermissionPreviewSection`, `InstallConfirmationDialog`, `InstalledPackagesView`, `MarketplaceSourcesView`, plus the `useMarketplaceStore` Zustand store under `model/marketplace-store.ts`.
+- `layers/features/marketplace/` — UI components: `Marketplace`, `PackageGrid`, `PackageCard`, `PackageDetailSheet`, `PermissionPreviewSection`, `InstallConfirmationDialog`, `InstalledPackagesView`, `MarketplaceSourcesView`, the dev-link surfaces (`LinkFolderDialog`, `UnlinkDialog`, `DevLinkRow`), plus the `useMarketplaceStore` Zustand store under `model/marketplace-store.ts`.
 - `layers/widgets/marketplace/` — Page shells (`MarketplacePage`, `MarketplaceSourcesPage`).
 - `layers/shared/lib/transport/marketplace-methods.ts` — `marketplaceMethods` factory wired into `HttpTransport`.
 - `packages/shared/src/marketplace-schemas.ts` — shared types (`AggregatedPackage`, `MarketplacePackageDetail`, `PermissionPreview`, etc.) consumed by both client and server.
@@ -890,6 +902,7 @@ Always import from the layer barrels (`index.ts`), never internal paths — the 
 - `marketplaceKeys.permissionPreview(name)` — permission preview for a target package.
 - `marketplaceKeys.installed()` — currently installed packages.
 - `marketplaceKeys.sources()` — configured marketplace sources.
+- `marketplaceKeys.devLinks()` — every dev link and its state (under the `installed` prefix, so anything that refreshes the installed list refreshes it).
 
 Install, uninstall, update, add-source, and remove-source mutations invalidate the appropriate keys on success. See `contributing/state-management.md` for the broader Zustand-vs-TanStack-Query rationale.
 

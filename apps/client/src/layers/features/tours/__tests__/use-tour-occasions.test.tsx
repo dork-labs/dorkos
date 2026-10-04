@@ -27,7 +27,16 @@ let mockMesh: { agents: unknown[] } | undefined;
 let mockRelayEnabled = true;
 let mockStreaming = false;
 
-vi.mock('@/layers/entities/tasks', () => ({ useTasks: () => ({ data: mockTasks }) }));
+let mockTasksEnabled = true;
+/** The `enabled` argument each `useTasks` call was given. */
+const useTasksCalls: (boolean | undefined)[] = [];
+vi.mock('@/layers/entities/tasks', () => ({
+  useTasks: (enabled?: boolean) => {
+    useTasksCalls.push(enabled);
+    return { data: mockTasks };
+  },
+  useTasksEnabled: () => mockTasksEnabled,
+}));
 vi.mock('@/layers/entities/relay', () => ({
   useExternalAdapterCatalog: () => ({ data: mockCatalog }),
   useRelayEnabled: () => mockRelayEnabled,
@@ -55,9 +64,21 @@ beforeEach(() => {
   mockMesh = agents(1);
   mockRelayEnabled = true;
   mockStreaming = false;
+  mockTasksEnabled = true;
+  useTasksCalls.length = 0;
 });
 
 describe('useTourOccasions', () => {
+  it('does not read Tasks while Tasks is off', () => {
+    // With Tasks off the route answers 404, and an ungated read leaves the
+    // shared tasks query in error for every surface that reads it (DOR-2578).
+    // Seeded defect: call `useTasks()` with no gate.
+    mockTasksEnabled = false;
+    renderHook(() => useTourOccasions());
+    expect(useTasksCalls.length).toBeGreaterThan(0);
+    expect(useTasksCalls.every((enabled) => enabled === false)).toBe(true);
+  });
+
   it('offers the tasks tour on an observed 0 to 1 transition', () => {
     mockTasks = [];
     const { rerender } = renderHook(() => useTourOccasions());

@@ -157,6 +157,13 @@ vi.mock('@/layers/entities/command', async (importOriginal) => ({
   useCommandsSync: () => {},
 }));
 
+// AppShell keeps dev links current from the event stream (DOR-2696); this
+// test provides no EventStreamProvider, so the subscription is stubbed.
+vi.mock('@/layers/entities/marketplace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/marketplace')>()),
+  useDevLinkReloadSync: () => {},
+}));
+
 vi.mock('@/layers/entities/room', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/room')>()),
   useRoomListStream: () => {},

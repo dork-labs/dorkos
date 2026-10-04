@@ -14,7 +14,8 @@
  *
  * @module entities/attention/model/use-waiting-queue
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { Task } from '@dorkos/shared/types';
@@ -23,10 +24,16 @@ import type {
   ExtensionDecisionDTO,
   PendingDecisionOffer,
 } from '@dorkos/shared/extension-decision-schemas';
-import { useExtensionDecisions, usePendingExtensionApprovals } from '@/layers/entities/extension';
+import {
+  extensionDecisionsKey,
+  extensionQueryKeys,
+  useExtensionDecisions,
+  usePendingExtensionApprovals,
+} from '@/layers/entities/extension';
+import { TASKS_KEY } from '@/layers/entities/tasks';
 import { deriveWaitingItems, type WaitingItem } from './derive-waiting-items';
-import { usePendingApprovals } from './use-pending-approvals';
-import { usePendingInteractions } from './use-pending-interactions';
+import { PENDING_APPROVALS_QUERY_KEY, usePendingApprovals } from './use-pending-approvals';
+import { PENDING_INTERACTIONS_QUERY_KEY, usePendingInteractions } from './use-pending-interactions';
 import { usePendingScheduleApprovals } from './use-pending-schedule-approvals';
 
 /** What {@link useWaitingQueue} hands its consumer. */
@@ -67,17 +74,50 @@ export interface WaitingQueueState {
    * reassembled at every call site.
    */
   items: readonly WaitingItem[];
-  /** True when the approval queue could not be read. */
+  /**
+   * True while any of the five reads is still on its first load.
+   *
+   * Every read, deliberately: a surface that says "Nothing needs you" the
+   * moment four of them answer is claiming something it has not checked.
+   */
+  isLoading: boolean;
+  /**
+   * True when the approval queue could not be read. Drives the bell's
+   * "couldn't check approvals" card and its retry, which are about that queue.
+   */
   isError: boolean;
+  /**
+   * True when ANY of the five reads failed. A failed read answers with an
+   * empty list, and an empty list is not "nothing waiting": a surface that
+   * says all is quiet must not say it while this is true.
+   */
+  isAnyError: boolean;
+  /** Read again every one of the five queues whose last read failed. */
+  retryFailed: () => void;
   /** Retry the approval queue read. */
   retry: () => void;
 }
 
+/** The five reads the queue is built from, by query key. */
+function waitingQueryKeys(): readonly QueryKey[] {
+  return [
+    PENDING_APPROVALS_QUERY_KEY,
+    PENDING_INTERACTIONS_QUERY_KEY,
+    TASKS_KEY,
+    extensionQueryKeys.pendingApprovals(),
+    extensionDecisionsKey(),
+  ];
+}
+
 /**
- * Everything waiting on the operator that the Inbox popover renders and
- * counts: capability approvals, prompts agents are parked on, schedules an
- * agent proposed and never armed, and installed extensions waiting to be
- * turned on (DOR-2517).
+ * Everything waiting on the operator: capability approvals, prompts agents are
+ * parked on, schedules an agent proposed and never armed, installed extensions
+ * waiting to be turned on (DOR-2517), and decisions extensions asked about.
+ *
+ * **The one answer to "is anything waiting on me?"** The Inbox popover renders
+ * and counts it, and the Pulse panel reads the same `items` before it may say
+ * "Nothing needs you" — so the two cannot disagree about whether something is
+ * waiting (DOR-2578). A new kind added here reaches both at once.
  *
  * Wraps the same three reads `useAttentionSignals` gathers beside it
  * (`usePendingApprovals`, `usePendingInteractions`, `usePendingScheduleApprovals`)
@@ -87,11 +127,43 @@ export interface WaitingQueueState {
  * rather than letting a caller re-sum the lengths by hand.
  */
 export function useWaitingQueue(): WaitingQueueState {
-  const { approvals, isError, retry } = usePendingApprovals();
-  const { interactions: asks } = usePendingInteractions();
-  const { schedules } = usePendingScheduleApprovals();
-  const { approvals: extensionApprovals } = usePendingExtensionApprovals();
-  const { decisions: extensionDecisions, offers: decisionOffers } = useExtensionDecisions();
+  const queryClient = useQueryClient();
+  const { approvals, isLoading: approvalsLoading, isError, retry } = usePendingApprovals();
+  const {
+    interactions: asks,
+    isLoading: asksLoading,
+    isError: asksError,
+  } = usePendingInteractions();
+  const {
+    schedules,
+    isLoading: schedulesLoading,
+    isError: schedulesError,
+  } = usePendingScheduleApprovals();
+  const {
+    approvals: extensionApprovals,
+    isLoading: extensionApprovalsLoading,
+    isError: extensionApprovalsError,
+  } = usePendingExtensionApprovals();
+  const {
+    decisions: extensionDecisions,
+    offers: decisionOffers,
+    isLoading: decisionsLoading,
+    isError: decisionsError,
+  } = useExtensionDecisions();
+
+  // Only the reads that failed, and only enabled ones: a disabled query (Tasks
+  // switched off) is never refetched by `refetchQueries`.
+  const retryFailed = useCallback(() => {
+    for (const queryKey of waitingQueryKeys()) {
+      void queryClient.refetchQueries({
+        queryKey,
+        // Exact: `['tasks']` is a prefix of other task reads (a run list, say)
+        // that are not part of this queue.
+        exact: true,
+        predicate: (query) => query.state.status === 'error',
+      });
+    }
+  }, [queryClient]);
 
   const items = useMemo(
     () =>
@@ -107,7 +179,15 @@ export function useWaitingQueue(): WaitingQueueState {
     extensionDecisions,
     decisionOffers,
     items,
+    isLoading:
+      approvalsLoading ||
+      asksLoading ||
+      schedulesLoading ||
+      extensionApprovalsLoading ||
+      decisionsLoading,
     isError,
+    isAnyError: isError || asksError || schedulesError || extensionApprovalsError || decisionsError,
+    retryFailed,
     retry,
   };
 }
