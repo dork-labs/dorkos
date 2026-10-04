@@ -6,6 +6,7 @@ covers:
   - 'feat(community): ask for the account password on the sign-in page'
   - "fix(community): let the link panel's password field take focus normally"
   - 'fix(community): refuse sessions a sign-in made after its account was cleared'
+  - 'fix(community): say how sign-in linking meets an email someone else used'
 ---
 
 ### Added

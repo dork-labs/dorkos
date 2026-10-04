@@ -37,7 +37,7 @@ Password recovery never changes who owns a community. To give a community a new 
 
 ## An account that holds someone else's email
 
-If a password account was created with an email address that belongs to someone else, the real owner of that address is refused by single sign-on. Password recovery is the wrong tool here: it would hand the account to whoever you give the password. Instead, if the account never joined a community, remove it with `node dist-server/host/release-unverified-account.js <email>` (see the single sign-on section of [DEPLOYMENT.md](DEPLOYMENT.md)). If it already joined, the community's owner removes the member first, or the person erases their own membership or account, and then you release it.
+If a password account was created with an email address that belongs to someone else, what the real owner sees depends on your single sign-on setting. If you trust your provider (`COMMUNITY_OIDC_LINK_VERIFIED_EMAIL=1`), their first sign-in through it clears the account's old password, sessions and other sign-ins and takes it over, so there is nothing for you to do. Otherwise, and for Google or GitHub, the sign-in page asks them for that account's password, which they never set. Password recovery is the wrong tool here: it would hand the account to whoever you give the password. Instead, if the account never joined a community, remove it with `node dist-server/host/release-unverified-account.js <email>` (see the single sign-on section of [DEPLOYMENT.md](DEPLOYMENT.md)). If it already joined, the community's owner removes the member first, or the person erases their own membership or account, and then you release it.
 
 ## An import is not a backup
 
