@@ -35,7 +35,9 @@ import path from 'node:path';
 import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
-import { declaredSet } from '../../extensions/isolation/permission-coverage.js';
+import { declaredSet, isCovered } from '../../extensions/isolation/permission-coverage.js';
+import { hasServerHalf } from '../../extensions/isolation/server-half.js';
+import { ISOLATED_SERVER_PARTS_RUN } from '@dorkos/shared/extension-server-status';
 import {
   DevLinkPackageNameSchema,
   disclosesAnything,
@@ -196,7 +198,15 @@ interface LinkPlan {
    * differently and is asked about again.
    */
   permissions: Record<string, ApprovedPermissionSet>;
+  /**
+   * Whether each carried extension has a server half, so a screens-only one
+   * is never described as having full access to the computer.
+   */
+  servers: Record<string, boolean>;
 }
+
+/** What the card text says each carried extension may reach. */
+type CardSets = Pick<LinkPlan, 'permissions' | 'servers'>;
 
 /** The folder a package carries its extensions in. */
 const EXTENSIONS_DIR = path.join('.dork', 'extensions');
@@ -231,10 +241,10 @@ export class DevLinkService {
   async preview(
     target: DevLinkTarget & { replaceInstalled?: boolean }
   ): Promise<DevLinkPreviewResponse> {
-    const { preview, permissions } = await this.plan(target);
+    const plan = await this.plan(target);
     return {
-      ...preview,
-      change: describePlan(preview, target.replaceInstalled === true, permissions),
+      ...plan.preview,
+      change: describePlan(plan.preview, target.replaceInstalled === true, plan),
     };
   }
 
@@ -255,11 +265,7 @@ export class DevLinkService {
   async describeApproval(request: DevLinkTarget & { replaceInstalled?: boolean }): Promise<string> {
     const plan = await this.plan(request);
     if (plan.slotHolds === 'installed' && !request.replaceInstalled) throw slotTaken(plan.preview);
-    const description = describePlan(
-      plan.preview,
-      request.replaceInstalled === true,
-      plan.permissions
-    );
+    const description = describePlan(plan.preview, request.replaceInstalled === true, plan);
     // A card stores at most this much. Cutting the text would bind the
     // approval to only part of what the folder runs, and anything added past
     // the cut would ride in on it, so a folder that does not fit is refused.
@@ -292,8 +298,12 @@ export class DevLinkService {
       }
       if (
         request.expectedChange !== undefined &&
-        describePlan(plan.preview, request.replaceInstalled === true, plan.permissions) !==
-          request.expectedChange
+        describePlan(plan.preview, request.replaceInstalled === true, plan) !==
+          request.expectedChange &&
+        // A folder that only narrowed what an extension may reach since the
+        // card asks for nothing the person did not see: link it, recording
+        // the narrower sets it declares now. Anything else is a new card.
+        !onlyNarrowed(request.expectedChange, plan, request.replaceInstalled === true)
       ) {
         throw new DevLinkError(
           'dev_link_changed',
@@ -591,8 +601,13 @@ export class DevLinkService {
       extensions: await carriedExtensions(folder),
     };
     const permissions: Record<string, ApprovedPermissionSet> = {};
-    for (const id of preview.extensions) permissions[id] = await declaredSetIn(folder, id);
-    return { preview, projectPath, slotHolds, declarationsReadable, permissions };
+    const servers: Record<string, boolean> = {};
+    for (const id of preview.extensions) {
+      const declared = await declaredIn(folder, id);
+      permissions[id] = declared.set;
+      servers[id] = declared.hasServer;
+    }
+    return { preview, projectPath, slotHolds, declarationsReadable, permissions, servers };
   }
 
   /**
@@ -949,12 +964,13 @@ async function carriedExtensions(folder: string): Promise<string[]> {
  * @param folder - The linked folder (its real path).
  * @param id - The extension's folder name under `.dork/extensions`.
  */
-async function declaredSetIn(folder: string, id: string): Promise<ApprovedPermissionSet> {
-  const narrowest: ApprovedPermissionSet = {
-    runtime: 'subprocess',
-    net: [],
-    run: [],
-    agents: false,
+async function declaredIn(
+  folder: string,
+  id: string
+): Promise<{ set: ApprovedPermissionSet; hasServer: boolean }> {
+  const narrowest = {
+    set: { runtime: 'subprocess', net: [], run: [], agents: false } as ApprovedPermissionSet,
+    hasServer: true,
   };
   try {
     const raw = await readPackageFileWithin(
@@ -964,7 +980,11 @@ async function declaredSetIn(folder: string, id: string): Promise<ApprovedPermis
       "The extension's extension.json"
     );
     const parsed = ExtensionManifestSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? declaredSet(parsed.data) : narrowest;
+    if (!parsed.success) return narrowest;
+    return {
+      set: declaredSet(parsed.data),
+      hasServer: await hasServerHalf(path.join(folder, EXTENSIONS_DIR, id), parsed.data),
+    };
   } catch {
     return narrowest;
   }
@@ -1012,16 +1032,31 @@ function stillMeaningful(
   return true;
 }
 
+/** How a card line says an extension's server half runs inside DorkOS. */
+const IN_PROCESS_LINE = 'runs inside DorkOS with full access to this computer';
+
+/** How a card line says an extension has only screens. */
+const SCREENS_ONLY_LINE = 'only screens, which run in DorkOS with your access';
+
+/**
+ * How a card line says an extension runs separately: in the future tense,
+ * and saying so, while this version cannot run that half yet.
+ */
+const SEPARATE_LINE = ISOLATED_SERVER_PARTS_RUN
+  ? 'runs separately'
+  : 'will run separately (its server part can’t run in this version yet)';
+
 /**
  * One extension's permission set as a card line: where it runs, then every
  * host, program and agent grant, never a count.
  *
  * @param set - What it declares.
+ * @param hasServer - Whether it has a server half; without one it is screens only.
  */
-function describePermissionSet(set: ApprovedPermissionSet): string {
-  if (set.runtime === 'in-process') return 'runs inside DorkOS with full access to this computer';
+function describePermissionSet(set: ApprovedPermissionSet, hasServer: boolean): string {
+  if (set.runtime === 'in-process') return hasServer ? IN_PROCESS_LINE : SCREENS_ONLY_LINE;
   const parts = [
-    'runs separately',
+    SEPARATE_LINE,
     set.net.length > 0 ? `connects to ${set.net.join(', ')}` : 'no internet',
     ...(set.run.length > 0 ? [`runs ${set.run.join(', ')}`] : []),
     ...(set.agents ? ['messages your agents'] : []),
@@ -1030,14 +1065,63 @@ function describePermissionSet(set: ApprovedPermissionSet): string {
 }
 
 /**
+ * Read a card line back into the set it describes, or `null` when it is not
+ * one {@link describePermissionSet} writes. Only ever trusted after the whole
+ * card text is rebuilt from what it returns and matches exactly.
+ *
+ * @param line - The text after `<id>: `.
+ */
+function parsePermissionSet(line: string): ApprovedPermissionSet | null {
+  if (line === IN_PROCESS_LINE || line === SCREENS_ONLY_LINE) {
+    return { runtime: 'in-process', net: [], run: [], agents: false };
+  }
+  if (!line.startsWith(`${SEPARATE_LINE}; `)) return null;
+  const set: ApprovedPermissionSet = { runtime: 'subprocess', net: [], run: [], agents: false };
+  for (const part of line.slice(SEPARATE_LINE.length + 2).split('; ')) {
+    if (part === 'no internet') continue;
+    if (part === 'messages your agents') set.agents = true;
+    else if (part.startsWith('connects to ')) set.net = part.slice(12).split(', ');
+    else if (part.startsWith('runs ')) set.run = part.slice(5).split(', ');
+    else return null;
+  }
+  return set;
+}
+
+/**
+ * Whether a card's text differs from the folder's description now only in
+ * extensions that ask for less than the card listed (DOR-2686). Every other
+ * line must match exactly, each listed set must read back to the very text
+ * the card showed, and each extension's set now must be covered by the one
+ * shown, so a yes is never stretched over anything the person did not see.
+ *
+ * @param shown - The card text the person approved.
+ * @param plan - The folder as it is now.
+ * @param replaceInstalled - Whether the link sets an installed copy aside.
+ */
+function onlyNarrowed(shown: string, plan: LinkPlan, replaceInstalled: boolean): boolean {
+  const shownLines = shown.split('\n');
+  const nowLines = describePlan(plan.preview, replaceInstalled, plan).split('\n');
+  if (shownLines.length !== nowLines.length) return false;
+  const shownSets: Record<string, ApprovedPermissionSet> = {};
+  for (const id of plan.preview.extensions) {
+    const prefix = `${id}: `;
+    const index = nowLines.findIndex((line) => line.startsWith(prefix));
+    if (index < 0 || !shownLines[index]!.startsWith(prefix)) return false;
+    const parsed = parsePermissionSet(shownLines[index]!.slice(prefix.length));
+    if (!parsed || !isCovered(plan.permissions[id]!, parsed)) return false;
+    shownSets[id] = parsed;
+  }
+  // Rebuilt from what was read back, the card must be exactly what was shown.
+  return (
+    describePlan(plan.preview, replaceInstalled, { ...plan, permissions: shownSets }) === shown
+  );
+}
+
+/**
  * The approval card text for a planned link. Deterministic, so the same folder
  * describes the same way at the card and at the retry.
  */
-function describePlan(
-  preview: DevLinkPreview,
-  replaceInstalled: boolean,
-  permissions: Readonly<Record<string, ApprovedPermissionSet>>
-): string {
+function describePlan(preview: DevLinkPreview, replaceInstalled: boolean, sets: CardSets): string {
   const lines = [
     `Folder: ${preview.path}`,
     `Package: ${preview.name} (${preview.type})`,
@@ -1055,8 +1139,8 @@ function describePlan(
   // sets, and is bound to this text, so a folder that widens one before the
   // click describes differently and is asked about again.
   for (const id of preview.extensions) {
-    const set = permissions[id];
-    if (set) lines.push(`${id}: ${describePermissionSet(set)}`);
+    const set = sets.permissions[id];
+    if (set) lines.push(`${id}: ${describePermissionSet(set, sets.servers[id] ?? true)}`);
   }
   // Every hook, server and program in full, never a count: the yes records
   // approval for exactly these (the global-activation and hook decisions,

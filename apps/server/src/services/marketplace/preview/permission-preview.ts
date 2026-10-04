@@ -21,6 +21,7 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { declaredSet } from '../../extensions/isolation/permission-coverage.js';
+import { hasServerHalf } from '../../extensions/isolation/server-half.js';
 import { clampSchedulePermissionMode } from '../../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { readNpmDependencies } from '../lib/npm-dependencies.js';
@@ -494,11 +495,15 @@ export class PermissionPreviewBuilder {
     preview.fileChanges = await this.computeFileChanges(packagePath, installRoot);
 
     const extensionManifests = await readExtensionManifests(packagePath);
-    preview.extensions = extensionManifests.map(({ id, manifest: extManifest }) => ({
-      id,
-      slots: extractSlots(extManifest.contributions),
-      isolation: isolationOfManifest(extManifest),
-    }));
+    const extRoot = join(packagePath, ...EFFECT_BEARING_PATHS.extensions.split('/'));
+    preview.extensions = await Promise.all(
+      extensionManifests.map(async ({ id, manifest: extManifest }) => ({
+        id,
+        slots: extractSlots(extManifest.contributions),
+        isolation: isolationOfManifest(extManifest),
+        hasServer: await hasServerHalf(join(extRoot, id), extManifest),
+      }))
+    );
 
     Object.assign(
       preview,

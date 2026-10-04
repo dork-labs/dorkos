@@ -11,6 +11,19 @@
  * @module shared/extension-server-status
  */
 
+/**
+ * Whether this version of DorkOS runs the server half of an extension that
+ * runs separately (DOR-2686). `false` until the phase that starts isolated
+ * extensions lands: the server refuses that half with `isolation_not_ready`
+ * (`waitsForIsolation`), and every card says so before the yes
+ * ({@link ISOLATED_SERVER_NOT_YET_COPY}). The one switch: flipping it turns
+ * the refusal and the card line off together.
+ */
+export const ISOLATED_SERVER_PARTS_RUN: boolean = false;
+
+/** The card line shown before the yes while {@link ISOLATED_SERVER_PARTS_RUN} is `false`. */
+export const ISOLATED_SERVER_NOT_YET_COPY = 'Its server part can’t run in this version yet.';
+
 /** The `serverError` codes an extension that runs separately can carry. */
 export const EXTENSION_SERVER_ERROR_CODES = [
   'server_crashed',

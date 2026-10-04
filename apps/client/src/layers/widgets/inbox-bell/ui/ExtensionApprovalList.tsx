@@ -14,6 +14,7 @@ import {
   approvedSetOf,
   extensionConsentCopy,
   permissionViewFromApproval,
+  useAddedSinceSeen,
   useExtensionApprovalActions,
   type ApproveExtensionInput,
   type ExtensionAnswerInput,
@@ -46,6 +47,25 @@ function copyOf(approval: PendingExtensionApproval): ExtensionAnswerInput {
 function approvalOf(approval: PendingExtensionApproval): ApproveExtensionInput {
   const permissions = approvedSetOf(permissionViewFromApproval(approval));
   return { ...copyOf(approval), ...(permissions ? { permissions } : {}) };
+}
+
+/**
+ * What a waiting extension can reach, leading with what is new: since the
+ * person's last approval (the server's `added`), or, on a first ask whose yes
+ * was just refused as stale, since the card they saw (DOR-2686).
+ *
+ * @param props - The waiting extension.
+ */
+function ApprovalPermissionLines({ approval }: { approval: PendingExtensionApproval }) {
+  const view = permissionViewFromApproval(approval);
+  const sinceSeen = useAddedSinceSeen(approval.id, approvedSetOf(view));
+  return (
+    <ExtensionPermissionLines
+      permissions={view}
+      added={approval.added ?? sinceSeen}
+      data-testid={`extension-permissions-${approval.id}`}
+    />
+  );
 }
 
 /** Props for {@link ExtensionApprovalList}. */
@@ -91,13 +111,7 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
             // Nothing extra when the server sent no set (one version behind).
             {...(approval.permissions
               ? {
-                  details: (
-                    <ExtensionPermissionLines
-                      permissions={permissionViewFromApproval(approval)}
-                      added={approval.added}
-                      data-testid={`extension-permissions-${approval.id}`}
-                    />
-                  ),
+                  details: <ApprovalPermissionLines approval={approval} />,
                 }
               : {})}
             sourceLine={approval.sourceLabel}

@@ -907,9 +907,11 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
     });
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
     const box = await screen.findByTestId('extension-needs-approval-mail');
-    expect(within(box).getByText('Runs separately from DorkOS.')).toBeInTheDocument();
-    expect(within(box).getByText('imap.fastmail.com')).toBeInTheDocument();
-    expect(within(box).getByText('Can run bash, which can run any program.')).toBeInTheDocument();
+    const lines = within(box).getByTestId('extension-permissions-mail');
+    expect(lines).toHaveTextContent('Its server part can’t run in this version yet.');
+    expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+    expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com');
+    expect(lines).toHaveTextContent('Can run bash, which can run any program.');
     expect(within(box).queryByText(/anything DorkOS can/)).not.toBeInTheDocument();
   });
 
@@ -964,10 +966,13 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
 
   // Purpose: a stale yes says so in plain words, not the server's sentence.
   it('says plainly when the extension changed since the card was drawn', async () => {
+    let current = ISOLATION;
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
         if (url.includes('/approve')) {
+          // It widened while the card was on screen.
+          current = { ...ISOLATION, net: [...ISOLATION.net, 'api.example.com'] };
           return Promise.resolve({
             ok: false,
             status: 409,
@@ -979,7 +984,7 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
           ok: true,
           json: () =>
             Promise.resolve([
-              makeExtension({ id: 'mail', approvedToRun: false, isolation: ISOLATION }),
+              makeExtension({ id: 'mail', approvedToRun: false, isolation: current }),
             ]),
         });
       })
@@ -991,12 +996,12 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
         'Test Extension changed since you saw it. Check it again.'
       )
     );
-    // The list is read again, so the card redraws with what it asks for now.
+    // The list is read again, so the card redraws with what it asks for now,
+    // leading with the host the refused card did not list.
     await waitFor(() =>
       expect(
-        vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/api/extensions'))
-          .length
-      ).toBeGreaterThan(1)
+        screen.getByTestId('extension-permissions-mail').querySelector('li')
+      ).toHaveTextContent('Now also wants to connect to: api.example.com')
     );
   });
 });

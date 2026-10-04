@@ -888,7 +888,9 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     await declare({ runtime: 'subprocess', allow: { net: ['api.example.com:443'] } });
     const svc = service();
     const shown = await svc.describeApproval({ path: work, scope: 'global' });
-    expect(shown).toContain('flow-dash: runs separately; connects to api.example.com:443');
+    expect(shown).toContain(
+      'flow-dash: will run separately (its server part can’t run in this version yet); connects to api.example.com:443'
+    );
 
     await declare({
       runtime: 'subprocess',
@@ -902,11 +904,67 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     expect(approvals.approvedPermissions ?? {}).toEqual({});
   });
 
-  it('says full access on the card for an extension that runs inside DorkOS', async () => {
+  it('says full access on the card for a server half that runs inside DorkOS', async () => {
     // Purpose: the in-process case is named, never left implicit.
+    await writeFile(path.join(work, '.dork', 'extensions', 'flow-dash', 'server.ts'), '');
     expect(await service().describeApproval({ path: work, scope: 'global' })).toContain(
       'flow-dash: runs inside DorkOS with full access to this computer'
     );
+  });
+
+  it('says screens only on the card for an extension with no server half', async () => {
+    // Purpose: a screens-only extension is never described as having full
+    // access to the computer.
+    const shown = await service().describeApproval({ path: work, scope: 'global' });
+    expect(shown).toContain('flow-dash: only screens, which run in DorkOS with your access');
+    expect(shown).not.toContain('full access');
+  });
+
+  it('links a folder that only narrowed since the card, recording the narrower set', async () => {
+    // Purpose: dropping a host between the card and the click asks for
+    // nothing the person did not see, so the yes stands, and what is
+    // recorded is what the folder declares now. Fails if narrowing is
+    // refused as a changed folder, or if the wider shown set is recorded.
+    await declare({
+      runtime: 'subprocess',
+      allow: { net: ['a.example.com', 'b.example.com'], run: ['git'] },
+    });
+    const svc = service();
+    const shown = await svc.describeApproval({ path: work, scope: 'global' });
+    await declare({ runtime: 'subprocess', allow: { net: ['a.example.com'] } });
+    await svc.link({ path: work, scope: 'global', via: 'agent-card', expectedChange: shown });
+    expect(approvals.approvedPermissions?.['flow-dash']).toEqual({
+      runtime: 'subprocess',
+      net: ['a.example.com'],
+      run: [],
+      agents: false,
+    });
+  });
+
+  it('refuses a folder that narrowed one list but widened another', async () => {
+    // Purpose: a narrowing elsewhere never carries a widening in with it.
+    await declare({ runtime: 'subprocess', allow: { net: ['a.example.com', 'b.example.com'] } });
+    const svc = service();
+    const shown = await svc.describeApproval({ path: work, scope: 'global' });
+    await declare({ runtime: 'subprocess', allow: { net: ['a.example.com'], agents: true } });
+    const err = await refusal(
+      svc.link({ path: work, scope: 'global', via: 'agent-card', expectedChange: shown })
+    );
+    expect(err).toMatchObject({ code: 'dev_link_changed', status: 409 });
+    expect(approvals.approvedToRun).toEqual([]);
+  });
+
+  it('refuses a narrowed folder when anything else on the card changed', async () => {
+    // Purpose: only the permission lines may differ; any other edit is a new card.
+    await declare({ runtime: 'subprocess', allow: { net: ['a.example.com', 'b.example.com'] } });
+    const svc = service();
+    const shown = await svc.describeApproval({ path: work, scope: 'global' });
+    await declare({ runtime: 'subprocess', allow: { net: ['a.example.com'] } });
+    const forged = shown.replace('Runs in: every session', 'Runs in: nowhere');
+    const err = await refusal(
+      svc.link({ path: work, scope: 'global', via: 'agent-card', expectedChange: forged })
+    );
+    expect(err).toMatchObject({ code: 'dev_link_changed', status: 409 });
   });
 
   it('records the narrowest set for a manifest it cannot read', async () => {

@@ -11,7 +11,11 @@ import {
   useSetExtensionRunApproval,
   RunApprovalError,
 } from '../api/queries';
-import { approvedSetOf, permissionViewFromRecord } from '@/layers/entities/extension';
+import {
+  approvedSetOf,
+  permissionViewFromRecord,
+  useSeenBeforeStaleStore,
+} from '@/layers/entities/extension';
 import { ExtensionCard } from './ExtensionCard';
 import { TrustedSourcesSection } from './TrustedSourcesSection';
 
@@ -52,6 +56,7 @@ export function ExtensionsSettingsTab() {
       },
       {
         onSuccess: (result) => {
+          if (approve) useSeenBeforeStaleStore.getState().forget(id);
           const name = result.extension.manifest.name;
           // "inside DorkOS" only for one that does run inside (DOR-2686).
           const where = result.extension.isolation ? '' : ' inside DorkOS';
@@ -59,6 +64,8 @@ export function ExtensionsSettingsTab() {
         },
         onError: (err) => {
           if (err instanceof RunApprovalError && err.stale) {
+            // The redrawn card leads with what this one did not list.
+            if (permissions) useSeenBeforeStaleStore.getState().remember(id, permissions);
             toast.error(`${shown.manifest.name} changed since you saw it. Check it again.`);
             return;
           }

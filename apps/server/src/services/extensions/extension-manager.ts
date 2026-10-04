@@ -55,7 +55,7 @@ import {
   reconcileRunningSkills,
   type RunningSkillsChange,
 } from './agent-skills/running-skills-ledger.js';
-import { declaredSet, isSamePermissionSet } from './isolation/permission-coverage.js';
+import { declaredSet, isCovered, isSamePermissionSet } from './isolation/permission-coverage.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
 
 /**
@@ -85,7 +85,8 @@ export interface ExpectedCopy {
   plugin?: string | null;
   /**
    * The permission set the person was shown (DOR-2686); absent means "not
-   * compared". Compared as a set against what the copy declares now.
+   * compared". The copy must ask for nothing outside it: equal or narrower
+   * approves (recording what it declares now), wider is stale.
    */
   permissions?: ApprovedPermissionSet;
 }
@@ -107,9 +108,12 @@ export function isExpectedCopy(record: ExtensionRecord, expected: ExpectedCopy):
   if (expected.plugin !== undefined && expected.plugin !== (record.sourcePlugin ?? null)) {
     return false;
   }
+  // The yes covers what the card showed. A copy that narrowed since asks for
+  // nothing the person did not see, and the approval records what it declares
+  // now (the narrower set), so it is approved; one that widened is stale.
   if (
     expected.permissions !== undefined &&
-    !isSamePermissionSet(declaredSet(record.manifest), expected.permissions)
+    !isCovered(declaredSet(record.manifest), expected.permissions)
   ) {
     return false;
   }

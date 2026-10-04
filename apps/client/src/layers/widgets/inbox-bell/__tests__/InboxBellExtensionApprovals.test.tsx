@@ -329,8 +329,13 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       waiting = [MAIL];
       renderBell();
       const { user, row } = await openRow();
-      expect(within(row).getByText('Runs separately from DorkOS.')).toBeInTheDocument();
-      expect(within(row).getByText('imap.fastmail.com, smtp.fastmail.com')).toBeInTheDocument();
+      const lines = within(row).getByTestId('extension-permissions-flow');
+      // Said before the yes: its server part does not run in this version yet.
+      expect(lines.querySelector('li')).toHaveTextContent(
+        'Its server part can’t run in this version yet.'
+      );
+      expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+      expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com, smtp.fastmail.com');
 
       await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
       await waitFor(() => expect(posts).toHaveLength(1));
@@ -371,9 +376,16 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith('Flow changed since you saw it. Check it again.')
       );
-      expect(
-        await screen.findByText('imap.fastmail.com, smtp.fastmail.com, api.example.com')
-      ).toBeInTheDocument();
+      // A first ask has no earlier approval, yet the redrawn row still leads
+      // with the host the refused card did not list.
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('extension-permissions-flow').querySelector('li')
+        ).toHaveTextContent('Now also wants to connect to: api.example.com')
+      );
+      expect(screen.getByTestId('extension-permissions-flow')).toHaveTextContent(
+        'Can connect to: imap.fastmail.com, smtp.fastmail.com, api.example.com'
+      );
     });
 
     // Purpose: a server one version behind sends no set; the row adds nothing

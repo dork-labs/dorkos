@@ -543,6 +543,28 @@ describe('POST /api/extensions/:id/approve', () => {
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
 
+    // Purpose: a copy that narrowed since the card asks for nothing the person
+    // did not see, so the yes stands (the approval records what it declares
+    // now). Fails if the echo is compared for equality instead of coverage.
+    it('approves a copy that narrowed since the card', async () => {
+      manager.get.mockReturnValue(
+        stubRecord({
+          manifest: {
+            ...MAIL_MANIFEST,
+            serverCapabilities: {
+              ...MAIL_MANIFEST.serverCapabilities!,
+              allow: { net: ['a.example.com'] },
+            },
+          } as ExtensionRecord['manifest'],
+        })
+      );
+      const res = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send({ version: '1.0.0', permissions: SHOWN });
+      expect(res.status).toBe(200);
+      expect(manager.approveToRun).toHaveBeenCalledWith('my-ext');
+    });
+
     // Purpose: a card that showed "runs separately" cannot approve a copy that
     // now runs inside DorkOS.
     it('refuses as stale when it moved back inside DorkOS', async () => {

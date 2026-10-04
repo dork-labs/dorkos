@@ -1519,6 +1519,25 @@ describe('PermissionPreviewBuilder', () => {
     });
   });
 
+  describe('server half (DOR-2686)', () => {
+    it('says which extensions have a server half, so screens only never reads as full access', async () => {
+      // Purpose: the install card tells a screens-only extension from one whose
+      // server half runs inside DorkOS. Fails if every in-process extension is
+      // reported as having a server half.
+      const manifest = pluginManifest('halves');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        extensions: [{ id: 'panel' }, { id: 'backend' }],
+      });
+      await writeFile(join(pkgPath, '.dork', 'extensions', 'backend', 'server.ts'), 'export {}');
+      await rm(join(pkgPath, '.dork', 'extensions', 'panel', 'server.ts'), { force: true });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      const byId = Object.fromEntries(preview.extensions.map((ext) => [ext.id, ext.hasServer]));
+      expect(byId).toEqual({ panel: false, backend: true });
+    });
+  });
+
   describe('npmDependencies', () => {
     it('discloses every runtime library the install will fetch, with its version range', async () => {
       const manifest = pluginManifest('flow');

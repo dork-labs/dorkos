@@ -5,10 +5,10 @@
  *
  * @module entities/extension/ui/ExtensionPermissionLines
  */
-import type { ExtensionApprovalAdditions } from '@dorkos/shared/extension-approval-schemas';
 import { cn } from '@/layers/shared/lib';
 import {
   extensionPermissionLines,
+  type ExtensionPermissionAdditions,
   type ExtensionPermissionTone,
   type ExtensionPermissionView,
 } from '../lib/permission-lines';
@@ -18,7 +18,7 @@ export interface ExtensionPermissionLinesProps {
   /** What it declares, or `null` when the server sent nothing (draws nothing). */
   permissions: ExtensionPermissionView | null | undefined;
   /** What its last approval did not cover. A re-ask leads with these. */
-  added?: ExtensionApprovalAdditions | null;
+  added?: ExtensionPermissionAdditions | null;
   /** Test id for the list. */
   'data-testid'?: string;
   /** Chrome for the list. */
@@ -61,11 +61,27 @@ export function ExtensionPermissionLines({
           data-tone={line.tone}
           className={cn('min-w-0 break-words', TONE_CLASS[line.tone])}
         >
-          {line.text}
+          {line.parts.map((part, index) =>
+            typeof part === 'string' ? (
+              part
+            ) : (
+              // A name the author chose, isolated so it cannot reorder the copy.
+              <bdi key={index} className="font-mono break-all">
+                {part.name}
+              </bdi>
+            )
+          )}
           {line.items && (
             <>
               {' '}
-              <span className="text-foreground font-mono break-all">{line.items.join(', ')}</span>
+              <span className="text-foreground font-mono break-all">
+                {line.items.map((item, index) => (
+                  <span key={`${index}:${item}`}>
+                    {index > 0 && ', '}
+                    <bdi>{item}</bdi>
+                  </span>
+                ))}
+              </span>
             </>
           )}
         </li>

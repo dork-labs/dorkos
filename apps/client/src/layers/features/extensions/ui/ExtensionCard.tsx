@@ -14,7 +14,9 @@ import {
   ExtensionPermissionLines,
   agentGiftsFromRecord,
   extensionConsentCopy,
+  approvedSetOf,
   permissionViewFromRecord,
+  useAddedSinceSeen,
 } from '@/layers/entities/extension';
 
 interface ExtensionCardProps {
@@ -71,6 +73,10 @@ export function ExtensionCard({
   // Where it runs and what it may reach (DOR-2686). `null` from a server that
   // never sends it, so the card adds nothing rather than guessing.
   const permissions = permissionViewFromRecord(extension);
+  // After a stale refusal here, what the redrawn card lists that the one the
+  // person saw did not. A re-ask after an earlier approval has no such lead
+  // on this card: the record does not carry the approved set (the inbox row does).
+  const addedSinceSeen = useAddedSinceSeen(extension.id, approvedSetOf(permissions));
   // Health/availability state — communicated by a badge that is visually
   // distinct from the on/off toggle (an errored extension can still be "on").
   const healthLabel = hasError
@@ -273,6 +279,7 @@ export function ExtensionCard({
                     that ask say the same thing. */}
                 <ExtensionPermissionLines
                   permissions={permissions}
+                  added={addedSinceSeen}
                   data-testid={`extension-permissions-${extension.id}`}
                 />
                 <p className="text-muted-foreground text-sm">

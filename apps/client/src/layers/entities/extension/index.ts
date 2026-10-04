@@ -27,14 +27,20 @@ export { ExtensionAgentGifts, type ExtensionAgentGiftsProps } from './ui/Extensi
 export {
   approvedSetOf,
   extensionPermissionLines,
+  permissionLineText,
+  permissionsAddedSince,
   permissionViewFromApproval,
   permissionViewFromRecord,
   runsAnyProgram,
+  type ExtensionPermissionAdditions,
   type ExtensionPermissionLine,
+  type ExtensionPermissionPart,
+  type ExtensionPermissionSet,
   type ExtensionPermissionProgram,
   type ExtensionPermissionTone,
   type ExtensionPermissionView,
 } from './lib/permission-lines';
+export { useSeenBeforeStaleStore, useAddedSinceSeen } from './model/seen-before-stale-store';
 export {
   ExtensionPermissionLines,
   type ExtensionPermissionLinesProps,

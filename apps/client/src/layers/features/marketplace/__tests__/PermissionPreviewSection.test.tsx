@@ -520,7 +520,8 @@ describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)'
     );
     expect(isOpen(REACH)).toBe(true);
     const lines = screen.getByTestId('preview-extension-reach-mail');
-    expect(lines).toHaveTextContent('Runs separately from DorkOS.');
+    expect(lines).toHaveTextContent('Its server part can’t run in this version yet.');
+    expect(lines).toHaveTextContent('Will run separately from DorkOS.');
     expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com');
     expect(lines).toHaveTextContent('Can run: git');
     expect(lines).toHaveTextContent('Can message your agents and start chats.');
@@ -579,6 +580,28 @@ describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)'
     expect(screen.getByTestId('preview-extension-reach-mail')).toHaveTextContent(
       'Can’t connect to the internet.'
     );
+  });
+
+  // Purpose: an extension with only screens is never described as having
+  // full access to the computer.
+  it('says screens only for an extension with no server half', () => {
+    render(
+      <PermissionPreviewSection
+        preview={makePreview({
+          extensions: [
+            {
+              id: 'panel',
+              slots: [],
+              isolation: { runtime: 'in-process', net: [], run: [], agents: false },
+              hasServer: false,
+            },
+          ],
+        })}
+      />
+    );
+    const lines = screen.getByTestId('preview-extension-reach-panel');
+    expect(lines).toHaveTextContent('Its screens run in DorkOS with your access.');
+    expect(lines).not.toHaveTextContent('full access');
   });
 
   // Purpose: an older server sends no isolation; the section is left out.

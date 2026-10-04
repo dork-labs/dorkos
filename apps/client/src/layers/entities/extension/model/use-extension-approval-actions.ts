@@ -15,6 +15,7 @@ import {
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { useTrustOfferStore } from './trust-offer-store';
+import { useSeenBeforeStaleStore } from './seen-before-stale-store';
 
 /**
  * Which copy the person answered — the one their row showed — and the name to
@@ -130,6 +131,7 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
         body: JSON.stringify({ path, version, plugin, ...(permissions ? { permissions } : {}) }),
       });
       if (!res.ok) throw await failureOf(res);
+      useSeenBeforeStaleStore.getState().forget(id);
       // The one-time "Next time, trust everything from <source>?" (spec
       // `flow-multiproject` §9.3): only this window heard it, so only this
       // window shows it, under the history row the answer leaves.
@@ -139,11 +141,13 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
       }
     },
     onMutate: ({ id }) => removeOptimistically(queryClient, id),
-    onError: (err, { name }, restore) => {
+    onError: (err, { id, name, permissions }, restore) => {
       restore?.();
       // It changed while the card was on screen: nothing was turned on, and
-      // the refresh below redraws the row with what it asks for now.
+      // the refresh below redraws the row with what it asks for now, leading
+      // with what the card the person saw did not list.
       if (isStale(err)) {
+        if (permissions) useSeenBeforeStaleStore.getState().remember(id, permissions);
         toast.error(`${name} changed since you saw it. Check it again.`);
         return;
       }

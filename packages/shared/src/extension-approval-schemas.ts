@@ -237,10 +237,11 @@ export const ApproveExtensionRequestSchema = z
     plugin: z.string().min(1).nullable().optional(),
     /**
      * The permission set the card showed (DOR-2686): where it runs and the
-     * hosts, programs and agent access it declared. Compared when sent, as a
-     * set, so a manifest that changed what it asks for while the card was on
-     * screen is refused with `409 stale_approval` instead of being approved
-     * on a yes given to the old lists.
+     * hosts, programs and agent access it declared. Compared when sent: a
+     * manifest that asks for anything outside it by now is refused with
+     * `409 stale_approval` instead of being approved on a yes given to the
+     * old lists. One that narrowed since is approved, and what it declares
+     * now (the narrower set) is recorded.
      */
     permissions: z
       .object({

@@ -558,8 +558,26 @@ const MAIL_PERMISSIONS: ExtensionPermissionView = {
 /** Every state the permission lines draw (DOR-2686). */
 const PERMISSION_STATES: { label: string; permissions: ExtensionPermissionView }[] = [
   {
-    label: 'Runs inside DorkOS',
-    permissions: { runtime: 'in-process', net: [], run: [], agents: false, hasPage: true },
+    label: 'A server half that runs inside DorkOS',
+    permissions: {
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasPage: true,
+      hasServer: true,
+    },
+  },
+  {
+    label: 'Screens only, no server half',
+    permissions: {
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasPage: true,
+      hasServer: false,
+    },
   },
   {
     label: 'Runs separately, reaches nothing',
