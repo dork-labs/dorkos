@@ -124,7 +124,7 @@ describe('isolated child failures (real child processes)', () => {
     await probe(host, 'sendBig', 5 * 1024 * 1024);
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(h.logs.filter((l) => l.message.includes('dropped a malformed message'))).toHaveLength(2);
-    expect(h.logs.some((l) => /dropped a \d+-byte message/.test(l.message))).toBe(true);
+    expect(h.logs.some((l) => l.message.includes('dropped a message over'))).toBe(true);
     expect(host.running).toBe(true);
     expect(await probe(host, 'argvFlags')).toMatchObject({ ok: true });
   });

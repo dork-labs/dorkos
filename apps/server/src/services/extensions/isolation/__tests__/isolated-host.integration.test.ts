@@ -165,7 +165,7 @@ describe('IsolatedExtensionHost (real child processes)', () => {
     const escaping = makeHost(h, { id: 'linky', extensionDir: extDir });
     expect(await escaping.start()).toEqual({
       ok: false,
-      code: 'isolation_assets_link',
+      code: 'isolation_unavailable',
       message: "Probe couldn't start: its assets folder links outside itself.",
     });
     expect(escaping.running).toBe(false);

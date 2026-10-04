@@ -58,7 +58,6 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { serialize } from 'node:v8';
 import type { ExtensionIsolation } from '@dorkos/extension-api';
 import {
   ISOLATION_LIMITS,
@@ -74,11 +73,11 @@ import {
   selfCheckPassed,
 } from './grants.js';
 import { LogForwarder, type ForwardLogger } from './log-forwarder.js';
+import { boundedMessageSize } from './message-size.js';
 import { RunBroker } from './run-broker.js';
 
 /** Why a start was refused, as a record's `serverError.code`. */
-export type IsolatedStartErrorCode =
-  'isolation_unavailable' | 'isolation_assets_link' | 'server_start_failed';
+export type IsolatedStartErrorCode = 'isolation_unavailable' | 'server_start_failed';
 
 /** The outcome of {@link IsolatedExtensionHost.start}. */
 export type IsolatedStartResult =
@@ -197,21 +196,6 @@ function abortedLike(code: number | null, signal: NodeJS.Signals | null): boolea
 }
 
 /**
- * The serialized size of a message, as the channel carried it. Measured after
- * Node has already read it (the IPC channel has no limit of its own), so this
- * bounds what the host ACTS on, not what it reads.
- *
- * @param message - A message from the child.
- */
-function messageSize(message: unknown): number {
-  try {
-    return serialize(message).byteLength;
-  } catch {
-    return Number.POSITIVE_INFINITY;
-  }
-}
-
-/**
  * Starts, watches and stops one isolated extension's child process.
  */
 export class IsolatedExtensionHost {
@@ -291,7 +275,10 @@ export class IsolatedExtensionHost {
         );
         return {
           ok: false,
-          code: 'isolation_assets_link',
+          // The assets refusal is one way of not being able to run with its
+          // limits, so it shares that code (and the app's copy for it), with
+          // its own, more specific message.
+          code: 'isolation_unavailable',
           message: `${name} couldn't start: its assets folder links outside itself.`,
         };
       }
@@ -524,10 +511,11 @@ export class IsolatedExtensionHost {
       );
       return false;
     }
-    const size = messageSize(raw);
+    // Bounded, copy-free estimate; fails closed (see message-size.ts).
+    const size = boundedMessageSize(raw, ISOLATION_LIMITS.maxMessageBytes);
     if (size > ISOLATION_LIMITS.maxMessageBytes) {
       this.options.logger.warn(
-        `[Extensions] ${this.options.extensionId}: dropped a ${size}-byte message (limit ${ISOLATION_LIMITS.maxMessageBytes})`
+        `[Extensions] ${this.options.extensionId}: dropped a message over ${ISOLATION_LIMITS.maxMessageBytes} bytes`
       );
       if (raw.type === 'run-spawn') {
         this.send({
