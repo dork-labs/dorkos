@@ -296,6 +296,28 @@ async function buildCLI() {
     },
   });
 
+  // 2.1: The extension child (DOR-2686). DorkOS forks this file, not the
+  // server bundle, for every extension that runs separately, with Node's
+  // permission model on and read access to nothing but this file and the
+  // extension's own. So it must be ONE self-contained file: express and the
+  // extension API are inlined (the server bundle keeps them external, and the
+  // child could not read node_modules anyway). CommonJS, as `.cjs`, because
+  // this package is `"type": "module"`. The server finds it beside its own
+  // bundle (`isolation/child-entry.ts`, CHILD_ENTRY_FILE); the name and the
+  // entry are pinned by scripts/__tests__/extension-child-build-entry.test.ts.
+  const childBundle = await build({
+    entryPoints: [
+      path.join(ROOT, 'apps/server/src/services/extensions/isolation/child/bootstrap.ts'),
+    ],
+    bundle: true,
+    platform: 'node',
+    target: 'node22.22',
+    format: 'cjs',
+    outfile: path.join(OUT, 'server/extension-child.cjs'),
+    plugins: [dorkosSourcePlugin()],
+  });
+  await assertNoUnexpectedWarnings('extension child', childBundle.warnings);
+
   // 2.5: Copy Drizzle migration files alongside bundled server.
   // At runtime, `migrationsFolder()` (packages/db/src/migrations-folder.ts) resolves them via
   // path.join(dirname(fileURLToPath(import.meta.url)), '../drizzle'). In the CLI bundle that

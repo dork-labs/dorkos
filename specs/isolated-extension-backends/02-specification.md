@@ -567,7 +567,11 @@ stays loadable (the DOR-1336 rule).
 
 **Limits.** Heap: `limits.memoryMb` via `--max-old-space-size` (heap only; Buffers and native memory
 are not counted, stated in the docs). IPC: 4 MB per message, 256 outstanding calls, 64 KB HTTP
-frames, and a host-to-child backlog over 1,000 undelivered messages is treated as unresponsive.
+frames, and a host-to-child backlog over 1,000 undelivered messages is treated as unresponsive. (Known
+gap, found in the Phase 3 review: Node's IPC channel reads a whole message before the host sees it,
+so the 4 MB limit bounds what the host acts on, not what it reads. A child that sends one huge frame
+still costs the host that much memory, once. Closing it needs a framed pipe of DorkOS's own in place
+of `fork`'s channel, which checks the length before reading.)
 Programs: 8 concurrent. CPU: no cap; the watchdog bounds a stuck event loop only.
 
 ### 10. Dev link (DOR-2696)
