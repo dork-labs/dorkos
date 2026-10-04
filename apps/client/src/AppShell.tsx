@@ -46,6 +46,7 @@ import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useTasksSync } from '@/layers/entities/tasks';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
+import { useInboxDeepLink } from '@/layers/entities/notifications';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'motion/react';
 import { routedPageKey, shouldFadeRoute } from './app/route-fade';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
@@ -390,6 +391,8 @@ export function AppShell() {
     done: isOnboardingComplete || isOnboardingDismissed,
     overlayVisible: showOnboarding,
   });
+  // `?inbox=` opens the Inbox on any route (DOR-2577), but not over onboarding.
+  useInboxDeepLink({ blocked: showOnboarding });
 
   // **A failed config read is not a slow one, and the gate below cannot tell.**
   // `isLoading` is `isPending && isFetching`, so the moment the read ERRORS it

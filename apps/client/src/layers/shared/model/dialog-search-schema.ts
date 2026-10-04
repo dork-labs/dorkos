@@ -39,6 +39,10 @@ export const dialogSearchSchema = z.object({
   // to the profile feature and `shared/` may not import it; the feature parses
   // it back (`asProfilePageId`) and lands on the root when it names no page.
   profilePage: z.string().optional(),
+  // The Inbox: `open`, or the id of one waiting item to focus. Read once and
+  // removed by `useInboxDeepLink`. Coerced because the app's search parser
+  // reads a number-looking id as a number.
+  inbox: z.coerce.string().optional().catch(undefined),
   // Other dialogs (parameterless — no tabs)
   tasks: z.string().optional(),
   relay: z.string().optional(),

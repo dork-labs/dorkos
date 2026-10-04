@@ -19,6 +19,8 @@ import {
 } from '@/layers/entities/attention';
 import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
+  INBOX_REQUEST_TTL_MS,
+  settleInboxRequest,
   useInboxRequest,
   useMarkAllRead,
   useNotifications,
@@ -238,6 +240,10 @@ export function InboxBell() {
   // a filtered Inbox (a session's menu), and dropped when the panel closes —
   // a filter nobody can see is a filter that makes the next open look broken.
   const [lens, setLens] = useState<NotificationLens | undefined>(undefined);
+  // The one waiting item a link asked to single out (`?inbox=<id>`, DOR-2577):
+  // its row takes focus and a ring. Dropped when focus leaves that row, and on
+  // close for the same reason as the lens.
+  const [focusId, setFocusId] = useState<string | undefined>(undefined);
 
   // Somebody pressed the shortcut, or a session asked for its own notifications,
   // with nothing on screen to jump to. Opening here is the whole of "opens
@@ -252,14 +258,29 @@ export function InboxBell() {
   if (seenRequest !== trayRequest) {
     setSeenRequest(trayRequest);
     setLens(undefined);
+    setFocusId(undefined);
     setOpen(true);
   }
-  const [seenInboxRequest, setSeenInboxRequest] = useState(inboxRequest.openRequest);
+  // A request still pending when this bell mounts was made before it existed
+  // (a cold-load `?inbox=` link read while the shell was loading), so it starts
+  // out unseen and opens on the first render. One already answered by an
+  // earlier bell, or older than the TTL, starts out seen.
+  const [seenInboxRequest, setSeenInboxRequest] = useState<number | null>(() =>
+    inboxRequest.pending && Date.now() - inboxRequest.requestedAt < INBOX_REQUEST_TTL_MS
+      ? null
+      : inboxRequest.openRequest
+  );
   if (seenInboxRequest !== inboxRequest.openRequest) {
     setSeenInboxRequest(inboxRequest.openRequest);
     setLens(inboxRequest.lens);
+    setFocusId(inboxRequest.focus);
     setOpen(true);
   }
+
+  // Opened for it: tell the store, so a bell mounted later does not open again.
+  useEffect(() => {
+    if (seenInboxRequest !== null) settleInboxRequest();
+  }, [seenInboxRequest]);
 
   // A parked schedule counts toward the number on the badge — it is a
   // request for a decision just like a capability approval — but the SENTENCE
@@ -328,6 +349,7 @@ export function InboxBell() {
             setOpen(next);
             if (!next) {
               setLens(undefined);
+              setFocusId(undefined);
               // A one-time "Next time, trust …?" offer ends with the bell
               // (spec `flow-multiproject` §9.3): it never waits for later.
               withdrawTrustOffers();
@@ -411,6 +433,8 @@ export function InboxBell() {
                     approvals={shownApprovals}
                     decisions={extensionDecisions}
                     schedules={shownSchedules}
+                    focusId={focusId}
+                    onFocusSpent={() => setFocusId(undefined)}
                     agentNames={agentNames}
                     onOpenSession={(sessionId) => {
                       setOpen(false);
