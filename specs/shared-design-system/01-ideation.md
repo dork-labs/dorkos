@@ -11,6 +11,12 @@ status: ideation
 **Author:** Codex, from the operator's architecture discussion
 **Date:** 2026-09-23
 
+## Current reading context, 2026-10-04
+
+This is the original September 23 brief. Shared foundations, the standalone catalog and consumer adoption have since been delivered; its proposal and open decisions are historical. Read the [extraction implementation record](04-implementation.md), [consumer delivery receipt](../shared-ui-consumer-adoption/04-implementation.md) and [current ownership guide](../../contributing/shared-ui.md) for implementation, publication and consumer evidence. Publication and source adoption do not establish live deployment.
+
+Further architecture priorities live in the [roadmap](../../plans/architecture-improvement-roadmap.md). Do not restart extraction from this ideation document or infer current execution status from its original frontmatter.
+
 ## 1) Intent & Assumptions
 
 **Task brief:** Make the DorkOS client, Cloud account experience, and Community/Spaces feel consistent through shared styles, components, and interaction behavior. Determine which parts of the existing development playground should become a standalone design-system catalog. Support implementation while Cloud and Community continue evolving.

@@ -3,7 +3,21 @@
 **Recorded:** 2026-09-28. **Public source baseline:** `5794f638160a68811382347356fd29b31ee2e911`.
 **Owners:** [DOR-2442](https://linear.app/dorkspace/issue/DOR-2442) (retirement), [DOR-1798](https://linear.app/dorkspace/issue/DOR-1798) (Connections acceptance). This inventory completes neither issue.
 
-## Decision and evidence limit
+## Current reading context, 2026-10-04
+
+The original inventory below records September 28 source and test evidence. At public source `116297e14f7c357d24010ba34b9ceaa1b44aef99`, managed compatibility forwarding is now implemented behind `DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD=1`, independently of the account origin. The blanket managed-exclusion wording in the original inventory is historical, not the current routing rule.
+
+| Configuration                                            | Current public-side behavior                                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| No valid account forwarding origin                       | Account paths remain local; managed availability follows its local configuration and acceptance gates. |
+| Valid account origin; managed-forward switch off         | Account paths forward; managed paths remain local and report unavailable.                              |
+| Valid account origin; managed-forward switch exactly `1` | Eligible managed paths forward too. The destination must serve them before enabling this switch.       |
+
+See [forwarding](../apps/site/src/lib/cloud-accounts/forward.ts), [managed configuration](../apps/site/src/lib/connectors/managed/config.ts) and the current [atlas](../contributing/system-architecture.md). Both local maintenance routes stand down when account forwarding is active, regardless of the managed-forward switch. Route reachability, actual schedule ownership, local dependencies and migration history still need reconciliation before deletion.
+
+The required full production release after handover without rollback remains the retirement gate. This update inspected public source; it did not rerun the historical tests or establish live configuration, current destination acceptance or the release prerequisite. The [October 4 assessment](20261004-architecture-assessment.md) and [roadmap](../plans/architecture-improvement-roadmap.md) describe the next bounded inventory work under existing owners.
+
+## September 28 decision and evidence limit
 
 Do not delete the site's account implementation yet. The prerequisite is a full production release after account handover with no rollback. The public evidence inspected does not establish that prerequisite. Merged code, a configured forwarding origin, historical acceptance, and a production release are different evidence. Record the release/deployment identifiers, handover interval and rollback disposition before making the retirement decision.
 

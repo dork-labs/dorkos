@@ -33,6 +33,14 @@ Extensions contribute pages under `/x/<extensionId>`, status items and questions
 
 Connections uses one app list. Shared readiness explains what is usable and how to repair it; authorization still checks grants, access levels and per-chat choices. Chosen levels remain bounded as an app's operations change.
 
+## Executable contributions and document delivery
+
+Owner-approved dev links load working folders and reload through a serial lane. Their provenance and consent remain distinct from installed copies. Extensions can supply guarded agent tools and skills; destructive tools always ask a person. Subprocess foundations are merged, but production isolated-backend starts still refuse until the remaining wiring ships.
+
+Document channels persist notifications and recheck current grants before dispatch. Frame generation correlates the preview lifetime; it does not authenticate page scripts. Relay HTTP agent deliveries have a separate durable status resource. Accepted, delivered and successful agent work are different outcomes.
+
+The new managed-browser engine is a fixture/research foundation. It is separate from previews and signed-in Playwright access, and is not activated in production startup.
+
 ## Replaceable interfaces
 
 A port is an interface in code; an adapter implements it. A port does not necessarily cross a network.
@@ -91,15 +99,15 @@ Source registries supply package metadata and content. The website browses them.
 
 The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. Both resolve `DORKOS_CLOUD_URL`, falling back to the website origin. Service implementation does not itself migrate those callers or origins.
 
-The contract's remote command stream uses SSE and has lease/acknowledgement semantics. The existing local tunnel manager separately uses the ngrok SDK; the managed command consumer remains separate app-side work. Remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, requiring an explicit flag and a linked instance. Local DorkOS and Community both run without Cloud.
+The contract's remote command stream uses SSE and has lease/acknowledgement semantics. The existing local tunnel manager separately uses the ngrok SDK; the managed command consumer remains separate app-side work. Remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, selected through Runs on on a linked installation. The environment variable can disable credits; it cannot authorize spending. Local DorkOS and Community both run without Cloud.
 
-The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. A proposed per-session credits choice is active work; the current implementation still requires the explicit credits flag and supports Claude Code only.
+The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. Claude Code selects credits per session. Codex binds a new conversation to its credits home. OpenCode selects credits for its whole sidecar and waits for running replies before switching. Its local relay holds the Cloud token outside the sidecar. Codex and OpenCode require their format in the token’s served list; there is no fallback to a different payer.
 
 ### Account handover
 
 [![Website account redirect and compatibility proxy](/diagrams/architecture/accounts-handover.svg)](/diagrams/architecture/accounts-handover.svg)
 
-With a valid `DORKOS_CLOUD_ACCOUNTS_ORIGIN`, the public site redirects account pages and eligible navigations with 307, and proxies machine requests and background fetches while preserving method, body and authorization. With it unset or invalid, the site serves its account implementation. The forwarding policy lists exact route families; it is not a general `/v1` proxy. Managed connections are excluded and disabled on the site while forwarding is enabled; their migration is separate. Account implementation deletion follows verified cutover rather than the completion of Cloud development.
+With a valid `DORKOS_CLOUD_ACCOUNTS_ORIGIN`, the public site redirects account pages and eligible navigations with 307, and proxies machine requests and background fetches while preserving method, body and authorization. With it unset or invalid, the site serves its account implementation. The forwarding policy lists exact route families; it is not a general `/v1` proxy. Managed connections require the independent `DORKOS_CLOUD_MANAGED_CONNECTIONS_FORWARD=1` switch too. Otherwise they remain unavailable on the forwarding site. Their migration evidence remains separate. Account implementation deletion follows verified cutover rather than the completion of Cloud development.
 
 The [repository system architecture guide](https://github.com/dork-labs/dorkos/blob/main/contributing/system-architecture.md) has code evidence, data ownership, status notes and diagram maintenance instructions.
 
