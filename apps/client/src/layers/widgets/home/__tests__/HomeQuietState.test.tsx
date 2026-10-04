@@ -304,6 +304,8 @@ function renderQuiet({
 let mockExtensionDecisions: ExtensionDecisionDTO[] = [];
 /** When true, the extension routes never answer — a first load still in flight. */
 let extensionReadsHang = false;
+/** When true, the decisions route answers 500 — a read that failed. */
+let decisionsReadFails = false;
 
 /**
  * The two extension reads in the Inbox's waiting queue are plain `fetch` calls,
@@ -314,6 +316,9 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = String(input);
   const json = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body)));
   if (url.endsWith('/extensions/pending-approvals')) return json({ approvals: [] });
+  if (url.endsWith('/extension-decisions') && decisionsReadFails) {
+    return Promise.resolve(new Response('{"error":"boom"}', { status: 500 }));
+  }
   if (url.endsWith('/extension-decisions')) {
     return json({ decisions: mockExtensionDecisions, offers: [] });
   }
@@ -358,6 +363,7 @@ beforeEach(() => {
   suggestionQualifies = true;
   mockExtensionDecisions = [];
   extensionReadsHang = false;
+  decisionsReadFails = false;
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
 });
 
@@ -456,7 +462,10 @@ describe('HomeQuietState — when it stands down', () => {
     renderQuiet();
 
     await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/extension-decisions$/))
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/extension-decisions$/),
+        expect.anything()
+      )
     );
     // Long enough for the line to have appeared if it were going to.
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -480,6 +489,22 @@ describe('HomeQuietState — when it stands down', () => {
     });
 
     await waitFor(() => expect(transport.listPendingInteractions).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(quietLine()).toBeNull();
+  });
+
+  it('says nothing when a waiting read failed — cannot say is not quiet', async () => {
+    // A failed read answers with an empty list. Seeded defect: drop
+    // `waitingUnreadable ||` from the gate and "All quiet." is drawn over it.
+    decisionsReadFails = true;
+    renderQuiet();
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/extension-decisions$/),
+        expect.anything()
+      )
+    );
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(quietLine()).toBeNull();
   });

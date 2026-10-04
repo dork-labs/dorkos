@@ -1,8 +1,13 @@
-import type { Task } from '@dorkos/shared/types';
 import { useNavigate } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
 
-import { useAppStore, useIsMobile, usePendingRead, useSafePathname } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useIsBelowDesktop,
+  useIsMobile,
+  usePendingRead,
+  useSafePathname,
+} from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { describeWaitingQueue, useWaitingQueue } from '@/layers/entities/attention';
 import { requestInbox } from '@/layers/entities/notifications';
@@ -13,9 +18,6 @@ import {
 } from '@/layers/features/schedule-approval';
 import { InboxRow, useOpenNotification } from '@/layers/features/inbox';
 import { PulseSection } from './PulseSection';
-
-/** Shared empty, so leaving schedules out of the line never mints a fresh array. */
-const NO_SCHEDULES: readonly Task[] = [];
 
 /** Max rows shown in the Pulse teaser (overflow lives on the home surface). */
 const PULSE_ATTENTION_CAP = 5;
@@ -48,10 +50,14 @@ const staggerContainer = {
  * with a door to it. "Nothing needs you" is only said when that queue is empty
  * too: the pill reading "1 waiting" beside an all-clear was DOR-2578.
  *
- * Parked schedules are the one kind left out of the line, on purpose: this
- * section already draws each one as its own card, and "1 schedule wants your
- * approval" directly above that card says it twice. Every item the pill counts
- * still shows here, either as a card or in the line — never neither.
+ * Parked schedules are left out of the line when they have a card, on purpose:
+ * "1 schedule wants your approval" directly above that card says it twice. The
+ * ones past the five-row cap have no card, so the line names those. Every item
+ * the pill counts still shows here, either as a card or in the line — never
+ * neither.
+ *
+ * A failed read is not an empty queue either: while any of the queue's reads
+ * has failed the section says it could not check, never that all is quiet.
  *
  * "View all →" opens the home surface where the full header and its detail
  * sheets live. Collapses to a calm all-clear line when nothing needs you.
@@ -76,12 +82,9 @@ export function PulseAttentionSection() {
   const isMobile = useIsMobile();
   const { schedules, errors, activity, isLoading: isFetchingRows, total } = useAttentionRows();
   const waitingQueue = useWaitingQueue();
-  // The pill's queue minus parked schedules, which draw as cards below (see
-  // the component doc for why they are not named twice).
-  const inboxOnly = { ...waitingQueue, schedules: NO_SCHEDULES };
-  const waitingCount = waitingQueue.items.filter(
-    (item) => item.kind !== 'schedule-approval'
-  ).length;
+  // The panel is a modal sheet everywhere below desktop width
+  // (`RightPanelContainer`), not only on a phone.
+  const panelIsSheet = useIsBelowDesktop();
   // A paused read during the boot-cache restore is not an empty list (DOR-1914).
   // Why `isLoading` cannot answer that on its own is in `usePendingRead`.
   const isLoading = usePendingRead(isFetchingRows || waitingQueue.isLoading);
@@ -107,6 +110,18 @@ export function PulseAttentionSection() {
     0,
     PULSE_ATTENTION_CAP - shownSchedules.length - shownErrors.length
   );
+  // The pill's queue, with the schedules that have a card above swapped for the
+  // ones the cap pushed off (see the component doc). A schedule still holding
+  // its "approved" receipt is not waiting, so only live ones are named.
+  const liveScheduleIds = new Set(schedules.map((task) => task.id));
+  const overflowSchedules = settlingSchedules
+    .slice(PULSE_ATTENTION_CAP)
+    .filter((task) => liveScheduleIds.has(task.id));
+  const lineQueue = { ...waitingQueue, schedules: overflowSchedules };
+  const waitingCount =
+    waitingQueue.items.filter((item) => item.kind !== 'schedule-approval').length +
+    overflowSchedules.length;
+  const unreadable = waitingQueue.isAnyError;
 
   if (duplicatesHomeHeader) return null;
 
@@ -120,7 +135,14 @@ export function PulseAttentionSection() {
       // the server has already stopped counting it.
       // Something waiting in the Inbox is not an all-clear either, whichever
       // kind it is — the same `items` the pill beside this panel counts.
-      empty={!isLoading && total === 0 && shownSchedules.length === 0 && waitingCount === 0}
+      // And a read that failed is "cannot say", never "nothing".
+      empty={
+        !isLoading &&
+        total === 0 &&
+        shownSchedules.length === 0 &&
+        waitingCount === 0 &&
+        !unreadable
+      }
       allClear="All quiet. Nothing needs you."
       action={
         <Button
@@ -133,6 +155,13 @@ export function PulseAttentionSection() {
         </Button>
       }
     >
+      {/* Said whether or not anything else is drawn: with one read failed, the
+          line below may be counting short. */}
+      {unreadable && (
+        <p data-slot="pulse-waiting-unreadable" className="text-muted-foreground mb-2 px-2 text-xs">
+          Couldn’t check everything waiting on you.
+        </p>
+      )}
       {waitingCount > 0 && (
         <div
           data-slot="pulse-waiting-line"
@@ -140,16 +169,16 @@ export function PulseAttentionSection() {
         >
           <span className="bg-status-warning size-1.5 shrink-0 rounded-full" aria-hidden />
           <span className="text-foreground/90 min-w-0 flex-1 text-xs">
-            {describeWaitingQueue(inboxOnly)}
+            {describeWaitingQueue(lineQueue)}
           </span>
           <Button
             variant="ghost"
             size="sm"
             className="h-6 shrink-0 px-2 text-xs"
             onClick={() => {
-              // On a phone this panel is a sheet over the page, and the Inbox
-              // is a sheet too: close this one so the two never stack.
-              if (isMobile) setRightPanelOpen(false);
+              // Below desktop this panel is a modal sheet over the page, and
+              // the Inbox would open under its overlay: close this one first.
+              if (panelIsSheet) setRightPanelOpen(false);
               requestInbox();
             }}
           >

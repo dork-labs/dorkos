@@ -53,7 +53,10 @@ let mockWaiting: {
   extensionApprovals: unknown[];
   extensionDecisions: unknown[];
   isLoading: boolean;
+  isAnyError: boolean;
 } = emptyWaiting();
+/** Whether the panel is a modal sheet (below desktop width) in this case. */
+let mockBelowDesktop = false;
 const mockRequestInbox = vi.fn();
 
 function emptyWaiting() {
@@ -64,6 +67,7 @@ function emptyWaiting() {
     extensionApprovals: [],
     extensionDecisions: [],
     isLoading: false,
+    isAnyError: false,
   };
 }
 
@@ -82,6 +86,13 @@ vi.mock('@tanstack/react-router', () => ({
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: mockPathname } }),
 }));
+
+// Only the viewport question is stubbed; the app store and the rest are real,
+// so a case can read `rightPanelOpen` back out of the store it wrote to.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return { ...actual, useIsBelowDesktop: () => mockBelowDesktop };
+});
 
 // The waiting queue is the bell's own hook. Stubbed at its data, but its `items`
 // come from the real derivation and the sentence from the real describer, so a
@@ -167,6 +178,7 @@ vi.mock('@/layers/features/activity-feed-page', () => ({
   ),
 }));
 
+import { useAppStore } from '@/layers/shared/model';
 import { PulsePanel } from '../ui/PulsePanel';
 
 function makeAttention(n: number): MockAttentionItem[] {
@@ -200,6 +212,7 @@ beforeEach(() => {
   mockActivity = { groups: [], isLoading: false };
   mockPathname = '/team';
   mockWaiting = emptyWaiting();
+  mockBelowDesktop = false;
 });
 
 describe('PulsePanel', () => {
@@ -353,6 +366,61 @@ describe('PulsePanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open Inbox' }));
     expect(mockRequestInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the panel before opening the Inbox wherever the panel is a sheet', async () => {
+    // Below desktop width the panel is a modal sheet (tablet included, not only
+    // phones), and the Inbox would open under its overlay — the first click on
+    // it would just close the sheet. Seeded defect: gate on `useIsMobile`.
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    mockBelowDesktop = true;
+    useAppStore.getState().setRightPanelOpen(true);
+    mockWaiting = { ...emptyWaiting(), extensionDecisions: [{ id: 'dec-1' }] };
+
+    render(<PulsePanel />);
+
+    await user.click(screen.getByRole('button', { name: 'Open Inbox' }));
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(mockRequestInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a docked panel open when it opens the Inbox', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    useAppStore.getState().setRightPanelOpen(true);
+    mockWaiting = { ...emptyWaiting(), extensionDecisions: [{ id: 'dec-1' }] };
+
+    render(<PulsePanel />);
+
+    await user.click(screen.getByRole('button', { name: 'Open Inbox' }));
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+  });
+
+  it('names the parked schedules the cap pushed off, so none shows nowhere', () => {
+    // Seven parked, five cards: the other two have no card, so the line has
+    // to name them. Seeded defect: leave every schedule out of the line.
+    const parked = Array.from({ length: 7 }, (_, i) => ({ id: `task-${i}`, displayName: `S${i}` }));
+    mockSchedules = parked;
+    mockWaiting = { ...emptyWaiting(), schedules: parked };
+
+    render(<PulsePanel />);
+
+    expect(screen.getAllByTestId('schedule-row')).toHaveLength(5);
+    expect(
+      screen.getByText('2 schedules want your approval. Nothing runs until you decide.')
+    ).toBeInTheDocument();
+  });
+
+  it('says it could not check, never all quiet, when a waiting read failed', () => {
+    // A failed read answers with an empty list. Seeded defect: drop
+    // `&& !unreadable` from the `empty` gate and the all-clear is drawn over it.
+    mockWaiting = { ...emptyWaiting(), isAnyError: true };
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.getByText('Couldn’t check everything waiting on you.')).toBeInTheDocument();
   });
 
   it('does not flash the all-clear while the waiting queue is still loading', () => {

@@ -74,8 +74,17 @@ export interface WaitingQueueState {
    * moment four of them answer is claiming something it has not checked.
    */
   isLoading: boolean;
-  /** True when the approval queue could not be read. */
+  /**
+   * True when the approval queue could not be read. Drives the bell's
+   * "couldn't check approvals" card and its retry, which are about that queue.
+   */
   isError: boolean;
+  /**
+   * True when ANY of the five reads failed. A failed read answers with an
+   * empty list, and an empty list is not "nothing waiting": a surface that
+   * says all is quiet must not say it while this is true.
+   */
+  isAnyError: boolean;
   /** Retry the approval queue read. */
   retry: () => void;
 }
@@ -99,14 +108,26 @@ export interface WaitingQueueState {
  */
 export function useWaitingQueue(): WaitingQueueState {
   const { approvals, isLoading: approvalsLoading, isError, retry } = usePendingApprovals();
-  const { interactions: asks, isLoading: asksLoading } = usePendingInteractions();
-  const { schedules, isLoading: schedulesLoading } = usePendingScheduleApprovals();
-  const { approvals: extensionApprovals, isLoading: extensionApprovalsLoading } =
-    usePendingExtensionApprovals();
+  const {
+    interactions: asks,
+    isLoading: asksLoading,
+    isError: asksError,
+  } = usePendingInteractions();
+  const {
+    schedules,
+    isLoading: schedulesLoading,
+    isError: schedulesError,
+  } = usePendingScheduleApprovals();
+  const {
+    approvals: extensionApprovals,
+    isLoading: extensionApprovalsLoading,
+    isError: extensionApprovalsError,
+  } = usePendingExtensionApprovals();
   const {
     decisions: extensionDecisions,
     offers: decisionOffers,
     isLoading: decisionsLoading,
+    isError: decisionsError,
   } = useExtensionDecisions();
 
   const items = useMemo(
@@ -130,6 +151,7 @@ export function useWaitingQueue(): WaitingQueueState {
       extensionApprovalsLoading ||
       decisionsLoading,
     isError,
+    isAnyError: isError || asksError || schedulesError || extensionApprovalsError || decisionsError,
     retry,
   };
 }

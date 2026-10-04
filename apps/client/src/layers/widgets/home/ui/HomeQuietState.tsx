@@ -76,7 +76,8 @@ export interface HomeQuietStateProps {
  * the pill and Pulse also read. Not only the approvals the header draws: an
  * extension decision is not in the header, but "All quiet." under a pill
  * reading "1 waiting" is the contradiction DOR-2578 removed from Pulse. And
- * nothing is said until that queue has loaded, for the same reason.
+ * nothing is said until that queue has loaded, or while any of its reads has
+ * failed, for the same reason.
  *
  * **The reads are cached reads.** `useWaitingQueue`, `useAttentionRows`, and
  * `useShiftReport` are the same queries the header and the pill hold, so
@@ -100,7 +101,7 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
   const {
     items: waiting,
     isLoading: waitingLoading,
-    isError: approvalsUnavailable,
+    isAnyError: waitingUnreadable,
   } = useWaitingQueue();
   const { total: headerRows } = useAttentionRows();
   const shiftReport = useShiftReport();
@@ -115,7 +116,8 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
   const headerSpeaks =
     waiting.length > 0 ||
     waitingLoading ||
-    approvalsUnavailable ||
+    // A failed read is not an empty queue: "cannot say" is not "quiet".
+    waitingUnreadable ||
     headerRows > 0 ||
     shiftReport !== undefined ||
     presenceOccupied;

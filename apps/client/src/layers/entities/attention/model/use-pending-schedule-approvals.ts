@@ -38,6 +38,11 @@ export interface PendingScheduleApprovals {
    * that would contradict it has actually arrived.
    */
   isLoading: boolean;
+  /**
+   * True when the last read failed. A failed read is not an empty list: a
+   * surface that draws an all-clear must not draw it over one.
+   */
+  isError: boolean;
 }
 
 /**
@@ -64,7 +69,7 @@ export function usePendingScheduleApprovals(): PendingScheduleApprovals {
   // gives up waiting on config after three seconds and renders anyway
   // (DOR-1391).
   const { enabled, isLoading: configLoading } = useTasksEnabledState();
-  const { data, isLoading } = useTasks(enabled);
+  const { data, isLoading, isError } = useTasks(enabled);
 
   const schedules = useMemo(() => {
     // A package can ship a schedule switched off, and discovery still parks it
@@ -81,5 +86,5 @@ export function usePendingScheduleApprovals(): PendingScheduleApprovals {
     return parked.length === 0 ? NO_SCHEDULES : parked;
   }, [data]);
 
-  return { schedules, isLoading: configLoading || isLoading };
+  return { schedules, isLoading: configLoading || isLoading, isError };
 }

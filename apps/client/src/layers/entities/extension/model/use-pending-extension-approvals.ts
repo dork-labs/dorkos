@@ -33,6 +33,11 @@ export interface PendingExtensionApprovalsState {
   approvals: readonly PendingExtensionApproval[];
   /** True while the list is still on its first read. */
   isLoading: boolean;
+  /**
+   * True when the last read failed. A failed read is not an empty list: a
+   * surface that draws an all-clear must not draw it over one.
+   */
+  isError: boolean;
 }
 
 /**
@@ -40,8 +45,8 @@ export interface PendingExtensionApprovalsState {
  *
  * @returns The extensions waiting, oldest first.
  */
-async function fetchPendingApprovals(): Promise<PendingExtensionApproval[]> {
-  const res = await fetch(`${resolveApiBaseUrl()}/extensions/pending-approvals`);
+async function fetchPendingApprovals(signal?: AbortSignal): Promise<PendingExtensionApproval[]> {
+  const res = await fetch(`${resolveApiBaseUrl()}/extensions/pending-approvals`, { signal });
   if (!res.ok) {
     throw new Error(`Couldn’t check for extensions waiting to be turned on (${res.status})`);
   }
@@ -60,19 +65,24 @@ async function fetchPendingApprovals(): Promise<PendingExtensionApproval[]> {
  */
 export function usePendingExtensionApprovals(): PendingExtensionApprovalsState {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: extensionQueryKeys.pendingApprovals(),
-    queryFn: fetchPendingApprovals,
+    queryFn: ({ signal }) => fetchPendingApprovals(signal),
   });
 
   const refresh = (raw: unknown) => {
     const kind = (raw as { kind?: unknown } | null)?.kind;
     if (kind !== undefined && kind !== 'extension.approval') return;
-    void queryClient.invalidateQueries({ queryKey: extensionQueryKeys.pendingApprovals() });
+    // One read per event, however many copies of this hook heard it (see the
+    // same call in `use-extension-decisions`).
+    void queryClient.invalidateQueries(
+      { queryKey: extensionQueryKeys.pendingApprovals() },
+      { cancelRefetch: false }
+    );
   };
   useEventSubscription('standing_pending', refresh);
   useEventSubscription('standing_resolved', refresh);
   useEventSubscription('extension_reloaded', () => refresh(null));
 
-  return { approvals: data ?? NO_APPROVALS, isLoading };
+  return { approvals: data ?? NO_APPROVALS, isLoading, isError };
 }

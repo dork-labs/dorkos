@@ -39,6 +39,11 @@ export interface ExtensionDecisionsState {
   offers: readonly PendingDecisionOffer[];
   /** True while the first read is in flight. */
   isLoading: boolean;
+  /**
+   * True when the last read failed. A failed read is not an empty list: a
+   * surface that draws an all-clear must not draw it over one.
+   */
+  isError: boolean;
 }
 
 /** A failed request's own sentence, or the status when it sent none. */
@@ -52,8 +57,8 @@ async function failureOf(res: Response): Promise<Error & { code?: string }> {
 }
 
 /** Read the list once. */
-async function fetchDecisions(): Promise<ListExtensionDecisionsResponse> {
-  const res = await fetch(`${resolveApiBaseUrl()}/extension-decisions`);
+async function fetchDecisions(signal?: AbortSignal): Promise<ListExtensionDecisionsResponse> {
+  const res = await fetch(`${resolveApiBaseUrl()}/extension-decisions`, { signal });
   if (!res.ok) throw await failureOf(res);
   return ListExtensionDecisionsResponseSchema.parse(await res.json());
 }
@@ -66,15 +71,22 @@ async function fetchDecisions(): Promise<ListExtensionDecisionsResponse> {
  */
 export function useExtensionDecisions(): ExtensionDecisionsState {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: extensionDecisionsKey(),
-    queryFn: fetchDecisions,
+    queryFn: ({ signal }) => fetchDecisions(signal),
   });
 
   const refresh = (raw: unknown) => {
     const kind = (raw as { kind?: unknown } | null)?.kind;
     if (kind !== undefined && kind !== 'extension.decision') return;
-    void queryClient.invalidateQueries({ queryKey: extensionDecisionsKey() });
+    // `cancelRefetch: false`: the bell, Pulse and Home each mount this hook,
+    // every copy hears the same event and invalidates, and the default would
+    // cancel the read in flight and start another for each one — two or three
+    // requests per event. One read per event is enough.
+    void queryClient.invalidateQueries(
+      { queryKey: extensionDecisionsKey() },
+      { cancelRefetch: false }
+    );
   };
   useEventSubscription('standing_pending', refresh);
   useEventSubscription('standing_resolved', refresh);
@@ -84,6 +96,7 @@ export function useExtensionDecisions(): ExtensionDecisionsState {
     decisions: data?.decisions ?? NO_DECISIONS,
     offers: data?.offers ?? NO_OFFERS,
     isLoading,
+    isError,
   };
 }
 
