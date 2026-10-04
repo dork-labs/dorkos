@@ -14,11 +14,19 @@
  *   extension (`reloadExtension`), only when it is turned on and approved;
  * - a new or removed extension folder, or a changed `extension.json`,
  *   re-scans the extensions first (`requestRefresh`);
- * - skills, commands, hooks and tasks ask a project dev link's harness
- *   projection to run again;
- * - manifests, hooks, servers, programs and everything else refresh the
- *   runtime's plugin list, which also checks again what the package runs on
- *   its own.
+ * - manifests, skills, commands, hooks and tasks ask a project dev link's
+ *   harness projection to run again;
+ * - for a global dev link, manifests, hooks, servers, programs, skills,
+ *   commands and agents (every file `readRunnableDeclarations` reads, and any
+ *   path its plugin.json names) refresh the runtime's plugin list, which also
+ *   checks again what the package runs on its own. A project package is not
+ *   handed to the SDK as a plugin (it reaches sessions through the projection),
+ *   so a project dev link never asks live sessions to reload their plugins;
+ * - anything else (a README, `src/`, a log, a swap file) does nothing at all.
+ *
+ * Events that arrive while a burst is being acted on start their own quiet
+ * period once it is done; bursts never run back to back. Plugin refreshes and
+ * each dev link's projections run one at a time, with at most one more owed.
  *
  * After each burst it broadcasts `marketplace_dev_link_reloaded` and keeps the
  * time for `DevLinkStatus.lastReloadAt`.
@@ -53,9 +61,13 @@
  *   across a hook card, which a person has hours to answer, so each dev link
  *   has at most one projection running and one more owed, however many edits
  *   arrive meanwhile.
- * - **Watch `.git`, `node_modules` or DorkOS's runtime state** inside the
- *   folder ({@link isIgnoredDevLinkPath}). That is what keeps a folder with
- *   thousands of dependencies cheap.
+ * - **Watch `.git`, `node_modules`, build, cache and virtual environment
+ *   folders, or DorkOS's runtime state** inside the folder
+ *   ({@link isIgnoredDevLinkPath}). That is what keeps a folder with thousands
+ *   of dependencies cheap.
+ * - **Act on a dev link being unlinked.** {@link DevLinkWatcher.hold} marks it
+ *   at once and waits for a burst already under way, which checks again before
+ *   every rebuild, refresh and owed projection.
  *
  * ## The sweep
  *
@@ -67,7 +79,9 @@
  * written right after a watch opens is dropped 13-40% of the time, a missing
  * folder cannot be watched at all, and a watch can die (`EMFILE`). The same
  * comparison runs once just after each watch settles, to cover the first case
- * straight away.
+ * straight away. A watch replaced after it died, or a folder that came back,
+ * is compared against the listing last acted on, so only what really changed
+ * meanwhile is acted on.
  *
  * @module services/marketplace/dev-links/dev-link-watcher
  */
@@ -79,8 +93,11 @@ import {
   type DevLinkReloadedEvent,
 } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../../../lib/logger.js';
+import { readPluginJson } from '../lib/declarations/package-declarations.js';
 import {
   classifyDevLinkChanges,
+  declaredPathsOf,
+  isDevLinkDeclarationChange,
   isIgnoredDevLinkPath,
   relativeTo,
   shapeChanges,
@@ -93,6 +110,7 @@ import {
   type DevLinkExtensionReload,
   type DevLinkExtensions,
 } from './dev-link-extensions.js';
+import { DevLinkLane } from './dev-link-lane.js';
 import { devLinkStateOf, readDevLinks } from './registry.js';
 
 /**
@@ -102,26 +120,26 @@ import { devLinkStateOf, readDevLinks } from './registry.js';
  * is one change to a person. The window restarts on every event, up to
  * {@link DEV_LINK_MAX_WAIT_MS}.
  */
-export const DEV_LINK_QUIET_MS = 300;
+const DEV_LINK_QUIET_MS = 300;
 
 /**
  * The longest a burst waits, however steadily events keep arriving, so a tool
  * that writes into the folder without pause cannot hold every reload back.
  */
-export const DEV_LINK_MAX_WAIT_MS = 3_000;
+const DEV_LINK_MAX_WAIT_MS = 3_000;
 
 /**
  * How often the registry is re-read, missing watches opened and each folder
  * compared against what was last acted on. See the module docs.
  */
-export const DEV_LINK_REARM_MS = 60_000;
+const DEV_LINK_REARM_MS = 60_000;
 
 /**
  * How long after chokidar reports `ready` before a watch is treated as live
  * and its folder compared once. `skills-watcher.ts` (`SKILLS_SETTLE_MS`) has
  * the measurement.
  */
-export const DEV_LINK_SETTLE_MS = 100;
+const DEV_LINK_SETTLE_MS = 100;
 
 /** How long a file must stop changing before chokidar reports it (`skills-watcher.ts`). */
 const WRITE_STABILITY_MS = 50;
@@ -129,16 +147,8 @@ const WRITE_STABILITY_MS = 50;
 /** @see {@link WRITE_STABILITY_MS} */
 const WRITE_POLL_MS = 25;
 
-/** Which dev link a projection or refresh is for. */
-export interface DevLinkScopeContext {
-  /** Package name. */
-  packageName: string;
-  /** The project, for a project dev link. */
-  projectPath?: string;
-}
-
 /** A minimal file watch: what the watcher needs from chokidar. */
-export interface DevLinkWatchHandle {
+interface DevLinkWatchHandle {
   /** Close the watch. */
   close(): Promise<void>;
 }
@@ -157,14 +167,15 @@ export interface DevLinkWatchListeners {
  * Open a watch on a folder. The default is chokidar; a test passes a fake.
  *
  * @param folder - The folder's real path.
- * @param ignored - Whether an absolute path inside it is never watched.
+ * @param ignored - Whether an absolute path inside it is never watched, given
+ *   whether it is known to be a directory.
  * @param listeners - Where to report.
  */
 export type DevLinkWatchFactory = (
   folder: string,
-  ignored: (absPath: string) => boolean,
+  ignored: (absPath: string, isDirectory?: boolean) => boolean,
   listeners: DevLinkWatchListeners
-) => DevLinkWatchHandle;
+) => { close(): Promise<void> };
 
 /** What {@link DevLinkWatcher} needs. */
 export interface DevLinkWatcherDeps {
@@ -173,16 +184,16 @@ export interface DevLinkWatcherDeps {
   /** The extension seams. Absent when extensions did not start: edits there do nothing. */
   extensions?: DevLinkExtensions;
   /**
-   * Refresh the runtime's plugin list for the dev link's scope and check again
-   * what the package runs on its own (global consent). Fire-and-forget; must
-   * not throw.
+   * Refresh the runtime's global plugin list and check again what global
+   * packages run on their own (global consent). Never called for a project
+   * dev link. At most one runs at a time; must not reject.
    */
-  refreshPlugins: (ctx: DevLinkScopeContext) => void;
+  refreshPlugins: () => Promise<void>;
   /**
    * Run a project's harness projection through its consent seam, which
    * withholds and asks about new hooks. May stay pending while a card is open.
    */
-  reproject: (ctx: DevLinkScopeContext & { projectPath: string }) => Promise<void>;
+  reproject: (ctx: { packageName: string; projectPath: string }) => Promise<void>;
   /** Broadcast one dev link's reload on the global event stream. */
   broadcast: (event: DevLinkReloadedEvent) => void;
   /** Override {@link DEV_LINK_QUIET_MS}. @internal For tests. */
@@ -214,22 +225,18 @@ interface WatchedFolder {
   dead: boolean;
   /** Resolves once the watch has settled. */
   ready: Promise<void>;
-  /** Changes not yet acted on. */
-  pending: DevLinkChange[];
+  /** Changes not yet acted on, by relative path. */
+  pending: Map<string, DevLinkChangeKind>;
   /** The quiet-period timer. */
   timer?: NodeJS.Timeout;
   /** When the current burst began, for {@link DEV_LINK_MAX_WAIT_MS}. */
   burstStartedAt?: number;
   /** The burst being acted on now. */
   inFlight?: Promise<void>;
-  /** The listing last acted on, by swept directory. */
+  /** The listing last acted on ({@link shapeOf}). */
   shape?: Map<string, string>;
-}
-
-/** One dev link's projection lane: at most one running and one more owed. */
-interface ProjectionLane {
-  inFlight?: Promise<void>;
-  again: boolean;
+  /** Declaration paths the folder's plugin.json names, as last read. */
+  declared: string[];
 }
 
 /** The stable string key of one dev link. */
@@ -242,15 +249,20 @@ function sameRecord(a: DevLinkRecord, b: DevLinkRecord): boolean {
   return keyOf(a) === keyOf(b) && a.target === b.target && a.slot === b.slot;
 }
 
-/** The default watch: chokidar over the whole folder, links not followed. */
-const chokidarWatch: DevLinkWatchFactory = (folder, ignored, listeners) => {
+/**
+ * The default watch: chokidar over the whole folder, links not followed.
+ *
+ * @internal Exported so a test can wrap the real watch and see it close.
+ */
+export const chokidarDevLinkWatch: DevLinkWatchFactory = (folder, ignored, listeners) => {
   const watcher = chokidar.watch(folder, {
     persistent: true,
     ignoreInitial: true,
     // A link inside the working folder is not followed: it could lead out of
     // the folder, or back into it.
     followSymlinks: false,
-    ignored: (absPath: string) => ignored(absPath),
+    ignored: (absPath: string, stats?: { isDirectory(): boolean }) =>
+      ignored(absPath, stats?.isDirectory()),
     awaitWriteFinish: { stabilityThreshold: WRITE_STABILITY_MS, pollInterval: WRITE_POLL_MS },
   });
   watcher.on('all', (eventName, absPath) => {
@@ -278,9 +290,20 @@ const ACTION_ORDER = DevLinkReloadActionSchema.options;
  */
 export class DevLinkWatcher {
   private readonly folders = new Map<string, WatchedFolder>();
-  /** Folders whose watch closed because the folder went missing, for a catch-up on return. */
-  private readonly lost = new Set<string>();
-  private readonly lanes = new Map<string, ProjectionLane>();
+  /**
+   * Folders whose watch closed because the folder went missing, with the
+   * listing last acted on (absent when it was never watched), for a catch-up
+   * on return.
+   */
+  private readonly lost = new Map<string, Map<string, string> | undefined>();
+  /** Each dev link's projections. */
+  private readonly lanes = new Map<string, DevLinkLane>();
+  /** Global plugin refreshes, shared by every global dev link. */
+  private readonly pluginLane = new DevLinkLane({
+    job: () => this.deps.refreshPlugins(),
+    mayRun: () => !this.stopped,
+    failure: 'Refreshing plugins after a dev link edit failed',
+  });
   private readonly lastReloads = new Map<string, string>();
   /** Dev links being unlinked: never watched or acted on until released. */
   private readonly held = new Set<string>();
@@ -296,7 +319,7 @@ export class DevLinkWatcher {
    * @param deps - See {@link DevLinkWatcherDeps}.
    */
   constructor(private readonly deps: DevLinkWatcherDeps) {
-    this.watch = deps.watch ?? chokidarWatch;
+    this.watch = deps.watch ?? chokidarDevLinkWatch;
   }
 
   /**
@@ -325,13 +348,23 @@ export class DevLinkWatcher {
   /**
    * Stop watching and acting on one dev link, before it is unlinked, until
    * {@link release}. Its folder's watch closes when no other dev link uses it.
+   * Resolves only once a burst already being acted on for it has finished,
+   * so nothing rebuilds or projects for it after this returns.
    *
    * @param record - Which dev link.
    */
-  hold(record: DevLinkKey): Promise<void> {
-    return this.serialize(async () => {
-      const key = keyOf(record);
-      this.held.add(key);
+  async hold(record: DevLinkKey): Promise<void> {
+    const key = keyOf(record);
+    // Marked at once: a burst under way checks it before each step.
+    this.held.add(key);
+    // Waited on outside `serialize`: a burst whose gate closes its watch goes
+    // through `serialize` itself, so waiting inside it would never end.
+    await Promise.allSettled(
+      [...this.folders.values()]
+        .filter((watched) => watched.records.some((r) => keyOf(r) === key))
+        .map((watched) => watched.inFlight)
+    );
+    await this.serialize(async () => {
       for (const watched of [...this.folders.values()]) {
         watched.records = watched.records.filter((r) => keyOf(r) !== key);
         if (watched.records.length === 0) await this.close(watched);
@@ -390,28 +423,34 @@ export class DevLinkWatcher {
   }
 
   /**
-   * Act on everything pending now and wait for it.
+   * Act on everything pending now, including what arrives while doing so, and
+   * wait for it.
    *
    * @internal For tests: it collapses the quiet period.
    */
   async flush(): Promise<void> {
-    for (const watched of this.folders.values()) {
-      if (watched.timer) {
-        clearTimeout(watched.timer);
-        watched.timer = undefined;
-        this.fire(watched);
+    // Bounded, so a test whose folder never stops changing cannot hang here.
+    for (let pass = 0; pass < 10; pass++) {
+      for (const watched of this.folders.values()) {
+        if (watched.timer) {
+          clearTimeout(watched.timer);
+          watched.timer = undefined;
+          this.fire(watched);
+        }
       }
+      const busy = [...this.folders.values()].filter((watched) => watched.inFlight);
+      if (busy.length === 0) return;
+      await Promise.all(busy.map((watched) => watched.inFlight));
     }
-    await Promise.all([...this.folders.values()].map((watched) => watched.inFlight));
   }
 
   /**
-   * Wait for every projection this watcher started.
+   * Wait for every projection and plugin refresh this watcher started.
    *
    * @internal For tests.
    */
   async projectionsIdle(): Promise<void> {
-    await Promise.all([...this.lanes.values()].map((lane) => lane.inFlight));
+    await Promise.all([...this.lanes.values(), this.pluginLane].map((lane) => lane.inFlight));
   }
 
   /** Close every watch, drop everything pending, and wait for a burst being acted on. */
@@ -444,6 +483,9 @@ export class DevLinkWatcher {
     const records = 'links' in reading ? reading.links : [];
     const recorded = new Set(records.map(keyOf));
     for (const key of [...this.held]) if (!recorded.has(key)) this.held.delete(key);
+    // A folder no dev link runs from any more owes no catch-up.
+    const targets = new Set(records.map((record) => record.target));
+    for (const folder of [...this.lost.keys()]) if (!targets.has(folder)) this.lost.delete(folder);
     for (const key of [...this.lastReloads.keys()]) {
       if (!recorded.has(key)) this.lastReloads.delete(key);
     }
@@ -452,7 +494,9 @@ export class DevLinkWatcher {
     for (const record of records) {
       if (this.held.has(keyOf(record))) continue;
       const state = await devLinkStateOf(record);
-      if (state === 'folder-missing') this.lost.add(record.target);
+      if (state === 'folder-missing' && !this.lost.has(record.target)) {
+        this.lost.set(record.target, this.folders.get(record.target)?.shape);
+      }
       if (state !== 'active') continue;
       wanted.set(record.target, [...(wanted.get(record.target) ?? []), record]);
     }
@@ -464,23 +508,47 @@ export class DevLinkWatcher {
     for (const [folder, folderRecords] of wanted) {
       let watched = this.folders.get(folder);
       if (!watched) {
-        watched = { folder, records: [], dead: false, ready: Promise.resolve(), pending: [] };
+        watched = {
+          folder,
+          records: [],
+          dead: false,
+          ready: Promise.resolve(),
+          pending: new Map(),
+          declared: [],
+        };
         this.folders.set(folder, watched);
       }
       watched.records = folderRecords;
       if (watched.handle && !watched.dead) continue;
       // A folder that went missing and is back, or a watch that died: what
-      // changed meanwhile was never seen, so everything is checked again.
-      const catchUp = this.lost.delete(folder) || watched.dead;
-      await this.arm(watched, catchUp);
+      // changed meanwhile was never seen, so it is compared against the
+      // listing last acted on. A folder never watched before has none, and
+      // everything in it is new.
+      let catchUpFrom: ReadonlyMap<string, string> | undefined;
+      if (this.lost.has(folder)) {
+        catchUpFrom = this.lost.get(folder) ?? new Map();
+        this.lost.delete(folder);
+      } else if (watched.dead) {
+        catchUpFrom = watched.shape;
+      }
+      await this.arm(watched, catchUpFrom);
     }
   }
 
-  /** Open (or replace) the watch on one folder. */
-  private async arm(watched: WatchedFolder, catchUp: boolean): Promise<void> {
+  /**
+   * Open (or replace) the watch on one folder.
+   *
+   * @param catchUpFrom - The listing last acted on, when changes may have been
+   *   missed: whatever differs from it now is acted on.
+   */
+  private async arm(
+    watched: WatchedFolder,
+    catchUpFrom: ReadonlyMap<string, string> | undefined
+  ): Promise<void> {
     if (watched.handle) await watched.handle.close().catch(() => undefined);
     watched.handle = undefined;
     watched.dead = false;
+    watched.declared = declaredPathsOf(await readPluginJson(watched.folder));
     // Read before the watch opens, so a write in the moments after is a
     // difference the settle comparison finds.
     const before = await shapeOf(watched.folder);
@@ -502,14 +570,14 @@ export class DevLinkWatcher {
     };
     watched.handle = this.watch(
       watched.folder,
-      (absPath) => {
+      (absPath, isDirectory) => {
         const rel = relativeTo(watched.folder, absPath);
-        return rel !== null && isIgnoredDevLinkPath(rel);
+        return rel !== null && isIgnoredDevLinkPath(rel, isDirectory);
       },
       {
         onEvent: (kind, absPath) => {
           const rel = relativeTo(watched.folder, absPath);
-          if (rel === null || isIgnoredDevLinkPath(rel)) return;
+          if (rel === null) return;
           this.enqueue(watched, [{ rel, kind }]);
         },
         onReady: onSettled,
@@ -529,12 +597,7 @@ export class DevLinkWatcher {
         },
       }
     );
-    if (catchUp) {
-      this.enqueue(
-        watched,
-        [...before.keys()].map((rel) => ({ rel, kind: 'change' as const }))
-      );
-    }
+    if (catchUpFrom) this.enqueue(watched, shapeChanges(catchUpFrom, before));
   }
 
   /** The one comparison right after a watch settles. */
@@ -547,12 +610,34 @@ export class DevLinkWatcher {
     if (changes.length > 0) this.enqueue(watched, changes);
   }
 
-  /** Add changes to a folder's burst and (re)start its quiet period. */
+  /**
+   * Add changes to a folder's burst and (re)start its quiet period. A change
+   * no declaration or extension lives at is dropped here, so it never wakes
+   * anything. One entry per path: the latest kind, except that a later
+   * `change` never hides an `add` or `unlink` before it.
+   */
   private enqueue(watched: WatchedFolder, changes: readonly DevLinkChange[]): void {
     if (this.stopped || this.folders.get(watched.folder) !== watched) return;
-    watched.pending.push(...changes);
-    // A burst is being acted on: these wait, and one more pass runs after it.
+    let added = false;
+    for (const change of changes) {
+      if (!isDevLinkDeclarationChange(change, watched.declared)) continue;
+      const was = watched.pending.get(change.rel);
+      watched.pending.set(
+        change.rel,
+        was !== undefined && change.kind === 'change' ? was : change.kind
+      );
+      added = true;
+    }
+    if (!added) return;
+    watched.burstStartedAt ??= Date.now();
+    // A burst is being acted on: these wait for it, then for their own quiet
+    // period (see `fire`).
     if (watched.inFlight) return;
+    this.schedule(watched);
+  }
+
+  /** (Re)start a folder's quiet period, capped by the maximum wait. */
+  private schedule(watched: WatchedFolder): void {
     const quietMs = this.deps.quietMs ?? DEV_LINK_QUIET_MS;
     const maxWaitMs = this.deps.maxWaitMs ?? DEV_LINK_MAX_WAIT_MS;
     const now = Date.now();
@@ -566,20 +651,31 @@ export class DevLinkWatcher {
     watched.timer.unref?.();
   }
 
-  /** Start acting on a folder's burst, and run once more if more arrived meanwhile. */
+  /**
+   * Start acting on a folder's burst. What arrives meanwhile is acted on after
+   * a fresh quiet period from when this one finishes, never straight away, so
+   * a folder that keeps changing cannot drive one reload after another.
+   */
   private fire(watched: WatchedFolder): void {
-    if (watched.inFlight || watched.pending.length === 0) return;
+    if (watched.inFlight || watched.pending.size === 0) return;
+    const changes = [...watched.pending].map(([rel, kind]) => ({ rel, kind }));
+    watched.pending.clear();
     watched.burstStartedAt = undefined;
     const run = (async () => {
       try {
-        while (watched.pending.length > 0 && !this.stopped) {
-          const changes = watched.pending.splice(0);
-          await this.act(watched, changes);
-        }
+        await this.act(watched, changes);
       } catch (err) {
         logger.warn('[Marketplace] A dev link reload failed', { folder: watched.folder, err });
       } finally {
         watched.inFlight = undefined;
+        if (
+          watched.pending.size > 0 &&
+          !this.stopped &&
+          this.folders.get(watched.folder) === watched
+        ) {
+          watched.burstStartedAt = Date.now();
+          this.schedule(watched);
+        }
       }
     })();
     watched.inFlight = run;
@@ -595,13 +691,17 @@ export class DevLinkWatcher {
       await this.serialize(async () => {
         if (this.folders.get(watched.folder) === watched && watched.records.length > 0) {
           const states = await Promise.all(watched.records.map((r) => devLinkStateOf(r)));
-          if (states.includes('folder-missing')) this.lost.add(watched.folder);
+          if (states.includes('folder-missing')) this.lost.set(watched.folder, watched.shape);
         }
         await this.close(watched);
       });
       return;
     }
     watched.shape = await shapeOf(watched.folder);
+    watched.declared = declaredPathsOf(await readPluginJson(watched.folder));
+    // A dev link held since the gate (an unlink started) is dropped before
+    // every step that rebuilds, refreshes or projects anything.
+    const inForce = (): DevLinkRecord[] => live.filter((r) => !this.held.has(keyOf(r)));
 
     const extensions = this.deps.extensions;
     const carried = (): Map<string, string[]> => {
@@ -612,12 +712,13 @@ export class DevLinkWatcher {
       return byDir;
     };
     let known = carried();
-    const plan = classifyDevLinkChanges(changes, new Set(known.keys()));
+    const plan = classifyDevLinkChanges(changes, new Set(known.keys()), watched.declared);
     const actions = new Set<DevLinkReloadAction>();
     const errors: string[] = [];
 
     if (extensions && (plan.refreshExtensions || plan.reload.length > 0)) {
       if (plan.refreshExtensions) {
+        if (inForce().length === 0) return;
         try {
           await extensions.refresh();
           actions.add('extension');
@@ -628,6 +729,7 @@ export class DevLinkWatcher {
       }
       const ids = new Set(plan.reload.flatMap((dir) => known.get(dir) ?? []));
       for (const id of [...ids].sort()) {
+        if (inForce().length === 0) return;
         const result = await extensions
           .reload(id)
           .catch((err): DevLinkExtensionReload => ({ outcome: 'failed', error: messageOf(err) }));
@@ -638,24 +740,20 @@ export class DevLinkWatcher {
     }
 
     const at = (this.deps.now ?? (() => new Date()))().toISOString();
-    for (const record of live) {
+    for (const record of inForce()) {
       const recordActions = new Set(actions);
-      const context: DevLinkScopeContext = {
-        packageName: record.name,
-        ...(record.projectPath !== undefined && { projectPath: record.projectPath }),
-      };
-      if (plan.plugins) {
-        try {
-          this.deps.refreshPlugins(context);
-        } catch (err) {
-          logger.warn('[Marketplace] Refreshing plugins after a dev link edit failed', { err });
+      if (record.projectPath === undefined) {
+        // Global packages are not projected by DorkOS (the same as an
+        // install, `runAutoProjection`); the plugin refresh is what loads a
+        // changed declaration and re-checks global consent for a new one.
+        if (plan.plugins) {
+          this.pluginLane.request();
+          recordActions.add('plugins');
         }
-        recordActions.add('plugins');
-      }
-      // Global packages are not projected by DorkOS (the same as an install,
-      // `runAutoProjection`); in a project, a changed declaration also runs
-      // the projection, which is where a new hook is withheld and asked about.
-      if ((plan.projection || plan.plugins) && record.projectPath !== undefined) {
+      } else if (plan.projection || plan.plugins) {
+        // A project package is not an SDK plugin: its declarations reach
+        // sessions through the projection, which is also where a new hook is
+        // withheld and asked about. Live sessions' plugins are left alone.
         this.project(record, record.projectPath);
         recordActions.add('projection');
       }
@@ -695,31 +793,28 @@ export class DevLinkWatcher {
   /** Ask for one projection of a project dev link, coalesced with any in flight. */
   private project(record: DevLinkRecord, projectPath: string): void {
     const key = keyOf(record);
-    const lane = this.lanes.get(key) ?? { again: false };
-    this.lanes.set(key, lane);
-    if (lane.inFlight) {
-      lane.again = true;
-      return;
+    let lane = this.lanes.get(key);
+    if (!lane) {
+      const own: DevLinkLane = new DevLinkLane({
+        job: () => this.deps.reproject({ packageName: record.name, projectPath }),
+        // An owed projection never runs once its dev link is being unlinked.
+        mayRun: () => !this.stopped && !this.held.has(key),
+        failure: 'Projecting after a dev link edit failed',
+        onIdle: () => {
+          if (this.lanes.get(key) === own) this.lanes.delete(key);
+        },
+      });
+      lane = own;
+      this.lanes.set(key, lane);
     }
-    lane.inFlight = (async () => {
-      do {
-        lane.again = false;
-        try {
-          await this.deps.reproject({ packageName: record.name, projectPath });
-        } catch (err) {
-          logger.warn('[Marketplace] Projecting after a dev link edit failed', { err });
-        }
-      } while (lane.again && !this.stopped);
-      lane.inFlight = undefined;
-      this.lanes.delete(key);
-    })();
+    lane.request();
   }
 
   /** Close one folder's watch and forget it. */
   private async close(watched: WatchedFolder): Promise<void> {
     if (watched.timer) clearTimeout(watched.timer);
     watched.timer = undefined;
-    watched.pending = [];
+    watched.pending.clear();
     if (this.folders.get(watched.folder) === watched) this.folders.delete(watched.folder);
     const handle = watched.handle;
     watched.handle = undefined;

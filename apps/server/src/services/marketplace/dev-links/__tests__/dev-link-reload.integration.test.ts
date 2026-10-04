@@ -49,7 +49,7 @@ import { mayRunExtensionCode } from '../../../extensions/extension-load-policy.j
 import { runAutoProjection } from '../../../harness/auto-project.js';
 import { DevLinkService } from '../dev-link-service.js';
 import { devLinkExtensionsOf } from '../dev-link-extensions.js';
-import { DevLinkWatcher } from '../dev-link-watcher.js';
+import { chokidarDevLinkWatch, DevLinkWatcher } from '../dev-link-watcher.js';
 import { memoryConsentStore } from './memory-consent-store.js';
 
 const PLUGIN = 'flow';
@@ -139,6 +139,8 @@ describe('a dev link reloads when its folder changes', () => {
   let service: DevLinkService;
   let announced: string[][];
   let events: DevLinkReloadedEvent[];
+  /** Folders whose real chokidar watch was closed. */
+  let closedWatches: string[];
 
   beforeEach(async () => {
     root = await realpath(await mkdtemp(path.join(tmpdir(), 'dorkos-devlink-reload-')));
@@ -151,6 +153,7 @@ describe('a dev link reloads when its folder changes', () => {
     stored.value = { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} };
     announced = [];
     events = [];
+    closedWatches = [];
 
     // The installed copy the dev link sets aside, approved and turned on.
     await writePlugin(path.join(project, '.dork', 'plugins', PLUGIN), '1.0.0');
@@ -167,11 +170,21 @@ describe('a dev link reloads when its folder changes', () => {
         config: () => stored.value,
         announce: (ids) => announced.push(ids),
       }),
-      refreshPlugins: () => undefined,
+      refreshPlugins: async () => undefined,
       reproject: (ctx) => runAutoProjection({ ...ctx, action: 'install' }, { dorkHome }),
       broadcast: (event) => events.push(event),
       quietMs: 150,
       rearmMs: 0,
+      // The real chokidar watch, wrapped only to see it close.
+      watch: (folder, ignored, listeners) => {
+        const handle = chokidarDevLinkWatch(folder, ignored, listeners);
+        return {
+          close: async () => {
+            closedWatches.push(folder);
+            await handle.close();
+          },
+        };
+      },
     });
     service = new DevLinkService({
       dorkHome,
@@ -289,15 +302,9 @@ describe('a dev link reloads when its folder changes', () => {
     expect(stored.value.approvedSources.dash).toEqual(installedApproval);
     expect(manager.get('dash')?.devLink).toBeUndefined();
     expect(runs('dash')).toBe(true);
+    // And the folder no longer reloads anything: its watch is closed, not
+    // merely quiet, so no later edit can reach a reload.
     expect(watcher.watchedFolders()).toEqual([]);
-
-    // And the folder no longer reloads anything.
-    const announcedAtUnlink = announced.length;
-    await writeFile(
-      path.join(work, '.dork', 'extensions', 'dash', 'index.ts'),
-      'export const version = 3;\n'
-    );
-    await sleep(800);
-    expect(announced).toHaveLength(announcedAtUnlink);
+    expect(closedWatches).toContain(work);
   }, 60_000);
 });

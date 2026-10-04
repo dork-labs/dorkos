@@ -5311,23 +5311,26 @@ async function start() {
     // it entirely and leave the plugin unprojected (DOR-2057).
     // The runtime half of the post-change notifier, on its own so the dev link
     // watcher can refresh plugins without also queuing a projection per edit.
-    const refreshRuntimePlugins = (projectPath: string | undefined): void => {
+    // Resolves when the refresh is done, and never rejects.
+    const refreshRuntimePlugins = (projectPath: string | undefined): Promise<void> => {
       // Pass the project path (when the change was project-scoped) so the
       // runtime drops that cwd's cached command list and re-warms it with
       // the merged per-cwd plugin set.
-      claudeRuntime?.refreshActivatedPlugins(projectPath).catch((err) => {
-        logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
-      });
+      const refreshed =
+        claudeRuntime?.refreshActivatedPlugins(projectPath).catch((err) => {
+          logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
+        }) ?? Promise.resolve();
       // A global change can leave a package held back from every session until
       // a person approves what it runs (DOR-2306): ask now, in the background.
       if (projectPath === undefined) askAboutWithheldGlobals();
+      return refreshed;
     };
 
     const onPluginsChanged: MarketplaceMcpDeps['onPluginsChanged'] = (ctx) => {
       // Never throws into the caller: it runs after a mutation already succeeded,
       // and a failed follow-up must not be reported as a failed install.
       try {
-        refreshRuntimePlugins(ctx.projectPath);
+        void refreshRuntimePlugins(ctx.projectPath);
         // Harness Sync auto-projection (GAP-4): project the changed plugin's
         // assets to the project's other harnesses. Fire-and-forget; the
         // service is internally best-effort and never throws, but we still
@@ -5354,17 +5357,13 @@ async function start() {
         config: () => configManager.get('extensions'),
         announce: (ids) => broadcastExtensionReloaded(ids),
       }),
-      refreshPlugins: ({ projectPath }) => {
-        try {
-          refreshRuntimePlugins(projectPath);
-        } catch (err) {
-          logger.warn('[Marketplace] Refreshing plugins after a dev link edit failed', { err });
-        }
-      },
+      // Global dev links only: a project package is not an SDK plugin, so a
+      // project dev link's edits reach sessions through the projection alone.
+      refreshPlugins: () => refreshRuntimePlugins(undefined),
       reproject: (ctx) =>
         runAutoProjection({ ...ctx, action: 'install' }, { dorkHome, approvals: approvalService }),
-      // A person's surface (the dev link badge): it names folders and build
-      // errors, so it goes where `config_changed` goes and no agent reads it.
+      // A person's surface: it names folders and build errors, so it goes
+      // where `config_changed` goes and no agent reads it.
       broadcast: (event) =>
         eventFanOut.broadcast('marketplace_dev_link_reloaded', event, operatorAudience),
     });
