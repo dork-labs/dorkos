@@ -15,6 +15,11 @@ interface DevLinkReloadState {
   latest: Record<string, DevLinkReloadedEvent>;
   /** Keep a reload the server just reported. */
   record: (event: DevLinkReloadedEvent) => void;
+  /**
+   * Forget what was kept for a dev link that was just made or removed, so a
+   * build error from an earlier link never shows on the next one.
+   */
+  forget: (link: { name: string; scope: 'global' | 'project'; projectPath?: string }) => void;
 }
 
 /**
@@ -26,4 +31,11 @@ interface DevLinkReloadState {
 export const useDevLinkReloadStore = create<DevLinkReloadState>((set) => ({
   latest: {},
   record: (event) => set((state) => ({ latest: { ...state.latest, [devLinkKey(event)]: event } })),
+  forget: (link) =>
+    set((state) => {
+      const key = devLinkKey(link);
+      if (!(key in state.latest)) return state;
+      const { [key]: _forgotten, ...rest } = state.latest;
+      return { latest: rest };
+    }),
 }));

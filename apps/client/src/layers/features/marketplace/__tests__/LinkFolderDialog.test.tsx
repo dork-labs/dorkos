@@ -248,8 +248,9 @@ describe('LinkFolderDialog', () => {
     await screen.findByText('Run Flow from this folder?');
     await user.click(screen.getByRole('button', { name: 'Link folder' }));
 
+    // The copy promises no retry: the button stays off and no token is sent.
     expect(
-      await screen.findByText('Waiting for approval. Approve it, then link again.')
+      await screen.findByText('Approve it where DorkOS asks. This dialog can close.')
     ).toBeVisible();
     expect(toastSuccess).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Link folder' })).toBeDisabled();

@@ -46,29 +46,37 @@ export function reloadFailureHeadline(errors: readonly string[]): string {
 /**
  * What the status line says for a dev-linked row. A link that isn't in force
  * says so first; otherwise the newest reload this app heard about wins over the
- * listing's `lastReloadAt`, because only the event says whether it failed.
+ * listing's `lastReloadAt`, because only the event says whether it failed. An
+ * event from before the link was made belongs to an earlier link of the same
+ * package and is ignored.
  *
  * @param devLink - The row's dev-link fields.
  * @param reload - The last reload event this app received for it, if any.
- * @param lastReloadAt - When the server says it last reloaded, if it has.
+ * @param listing - The listing's entry for this link: when it was made, and
+ *   when the server says it last reloaded.
  */
 export function devLinkRowStatus(
   devLink: InstalledDevLink,
   reload: DevLinkReloadedEvent | undefined,
-  lastReloadAt: string | undefined
+  listing: Pick<DevLinkStatus, 'linkedAt' | 'lastReloadAt'> | undefined
 ): DevLinkRowStatus {
   if (devLink.state !== 'active') return { kind: devLink.state };
+  const lastReloadAt = listing?.lastReloadAt;
+  const current =
+    reload !== undefined && (listing === undefined || reload.at >= listing.linkedAt)
+      ? reload
+      : undefined;
   const eventIsNewest =
-    reload !== undefined && (lastReloadAt === undefined || reload.at >= lastReloadAt);
-  if (eventIsNewest && reload.errors && reload.errors.length > 0) {
+    current !== undefined && (lastReloadAt === undefined || current.at >= lastReloadAt);
+  if (eventIsNewest && current.errors && current.errors.length > 0) {
     return {
       kind: 'reload-failed',
-      at: reload.at,
-      headline: reloadFailureHeadline(reload.errors),
-      details: reload.errors,
+      at: current.at,
+      headline: reloadFailureHeadline(current.errors),
+      details: current.errors,
     };
   }
-  const at = eventIsNewest ? reload.at : lastReloadAt;
+  const at = eventIsNewest ? current.at : lastReloadAt;
   return at ? { kind: 'reloaded', at } : { kind: 'watching' };
 }
 
@@ -101,7 +109,11 @@ export function devLinkScopeOf(installation: InstalledPackage): {
 }
 
 /**
- * The listing's entry for an installed row, matched by name, scope and project.
+ * The listing's entry for an installed row, matched by name, scope and the
+ * folder it runs from. Not by project path: the row carries the project as
+ * the agent registry spells it, while the listing (and every reload event)
+ * carries the project's real path, and the two differ wherever a symbolic
+ * link is in the way (`/tmp` and `/private/tmp` on macOS).
  *
  * @param links - Every dev link, as the listing reports them.
  * @param installation - The installed row.
@@ -110,13 +122,32 @@ export function findDevLinkStatus(
   links: readonly DevLinkStatus[] | undefined,
   installation: InstalledPackage
 ): DevLinkStatus | undefined {
-  const { scope, projectPath } = devLinkScopeOf(installation);
+  const { scope } = devLinkScopeOf(installation);
+  const folder = installation.devLink?.path;
   return links?.find(
-    (link) =>
-      link.name === installation.name &&
-      link.scope === scope &&
-      (scope === 'global' || link.projectPath === projectPath)
+    (link) => link.name === installation.name && link.scope === scope && link.path === folder
   );
+}
+
+/**
+ * Which dev link a row is, as reload events name it: the listing entry's own
+ * scope and project, or the row's when the listing hasn't answered yet.
+ *
+ * @param installation - The installed row.
+ * @param entry - The listing's entry for it, from {@link findDevLinkStatus}.
+ */
+export function devLinkIdentityOf(
+  installation: InstalledPackage,
+  entry: DevLinkStatus | undefined
+): { name: string; scope: 'global' | 'project'; projectPath?: string } {
+  if (entry) {
+    return {
+      name: entry.name,
+      scope: entry.scope,
+      ...(entry.projectPath !== undefined && { projectPath: entry.projectPath }),
+    };
+  }
+  return { name: installation.name, ...devLinkScopeOf(installation) };
 }
 
 /** What the unlink toast says: a title and, when needed, one more line. */

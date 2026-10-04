@@ -66,8 +66,12 @@ export function UnlinkDialog({ target, onClose, onUnlinked }: UnlinkDialogProps)
         ...(target.projectPath !== undefined && { projectPath: target.projectPath }),
       });
       if (installing && result.restored === 'removed' && !result.parkedLeftAt) {
+        // Whatever unlink found in the link's place is still said: the install
+        // that follows lands in that same slot.
         toast.success(`${name} unlinked.`, {
-          description: 'It’s not installed until you finish the install.',
+          description: result.leftInPlace
+            ? 'Something else was in its place. It was left as it is.'
+            : 'It’s not installed until you finish the install.',
         });
       } else {
         const copy = unlinkOutcomeCopy(name, result);

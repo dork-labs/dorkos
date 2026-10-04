@@ -11,7 +11,9 @@ function isReloadEvent(data: unknown): data is DevLinkReloadedEvent {
     typeof event.name === 'string' &&
     (event.scope === 'global' || event.scope === 'project') &&
     typeof event.at === 'string' &&
-    Array.isArray(event.actions)
+    Array.isArray(event.actions) &&
+    (event.errors === undefined ||
+      (Array.isArray(event.errors) && event.errors.every((e) => typeof e === 'string')))
   );
 }
 

@@ -14,7 +14,11 @@ import { IsolatedQueryProvider } from './marketplace-query-provider';
 
 // The barrel first, then the leaves it does not carry — see the import rule in
 // `.claude/skills/maintaining-dev-playground/SKILL.md`.
-import { InstalledPackagesView, UnlinkDialog, type UnlinkTarget } from '@/layers/features/marketplace';
+import {
+  InstalledPackagesView,
+  UnlinkDialog,
+  type UnlinkTarget,
+} from '@/layers/features/marketplace';
 import { marketplaceKeys, useDevLinkReloadStore } from '@/layers/entities/marketplace';
 import { Button, DevLinkPath, DevLinkTag } from '@/layers/shared/ui';
 
@@ -33,7 +37,11 @@ function seedDevLinks(qc: QueryClient) {
   qc.setQueryData(marketplaceKeys.updates(), { checks: [] });
   qc.setQueryData(marketplaceKeys.packageList(undefined), [
     ...MOCK_PACKAGES,
-    { name: 'release-notes', source: 'github.com/kai/release-notes', marketplace: 'dorkos-community' },
+    {
+      name: 'release-notes',
+      source: 'github.com/kai/release-notes',
+      marketplace: 'dorkos-community',
+    },
   ]);
   useDevLinkReloadStore.getState().record(mockFailedReload(now));
 }

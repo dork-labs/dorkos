@@ -12,8 +12,8 @@ import { Button, DevLinkPath, MoreDetails } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { devLinkKey, useDevLinkReloadStore, useDevLinks } from '@/layers/entities/marketplace';
 import {
+  devLinkIdentityOf,
   devLinkRowStatus,
-  devLinkScopeOf,
   findDevLinkStatus,
   formatReloadedAgo,
   type DevLinkRowStatus,
@@ -27,11 +27,11 @@ import {
  */
 export function useDevLinkRowStatus(installation: InstalledPackage): DevLinkRowStatus | null {
   const { data: listing } = useDevLinks();
-  const key = devLinkKey({ name: installation.name, ...devLinkScopeOf(installation) });
+  const entry = findDevLinkStatus(listing?.links, installation);
+  const key = devLinkKey(devLinkIdentityOf(installation, entry));
   const reload = useDevLinkReloadStore((s) => s.latest[key]);
   if (!installation.devLink) return null;
-  const lastReloadAt = findDevLinkStatus(listing?.links, installation)?.lastReloadAt;
-  return devLinkRowStatus(installation.devLink, reload, lastReloadAt);
+  return devLinkRowStatus(installation.devLink, reload, entry);
 }
 
 /** The status sentence for a dev link, with a Details toggle for a failed reload. */
@@ -49,8 +49,8 @@ function DevLinkStatusText({ status }: { status: DevLinkRowStatus }) {
             <span className="[overflow-wrap:anywhere]">{status.headline}</span>
           </p>
           <MoreDetails label="Details" openLabel="Hide details" className="ml-4">
-            {status.details.map((detail) => (
-              <p key={detail} className="font-mono text-xs [overflow-wrap:anywhere]">
+            {status.details.map((detail, index) => (
+              <p key={`${index}-${detail}`} className="font-mono text-xs [overflow-wrap:anywhere]">
                 {detail}
               </p>
             ))}

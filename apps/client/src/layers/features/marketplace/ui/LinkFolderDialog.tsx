@@ -273,11 +273,11 @@ export function LinkFolderDialog({ open, onOpenChange }: LinkFolderDialogProps) 
                 {state.refusal}
               </p>
             )}
-            {state.checking && (
-              <p className="text-muted-foreground text-xs" aria-live="polite">
-                Checking the folder…
-              </p>
-            )}
+            {/* Always mounted, so a screen reader is already listening when the
+                text appears; an empty region takes no space. */}
+            <p className="text-muted-foreground text-xs empty:hidden" aria-live="polite">
+              {state.checking ? 'Checking the folder…' : ''}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -349,8 +349,14 @@ export function LinkFolderDialog({ open, onOpenChange }: LinkFolderDialogProps) 
                     <Checkbox
                       id="dev-link-replace"
                       checked={replaceTicked}
-                      onCheckedChange={(checked) => handleTick(checked === true)}
-                      disabled={state.checking}
+                      // `aria-disabled`, not `disabled`, while the folder is
+                      // checked again: a disabled control drops keyboard focus
+                      // to the page, as `UpdateButton` explains.
+                      onCheckedChange={(checked) => {
+                        if (!state.checking) handleTick(checked === true);
+                      }}
+                      aria-disabled={state.checking || undefined}
+                      className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                     />
                     <Label htmlFor="dev-link-replace" className="text-sm leading-snug font-normal">
                       Use my folder instead of the installed copy
@@ -380,7 +386,7 @@ export function LinkFolderDialog({ open, onOpenChange }: LinkFolderDialogProps) 
 
           {pendingApproval && (
             <Notice tone="info" role="status">
-              Waiting for approval. Approve it, then link again.
+              Approve it where DorkOS asks. This dialog can close.
             </Notice>
           )}
           {linkError && (

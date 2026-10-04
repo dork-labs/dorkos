@@ -9,6 +9,7 @@ import type {
 } from '@dorkos/shared/marketplace-schemas';
 import type { DevLinkCreateResult } from '@dorkos/shared/transport';
 import { useInvalidateDevLinkViews } from './use-dev-links';
+import { useDevLinkReloadStore } from './dev-link-reload-store';
 
 /**
  * Ask what linking a folder would do, changing nothing. A refusal rejects with
@@ -32,11 +33,16 @@ export function usePreviewDevLink() {
 export function useLinkFolder() {
   const transport = useTransport();
   const invalidate = useInvalidateDevLinkViews();
+  const forget = useDevLinkReloadStore((s) => s.forget);
   return useMutation<DevLinkCreateResult, Error, DevLinkCreateInput>({
     mutationFn: (input) => transport.linkDevLink(input),
     meta: { suppressErrorToast: true },
     onSuccess: (result) => {
-      if (result.status === 'linked') invalidate();
+      if (result.status !== 'linked') return;
+      // A new link starts with no reload behind it. Keyed by what the server
+      // answered, so a project link uses the project's real path.
+      forget(result.link);
+      invalidate();
     },
   });
 }
@@ -55,9 +61,13 @@ export interface UnlinkDevLinkArgs extends DevLinkScopeInput {
 export function useUnlinkDevLink() {
   const transport = useTransport();
   const invalidate = useInvalidateDevLinkViews();
+  const forget = useDevLinkReloadStore((s) => s.forget);
   return useMutation<DevUnlinkResult, Error, UnlinkDevLinkArgs>({
     mutationFn: ({ name, ...scope }) => transport.unlinkDevLink(name, scope),
     meta: { suppressErrorToast: true },
-    onSuccess: () => invalidate(),
+    onSuccess: (_result, link) => {
+      forget(link);
+      invalidate();
+    },
   });
 }

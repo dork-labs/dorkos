@@ -104,7 +104,7 @@ export function ExtensionCard({
               <button
                 type="button"
                 onClick={() => void openLink(INSTALLED_LINK)}
-                className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+                className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-xs underline underline-offset-2"
               >
                 Unlink or switch
               </button>

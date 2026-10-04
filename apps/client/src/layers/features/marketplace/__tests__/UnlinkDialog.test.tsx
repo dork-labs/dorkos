@@ -135,6 +135,22 @@ describe('UnlinkDialog', () => {
     );
   });
 
+  it('keeps the left-in-place line when unlinking to install the published version', async () => {
+    // Purpose: the install that follows lands in that slot, so say what is there.
+    vi.mocked(transport.unlinkDevLink).mockResolvedValue({
+      restored: 'removed',
+      leftInPlace: true,
+    });
+    const user = userEvent.setup();
+    renderDialog({ ...GLOBAL, then: 'install' });
+    await user.click(screen.getByRole('button', { name: 'Unlink and install' }));
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith('Flow unlinked.', {
+        description: 'Something else was in its place. It was left as it is.',
+      })
+    );
+  });
+
   it('asks to unlink first when it is the start of installing the published version', async () => {
     // Purpose: "Install published version" names both steps before the click.
     vi.mocked(transport.unlinkDevLink).mockResolvedValue({ restored: 'removed' });

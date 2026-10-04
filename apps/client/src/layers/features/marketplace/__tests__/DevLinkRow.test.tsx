@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
@@ -111,6 +111,43 @@ describe('DevLinkDetails', () => {
       deliver!({ name: 'other', scope: 'global', at: '2026-10-03T12:00:06.000Z', actions: [] })
     );
     expect(screen.getByText('Watching for edits.')).toBeVisible();
+  });
+
+  it('shows a live reload for a project link spelled through a symbolic link', async () => {
+    // Purpose: the event names the project's real path; the row's agent path
+    // is the symlinked spelling. The row still picks the event up.
+    let deliver: ((data: unknown) => void) | undefined;
+    vi.mocked(useEventSubscription).mockImplementation((name, handler) => {
+      if (name === 'marketplace_dev_link_reloaded') deliver = handler;
+    });
+    vi.mocked(transport.listDevLinks).mockResolvedValue({
+      links: [
+        {
+          name: 'flow',
+          type: 'plugin',
+          scope: 'project',
+          projectPath: '/private/tmp/app',
+          path: '/work/flow',
+          state: 'active',
+          parked: null,
+          linkedAt: '2026-10-03T12:00:00.000Z',
+        },
+      ],
+    });
+    renderWith(<Harness installation={row({ scope: 'agent-local', agentPath: '/tmp/app' })} />);
+    await waitFor(() => expect(transport.listDevLinks).toHaveBeenCalled());
+    expect(await screen.findByText('Watching for edits.')).toBeVisible();
+
+    act(() =>
+      deliver!({
+        name: 'flow',
+        scope: 'project',
+        projectPath: '/private/tmp/app',
+        at: '2026-10-03T12:00:06.000Z',
+        actions: ['projection'],
+      })
+    );
+    expect(await screen.findByText('Reloaded 4s ago')).toBeVisible();
   });
 
   it('says the folder is missing', async () => {

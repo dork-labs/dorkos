@@ -21,6 +21,7 @@ import {
   useDevLinkReloadStore,
   useDevLinkReloadSync,
   useLinkFolder,
+  useUnlinkDevLink,
 } from '../index';
 
 let transport: Transport;
@@ -81,9 +82,58 @@ describe('useDevLinkReloadSync', () => {
     renderHook(() => useDevLinkReloadSync(), { wrapper });
 
     act(() => deliver!({ name: 'flow' }));
+    // `errors` that is not a list of sentences would crash the Details list.
+    act(() =>
+      deliver!({
+        name: 'flow',
+        scope: 'global',
+        at: '2026-10-03T12:00:00.000Z',
+        actions: [],
+        errors: 'boom',
+      })
+    );
 
     expect(useDevLinkReloadStore.getState().latest).toEqual({});
     expect(invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('a stale reload after unlinking and linking again', () => {
+  const FAILED = {
+    name: 'flow',
+    scope: 'global' as const,
+    at: '2026-10-03T12:00:00.000Z',
+    actions: ['extension' as const],
+    errors: ["x didn't build: y"],
+  };
+
+  it('is forgotten when the link is removed, and again when it is made', async () => {
+    // Purpose: unlink, then relink, never shows the earlier link's build error.
+    vi.mocked(transport.unlinkDevLink).mockResolvedValue({ restored: 'removed' });
+    vi.mocked(transport.linkDevLink).mockResolvedValue({
+      status: 'linked',
+      link: {
+        name: 'flow',
+        type: 'plugin',
+        scope: 'global',
+        path: '/work/flow',
+        state: 'active',
+        parked: null,
+        linkedAt: '2026-10-03T12:05:00.000Z',
+      },
+    });
+    const { wrapper } = setup();
+    const unlink = renderHook(() => useUnlinkDevLink(), { wrapper });
+    const link = renderHook(() => useLinkFolder(), { wrapper });
+    const key = devLinkKey(FAILED);
+
+    useDevLinkReloadStore.getState().record(FAILED);
+    await act(() => unlink.result.current.mutateAsync({ name: 'flow', scope: 'global' }));
+    expect(useDevLinkReloadStore.getState().latest[key]).toBeUndefined();
+
+    useDevLinkReloadStore.getState().record(FAILED);
+    await act(() => link.result.current.mutateAsync({ path: '/work/flow', scope: 'global' }));
+    expect(useDevLinkReloadStore.getState().latest[key]).toBeUndefined();
   });
 });
 
