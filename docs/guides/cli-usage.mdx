@@ -382,7 +382,7 @@ dorkos agent update --path <dir> --color "" --icon ""      # Pass "" to clear a 
 
 A template is copied into the new agent's folder, and that folder is where the agent's sessions run. So before it lands, DorkOS checks what it brings: settings files the sessions load (such as `.claude/settings.json` with its hooks and permission rules, or a `.mcp.json`), and skills that run commands or use tools without asking. If it brings any of those, `dorkos agent create` prints them and asks before creating the agent (`--yes` skips the question and still prints them). When an agent runs this command, a person has to approve it on a card first; the command prints the `--approval` retry. An agent from the marketplace is created from the Marketplace in the app, or with `dorkos marketplace install`, rather than as a template.
 
-What an agent may do — Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, DorkOS settings, Safety limits, Permissions, Reach & secrets, and Files & commands — is set with `dorkos agent permissions`, not `dorkos agent update`:
+What an agent may do — Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, Extension tools, DorkOS settings, Safety limits, Permissions, Reach & secrets, and Files & commands — is set with `dorkos agent permissions`, not `dorkos agent update`:
 
 ```bash
 dorkos agent permissions <agent>                       # What one agent may do, and why

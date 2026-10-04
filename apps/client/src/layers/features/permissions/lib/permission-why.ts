@@ -34,6 +34,8 @@ export interface StateWhyInput {
   preset: PermissionPreset | null;
   /** The agent the state belongs to, named in lists that span agents. */
   agentName?: string;
+  /** The action is a tool a running extension added (DOR-2685). */
+  fromExtension?: boolean;
 }
 
 /** "the default (Full power)", or "the default" while no preset is chosen. */
@@ -58,7 +60,9 @@ export function stateWhy(input: StateWhyInput): string {
     case 'unchanged':
       return `${state}. No preset chosen yet, so it works as before.`;
     case 'always-asks':
-      return `${state}. It always shows you the change first, so it’s never Allowed.`;
+      return input.fromExtension
+        ? `${state}. Extension tools that can delete things always ask.`
+        : `${state}. It always shows you the change first, so it’s never Allowed.`;
     default:
       break;
   }

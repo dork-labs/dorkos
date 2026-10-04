@@ -55,7 +55,11 @@ function ActionWhy({
   return (
     <PermissionWhy
       question={`Why is ${action.title} set to ${state}${agentName ? ` for ${agentName}` : ''}?`}
-      sentence={stateWhy({ ...action.resolved, preset })}
+      sentence={stateWhy({
+        ...action.resolved,
+        preset,
+        fromExtension: action.source !== undefined,
+      })}
       {...(action.lastChange ? { lastChange: action.lastChange } : {})}
     />
   );
@@ -86,7 +90,9 @@ function ActionRow({
   const hint = here
     ? 'Set on its own'
     : action.alwaysAsks
-      ? 'Always asks, so you see the change first'
+      ? action.source
+        ? 'Always asks: an extension tool that can delete things'
+        : 'Always asks, so you see the change first'
       : action.resolved.destructiveAsk
         ? 'Always asks unless you set it here'
         : `Follows ${area.label}`;
@@ -100,6 +106,7 @@ function ActionRow({
       <div className="min-w-0">
         <p className="text-sm">{action.title}</p>
         <p className="text-muted-foreground text-xs">
+          {action.source ? <span>From {action.source.name} · </span> : null}
           <span>{hint}</span>
           {preview ? <span> · {preview}</span> : null} ·{' '}
           <ActionWhy action={action} preset={preset} {...(agentName ? { agentName } : {})} />

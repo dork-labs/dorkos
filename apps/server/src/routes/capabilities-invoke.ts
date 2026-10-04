@@ -35,9 +35,23 @@
  * the generic agent actuation path, and the cost of gating it is one Allow click
  * for a person running a destructive capability from a shell.
  *
+ * ## Extension tools
+ *
+ * A running extension's tools (DOR-2685) are reachable here by id too, although
+ * they advertise only the in-session MCP surface. That is deliberate: every
+ * call still goes through `registry.invoke`, so the same tier and permission
+ * gate decides it exactly as it would in a session. An `ext_` id whose
+ * extension is stopped answers `503` with the same "isn't available right now"
+ * sentence the in-session tool gives, not an "unknown capability" 404.
+ *
  * @module routes/capabilities-invoke
  */
 import { Router } from 'express';
+import {
+  EXTENSION_TOOL_UNAVAILABLE_CODE,
+  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
+  isExtensionCapabilityId,
+} from '@dorkos/shared/capabilities';
 import { z } from 'zod';
 
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
@@ -69,6 +83,11 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
     const { id } = req.params;
 
     const capability = registry.get(id);
+    if (!capability && isExtensionCapabilityId(id)) {
+      return res
+        .status(503)
+        .json({ error: EXTENSION_TOOL_UNAVAILABLE_MESSAGE, code: EXTENSION_TOOL_UNAVAILABLE_CODE });
+    }
     if (!capability) {
       return res
         .status(404)

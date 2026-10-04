@@ -120,6 +120,10 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
     'reload_extensions',
     'test_extension',
   ],
+  // Extension tools (DOR-2685) have no static member on purpose: every action
+  // in this area is contributed to the live registry by a running extension,
+  // and the docs registry composes no extension.
+  extensions: [],
   settings: ['operator.config_patch'],
   safety: ['operator.update_agent_boundaries'],
   permissions: ['permissions.change'],
@@ -200,9 +204,12 @@ describe('permission-area census', () => {
     }
   });
 
-  it('gives all ten areas something to switch, Reach & secrets by input', () => {
+  it('gives every static area something to switch, Reach & secrets by input', () => {
     for (const area of PERMISSION_AREA_IDS) {
       if (area === 'reach') continue;
+      // Extension tools are switched by what running extensions contribute
+      // (DOR-2685); the docs registry composes none, so it is empty here.
+      if (area === 'extensions') continue;
       expect(
         actions.some((a) => a.area === area),
         area

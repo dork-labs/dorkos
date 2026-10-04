@@ -86,6 +86,19 @@ describe('POST /api/capabilities/:id/invoke', () => {
     expect(res.body.code).toBe('UNKNOWN_CAPABILITY');
   });
 
+  it("answers a stopped extension's tool with the same sentence the session gives (DOR-2685)", async () => {
+    // An ext_ id is a tool whose extension is stopped or restarting, not a
+    // typo: the caller is told so, in the words the in-session tool uses.
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .post('/api/capabilities/ext_mail_app.send_message/invoke')
+      .send({});
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      error: "That tool isn't available right now: its extension is stopped or restarting.",
+      code: 'EXTENSION_TOOL_UNAVAILABLE',
+    });
+  });
+
   it('400s input that fails the capability input schema', async () => {
     const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/capabilities/test.echo/invoke')

@@ -103,7 +103,7 @@
  *
  * @module services/core/capabilities/tier-enforcement
  */
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
 import type {
   ApprovalOrigin,
   ApprovalServiceAction,
@@ -174,6 +174,12 @@ export interface GatedAction {
   id: string;
   /** Human-facing title, as the operator's approval card shows it. */
   title: string;
+  /**
+   * Where the action came from, when a running extension contributed it
+   * (DOR-2685). Its title is then the extension author's text, and the card
+   * names the extension.
+   */
+  source?: CapabilitySource;
   /** Permission tier. This, and nothing about the caller, decides whether to gate. */
   tier: CapabilityTier;
   /**
@@ -685,9 +691,18 @@ export function describeGatedAttempt(
     )
   );
   const detail = clause ? ` with ${clause}` : '';
-  // The title is declared in DorkOS's own source, never by the caller, so it needs
-  // no escaping — but the whole sentence gets the secret sweep anyway, because
-  // this string is broadcast.
+  // A core title is declared in DorkOS's own source, so it is written as is. An
+  // extension's title and name are its author's text (DOR-2685): both are
+  // JSON-quoted, so neither can close the quote and forge a field after it,
+  // and the card says which extension the tool comes from. `contribute` also
+  // refuses quotes and control characters in both. The whole sentence gets
+  // the secret sweep either way, because this string is broadcast.
+  if (action.source) {
+    return redactSecretsInText(
+      `${who}wants to run ${JSON.stringify(action.title)} from ` +
+        `${JSON.stringify(action.source.name)}${detail}`
+    );
+  }
   return redactSecretsInText(`${who}wants to run "${action.title}"${detail}`);
 }
 

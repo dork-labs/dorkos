@@ -57,6 +57,8 @@ export function createPermissionWorld(
     writeFails?: boolean;
     /** Whether the record of screened arrivals can be read. */
     arrivalsHealthy?: boolean;
+    /** Extra actions beside the fixture ones, e.g. a running extension's tools. */
+    extraActions?: PermissionActionInfo[];
   } = {}
 ) {
   const config = {
@@ -157,7 +159,7 @@ export function createPermissionWorld(
         else delete agent.permissions;
       },
     },
-    actions: () => FIXTURE_ACTIONS,
+    actions: () => [...FIXTURE_ACTIONS, ...(options.extraActions ?? [])],
     arrivalsHealthy: () => options.arrivalsHealthy ?? true,
     activity,
   });

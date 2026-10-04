@@ -16,6 +16,7 @@ export {
   serializeCapability,
   computeCatalogVersion,
   type CapabilityRegistry,
+  type ContributeResult,
   type CapabilityHandlerContext,
   type HandToolReach,
   type CapabilityInvocationContext,
@@ -23,6 +24,9 @@ export {
   type CapabilityPreflightResult,
 } from './registry.js';
 export { isTrustedCaller, trustedCaller, type TrustedCaller } from './trusted-caller.js';
+// What a running extension hands `registry.contribute` (DOR-2685). The builder
+// and its constants stay off the barrel: only the registry builds definitions.
+export type { ExtensionContribution, ExtensionToolSpec } from './extension-contribution.js';
 export {
   // `resolveCallPermission` is exported for the tool-list builders, which hide a
   // Blocked action from the agent; the gate itself reads it inside its callers.

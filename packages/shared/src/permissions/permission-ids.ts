@@ -14,7 +14,12 @@
 /** The three states an area or a single action can be in, strictest first. */
 export const PERMISSION_STATES = ['blocked', 'ask', 'allowed'] as const;
 
-/** The ten areas that take a state. `files` is separate: it takes a trust stop. */
+/**
+ * The eleven areas that take a state. `files` is separate: it takes a trust stop.
+ *
+ * `extensions` holds every tool a running extension adds (DOR-2685). It has no
+ * static member: its actions join the live registry while their extension runs.
+ */
 export const PERMISSION_AREA_IDS = [
   'rooms',
   'tasks',
@@ -22,6 +27,7 @@ export const PERMISSION_AREA_IDS = [
   'messages',
   'connections',
   'packages',
+  'extensions',
   'settings',
   'safety',
   'permissions',

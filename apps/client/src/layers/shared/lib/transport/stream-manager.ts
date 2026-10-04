@@ -244,6 +244,10 @@ export const GENERIC_EVENTS = [
   // the Connections page's Needs you strip re-read their owner-scoped list on it,
   // so answering in one window retires the card in every other.
   'connector_agent_requests_changed',
+  // A running extension's tools joined or left the capability registry
+  // (DOR-2685). A counter only: the permissions page re-reads its list on it,
+  // so a tool an extension adds shows up, and one it takes away goes, live.
+  'capabilities_changed',
   // A blocking condition began or stopped standing (DOR-1570). A standing kind
   // stores no row while it stands, so these are the only live news that a
   // schedule was proposed or an approval is waiting — which is what the desktop

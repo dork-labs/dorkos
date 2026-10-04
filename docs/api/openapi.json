@@ -3078,6 +3078,7 @@
               "messages",
               "connections",
               "packages",
+              "extensions",
               "settings",
               "safety",
               "permissions",
@@ -11344,6 +11345,7 @@
           "messages",
           "connections",
           "packages",
+          "extensions",
           "settings",
           "safety",
           "permissions",
@@ -11378,6 +11380,28 @@
           },
           "lastChange": {
             "$ref": "#/components/schemas/PermissionLastChange"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ]
           }
         },
         "required": [
@@ -75045,6 +75069,28 @@
                               },
                               "summary": {
                                 "type": "string"
+                              },
+                              "source": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "extension"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "id",
+                                  "name"
+                                ]
                               }
                             },
                             "required": [
@@ -75210,6 +75256,28 @@
                                 "type": [
                                   "string",
                                   "null"
+                                ]
+                              },
+                              "source": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "extension"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "id",
+                                  "name"
                                 ]
                               }
                             },

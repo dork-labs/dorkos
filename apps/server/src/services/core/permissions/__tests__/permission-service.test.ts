@@ -212,6 +212,38 @@ describe('PermissionService reads', () => {
     expect(rooms.actions.map((a) => a.id)).toEqual(['rooms.create', 'rooms.merge']);
   });
 
+  it('names the extension an action came from on its row (DOR-2685)', async () => {
+    // The permissions page labels each extension tool with its extension's
+    // name; DorkOS's own actions carry no source.
+    const world = createPermissionWorld({
+      preset: 'careful',
+      extraActions: [
+        {
+          id: 'ext_mail_app.send_message',
+          title: 'Send an email',
+          tier: 'act',
+          area: 'extensions',
+          toolName: 'ext_mail_app__send_message',
+          source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+        },
+      ],
+    });
+
+    const overview = await world.service.getOverview();
+    const extensions = overview.areas.find((a) => a.id === 'extensions')!;
+
+    expect(extensions.label).toBe('Extension tools');
+    expect(extensions.actions).toEqual([
+      expect.objectContaining({
+        id: 'ext_mail_app.send_message',
+        source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+        resolved: expect.objectContaining({ state: 'ask', source: 'preset' }),
+      }),
+    ]);
+    const rooms = overview.areas.find((a) => a.id === 'rooms')!;
+    expect(rooms.actions.every((a) => a.source === undefined)).toBe(true);
+  });
+
   it("shows an agent's own state beside what it would inherit", async () => {
     const world = createPermissionWorld({ preset: 'full', agents: TWO_AGENTS });
 
