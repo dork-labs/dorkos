@@ -25,6 +25,21 @@ export {
 } from './lib/agent-gifts';
 export { ExtensionAgentGifts, type ExtensionAgentGiftsProps } from './ui/ExtensionAgentGifts';
 export {
+  approvedSetOf,
+  extensionPermissionLines,
+  permissionViewFromApproval,
+  permissionViewFromRecord,
+  runsAnyProgram,
+  type ExtensionPermissionLine,
+  type ExtensionPermissionProgram,
+  type ExtensionPermissionTone,
+  type ExtensionPermissionView,
+} from './lib/permission-lines';
+export {
+  ExtensionPermissionLines,
+  type ExtensionPermissionLinesProps,
+} from './ui/ExtensionPermissionLines';
+export {
   parseExtensionApprovalSubject,
   canTurnOnInPlace,
   type ExtensionApprovalSubject,

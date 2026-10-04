@@ -27,8 +27,19 @@ export const ExtensionApprovalPermissionsSchema = z
     runtime: z.enum(['in-process', 'subprocess']),
     /** Hosts it may connect to (`allow.net`), as declared. */
     net: z.array(z.string()),
-    /** Programs it may start (`allow.run`), and whether each was found on this computer. */
-    run: z.array(z.object({ name: z.string(), found: z.boolean() })),
+    /**
+     * Programs it may start (`allow.run`), and whether each was found on this
+     * computer. `refusedReason` is set when a file was found but DorkOS will
+     * not let it run (it sits in extension files, or is a Windows script), in
+     * a plain sentence the card shows; absent for a program simply not found.
+     */
+    run: z.array(
+      z.object({
+        name: z.string(),
+        found: z.boolean(),
+        refusedReason: z.string().optional(),
+      })
+    ),
     /** Whether it may message agents and start agent sessions (`allow.agents`). */
     agents: z.boolean(),
     /** Whether it has screens (a client bundle), which run in DorkOS with your access. */

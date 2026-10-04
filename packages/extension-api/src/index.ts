@@ -34,7 +34,12 @@ export {
   NET_ENTRY_LOCAL_NEEDS_PORT,
 } from './net-allowlist.js';
 export type { ParsedNetEntry, NetEntryError, NetEntryKind } from './net-allowlist.js';
-export { runEntryProblem, isAbsoluteProgramPath, RUN_ENTRY_ONE_PROGRAM } from './run-allowlist.js';
+export {
+  runEntryProblem,
+  isAbsoluteProgramPath,
+  RUN_ENTRY_ONE_PROGRAM,
+  RUN_PROGRAM_NOT_FOUND,
+} from './run-allowlist.js';
 export type {
   ExtensionManifest,
   SecretDeclaration,

@@ -22,6 +22,14 @@ const MAX_RUN_ENTRY_LENGTH = 1024;
 export const RUN_ENTRY_ONE_PROGRAM = 'Name one program, without arguments, like git';
 
 /**
+ * Why an `allow.run` program has no path on this computer, when it simply
+ * was not found (`ExtensionResolvedProgram.reason`). Any other reason means
+ * DorkOS found a file and refuses it, which a card says differently, so the
+ * server that records it and the app that reads it compare this one string.
+ */
+export const RUN_PROGRAM_NOT_FOUND = 'Not found on this computer.';
+
+/**
  * Whether an entry is an absolute path (POSIX `/…` or Windows `X:\…`) rather
  * than a bare program name.
  *

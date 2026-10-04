@@ -8,10 +8,14 @@ import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval
 import {
   EXTENSION_TRUST_COPY,
   ExtensionAgentGifts,
+  ExtensionPermissionLines,
   agentGiftsFromApproval,
   agentGiftsLine,
+  approvedSetOf,
   extensionConsentCopy,
+  permissionViewFromApproval,
   useExtensionApprovalActions,
+  type ApproveExtensionInput,
   type ExtensionAnswerInput,
 } from '@/layers/entities/extension';
 import { InboxDecisionRow } from '@/layers/features/inbox';
@@ -30,6 +34,18 @@ function copyOf(approval: PendingExtensionApproval): ExtensionAnswerInput {
     version: approval.version,
     plugin: approval.plugin,
   };
+}
+
+/**
+ * The copy a row shows plus the permission set it lists, sent with "Turn it
+ * on" so a widening while the row was on screen is refused as stale rather
+ * than approved on a yes given to the old lists (DOR-2686).
+ *
+ * @param approval - The waiting extension.
+ */
+function approvalOf(approval: PendingExtensionApproval): ApproveExtensionInput {
+  const permissions = approvedSetOf(permissionViewFromApproval(approval));
+  return { ...copyOf(approval), ...(permissions ? { permissions } : {}) };
 }
 
 /** Props for {@link ExtensionApprovalList}. */
@@ -70,11 +86,30 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
             // What it gives agents, on the row itself, so it is read before the
             // yes; each tool and its tier is in the ⓘ panel (DOR-2685).
             {...(giftsLine ? { meta: giftsLine } : {})}
+            // Where it runs and what it may reach, on the row itself, so the
+            // yes is given to what it lists; a re-ask leads with what is new.
+            // Nothing extra when the server sent no set (one version behind).
+            {...(approval.permissions
+              ? {
+                  details: (
+                    <ExtensionPermissionLines
+                      permissions={permissionViewFromApproval(approval)}
+                      added={approval.added}
+                      data-testid={`extension-permissions-${approval.id}`}
+                    />
+                  ),
+                }
+              : {})}
             sourceLine={approval.sourceLabel}
             more={
               <>
                 <ExtensionAgentGifts gifts={gifts} variant="list" />
-                <p>{extensionConsentCopy(approval.runsInServer)}</p>
+                <p>
+                  {extensionConsentCopy(
+                    approval.runsInServer,
+                    approval.permissions?.runtime === 'subprocess'
+                  )}
+                </p>
                 <p>{EXTENSION_TRUST_COPY}</p>
                 <p>
                   <button
@@ -91,7 +126,7 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
               kind: 'yes-no',
               approveLabel: 'Turn it on',
               rejectLabel: 'Not now',
-              onApprove: () => approve(copyOf(approval)),
+              onApprove: () => approve(approvalOf(approval)),
               onReject: () => dismiss(copyOf(approval)),
             }}
             pending={

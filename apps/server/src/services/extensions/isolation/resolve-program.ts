@@ -39,7 +39,11 @@
 import fs from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import path from 'path';
-import { isAbsoluteProgramPath, runEntryProblem } from '@dorkos/extension-api';
+import {
+  isAbsoluteProgramPath,
+  runEntryProblem,
+  RUN_PROGRAM_NOT_FOUND,
+} from '@dorkos/extension-api';
 
 /** `PATHEXT` when the environment does not set one, as Windows ships it. */
 const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD';
@@ -59,8 +63,8 @@ const DORK_HOME_EXTENSION_ROOTS = [
 /** The folders under a `.dork` folder that hold extension files. */
 const DOT_DORK_EXTENSION_ROOTS = new Set(['extensions', 'plugins', 'extension-data']);
 
-/** Why a program was not found. Shown on the record. */
-export const PROGRAM_NOT_FOUND = 'Not found on this computer.';
+/** Why a program was not found. Shown on the record; the app compares it, so it lives in the API package. */
+export const PROGRAM_NOT_FOUND = RUN_PROGRAM_NOT_FOUND;
 
 /** Why a program the extension ships or can change was refused. Shown on the record. */
 export const PROGRAM_INSIDE_EXTENSION =

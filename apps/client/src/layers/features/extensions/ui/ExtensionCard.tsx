@@ -6,8 +6,10 @@ import { cn, openLink } from '@/layers/shared/lib';
 import {
   EXTENSION_TRUST_COPY,
   ExtensionAgentGifts,
+  ExtensionPermissionLines,
   agentGiftsFromRecord,
   extensionConsentCopy,
+  permissionViewFromRecord,
 } from '@/layers/entities/extension';
 
 interface ExtensionCardProps {
@@ -55,6 +57,9 @@ export function ExtensionCard({
   // (DOR-516). This only picks which reach to name, because a server entry or data
   // proxy adds "anything DorkOS can" to acting as you in DorkOS.
   const runsInServer = extension.hasServerEntry || extension.hasDataProxy;
+  // Where it runs and what it may reach (DOR-2686). `null` from a server that
+  // never sends it, so the card adds nothing rather than guessing.
+  const permissions = permissionViewFromRecord(extension);
   // Health/availability state — communicated by a badge that is visually
   // distinct from the on/off toggle (an errored extension can still be "on").
   const healthLabel = hasError
@@ -200,6 +205,12 @@ export function ExtensionCard({
                 >
                   Stop it
                 </button>
+                {/* What the yes covers, so it can be checked again later. */}
+                <ExtensionPermissionLines
+                  permissions={permissions}
+                  className="basis-full"
+                  data-testid={`extension-permissions-${extension.id}`}
+                />
               </div>
             ) : (
               <div
@@ -226,8 +237,12 @@ export function ExtensionCard({
                 {/* The consent sentence and the trust warning are shared with
                     the Activity inbox's ⓘ panel (DOR-2517), so the two places
                     that ask say the same thing. */}
+                <ExtensionPermissionLines
+                  permissions={permissions}
+                  data-testid={`extension-permissions-${extension.id}`}
+                />
                 <p className="text-muted-foreground text-sm">
-                  {extensionConsentCopy(runsInServer)}
+                  {extensionConsentCopy(runsInServer, permissions?.runtime === 'subprocess')}
                 </p>
                 <p className="text-muted-foreground text-sm">{EXTENSION_TRUST_COPY}</p>
                 <Button
