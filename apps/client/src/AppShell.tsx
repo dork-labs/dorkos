@@ -41,6 +41,7 @@ import { useConfig, useConfigSync } from '@/layers/entities/config';
 import { useAgentsSync } from '@/layers/entities/mesh';
 import { useConnectorAgentRequestsSync } from '@/layers/entities/connectors';
 import { useCommandsSync } from '@/layers/entities/command';
+import { useCapabilitiesSync } from '@/layers/entities/permissions';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
@@ -339,6 +340,9 @@ export function AppShell() {
   // Live agent requests for apps (DOR-2415): a request answered in one window,
   // on the Connections page or in a room retires its chat card everywhere.
   useConnectorAgentRequestsSync();
+  // Live extension tools (DOR-2685): when an extension starts or stops, the
+  // permissions pages re-read their actions so its tools appear or go.
+  useCapabilitiesSync();
   // Remote access, live and audible — the two halves that must happen exactly
   // once for the whole app (DOR-1743). `useTunnelSync` refreshes the config
   // read from other tabs and from the server's `tunnel_status` stream, which

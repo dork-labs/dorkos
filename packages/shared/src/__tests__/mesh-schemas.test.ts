@@ -399,6 +399,9 @@ describe('AgentManifestFileSchema — the read-time fold of retired permission f
     messages: 'blocked',
     connections: 'blocked',
     packages: 'blocked',
+    // An observe ceiling blocks Extension tools too (DOR-2685): a capped agent
+    // must not gain the tools an extension adds.
+    extensions: 'blocked',
     settings: 'blocked',
     safety: 'blocked',
     permissions: 'blocked',

@@ -85,6 +85,7 @@ import { NotificationStore } from './services/notifications/notification-store.j
 import {
   connectorAgentRequestsChangedAnnouncer,
   wireLiveChangeBroadcasts,
+  wireCapabilitiesChangedBroadcast,
 } from './services/core/streams/live-change-broadcasts.js';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
@@ -5600,6 +5601,9 @@ async function start() {
     },
     createCapabilityAttributionObserver(activityService)
   );
+  // A running extension's tools join and leave the registry (DOR-2685); every
+  // open window re-fetches the catalog and the permissions page when they do.
+  wireCapabilitiesChangedBroadcast(capabilityRegistry, eventFanOut);
   // Arm tier enforcement (spec `agent-trust` §3.2) now that both the approval
   // primitive and the Activity feed exist. The gate runs INSIDE `registry.invoke`
   // (DOR-467), so every surface that reaches a capability through the registry is

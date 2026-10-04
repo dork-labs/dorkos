@@ -30,8 +30,12 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { z } from 'zod';
+
+import { composeRegistry } from '../../capabilities/registry.js';
 import {
   connectorAgentRequestsChangedAnnouncer,
+  wireCapabilitiesChangedBroadcast,
   wireLiveChangeBroadcasts,
   type AgentsChangedSource,
   type CommunityConnectionsSource,
@@ -411,5 +415,61 @@ describe('connector_agent_requests_changed', () => {
 
     expect(fanOut.only('connector_agent_requests_changed').audience).toBeDefined();
     expect(fanOut.reaches('connector_agent_requests_changed', { kind: 'agent' })).toBe(false);
+  });
+});
+
+describe('capabilities_changed (DOR-2685)', () => {
+  /** A real registry with no core domains, so only the live layer moves. */
+  function liveRegistry() {
+    return composeRegistry([], { logger: { debug() {}, info() {}, warn() {}, error() {} } });
+  }
+
+  /** One extension's contribution with a single observe tool. */
+  const mail = {
+    owner: 'mail-app',
+    displayName: 'Mail',
+    tools: [
+      {
+        name: 'list_inbox',
+        title: 'List the inbox',
+        description: 'Read the newest messages.',
+        tier: 'observe' as const,
+        input: z.object({}),
+        invoke: async () => [],
+      },
+    ],
+  };
+
+  it('reaches every window, agents included, with the version after each change', () => {
+    // An open permissions page re-reads on this, and the catalog an agent lists
+    // is the same catalog, so it is global; the payload is a counter only.
+    const registry = liveRegistry();
+    const fanOut = recordingFanOut();
+    wireCapabilitiesChangedBroadcast(registry, fanOut);
+
+    const added = registry.contribute(mail);
+    expect(fanOut.only('capabilities_changed')).toEqual({
+      event: 'capabilities_changed',
+      data: { version: 1 },
+      audience: undefined,
+    });
+    expect(fanOut.reaches('capabilities_changed', { kind: 'agent' })).toBe(true);
+
+    if (added.ok) added.remove();
+    expect(fanOut.sent.map((entry) => entry.data)).toEqual([{ version: 1 }, { version: 2 }]);
+  });
+
+  it('says nothing for a refused contribution, and stops when unwired', () => {
+    // A refusal changed nothing; announcing it would make every window re-read.
+    const registry = liveRegistry();
+    const fanOut = recordingFanOut();
+    const stop = wireCapabilitiesChangedBroadcast(registry, fanOut);
+
+    registry.contribute({ ...mail, tools: [] });
+    expect(fanOut.sent).toEqual([]);
+
+    stop();
+    registry.contribute(mail);
+    expect(fanOut.sent).toEqual([]);
   });
 });

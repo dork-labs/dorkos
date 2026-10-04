@@ -166,6 +166,18 @@ describe('extension tools at the gate (DOR-2685)', () => {
     expect(ran).toEqual([]);
   });
 
+  it('lists each extension tool for the permission pages with its extension named', () => {
+    // The permission pages and the tool-list builders read this one list; the
+    // source is how a row says which extension a tool belongs to.
+    const actions = permissionActions(registry);
+    expect(actions.find((a) => a.id === 'ext_mail_app.send')).toMatchObject({
+      area: 'extensions',
+      toolName: 'ext_mail_app__send',
+      source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+    });
+    expect(actions.find((a) => a.id === 'probe.send')).not.toHaveProperty('source');
+  });
+
   it('hides a Blocked extension tool from the tool list, and only while it is registered', () => {
     // The tool-list builders read the live registry: an agent whose Extension
     // tools are Blocked never sees the tool, and a removed tool is not listed.

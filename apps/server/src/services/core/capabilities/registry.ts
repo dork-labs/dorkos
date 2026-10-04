@@ -465,6 +465,9 @@ export interface CapabilityRegistry {
  * live catalog instead of a static list that would drift, and the docs
  * projection reports the same field.
  *
+ * `source` is present only for an extension's capability, naming the
+ * extension, so every reader of the catalog can say where a tool came from.
+ *
  * @param capability - The runtime capability definition.
  * @returns The serialized, wire-safe entry.
  */
@@ -478,6 +481,9 @@ export function serializeCapability(capability: CapabilityDefinition): Serialize
     outputSchema: z.toJSONSchema(capability.output),
     surfaces: capability.surfaces,
     area: capability.area,
+    // Only a definition the host built for a running extension has a source;
+    // a core capability's entry stays exactly as it was (DOR-2685).
+    ...(capability.source ? { source: { ...capability.source } } : {}),
   };
 }
 

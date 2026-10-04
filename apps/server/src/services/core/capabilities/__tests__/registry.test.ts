@@ -734,6 +734,22 @@ describe('extension layer — contribute and remove (DOR-2685)', () => {
   });
 });
 
+describe('extension layer — source on the catalog (DOR-2685)', () => {
+  it('serializes source for an extension definition and omits it for a core one', () => {
+    // Every reader of the catalog says where a tool came from off this field;
+    // a core entry must stay exactly as it was, with no source key at all.
+    const registry = composeRegistry([configDomain], deps);
+    registry.contribute(contribution('mail-app'));
+
+    const extension = serializeCapability(registry.get('ext_mail_app.send_message')!);
+    expect(extension.source).toEqual({ kind: 'extension', id: 'mail-app', name: 'Ext mail-app' });
+    expect(serializeCapability(configGet)).not.toHaveProperty('source');
+    expect(
+      registry.catalog().capabilities.find((c) => c.id === 'ext_mail_app.send_message')?.source
+    ).toEqual({ kind: 'extension', id: 'mail-app', name: 'Ext mail-app' });
+  });
+});
+
 describe('extension layer — reserved namespace (DOR-2685)', () => {
   it('refuses a core domain named in the ext_ namespace at boot', () => {
     // Otherwise a core domain could pre-claim an extension's ids, or an

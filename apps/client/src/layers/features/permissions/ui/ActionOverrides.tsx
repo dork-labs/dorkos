@@ -100,6 +100,7 @@ function ActionRow({
       <div className="min-w-0">
         <p className="text-sm">{action.title}</p>
         <p className="text-muted-foreground text-xs">
+          {action.source ? <span>From {action.source.name} · </span> : null}
           <span>{hint}</span>
           {preview ? <span> · {preview}</span> : null} ·{' '}
           <ActionWhy action={action} preset={preset} {...(agentName ? { agentName } : {})} />

@@ -333,6 +333,26 @@ describe('individual actions', () => {
     );
   });
 
+  it('names the extension an action came from on its row (DOR-2685)', async () => {
+    // Extension tools sit under one area, so each row says which extension
+    // added it; DorkOS's own actions say nothing extra.
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getPermissions).mockResolvedValue(
+      withActions({
+        id: 'ext_mail_app.send_message',
+        title: 'Send an email',
+        tier: 'act',
+        source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+        resolved: { area: 'tasks', state: 'allowed', source: 'preset', layer: 'default' },
+      })
+    );
+    render(<PermissionList scope={{ kind: 'default' }} />, { wrapper });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Show individual actions' }));
+    const row = screen.getByTestId('permission-action-ext_mail_app.send_message');
+    expect(within(row).getByText(/From Mail/)).toBeInTheDocument();
+  });
+
   it('shows a default action change while collapsed, with a Reset', async () => {
     const { transport, wrapper } = wrap();
     vi.mocked(transport.getPermissions).mockResolvedValue(

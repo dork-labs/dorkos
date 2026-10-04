@@ -419,6 +419,13 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
 // useUnattendedAutonomySync, and usePulseFreshness — each subscribes via the
 // event stream and so needs an EventStreamProvider. This slot test isolates AppShell and provides no such
 // provider, so no-op the subscriptions here.
+// The live extension-tools subscriber (DOR-2685) reads the event stream this
+// suite does not provide; nothing here is about permissions.
+vi.mock('@/layers/entities/permissions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/permissions')>()),
+  useCapabilitiesSync: () => {},
+}));
+
 vi.mock('@/layers/entities/command', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/command')>();
   return {

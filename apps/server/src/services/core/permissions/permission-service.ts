@@ -38,7 +38,7 @@ import {
 } from '@dorkos/shared/permissions';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
 import type { z } from 'zod';
 
 import {
@@ -87,6 +87,8 @@ export interface PermissionActionInfo {
   toolName?: string;
   /** Its card shows the change it would make, so it is never Allowed (DOR-2328). */
   alwaysAsks?: true;
+  /** The running extension it came from; absent on DorkOS's own actions (DOR-2685). */
+  source?: CapabilitySource;
 }
 
 /** One registered agent, as the service needs it. */
@@ -828,6 +830,7 @@ export class PermissionService {
                   title: a.title,
                   tier: a.tier,
                   ...(a.alwaysAsks ? { alwaysAsks: true as const } : {}),
+                  ...(a.source ? { source: { ...a.source } } : {}),
                   resolved: actionResolved,
                 },
                 lastChangeFor(lastChanges, {
