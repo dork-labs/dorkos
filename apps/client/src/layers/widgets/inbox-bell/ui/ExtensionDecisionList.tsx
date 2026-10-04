@@ -21,6 +21,10 @@ import {
 /** What a row says when the agent's pick could not be applied at the deadline. */
 const NEEDS_YOU = 'The agent couldn’t go ahead. It needs you.';
 
+/** Fields a person types into. A checkbox or a button is not one. */
+const TEXT_ENTRY =
+  'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="tel"], input[type="password"], input[type="number"]';
+
 /** The first control in a row, where focus lands when a row above it leaves. */
 const ROW_FOCUS_TARGET = 'button:not([disabled])';
 
@@ -93,7 +97,7 @@ function DecisionFrame({
       !!panel &&
       active instanceof HTMLElement &&
       panel.contains(active) &&
-      (active.matches('input, textarea') || active.isContentEditable);
+      (active.matches(TEXT_ENTRY) || active.isContentEditable);
     if (!everPlain.current && typingInPanel) return;
     frame.focus({ preventScroll: true });
   }, [focused]);

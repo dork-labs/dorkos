@@ -138,7 +138,18 @@ describe('useInboxDeepLink', () => {
     const { router, view } = mount('/x/flow?inbox=01J0000000000000000000000D', true);
 
     await waitFor(() => expect(router.state.location.search).toEqual({}));
-    expect(view.result.current.openRequest).toBe(1);
+    expect(view.result.current.openRequest).toBe(0);
+    expect(view.result.current.pending).toBe(false);
+  });
+
+  it('asks for nothing when a link arrives while onboarding is already up', async () => {
+    const { router, view } = mount('/x/flow', true);
+    await waitFor(() => expect(router.state.status).toBe('idle'));
+
+    await router.navigate({ href: '/x/flow?inbox=01J0000000000000000000000D' });
+
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(view.result.current.openRequest).toBe(0);
     expect(view.result.current.pending).toBe(false);
   });
 

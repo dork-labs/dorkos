@@ -539,6 +539,27 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
     await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
   });
 
+  it('still takes focus from a checkbox, which is not typing', async () => {
+    decisions = [];
+    historyRows = [historyRow('01JOLD', 'An older ask, answered')];
+    const { queryClient } = renderBell();
+    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
+    await screen.findByText('An older ask, answered');
+    // Any control in the panel that takes focus but no text.
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    screen.getByRole('dialog').appendChild(checkbox);
+    act(() => checkbox.focus());
+    expect(checkbox).toHaveFocus();
+
+    decisions = [shipDecision({ id: QUESTION_ID, title: 'Which way should the migration go?' })];
+    await act(() => queryClient.invalidateQueries());
+
+    await screen.findByText('Which way should the migration go?');
+    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
+    checkbox.remove();
+  });
+
   it('rings a late decision but leaves focus in a field the person is typing in', async () => {
     decisions = [
       shipDecision({

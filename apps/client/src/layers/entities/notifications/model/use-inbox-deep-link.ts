@@ -57,17 +57,19 @@ export function useInboxDeepLink({ blocked = false }: InboxDeepLinkOptions = {})
 
   useEffect(() => {
     if (!present || !inPlaceNavigate) return;
-    // An empty `?inbox=` names nothing, so it opens nothing, but it is still
-    // taken out of the address like any other.
-    if (target) requestInbox(undefined, target === INBOX_OPEN ? undefined : { focus: target });
+    // An empty `?inbox=` names nothing, and a link read while the window is
+    // taken asks for nothing, but both are still taken out of the address.
+    if (target && !blocked) {
+      requestInbox(undefined, target === INBOX_OPEN ? undefined : { focus: target });
+    }
     inPlaceNavigate({
       search: (prev) => ({ ...prev, [INBOX_SEARCH_PARAM]: undefined }),
       replace: true,
     });
-  }, [present, target, inPlaceNavigate]);
+  }, [present, target, blocked, inPlaceNavigate]);
 
-  // Declared after the effect above, so a link read in the same commit is
-  // made first and then dropped.
+  // A request made before the window was taken (one still waiting for a
+  // bell) is dropped once it is.
   useEffect(() => {
     if (blocked) settleInboxRequest();
   }, [blocked]);
