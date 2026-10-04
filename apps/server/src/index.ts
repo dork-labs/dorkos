@@ -342,6 +342,8 @@ import {
 import { UninstallFlow } from './services/marketplace/flows/uninstall/uninstall.js';
 import {
   DevLinkService,
+  DevLinkWatcher,
+  devLinkExtensionsOf,
   hookDecisionConsentStore,
 } from './services/marketplace/dev-links/index.js';
 import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
@@ -563,6 +565,7 @@ import {
   formatFirstRunTelemetryNotice,
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
+import { operatorAudience } from './services/notifications/notification-entitlement.js';
 import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
@@ -828,6 +831,8 @@ let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
 /** The `.agents/skills` projection watcher; absent when `harness.autoSync` is off. */
 let skillsWatcher: SkillsWatcherHandle | undefined;
+/** Hot reload for dev links (DOR-2696); absent when the marketplace did not start. */
+let devLinkWatcher: DevLinkWatcher | undefined;
 /** The turn-end half of the same trigger; absent whenever {@link skillsWatcher} is. */
 let turnEndReprojection: TurnEndReprojection | undefined;
 /**
@@ -5304,19 +5309,25 @@ async function start() {
     // (`marketplaceMcpDeps`). It is required on both deps types, so a surface
     // cannot be wired without it — an agent's `marketplace_install` used to skip
     // it entirely and leave the plugin unprojected (DOR-2057).
+    // The runtime half of the post-change notifier, on its own so the dev link
+    // watcher can refresh plugins without also queuing a projection per edit.
+    const refreshRuntimePlugins = (projectPath: string | undefined): void => {
+      // Pass the project path (when the change was project-scoped) so the
+      // runtime drops that cwd's cached command list and re-warms it with
+      // the merged per-cwd plugin set.
+      claudeRuntime?.refreshActivatedPlugins(projectPath).catch((err) => {
+        logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
+      });
+      // A global change can leave a package held back from every session until
+      // a person approves what it runs (DOR-2306): ask now, in the background.
+      if (projectPath === undefined) askAboutWithheldGlobals();
+    };
+
     const onPluginsChanged: MarketplaceMcpDeps['onPluginsChanged'] = (ctx) => {
       // Never throws into the caller: it runs after a mutation already succeeded,
       // and a failed follow-up must not be reported as a failed install.
       try {
-        // Pass the project path (when the change was project-scoped) so the
-        // runtime drops that cwd's cached command list and re-warms it with
-        // the merged per-cwd plugin set.
-        claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
-          logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
-        });
-        // A global change can leave a package held back from every session until
-        // a person approves what it runs (DOR-2306): ask now, in the background.
-        if (ctx.projectPath === undefined) askAboutWithheldGlobals();
+        refreshRuntimePlugins(ctx.projectPath);
         // Harness Sync auto-projection (GAP-4): project the changed plugin's
         // assets to the project's other harnesses. Fire-and-forget; the
         // service is internally best-effort and never throws, but we still
@@ -5334,6 +5345,29 @@ async function start() {
     // yes for the extensions it carries is written beside every other
     // extension approval, keeping the rest of that section as it is.
     const devLinkExtensions = extensionManager;
+    // An edit in a linked folder reaches DorkOS within seconds, through the
+    // seams an install uses (spec §6). It records no approval: a rebuild needs
+    // the extension already approved, and anything new asks on its own card.
+    devLinkWatcher = new DevLinkWatcher({
+      dorkHome,
+      extensions: devLinkExtensionsOf(devLinkExtensions, {
+        config: () => configManager.get('extensions'),
+        announce: (ids) => broadcastExtensionReloaded(ids),
+      }),
+      refreshPlugins: ({ projectPath }) => {
+        try {
+          refreshRuntimePlugins(projectPath);
+        } catch (err) {
+          logger.warn('[Marketplace] Refreshing plugins after a dev link edit failed', { err });
+        }
+      },
+      reproject: (ctx) =>
+        runAutoProjection({ ...ctx, action: 'install' }, { dorkHome, approvals: approvalService }),
+      // A person's surface (the dev link badge): it names folders and build
+      // errors, so it goes where `config_changed` goes and no agent reads it.
+      broadcast: (event) =>
+        eventFanOut.broadcast('marketplace_dev_link_reloaded', event, operatorAudience),
+    });
     const devLinkService = new DevLinkService({
       dorkHome,
       approvals: {
@@ -5354,7 +5388,10 @@ async function start() {
       consent: hookDecisionConsentStore,
       onPluginsChanged,
       refreshExtensions: () => devLinkExtensions.requestRefresh(),
+      reloads: devLinkWatcher,
     });
+    // Not awaited: boot does not wait on watches opening. It never rejects.
+    void devLinkWatcher.start();
 
     // Build the confirmation provider that gates marketplace mutations. There is
     // exactly one, and no way to switch it off: it records an approval the
@@ -6227,6 +6264,11 @@ async function shutdownServices() {
   if (skillsWatcher) {
     await skillsWatcher.stop();
     skillsWatcher = undefined;
+  }
+  // Every dev link's watch closes here, so shutdown leaves no handle open.
+  if (devLinkWatcher) {
+    await devLinkWatcher.stop();
+    devLinkWatcher = undefined;
   }
   if (searchIndexer) {
     searchIndexer.stop();

@@ -86,6 +86,22 @@ export interface DevLinkFs {
   rmdir: typeof rmdir;
 }
 
+/**
+ * The hot-reload watcher as the service drives it (`DevLinkWatcher`): told
+ * when a link is made, told to stand down before one is removed, and asked
+ * when each last reloaded.
+ */
+export interface DevLinkReloads {
+  /** Watch every dev link in force, including one just made. Never throws. */
+  sync(): Promise<void>;
+  /** Stop watching and reloading one dev link before it is unlinked. */
+  hold(record: Pick<DevLinkRecord, 'name' | 'scope' | 'projectPath'>): Promise<void>;
+  /** Undo {@link hold} once the unlink has finished or failed. */
+  release(record: Pick<DevLinkRecord, 'name' | 'scope' | 'projectPath'>): Promise<void>;
+  /** When an edit last reloaded a dev link, since the server started. */
+  lastReloadAt(record: Pick<DevLinkRecord, 'name' | 'scope' | 'projectPath'>): string | undefined;
+}
+
 /** What {@link DevLinkService} needs. */
 export interface DevLinkServiceDeps {
   /** Resolved DorkOS data directory. */
@@ -101,6 +117,8 @@ export interface DevLinkServiceDeps {
   onPluginsChanged: NotifyPluginsChanged;
   /** Ask extensions to re-scan, without waiting. */
   refreshExtensions: () => void;
+  /** The hot-reload watcher; absent means edits are not watched. */
+  reloads?: DevLinkReloads;
   /** The directory boundary a linked folder must sit inside; defaults to the server's. */
   boundary?: () => string;
   /** The platform, for the link type; defaults to `process.platform`. */
@@ -334,6 +352,9 @@ export class DevLinkService {
         undo.push(async () => forgetLinkConsent(this.deps.consent, record, true));
         this.approveExtensions(preview);
         this.notify(preview.name, projectPath, 'install');
+        // Edits reload from now on. After everything else, so the first event
+        // it could act on finds the link recorded and approved.
+        await this.deps.reloads?.sync();
         return this.statusOf(record, 'active');
       } catch (err) {
         for (const step of undo.reverse()) {
@@ -361,32 +382,48 @@ export class DevLinkService {
     return withInstallTargetLock(first.slot, async () => {
       // Read again under the lock: another unlink may have finished meanwhile.
       const record = await this.findRecord(request.name, request.scope, projectPath);
-      const state = await devLinkStateOf(record);
-      if (state === 'active' || state === 'folder-missing') await this.removeLink(record.slot);
-      let restored: DevUnlinkResult['restored'] = 'removed';
-      let parkedLeftAt: string | undefined;
-      if (record.parked && (await exists(record.parked))) {
-        if (await exists(record.slot)) {
-          parkedLeftAt = record.parked;
-        } else {
-          await this.fs.rename(record.parked, record.slot);
-          restored = 'installed';
-        }
+      // Stop reloading first: nothing may rebuild from the folder while its
+      // link and approvals are being taken away.
+      await this.deps.reloads?.hold(record);
+      try {
+        return await this.unlinkHeld(record);
+      } finally {
+        await this.deps.reloads?.release(record);
       }
-      const reading = await readDevLinks(this.deps.dorkHome);
-      const others = 'links' in reading ? reading.links.filter((l) => !sameLink(l, record)) : [];
-      await this.forgetApprovals(record, restored === 'installed', others);
-      forgetLinkConsent(this.deps.consent, record, restored === 'installed');
-      await updateDevLinks(this.deps.dorkHome, (links) =>
-        links.filter((link) => !sameLink(link, record))
-      );
-      this.notify(
-        record.name,
-        record.projectPath,
-        restored === 'installed' ? 'install' : 'uninstall'
-      );
-      return { restored, ...(parkedLeftAt !== undefined && { parkedLeftAt }) };
     });
+  }
+
+  /**
+   * The body of {@link unlink}, under the lock with reloads held.
+   *
+   * @internal
+   */
+  private async unlinkHeld(record: DevLinkRecord): Promise<DevUnlinkResult> {
+    const state = await devLinkStateOf(record);
+    if (state === 'active' || state === 'folder-missing') await this.removeLink(record.slot);
+    let restored: DevUnlinkResult['restored'] = 'removed';
+    let parkedLeftAt: string | undefined;
+    if (record.parked && (await exists(record.parked))) {
+      if (await exists(record.slot)) {
+        parkedLeftAt = record.parked;
+      } else {
+        await this.fs.rename(record.parked, record.slot);
+        restored = 'installed';
+      }
+    }
+    const reading = await readDevLinks(this.deps.dorkHome);
+    const others = 'links' in reading ? reading.links.filter((l) => !sameLink(l, record)) : [];
+    await this.forgetApprovals(record, restored === 'installed', others);
+    forgetLinkConsent(this.deps.consent, record, restored === 'installed');
+    await updateDevLinks(this.deps.dorkHome, (links) =>
+      links.filter((link) => !sameLink(link, record))
+    );
+    this.notify(
+      record.name,
+      record.projectPath,
+      restored === 'installed' ? 'install' : 'uninstall'
+    );
+    return { restored, ...(parkedLeftAt !== undefined && { parkedLeftAt }) };
   }
 
   /**
@@ -785,8 +822,14 @@ export class DevLinkService {
       state,
       parked,
       linkedAt: record.linkedAt,
+      ...lastReload(this.deps.reloads?.lastReloadAt(record)),
     };
   }
+}
+
+/** The `lastReloadAt` field, present only once something reloaded. */
+function lastReload(at: string | undefined): { lastReloadAt?: string } {
+  return at === undefined ? {} : { lastReloadAt: at };
 }
 
 /** The refusal for an installed copy in the slot without the explicit switch. */

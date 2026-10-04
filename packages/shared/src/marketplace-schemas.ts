@@ -1847,7 +1847,10 @@ export interface DevLinkStatus {
   parked: { version?: string } | null;
   /** When the link was made. ISO 8601. */
   linkedAt: string;
-  /** When an edit last reloaded it, once something does. ISO 8601. */
+  /**
+   * When an edit in the folder last reloaded it, since the server started.
+   * ISO 8601. Absent until the first reload.
+   */
   lastReloadAt?: string;
 }
 
@@ -1860,6 +1863,47 @@ export interface InstalledDevLink {
   /** Whether an installed copy is set aside and comes back on unlink. */
   parked: boolean;
 }
+
+/**
+ * The name of the global-stream event a dev link's reload broadcasts
+ * (`GET /api/events`), so the badge can say when it last reloaded.
+ */
+export const DEV_LINK_RELOADED_EVENT = 'marketplace_dev_link_reloaded';
+
+/**
+ * What a reload did after an edit in a linked folder:
+ *
+ * - `extension` — an extension it carries was rebuilt, or the extensions were re-scanned.
+ * - `projection` — the project's harness projection was asked to run again.
+ * - `plugins` — the runtime's plugin list was refreshed and what the package
+ *   runs on its own was checked again, so anything new is held back to ask.
+ */
+export const DevLinkReloadActionSchema = z.enum(['extension', 'projection', 'plugins']);
+
+/** One thing a dev link's reload did. */
+export type DevLinkReloadAction = z.infer<typeof DevLinkReloadActionSchema>;
+
+/**
+ * The payload of {@link DEV_LINK_RELOADED_EVENT}: one per dev link, after each
+ * burst of edits in its folder has settled and been acted on.
+ */
+export const DevLinkReloadedEventSchema = z.object({
+  /** Package name. */
+  name: z.string(),
+  /** `global` or `project`. */
+  scope: z.enum(['global', 'project']),
+  /** The project, for a project dev link. */
+  projectPath: z.string().optional(),
+  /** When the reload finished. ISO 8601. */
+  at: z.string(),
+  /** What the reload did, in a fixed order. */
+  actions: z.array(DevLinkReloadActionSchema),
+  /** One plain sentence per thing that did not reload, such as an extension that failed to build. */
+  errors: z.array(z.string()).optional(),
+});
+
+/** The payload of {@link DEV_LINK_RELOADED_EVENT}. */
+export type DevLinkReloadedEvent = z.infer<typeof DevLinkReloadedEventSchema>;
 
 /** What linking a folder would do, as `POST /api/marketplace/dev-links/preview` reports it. */
 export interface DevLinkPreview {
