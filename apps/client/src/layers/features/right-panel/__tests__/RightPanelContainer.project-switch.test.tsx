@@ -151,6 +151,7 @@ describe('RightPanelContainer — switching to another project’s chat (DOR-257
       rightPanelLayoutKey: null,
       requestedRightPanel: null,
       explicitAgentPath: null,
+      inheritedRightPanelTab: null,
     });
     mockContributions = [
       contribution('pulse', { isGlobal: true }),
@@ -218,7 +219,9 @@ describe('RightPanelContainer — switching to another project’s chat (DOR-257
     await waitFor(() => expect(screen.getByTestId('tab-content-a-only')).toBeInTheDocument());
   });
 
-  it('keeps the sheet open below desktop width', async () => {
+  it('shows the chat, not the sheet, on a switch below desktop width', async () => {
+    // The panel is a sheet over the chat there; inheriting it would land you
+    // behind it instead of in the chat you just picked.
     mockIsBelowDesktop = true;
     const { rerender } = await openInProjectA('flow');
     expect(screen.getByTestId('sheet')).toBeInTheDocument();
@@ -226,7 +229,9 @@ describe('RightPanelContainer — switching to another project’s chat (DOR-257
     act(() => enterProject('/repo/b', 'agent-b'));
     rerender(<SessionShell />);
 
-    expect(screen.getByTestId('sheet')).toBeInTheDocument();
-    expect(screen.getByTestId('tab-content-flow')).toBeInTheDocument();
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    expect(screen.queryByTestId('sheet')).not.toBeInTheDocument();
+    // Desktop memory is untouched: project A still remembers its open panel.
+    expect(storedLayouts()['agent-a']).toMatchObject({ open: true, activeTab: 'flow' });
   });
 });

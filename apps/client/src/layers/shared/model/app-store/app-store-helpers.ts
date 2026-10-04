@@ -117,9 +117,10 @@ export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
 // ---------------------------------------------------------------------------
 //
 // Two localStorage surfaces, by design (DOR-227):
-//   - `RIGHT_PANEL_STATE` (global): the layout used when no agent is in scope —
-//     the initial mount and non-session routes. Preserves the pre-DOR-227 global
-//     behavior so navigating outside `/session` never changes agent layouts.
+//   - `RIGHT_PANEL_STATE` (global): the last layout you looked at, anywhere.
+//     Non-session routes use it directly, and every per-agent write and agent
+//     bind mirrors into it (DOR-2579), so a reload restores the panel you left —
+//     including on a project that only inherited its layout and has none saved.
 //   - `RIGHT_PANEL_LAYOUTS` (per-agent map): `agentKey → { open, activeTab }`,
 //     LRU-capped, so returning to an agent restores how you left its panel.
 //
@@ -171,25 +172,60 @@ export function writeRightPanelState(entry: RightPanelStateEntry): void {
   } catch {}
 }
 
-/** The per-agent layout map's key before DOR-2579 (see `STORAGE_KEYS.RIGHT_PANEL_LAYOUTS`). */
-const LEGACY_RIGHT_PANEL_LAYOUTS_KEY = 'dorkos-right-panel-layouts';
-
-/**
- * Remove the pre-DOR-2579 per-agent layout map. Idempotent, so it can run on
- * every mount for as long as the old key might still be in somebody's browser.
- */
-export function dropLegacyRightPanelLayouts(): void {
-  try {
-    localStorage.removeItem(LEGACY_RIGHT_PANEL_LAYOUTS_KEY);
-  } catch {}
-}
-
 /** A per-agent right panel layout entry (the durable state plus its LRU recency stamp). */
 interface RightPanelLayoutEntry extends RightPanelStateEntry {
   accessedAt: number;
 }
 
 type RightPanelLayoutMap = Record<string, RightPanelLayoutEntry>;
+
+/** Persist the per-agent map, keeping only the newest {@link MAX_RIGHT_PANEL_LAYOUTS} entries. */
+function saveRightPanelLayoutMap(map: RightPanelLayoutMap): void {
+  const entries = Object.entries(map);
+  if (entries.length > MAX_RIGHT_PANEL_LAYOUTS) {
+    entries.sort((a, b) => b[1].accessedAt - a[1].accessedAt);
+    map = Object.fromEntries(entries.slice(0, MAX_RIGHT_PANEL_LAYOUTS));
+  }
+  localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS, JSON.stringify(map));
+}
+
+/** The per-agent layout map's key before DOR-2579 (see `STORAGE_KEYS.RIGHT_PANEL_LAYOUTS`). */
+const LEGACY_RIGHT_PANEL_LAYOUTS_KEY = 'dorkos-right-panel-layouts';
+
+/**
+ * Carry the pre-DOR-2579 per-agent map over to the current key, then remove it.
+ *
+ * Only OPEN layouts move. Before DOR-2579, switching into a project with no
+ * layout closed the panel and saved "closed" for it, so a closed entry in the
+ * old map is usually the bug talking, not a choice; an open one was always
+ * somebody opening the panel. An entry already under the new key wins.
+ *
+ * Idempotent and cheap once the old key is gone. Nothing writes the old key any
+ * more, so this can be deleted once no supported install predates the release
+ * that shipped DOR-2579.
+ */
+export function migrateLegacyRightPanelLayouts(): void {
+  try {
+    const legacyRaw = localStorage.getItem(LEGACY_RIGHT_PANEL_LAYOUTS_KEY);
+    if (legacyRaw === null) return;
+    localStorage.removeItem(LEGACY_RIGHT_PANEL_LAYOUTS_KEY);
+    const legacy: unknown = JSON.parse(legacyRaw);
+    if (legacy === null || typeof legacy !== 'object') return;
+    const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
+    const map: RightPanelLayoutMap = raw ? JSON.parse(raw) : {};
+    for (const [agentKey, value] of Object.entries(legacy as Record<string, unknown>)) {
+      if (agentKey in map || value === null || typeof value !== 'object') continue;
+      const { open, activeTab, accessedAt } = value as Record<string, unknown>;
+      if (open !== true) continue;
+      map[agentKey] = {
+        open: true,
+        activeTab: currentTabId(activeTab),
+        accessedAt: typeof accessedAt === 'number' ? accessedAt : 0,
+      };
+    }
+    saveRightPanelLayoutMap(map);
+  } catch {}
+}
 
 /**
  * Read a single agent's persisted right panel layout from the per-agent map.
@@ -216,32 +252,22 @@ export function readRightPanelLayout(agentKey: string): RightPanelStateEntry | n
  * Write a right panel layout to the correct surface, enforcing LRU eviction.
  *
  * When `agentKey` is set, the layout is stored in the per-agent map (evicting
- * the least-recently-used entry past {@link MAX_RIGHT_PANEL_LAYOUTS}). When it is
- * null (initial mount / non-session routes), the layout is written to the global
- * state instead, preserving the pre-DOR-227 behavior.
+ * the least-recently-used entry past {@link MAX_RIGHT_PANEL_LAYOUTS}) AND
+ * mirrored to the global state, which holds the last layout you looked at
+ * (DOR-2579). When it is null (initial mount / non-session routes), only the
+ * global state is written.
  *
  * @param agentKey - Stable agent identity, or null for the global surface.
  * @param entry - The open/active-tab layout to persist.
  */
 export function writeRightPanelLayout(agentKey: string | null, entry: RightPanelStateEntry): void {
-  if (agentKey === null) {
-    writeRightPanelState(entry);
-    return;
-  }
+  writeRightPanelState(entry);
+  if (agentKey === null) return;
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
     const map: RightPanelLayoutMap = raw ? JSON.parse(raw) : {};
     map[agentKey] = { ...entry, accessedAt: Date.now() };
-
-    // LRU eviction: keep only the newest MAX_RIGHT_PANEL_LAYOUTS entries.
-    const entries = Object.entries(map);
-    if (entries.length > MAX_RIGHT_PANEL_LAYOUTS) {
-      entries.sort((a, b) => b[1].accessedAt - a[1].accessedAt);
-      const trimmed = Object.fromEntries(entries.slice(0, MAX_RIGHT_PANEL_LAYOUTS));
-      localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS, JSON.stringify(trimmed));
-    } else {
-      localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS, JSON.stringify(map));
-    }
+    saveRightPanelLayoutMap(map);
   } catch {}
 }
 
