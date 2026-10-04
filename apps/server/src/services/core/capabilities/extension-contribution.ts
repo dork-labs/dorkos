@@ -179,6 +179,25 @@ export interface ExtensionContribution {
 /** Either a usable value or the sentence saying why it was refused. */
 type Checked<T> = { ok: true; value: T } | { ok: false; reason: string };
 
+/**
+ * Characters author text on a card may not contain: the straight double quote
+ * and every typographic quote mark (`“ ” „ ‟ ‘ ’ ‚ ‛ « » ‹ ›`, CJK and
+ * full-width quotes), C0/C1 controls (`\p{Cc}`), the line and paragraph separators, and
+ * every format character (`\p{Cf}`).
+ */
+const CARD_TEXT_REFUSED =
+  /["\p{Cc}\u00ab\u00bb\u2018-\u201f\u2039\u203a\u2028\u2029\u300c-\u300f\u301d-\u301f\uff02\uff07\p{Cf}]/u;
+
+/**
+ * Whether a display name contains a letter outside ASCII, after NFKC folds
+ * compatibility forms (full-width letters, ligatures) to their plain letters.
+ * Refused because a look-alike letter — a Cyrillic `о` in "DоrkOS" — would let
+ * a name read as one the reserved-name check refuses.
+ */
+function hasNonAsciiLetter(value: string): boolean {
+  return /[^\p{ASCII}]/u.test(value.normalize('NFKC').replace(/[^\p{L}]/gu, ''));
+}
+
 /** Whether a value is a non-empty string after trimming. */
 function isText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
@@ -186,17 +205,16 @@ function isText(value: unknown): value is string {
 
 /**
  * Whether author text is safe to put on a card: a non-empty single line within
- * `max` characters, with no double quote and no control character. A quote
- * could close the card's quoted title and forge a field after it; a newline or
- * control character could fake a second line.
+ * `max` characters, with no quote mark, no control character and no invisible
+ * format character. A quote, straight or typographic, could close (or look as
+ * if it closed) the card's quoted title and forge a field after it; a newline
+ * or control character could fake a second line; a format character (Unicode
+ * category Cf: zero-width spaces, bidi overrides and isolates, the BOM, soft
+ * hyphens) can hide text or reorder what a person reads.
  */
 function isCardText(value: unknown, max: number): value is string {
   return (
-    isText(value) &&
-    value.length <= max &&
-    value === value.trim() &&
-    // eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
-    !/["\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(value)
+    isText(value) && value.length <= max && value === value.trim() && !CARD_TEXT_REFUSED.test(value)
   );
 }
 
@@ -378,7 +396,17 @@ export function checkExtensionContribution(contribution: unknown): Checked<Exten
         reason: `${owner} display name must be one line of at most ${EXTENSION_DISPLAY_NAME_MAX} characters, with no quotes`,
       };
     }
-    if (RESERVED_DISPLAY_NAMES.has(displayName.toLowerCase().replace(/[^a-z0-9]/g, ''))) {
+    if (hasNonAsciiLetter(displayName)) {
+      return { ok: false, reason: `${owner} display name must use plain letters A to Z` };
+    }
+    if (
+      RESERVED_DISPLAY_NAMES.has(
+        displayName
+          .normalize('NFKC')
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '')
+      )
+    ) {
       return { ok: false, reason: `${owner} may not call itself ${displayName}` };
     }
     if (!Array.isArray(tools) || tools.length === 0) {

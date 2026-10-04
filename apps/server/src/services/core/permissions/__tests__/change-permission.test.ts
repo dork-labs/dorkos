@@ -103,6 +103,8 @@ describe('permissions.change', () => {
         requestedByPath: DORKBOT.agentPath,
         area: 'permissions',
         authorityBindingDigest: null,
+        capabilityId: 'permissions.change',
+        tier: 'act',
       })
     ).toBe(false);
   });

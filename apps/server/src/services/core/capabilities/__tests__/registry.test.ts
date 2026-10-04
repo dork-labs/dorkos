@@ -959,6 +959,51 @@ describe('extension layer — author text on cards (DOR-2685 review)', () => {
     }
   });
 
+  it('refuses typographic quotes and invisible format characters (re-review)', () => {
+    // A curly quote reads as a quote on the card, and an invisible character
+    // (zero-width, bidi override, BOM) hides or reorders what a person reads.
+    const bad = [
+      '\u201c',
+      '\u201d',
+      '\u2018',
+      '\u2019',
+      '\u00ab',
+      '\u00bb',
+      '\u201e',
+      '\u200b',
+      '\u200f',
+      '\u202a',
+      '\u202e',
+      '\u2060',
+      '\u2064',
+      '\u2066',
+      '\u2069',
+      '\ufeff',
+      '\u00ad',
+    ];
+    for (const ch of bad) {
+      const title = `Archive${ch}mail`;
+      expect(
+        checkExtensionContribution(contribution('mail-app', [extensionTool('send', { title })])).ok,
+        `title U+${ch.codePointAt(0)!.toString(16)}`
+      ).toBe(false);
+      expect(
+        checkExtensionContribution({ ...contribution('mail-app'), displayName: `Mail${ch}` }).ok,
+        `name U+${ch.codePointAt(0)!.toString(16)}`
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a display name spelled with look-alike letters (re-review)', () => {
+    // "DоrkOS" with a Cyrillic о, or full-width letters, would read as DorkOS.
+    for (const displayName of ['D\u043erkOS', '\uff24\uff4f\uff52\uff4bOS', 'Caf\u00e9']) {
+      expect(
+        checkExtensionContribution({ ...contribution('mail-app'), displayName }).ok,
+        displayName
+      ).toBe(false);
+    }
+  });
+
   it('refuses a display name that claims to be DorkOS', () => {
     // A row reading "From DorkOS" would say the tool is DorkOS's own.
     for (const displayName of ['DorkOS', 'dorkos', 'Dork OS', 'DorkBot']) {

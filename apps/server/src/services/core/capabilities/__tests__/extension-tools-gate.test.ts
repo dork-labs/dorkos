@@ -195,6 +195,10 @@ describe('extension tools at the gate (DOR-2685)', () => {
     ).toBe(false);
     expect(isAlwaysOffered({ ...row, capabilityId: 'ext_mail_app.send', tier: 'act' })).toBe(true);
     expect(isAlwaysOffered({ ...row, capabilityId: 'probe.wipe', tier: 'destructive' })).toBe(true);
+    // A caller cannot forget the two facts the extension rule reads: leaving
+    // them out would quietly offer Always allow on a destructive extension card.
+    // @ts-expect-error -- capabilityId and tier are required
+    expect(isAlwaysOffered(row)).toBe(true);
   });
 
   it('quotes an extension title on the card and names the extension', () => {

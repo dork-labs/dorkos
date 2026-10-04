@@ -4,6 +4,7 @@ covers:
   - 'feat(capabilities): live extension layer on the capability registry (DOR-2685)'
   - 'feat(capabilities): name the extension behind a tool and announce catalog changes (DOR-2685)'
   - 'fix(capabilities): harden what an extension may contribute (DOR-2685)'
+  - 'fix(capabilities): refuse look-alike and invisible text in extension names (DOR-2685)'
 ---
 
 ### Added

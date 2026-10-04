@@ -591,8 +591,10 @@ export function isAlwaysOffered(row: {
   area: string | null;
   authorityBindingDigest: string | null;
   detail?: string | null;
-  capabilityId?: string;
-  tier?: string;
+  /** Required: the extension rule reads it, and a caller must not be able to forget it. */
+  capabilityId: string;
+  /** Required for the same reason. */
+  tier: string;
 }): boolean {
   return (
     row.requestedByPath !== null &&
@@ -600,7 +602,7 @@ export function isAlwaysOffered(row: {
     !isFloorArea(row.area) &&
     row.authorityBindingDigest === null &&
     (row.detail ?? null) === null &&
-    !(row.tier === 'destructive' && isExtensionCapabilityId(row.capabilityId ?? ''))
+    !(row.tier === 'destructive' && isExtensionCapabilityId(row.capabilityId))
   );
 }
 
