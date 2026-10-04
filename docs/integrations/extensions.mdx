@@ -40,7 +40,7 @@ An extension with a server half can give your agents tools while it runs. A mail
 - **Each tool says how much it can do.** A tool that only reads runs when an agent calls it. A tool that changes something sits in the **Extension tools** area of **Settings → Permissions**, where you can set every extension's tools, or one tool, to Allowed, Ask or Blocked. A tool that deletes or removes something asks you every time, even if you set it to Allowed.
 - **Each tool names its extension.** Its row on the permissions page and its approval card say which extension it came from.
 - **Removing an extension clears its tool settings.** If you set one of its tools to Allowed, that choice does not carry over to anything installed later under the same name.
-- **When agents see a new tool.** Codex and OpenCode chats get the new list the next time they ask DorkOS for it. A Claude Code chat that is already running keeps the tools it started with until it starts again.
+- **When agents see a new tool.** Codex and OpenCode chats get the new list the next time they ask DorkOS for it. A Claude Code chat gets it with your next message. A reply that is already being written finishes with the tools it started with.
 
 Extensions can also list skills in their manifest. DorkOS checks those names today, but does not hand the skills to your agents yet.
 
