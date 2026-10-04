@@ -29,6 +29,7 @@ import {
   refusalFor,
   type EligibilityConfigReader,
 } from '../account-eligibility.js';
+import { projectRegistry } from '../../../projects/project-registry.js';
 
 const CLIENT_APP = '/projects/client-app';
 const DORKOS = '/projects/dorkos';
@@ -336,6 +337,37 @@ describe('accountEligibility / eligibleAccountIds / onlyProjectsOf', () => {
       root: '/some/where/my app',
       name: 'my-app',
     });
+  });
+
+  it('never names an unknown root with a name another project already holds', () => {
+    // Purpose: Settings and the eligibility GET must not show two projects
+    // under one name; the unknown root gets the name it would be recorded with.
+    projectRegistry.attachStore({
+      all: () => [
+        {
+          root: '/elsewhere/taken/my-app',
+          name: 'my-app',
+          originRepo: null,
+          source: 'seen',
+          firstSeenAt: '2026-10-01T00:00:00.000Z',
+          lastSeenAt: '2026-10-01T00:00:00.000Z',
+        },
+      ],
+      reporters: () => [],
+      insert: vi.fn(),
+      update: vi.fn(),
+      addReporter: vi.fn(),
+      removeLookupOnly: vi.fn(() => true),
+    });
+    expect(projectRefFor('/some/where/my-app')).toEqual({
+      root: '/some/where/my-app',
+      name: 'my-app~where',
+    });
+    expect(projectRefFor('/elsewhere/taken/my-app')).toEqual({
+      root: '/elsewhere/taken/my-app',
+      name: 'my-app',
+    });
+    expect(projectRegistry.get('/some/where/my-app')).toBeUndefined();
   });
 
   it('reads an empty, relative or missing folder as no project', async () => {

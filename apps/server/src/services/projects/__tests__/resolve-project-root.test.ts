@@ -16,6 +16,7 @@ import {
   MAX_CONCURRENT_ROOT_LOOKUPS,
   MAX_NEGATIVE_ROOT_TTL_MS,
   NEGATIVE_ROOT_TTL_MS,
+  ROOT_LOOKUP_GIT_ENV,
   isNotARepository,
   negativeTtl,
   projectRootFromCommonDir,
@@ -236,6 +237,35 @@ describe('the cache', () => {
     expect(resolver.peek('/repos/flaky')).toBeNull();
     clock += NEGATIVE_ROOT_TTL_MS;
     expect(resolver.peek('/repos/flaky')).toBeUndefined();
+  });
+
+  it('runs git in the C locale, so a translated git still says "not a git repository"', async () => {
+    const fakeGit = vi.fn(async () => {
+      throw notARepo();
+    });
+    const resolver = createProjectRootResolver({
+      runGit: fakeGit as unknown as typeof runGit,
+      canonical: (dir) => dir,
+    });
+    await resolver.resolve('/repos/c');
+    expect(fakeGit).toHaveBeenCalledWith(expect.any(Array), '/repos/c', {
+      timeoutMs: expect.any(Number),
+      env: { LC_ALL: 'C', LANG: 'C' },
+    });
+    expect(ROOT_LOOKUP_GIT_ENV).toEqual({ LC_ALL: 'C', LANG: 'C' });
+  });
+
+  it('answers in English through the real runner even when the inherited locale is not', async () => {
+    vi.stubEnv('LC_ALL', 'de_DE.UTF-8');
+    vi.stubEnv('LANGUAGE', 'de');
+    try {
+      const err = await runGit(['rev-parse', '--git-common-dir'], plain, {
+        env: ROOT_LOOKUP_GIT_ENV,
+      }).catch((e: unknown) => e);
+      expect(isNotARepository(err)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('reads git\'s own "not a git repository" as the only answer worth backing off on', () => {

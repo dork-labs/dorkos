@@ -36,7 +36,6 @@ import { readProjectRootList } from '@dorkos/shared/config-schema';
 import { ACCOUNT_NOT_ALLOWED_CODE, type ProjectRef } from '@dorkos/shared/project-schemas';
 
 import { projectRegistry } from '../../projects/project-registry.js';
-import { sanitizeNameSegment } from '../../projects/project-names.js';
 
 /** The runtimes that have account rules. */
 export type EligibilityRuntime = 'claude-code';
@@ -182,15 +181,13 @@ export function accountRuleRoots(claudeCode: unknown): Set<string> {
 
 /**
  * The project a root is, named as the registry names it: the known name, else
- * the folder's name in the characters a project name may hold.
+ * the name it would get if recorded now (never one another project holds).
+ * Records nothing.
  *
  * @param root - A project root, canonical.
  */
 export function projectRefFor(root: string): ProjectRef {
-  const known = projectRegistry.get(root);
-  return known
-    ? { root: known.root, name: known.name }
-    : { root, name: sanitizeNameSegment(path.basename(root)) || 'project' };
+  return { root, name: projectRegistry.nameFor(root) };
 }
 
 function readRules(config: EligibilityConfigReader): EligibilityRules {

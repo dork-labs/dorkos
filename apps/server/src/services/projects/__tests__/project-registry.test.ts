@@ -329,6 +329,19 @@ describe('reported roots are second-class', () => {
   });
 });
 
+describe('nameFor', () => {
+  it('answers a known name, or the name a root would get, and records nothing', async () => {
+    const reg = registry({ resolveRoot: async (cwd) => cwd, checkBoundary: async (d) => d });
+    const first = path.join(boundary, 'names-for', 'a', 'app');
+    await reg.resolve(first);
+    expect(reg.nameFor(first)).toBe('app');
+    const second = path.join(boundary, 'names-for', 'b', 'app');
+    expect(reg.nameFor(second)).toBe('app~b');
+    expect(reg.get(second)).toBeUndefined();
+    expect(reg.nameFor(path.join(boundary, 'names-for', 'c', 'fresh'))).toBe('fresh');
+  });
+});
+
 describe("a person's lookups are capped", () => {
   it(`keeps at most ${MAX_LOOKUP_ROOTS} lookup-only roots, forgetting the least recently used`, async () => {
     const db = createDb(':memory:');

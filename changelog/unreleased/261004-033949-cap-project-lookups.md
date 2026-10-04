@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): cap and person-gate project lookups, and limit background git calls (DOR-2547)'
   - 'fix(server): close the second lookup door and harden the lookup cap (DOR-2547 review)'
+  - 'fix(server): never show a taken name for an unknown root; read git in the C locale (DOR-2547 review)'
 ---
 
 ### Fixed

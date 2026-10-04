@@ -61,6 +61,12 @@ export const MAX_NEGATIVE_ROOT_TTL_MS = 10 * 60_000;
 /** The most cached lookups that run `git` at once, per resolver. */
 export const MAX_CONCURRENT_ROOT_LOOKUPS = 4;
 
+/**
+ * The locale every root lookup runs git in, so its "not a git repository"
+ * answer reads the same on a translated git ({@link isNotARepository}).
+ */
+export const ROOT_LOOKUP_GIT_ENV: Readonly<Record<string, string>> = { LC_ALL: 'C', LANG: 'C' };
+
 /** Timeout for the one `git rev-parse`, which can run while a request waits. */
 const GIT_TIMEOUT_MS = 5_000;
 
@@ -186,7 +192,7 @@ export function createProjectRootResolver(
       const commonDir = await deps.runGit(
         ['rev-parse', '--path-format=absolute', '--git-common-dir'],
         dir,
-        { timeoutMs: GIT_TIMEOUT_MS }
+        { timeoutMs: GIT_TIMEOUT_MS, env: ROOT_LOOKUP_GIT_ENV }
       );
       const root = projectRootFromCommonDir(commonDir);
       return { root: root === null ? null : deps.canonical(root), answered: true };

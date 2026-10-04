@@ -393,6 +393,17 @@ export class ProjectRegistry {
   }
 
   /**
+   * The name a root has, or would get if it were recorded now, without
+   * recording it: never a name another project already holds. For readers
+   * that must not write (an ungated GET naming a folder).
+   *
+   * @param root - A project root, canonical.
+   */
+  nameFor(root: string): string {
+    return this.byRoot.get(root)?.name ?? assignProjectName(root, (name) => this.names.has(name));
+  }
+
+  /**
    * Whether a root is known only because an extension or a lookup named it.
    * Such a root must never widen where core looks for extension code (§6.1).
    *
@@ -490,8 +501,7 @@ export class ProjectRegistry {
       this.warn('could not read the roots settings name', err);
       return;
     }
-    const naming = new Set<string>();
-    for (const roots of this.reserved.values()) for (const root of roots) naming.add(root);
+    const naming = new Set([...this.reserved.values()].flatMap((roots) => [...roots]));
     const lookups = [...this.byRoot.values()].filter(
       (p) =>
         p.source === 'reported' &&
@@ -506,7 +516,7 @@ export class ProjectRegistry {
       (a, b) =>
         a.lastSeenAt.localeCompare(b.lastSeenAt) || a.firstSeenAt.localeCompare(b.firstSeenAt)
     );
-    let forgot = false;
+    const over = excess;
     for (const project of lookups) {
       if (excess <= 0) break;
       if (project.root === keep) continue;
@@ -524,15 +534,16 @@ export class ProjectRegistry {
         this.relearn(project.root);
         continue;
       }
-      this.drop(project);
-      forgot = true;
+      this.drop(project.root);
       excess--;
     }
-    if (forgot) this.changed();
+    if (excess < over) this.changed();
   }
 
   /** Forget a project in memory only. */
-  private drop(project: KnownProject): void {
+  private drop(root: string): void {
+    const project = this.byRoot.get(root);
+    if (!project) return;
     this.byRoot.delete(project.root);
     this.names.delete(project.name);
     this.lastWritten.delete(project.root);
@@ -544,13 +555,10 @@ export class ProjectRegistry {
     if (!this.store) return;
     try {
       const stored = this.store.all().find((p) => p.root === root);
-      const current = this.byRoot.get(root);
-      if (!stored) {
-        if (current) this.drop(current);
-      } else {
+      if (stored) {
         this.byRoot.set(root, stored);
         this.names.add(stored.name);
-      }
+      } else this.drop(root);
       for (const reporter of this.store.reporters()) this.noteReporter(reporter);
       this.changed();
     } catch (err) {
