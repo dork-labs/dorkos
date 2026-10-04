@@ -1,6 +1,21 @@
 {
   "version": 1,
   "tests": {
+    "dev-link": {
+      "relatedCode": [
+        "apps/client/src/layers/features/marketplace/ui/LinkFolderDialog.tsx",
+        "apps/client/src/layers/features/marketplace/ui/UnlinkDialog.tsx",
+        "apps/client/src/layers/features/marketplace/ui/DevLinkRow.tsx",
+        "apps/client/src/layers/features/extensions/ui/ExtensionCard.tsx",
+        "apps/server/src/routes/marketplace/dev-links.ts",
+        "apps/server/src/services/marketplace/dev-links/dev-link-service.ts"
+      ],
+      "explorationNotes": [
+        "Runs on the cockpit leg, whose boundary is the checkout: a folder in the system temp dir is refused as outside the boundary, so the fixture folder lives in the gitignored .temp/ of the checkout.",
+        "The server refuses a path that is not its own realpath (dev_link_path_not_real), so the spec types realpathSync of the folder.",
+        "Extension discovery runs after POST /dev-links returns (refreshExtensions is fire-and-forget), so the Settings card gets a long timeout rather than a reload."
+      ]
+    },
     "served-document-isolation": {
       "relatedCode": [
         "apps/server/src/routes/workbench-serve.ts",
