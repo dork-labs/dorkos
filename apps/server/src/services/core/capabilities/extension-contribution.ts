@@ -25,6 +25,10 @@ import { z } from 'zod';
 import {
   CAPABILITY_TIERS,
   EXTENSION_CAPABILITY_ID_PREFIX,
+  EXTENSION_MCP_TOOL_NAME_MAX,
+  EXTENSION_TOOL_NAME_PATTERN,
+  EXTENSION_TOOL_TITLE_MAX,
+  extensionDomainName,
   isSecretInputKey,
   type CapabilitySource,
   type CapabilityTier,
@@ -48,31 +52,13 @@ export const EXTENSION_DOMAIN_PREFIX = EXTENSION_CAPABILITY_ID_PREFIX;
 export const EXTENSION_TOOLS_AREA: PermissionAreaId = 'extensions';
 
 /**
- * The shape of one tool's name inside its extension, e.g. `send_message`:
- * lowercase words joined by single underscores. No `__` and no leading or
- * trailing `_`, so the first `__` in `ext_<id>__<tool>` always marks where the
- * extension ends and the tool begins.
+ * Re-exported from `@dorkos/shared/capabilities`, which owns them so the
+ * manifest schema and this check read one definition and cannot drift.
  */
-export const EXTENSION_TOOL_NAME_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
-
-/**
- * The prefix a harness puts in front of a tool from the `dorkos` MCP server
- * (Claude Code's form, the longest of the three runtimes').
- */
-const MCP_TOOL_PREFIX = 'mcp__dorkos__';
-
-/** The longest tool name the model API accepts, prefix included. */
-const MCP_QUALIFIED_NAME_MAX = 64;
-
-/**
- * The longest MCP tool name (`ext_<id>__<tool>`) an extension tool may have, so
- * the name a harness sends the model API stays within its 64-character limit.
- * One name over it would fail every turn of every session that lists it.
- */
-export const EXTENSION_MCP_TOOL_NAME_MAX = MCP_QUALIFIED_NAME_MAX - MCP_TOOL_PREFIX.length;
+export { EXTENSION_TOOL_NAME_PATTERN, EXTENSION_MCP_TOOL_NAME_MAX, extensionDomainName };
 
 /** The longest title, which a person reads on cards and the permissions page. */
-export const EXTENSION_TITLE_MAX = 80;
+export const EXTENSION_TITLE_MAX = EXTENSION_TOOL_TITLE_MAX;
 
 /** The longest extension display name, shown beside every one of its tools. */
 export const EXTENSION_DISPLAY_NAME_MAX = 40;
@@ -83,20 +69,6 @@ export const EXTENSION_DISPLAY_NAME_MAX = 40;
  * DorkOS" would claim the tool is DorkOS's own.
  */
 const RESERVED_DISPLAY_NAMES: ReadonlySet<string> = new Set(['dorkos', 'dorkbot']);
-
-/**
- * The registry domain an extension's tools live under: `ext_` plus the
- * extension id with every `-` turned into `_`.
- *
- * Injective because an extension id can never contain `_`
- * (`EXTENSION_ID_REGEX`), so two different extensions can never share a domain.
- *
- * @param extensionId - A valid extension id, e.g. `mail-app`.
- * @returns The domain, e.g. `ext_mail_app`.
- */
-export function extensionDomainName(extensionId: string): string {
-  return EXTENSION_DOMAIN_PREFIX + extensionId.replaceAll('-', '_');
-}
 
 /**
  * Whether an action is an extension's destructive tool, which asks a person on

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@dorkos/shared": "workspace:*",
+    "@dorkos/skills": "workspace:*",
     "zod": "^4.6.2"
   },
   "devDependencies": {

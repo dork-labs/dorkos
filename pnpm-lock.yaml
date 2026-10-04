@@ -1506,6 +1506,9 @@ importers:
       '@dorkos/shared':
         specifier: workspace:*
         version: link:../shared
+      '@dorkos/skills':
+        specifier: workspace:*
+        version: link:../skills
       zod:
         specifier: ^4.6.2
         version: 4.6.5
