@@ -8,6 +8,7 @@ covers:
   - 'fix(community): refuse sessions a sign-in made after its account was cleared'
   - 'fix(community): say how sign-in linking meets an email someone else used'
   - 'fix(community): record a trusted link only once its row exists'
+  - 'fix(community): drop account rows a request wrote after its account was cleared'
 ---
 
 ### Added

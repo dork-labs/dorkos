@@ -65,7 +65,10 @@ export function registerAccountPasswordRoutes(
         headers: c.req.raw.headers,
         body: { newPassword: body.newPassword },
       });
-    } catch {
+    } catch (cause) {
+      // The account was cleared while this request was under way; the password did not stick.
+      if ((cause as { body?: { code?: string } }).body?.code === 'sign_in_refused')
+        throw new ApiError(403, 'FORBIDDEN', 'This account changed. Sign in again.');
       // Better Auth refuses a second password; a concurrent request may have set one first.
       throw new ApiError(409, 'STATE_CONFLICT', 'This account already has a password.');
     }

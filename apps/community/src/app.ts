@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context, type Next } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { getConnInfo } from '@hono/node-server/conninfo';
@@ -247,17 +247,15 @@ export function createCommunityApp({
     limitAttempts(`signup:${peer(c)}`, config.limits.signupAttemptsPerMinute);
     await next();
   });
-  // Every auth request that can sign someone in, and the password link route, records the
-  // database snapshot it began with, so a session it makes after a clean-out of the account
-  // committed is refused (sign-in/request-start.ts). Reading a session makes none.
-  app.use('/api/auth/*', async (c, next) => {
-    if (c.req.method === 'GET' && c.req.path === '/api/auth/get-session') return next();
+  // Every mutating request records the database snapshot it began with, so a session or account
+  // row it writes after a clean-out of the account committed is refused (request-start.ts).
+  // Better Auth's own handler records it for its GET callbacks too (auth.ts).
+  const recordStart = async (c: Context, next: Next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) return next();
     await withRequestStart(pool, next);
-  });
-  app.use('/api/v1/sign-in-link', async (c, next) => {
-    if (c.req.method === 'POST') await withRequestStart(pool, next);
-    else await next();
-  });
+  };
+  app.use('/api/v1/*', recordStart);
+  app.use('/api/auth/*', recordStart);
   app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
 
   const now = hooks?.now ?? (() => new Date());

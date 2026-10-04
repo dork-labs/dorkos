@@ -42,6 +42,9 @@ export async function clearAccountAccess(
 ): Promise<string[]> {
   // Stamped first: a sign-in that began before this transaction commits cannot keep the session
   // it makes, whatever it read (see sign-in/request-start.ts).
+  // The callers lock it already; taking it again here is free and keeps this function correct
+  // on its own: every insert of a session or account row for this user waits on this lock.
+  await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR UPDATE', [userId]);
   await client.query('UPDATE "user" SET access_cleared_xid=pg_current_xact_id() WHERE id=$1', [
     userId,
   ]);

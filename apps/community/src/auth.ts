@@ -17,7 +17,7 @@ import {
 import { hashSecret, readCookie, verifyValue } from './security.js';
 import type { NoticeKind } from './mail/outbox.js';
 import { gateAccountLink, settleTrustedLink, SIGN_IN_REFUSED_CODE } from './sign-in/link-gate.js';
-import { sessionPredatesClearing } from './sign-in/request-start.js';
+import { withRequestStart, writtenBeforeClearing } from './sign-in/request-start.js';
 
 /**
  * What let a new account in: an owner grant or an invitation, or only a live claim to replace
@@ -110,7 +110,7 @@ export function createCommunityAuth(
    */
   const creatingUser = new WeakSet<object>();
 
-  return betterAuth({
+  const auth = betterAuth({
     database: pool,
     secret: config.authSecret,
     baseURL: config.publicUrl,
@@ -249,9 +249,47 @@ export function createCommunityAuth(
             });
             return { data: account };
           },
-          // A trusted link is audited, mailed and shown only once its row exists.
+          /**
+           * A request that checked the account before a clean-out (`clearAccountAccess`)
+           * committed must not leave a new way in behind it: `setPassword` checks there is no
+           * password, hashes, then inserts; `/link-social` checks, then inserts. Runs once the
+           * row is committed:
+           *
+           * - Row committed before the clean-out's `DELETE FROM account`: that DELETE removes it.
+           *   (Its foreign-key check takes a key-share lock on the user row, which waits while a
+           *   clean-out holds it `FOR UPDATE`, so it cannot land between that DELETE and the
+           *   commit.)
+           * - Row committed after: the `FOR SHARE` read waits for the clean-out, then sees its
+           *   stamp. The request's start snapshot cannot see that clean-out, so the row is
+           *   deleted and the request refused.
+           *
+           * The clean-out's own request is exempt: its link row is the new owner's. A trusted
+           * link is audited, mailed and shown only once its row exists and has passed this.
+           */
           after: async (account, ctx) => {
+            if (await writtenBeforeClearing(pool, account.userId, { lock: true })) {
+              await pool.query('DELETE FROM account WHERE id=$1', [account.id]);
+              throw clearedRefusal();
+            }
             await settleTrustedLink(account, ctx, { pool, config, canSendNotice, now });
+          },
+        },
+        update: {
+          /**
+           * The same rule for an update. Better Auth's `update.before` sees only the changed
+           * fields, not whose row it is, so the check runs here, after the commit. Updates in
+           * this server only refresh a provider link's tokens (password changes and resets are
+           * off), so a stale one adds no way in; the sign-in it belongs to is refused, and its
+           * session too (`session.create.after`). A stale update to a password row would be one
+           * a clean-out did not write, so that row is deleted: the account then has no password,
+           * which fails closed.
+           */
+          after: async (account) => {
+            if (!account || !(await writtenBeforeClearing(pool, account.userId, { lock: true })))
+              return;
+            if (account.providerId === 'credential')
+              await pool.query('DELETE FROM account WHERE id=$1', [account.id]);
+            throw clearedRefusal();
           },
         },
       },
@@ -267,7 +305,7 @@ export function createCommunityAuth(
               throw new APIError('FORBIDDEN', { code: SIGN_IN_REFUSED_CODE, message: refusal });
             // Early answer for a request that began before the account was cleared. The `after`
             // check below is the one that holds under a race.
-            if (await sessionPredatesClearing(pool, session.userId, { lock: false }))
+            if (await writtenBeforeClearing(pool, session.userId, { lock: false }))
               throw clearedRefusal();
             await options.beforeSessionInsert?.(session.userId);
             return { data: session };
@@ -279,8 +317,8 @@ export function createCommunityAuth(
            *
            * - Session committed before the clean-out deletes sessions: the clean-out's
            *   `DELETE FROM session` removes it. (Inserting a session takes a key-share lock on the
-           *   account row, which waits while a clean-out holds it `FOR UPDATE`, so an insert
-           *   cannot slip in after that DELETE and before the commit.)
+           *   `"user"` row for its foreign key; `clearAccountAccess` holds that row `FOR UPDATE`,
+           *   so an insert cannot slip in after that DELETE and before the commit.)
            * - Session committed after the clean-out: `FOR SHARE` waits for a clean-out still
            *   holding the row, then reads its stamp. If the request's start snapshot cannot see
            *   the clean-out's transaction, the request may have authenticated with something it
@@ -289,7 +327,7 @@ export function createCommunityAuth(
            * The request that did the clean-out is exempt: its session is the new owner's.
            */
           after: async (session) => {
-            if (!(await sessionPredatesClearing(pool, session.userId, { lock: true }))) return;
+            if (!(await writtenBeforeClearing(pool, session.userId, { lock: true }))) return;
             await pool.query('DELETE FROM session WHERE id=$1', [session.id]);
             throw clearedRefusal();
           },
@@ -297,6 +335,14 @@ export function createCommunityAuth(
       },
     },
   });
+  // Every Better Auth request but reading a session records its start (sign-in/request-start.ts),
+  // so the hooks above can tell a write that began before a clean-out from one after it.
+  const handler = auth.handler;
+  auth.handler = (request: Request) =>
+    request.method === 'GET' && new URL(request.url).pathname.endsWith('/get-session')
+      ? handler(request)
+      : withRequestStart(pool, () => handler(request));
+  return auth;
 }
 
 /** The refusal a sign-in gets when the account was cleared while it was under way. */

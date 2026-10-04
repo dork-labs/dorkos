@@ -9,6 +9,7 @@ import { parseConfig } from '../config.js';
 import { signInLinkComposers } from '../sign-in/linked.js';
 import { prunePendingSignInLinks } from '../sign-in/link-gate.js';
 import { recoverPassword } from '../recover-password.js';
+import { createCommunityAuth } from '../auth.js';
 import { hashSecret, signValue } from '../security.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 import { startFakeIssuer, type FakeIssuer } from './fake-oidc-issuer.js';
@@ -820,6 +821,78 @@ describe('a sign-in under way while the account is cleared', () => {
     expect(
       (await passwordSignIn('recovered-race@example.com', 'recovered-password-1')).status
     ).toBe(200);
+  });
+});
+
+describe('an account write under way while the account is cleared', () => {
+  it('drops a password a squatter set while the trusted clean-out ran', async () => {
+    // Purpose: fails if `setPassword`, which checked "no password yet" before the clean-out
+    // committed and inserted after it, leaves a password the squatter can sign in with. The
+    // pause is a database trigger that sleeps before the password row's insert, between Better
+    // Auth's check and its write, where no lock is held.
+    const { userId } = await account('set-password-race@example.com', { password: null });
+    // GitHub does not vouch for the email, so signing in through the already-linked GitHub
+    // account gives a fresh session and leaves the email unconfirmed.
+    github = { id: 31337, email: 'set-password-race@example.com', verified: false };
+    await pool.query(
+      `INSERT INTO account(id,"accountId","providerId","userId") VALUES($1,'31337','github',$2)`,
+      [randomUUID(), userId]
+    );
+    const squatter = await providerSignIn(trusted, 'github');
+    expect(squatter.location.pathname).toBe('/signed-in');
+    expect(
+      (await pool.query('SELECT "emailVerified" FROM "user" WHERE id=$1', [userId])).rows[0]
+    ).toEqual({ emailVerified: false });
+    await pool.query(`CREATE OR REPLACE FUNCTION slow_test_password() RETURNS trigger AS $$
+      BEGIN PERFORM pg_sleep(1.5); RETURN NEW; END $$ LANGUAGE plpgsql`);
+    await pool.query(
+      `CREATE TRIGGER slow_test_password BEFORE INSERT ON account FOR EACH ROW
+       WHEN (NEW."userId" = '${userId}' AND NEW."providerId" = 'credential')
+       EXECUTE FUNCTION slow_test_password()`
+    );
+    try {
+      const setting = call(
+        trusted,
+        '/api/v1/account/password',
+        'POST',
+        { newPassword: 'squatter-password-12' },
+        squatter.cookie
+      );
+      // Wait until the insert is asleep in the trigger: the check has passed, the write waits.
+      for (let tries = 0; ; tries++) {
+        const sleeping = await pool.query(
+          "SELECT 1 FROM pg_stat_activity WHERE wait_event='PgSleep'"
+        );
+        if (sleeping.rowCount) break;
+        if (tries > 200) throw new Error('the password insert never paused');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      identity('set-password-race@example.com', 'set-password-race-at-issuer');
+      const victim = await providerSignIn(trusted, 'oidc');
+      expect(victim.location.pathname).toBe('/signed-in');
+      const refused = await setting;
+      expect(refused.status).toBe(403);
+      expect(await providersOf(userId)).toEqual(['oidc']);
+      expect(
+        (await passwordSignIn('set-password-race@example.com', 'squatter-password-12')).status
+      ).toBe(401);
+      expect(await whoIs(trusted, victim.cookie)).toBe('set-password-race@example.com');
+    } finally {
+      await pool.query('DROP TRIGGER slow_test_password ON account');
+    }
+  });
+
+  it('refuses a sign-in made with no recorded request start', async () => {
+    // Purpose: fails if a session-writing path that skips the request-start wrapper is judged
+    // from "now" (which would let the clean-out race through) instead of refused.
+    await account('no-start@example.com');
+    const bare = createCommunityAuth(
+      pool,
+      parseConfig({ ...baseEnv, COMMUNITY_OIDC_LABEL: undefined, COMMUNITY_OIDC_MARK: undefined })
+    );
+    await expect(
+      bare.api.signInEmail({ body: { email: 'no-start@example.com', password: PASSWORD } })
+    ).rejects.toThrow(/No request start recorded/u);
   });
 });
 
