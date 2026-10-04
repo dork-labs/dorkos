@@ -167,6 +167,7 @@ import { isPersistentSessionEnabled } from '../persistent-session-optin.js';
 import {
   AccountPinViolationError,
   captureLaunchFingerprint,
+  withLiveToolSurface,
   type LaunchFingerprint,
 } from './launch-fingerprint.js';
 import { createPumpLauncher, decideProcessReuse, type PumpLaunchPlan } from './pump-launch.js';
@@ -237,6 +238,13 @@ interface SessionBundle {
    * D1). Emptied when the process dies; a replacement process gets a fresh bundle.
    */
   seenTaskTypes: Set<string>;
+  /**
+   * The busy spell (its `busySince`) this process was already warned about for
+   * holding a stale tool list past the four-hour ceiling, so the warning is
+   * said once rather than on every message (DOR-2685). A replacement process
+   * gets a fresh bundle.
+   */
+  staleToolListWarnedFor?: number;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -595,7 +603,46 @@ export class PersistentDispatch {
     // dispatch back to ask again, and `onPluginReloadHeld` is what stops that
     // asking going on for ever.
     const contextTokens = conversationTokens(session);
-    const reuse = decideProcessReuse(bundle.fingerprint, plan.fingerprint, {
+    // A changed tool list (an extension started or stopped, a permission that
+    // hides a tool) is moved from outside this session, so it never tears down
+    // a process that is still working: a helper agent, a Monitor, a delivery
+    // owed (DOR-2685; the DOR-2705 class). It waits, and the stored fingerprint
+    // keeps the old list, so the next dispatch asks again. Any other pin that
+    // moved still relaunches as it always did.
+    const live = bundle.fingerprint;
+    const busy =
+      live !== undefined && live.pins.toolSurface !== plan.fingerprint.pins.toolSurface
+        ? bundle.pump.quietness()
+        : undefined;
+    const compared =
+      live !== undefined && busy !== undefined && !busy.quiet
+        ? withLiveToolSurface(live, plan.fingerprint)
+        : plan.fingerprint;
+    // Deliberately NO ceiling on this hold. The reaper takes a process back at
+    // the four-hour ceiling, but a dispatch is not the reaper: tearing down a
+    // process whose helper or Monitor is still working is exactly the DOR-2705
+    // bug, and a stale tool list costs far less than lost work (the gate still
+    // refuses any call a person blocked). So past the ceiling the hold goes on,
+    // and the only change is one warning per busy spell saying the list is stale.
+    if (busy !== undefined && !busy.quiet) {
+      const busyForMs = Date.now() - busy.busySince;
+      logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
+        session: sessionId,
+        because: busy.because,
+        busyForMs,
+      });
+      if (
+        bundle.pump.isPastCeiling(Date.now()) &&
+        bundle.staleToolListWarnedFor !== busy.busySince
+      ) {
+        bundle.staleToolListWarnedFor = busy.busySince;
+        logger.warn(
+          '[persistent-dispatch] tool list is stale until this session’s background work ends',
+          { session: sessionId, because: busy.because, busyForMs }
+        );
+      }
+    }
+    const reuse = decideProcessReuse(bundle.fingerprint, compared, {
       holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),
       sessionId,
       ...(contextTokens !== undefined ? { contextTokens } : {}),

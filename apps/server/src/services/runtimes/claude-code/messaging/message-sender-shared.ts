@@ -88,6 +88,15 @@ export interface McpServerLaunch {
    * caller the tool runs as cannot disagree.
    */
   identity?: HomeResolution;
+  /**
+   * Whether the in-session server carries the five connector tools (DOR-2685).
+   * Decided from facts that hold for the whole session — the runtime has the
+   * connector boundary and the session's agent is registered — never from the
+   * per-turn connector context, so a process warmed for a staged note lists
+   * the same tools as the turn that follows it. The turn context is still read
+   * per call to resolve who is calling.
+   */
+  connectorTools?: boolean;
 }
 
 /** Builds the per-query MCP server configs for one session's turn. */
@@ -119,6 +128,8 @@ export interface MessageSenderOpts {
   bindingStore?: BindingStore;
   adapterManager?: AdapterManager;
   mcpServerFactory?: McpServerFactory | null;
+  /** Handed to the tool server factory as {@link McpServerLaunch.connectorTools}. */
+  connectorTools?: boolean;
   onModelsReceived?: (models: SdkReportedModel[]) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
   /**

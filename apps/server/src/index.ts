@@ -4074,7 +4074,11 @@ async function start() {
           launch?.hiddenToolNames,
           // Whose identity the tools act as, as the launch resolved it — the
           // agent a room worktree belongs to, not the worktree (DOR-2091).
-          launch?.identity
+          launch?.identity,
+          // Whether the connector tools are listed, from facts that hold for
+          // the whole session, so a staged warm-up and the turn after it list
+          // the same tools (DOR-2685).
+          launch?.connectorTools
         ),
       })
     );

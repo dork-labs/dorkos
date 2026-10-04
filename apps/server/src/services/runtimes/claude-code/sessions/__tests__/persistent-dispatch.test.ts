@@ -163,6 +163,11 @@ import { SessionStateProjector } from '../../../../session/session-state-project
 import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
 import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
+import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 
 const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
@@ -1093,6 +1098,221 @@ describe('a global plugin withdrawn from a warm process (DOR-2306, I-2)', () => 
         (opts) => (opts as { holdOnCacheImpact?: boolean } | undefined)?.holdOnCacheImpact !== true
       )
     ).toBe(true);
+  });
+});
+
+describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
+  /** What the next build of the `dorkos` server lists. */
+  let listed: string[];
+
+  beforeEach(() => {
+    optIn.persistentSession = true;
+    listed = ['ping', 'relay_send'];
+    // A fresh instance per launch, as the real factory builds, recording the
+    // tool surface the real factory would record for it — the connector tools
+    // included on the same rule (`createDorkOsToolServer`'s `connectorTools`).
+    runtime.setMcpServerFactory((session, _sessionId, launch) => {
+      const instance = {};
+      const connectorTools = launch?.connectorTools ?? session.connectorTurn !== undefined;
+      recordToolSurface(
+        instance,
+        [...listed, ...(connectorTools ? ['connectors.execute_read'] : [])].map((name) => ({
+          name,
+          inputSchema: {},
+        }))
+      );
+      return { dorkos: { type: 'sdk', name: 'dorkos', instance } as never };
+    });
+  });
+
+  it('lists the same tools for a staged warm-up and the turn after it', async () => {
+    // Purpose: a note staged into a cold session boots the process the next
+    // turn rides. The turn holds a connector context the stage never had, so
+    // if the connector tools followed that context, the turn would relaunch
+    // the process the note was staged into.
+    registerTestHomes([CWD]);
+    try {
+      runtime.setMeshCore({
+        getByPath: () => ({ id: 'agent-1', name: 'agent' }),
+        listWithPaths: () => [],
+        updateLastSeen: () => undefined,
+      } as never);
+      runtime.setConnectorRuntimeTools({
+        principals: {
+          openTurn: vi.fn(),
+          renew: vi.fn(),
+          resolve: vi.fn(),
+          revoke: vi.fn().mockResolvedValue(undefined),
+        },
+        listenerUrl: 'http://127.0.0.1:1/mcp',
+        isConnectorCapabilityId: () => false,
+        accessSnapshot: vi.fn().mockResolvedValue({ accountCount: 0, revision: 'r' }),
+      } as never);
+      const sessionId = nextSession();
+      const receipt = await runtime.deliverIntoTurn(sessionId, 'a note first', {
+        mode: 'stage',
+        messageId: 'stage-1',
+      });
+      expect(receipt).toEqual({ delivered: true });
+      expect(cli.launches).toBe(1);
+
+      await turn(sessionId, 'then the turn');
+      expect(cli.launches).toBe(1);
+      expect(cli.processes[0]!.ended).toBe(false);
+      expect(cli.processes[0]!.staged.map((m) => m.uuid)).toEqual(['stage-1']);
+    } finally {
+      clearTestHomes();
+    }
+  });
+
+  it('rides the warm process while the list stays the same', async () => {
+    // Purpose: the server is rebuilt for every dispatch, so an unchanged list
+    // must still compare equal, or every message would relaunch.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    await turn(sessionId, 'second');
+    await turn(sessionId, 'third');
+    expect(cli.launches).toBe(1);
+  });
+
+  it('relaunches before the next turn when a tool joined, keeping the permission mode', async () => {
+    // Purpose: an extension started while the session was warm. The next
+    // message runs on a process that lists its tool, and the person's
+    // permission mode survives the relaunch.
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+    await turn(sessionId);
+    expect(cli.launches).toBe(1);
+
+    listed = [...listed, 'ext_mail_app__send'];
+    const events = await turn(sessionId, 'after the extension started');
+
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(cli.processes[1]!.options.permissionMode).toBe('acceptEdits');
+    // The message that triggered the relaunch is the one the new process ran.
+    expect(cli.processes[1]!.inbox.map((m) => m.content).join('\n')).toContain(
+      'after the extension started'
+    );
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('relaunches when a tool left the list', async () => {
+    // Purpose: a stopped extension, or a tool a permission now hides, must not
+    // stay listed in a warm process.
+    listed = [...listed, 'ext_mail_app__send'];
+    const sessionId = nextSession();
+    await turn(sessionId);
+
+    listed = ['ping', 'relay_send'];
+    await turn(sessionId, 'after the extension stopped');
+
+    expect(cli.launches).toBe(2);
+  });
+
+  it('holds the relaunch while a helper is still working, then relaunches once quiet', async () => {
+    // Purpose: a tool-list change comes from outside the session (an extension
+    // turned on, a permission changed). It must never tear down a process
+    // whose background helper is still working (the DOR-2705 class); it waits,
+    // and the next dispatch after the work ends relaunches.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    await turn(sessionId, 'while the helper works');
+    expect(cli.launches).toBe(1);
+    expect(process.ended).toBe(false);
+
+    // Still held on a second message: the stored fingerprint kept the old list.
+    await turn(sessionId, 'still working');
+    expect(cli.launches).toBe(1);
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
+    await turn(sessionId, 'after the helper finished');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
+  it('keeps holding past the four-hour ceiling, and warns once that the list is stale', async () => {
+    // Purpose: a dispatch never tears down working background (DOR-2705), so
+    // the hold has no ceiling. Past the reaper's ceiling it only says, once,
+    // that this session's tool list is stale until the work ends.
+    const { logger } = await import('../../../../../lib/logger.js');
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+    listed = [...listed, 'ext_mail_app__send'];
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
+      vi.mocked(logger.warn).mockClear();
+      const staleWarnings = () =>
+        vi
+          .mocked(logger.warn)
+          .mock.calls.filter(([message]) => String(message).includes('tool list is stale'));
+
+      await turn(sessionId, 'long after the ceiling');
+      expect(cli.launches).toBe(1);
+      expect(process.ended).toBe(false);
+      expect(staleWarnings()).toHaveLength(1);
+      expect(staleWarnings()[0]![1]).toMatchObject({ session: sessionId });
+
+      await turn(sessionId, 'and again');
+      expect(cli.launches).toBe(1);
+      expect(staleWarnings()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still applies a live change while the relaunch is held', async () => {
+    // Purpose: holding the tool list must not hold anything else. A permission
+    // mode changed at the same time reaches the busy process live.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'monitor-1', task_type: 'monitor' }]);
+    await vi.waitFor(() => expect(process.received.length).toBeGreaterThan(0));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+    await turn(sessionId, 'with the monitor running');
+
+    expect(cli.launches).toBe(1);
+    expect(process.liveSets).toContain('setPermissionMode:acceptEdits');
+  });
+
+  it('never relaunches mid-turn: a change during a running turn waits for it to end', async () => {
+    // Purpose: the relaunch is decided at dispatch, so a turn already running
+    // finishes on the process it started on.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'a long turn');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    listed = [...listed, 'ext_mail_app__send'];
+    // Give anything that might react to the change a chance to.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(process.ended).toBe(false);
+    expect(cli.launches).toBe(1);
+
+    process.answer(process.received[1]!);
+    const events = await running;
+    expect(spokenText(events)).toContain('ok');
+    expect(process.ended).toBe(false);
+
+    await turn(sessionId, 'the next message');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
   });
 });
 

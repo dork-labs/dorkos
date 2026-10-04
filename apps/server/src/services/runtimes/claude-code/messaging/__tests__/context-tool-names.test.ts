@@ -485,6 +485,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 118 -> 119 for `marketplace_link` (DOR-2696): no prompt block names it
     // (the `<marketplace_tools>` block teaches the confirmation-token protocol,
     // which it does not use), so it stays deferred and unprefixed.
+    // Unchanged by extension tools (DOR-2685): the docs registry this reads
+    // composes no extension. `extension-tools-every-list.test.ts` guards those.
     expect(advertised.size).toBe(119);
     for (const name of [
       'configure_doc_channel',
