@@ -89,6 +89,7 @@ const mockCreateDataProviderContext = vi.fn().mockReturnValue({
   getScheduledCleanups: () => [mockScheduledCleanup],
   releaseListeners: () => mockReleaseListeners(),
   dispose: () => mockDispose(),
+  tools: { seal: () => ({ handled: [], unhandled: [] }), close: () => {} },
 });
 vi.mock('../extension-server-api-factory.js', () => ({
   createDataProviderContext: (...args: unknown[]) => mockCreateDataProviderContext(...args),
@@ -231,6 +232,8 @@ describe('ExtensionManager — server lifecycle', () => {
         extensionDir: '/fake/extensions/srv-ext',
         dorkHome: '/fake/dork-home',
         extensionName: expect.any(String),
+        // The manifest declares no tools, so `ctx.tools` binds nothing (DOR-2685).
+        toolChecks: [],
       });
     });
 

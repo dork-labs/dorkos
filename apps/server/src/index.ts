@@ -5609,6 +5609,15 @@ async function start() {
   // A running extension's tools join and leave the registry (DOR-2685); every
   // open window re-fetches the catalog and the permissions page when they do.
   wireCapabilitiesChangedBroadcast(capabilityRegistry, eventFanOut);
+  // Extensions started at boot, before the registry existed: hand every
+  // running one's tools over now, and every later start hands its own over
+  // as it starts. An uninstall clears the removed extension's per-tool
+  // permission settings through the one permission writer (DOR-2685).
+  extensionManager?.attachAgentTools({
+    registry: capabilityRegistry,
+    forgetToolPermissions: (extensionId, extensionName) =>
+      permissionService.forgetExtensionActions(extensionId, extensionName),
+  });
   // Arm tier enforcement (spec `agent-trust` §3.2) now that both the approval
   // primitive and the Activity feed exist. The gate runs INSIDE `registry.invoke`
   // (DOR-467), so every surface that reaches a capability through the registry is

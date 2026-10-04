@@ -39,7 +39,7 @@ const lifecycle = vi.hoisted(() => ({
 }));
 vi.mock('../extension-server-lifecycle.js', () => ({
   ExtensionServerLifecycle: vi.fn().mockImplementation(function () {
-    return { ...lifecycle, getRouter: vi.fn() };
+    return { ...lifecycle, getRouter: vi.fn(), toolStatuses: vi.fn() };
   }),
 }));
 

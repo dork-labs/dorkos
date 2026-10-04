@@ -22,6 +22,7 @@ import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enabl
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
 import { ExtensionServerLifecycle } from './extension-server-lifecycle.js';
+import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { testClientExtension, testServerCompilation } from './extension-test-harness.js';
 import { scaffoldExtension, buildCreateResult } from './extension-scaffolder.js';
 import { configManager } from '../core/config-manager.js';
@@ -43,7 +44,9 @@ import {
   isApprovedCopy,
   isFromTrustedSource,
   mayRunExtensionCode,
+  type ExtensionApprovals,
 } from './extension-load-policy.js';
+import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 
 import { logger } from '../../lib/logger.js';
 import { collectSnapshots, ensureSnapshot } from './extension-snapshots.js';
@@ -170,6 +173,9 @@ export class ExtensionManager {
   private projectRoots: ((cwd: string | null) => Promise<readonly string[]>) | null = null;
   /** Tells connected clients which extensions changed under them. */
   private announceReloaded: ((ids: string[]) => void) | null = null;
+  /** Clears an uninstalled extension's tool permission settings; see {@link attachAgentTools}. */
+  private forgetToolPermissions:
+    ((extensionId: string, extensionName: string) => Promise<unknown>) | null = null;
 
   /**
    * Build the extension system rooted at one DorkOS data directory.
@@ -203,6 +209,34 @@ export class ExtensionManager {
    */
   getCompiler(): ExtensionCompiler {
     return this.compiler;
+  }
+
+  /**
+   * The public record for a copy that runs (or would run): the record plus
+   * where each of its declared tools stands right now (DOR-2685). Shadowed
+   * copies never run, so they go through `toPublic` without tool statuses.
+   */
+  private publicOf(record: ExtensionRecord, approvals: ExtensionApprovals): ExtensionRecordPublic {
+    return toPublic(record, approvals, this.serverLifecycle.toolStatuses(record));
+  }
+
+  /**
+   * Connect running extensions' tools to the rest of DorkOS, once boot has
+   * composed the capability registry (DOR-2685). Extensions start before it
+   * exists, so tools of every instance already running are handed over here.
+   *
+   * @param wiring.registry - The live capability registry.
+   * @param wiring.forgetToolPermissions - Clears every permission setting
+   *   (defaults and each agent's own) kept for one extension's tools. Called
+   *   when an extension is uninstalled, so a standing Allowed never carries
+   *   over to whatever is installed under the same id next.
+   */
+  attachAgentTools(wiring: {
+    registry: CapabilityRegistry;
+    forgetToolPermissions?: (extensionId: string, extensionName: string) => Promise<unknown>;
+  }): void {
+    this.forgetToolPermissions = wiring.forgetToolPermissions ?? null;
+    this.serverLifecycle.attachCapabilityRegistry(wiring.registry);
   }
 
   /**
@@ -430,6 +464,7 @@ export class ExtensionManager {
           path: path.resolve(rec.path),
           runPath: rec.runPath ?? null,
           runs: mayRunExtensionCode(rec, configManager.get('extensions')),
+          declarations: extensionDeclarationDigest(rec.manifest),
         },
       ])
     );
@@ -443,7 +478,11 @@ export class ExtensionManager {
         !prior ||
         prior.path !== path.resolve(rec.path) ||
         prior.runPath !== (rec.runPath ?? null) ||
-        prior.runs !== runs;
+        prior.runs !== runs ||
+        // A running copy whose manifest now declares different tools or
+        // skills restarts, so the tools agents see match its manifest
+        // (DOR-2685).
+        (runs && prior.declarations !== extensionDeclarationDigest(rec.manifest));
       if (!switched) continue;
       changed.push(rec.id);
       if (prior) await this.serverLifecycle.shutdown(rec.id);
@@ -598,7 +637,7 @@ export class ExtensionManager {
   /** Get all extensions as public records (for API responses). */
   listPublic(): ExtensionRecordPublic[] {
     const approvals = configManager.get('extensions');
-    return Array.from(this.extensions.values()).map((record) => toPublic(record, approvals));
+    return Array.from(this.extensions.values()).map((record) => this.publicOf(record, approvals));
   }
 
   /**
@@ -788,7 +827,7 @@ export class ExtensionManager {
 
     this.emitChanged();
     return {
-      extension: toPublic(record, configManager.get('extensions')),
+      extension: this.publicOf(record, configManager.get('extensions')),
       reloadRequired: true,
     };
   }
@@ -820,7 +859,7 @@ export class ExtensionManager {
 
     this.emitChanged();
     return {
-      extension: toPublic(record, configManager.get('extensions')),
+      extension: this.publicOf(record, configManager.get('extensions')),
       reloadRequired: true,
     };
   }
@@ -892,7 +931,7 @@ export class ExtensionManager {
     }
 
     this.emitChanged();
-    return toPublic(record, configManager.get('extensions'));
+    return this.publicOf(record, configManager.get('extensions'));
   }
 
   /**
@@ -975,7 +1014,7 @@ export class ExtensionManager {
     if (record.origin === 'user') this.recordDismissal(record, 'stopping an extension');
     await this.forgetRunApproval(id);
 
-    return toPublic(record, configManager.get('extensions'));
+    return this.publicOf(record, configManager.get('extensions'));
   }
 
   /**
@@ -1072,8 +1111,22 @@ export class ExtensionManager {
       logger.info(`[Extensions] Forgot the run approval for ${id} — its code is being replaced`);
     }
 
+    const name = this.extensions.get(id)?.manifest.name ?? id;
     await this.serverLifecycle.shutdown(id);
+    // Removed, not stopped: a per-tool setting kept for its tools must not
+    // carry over to whatever is installed under this id next (DOR-2685).
+    if (installRoot) await this.forgetToolPermissionsOf(id, name);
     this.emitChanged();
+  }
+
+  /** Clear one extension's tool permission settings, best-effort. */
+  private async forgetToolPermissionsOf(id: string, name: string): Promise<void> {
+    if (!this.forgetToolPermissions) return;
+    try {
+      await this.forgetToolPermissions(id, name);
+    } catch (err) {
+      logger.warn(`[Extensions] Could not clear the tool permission settings of ${id}`, err);
+    }
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */

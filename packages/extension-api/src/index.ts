@@ -110,3 +110,4 @@ export type {
   ProjectSettingsReader,
   SessionsApi,
 } from './server-extension-api.js';
+export type { ToolsApi, ExtensionToolHandler, ExtensionToolCall } from './extension-tools.js';

@@ -231,6 +231,14 @@ interface DataProviderContext {
   // Message an agent: send({ to, text, context?, idempotencyKey }) → { messageId, status };
   // subscribe(fn) → turn.started / turn.done / turn.failed by messageId
   readonly agent: AgentApi;
+  // Bind handlers for the tools extension.json declares (call during register)
+  readonly tools: {
+    handle(
+      name: string,
+      handler: (input: unknown, call: { signal: AbortSignal; agentId: string | null })
+        => unknown | Promise<unknown>
+    ): void;
+  };
 }
 \`\`\`
 
@@ -262,6 +270,64 @@ interface DataProviderContext {
 \`\`\`
 
 Proxy routes are auto-mounted at \`/api/ext/{id}/proxy/*\`.
+
+### Manifest: tools (give agents tools)
+
+Declare each tool, then bind it in \`server.ts\` with \`ctx.tools.handle\` while \`register()\` runs.
+Agents see it as \`ext_<id with - as _>__<name>\` (e.g. \`ext_mail_app__send_message\`) once \`register()\`
+finishes, and lose it when the extension stops, reloads or is turned off. In a skill, name a tool by
+that bare name: the prefix in front of it differs per agent runtime.
+
+\`\`\`json
+{
+  "serverCapabilities": { "serverEntry": "./server.ts" },
+  "tools": [
+    {
+      "name": "send_message",
+      "title": "Send an email",
+      "description": "Send an email from the person's mail account.",
+      "tier": "act",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "to": { "type": "string" }, "subject": { "type": "string" } },
+        "required": ["to"],
+        "additionalProperties": false
+      },
+      "approvalDisplayFields": ["to", "subject"],
+      "timeoutSeconds": 60
+    }
+  ],
+  "skills": ["triage-inbox"]
+}
+\`\`\`
+
+- \`name\`: lowercase words joined by single underscores. \`mcp__dorkos__ext_<id>__<name>\` must fit 64 characters.
+- \`tier\`: \`observe\` (reads), \`act\` (changes something; a person can set it to ask first),
+  \`destructive\` (deletes or removes; asks a person on every call).
+- \`inputSchema\`: a closed JSON Schema. Allowed: type, properties, required, items, enum, const,
+  description, title, default, minimum, maximum, minLength, maxLength, pattern, format, minItems,
+  maxItems, anyOf. Every object needs \`"additionalProperties": false\`. Refused: open objects,
+  patternProperties, propertyNames, $ref, $defs.
+- \`approvalDisplayFields\`: required for act and destructive tools; top-level input properties the
+  approval card shows.
+- \`timeoutSeconds\`: 1 to 300, default 60.
+- \`skills\`: folder names under \`<extension>/skills/\`, each holding a SKILL.md.
+
+\`\`\`typescript
+const register: ServerExtensionRegister = (router, ctx) => {
+  ctx.tools.handle('send_message', async (input, call) => {
+    const { to, subject } = input as { to: string; subject?: string };
+    await sendMail(to, subject, { signal: call.signal });
+    return { sent: true };
+  });
+};
+\`\`\`
+
+A handler that throws becomes a tool error the agent reads, prefixed with the extension's name.
+Return plain JSON (a string passes through as text), at most 256 KB serialized. A call that runs past
+its timeout, or whose extension stops, is aborted through \`call.signal\` and its result is thrown away.
+A declared tool with no handler is not offered; \`handle\` throws for an undeclared or refused name.
+\`list_extensions\` shows each tool's status and, for a refused one, why.
 `;
 
 /**

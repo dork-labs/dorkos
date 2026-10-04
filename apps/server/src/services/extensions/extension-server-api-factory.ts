@@ -37,6 +37,8 @@ import {
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../lib/logger.js';
+import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.js';
+import type { ExtensionToolCheck } from './agent-tools/tool-schema.js';
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;
@@ -228,6 +230,12 @@ interface CreateContextDeps {
   dorkHome: string;
   /** The manifest name, which inbox rows, pushes and the person bar say. Defaults to the id. */
   extensionName?: string;
+  /**
+   * Discovery's decision on each tool the manifest declares
+   * (`checkDeclaredTools`), which `ctx.tools.handle` binds against. Omitted
+   * means the extension declares none, and every `handle` call is refused.
+   */
+  toolChecks?: readonly ExtensionToolCheck[];
 }
 
 /**
@@ -247,6 +255,9 @@ interface CreateContextDeps {
  * - `sessions`: start work in a new chat by the extension's own rules (§7.7)
  * - `agent`: send one of the person's agents a message, held while it is busy,
  *   and hear what became of it (DOR-2683)
+ * - `tools`: bind the handlers for the tools the manifest declares (DOR-2685);
+ *   the returned `tools` binding is sealed by the lifecycle once `register()`
+ *   finishes
  *
  * @param deps - Extension identity and directory info
  * @returns The context, a function to retrieve scheduled cleanup functions, and
@@ -258,6 +269,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   getScheduledCleanups: () => Array<() => void>;
   releaseListeners: () => void;
   dispose: () => void;
+  tools: ToolBinding;
 } {
   const scheduledCleanups: Array<() => void> = [];
   const { extensionId, extensionDir, dorkHome } = deps;
@@ -321,6 +333,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     dorkHome
   );
   const { agent, release: releaseAgent } = createAgentApi(extensionId);
+  const tools = createToolBinding(extensionId, deps.toolChecks ?? []);
 
   // Every way this instance can start something that outlives the call.
   const guardedAccounts = accounts && {
@@ -391,6 +404,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
       },
     },
     agent: guardedAgent,
+    tools: tools.api,
   };
 
   const releaseListeners = () => {
@@ -405,6 +419,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     ctx,
     getScheduledCleanups: () => [...scheduledCleanups],
     releaseListeners,
+    tools,
     /**
      * Give up on this instance: cancel what it scheduled, release what it
      * registered, and make every later `schedule` or listener registration a
@@ -413,6 +428,8 @@ export function createDataProviderContext(deps: CreateContextDeps): {
      */
     dispose: () => {
       disposed = true;
+      // A given-up instance never offers tools, whatever it binds later.
+      tools.close();
       for (const cancel of scheduledCleanups.splice(0)) {
         try {
           cancel();

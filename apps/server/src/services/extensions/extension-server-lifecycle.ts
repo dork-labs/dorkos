@@ -11,7 +11,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { createRequire } from 'node:module';
 import { Router } from 'express';
-import type { ExtensionRecord } from '@dorkos/extension-api';
+import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
 import { createProxyRouter } from './extension-proxy.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
@@ -25,6 +25,10 @@ import { configManager } from '../core/config-manager.js';
 import { getExtensionInbox } from './inbox/extension-inbox.js';
 import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
+import type { CapabilityRegistry } from '../core/capabilities/registry.js';
+import { checkDeclaredTools } from './agent-tools/tool-schema.js';
+import { RunningExtensionTools } from './agent-tools/tool-binding.js';
+import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 
 const require = createRequire(import.meta.url);
 
@@ -43,6 +47,11 @@ const require = createRequire(import.meta.url);
  * that field is the CLIENT bundle's hash, which answers a different question and
  * would have missed an edited `server.ts`.
  *
+ * The manifest's tool and skill declarations are covered too
+ * ({@link extensionDeclarationDigest}): a running instance's tools are the
+ * ones its manifest declared when it started, so a changed declaration needs
+ * a restart to take effect (DOR-2685).
+ *
  * The bundle hash covers everything `server.ts` imports, because it is the
  * hash of the bundled output (`ExtensionCompiler.compileServer`, DOR-2491): an
  * edit to a helper module changes the bundle and so restarts the extension,
@@ -59,6 +68,7 @@ function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null
     version: record.manifest.version,
     serverEntryPath: record.serverEntryPath ?? null,
     dataProxy: record.manifest.dataProxy ?? null,
+    declarations: extensionDeclarationDigest(record.manifest),
     serverSourceHash,
   });
 }
@@ -86,6 +96,12 @@ const REGISTER_TIMEOUT_ERROR = 'server_start_timeout';
  */
 export class ExtensionServerLifecycle {
   private serverExtensions = new Map<string, ActiveServerExtension>();
+  /**
+   * The live capability registry, once boot has composed it. Extensions start
+   * before it exists; their tools wait on their running instance and are
+   * handed over by {@link attachCapabilityRegistry}.
+   */
+  private capabilityRegistry: CapabilityRegistry | null = null;
 
   /**
    * Build the lifecycle for one DorkOS data directory.
@@ -100,6 +116,45 @@ export class ExtensionServerLifecycle {
     private readonly compiler: ExtensionCompiler,
     private readonly registerTimeoutMs: number = REGISTER_TIMEOUT_MS
   ) {}
+
+  /**
+   * Give the lifecycle the live capability registry, so running extensions'
+   * tools reach agents (DOR-2685). Boot starts extensions before the registry
+   * is composed, so every instance already running hands its tools over now;
+   * every instance started later hands them over as it starts.
+   *
+   * @param registry - The composed capability registry.
+   */
+  attachCapabilityRegistry(registry: CapabilityRegistry): void {
+    this.capabilityRegistry = registry;
+    for (const active of this.serverExtensions.values()) {
+      active.agentTools?.contribute(registry);
+    }
+  }
+
+  /**
+   * Where each tool an extension declares stands right now, for
+   * `GET /api/extensions` (DOR-2685). Read from discovery's decision and the
+   * running instance, never stored on the record: records are rebuilt on every
+   * scan while the instance keeps running.
+   *
+   * @param record - The extension's discovery record.
+   * @returns One status per declared tool, or `undefined` when it declares none.
+   */
+  toolStatuses(record: ExtensionRecord): ExtensionToolStatus[] | undefined {
+    const checks = record.toolChecks;
+    if (!checks || checks.length === 0) return undefined;
+    const running = this.serverExtensions.get(record.id)?.agentTools;
+    return checks.map((check) => {
+      const base = { name: check.name, title: check.title, tier: check.tier };
+      if (!check.ok) {
+        return { ...base, status: 'refused' as const, reason: check.reason ?? 'DorkOS refused it' };
+      }
+      const live = running?.statusOf(check.name);
+      if (!live) return { ...base, status: 'inactive' as const };
+      return { ...base, status: live.status, ...(live.reason ? { reason: live.reason } : {}) };
+    });
+  }
 
   /**
    * Initialize a server-side extension: compile, load, and register routes.
@@ -232,6 +287,7 @@ export class ExtensionServerLifecycle {
     }
 
     let registered: (() => void) | undefined;
+    let closeTools: (() => void) | undefined;
     try {
       const mod = require(tempFile);
       const registerFn = mod.default ?? mod;
@@ -242,17 +298,21 @@ export class ExtensionServerLifecycle {
       const router = Router();
       // Starting again lifts the stop on its messages (DOR-2683).
       getAgentSendService()?.extensionStarted(id);
-      const { ctx, getScheduledCleanups, releaseListeners, dispose } = createDataProviderContext({
-        extensionId: id,
-        // A copy that runs by origin runs from its verified snapshot, so what
-        // it reaches relative to itself at runtime is the snapshot's too.
-        extensionDir: record.runPath ?? record.path,
-        dorkHome: this.dorkHome,
-        extensionName: record.manifest.name,
-      });
+      const toolChecks = checkDeclaredTools(record.manifest);
+      const { ctx, getScheduledCleanups, releaseListeners, dispose, tools } =
+        createDataProviderContext({
+          extensionId: id,
+          // A copy that runs by origin runs from its verified snapshot, so what
+          // it reaches relative to itself at runtime is the snapshot's too.
+          extensionDir: record.runPath ?? record.path,
+          dorkHome: this.dorkHome,
+          extensionName: record.manifest.name,
+          toolChecks,
+        });
       // A register() that throws after adding an account listener or advisor
       // must not leave it behind: this instance never becomes active.
       registered = releaseListeners;
+      closeTools = () => tools.close();
 
       const outcome = await settleWithin(
         Promise.resolve(registerFn(router, ctx)),
@@ -283,6 +343,26 @@ export class ExtensionServerLifecycle {
       const result = outcome.value;
       const cleanup = typeof result === 'function' ? result : null;
 
+      // register() finished: no more handlers. Only an instance that started
+      // has tools, and only the declared tools it handled (DOR-2685). A
+      // declared tool with no handler is reported, not offered.
+      const { handled, unhandled } = tools.seal();
+      const agentTools = new RunningExtensionTools(id, record.manifest.name, handled, [
+        ...toolChecks.flatMap((check) =>
+          check.ok ? [] : [{ name: check.name, reason: check.reason }]
+        ),
+        ...unhandled.map((tool) => ({
+          name: tool.name,
+          reason: `${record.manifest.name} declares ${tool.name} but never handles it`,
+        })),
+      ]);
+      if (unhandled.length > 0) {
+        logger.warn(
+          `[Extensions] ${id} declares tools it never handles, so agents won't get them: ` +
+            unhandled.map((tool) => tool.name).join(', ')
+        );
+      }
+
       // Mount proxy routes alongside custom routes for hybrid extensions
       if (record.hasDataProxy && record.manifest.dataProxy) {
         const proxyRouter = createProxyRouter(id, record.manifest.dataProxy, this.dorkHome);
@@ -296,8 +376,15 @@ export class ExtensionServerLifecycle {
         scheduledCleanups: getScheduledCleanups(),
         releaseListeners,
         sourceKey,
+        agentTools,
       });
       registered = undefined;
+
+      // Only now, with the instance active, can agents reach its tools. A
+      // refusal leaves the extension running without them and says why on
+      // each tool, never on `status`/`serverError` (DOR-1336: a server-side
+      // problem must not pull a working client UI).
+      if (this.capabilityRegistry) agentTools.contribute(this.capabilityRegistry);
 
       // Its inbox decisions show again, escalate again, and a deadline that
       // passed while it was down fires now that it can answer (spec
@@ -312,20 +399,29 @@ export class ExtensionServerLifecycle {
       return { ok: true };
     } catch (err) {
       registered?.();
+      // Nor are its tools ever offered: it never started.
+      closeTools?.();
       logger.error(`[Extensions] Server init failed for ${id}:`, err);
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
   /**
-   * Shut down a server-side extension: cancel tasks, call cleanup, remove its
-   * account listeners and advisor, remove router.
+   * Shut down a server-side extension: take its agent tools away, cancel
+   * tasks, call cleanup, remove its account listeners and advisor, remove
+   * router.
    *
    * @param id - Extension identifier
    */
   async shutdown(id: string): Promise<void> {
     const active = this.serverExtensions.get(id);
     if (!active) return;
+
+    // Its tools go FIRST, before anything else of it is torn down: no agent
+    // can start a new call, a call that found a tool a moment ago is refused
+    // before its handler runs, and every call still running is aborted with
+    // its result thrown away (DOR-2685).
+    active.agentTools?.stop();
 
     // Nobody can answer its decisions while it is down: hide them and stop
     // their clocks before its handler goes away.

@@ -41,6 +41,7 @@ import {
   PermissionError,
   compact,
   isArrivalScreenLine,
+  isExtensionRemovalLine,
   isState,
   ownState,
 } from './permission-values.js';
@@ -146,6 +147,13 @@ export async function undoPermissionChange(
     );
   }
   const metadata = parsed.data;
+  if (isExtensionRemovalLine(metadata)) {
+    throw new PermissionError(
+      'NOT_UNDOABLE',
+      "These settings went with an extension that was removed, so Undo can't put them back.",
+      409
+    );
+  }
   if (isArrivalScreenLine(metadata)) {
     throw new PermissionError(
       'NOT_UNDOABLE',
