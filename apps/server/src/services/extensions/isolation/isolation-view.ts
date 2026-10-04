@@ -50,9 +50,7 @@ export async function isolationOf(
  *
  * @param record - The extension's discovery record.
  */
-export function isolationKeyOf(
-  record: Pick<ExtensionRecord, 'isolation'>
-): {
+export function isolationKeyOf(record: Pick<ExtensionRecord, 'isolation'>): {
   runtime: 'subprocess';
   net: string[];
   run: string[];
@@ -68,4 +66,16 @@ export function isolationKeyOf(
     agents: isolation.agents,
     memoryMb: isolation.memoryMb,
   };
+}
+
+/**
+ * Whether this extension asks to run separately and so does not run yet
+ * (DOR-2686 phase 1): its server half is refused with `isolation_not_ready`,
+ * and nothing it ships — skills included — reaches agents as if it ran. The
+ * phase that starts isolated extensions deletes this and its uses.
+ *
+ * @param manifest - The parsed `extension.json`.
+ */
+export function waitsForIsolation(manifest: ExtensionManifest): boolean {
+  return manifest.serverCapabilities?.runtime === 'subprocess';
 }

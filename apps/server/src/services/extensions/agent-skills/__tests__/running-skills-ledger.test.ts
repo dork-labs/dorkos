@@ -113,6 +113,42 @@ describe('which extensions the ledger lists', () => {
     expect(await ask(record(dir), approving('mail', path.join(dorkHome, 'other')))).toEqual([]);
   });
 
+  it('leaves out a copy that widened past its approval, or does not run yet (DOR-2686)', async () => {
+    // Purpose: skills ride the coverage-aware gate. A copy approved for one
+    // host that now declares another waits for a person, and a copy asking to
+    // run separately is refused (isolation_not_ready) — neither ships skills.
+    const dir = path.join(dorkHome, 'extensions', 'mail');
+    await writeSkill(dir, 'triage-inbox');
+    const isolated = (net: string[]) =>
+      record(dir, {
+        manifest: {
+          id: 'mail',
+          name: 'Mail',
+          version: '1.2.3',
+          skills: ['triage-inbox'],
+          serverCapabilities: {
+            serverEntry: './server.ts',
+            runtime: 'subprocess',
+            allow: { net, run: [], agents: false },
+          },
+        },
+      });
+    const config = {
+      ...approving('mail', dir),
+      approvedPermissions: {
+        mail: { runtime: 'subprocess' as const, net: ['a.example.com'], run: [], agents: false },
+      },
+    };
+    expect(
+      await selectRunningSkills([isolated(['a.example.com', 'b.example.com'])], { config, core })
+    ).toEqual([]);
+    expect(await selectRunningSkills([isolated(['a.example.com'])], { config, core })).toEqual([]);
+    // The same copy in-process, approved, still ships its skill.
+    expect(
+      await selectRunningSkills([record(dir)], { config: approving('mail', dir), core })
+    ).toHaveLength(1);
+  });
+
   it('reads a trusted copy from its verified snapshot, never the project folder', async () => {
     const dir = path.join(project, '.dork', 'extensions', 'mail');
     const runPath = path.join(dorkHome, 'extension-snapshots', 'abc', 'mail');

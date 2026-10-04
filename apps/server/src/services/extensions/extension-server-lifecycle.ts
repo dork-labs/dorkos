@@ -29,7 +29,7 @@ import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import { RunningExtensionTools } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
-import { isolationKeyOf } from './isolation/isolation-view.js';
+import { isolationKeyOf, waitsForIsolation } from './isolation/isolation-view.js';
 
 const require = createRequire(import.meta.url);
 
@@ -281,7 +281,7 @@ export class ExtensionServerLifecycle {
     // nothing here would keep. Anything still running for this id (a version
     // that ran inside DorkOS before its manifest moved) is stopped, so the
     // old in-process code cannot keep serving under the new promise.
-    if (record.manifest.serverCapabilities?.runtime === 'subprocess') {
+    if (waitsForIsolation(record.manifest)) {
       await this.stop(id);
       const message = `${record.manifest.name} needs a newer version of DorkOS to run.`;
       record.serverError = { code: ISOLATION_NOT_READY, message };
