@@ -47,6 +47,7 @@ import {
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { isEnabled, type CoreExtensionInfo } from '../extension-enable-resolution.js';
 import { mayRunExtensionCode } from '../extension-load-policy.js';
+import { waitsForIsolation } from '../isolation/isolation-view.js';
 import { writeFileAtomic } from '../extension-build-cache.js';
 import type { ExtensionsConfig } from '../extension-enable-resolution.js';
 import { logger } from '../../../lib/logger.js';
@@ -143,7 +144,12 @@ export async function selectRunningSkills(
     if (declared.length === 0 || record.shadowedBy) continue;
     if (NOT_RUNNING.has(record.status)) continue;
     if (!isEnabled(record.id, ctx.config, ctx.core)) continue;
+    // The coverage-aware gate: a copy whose manifest widened past its
+    // approval waits for a person, and so do its skills (DOR-2686).
     if (!mayRunExtensionCode(record, ctx.config)) continue;
+    // A copy that asks to run separately does not run yet, so its skills do
+    // not reach agents either (DOR-2686 phase 1, `isolation_not_ready`).
+    if (waitsForIsolation(record.manifest)) continue;
     // The folder the copy RUNS from: a trusted copy's verified snapshot, so a
     // project file changed after the scan never becomes a skill.
     const skillsDir = path.join(record.runPath ?? record.path, 'skills');

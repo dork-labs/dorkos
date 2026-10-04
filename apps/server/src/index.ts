@@ -5417,6 +5417,7 @@ async function start() {
           return {
             approvedToRun: extensions.approvedToRun,
             approvedSources: extensions.approvedSources ?? {},
+            approvedPermissions: extensions.approvedPermissions ?? {},
           };
         },
         write: (next) => {

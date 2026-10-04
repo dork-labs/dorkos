@@ -14,6 +14,7 @@
  * @module services/extensions/extension-enable-resolution
  */
 import type {
+  ApprovedPermissionSet,
   ExtensionApprovedSource,
   ExtensionDismissedApproval,
   ExtensionTrustedSource,
@@ -49,6 +50,12 @@ export interface ExtensionsConfig {
    * untouched, like `approvedToRun`; see `extension-load-policy.ts`.
    */
   approvedSources?: Record<string, ExtensionApprovedSource>;
+  /**
+   * The permission set each approval covers, keyed by id (DOR-2686). Absent,
+   * and an absent entry, read as the full in-process set. Carried through
+   * {@link setEnabled} untouched; see `isolation/permission-coverage.ts`.
+   */
+  approvedPermissions?: Record<string, ApprovedPermissionSet>;
   /**
    * The copies a person said "Not now" to in the Activity inbox, keyed by id
    * (DOR-2517). Absent reads as empty. Carried through {@link setEnabled}

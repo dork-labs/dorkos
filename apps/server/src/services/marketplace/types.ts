@@ -269,11 +269,40 @@ export interface InstallOwnershipContext {
  * external hosts contacted, dependencies, and conflicts. Surfaced to the user
  * before any disk mutation.
  */
+/**
+ * Where an extension in a package runs and what it may reach (DOR-2686):
+ * `in-process` is inside DorkOS with full access, and its lists are empty;
+ * `subprocess` is limited to them.
+ */
+export interface PreviewExtensionIsolation {
+  /** Where its server half runs. */
+  runtime: 'in-process' | 'subprocess';
+  /** Hosts it may connect to (`allow.net`). */
+  net: string[];
+  /** Programs it may start (`allow.run`), as declared. */
+  run: string[];
+  /** Whether it may message agents and start agent sessions (`allow.agents`). */
+  agents: boolean;
+}
+
+/** One extension a package will register. */
+export interface PreviewExtension {
+  /** Its id (its folder name under `.dork/extensions`). */
+  id: string;
+  /** The slots its manifest says it contributes to. */
+  slots: string[];
+  /**
+   * Where it runs and what it may reach. Always set by the preview builder;
+   * optional only so a preview from an older server still reads.
+   */
+  isolation?: PreviewExtensionIsolation;
+}
+
 export interface PermissionPreview {
   /** What will be created on disk */
   fileChanges: { path: string; action: 'create' | 'modify' | 'delete' }[];
-  /** Extensions that will be registered */
-  extensions: { id: string; slots: string[] }[];
+  /** Extensions that will be registered, and where each runs */
+  extensions: PreviewExtension[];
   /** Shell hooks the package registers with the harness, commands verbatim */
   hooks: PreviewHook[];
   /** Hook declarations the package ships that could not be read */

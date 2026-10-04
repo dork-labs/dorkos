@@ -17,6 +17,8 @@ const FLOW: PendingExtensionApproval = {
   adds: null,
   since: '2026-09-28T12:00:00.000Z',
   why: 'You installed the flow plugin. It runs as you.',
+  permissions: { runtime: 'in-process', net: [], run: [], agents: false, hasPage: false },
+  added: null,
   agentTools: [],
   agentSkills: [],
 };

@@ -467,7 +467,7 @@ describe('DevLinkService.unlink', () => {
       await readFile(path.join(work, '.dork', 'extensions', 'flow-dash', 'index.ts'), 'utf-8')
     ).toBe('export {}');
     expect(await readDevLinks(home)).toEqual({ links: [] });
-    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {}, approvedPermissions: {} });
     expect(onPluginsChanged).toHaveBeenLastCalledWith({ packageName: 'flow', action: 'uninstall' });
   });
 
@@ -524,6 +524,7 @@ describe('DevLinkService.unlink', () => {
     expect(approvals).toEqual({
       approvedToRun: ['flow-dash'],
       approvedSources: { 'flow-dash': installedApproval },
+      approvedPermissions: {},
     });
   });
 
@@ -591,7 +592,7 @@ describe('DevLinkService.unlink', () => {
       leftInPlace: true,
     });
     expect((await lstat(parked)).isDirectory()).toBe(true);
-    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {}, approvedPermissions: {} });
   });
 
   it("does not put the installed copy's approval back when the parked copy is gone", async () => {
@@ -612,7 +613,7 @@ describe('DevLinkService.unlink', () => {
     expect(await service().unlink({ name: 'flow', scope: 'global' })).toEqual({
       restored: 'removed',
     });
-    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {}, approvedPermissions: {} });
   });
 
   it('answers only one of two unlinks of the same link', async () => {
@@ -642,6 +643,7 @@ describe('DevLinkService.unlink', () => {
     expect(approvals).toEqual({
       approvedToRun: [],
       approvedSources: { 'flow-dash': { path: '/elsewhere/flow-dash' } },
+      approvedPermissions: {},
     });
   });
 
@@ -660,7 +662,7 @@ describe('DevLinkService.unlink', () => {
       devLink: work,
     };
     await service().unlink({ name: 'flow', scope: 'project', projectPath: project });
-    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {}, approvedPermissions: {} });
   });
 
   it("does not strip another dev link's approval when the same folder is linked twice", async () => {
@@ -681,7 +683,7 @@ describe('DevLinkService.unlink', () => {
     // And unlinking the project link does not resurrect the global link's
     // approval it replaced, because that link is gone.
     await service().unlink({ name: 'flow', scope: 'project', projectPath: project });
-    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {} });
+    expect(approvals).toEqual({ approvedToRun: [], approvedSources: {}, approvedPermissions: {} });
   });
 
   it('refuses a name with no dev link', async () => {
@@ -848,5 +850,78 @@ describe('DevLinkService and the hot-reload watcher', () => {
     );
     await expect(svc.unlink({ name: 'flow', scope: 'global' })).rejects.toThrow('EBUSY');
     expect(calls).toEqual(['hold:linked', 'release:linked']);
+  });
+});
+
+describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
+  /** Rewrite the linked extension's manifest with these server capabilities. */
+  async function declare(serverCapabilities: object | string): Promise<void> {
+    await writeFile(
+      path.join(work, '.dork', 'extensions', 'flow-dash', 'extension.json'),
+      typeof serverCapabilities === 'string'
+        ? serverCapabilities
+        : JSON.stringify({
+            id: 'flow-dash',
+            name: 'flow-dash',
+            version: '1.0.0',
+            serverCapabilities,
+          })
+    );
+  }
+
+  it('records what the folder declares beside the dev-link binding', async () => {
+    // Purpose: the dev link's yes covers the set the folder declares when it
+    // is linked, so a later edit that widens it waits for the person. Fails if
+    // linking writes no set (which would read as full access).
+    await declare({ runtime: 'subprocess', allow: { net: ['api.example.com:443'] } });
+    await service().link({ path: work, scope: 'global', via: 'app' });
+    expect(approvals.approvedSources['flow-dash']).toMatchObject({ devLink: work });
+    expect(approvals.approvedPermissions).toEqual({
+      'flow-dash': { runtime: 'subprocess', net: ['api.example.com:443'], run: [], agents: false },
+    });
+  });
+
+  it('records the narrowest set for a manifest it cannot read', async () => {
+    // Purpose: a broken manifest at link time must not leave a yes that reads
+    // as full access once it is fixed.
+    await declare('{ not json');
+    await service().link({ path: work, scope: 'global', via: 'app' });
+    expect(approvals.approvedPermissions?.['flow-dash']).toEqual({
+      runtime: 'subprocess',
+      net: [],
+      run: [],
+      agents: false,
+    });
+  });
+
+  it('puts the installed copy’s set back on unlink, and drops the link’s', async () => {
+    // Purpose: the link's set never outlives it, and the replaced approval
+    // comes back exactly as it was — with its own set, or with none.
+    await writePackage(globalSlot(), { version: '0.9.2', extensions: ['flow-dash'] });
+    const installedApproval = {
+      path: path.join(globalSlot(), '.dork', 'extensions', 'flow-dash'),
+      plugin: 'flow',
+    };
+    const installedSet = {
+      runtime: 'subprocess' as const,
+      net: ['a.example.com'],
+      run: [],
+      agents: false,
+    };
+    approvals = {
+      approvedToRun: ['flow-dash'],
+      approvedSources: { 'flow-dash': installedApproval },
+      approvedPermissions: { 'flow-dash': installedSet },
+    };
+    await declare({ runtime: 'subprocess', allow: { net: ['b.example.com'], agents: true } });
+    await service().link({ path: work, scope: 'global', replaceInstalled: true, via: 'app' });
+    expect(approvals.approvedPermissions?.['flow-dash']).toMatchObject({ net: ['b.example.com'] });
+
+    await service().unlink({ name: 'flow', scope: 'global' });
+    expect(approvals).toEqual({
+      approvedToRun: ['flow-dash'],
+      approvedSources: { 'flow-dash': installedApproval },
+      approvedPermissions: { 'flow-dash': installedSet },
+    });
   });
 });

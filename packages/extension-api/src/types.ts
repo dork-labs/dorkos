@@ -61,6 +61,49 @@ export interface ExtensionToolStatus {
   reason?: string;
 }
 
+/** One `allow.run` entry and the program it names on this computer. */
+export interface ExtensionResolvedProgram {
+  /** The entry as the manifest wrote it: a bare name (`git`) or an absolute path. */
+  name: string;
+  /**
+   * The absolute path of the program DorkOS found for it when it discovered
+   * the extension: a bare name looked up on the server's `PATH` (absolute
+   * `PATH` folders only, and `PATHEXT` on Windows), an absolute path kept as
+   * written. `null` when no runnable file was found on this computer, or when
+   * the file sits in extension files (its own folder, package, run folder,
+   * dev link, or any extension data folder), which the approval card shows
+   * and the program broker refuses. Found by looking
+   * at the disk only: nothing is run.
+   */
+  path: string | null;
+  /**
+   * Why `path` is `null`, in a plain sentence: not found here, a Windows
+   * script that needs a shell, or a file inside extension files (which an
+   * update could change without asking). Absent when a program was found.
+   */
+  reason?: string;
+}
+
+/**
+ * How an extension that runs separately (`serverCapabilities.runtime:
+ * "subprocess"`, DOR-2686) is limited, normalized from its manifest so every
+ * consumer — the lifecycle, the approval queue, the app — reads one view.
+ */
+export interface ExtensionIsolation {
+  /** Always `subprocess`: an in-process extension has no isolation view. */
+  runtime: 'subprocess';
+  /** The `allow.net` entries, as written. */
+  net: string[];
+  /** The `allow.run` entries, as written. */
+  run: string[];
+  /** Each `allow.run` entry with the program it names here. */
+  resolvedRun: ExtensionResolvedProgram[];
+  /** Whether it may message agents and start agent sessions (`allow.agents`). */
+  agents: boolean;
+  /** Its heap limit in MB (`limits.memoryMb`, default 256). */
+  memoryMb: number;
+}
+
 /**
  * Whether one skill an extension declares can reach agents, checked against
  * its `skills/` folder when the extension is found (DOR-2685). `reason` is a
@@ -177,6 +220,12 @@ export interface ExtensionRecord {
    */
   toolChecks?: ExtensionToolCheckSummary[];
   /**
+   * How it is limited when it runs separately (DOR-2686). `null` (or absent,
+   * for a record built before discovery filled it) means it runs inside
+   * DorkOS with full access.
+   */
+  isolation?: ExtensionIsolation | null;
+  /**
    * What discovery found for each skill the manifest declares (DOR-2685).
    * Absent when the manifest declares none.
    */
@@ -240,6 +289,11 @@ export interface ExtensionRecordPublic {
    * Absent when its manifest declares none.
    */
   tools?: ExtensionToolStatus[];
+  /**
+   * How it is limited when it runs separately (DOR-2686); `null` means it
+   * runs inside DorkOS with full access. See {@link ExtensionRecord.isolation}.
+   */
+  isolation?: ExtensionIsolation | null;
   /**
    * The skills this extension ships to agents and whether each made it
    * (DOR-2685). Absent when its manifest declares none.

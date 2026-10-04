@@ -440,6 +440,7 @@ describe('ExtensionManager', () => {
         enabled: ['foo'],
         disabled: [],
         ...approved(['bar']),
+        approvedPermissions: {},
       });
     });
 
@@ -456,6 +457,7 @@ describe('ExtensionManager', () => {
         enabled: [],
         disabled: [],
         ...approved([]),
+        approvedPermissions: {},
       });
     });
 

@@ -20,6 +20,41 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 extendZodWithOpenApiOnce();
 
+/** Where an extension runs and what it may reach, as an approval card shows it (DOR-2686). */
+export const ExtensionApprovalPermissionsSchema = z
+  .object({
+    /** `in-process`: inside DorkOS with full access. `subprocess`: limited to the lists below. */
+    runtime: z.enum(['in-process', 'subprocess']),
+    /** Hosts it may connect to (`allow.net`), as declared. */
+    net: z.array(z.string()),
+    /** Programs it may start (`allow.run`), and whether each was found on this computer. */
+    run: z.array(z.object({ name: z.string(), found: z.boolean() })),
+    /** Whether it may message agents and start agent sessions (`allow.agents`). */
+    agents: z.boolean(),
+    /** Whether it has screens (a client bundle), which run in DorkOS with your access. */
+    hasPage: z.boolean(),
+  })
+  .openapi('ExtensionApprovalPermissions');
+
+/** Where an extension runs and what it may reach, as an approval card shows it. */
+export type ExtensionApprovalPermissions = z.infer<typeof ExtensionApprovalPermissionsSchema>;
+
+/** What an extension asks for that its last approval did not cover (DOR-2686). */
+export const ExtensionApprovalAdditionsSchema = z
+  .object({
+    /** Hosts not covered before. */
+    net: z.array(z.string()),
+    /** Programs not approved before. */
+    run: z.array(z.string()),
+    /** Whether agent access is new. */
+    agents: z.boolean(),
+    /** Whether it now asks to run inside DorkOS, with full access. */
+    runtime: z.boolean(),
+  })
+  .openapi('ExtensionApprovalAdditions');
+
+/** What an extension asks for that its last approval did not cover. */
+export type ExtensionApprovalAdditions = z.infer<typeof ExtensionApprovalAdditionsSchema>;
 /**
  * One tool an extension would give agents, as the approval row lists it
  * (DOR-2685). Built by the server from discovery's check of the manifest.
@@ -84,6 +119,24 @@ export const PendingExtensionApprovalSchema = z
     since: z.string(),
     /** The second line: what happens and why, derived from the manifest by the server. */
     why: z.string(),
+    /**
+     * Where it runs and what it may reach (DOR-2686), so the card can state
+     * its access level: `in-process` is inside DorkOS with full access (the
+     * lists are empty); `subprocess` is limited to the lists. `run` says, per
+     * program, whether it was found on this computer. `hasPage` says it has
+     * screens, which run in DorkOS with the person's access either way.
+     * `null` when DorkOS has no record of what it declares — which is also
+     * what a server one version behind, that never sends it, reads as, so
+     * one missing field cannot empty the whole inbox.
+     */
+    permissions: ExtensionApprovalPermissionsSchema.nullable().default(null),
+    /**
+     * What it asks for that the person's last approval of this copy did not
+     * cover (DOR-2686), so a re-ask card leads with what changed. `null` on a
+     * first ask, or when nothing in the permission set changed. Defaults to
+     * `null` for a server that never sends it.
+     */
+    added: ExtensionApprovalAdditionsSchema.nullable().default(null),
     /**
      * The tools it would give agents once it runs, in manifest order, so a
      * person sees each tool and its tier before saying yes (DOR-2685).
@@ -171,6 +224,21 @@ export const ApproveExtensionRequestSchema = z
     version: z.string().min(1),
     /** The plugin that carried it, or `null` for a direct install. Compared when sent. */
     plugin: z.string().min(1).nullable().optional(),
+    /**
+     * The permission set the card showed (DOR-2686): where it runs and the
+     * hosts, programs and agent access it declared. Compared when sent, as a
+     * set, so a manifest that changed what it asks for while the card was on
+     * screen is refused with `409 stale_approval` instead of being approved
+     * on a yes given to the old lists.
+     */
+    permissions: z
+      .object({
+        runtime: z.enum(['in-process', 'subprocess']),
+        net: z.array(z.string()).max(64),
+        run: z.array(z.string()).max(16),
+        agents: z.boolean(),
+      })
+      .optional(),
   })
   .openapi('ApproveExtensionRequest');
 
