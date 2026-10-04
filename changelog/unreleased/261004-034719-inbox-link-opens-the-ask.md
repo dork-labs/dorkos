@@ -4,6 +4,7 @@ covers:
   - 'fix(client): solid ring on the linked ask, and list inbox as a dialog param (DOR-2577)'
   - 'fix(client): open for a link read before the bell mounts; respect where focus is (DOR-2577 review)'
   - 'fix(client): late ask takes focus unless typing; expire stale Inbox links (DOR-2577 re-review)'
+  - 'fix(client): ask for nothing from a link read during onboarding; only text fields count as typing (DOR-2577)'
 ---
 
 ### Fixed
