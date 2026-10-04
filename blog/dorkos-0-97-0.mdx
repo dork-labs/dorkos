@@ -1,0 +1,56 @@
+---
+title: DorkOS 0.97.0
+description: Try a plugin or skill pack straight from a folder on your computer, keep long agent replies from being cut off, and read shorter, plainer wording across the app.
+date: 2026-10-03
+author: DorkOS Team
+category: release
+tags: [release, marketplace, extensions, reliability]
+---
+
+DorkOS 0.97.0 lets you try a plugin or skill pack straight from a folder on your computer, after you approve it. Long agent replies no longer get cut off at 30 minutes, and the app's wording is shorter and plainer everywhere.
+
+## Highlights
+
+### Run a package from a folder
+
+An agent can ask to use a plugin or skill pack from a folder instead of an installed copy. You approve it on a card that shows the folder and every command it would run, and nothing runs until you say yes.
+
+### Long replies finish
+
+A long reply used to stop at the 30-minute mark with "Request interrupted". Now it runs to the end, and an agent waits for a helper even when one step takes a long time.
+
+### Shorter, plainer wording
+
+No label, message or button in the app runs past 15 words. Buttons say exactly what they do, and errors say what to do next.
+
+## All Changes
+
+### Added
+
+- Let an extension send one of your agents a message. A busy agent holds it until its current turn ends, and the extension hears when the agent starts on it, finishes, or will never get to it (DOR-2683)
+- An agent can ask to run a plugin or skill pack from a folder on your computer instead of an installed copy (DOR-2696). You approve it on a card, and nothing runs from the folder until you do.
+- The card shows the folder's full path and the extensions it would run. No permission setting can approve it ahead of time, and a folder that changes before you answer is asked about again.
+- If you already have that package installed, the installed copy is set aside, not deleted.
+- A plugin or skill pack you run from a folder now reaches your agent tools like an installed copy (DOR-2696). Linked for one project, its skills, commands and hooks are set up in that project for Claude Code, Codex and the other tools you use there. Linked for every project, its skills are shared the same way an installed copy's are. Commands and hooks it sets up say which folder they came from.
+- The approval card for a folder now lists every command it runs and when it runs. Approving the card covers exactly those, so the package loads without a second card. Anything new the folder adds later asks first.
+- When the installed copy comes back, so do its approvals, exactly as they were.
+
+### Changed
+
+- The app's wording is shorter and plainer everywhere. No label, message or button runs past 15 words, and longer explanations sit behind an info button or a "More details" link next to what they explain
+- Buttons say exactly what they do ("Delete agent", "Remove app"), and dialogs for things you can't undo ask a question that names the thing
+- Approval buttons now read **Allow**, **Always allow** and **Don’t allow**, on chat cards and in the inbox
+- Error messages say what didn't happen and what to do next
+
+### Fixed
+
+- Settings › Privacy no longer says DorkOS shares anonymous data by default. It now says nothing is shared unless a switch on that page is on
+- Fix late message failures allowing agents to exceed their hourly turn limits.
+- Long replies no longer get cut off at the 30-minute mark. DorkOS used to tidy away a session it thought was idle, even while the agent was still answering, and the reply ended with "Request interrupted".
+- An agent that hands work to a helper now waits for the helper to finish, even when one step takes more than ten minutes, like a long build. Before, the reply was ended after ten quiet minutes and the helper's report never showed up.
+- A Neon organization key, the kind the setup guide asks for, now gets past setup's checks. Before, setup always stopped with "Neon preflight is unavailable", because Neon won't let that kind of key read its list of regions. Setup now checks your region against a saved copy of that list. If your region isn't on it, setup tells you why and what to do (DOR-2700).
+- A Neon project key that can't see your organization now gets the same clear message every time, naming the key and the organization. Before, the message changed from run to run, and most runs gave the vague "preflight is unavailable" instead. A Fly token that Fly turns away is reported the same steady way (DOR-2700).
+
+### Security
+
+- A Community server no longer starts its test-only controls just because `COMMUNITY_TEST_RUNTIME=true` is set. Those controls let anyone pause or refuse agents' posts without signing in, so the server now refuses to start unless `COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT` also holds an exact phrase, and it prints a warning when both are set. A real host should set neither (DOR-2655)
