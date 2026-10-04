@@ -33,7 +33,35 @@ import {
 import { assertJson, assertRowJson, readChecked, DocChannelCorruptionError } from './store-json.js';
 export { DocChannelCorruptionError } from './store-json.js';
 import { documentTransaction, type SynchronousResult } from './store-transaction.js';
+import {
+  readPreparedChannel,
+  readPreparedGrant,
+  readPreparedIntent,
+} from './readers/prepared-readers.js';
+import { requireDocEventUuidVacant, readDocEventRow } from './writes/reservation-policy-census.js';
+import { consumeCheckboxReservationAppend } from './writes/reservation-bridge.js';
 import { markDocWaitingWarning, markAcceptedDocWaitingWarning } from './store-warnings.js';
+
+type EventInput = Omit<typeof canvasDocEvents.$inferInsert, 'docSeq'>;
+const storeBindings = new WeakMap<
+  DocChannelStore,
+  { db: Db; append: (input: EventInput, tx: DbTransaction) => DocEventRow }
+>();
+
+/** Constructor identity only; neither a public connection getter nor an overridable transaction probe. */
+export function requireDocChannelStoreDatabase(store: DocChannelStore, expected: Db): void {
+  if (storeBindings.get(store)?.db !== expected)
+    throw new Error('Checkbox authority requires its genuine store transaction database.');
+}
+/** Fixed bridge consumes its internally staged append; callers cannot supply event data or credit. */
+export function appendConvertedCheckboxEvent(
+  store: DocChannelStore,
+  tx: DbTransaction
+): DocEventRow {
+  const binding = storeBindings.get(store);
+  if (!binding) throw new Error('Checkbox conversion requires a genuine store.');
+  return binding.append(consumeCheckboxReservationAppend(store, tx), tx);
+}
 
 /** A stored channel, independent of the physical canvas document. */
 export type DocChannelRow = typeof canvasDocChannels.$inferSelect;
@@ -73,29 +101,33 @@ export class DocChannelStateConflictError extends Error {
 /** Transaction-capable document channel storage with no publication side effects. */
 export class DocChannelStore {
   /** Build a store over the production SQLite connection. */
-  constructor(private readonly db: Db) {}
+  readonly #db: Db;
+  constructor(db: Db) {
+    this.#db = db;
+    storeBindings.set(this, { db, append: (input, tx) => this.#appendEvent(input, tx) });
+  }
 
   /** Compose synchronous source mutations atomically; asynchronous callbacks roll back. */
   transaction<T>(work: (tx: DbTransaction) => T & SynchronousResult<T>): T {
-    return documentTransaction(this.db, work);
+    return documentTransaction(this.#db, work);
   }
 
   /** Create a channel without modifying an existing channel on repeated initialization. */
   initialize(input: typeof canvasDocChannels.$inferInsert, tx?: DbTransaction): DocChannelRow {
     assertRowJson(input);
-    const executor = tx ?? this.db;
+    const executor = tx ?? this.#db;
     executor.insert(canvasDocChannels).values(input).onConflictDoNothing().run();
-    return this.getChannel(input.documentId, tx)!;
+    return this.#getChannel(input.documentId, tx)!;
   }
 
   /** Read one channel; a physical document can be gone while its tombstone remains. */
   getChannel(documentId: string, tx?: DbTransaction): DocChannelRow | undefined {
+    return this.#getChannel(documentId, tx);
+  }
+
+  #getChannel(documentId: string, tx?: DbTransaction): DocChannelRow | undefined {
     return readChecked('canvas_doc_channels', documentId, () =>
-      (tx ?? this.db)
-        .select()
-        .from(canvasDocChannels)
-        .where(eq(canvasDocChannels.documentId, documentId))
-        .get()
+      readPreparedChannel(tx ?? this.#db, documentId)
     );
   }
 
@@ -106,7 +138,15 @@ export class DocChannelStore {
   ): DocEventRow {
     if (!tx) return this.transaction((current) => this.appendEvent(input, current));
     assertRowJson(input);
-    const channel = this.getChannel(input.documentId, tx);
+    const channel = this.#getChannel(input.documentId, tx);
+    if (!channel || channel.closedAt !== null) throw new DocChannelClosedError(input.documentId);
+    requireDocEventUuidVacant(tx, input.documentId, input.eventId);
+    return this.#appendEvent(input, tx);
+  }
+
+  #appendEvent(input: EventInput, tx: DbTransaction): DocEventRow {
+    assertRowJson(input);
+    const channel = this.#getChannel(input.documentId, tx);
     if (!channel || channel.closedAt !== null) throw new DocChannelClosedError(input.documentId);
     if (
       !Number.isSafeInteger(channel.nextDocSeq) ||
@@ -134,20 +174,16 @@ export class DocChannelStore {
         provenance: input.provenance === null ? sql`'null'` : input.provenance,
       })
       .run();
-    return this.getEvent(input.documentId, input.eventId, tx)!;
+    return this.#getEvent(input.documentId, input.eventId, tx)!;
   }
 
   /** Read the original input by its document-local idempotency key. */
   getEvent(documentId: string, eventId: string, tx?: DbTransaction): DocEventRow | undefined {
-    return readChecked('canvas_doc_events', `${documentId}/${eventId}`, () =>
-      (tx ?? this.db)
-        .select()
-        .from(canvasDocEvents)
-        .where(
-          and(eq(canvasDocEvents.documentId, documentId), eq(canvasDocEvents.eventId, eventId))
-        )
-        .get()
-    );
+    return this.#getEvent(documentId, eventId, tx);
+  }
+
+  #getEvent(documentId: string, eventId: string, tx?: DbTransaction): DocEventRow | undefined {
+    return readDocEventRow(tx ?? this.#db, documentId, eventId);
   }
 
   /** Read a bounded sequence page through an optional captured high watermark. */
@@ -166,7 +202,7 @@ export class DocChannelStore {
     )
       throw new RangeError('Invalid document replay page.');
     return readChecked('canvas_doc_events', documentId, () =>
-      this.db
+      this.#db
         .select()
         .from(canvasDocEvents)
         .where(
@@ -185,24 +221,20 @@ export class DocChannelStore {
   /** Persist route evidence in an existing source transaction. */
   insertGrant(input: typeof canvasDocGrants.$inferInsert, tx?: DbTransaction): void {
     assertRowJson(input);
-    (tx ?? this.db).insert(canvasDocGrants).values(input).run();
+    (tx ?? this.#db).insert(canvasDocGrants).values(input).run();
   }
 
   /** Read one exact authority record. */
   getGrant(grantId: string, tx?: DbTransaction): DocGrantRow | undefined {
     return readChecked('canvas_doc_grants', grantId, () =>
-      (tx ?? this.db)
-        .select()
-        .from(canvasDocGrants)
-        .where(eq(canvasDocGrants.grantId, grantId))
-        .get()
+      readPreparedGrant(tx ?? this.#db, grantId)
     );
   }
 
   /** Persist a pending or immutable batch; database slot indexes enforce exclusivity. */
   insertBatch(input: typeof canvasDocBatches.$inferInsert, tx?: DbTransaction): void {
     assertRowJson(input);
-    (tx ?? this.db)
+    (tx ?? this.#db)
       .insert(canvasDocBatches)
       .values({
         ...input,
@@ -214,7 +246,7 @@ export class DocChannelStore {
   /** Read one batch, retaining immutable generation and source correlation. */
   getBatch(batchId: string, tx?: DbTransaction): DocBatchRow | undefined {
     return readChecked('canvas_doc_batches', batchId, () =>
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .select()
         .from(canvasDocBatches)
         .where(eq(canvasDocBatches.batchId, batchId))
@@ -288,7 +320,7 @@ export class DocChannelStore {
     tx?: DbTransaction
   ): boolean {
     return (
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .update(canvasDocBatches)
         .set({ status: input.status, updatedAt: input.updatedAt })
         .where(
@@ -306,13 +338,13 @@ export class DocChannelStore {
   /** Persist an individual input outcome without deleting its event. */
   insertDelivery(input: typeof canvasDocDeliveries.$inferInsert, tx?: DbTransaction): void {
     assertRowJson(input);
-    (tx ?? this.db).insert(canvasDocDeliveries).values(input).run();
+    (tx ?? this.#db).insert(canvasDocDeliveries).values(input).run();
   }
 
   /** Inspect all route outcomes for an input. */
   listDeliveries(documentId: string, eventId: string, tx?: DbTransaction): DocDeliveryRow[] {
     return readChecked('canvas_doc_deliveries', `${documentId}/${eventId}`, () =>
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .select()
         .from(canvasDocDeliveries)
         .where(
@@ -348,6 +380,7 @@ export class DocChannelStore {
       throw new RangeError('Invalid document state revision.');
     if (input.event.documentId !== input.documentId)
       throw new Error('State event document mismatch.');
+    requireDocEventUuidVacant(tx, input.documentId, input.event.eventId);
     const changed = tx
       .update(canvasDocChannels)
       .set({
@@ -376,7 +409,7 @@ export class DocChannelStore {
   ): boolean {
     assertJson(evidence);
     return (
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .update(canvasDocChannels)
         .set({ closedAt, closureEvidence: evidence, updatedAt: closedAt })
         .where(
@@ -392,13 +425,13 @@ export class DocChannelStore {
     tx?: DbTransaction
   ): void {
     assertRowJson(input);
-    (tx ?? this.db).insert(canvasDocIdentityIntents).values(input).run();
+    (tx ?? this.#db).insert(canvasDocIdentityIntents).values(input).run();
   }
 
   /** Read identity repair evidence without inventing a successful empty record. */
   getIdentityIntent(id: string, tx?: DbTransaction): DocIdentityIntentRow | undefined {
     return readChecked('canvas_doc_identity_intents', id, () =>
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .select()
         .from(canvasDocIdentityIntents)
         .where(eq(canvasDocIdentityIntents.intentId, id))
@@ -408,18 +441,16 @@ export class DocChannelStore {
 
   /** Store before/after evidence before a filesystem effect. */
   insertWriteIntent(input: typeof canvasDocWriteIntents.$inferInsert, tx?: DbTransaction): void {
+    if (!tx) return this.transaction((current) => this.insertWriteIntent(input, current));
     assertRowJson(input);
-    (tx ?? this.db).insert(canvasDocWriteIntents).values(input).run();
+    requireDocEventUuidVacant(tx, input.documentId, input.eventId);
+    tx.insert(canvasDocWriteIntents).values(input).run();
   }
 
   /** Read a write intent for crash reconciliation. */
   getWriteIntent(id: string, tx?: DbTransaction): DocWriteIntentRow | undefined {
     return readChecked('canvas_doc_write_intents', id, () =>
-      (tx ?? this.db)
-        .select()
-        .from(canvasDocWriteIntents)
-        .where(eq(canvasDocWriteIntents.intentId, id))
-        .get()
+      readPreparedIntent(tx ?? this.#db, id)
     );
   }
 
@@ -438,7 +469,7 @@ export class DocChannelStore {
     assertJson(input.inputEventIds);
     assertJson(input.effectivePayload, 80 * 1024);
     return (
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .update(canvasDocBatches)
         .set({
           inputEventIds: input.inputEventIds,
@@ -471,7 +502,7 @@ export class DocChannelStore {
   ): boolean {
     assertRowJson(input.changes);
     return (
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .update(canvasDocDeliveries)
         .set(input.changes)
         .where(
@@ -489,7 +520,7 @@ export class DocChannelStore {
   /** Revoke an unchanged route revision without replacing its immutable approval evidence. */
   revokeGrant(grantId: string, revision: number, revokedAt: string, tx?: DbTransaction): boolean {
     return (
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .update(canvasDocGrants)
         .set({ revokedAt })
         .where(
@@ -511,7 +542,7 @@ export class DocChannelStore {
     tx?: DbTransaction
   ): boolean {
     return (
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .update(canvasDocIdentityIntents)
         .set(changes)
         .where(
@@ -533,7 +564,7 @@ export class DocChannelStore {
   ): boolean {
     assertJson(changes.evidence);
     return (
-      (tx ?? this.db)
+      (tx ?? this.#db)
         .update(canvasDocWriteIntents)
         .set(changes)
         .where(

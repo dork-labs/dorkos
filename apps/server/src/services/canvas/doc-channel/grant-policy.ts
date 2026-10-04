@@ -48,6 +48,12 @@ export interface DocGrantAuthority {
   originCurrent(documentId: string, openerAgentId: string, tx?: DbTransaction): boolean;
   resolveWriteBinding?(documentId: string, tx?: DbTransaction): CanvasChannelGrant['write'];
 }
+/** Filesystem observation already completed outside SQL; never a newly chosen grant or target. */
+export interface DocOriginalWriteObservation {
+  manifestHash: string | null;
+  write: NonNullable<CanvasChannelGrant['write']>;
+}
+
 /** Authenticated grant request. It cannot select approval evidence or resolved session/runtime. */
 export const DocRouteGrantRequestSchema = z
   .object({

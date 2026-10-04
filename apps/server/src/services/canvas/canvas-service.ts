@@ -57,31 +57,13 @@ import {
 } from './canvas-document-store.js';
 import { canvasDocumentId, canvasSourceKey, canvasTitle } from './document-key.js';
 import { roomIdForScope } from './scopes.js';
-
-/**
- * How many unpinned documents one canvas holds before the least recently active
- * is dropped to make room.
- *
- * The same number for both scopes, because it is the same surface and a room
- * whose strip behaved differently from a session's would be two rules to learn.
- * Pinned documents are neither counted nor evicted.
- */
-export const MAX_CANVAS_DOCUMENTS = 12;
+import { CANVAS_EDIT_TTL_MS, canvasEditorLockHolder } from './canvas-editor-policy.js';
+export { CANVAS_EDIT_TTL_MS, canvasEditorLockHolder } from './canvas-editor-policy.js';
+import { MAX_CANVAS_DOCUMENTS } from './canvas-limits.js';
+export { MAX_CANVAS_DOCUMENTS } from './canvas-limits.js';
 
 /** How often a focused editor refreshes its claim on a document. */
 export const CANVAS_EDIT_HEARTBEAT_MS = 15_000;
-
-/**
- * How long a heartbeat keeps an edit lock live — three times the interval, so
- * one dropped request never drops a lock while somebody is mid-sentence.
- *
- * Evaluated LAZILY at read and write time, with no sweeper. A timer that expired
- * locks would have to be cancelled on every close, restart and room deletion,
- * and the failure mode of getting that wrong is a document nobody can ever edit
- * again. Evaluated lazily, a crashed browser simply stops holding a lock 45
- * seconds later and no code had to notice.
- */
-export const CANVAS_EDIT_TTL_MS = 45_000;
 
 /** The six `control_ui` verbs that change a canvas. Everything else is refused. */
 export const CANVAS_VERBS = new Set<UiCommand['action']>([
@@ -912,10 +894,7 @@ export class CanvasService {
    * editing this".
    */
   private lockHolder(row: CanvasDocumentRow): string | null {
-    if (row.editingBy === null) return null;
-    const heldAt = row.editingHeartbeatAt ? Date.parse(row.editingHeartbeatAt) : NaN;
-    if (!Number.isFinite(heldAt) || this.now() - heldAt >= CANVAS_EDIT_TTL_MS) return null;
-    return row.editingBy;
+    return canvasEditorLockHolder(row, this.now());
   }
 
   /**
