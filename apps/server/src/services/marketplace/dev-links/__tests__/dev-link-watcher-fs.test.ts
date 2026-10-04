@@ -75,7 +75,7 @@ beforeEach(async () => {
   await updateDevLinks(home, () => [record], { replaceUnreadable: true });
   events = [];
   reload = vi.fn<DevLinkExtensions['reload']>(async () => ({ outcome: 'reloaded' }));
-  refreshPlugins = vi.fn<DevLinkWatcherDeps['refreshPlugins']>();
+  refreshPlugins = vi.fn<DevLinkWatcherDeps['refreshPlugins']>(async () => undefined);
   watcher = new DevLinkWatcher({
     dorkHome: home,
     extensions: {
@@ -85,6 +85,7 @@ beforeEach(async () => {
     },
     refreshPlugins,
     reproject: async () => undefined,
+    refreshProjectCommands: () => undefined,
     broadcast: (event) => events.push(event),
     quietMs: 100,
     rearmMs: 0,
@@ -113,6 +114,9 @@ describe('DevLinkWatcher on a real folder', () => {
       recursive: true,
     });
     await writeFile(path.join(work, '.dork', 'extensions', 'dash', 'node_modules', 'a.js'), 'x');
+    await mkdir(path.join(work, 'dist'), { recursive: true });
+    await writeFile(path.join(work, 'dist', 'server.js'), 'x');
+    await writeFile(path.join(work, 'server.log'), 'started\n');
     await sleep(800);
     await watcher!.flush();
     expect(events).toEqual([]);
@@ -151,6 +155,53 @@ describe('DevLinkWatcher on a real folder', () => {
     await eventually(() => expect(reload).toHaveBeenCalledWith('dash'));
   });
 
+  it('watches a build-named folder inside skills', async () => {
+    // Purpose: `skills/build/` is a skill, not build output; chokidar must
+    // open it, so a new SKILL.md there refreshes plugins.
+    await mkdir(path.join(work, 'skills', 'build'), { recursive: true });
+    // The new `skills` folder is a change of its own; only what follows counts.
+    await sleep(400);
+    await watcher!.flush();
+    await watcher!.projectionsIdle();
+    refreshPlugins.mockClear();
+    await writeFile(
+      path.join(work, 'skills', 'build', 'SKILL.md'),
+      '---\nname: build\ndescription: Build things.\n---\n'
+    );
+    await eventually(() => expect(refreshPlugins).toHaveBeenCalled());
+  });
+
+  it('catches a file the watch never reported deep inside a skill folder on the next sweep', async () => {
+    // Purpose: the sweep lists declaration paths all the way down, so a file
+    // a dropped event never reported inside an existing skill still reloads.
+    await watcher!.stop();
+    await mkdir(path.join(work, 'skills', 'a'), { recursive: true });
+    watcher = new DevLinkWatcher({
+      dorkHome: home,
+      refreshPlugins,
+      reproject: async () => undefined,
+      refreshProjectCommands: () => undefined,
+      broadcast: (event) => events.push(event),
+      quietMs: 50,
+      rearmMs: 0,
+      settleMs: 0,
+      watch: (_folder, _ignored, listeners) => {
+        queueMicrotask(() => listeners.onReady());
+        return { close: async () => undefined };
+      },
+    });
+    await watcher.start();
+    await watcher.ready();
+    await watcher.flush();
+    await watcher.projectionsIdle();
+    refreshPlugins.mockClear();
+    await writeFile(path.join(work, 'skills', 'a', 'SKILL.md'), '---\nname: a\n---\n');
+    await watcher.sweep();
+    await watcher.flush();
+    await watcher.projectionsIdle();
+    expect(refreshPlugins).toHaveBeenCalledTimes(1);
+  });
+
   it('catches a change the watch never reported on the next sweep', async () => {
     // Purpose: chokidar can drop an event (right after a watch opens, or a
     // dead watch); the sweep's listing comparison still reloads.
@@ -165,6 +216,7 @@ describe('DevLinkWatcher on a real folder', () => {
       },
       refreshPlugins,
       reproject: async () => undefined,
+      refreshProjectCommands: () => undefined,
       broadcast: (event) => events.push(event),
       quietMs: 50,
       rearmMs: 0,

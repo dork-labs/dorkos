@@ -147,12 +147,6 @@ const WRITE_STABILITY_MS = 50;
 /** @see {@link WRITE_STABILITY_MS} */
 const WRITE_POLL_MS = 25;
 
-/** A minimal file watch: what the watcher needs from chokidar. */
-interface DevLinkWatchHandle {
-  /** Close the watch. */
-  close(): Promise<void>;
-}
-
 /** Callbacks a {@link DevLinkWatchFactory} reports through. */
 export interface DevLinkWatchListeners {
   /** A filesystem event at an absolute path. */
@@ -194,6 +188,12 @@ export interface DevLinkWatcherDeps {
    * withholds and asks about new hooks. May stay pending while a card is open.
    */
   reproject: (ctx: { packageName: string; projectPath: string }) => Promise<void>;
+  /**
+   * After a projection ran, tell the project's command palette its commands
+   * changed (drop its cached list, broadcast) without reloading any session's
+   * plugins. Must not throw.
+   */
+  refreshProjectCommands: (projectPath: string) => void;
   /** Broadcast one dev link's reload on the global event stream. */
   broadcast: (event: DevLinkReloadedEvent) => void;
   /** Override {@link DEV_LINK_QUIET_MS}. @internal For tests. */
@@ -220,7 +220,7 @@ interface WatchedFolder {
   /** Every dev link in force that runs from it. */
   records: DevLinkRecord[];
   /** The open watch, absent until armed. */
-  handle?: DevLinkWatchHandle;
+  handle?: ReturnType<DevLinkWatchFactory>;
   /** Set when the watch reported an error; the sweep replaces it. */
   dead: boolean;
   /** Resolves once the watch has settled. */
@@ -417,7 +417,7 @@ export class DevLinkWatcher {
     await this.sync();
     for (const watched of this.folders.values()) {
       if (!watched.handle || watched.dead || !watched.shape) continue;
-      const changes = shapeChanges(watched.shape, await shapeOf(watched.folder));
+      const changes = shapeChanges(watched.shape, await shapeOf(watched.folder, watched.declared));
       if (changes.length > 0) this.enqueue(watched, changes);
     }
   }
@@ -551,7 +551,7 @@ export class DevLinkWatcher {
     watched.declared = declaredPathsOf(await readPluginJson(watched.folder));
     // Read before the watch opens, so a write in the moments after is a
     // difference the settle comparison finds.
-    const before = await shapeOf(watched.folder);
+    const before = await shapeOf(watched.folder, watched.declared);
     watched.shape = before;
     const settleMs = this.deps.settleMs ?? DEV_LINK_SETTLE_MS;
     const seenCodes = new Set<string>();
@@ -572,7 +572,7 @@ export class DevLinkWatcher {
       watched.folder,
       (absPath, isDirectory) => {
         const rel = relativeTo(watched.folder, absPath);
-        return rel !== null && isIgnoredDevLinkPath(rel, isDirectory);
+        return rel !== null && isIgnoredDevLinkPath(rel, isDirectory, watched.declared);
       },
       {
         onEvent: (kind, absPath) => {
@@ -606,7 +606,10 @@ export class DevLinkWatcher {
     before: ReadonlyMap<string, string>
   ): Promise<void> {
     if (this.stopped || this.folders.get(watched.folder) !== watched || !watched.handle) return;
-    const changes = shapeChanges(watched.shape ?? before, await shapeOf(watched.folder));
+    const changes = shapeChanges(
+      watched.shape ?? before,
+      await shapeOf(watched.folder, watched.declared)
+    );
     if (changes.length > 0) this.enqueue(watched, changes);
   }
 
@@ -697,8 +700,17 @@ export class DevLinkWatcher {
       });
       return;
     }
-    watched.shape = await shapeOf(watched.folder);
-    watched.declared = declaredPathsOf(await readPluginJson(watched.folder));
+    const declared = declaredPathsOf(await readPluginJson(watched.folder));
+    const declaredChanged = declared.join('\n') !== watched.declared.join('\n');
+    watched.declared = declared;
+    watched.shape = await shapeOf(watched.folder, declared);
+    if (declaredChanged && watched.handle) {
+      // The watch decided what to skip with the old paths: a folder plugin.json
+      // now names may never have been opened. Replace it; its catch-up
+      // compares against the listing just taken, so nothing is acted on twice.
+      watched.dead = true;
+      void this.sync();
+    }
     // A dev link held since the gate (an unlink started) is dropped before
     // every step that rebuilds, refreshes or projects anything.
     const inForce = (): DevLinkRecord[] => live.filter((r) => !this.held.has(keyOf(r)));
@@ -796,7 +808,12 @@ export class DevLinkWatcher {
     let lane = this.lanes.get(key);
     if (!lane) {
       const own: DevLinkLane = new DevLinkLane({
-        job: () => this.deps.reproject({ packageName: record.name, projectPath }),
+        job: async () => {
+          await this.deps.reproject({ packageName: record.name, projectPath });
+          // A projected command or skill is new to this project's cached
+          // command list, which nothing else refreshes for a project package.
+          this.deps.refreshProjectCommands(projectPath);
+        },
         // An owed projection never runs once its dev link is being unlinked.
         mayRun: () => !this.stopped && !this.held.has(key),
         failure: 'Projecting after a dev link edit failed',
@@ -804,8 +821,7 @@ export class DevLinkWatcher {
           if (this.lanes.get(key) === own) this.lanes.delete(key);
         },
       });
-      lane = own;
-      this.lanes.set(key, lane);
+      this.lanes.set(key, (lane = own));
     }
     lane.request();
   }

@@ -18,14 +18,20 @@ import { isRuntimeStatePath } from '../lib/content-hash.js';
 
 /**
  * Directory names never watched anywhere inside a linked folder, compared
- * lowercased: version control, dependencies, and the build, cache and virtual
- * environment folders a toolchain fills (a Rust `target/` or a Python `.venv`
- * alone can hold more folders than a watch can open). Nothing a package
- * declares is read from inside one of them.
+ * lowercased: version control and dependencies.
  */
-const IGNORED_DIR_NAMES = new Set([
-  '.git',
-  'node_modules',
+const ALWAYS_IGNORED_DIR_NAMES = new Set(['.git', 'node_modules']);
+
+/**
+ * Directory names also never watched outside the paths a package declares
+ * things in, compared lowercased: the build, cache and virtual environment
+ * folders a toolchain fills (a Rust `target/` or a Python `.venv` alone can
+ * hold more folders than a watch can open). Inside a declaration path, the
+ * extensions folder or a path plugin.json names, the same name is an ordinary
+ * folder (`skills/build/SKILL.md`, an extension called `dist`), so there only
+ * {@link ALWAYS_IGNORED_DIR_NAMES} apply.
+ */
+const BUILD_DIR_NAMES = new Set([
   'target',
   '.venv',
   'venv',
@@ -91,14 +97,19 @@ const DECLARATION_PATHS = [
 const DECLARING_FIELDS = ['hooks', 'mcpServers', 'lspServers', 'monitors', 'skills', 'commands'];
 
 /**
- * The directories the sweep lists, relative to the folder. Each extension's own
- * folder is added per pass. Deeper edits are left to the watch, which in a
- * steady state misses nothing (`skills-watcher.ts`).
+ * The directories the sweep lists one level deep, relative to the folder: the
+ * folder itself (for root files such as `.mcp.json` and folders that come or
+ * go) and `.dork` (for its manifest).
  */
-const SWEPT_DIRS = [
-  '',
+const SHALLOW_SWEPT_DIRS = ['', '.dork'] as const;
+
+/**
+ * The paths the sweep lists all the way down: every place a declaration or an
+ * extension lives, plus each path plugin.json names. A file a dropped event
+ * never reported, deep in a skill or an extension, is still found.
+ */
+const DEEP_SWEPT_PATHS = [
   '.claude-plugin',
-  '.dork',
   EXTENSIONS_REL,
   EFFECT_BEARING_PATHS.tasks,
   EFFECT_BEARING_PATHS.skills,
@@ -108,7 +119,18 @@ const SWEPT_DIRS = [
   EFFECT_BEARING_PATHS.monitors,
   EFFECT_BEARING_PATHS.agents,
   EFFECT_BEARING_PATHS.outputStyles,
+  '.claude/agents',
+  '.claude/output-styles',
 ] as const;
+
+/** How deep the sweep descends below a deep path. */
+const SWEEP_MAX_DEPTH = 8;
+
+/**
+ * The most entries one sweep lists, so a folder that grew a huge tree under a
+ * declaration path costs a bounded read. The watch still sees everything.
+ */
+const SWEEP_MAX_ENTRIES = 20_000;
 
 /** A filesystem event, as chokidar names it. */
 export type DevLinkChangeKind = 'add' | 'addDir' | 'change' | 'unlink' | 'unlinkDir';
@@ -135,26 +157,49 @@ export interface DevLinkReloadPlan {
 
 /**
  * Whether a path inside a linked folder is never watched or acted on: anything
- * inside an {@link IGNORED_DIR_NAMES} folder (any case), such a folder itself
- * when it is known to be one, and DorkOS's own runtime state
- * (`isRuntimeStatePath`: saved data, secrets, install records).
+ * inside a `.git` or `node_modules` folder (any case); outside the paths a
+ * package declares things in, anything inside a {@link BUILD_DIR_NAMES}
+ * folder too; such a folder itself when it is known to be one; and DorkOS's
+ * own runtime state (`isRuntimeStatePath`: saved data, secrets, install
+ * records).
  *
  * A last segment is only ignored by those names as a directory, so a program
- * named `bin/build` is still a change. Editor and OS leftovers
- * ({@link JUNK_FILE}) are ignored as files.
+ * named `build` is still a change. Editor and OS leftovers ({@link JUNK_FILE})
+ * are ignored as files.
  *
  * @param rel - POSIX path relative to the folder.
  * @param isDirectory - Whether `rel` is known to be a directory.
+ * @param declared - Extra declaration paths from the folder's plugin.json
+ *   ({@link declaredPathsOf}); a build-named folder on the way to one is kept.
  */
-export function isIgnoredDevLinkPath(rel: string, isDirectory = false): boolean {
+export function isIgnoredDevLinkPath(
+  rel: string,
+  isDirectory = false,
+  declared: readonly string[] = []
+): boolean {
   if (rel === '') return false;
   const segments = rel.toLowerCase().split('/');
   const last = segments.length - 1;
-  if (segments.some((segment, i) => (i < last || isDirectory) && IGNORED_DIR_NAMES.has(segment))) {
+  const names = nearDeclarations(rel, declared) ? ALWAYS_IGNORED_DIR_NAMES : ALL_IGNORED_DIR_NAMES;
+  if (segments.some((segment, i) => (i < last || isDirectory) && names.has(segment))) {
     return true;
   }
   if (!isDirectory && JUNK_FILE.test(segments[last]!)) return true;
   return isRuntimeStatePath(rel);
+}
+
+/** Every directory name ignored outside the declaration paths. */
+const ALL_IGNORED_DIR_NAMES = new Set([...ALWAYS_IGNORED_DIR_NAMES, ...BUILD_DIR_NAMES]);
+
+/**
+ * Whether `rel` lies inside a declaration path, the extensions folder or a
+ * declared path, or on the way to one (`dist` when plugin.json names
+ * `dist/hooks.json`).
+ */
+function nearDeclarations(rel: string, declared: readonly string[]): boolean {
+  return [EXTENSIONS_REL, ...DECLARATION_PATHS, ...PROJECTED_PATHS, ...declared].some(
+    (root) => under(rel, root) || under(root, rel)
+  );
 }
 
 /** Whether `rel` is `prefix` or lies under it. */
@@ -235,7 +280,7 @@ export function isDevLinkDeclarationChange(
   { rel, kind }: DevLinkChange,
   declared: readonly string[] = []
 ): boolean {
-  if (isIgnoredDevLinkPath(rel, isDirKind(kind))) return false;
+  if (isIgnoredDevLinkPath(rel, isDirKind(kind), declared)) return false;
   if (under(rel, EXTENSIONS_REL)) return true;
   if (isDirKind(kind) && holdsDeclarations(rel, declared)) return true;
   const kinds = declarationKinds(rel, declared);
@@ -324,39 +369,46 @@ export function relativeTo(folder: string, abs: string): string | null {
 }
 
 /**
- * A cheap listing of a folder's meaningful directories: one entry per child,
- * keyed by its folder-relative path. A file carries its modification time and
- * size; a directory carries only that it is one, so a change deeper inside it
- * (an ignored `node_modules` filling up, `.dork/data` being written) never
- * reads as a change here. Ignored paths are left out.
+ * A cheap listing of where a folder's declarations and extensions live, keyed
+ * by folder-relative path: the folder and `.dork` one level deep, every
+ * declaration path, the extensions and each declared path all the way down
+ * (bounded). A file carries its modification time and size; a directory
+ * carries only that it is one, so something appearing inside an ignored
+ * folder (`node_modules` filling up, `.dork/data` being written) never reads
+ * as a change. Ignored paths are left out, and links are not followed.
  *
  * @param folder - The linked folder.
- * @returns Signature by child path: `d` for a directory, `mtime:size` otherwise.
+ * @param declared - Extra declaration paths from the folder's plugin.json.
+ * @returns Signature by path: `d` for a directory, `mtime:size` otherwise.
  */
-export async function shapeOf(folder: string): Promise<Map<string, string>> {
+export async function shapeOf(
+  folder: string,
+  declared: readonly string[] = []
+): Promise<Map<string, string>> {
   const shape = new Map<string, string>();
-  const extensionDirs = await readdir(path.join(folder, EXTENSIONS_REL), {
-    withFileTypes: true,
-  }).catch(() => []);
-  const dirs = [
-    ...SWEPT_DIRS,
-    ...extensionDirs
-      .filter((entry) => entry.isDirectory() && !isIgnoredDevLinkPath(entry.name, true))
-      .map((entry) => `${EXTENSIONS_REL}/${entry.name}`),
-  ];
-  for (const rel of dirs) {
-    const abs = path.join(folder, rel);
-    const entries = await readdir(abs).catch(() => null);
-    if (entries === null) continue;
-    for (const name of entries.sort()) {
-      const childRel = rel === '' ? name : `${rel}/${name}`;
-      const stats = await lstat(path.join(abs, name)).catch(() => null);
-      if (!stats) continue;
-      const isDirectory = stats.isDirectory();
-      if (isIgnoredDevLinkPath(childRel, isDirectory)) continue;
-      shape.set(childRel, isDirectory ? 'd' : `${stats.mtimeMs}:${stats.size}`);
-    }
+  const record = async (rel: string): Promise<boolean | null> => {
+    const stats = await lstat(path.join(folder, rel)).catch(() => null);
+    if (!stats) return null;
+    const isDirectory = stats.isDirectory();
+    if (isIgnoredDevLinkPath(rel, isDirectory, declared)) return null;
+    shape.set(rel, isDirectory ? 'd' : `${stats.mtimeMs}:${stats.size}`);
+    return isDirectory;
+  };
+  const children = async (rel: string): Promise<string[]> =>
+    ((await readdir(path.join(folder, rel)).catch(() => [])) as string[])
+      .sort()
+      .map((name) => (rel === '' ? name : `${rel}/${name}`));
+
+  for (const rel of SHALLOW_SWEPT_DIRS) {
+    for (const child of await children(rel)) await record(child);
   }
+  const walk = async (rel: string, depth: number): Promise<void> => {
+    if (shape.size >= SWEEP_MAX_ENTRIES) return;
+    const isDirectory = await record(rel);
+    if (!isDirectory || depth >= SWEEP_MAX_DEPTH) return;
+    for (const child of await children(rel)) await walk(child, depth + 1);
+  };
+  for (const rel of [...DEEP_SWEPT_PATHS, ...declared]) await walk(rel, 0);
   return shape;
 }
 

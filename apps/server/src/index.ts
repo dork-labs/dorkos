@@ -5362,6 +5362,7 @@ async function start() {
       refreshPlugins: () => refreshRuntimePlugins(undefined),
       reproject: (ctx) =>
         runAutoProjection({ ...ctx, action: 'install' }, { dorkHome, approvals: approvalService }),
+      refreshProjectCommands: (projectPath) => claudeRuntime?.refreshProjectCommands(projectPath),
       // A person's surface: it names folders and build errors, so it goes
       // where `config_changed` goes and no agent reads it.
       broadcast: (event) =>

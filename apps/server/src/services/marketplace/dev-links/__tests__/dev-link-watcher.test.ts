@@ -53,7 +53,13 @@ describe('isIgnoredDevLinkPath', () => {
     ['.venv/lib/site.py', true],
     ['venv/bin/python', true],
     ['dist/index.js', true],
-    ['.dork/extensions/dash/dist/index.js', true],
+    ['.dork/extensions/dash/dist/index.js', false],
+    ['skills/build/SKILL.md', false],
+    ['skills/coverage/SKILL.md', false],
+    ['commands/build/x.md', false],
+    ['.dork/extensions/dist/index.ts', false],
+    ['.dork/extensions/dist/node_modules/a.js', true],
+    ['skills/x/.git/HEAD', true],
     ['build/out.js', true],
     ['__pycache__/a.pyc', true],
     ['.next/cache/x', true],
@@ -78,8 +84,22 @@ describe('isIgnoredDevLinkPath', () => {
     // `build` is a real change.
     expect(isIgnoredDevLinkPath('target', true)).toBe(true);
     expect(isIgnoredDevLinkPath('Node_Modules', true)).toBe(true);
-    expect(isIgnoredDevLinkPath('bin/build', true)).toBe(true);
     expect(isIgnoredDevLinkPath('bin/build', false)).toBe(false);
+  });
+
+  it('keeps build-named folders inside declaration paths, the extensions and declared paths', () => {
+    // Purpose: `skills/build`, an extension called `dist` or a plugin.json
+    // path through `dist/` are ordinary folders there; only `.git` and
+    // `node_modules` are skipped, so the watch still opens them.
+    expect(isIgnoredDevLinkPath('skills/build', true)).toBe(false);
+    expect(isIgnoredDevLinkPath('bin/build', true)).toBe(false);
+    expect(isIgnoredDevLinkPath('.dork/extensions/dist', true)).toBe(false);
+    expect(isIgnoredDevLinkPath('skills/node_modules', true)).toBe(true);
+    const declared = ['dist/hooks.json'];
+    expect(isIgnoredDevLinkPath('dist', true, declared)).toBe(false);
+    expect(isIgnoredDevLinkPath('dist/hooks.json', false, declared)).toBe(false);
+    expect(isIgnoredDevLinkPath('dist/bundle.js', false, declared)).toBe(true);
+    expect(isIgnoredDevLinkPath('dist', true)).toBe(true);
   });
 });
 
@@ -136,14 +156,45 @@ describe('shapeOf', () => {
     });
     await mkdir(path.join(dir, '.dork', 'data'), { recursive: true });
     await writeFile(path.join(dir, '.dork', 'secrets.json'), '{}');
-    await writeFile(path.join(dir, 'skills', 'a', 'SKILL.md'), 'x');
     await mkdir(path.join(dir, 'target', 'debug'), { recursive: true });
+    await writeFile(path.join(dir, 'target', 'debug', 'out'), 'x');
+    await mkdir(path.join(dir, 'skills', 'a', 'node_modules'), { recursive: true });
     expect(shapeChanges(before, await shapeOf(dir))).toEqual([]);
 
     // And a real file at a swept level does.
     await writeFile(path.join(dir, '.dork', 'extensions', 'dash', 'more.ts'), 'y');
     expect(shapeChanges(before, await shapeOf(dir))).toEqual([
       { rel: '.dork/extensions/dash/more.ts', kind: 'add' },
+    ]);
+  });
+
+  it('finds a file added deep inside an existing skill or extension folder', async () => {
+    // Purpose: the sweep backs up a watch that dropped an event; a new file in
+    // `skills/a/` or an extension's `src/` must still read as a change, which
+    // a directory listing without modification times alone would miss.
+    await mkdir(path.join(dir, '.dork', 'extensions', 'dash', 'src', 'deep'), { recursive: true });
+    await mkdir(path.join(dir, 'skills', 'build'), { recursive: true });
+    const before = await shapeOf(dir);
+    await writeFile(path.join(dir, 'skills', 'a', 'SKILL.md'), 'x');
+    await writeFile(path.join(dir, 'skills', 'build', 'SKILL.md'), 'x');
+    await writeFile(path.join(dir, '.dork', 'extensions', 'dash', 'src', 'deep', 'a.ts'), 'x');
+    expect(
+      shapeChanges(before, await shapeOf(dir)).sort((a, b) => a.rel.localeCompare(b.rel))
+    ).toEqual([
+      { rel: '.dork/extensions/dash/src/deep/a.ts', kind: 'add' },
+      { rel: 'skills/a/SKILL.md', kind: 'add' },
+      { rel: 'skills/build/SKILL.md', kind: 'add' },
+    ]);
+  });
+
+  it('lists a path plugin.json names, even through a build-named folder', async () => {
+    // Purpose: `"hooks": "./dist/hooks.json"` is a declaration the sweep must see.
+    await mkdir(path.join(dir, 'dist'), { recursive: true });
+    const before = await shapeOf(dir, ['dist/hooks.json']);
+    await writeFile(path.join(dir, 'dist', 'hooks.json'), '{}');
+    await writeFile(path.join(dir, 'dist', 'bundle.js'), 'x');
+    expect(shapeChanges(before, await shapeOf(dir, ['dist/hooks.json']))).toEqual([
+      { rel: 'dist/hooks.json', kind: 'add' },
     ]);
   });
 });
@@ -180,6 +231,8 @@ describe('classifyDevLinkChanges', () => {
     ['monitors/monitors.json', 'change', { plugins: true }],
     ['agents/reviewer.md', 'change', { plugins: true, projection: false }],
     ['.dork', 'addDir', { plugins: true, projection: true, refreshExtensions: true }],
+    ['skills/build/SKILL.md', 'add', { projection: true, plugins: true }],
+    ['commands/build/x.md', 'change', { projection: true, plugins: true }],
   ])('%s (%s)', (rel, kind, expected) => {
     // Purpose: the spec's classification table. Each row is the seam the
     // change must reach, and no other.
@@ -218,6 +271,21 @@ describe('classifyDevLinkChanges', () => {
       ])
     ).toMatchObject({ plugins: true, projection: false });
     expect(plan('config/hooks.json')).toMatchObject({ plugins: false });
+    expect(
+      classifyDevLinkChanges([{ rel: 'dist/hooks.json', kind: 'change' }], known, [
+        'dist/hooks.json',
+      ])
+    ).toMatchObject({ plugins: true });
+  });
+
+  it('rebuilds an extension whose folder is named like a build folder', () => {
+    // Purpose: an extension called `dist` is still an extension.
+    expect(
+      classifyDevLinkChanges(
+        [{ rel: '.dork/extensions/dist/index.ts', kind: 'change' }],
+        new Set(['dist'])
+      )
+    ).toMatchObject({ reload: ['dist'] });
   });
 
   it('asks for nothing at all for ignored paths', () => {
@@ -294,6 +362,9 @@ function deferred<T = void>() {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** What the watcher told the command palette, shared by every watcher built here. */
+const refreshProjectCommands = vi.fn<(projectPath: string) => void>();
 
 let base: string;
 let home: string;
@@ -380,6 +451,7 @@ describe('DevLinkWatcher', () => {
       ...(extensions && { extensions }),
       refreshPlugins,
       reproject,
+      refreshProjectCommands,
       broadcast: (event) => events.push(event),
       quietMs,
       rearmMs: 0,
@@ -402,6 +474,7 @@ describe('DevLinkWatcher', () => {
     events = [];
     refreshPlugins = vi.fn<DevLinkWatcherDeps['refreshPlugins']>();
     reproject = vi.fn<DevLinkWatcherDeps['reproject']>(async () => undefined);
+    refreshProjectCommands.mockClear();
   });
 
   afterEach(async () => {
@@ -461,6 +534,7 @@ describe('DevLinkWatcher', () => {
       extensions: seam,
       refreshPlugins,
       reproject,
+      refreshProjectCommands,
       broadcast: (event) => events.push(event),
       quietMs: 100,
       maxWaitMs: 200,
@@ -589,6 +663,38 @@ describe('DevLinkWatcher', () => {
     await w.flush();
     await w.projectionsIdle();
     expect(reproject).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes the project's command list after each projection, and never for a global link", async () => {
+    // Purpose: a command or skill projected from a project dev link must reach
+    // that project's palette; its cached command list is refreshed only once
+    // the projection has written it.
+    await recordLink('project');
+    const running = deferred();
+    reproject.mockImplementationOnce(() => running.promise);
+    const w = build(fakeExtensions().seam);
+    await w.start();
+    await w.ready();
+    watches.emit(work, 'commands/go.md', 'add');
+    await w.flush();
+    await eventually(() => expect(reproject).toHaveBeenCalledTimes(1));
+    expect(refreshProjectCommands).not.toHaveBeenCalled();
+    running.resolve();
+    await w.projectionsIdle();
+    expect(refreshProjectCommands).toHaveBeenCalledWith(projectRoot);
+    await w.stop();
+
+    refreshProjectCommands.mockClear();
+    await updateDevLinks(home, () => []);
+    await recordLink('global');
+    const g = build(fakeExtensions().seam);
+    await g.start();
+    await g.ready();
+    watches.emit(work, 'commands/go.md', 'add');
+    await g.flush();
+    await g.projectionsIdle();
+    expect(refreshPlugins).toHaveBeenCalled();
+    expect(refreshProjectCommands).not.toHaveBeenCalled();
   });
 
   it('keeps at most one projection running and one more owed', async () => {
@@ -731,6 +837,7 @@ describe('DevLinkWatcher under load and during unlink', () => {
       ...(extensions && { extensions }),
       refreshPlugins,
       reproject,
+      refreshProjectCommands,
       broadcast: (event) => events.push(event),
       quietMs,
       rearmMs: 0,
@@ -752,6 +859,7 @@ describe('DevLinkWatcher under load and during unlink', () => {
     events = [];
     refreshPlugins = vi.fn<DevLinkWatcherDeps['refreshPlugins']>(async () => undefined);
     reproject = vi.fn<DevLinkWatcherDeps['reproject']>(async () => undefined);
+    refreshProjectCommands.mockClear();
   });
 
   afterEach(async () => {

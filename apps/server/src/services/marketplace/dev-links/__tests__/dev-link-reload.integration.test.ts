@@ -172,6 +172,7 @@ describe('a dev link reloads when its folder changes', () => {
       }),
       refreshPlugins: async () => undefined,
       reproject: (ctx) => runAutoProjection({ ...ctx, action: 'install' }, { dorkHome }),
+      refreshProjectCommands: () => undefined,
       broadcast: (event) => events.push(event),
       quietMs: 150,
       rearmMs: 0,

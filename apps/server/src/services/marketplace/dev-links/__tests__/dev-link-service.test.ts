@@ -778,6 +778,7 @@ describe('DevLinkService and the hot-reload watcher', () => {
       reproject: async () => {
         calls.push('project');
       },
+      refreshProjectCommands: () => calls.push('commands'),
       broadcast: () => calls.push('broadcast'),
       quietMs: 10,
       rearmMs: 0,
