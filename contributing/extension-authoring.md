@@ -562,6 +562,7 @@ Use CSS custom properties (`var(--border)`, `var(--muted-foreground)`) from the 
 - **Source maps**: TypeScript extensions include inline source maps. Set breakpoints in the original `.ts` file via the Sources panel.
 - **Compilation errors**: Check Settings > Extensions for error details if your extension fails to compile.
 - **State inspection**: Call `api.getState()` from a command callback to inspect host state.
+- **Building an extension inside a plugin**: link the plugin's folder instead of reinstalling it on every edit. Marketplace → Installed → "Link a folder" (or `dorkos marketplace link <path>`) runs the plugin from your folder, and each saved edit to one of its extensions rebuilds it without asking again. See the dev-link section of `contributing/marketplace-installs.md` and the user guide `docs/marketplace/dev-links.mdx`.
 
 ## Core Extensions
 
