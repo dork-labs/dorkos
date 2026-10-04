@@ -38,7 +38,7 @@ import { constants as osConstants } from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ExtensionIsolation } from '@dorkos/extension-api';
-import { killProcessTree } from '../../marketplace/lib/git/git-runner.js';
+import { killProcessTree } from '../../../lib/process/kill-tree.js';
 import {
   ISOLATION_LIMITS,
   RUN_DENIED_CODE,

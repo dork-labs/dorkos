@@ -67,6 +67,7 @@ exports.probes = {
   binding: () => attempt(() => typeof process.binding('tcp_wrap')),
   env: () => attempt(() => Object.assign({}, process.env)),
   argvFlags: () => attempt(() => process.execArgv),
+  versions: () => attempt(() => ({ node: process.versions.node, electron: process.versions.electron || null })),
   fetch: (url) =>
     attempt(async () => {
       const res = await fetch(url);
