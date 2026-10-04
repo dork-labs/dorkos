@@ -219,10 +219,26 @@ beforeEach(() => {
   useRoomDraftStore.setState({ drafts: {} });
   usePendingPostStore.setState({ posts: [] });
   localStorage.clear();
+  // The Inbox's two extension reads are plain `fetch` calls, not transport
+  // methods. Answered empty here: a read that FAILS is "could not check", and
+  // the quiet line rightly stands down for it (DOR-2578).
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.endsWith('/extension-decisions')
+        ? { decisions: [], offers: [] }
+        : url.endsWith('/extensions/pending-approvals')
+          ? { approvals: [] }
+          : {};
+      return Promise.resolve(new Response(JSON.stringify(body)));
+    })
+  );
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe('HomeRoomPage — the room', () => {

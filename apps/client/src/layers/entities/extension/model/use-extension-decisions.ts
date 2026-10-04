@@ -23,6 +23,10 @@ import {
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
+import { createRefreshLeader } from './refresh-leader';
+
+/** Which mounted copy of {@link useExtensionDecisions} answers an event. */
+const useIsDecisionsRefreshLeader = createRefreshLeader();
 
 /** Shared empty lists, so a quiet inbox never mints fresh arrays. */
 const NO_DECISIONS: readonly ExtensionDecisionDTO[] = [];
@@ -39,6 +43,11 @@ export interface ExtensionDecisionsState {
   offers: readonly PendingDecisionOffer[];
   /** True while the first read is in flight. */
   isLoading: boolean;
+  /**
+   * True when the last read failed. A failed read is not an empty list: a
+   * surface that draws an all-clear must not draw it over one.
+   */
+  isError: boolean;
 }
 
 /** A failed request's own sentence, or the status when it sent none. */
@@ -52,8 +61,8 @@ async function failureOf(res: Response): Promise<Error & { code?: string }> {
 }
 
 /** Read the list once. */
-async function fetchDecisions(): Promise<ListExtensionDecisionsResponse> {
-  const res = await fetch(`${resolveApiBaseUrl()}/extension-decisions`);
+async function fetchDecisions(signal?: AbortSignal): Promise<ListExtensionDecisionsResponse> {
+  const res = await fetch(`${resolveApiBaseUrl()}/extension-decisions`, { signal });
   if (!res.ok) throw await failureOf(res);
   return ListExtensionDecisionsResponseSchema.parse(await res.json());
 }
@@ -66,14 +75,18 @@ async function fetchDecisions(): Promise<ListExtensionDecisionsResponse> {
  */
 export function useExtensionDecisions(): ExtensionDecisionsState {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({
+  const isRefreshLeader = useIsDecisionsRefreshLeader();
+  const { data, isLoading, isError } = useQuery({
     queryKey: extensionDecisionsKey(),
-    queryFn: fetchDecisions,
+    queryFn: ({ signal }) => fetchDecisions(signal),
   });
 
   const refresh = (raw: unknown) => {
     const kind = (raw as { kind?: unknown } | null)?.kind;
     if (kind !== undefined && kind !== 'extension.decision') return;
+    // One copy answers each event, with a plain invalidate, so the read that
+    // follows always starts after the latest event (see `refresh-leader`).
+    if (!isRefreshLeader()) return;
     void queryClient.invalidateQueries({ queryKey: extensionDecisionsKey() });
   };
   useEventSubscription('standing_pending', refresh);
@@ -84,6 +97,7 @@ export function useExtensionDecisions(): ExtensionDecisionsState {
     decisions: data?.decisions ?? NO_DECISIONS,
     offers: data?.offers ?? NO_OFFERS,
     isLoading,
+    isError,
   };
 }
 

@@ -41,6 +41,11 @@ function toggleAriaLabel(open: boolean, count: number): string {
  * on screen: the Pulse teaser caps itself at five and offers "View all →" for
  * the rest, so a badge reading 8 over a panel showing 5 is the cap doing its
  * job, not the two disagreeing.
+ *
+ * **It does not count what waits in the Inbox.** Pulse names those items in one
+ * line (DOR-2578), but the Inbox pill sits right beside this button in the bar
+ * and already shows their number. Counting them here too would show one thing
+ * waiting as two badges, which reads as two things.
  */
 export function RightPanelToggle() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);

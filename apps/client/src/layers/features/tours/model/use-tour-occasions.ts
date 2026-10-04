@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { useSessionListStore } from '@/layers/entities/session';
-import { useTasks } from '@/layers/entities/tasks';
+import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
 import { useExternalAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 
@@ -32,7 +32,11 @@ export function useTourOccasions(): void {
   );
 
   const relayEnabled = useRelayEnabled();
-  const { data: tasks } = useTasks();
+  // Gated like every other Tasks read: with Tasks off the route answers 404,
+  // and an ungated read leaves the shared `['tasks']` query in error for every
+  // surface that reads it (DOR-2578).
+  const tasksEnabled = useTasksEnabled();
+  const { data: tasks } = useTasks(tasksEnabled);
   const { data: catalog } = useExternalAdapterCatalog(relayEnabled);
   const { data: mesh } = useRegisteredAgents();
 
