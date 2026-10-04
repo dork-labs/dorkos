@@ -94,7 +94,8 @@ import { VirtualSocket } from './virtual-socket.js';
 import { requirePersonCopy } from '../inbox/extension-inbox-context.js';
 
 /** Why a start was refused, as a record's `serverError.code`. */
-export type IsolatedStartErrorCode = 'isolation_unavailable' | 'server_start_failed';
+export type IsolatedStartErrorCode =
+  'isolation_unavailable' | 'server_start_failed' | 'server_start_timeout';
 
 /** The outcome of {@link IsolatedExtensionHost.start}. */
 export type IsolatedStartResult =
@@ -565,8 +566,8 @@ export class IsolatedExtensionHost {
           this.killNow();
           settleStart({
             ok: false,
-            code: 'server_start_failed',
-            message: `${name} took too long to start.`,
+            code: 'server_start_timeout',
+            message: `${name} took too long to start. Reload it to try again.`,
           });
         }, this.timings.loadTimeoutMs);
         return;
