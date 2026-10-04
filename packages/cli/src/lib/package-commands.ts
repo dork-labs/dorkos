@@ -47,6 +47,23 @@ export function shellWord(value: string): string {
 }
 
 /**
+ * The `dorkos marketplace unlink` line for a dev link, with `--project` when
+ * it is a project's: without it the command looks in the global slot and
+ * finds nothing to unlink.
+ *
+ * @param name - The package name.
+ * @param projectPath - The project, for a project dev link.
+ * @returns The command line, shell-quoted.
+ */
+export function unlinkCommand(name: string, projectPath?: string): string {
+  return [
+    'dorkos marketplace unlink',
+    shellWord(name),
+    ...(projectPath ? ['--project', shellWord(projectPath)] : []),
+  ].join(' ');
+}
+
+/**
  * Whether an error means the server does not have the route at all — a DorkOS
  * started before this CLI. The app's catch-all answers such a request 404 with
  * `code: 'API_NOT_FOUND'`; a bare 404 with no code is read the same way. A 404

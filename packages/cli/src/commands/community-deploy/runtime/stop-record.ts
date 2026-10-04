@@ -16,6 +16,7 @@ import {
   type LaunchJournal,
 } from '../journal.js';
 import type { z } from 'zod';
+import { classifyUncertainJournal } from '../provenance/uncertain-verdict.js';
 
 type LaunchSafeErrorCode = z.infer<typeof LaunchSafeErrorCodeSchema>;
 type LaunchErrorCategory = z.infer<typeof LaunchErrorCategorySchema>;
@@ -44,6 +45,12 @@ export function describeStoppedLaunch(journal: LaunchJournal): string {
   }
   const unsure =
     'Setup was stopped while a change was still in progress, so it cannot tell yet whether that change happened.';
+  // A create with no recorded id, or a removal under way, cannot be resumed: the recovery offers
+  // `--remove-uncertain` instead of a resume command (DOR-2701), so this line points there too.
+  const shape = classifyUncertainJournal(journal).shape;
+  if (shape === 'uncertain-create' || shape === 'pending-removal') {
+    return `${unsure} Run the --remove-uncertain command above: it checks, then tells you how to carry on.`;
+  }
   // Steps are printed only for an open creation intent (the recovery's "Manual reconciliation").
   return journal.pendingIntent
     ? `${unsure} Follow the steps above before you resume.`

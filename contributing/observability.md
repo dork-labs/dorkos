@@ -331,9 +331,9 @@ More than one span means the message crossed the bus and you can see where it st
 
 ## 8. Doctor
 
-`dorkos doctor` checks a machine from cold: Node, the data directory, the port, the Claude CLI and its auth, per-runtime auth, extensions, auth config, tunnel config, and file-descriptor headroom. `--json` emits the raw `CheckResult[]`. `--deep` additionally calls `GET /api/health/deep` and merges the server's own checks into the same checklist; with no server reachable it degrades to one `info` line and never fails.
+`dorkos doctor` checks a machine from cold: Node, the data directory, the port, the Claude CLI and its auth, per-runtime auth, extensions, dev links, auth config, tunnel config, and file-descriptor headroom. `--json` emits the raw `CheckResult[]`. `--deep` additionally calls `GET /api/health/deep` and merges the server's own checks into the same checklist; with no server reachable it degrades to one `info` line and never fails.
 
-The split is by what a check can see. A user who installed from npm has no `@dorkos/shared` dist to be stale and no `tsx` watcher to orphan, so the contributor-only checks live in `pnpm doctor:dev` — same `CheckResult` type, same renderer, different audience. Checks that need the live singleton graph (room bindings without transcripts, relay binding ghosts, quarantined access rules, unparsed adapter entries, duplicate mesh agent ids) live behind `/api/health/deep`.
+The split is by what a check can see. A user who installed from npm has no `@dorkos/shared` dist to be stale and no `tsx` watcher to orphan, so the contributor-only checks live in `pnpm doctor:dev` — same `CheckResult` type, same renderer, different audience. Checks that need the live singleton graph (room bindings without transcripts, relay binding ghosts, quarantined access rules, unparsed adapter entries, duplicate mesh agent ids) live behind `/api/health/deep`. Dev links are the one check in both: doctor names each folder, and the deep check returns the same verdict with names only, through the shared `judgeDevLinks`.
 
 `/api/health/deep` always answers `200`: a failing check is a fact about the machine, not a failed request. It is gated even though `/api/health` is exempt — including when the path is spelled with a trailing slash, which is how an earlier version of that carve-out leaked the whole report with no credential.
 

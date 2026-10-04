@@ -8,7 +8,9 @@
  */
 import { ExternalLabelSchema } from '../provider-contract.js';
 import { tigrisAccessKeySteps } from './tigris-access-key.js';
-import type { LaunchJournal } from '../journal.js';
+import { journalRecordsNoResource, type LaunchJournal } from '../journal.js';
+import { runResources, type RunResource } from './forget-launch.js';
+import { SERVICE_LABEL } from './uncertain-verdict.js';
 import type {
   CandidateSummary,
   ProvedResource,
@@ -24,15 +26,11 @@ export interface RemovalOutputContext {
   journal: LaunchJournal;
   /** The exact `--resume` command, or `null` for a journal without saved choices. */
   resumeCommand: string | null;
+  /** The same choices as a fresh launch, or `null` for a journal without saved choices. */
+  startCommand?: string | null;
   /** The existing recovery report for the journal. */
   recovery: string;
 }
-
-const SERVICE: Record<RemovalProvider, string> = {
-  fly: 'Fly app',
-  neon: 'Neon project',
-  tigris: 'Tigris bucket',
-};
 
 const TOKEN_NAME: Record<RemovalProvider, string> = {
   fly: 'internal id',
@@ -47,7 +45,7 @@ const OWNER: Record<RemovalProvider, string> = {
 };
 
 /** Show a read value only when it is a plain printable label. */
-function shown(value: string | undefined | null): string {
+export function shown(value: string | undefined | null): string {
   return value !== undefined && value !== null && ExternalLabelSchema.safeParse(value).success
     ? value
     : '(unreadable)';
@@ -108,10 +106,10 @@ export function formatRemovalOffer(
 ): string {
   const requestedAt = context.journal.pendingIntent?.requestedAt;
   const lines = [
-    `Run ${context.runId.slice(0, 8)} stopped while creating a ${SERVICE[target.provider]}. DorkOS can prove that run made it:`,
+    `Run ${context.runId.slice(0, 8)} stopped while creating a ${SERVICE_LABEL[target.provider]}. DorkOS can prove that run made it:`,
     '',
     row(
-      SERVICE[target.provider],
+      SERVICE_LABEL[target.provider],
       `${shown(target.resourceName)}  (${TOKEN_NAME[target.provider]} ${shown(target.token)})`
     ),
     row('Owner', `${OWNER[target.provider]} ${shown(target.organization)}`),
@@ -166,7 +164,7 @@ export function unprovedReasonText(reason: UnprovedReason, provider: RemovalProv
 }
 
 function candidateLine(provider: RemovalProvider, candidate: CandidateSummary): string {
-  return `${SERVICE[provider]} ${shown(candidate.name)} (${TOKEN_NAME[provider]} ${shown(candidate.token)}), ${OWNER[provider]} ${shown(candidate.organization)}, created ${formatCreated(candidate.createdAt, undefined)}: ${unprovedReasonText(candidate.reason, provider)}`;
+  return `${SERVICE_LABEL[provider]} ${shown(candidate.name)} (${TOKEN_NAME[provider]} ${shown(candidate.token)}), ${OWNER[provider]} ${shown(candidate.organization)}, created ${formatCreated(candidate.createdAt, undefined)}: ${unprovedReasonText(candidate.reason, provider)}`;
 }
 
 function manualSteps(provider: RemovalProvider, journal: LaunchJournal): string[] {
@@ -202,7 +200,7 @@ function manualSteps(provider: RemovalProvider, journal: LaunchJournal): string[
  * When an absent run can be cleared, in plain words: "in about 12 minutes (after 10:44 UTC)".
  * The clock time is rounded up to the next whole minute, so "after" is never early.
  */
-function whenClearable(clearableAfter: string, clearableInMs: number | undefined): string {
+export function whenClearable(clearableAfter: string, clearableInMs: number | undefined): string {
   const at = Date.parse(clearableAfter);
   const minute = new Date(Math.ceil(at / 60_000) * 60_000).toISOString().slice(11, 16);
   if (clearableInMs === undefined) return `after ${minute} UTC`;
@@ -214,6 +212,67 @@ function removeCommand(runId: string, token?: string): string {
   return `dorkos community deploy --remove-uncertain ${runId}${token ? ` --confirm ${shown(token)}` : ''}`;
 }
 
+/**
+ * Every resource a run made, where it lives and how to remove it. A bucket also gets the steps for
+ * its access key, which Fly leaves working when the bucket goes (DOR-2646).
+ *
+ * @param resources - The resources to list; nothing is printed for none.
+ * @param options - `giveUp` words it as the choice to abandon a run that could still go on.
+ */
+export function formatRunResources(
+  resources: readonly RunResource[],
+  options: { giveUp?: boolean } = {}
+): string[] {
+  if (resources.length === 0) return [];
+  const lines = [
+    options.giveUp
+      ? 'If you’d rather give up on this run, remove what it made. These may incur charges until you do:'
+      : 'This run made these. They may incur charges until you remove them:',
+  ];
+  for (const resource of resources) {
+    const name = shown(resource.name);
+    const id = shown(resource.id);
+    const where = resource.organization
+      ? `, in ${OWNER[resource.provider]} ${shown(resource.organization)}`
+      : '';
+    if (resource.provider === 'neon') {
+      lines.push(
+        `  ${SERVICE_LABEL.neon} ${name} (project id ${id})${where}`,
+        `    Remove: neonctl projects delete ${id}`
+      );
+    } else if (resource.provider === 'fly') {
+      lines.push(`  ${SERVICE_LABEL.fly} ${name}${where}`, `    Remove: fly apps destroy ${name}`);
+    } else {
+      lines.push(
+        `  ${SERVICE_LABEL.tigris} ${name}${where}`,
+        `    Remove: fly storage destroy ${name}`,
+        ...tigrisKeyLines(resource).map((line) => `    ${line}`)
+      );
+    }
+  }
+  return lines;
+}
+
+/**
+ * The access-key steps for a bucket the run made, by its own name and Fly organization.
+ *
+ * @param resource - A Tigris bucket from {@link runResources}.
+ */
+export function tigrisKeyLines(resource: RunResource): string[] {
+  return tigrisAccessKeySteps(shown(resource.name), shown(resource.organization ?? '<your-org>'));
+}
+
+/**
+ * {@link formatRunResources} for every resource the run's journal recorded, offered as a way to
+ * give up rather than the way forward, and how to stop listing the run afterwards.
+ */
+function madeByRun(context: RemovalOutputContext): string[] {
+  const lines = formatRunResources(runResources(context.journal), { giveUp: true });
+  return lines.length === 0
+    ? []
+    : [...lines, `Then stop listing this run: dorkos community deploy --forget ${context.runId}`];
+}
+
 function continueWith(context: RemovalOutputContext): string {
   return context.resumeCommand
     ? `Continue with: ${context.resumeCommand}`
@@ -221,7 +280,7 @@ function continueWith(context: RemovalOutputContext): string {
 }
 
 function removedLine(target: RemovalTarget, nameReleased: boolean | null): string {
-  const what = `${SERVICE[target.provider]} ${shown(target.resourceName)} (${TOKEN_NAME[target.provider]} ${shown(target.token)})`;
+  const what = `${SERVICE_LABEL[target.provider]} ${shown(target.resourceName)} (${TOKEN_NAME[target.provider]} ${shown(target.token)})`;
   if (target.provider === 'tigris') {
     return `Removed ${what} and took its access key off app ${shown(target.appName)}.`;
   }
@@ -254,18 +313,41 @@ export function formatRemovalOutcome(
       return done([
         'This run stopped while checking secrets, not while creating something. There is nothing to remove.',
         context.recovery,
+        ...madeByRun(context),
       ]);
     case 'nothing-pending':
       return done(['This run has no unresolved resource.']);
-    case 'absent':
-      return done([
-        `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)}. The create probably never landed.`,
-        outcome.cleared
-          ? 'Nothing was changed there. This run made nothing else, so DorkOS removed its saved record and it no longer shows in --list-incomplete. Start a new launch instead.'
-          : outcome.clearableAfter
-            ? `Nothing was changed. The create was sent recently and could still appear, so DorkOS keeps this run for now. Run ${removeCommand(context.runId)} again ${whenClearable(outcome.clearableAfter, outcome.clearableInMs)} to check once more and clear it.`
-            : 'Nothing was changed. This run cannot be resumed; start a new launch instead.',
-      ]);
+    case 'absent': {
+      const absent = `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)}. The create never landed.`;
+      if (outcome.released) {
+        const kept = runResources(context.journal).map(
+          (resource) => `${SERVICE_LABEL[resource.provider]} ${shown(resource.name)}`
+        );
+        return done([
+          absent,
+          kept.length > 0
+            ? `This run keeps what it already made (${kept.join(', ')}) and can continue from where it stopped.`
+            : 'This run can continue from where it stopped.',
+          continueWith(context),
+        ]);
+      }
+      if (outcome.cleared) {
+        return done([
+          absent,
+          'This run made nothing else, so DorkOS removed its saved record and it no longer shows in --list-incomplete.',
+          context.startCommand
+            ? `Start again with: ${context.startCommand}`
+            : 'Start a new launch instead.',
+        ]);
+      }
+      if (outcome.clearableAfter) {
+        return done([
+          `Nothing named ${shown(context.journal.pendingIntent?.resourceName)} exists in ${OWNER[outcome.provider]} ${shown(context.journal.pendingIntent?.organizationId)} yet. The create was sent recently and could still appear, so nothing was changed.`,
+          `Run ${removeCommand(context.runId)} again ${whenClearable(outcome.clearableAfter, outcome.clearableInMs)}. If it is still missing then, ${journalRecordsNoResource(context.journal) ? 'DorkOS clears this run.' : 'the run can continue from where it stopped.'}`,
+        ]);
+      }
+      return done([absent, 'Nothing was changed.', ...madeByRun(context)], 1);
+    }
     case 'unproved':
       return done([
         `DorkOS will not remove anything for this run: ${unprovedReasonText(outcome.reason, outcome.provider)}.`,
@@ -284,6 +366,7 @@ export function formatRemovalOutcome(
             ]
           : []),
         ...manualSteps(outcome.provider, context.journal),
+        ...madeByRun(context),
       ]);
     case 'unreachable':
       return done(
@@ -300,12 +383,12 @@ export function formatRemovalOutcome(
       ]);
     case 'declined':
       return done([
-        `Kept ${SERVICE[outcome.target.provider]} ${shown(outcome.target.resourceName)}. Nothing was changed.`,
+        `Kept ${SERVICE_LABEL[outcome.target.provider]} ${shown(outcome.target.resourceName)}. Nothing was changed.`,
       ]);
     case 'wrong-token':
       return done(
         [
-          `That is not the ${TOKEN_NAME[outcome.target.provider]}. Kept ${SERVICE[outcome.target.provider]} ${shown(outcome.target.resourceName)}. Nothing was changed.`,
+          `That is not the ${TOKEN_NAME[outcome.target.provider]}. Kept ${SERVICE_LABEL[outcome.target.provider]} ${shown(outcome.target.resourceName)}. Nothing was changed.`,
         ],
         1
       );
@@ -318,7 +401,11 @@ export function formatRemovalOutcome(
       );
     case 'too-many-removals':
       return done(
-        ['This run has already removed as many resources as it can. Start a new launch instead.'],
+        [
+          'This run has already removed as many resources as it can, so DorkOS will not remove more for it.',
+          ...manualSteps(context.journal.pendingIntent?.provider ?? 'fly', context.journal),
+          ...madeByRun(context),
+        ],
         1
       );
     case 'removed':
@@ -336,7 +423,7 @@ export function formatRemovalOutcome(
     case 'removal-uncertain':
       return done(
         [
-          `DorkOS asked to remove ${SERVICE[outcome.target.provider]} ${shown(outcome.target.resourceName)} but could not confirm it is gone. The run stays paused.`,
+          `DorkOS asked to remove ${SERVICE_LABEL[outcome.target.provider]} ${shown(outcome.target.resourceName)} but could not confirm it is gone. The run stays paused.`,
           `It is safe to run this again: ${removeCommand(context.runId)}`,
         ],
         1

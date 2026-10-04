@@ -38,6 +38,7 @@ import {
   disclosesAnything,
   MARKETPLACE_DEVLINK_PARKED_MARKER,
   type DevLinkPreview,
+  type DevLinkPreviewResponse,
   type DevLinkRecord,
   type DevLinkState,
   type DevLinkStatus,
@@ -171,6 +172,12 @@ export interface DevUnlinkResult {
    * because something else now holds the slot: where it still is.
    */
   parkedLeftAt?: string;
+  /**
+   * Set when the link had already been replaced by something else in its
+   * place (a real folder, or a link elsewhere). That was left as it is: only
+   * the record of the dev link was dropped.
+   */
+  leftInPlace?: true;
 }
 
 /** The listing: every recorded dev link and its state. */
@@ -216,12 +223,20 @@ export class DevLinkService {
   /**
    * Say what linking a folder would do, changing nothing.
    *
-   * @param target - The folder and scope.
-   * @returns The preview the card shows.
+   * The answer carries `change`: the same text an approval card binds
+   * ({@link DevLinkService.describeApproval}). A person who says yes after
+   * reading the preview sends it back as `expectedChange`, so the link is
+   * refused if the folder describes differently by then.
+   *
+   * @param target - The folder, scope and the explicit switch.
+   * @returns The preview, with the text the yes binds to.
    * @throws {DevLinkError} With the first reason it cannot be linked.
    */
-  async preview(target: DevLinkTarget): Promise<DevLinkPreview> {
-    return (await this.plan(target)).preview;
+  async preview(
+    target: DevLinkTarget & { replaceInstalled?: boolean }
+  ): Promise<DevLinkPreviewResponse> {
+    const { preview } = await this.plan(target);
+    return { ...preview, change: describePlan(preview, target.replaceInstalled === true) };
   }
 
   /**
@@ -423,7 +438,11 @@ export class DevLinkService {
       record.projectPath,
       restored === 'installed' ? 'install' : 'uninstall'
     );
-    return { restored, ...(parkedLeftAt !== undefined && { parkedLeftAt }) };
+    return {
+      restored,
+      ...(parkedLeftAt !== undefined && { parkedLeftAt }),
+      ...(state === 'link-replaced' && { leftInPlace: true as const }),
+    };
   }
 
   /**

@@ -16,6 +16,7 @@ import {
   checkFileDescriptors,
   readFileDescriptorLimit,
   checkGitProtection,
+  checkDevLinks,
 } from '../doctor-checks.js';
 
 describe('checkDorkHomeWritable', () => {
@@ -190,5 +191,149 @@ describe('checkGitProtection (DOR-2326)', () => {
 
   it('reads the real git on this machine', () => {
     expect(['pass', 'warn', 'info']).toContain(checkGitProtection().status);
+  });
+});
+
+// DOR-2696: the Dev links check reads the registry straight from disk, so it
+// answers with DorkOS stopped, and names every link that is not in use.
+describe('checkDevLinks', () => {
+  /** A data directory with real links in `plugins/`, and the registry naming them. */
+  function home(
+    links: Array<{ name: string; folder: string; exists: boolean; projectPath?: string }>
+  ) {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-devlinks-')));
+    fs.mkdirSync(path.join(dir, 'plugins'), { recursive: true });
+    const records = links.map((link) => {
+      const target = path.join(dir, 'work', link.folder);
+      if (link.exists) fs.mkdirSync(target, { recursive: true });
+      const slot = path.join(dir, 'plugins', link.name);
+      fs.symlinkSync(target, slot);
+      return {
+        name: link.name,
+        type: 'plugin',
+        scope: link.projectPath ? 'project' : 'global',
+        ...(link.projectPath && { projectPath: link.projectPath }),
+        slot,
+        target,
+        linkedAt: '2026-10-03T00:00:00.000Z',
+        linkedVia: 'terminal',
+      };
+    });
+    fs.mkdirSync(path.join(dir, 'marketplace'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'marketplace', 'dev-links.json'),
+      JSON.stringify({ version: 1, links: records })
+    );
+    return dir;
+  }
+
+  it('passes with no registry at all', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-devlinks-'));
+    try {
+      expect(checkDevLinks(dir)).toEqual({ label: 'No dev links', status: 'pass' });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes and names each folder when every link is in use', () => {
+    const dir = home([{ name: 'flow', folder: 'flow', exists: true }]);
+    try {
+      const result = checkDevLinks(dir);
+      expect(result.status).toBe('pass');
+      expect(result.label).toBe('1 dev link in use');
+      expect(result.detail).toBe(`flow → ${path.join(dir, 'work', 'flow')}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns about a link whose folder is gone, with the unlink that switches it back', () => {
+    const dir = home([
+      { name: 'flow', folder: 'flow', exists: true },
+      { name: 'fmt', folder: 'fmt', exists: false, projectPath: '/work/my web' },
+    ]);
+    try {
+      const result = checkDevLinks(dir);
+      expect(result.status).toBe('warn');
+      expect(result.label).toBe('1 dev link needs a look');
+      expect(result.detail).toContain('fmt (project /work/my web): its folder is gone');
+      expect(result.detail).not.toContain('flow');
+      expect(result.fix).toContain("dorkos marketplace unlink fmt --project '/work/my web'");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says a link someone replaced is not in use', () => {
+    const dir = home([{ name: 'flow', folder: 'flow', exists: true }]);
+    try {
+      fs.unlinkSync(path.join(dir, 'plugins', 'flow'));
+      fs.mkdirSync(path.join(dir, 'plugins', 'flow'));
+      expect(checkDevLinks(dir).detail).toBe('flow: something else is in its place');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says a link that was removed is not in use, with the unlink that finishes it', () => {
+    const dir = home([{ name: 'flow', folder: 'flow', exists: true }]);
+    try {
+      fs.unlinkSync(path.join(dir, 'plugins', 'flow'));
+      const result = checkDevLinks(dir);
+      expect(result.detail).toBe('flow: its link was removed');
+      expect(result.fix).toContain('dorkos marketplace unlink flow');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'calls a slot it cannot look at unreadable, not removed',
+    () => {
+      // Purpose: a permission error says nothing about whether the link is
+      // there. Reporting it removed, with an unlink as the fix, would send the
+      // person to undo a link that may be fine.
+      const dir = home([{ name: 'flow', folder: 'flow', exists: true }]);
+      const plugins = path.join(dir, 'plugins');
+      try {
+        fs.chmodSync(plugins, 0o000);
+        const result = checkDevLinks(dir);
+        expect(result.status).toBe('warn');
+        expect(result.detail).toBe("flow: its place on disk can't be read; check its permissions");
+        expect(result.detail).not.toContain('removed');
+        expect(result.fix).not.toContain('dorkos marketplace unlink');
+      } finally {
+        fs.chmodSync(plugins, 0o755);
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it('warns when the registry is not a file it can read', () => {
+    // Purpose: any read error but "no file" is a warning, never "No dev links".
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-devlinks-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'marketplace', 'dev-links.json'), { recursive: true });
+      const result = checkDevLinks(dir);
+      expect(result.status).toBe('warn');
+      expect(result.label).toBe("Dev links can't be read");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when the registry cannot be read, naming the file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-devlinks-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'marketplace'));
+      fs.writeFileSync(path.join(dir, 'marketplace', 'dev-links.json'), '{ torn');
+      const result = checkDevLinks(dir);
+      expect(result.status).toBe('warn');
+      expect(result.label).toBe("Dev links can't be read");
+      expect(result.detail).toContain(path.join(dir, 'marketplace', 'dev-links.json'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

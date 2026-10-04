@@ -3690,7 +3690,16 @@ registry.registerPath({
     body: {
       content: {
         'application/json': {
-          schema: z.object({ path: z.string().min(1).max(1024), ...DevLinkScopeBody }).strict(),
+          schema: z
+            .object({
+              path: z.string().min(1).max(1024),
+              ...DevLinkScopeBody,
+              replaceInstalled: z
+                .boolean()
+                .optional()
+                .describe('Describe the link as setting an installed copy aside.'),
+            })
+            .strict(),
         },
       },
     },
@@ -3710,6 +3719,12 @@ registry.registerPath({
             replaces: z.object({ version: z.string() }).nullable(),
             effects: DisclosedEffectsSchema.nullable(),
             extensions: z.array(z.string()),
+            change: z
+              .string()
+              .describe(
+                'The approval text for this folder as it reads now. Send it back as ' +
+                  '`expectedChange` when linking, so a folder that changed meanwhile is refused.'
+              ),
           }),
         },
       },
@@ -3749,6 +3764,15 @@ registry.registerPath({
               ...DevLinkScopeBody,
               replaceInstalled: z.boolean().optional(),
               via: z.enum(['app', 'terminal']).optional(),
+              expectedChange: z
+                .string()
+                .min(1)
+                .max(65_536)
+                .optional()
+                .describe(
+                  "The preview's `change` the person said yes to; a mismatch is refused with " +
+                    '`dev_link_changed`. Ignored for an agent, whose yes is the approval card.'
+                ),
             })
             .strict(),
         },
@@ -3803,6 +3827,12 @@ registry.registerPath({
           schema: z.object({
             restored: z.enum(['installed', 'removed']),
             parkedLeftAt: z.string().optional(),
+            leftInPlace: z
+              .literal(true)
+              .optional()
+              .describe(
+                "Set when something else had already taken the link's place; it was left as it is."
+              ),
           }),
         },
       },
