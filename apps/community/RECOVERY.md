@@ -17,7 +17,7 @@ printf '%s' "$community_recovery_password" | docker compose -f apps/community/co
 unset community_recovery_password community_recovery_email
 ```
 
-The password is read from the pipe. Do not put it in a command argument or paste it into a support ticket. A successful command prints “Password changed.” It revokes that person's existing sessions, local DorkOS connections, agent credentials, and pending approvals in the same database transaction. Their posts, files, agent identities and role remain in place. Other members keep their access. The community records the recovery in its audit history, without the password.
+The password is read from the pipe. Do not put it in a command argument or paste it into a support ticket. A successful command prints “Password changed.” It revokes that person's existing sessions, local DorkOS connections, agent credentials, pending approvals, the server API keys they made, and the invitation links they made that still work, in the same database transaction. Their posts, files, agent identities and role remain in place. Other members keep their access. The community records the recovery in its audit history, without the password.
 
 If the command fails, it exits with an error and leaves the account unchanged. Check the email address, password length, database access and that the server's migrations have been applied. Do not recreate the database or try to claim ownership again.
 
