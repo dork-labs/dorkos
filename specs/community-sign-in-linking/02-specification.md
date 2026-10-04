@@ -203,6 +203,8 @@ Invariants (the adversarial review attacks each):
 6. `signInRefusal` refuses before any clean-out or link; admission, minimum age and the named-claim subject binding are unchanged.
 7. Google and GitHub can never auto-link, whatever the settings.
 
+**Clean-out races (found in review, fixed).** A squatter's request that began before a clean-out committed could still finish after it: a password sign-in's new session, a `setPassword` or link row, a pairing approval, an invitation, or a host API key. One rule closes all of them: `clearAccountAccess` locks the user row and stamps `"user".access_cleared_xid = pg_current_xact_id()`; every non-GET `/api/v1/*` and `/api/auth/*` request (and Better Auth's GET callbacks) records `pg_current_snapshot()` at its start; a session or account row, or any member- or host-authorized write, whose request snapshot cannot see the stamp is refused and removed. The stamp is read `FOR SHARE`, so a check waits for a clean-out in flight. A write with no recorded start is refused (fail closed). The request that ran the clean-out is exempt for its own link and session.
+
 Takeover attempts the review must try: attacker-controlled untrusted issuer with victim email; trusted issuer with `email_verified: false`; stranger squats an unconfirmed account then the victim signs in (trusted and untrusted); replay or cross-browser use of the pending cookie; racing two callbacks for one account; linking an identity already owned by another user; the Settings-link exemption reached without a real session for that user.
 
 ## Documentation
