@@ -4,6 +4,11 @@ import { useTransport } from '@/layers/shared/model';
 /** Lifecycle of a file-backed canvas save. */
 export type CanvasSaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
+/** The server-acknowledged result of one conditional file save. */
+export type CanvasSaveOutcome =
+  | { status: 'changed' | 'no_op'; confirmed: { hash: string; content: string } }
+  | { status: 'conflict' | 'error' | 'idle' };
+
 /** The on-disk version surfaced when a save conflicts with an external change. */
 export interface CanvasSaveConflict {
   currentHash: string;
@@ -54,7 +59,7 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
     async (
       fullContent: string,
       expected: { expectedHash?: string; expectedContent?: string }
-    ): Promise<CanvasSaveStatus> => {
+    ): Promise<CanvasSaveOutcome> => {
       const result = await transport.writeFile(
         cwd as string,
         sourcePath as string,
@@ -62,37 +67,40 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
         expected
       );
       if (result.ok) {
+        if (
+          typeof result.hash !== 'string' ||
+          result.hash.length === 0 ||
+          (result.effect !== 'changed' && result.effect !== 'no_op')
+        ) {
+          throw new Error('Invalid file save acknowledgement');
+        }
         baseHashRef.current = result.hash;
         baseContentRef.current = fullContent;
         setConflict(null);
         setStatus('saved');
-        return 'saved';
+        return { status: result.effect, confirmed: { hash: result.hash, content: fullContent } };
       }
       setConflict(result.conflict);
       setStatus('conflict');
-      return 'conflict';
+      return { status: 'conflict' };
     },
     [transport, cwd, sourcePath]
   );
 
   /**
    * Save the current document, conditional on the tracked disk base. Resolves
-   * with the settled outcome — `'saved'` (including a no-op save), `'conflict'`,
-   * `'error'`, or `'idle'` when the file isn't savable — so a caller flushing
-   * before it renders (e.g. leaving edit mode) can react to the result without
+   * with the server's changed/no-op acknowledgement, a conflict/error, or idle
+   * when the file isn't savable. Even identical local bytes go to the server,
+   * so a caller flushing before it renders (e.g. leaving edit mode) can react
+   * to the result without
    * reading the (asynchronously-updated) status state.
    */
   const save = useCallback(
-    (fullContent: string): Promise<CanvasSaveStatus> => {
-      if (!canSave) return Promise.resolve('idle');
+    (fullContent: string): Promise<CanvasSaveOutcome> => {
+      if (!canSave) return Promise.resolve({ status: 'idle' });
       const next = inFlightRef.current
         .catch(() => {})
-        .then(async (): Promise<CanvasSaveStatus> => {
-          // Re-checked after the prior write settled, so the base is current.
-          if (fullContent === baseContentRef.current) {
-            setStatus('saved');
-            return 'saved';
-          }
+        .then(async (): Promise<CanvasSaveOutcome> => {
           setStatus('saving');
           try {
             const expected =
@@ -102,7 +110,7 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
             return await writeThrough(fullContent, expected);
           } catch {
             setStatus('error');
-            return 'error';
+            return { status: 'error' };
           }
         });
       // The serialization chain stays void; the outcome rides the returned promise.
@@ -114,23 +122,24 @@ export function useCanvasFileSave({ sourcePath, cwd, loadedContent }: UseCanvasF
 
   /** Reconcile a conflict by overwriting disk with the local draft. */
   const overwrite = useCallback(
-    (fullContent: string): Promise<void> => {
-      if (!conflict) return Promise.resolve();
+    (fullContent: string): Promise<CanvasSaveOutcome> => {
+      if (!canSave || !conflict) return Promise.resolve({ status: 'idle' });
       const expectedHash = conflict.currentHash;
       const next = inFlightRef.current
         .catch(() => {})
-        .then(async () => {
+        .then(async (): Promise<CanvasSaveOutcome> => {
           setStatus('saving');
           try {
-            await writeThrough(fullContent, { expectedHash });
+            return await writeThrough(fullContent, { expectedHash });
           } catch {
             setStatus('error');
+            return { status: 'error' };
           }
         });
-      inFlightRef.current = next;
+      inFlightRef.current = next.then(() => {});
       return next;
     },
-    [conflict, writeThrough]
+    [canSave, conflict, writeThrough]
   );
 
   /**

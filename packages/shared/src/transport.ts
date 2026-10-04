@@ -614,7 +614,7 @@ export interface ClaudePluginTransport {
  * throw.
  */
 export type WriteFileResult =
-  | { ok: true; hash: string }
+  | { ok: true; hash: string; effect: 'changed' | 'no_op' }
   | { ok: false; conflict: { currentHash: string; currentContent: string } };
 
 /** A single progress frame emitted while a runtime binary is being provisioned on demand. */
@@ -672,7 +672,7 @@ export interface TerminalHandle {
 }
 
 /**
- * An untrusted cockpit crash report relayed to the server (DOR-318). Carries
+ * An untrusted app crash report relayed to the server (DOR-318). Carries
  * only the three raw `Error` strings — the server rebuilds and scrubs them, so
  * the client never scrubs and the server never trusts these values. Everything
  * is optional because a given crash may expose only some of them.
@@ -1598,7 +1598,7 @@ export interface Transport
    */
   revealMcpLocalToken(): Promise<{ localToken: string }>;
   /**
-   * Relay a caught cockpit crash to the server's `POST /api/errors` intake
+   * Relay a caught app crash to the server's `POST /api/errors` intake
    * (DOR-318). Fire-and-forget and best-effort: it must never throw or surface
    * to the user. The server rebuilds and scrubs the report and only sends it
    * onward when error reporting is opted in — the client neither scrubs nor
