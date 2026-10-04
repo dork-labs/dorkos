@@ -18201,7 +18201,7 @@
           "Projects"
         ],
         "summary": "Name the project a folder belongs to",
-        "description": "The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ \"project\": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused).",
+        "description": "The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ \"project\": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused). Only a person may ask: a caller that names itself an agent, a request from another site, or (with login on) a caller without a session cookie is refused. The server keeps at most 200 roots that only a lookup named, and forgets the least recently used one past that.",
         "parameters": [
           {
             "schema": {
@@ -18235,7 +18235,7 @@
             }
           },
           "403": {
-            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary",
+            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary; or the caller is not a person",
             "content": {
               "application/json": {
                 "schema": {

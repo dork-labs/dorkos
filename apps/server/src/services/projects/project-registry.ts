@@ -13,6 +13,14 @@
  * An extension can name at most {@link MAX_REPORTED_ROOTS_PER_EXTENSION} roots,
  * so it cannot squat names at scale.
  *
+ * A person's lookups are capped too: at most {@link MAX_LOOKUP_ROOTS} roots are
+ * kept that only a lookup named (reported, and no extension named them). Past
+ * it, the one used least recently is forgotten and its name freed. A `seen`
+ * root, and any root an extension named, is never forgotten this way. A lookup
+ * records the root because the name it answers must stay the root's name; the
+ * cap is what keeps that from growing without end, since a caller the person
+ * bar trusts (any local script while login is off) can look up any folder.
+ *
  * ## The boundary
  *
  * Anything an extension or a person names is checked twice: the folder they
@@ -70,6 +78,12 @@ const EXTENSION_SCOPE_TTL_MS = 60_000;
  * seen. Past it, naming a new root answers null and records nothing.
  */
 export const MAX_REPORTED_ROOTS_PER_EXTENSION = 200;
+
+/**
+ * The most roots kept that only a person's lookup named. Past it, the least
+ * recently used is forgotten. See the module documentation.
+ */
+export const MAX_LOOKUP_ROOTS = 200;
 
 /** Timeout for `git remote get-url origin`. */
 const ORIGIN_GIT_TIMEOUT_MS = 5_000;
@@ -322,7 +336,9 @@ export class ProjectRegistry {
    * Both the folder and the root git answers with must be inside the
    * directory boundary. A root core had not seen is recorded as `reported`;
    * for an extension it counts against its cap, and it does not join the
-   * extension's own list (only {@link report} does that).
+   * extension's own list (only {@link report} does that). For a person it
+   * counts against {@link MAX_LOOKUP_ROOTS}, and looking it up again marks it
+   * used.
    *
    * @param dir - Any folder.
    * @param extensionId - The extension asking, or undefined for a person.
@@ -333,8 +349,17 @@ export class ProjectRegistry {
     const root = await this.boundedRoot(dir);
     if (root === 'outside' || root === null) return root;
     const known = this.byRoot.get(root);
-    if (known) return toRef(known);
-    if (extensionId === undefined) return toRef(await this.remember(root, 'reported'));
+    if (known) {
+      // A lookup refreshes only a lookup's own row: a seen project's
+      // `lastSeenAt` means a real session, agent, workspace or install folder.
+      const used = extensionId === undefined && known.source === 'reported';
+      return toRef(used ? this.touch(known, 'reported') : known);
+    }
+    if (extensionId === undefined) {
+      const project = await this.remember(root, 'reported');
+      this.forgetOldLookups(root);
+      return toRef(project);
+    }
     return this.withSlot(extensionId, root, async () => {
       const project = await this.remember(root, 'reported');
       this.addReporter(root, extensionId, 'resolve');
@@ -491,6 +516,49 @@ export class ProjectRegistry {
       pending.delete(root);
       if (pending.size === 0) this.reserved.delete(extensionId);
     }
+  }
+
+  /**
+   * Forget the least recently used roots that only a lookup named until at
+   * most {@link MAX_LOOKUP_ROOTS} remain. Never `keep` (the root just looked
+   * up), a `seen` root, a root any extension named or is naming right now, or
+   * one being recorded.
+   */
+  private forgetOldLookups(keep: string): void {
+    const naming = new Set<string>();
+    for (const roots of this.reserved.values()) for (const root of roots) naming.add(root);
+    const lookups = [...this.byRoot.values()].filter(
+      (p) =>
+        p.source === 'reported' &&
+        !this.reporters.get(p.root)?.size &&
+        !naming.has(p.root) &&
+        !this.recording.has(p.root)
+    );
+    let excess = lookups.length - MAX_LOOKUP_ROOTS;
+    if (excess <= 0) return;
+    lookups.sort(
+      (a, b) =>
+        a.lastSeenAt.localeCompare(b.lastSeenAt) || a.firstSeenAt.localeCompare(b.firstSeenAt)
+    );
+    let forgot = false;
+    for (const project of lookups) {
+      if (excess <= 0) break;
+      if (project.root === keep) continue;
+      try {
+        this.store?.remove(project.root);
+      } catch (err) {
+        // Memory keeps what storage has; the next lookup tries again.
+        this.warn(`could not forget ${project.root}`, err);
+        break;
+      }
+      this.byRoot.delete(project.root);
+      this.names.delete(project.name);
+      this.lastWritten.delete(project.root);
+      this.reporters.delete(project.root);
+      forgot = true;
+      excess--;
+    }
+    if (forgot) this.changed();
   }
 
   /** How many roots an extension has named. */

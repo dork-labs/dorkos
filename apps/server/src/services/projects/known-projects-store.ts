@@ -51,6 +51,11 @@ export interface KnownProjectsPort {
    * `resolve`; nothing downgrades.
    */
   addReporter(reporter: KnownProjectReporter): void;
+  /**
+   * Forget a stored project, freeing its name. Its reporter rows go with it.
+   * Only for a root a person merely looked up (the lookup cap evicts it).
+   */
+  remove(root: string): void;
 }
 
 /** {@link KnownProjectsPort} over the server's SQLite database. */
@@ -112,5 +117,14 @@ export class KnownProjectsStore implements KnownProjectsPort {
         },
       })
       .run();
+  }
+
+  /**
+   * Forget a stored project; its reporter rows cascade.
+   *
+   * @param root - The project's root.
+   */
+  remove(root: string): void {
+    this.db.delete(knownProjects).where(eq(knownProjects.root, root)).run();
   }
 }

@@ -19,6 +19,7 @@ import { KnownProjectsStore } from '../known-projects-store.js';
 import { parseOriginRepo } from '../origin-repo.js';
 import {
   assignProjectName,
+  MAX_LOOKUP_ROOTS,
   MAX_REPORTED_ROOTS_PER_EXTENSION,
   ProjectRegistry,
   sanitizeNameSegment,
@@ -329,6 +330,98 @@ describe('reported roots are second-class', () => {
   });
 });
 
+describe("a person's lookups are capped", () => {
+  it(`keeps at most ${MAX_LOOKUP_ROOTS} lookup-only roots, forgetting the least recently used`, async () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    let clock = Date.parse('2026-10-01T00:00:00Z');
+    const reg = registry(
+      {
+        resolveRoot: async (cwd) => cwd,
+        checkBoundary: async (dir) => dir,
+        exists: async () => true,
+        now: () => clock,
+      },
+      db
+    );
+    const dir = (name: string) => path.join(boundary, 'lookups', name);
+    // The oldest rows of all: a seen project and one an extension named.
+    const seen = dir('seen');
+    const named = dir('named');
+    await reg.resolve(seen);
+    await reg.report(named, 'flow');
+    const lookups = Array.from({ length: MAX_LOOKUP_ROOTS }, (_, i) => dir(`l${i}`));
+    for (const lookup of lookups) {
+      clock += 1_000;
+      expect(await reg.resolveWithin(lookup)).not.toBeNull();
+    }
+    // Looking the oldest up again, past the write interval, marks it used.
+    clock += 11 * 60_000;
+    await reg.resolveWithin(lookups[0]);
+
+    const fresh = dir('fresh');
+    expect(await reg.resolveWithin(fresh)).toEqual({ root: fresh, name: 'fresh' });
+
+    const stored = new KnownProjectsStore(db).all().map((p) => p.root);
+    expect(stored).not.toContain(lookups[1]);
+    expect(reg.get(lookups[1])).toBeUndefined();
+    for (const kept of [seen, named, lookups[0], lookups[2], fresh]) expect(stored).toContain(kept);
+    expect(stored).toHaveLength(MAX_LOOKUP_ROOTS + 2);
+
+    // Its name is free again, and a restart sees exactly what was kept.
+    const restarted = registry(
+      { resolveRoot: async (cwd) => cwd, checkBoundary: async (d) => d },
+      db
+    );
+    expect(restarted.get(lookups[1])).toBeUndefined();
+    expect(restarted.get(lookups[0])).toBeDefined();
+  });
+
+  it('never forgets a seen root or one an extension named, however many lookups follow', async () => {
+    const reg = registry({
+      resolveRoot: async (cwd) => cwd,
+      checkBoundary: async (dir) => dir,
+      exists: async () => true,
+    });
+    const dir = (name: string) => path.join(boundary, 'lookups-2', name);
+    await reg.resolve(dir('seen'));
+    await reg.resolveWithin(dir('resolved-by-ext'), 'flow');
+    for (let i = 0; i < MAX_LOOKUP_ROOTS + 50; i++) await reg.resolveWithin(dir(`l${i}`));
+    expect(reg.get(dir('seen'))).toBeDefined();
+    expect(reg.get(dir('resolved-by-ext'))).toBeDefined();
+    expect(reg.get(dir('l0'))).toBeUndefined();
+    expect(reg.get(dir(`l${MAX_LOOKUP_ROOTS + 49}`))).toBeDefined();
+  });
+
+  it('keeps a row storage would not forget, and tries again on the next lookup', async () => {
+    let refuse = true;
+    const remove = vi.fn(() => {
+      if (refuse) throw new Error('disk busy');
+    });
+    const reg = registry({
+      resolveRoot: async (cwd) => cwd,
+      checkBoundary: async (dir) => dir,
+      exists: async () => true,
+    });
+    reg.attachStore({
+      all: () => [],
+      reporters: () => [],
+      insert: vi.fn(),
+      update: vi.fn(),
+      addReporter: vi.fn(),
+      remove,
+    });
+    const dir = (name: string) => path.join(boundary, 'lookups-3', name);
+    for (let i = 0; i <= MAX_LOOKUP_ROOTS; i++) await reg.resolveWithin(dir(`l${i}`));
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(reg.get(dir('l0'))).toBeDefined();
+    refuse = false;
+    await reg.resolveWithin(dir('next'));
+    expect(reg.get(dir('l0'))).toBeUndefined();
+    expect(reg.get(dir('l1'))).toBeUndefined();
+  });
+});
+
 describe('the cap under concurrency, and a clash from another process', () => {
   it(`records at most ${MAX_REPORTED_ROOTS_PER_EXTENSION} of 300 roots named at once`, async () => {
     const db = createDb(':memory:');
@@ -370,6 +463,7 @@ describe('the cap under concurrency, and a clash from another process', () => {
       },
       update: vi.fn(),
       addReporter: vi.fn(),
+      remove: vi.fn(),
     });
     const dirs = Array.from({ length: MAX_REPORTED_ROOTS_PER_EXTENSION }, (_, i) =>
       path.join(boundary, 'slots', `r${i}`)
@@ -531,6 +625,7 @@ describe('boot order and naming', () => {
       insert,
       update: vi.fn(),
       addReporter: vi.fn(),
+      remove: vi.fn(),
     });
     const root = repo('home', 'refused', 'app');
     await expect(reg.resolve(root)).rejects.toThrow('disk full');

@@ -13,7 +13,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { runGit } from '../../workspace/providers/git.js';
 import {
   createProjectRootResolver,
+  MAX_CONCURRENT_ROOT_LOOKUPS,
+  MAX_NEGATIVE_ROOT_TTL_MS,
   NEGATIVE_ROOT_TTL_MS,
+  negativeTtl,
   projectRootFromCommonDir,
 } from '../resolve-project-root.js';
 
@@ -150,6 +153,79 @@ describe('the cache', () => {
     await resolver.resolve(plain);
     expect(resolver.peek(subfolder)).toBe(main);
     expect(resolver.peek(plain)).toBeNull();
+  });
+
+  it('waits longer after each further "no project", up to the ceiling', async () => {
+    const spy = vi.fn(runGit);
+    let clock = 0;
+    const resolver = createProjectRootResolver({ runGit: spy, now: () => clock });
+    await resolver.resolve(plain); // miss 1, kept 1 minute
+    clock += NEGATIVE_ROOT_TTL_MS;
+    await resolver.resolve(plain); // miss 2, kept 2 minutes
+    expect(spy).toHaveBeenCalledTimes(2);
+    clock += 2 * NEGATIVE_ROOT_TTL_MS - 1;
+    await resolver.resolve(plain);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(resolver.peek(plain)).toBeNull();
+    clock += 1;
+    await resolver.resolve(plain);
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect([1, 2, 3, 4, 5, 50].map(negativeTtl)).toEqual([
+      NEGATIVE_ROOT_TTL_MS,
+      2 * NEGATIVE_ROOT_TTL_MS,
+      4 * NEGATIVE_ROOT_TTL_MS,
+      8 * NEGATIVE_ROOT_TTL_MS,
+      MAX_NEGATIVE_ROOT_TTL_MS,
+      MAX_NEGATIVE_ROOT_TTL_MS,
+    ]);
+  });
+
+  it('starts over at one minute once a folder becomes a repository and stops again', async () => {
+    let isRepo = false;
+    const fakeGit = vi.fn(async () => {
+      if (!isRepo) throw new Error('not a git repository');
+      return '/repos/a/.git\n';
+    }) as unknown as typeof runGit;
+    let clock = 0;
+    const resolver = createProjectRootResolver({
+      runGit: fakeGit,
+      now: () => clock,
+      canonical: (dir) => dir,
+    });
+    await resolver.resolve('/repos/a'); // miss 1
+    clock += NEGATIVE_ROOT_TTL_MS;
+    await resolver.resolve('/repos/a'); // miss 2, kept 2 minutes
+    isRepo = true;
+    clock += 2 * NEGATIVE_ROOT_TTL_MS;
+    expect(await resolver.resolve('/repos/a')).toBe('/repos/a');
+    expect(fakeGit).toHaveBeenCalledTimes(3);
+  });
+
+  it(`never runs more than ${MAX_CONCURRENT_ROOT_LOOKUPS} git calls at once across cold folders`, async () => {
+    let running = 0;
+    let peak = 0;
+    const release: (() => void)[] = [];
+    const fakeGit = vi.fn(async (_args: string[], cwd: string) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise<void>((resolve) => release.push(resolve));
+      running -= 1;
+      return `${cwd}/.git\n`;
+    });
+    const resolver = createProjectRootResolver({
+      runGit: fakeGit as unknown as typeof runGit,
+      canonical: (dir) => dir,
+    });
+    const folders = Array.from({ length: 25 }, (_, i) => `/repos/r${i}`);
+    const all = Promise.all(folders.map((dir) => resolver.resolve(dir)));
+    while (fakeGit.mock.calls.length < folders.length || release.length > 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(running).toBeLessThanOrEqual(MAX_CONCURRENT_ROOT_LOOKUPS);
+      release.splice(0).forEach((go) => go());
+    }
+    expect(await all).toEqual(folders);
+    expect(peak).toBe(MAX_CONCURRENT_ROOT_LOOKUPS);
+    expect(fakeGit).toHaveBeenCalledTimes(folders.length);
   });
 
   it('reads uncached on every call', async () => {
