@@ -140,6 +140,25 @@ describe('extension-registry', () => {
     expect(items[0].label).toBe('Second');
   });
 
+  it('a stale unsubscribe leaves the entry that replaced it under the same id', () => {
+    const { register, getContributions } = useExtensionRegistry.getState();
+    const unregisterOld = register(
+      'sidebar.footer',
+      makeSidebarFooter({ id: 'dup', label: 'Old' })
+    );
+    const unregisterNew = register(
+      'sidebar.footer',
+      makeSidebarFooter({ id: 'dup', label: 'New' })
+    );
+
+    // A reload registered the new copy before the old copy's cleanup ran.
+    unregisterOld();
+    expect(getContributions('sidebar.footer').map((c) => c.label)).toEqual(['New']);
+
+    unregisterNew();
+    expect(getContributions('sidebar.footer')).toHaveLength(0);
+  });
+
   it('idempotent register does not affect other contributions in the same slot', () => {
     const { register, getContributions } = useExtensionRegistry.getState();
     register('sidebar.footer', makeSidebarFooter({ id: 'keep-me', label: 'Keeper' }));

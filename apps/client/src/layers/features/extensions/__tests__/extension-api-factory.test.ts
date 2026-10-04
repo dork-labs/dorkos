@@ -367,7 +367,9 @@ describe('createExtensionAPI', () => {
       const { api, cleanups } = createExtensionAPI('my-ext', deps);
 
       api.registerDialog('my-dialog', () => null);
-      expect(cleanups).toContain(unsub);
+      expect(cleanups).toHaveLength(1);
+      cleanups[0]!();
+      expect(unsub).toHaveBeenCalledTimes(1);
     });
   });
 

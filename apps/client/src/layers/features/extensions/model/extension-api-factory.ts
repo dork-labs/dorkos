@@ -32,6 +32,7 @@ import { createDialogOpenState } from '@/layers/shared/model';
 import type {
   CommandPaletteContribution,
   DialogContribution,
+  DialogOpenState,
   ExtensionPageContribution,
   StatusBarContribution,
 } from '@/layers/shared/model';
@@ -53,6 +54,19 @@ const FALLBACK_ICON = 'puzzle';
 
 /** Default order of an extension's status-bar item among the others (spec §11.1). */
 const DEFAULT_STATUS_BAR_PRIORITY = 100;
+
+/**
+ * Every registered extension dialog's open flag, across all extensions. Only
+ * one is open at a time: two would fight over Escape and focus.
+ */
+const openExtensionDialogs = new Set<DialogOpenState>();
+
+/** Close every extension dialog except `keep`. */
+function closeOtherDialogs(keep: DialogOpenState): void {
+  for (const state of openExtensionDialogs) {
+    if (state !== keep) state.set(false);
+  }
+}
 
 /**
  * Construct a per-extension API object wrapping host primitives.
@@ -132,13 +146,18 @@ export function createExtensionAPI(
     ): ExtensionDialogControls {
       // The open flag lives here, not in the app store: an extension cannot add
       // a store key, and DialogHost mounts the dialog only while this is true.
-      const openState = createDialogOpenState();
+      const openState = createDialogOpenState({ onOpen: () => closeOtherDialogs(openState) });
+      openExtensionDialogs.add(openState);
       const contribution: DialogContribution = {
         id: `${extId}:${id}`,
         component,
         openState,
       };
-      cleanups.push(deps.registry.register('dialog', contribution));
+      const unregister = deps.registry.register('dialog', contribution);
+      cleanups.push(() => {
+        openExtensionDialogs.delete(openState);
+        unregister();
+      });
       return {
         open: () => openState.set(true),
         close: () => openState.set(false),

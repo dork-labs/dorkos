@@ -110,6 +110,8 @@ export interface TestExtensionResult {
   error?: string;
   stack?: string;
   message?: string;
+  /** Calls the real host would refuse, such as `registerComponent('dialog', …)`. Absent when none. */
+  warnings?: string[];
 }
 
 /**

@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 import {
   useAppStore,
   useSlotContributions,
@@ -100,7 +101,20 @@ function OwnStateDialog({
   const open = useSyncExternalStore(openState.subscribe, openState.getSnapshot);
   const Component = contribution.component;
   if (!open) return null;
-  return <Component open onOpenChange={openState.set} />;
+  // A dialog that throws closes itself instead of taking every other dialog
+  // (Settings, Tasks…) down with it. The boundary unmounts with the dialog, so
+  // opening it again starts clean.
+  return (
+    <ErrorBoundary
+      fallback={null}
+      onError={(error) => {
+        console.error(`[extensions] Dialog ${contribution.id} crashed and was closed:`, error);
+        openState.set(false);
+      }}
+    >
+      <Component open onOpenChange={openState.set} />
+    </ErrorBoundary>
+  );
 }
 
 /** Renders one registry dialog from whichever open state it keeps. */

@@ -42,7 +42,7 @@ export interface ExtensionDialogProps {
 
 /** Controls returned by `registerDialog`. Safe to call before the dialog first renders. */
 export interface ExtensionDialogControls {
-  /** Show the dialog. Does nothing when it is already open. */
+  /** Show the dialog, closing any other extension dialog. Does nothing when it is already open. */
   open(): void;
   /** Hide and unmount the dialog. Does nothing when it is already closed. */
   close(): void;
@@ -325,7 +325,9 @@ export interface ExtensionAPI {
    * is open and unmounts it once it closes, so the component never needs to
    * hide itself, and its state starts fresh each time it opens. The component
    * draws its own dialog (backdrop, frame, Escape) and reports a close through
-   * `onOpenChange(false)`; see {@link ExtensionDialogProps}.
+   * `onOpenChange(false)`; see {@link ExtensionDialogProps}. One extension
+   * dialog is open at a time: opening one closes any other. One that throws
+   * while rendering is closed and logged.
    *
    * Removed when the extension deactivates.
    *

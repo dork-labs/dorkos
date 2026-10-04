@@ -478,7 +478,7 @@ The host keeps whether the dialog is open. It mounts your component only while t
 - **`open`**: always `true` while your component is mounted. It is there for a component you also use somewhere else.
 - **`onOpenChange(open)`**: call `onOpenChange(false)` when the person closes the dialog. It never throws.
 
-Extensions can import only `react`, `react-dom` and `@dorkos/extension-api` at runtime, so your component draws the dialog itself: a backdrop, a frame with `role="dialog"` and an accessible name, and the ways to close it. Escape, a click on the backdrop and your own close button each call `onOpenChange(false)`. Move focus into the dialog when it mounts and keep Tab inside it.
+Extensions cannot import the host's UI components, so your component draws the dialog itself: a backdrop, a frame with `role="dialog"` and an accessible name, and the ways to close it. Escape, a click on the backdrop and your own close button each call `onOpenChange(false)`. Move focus into the dialog when it mounts and keep Tab inside it.
 
 ```tsx
 import type { ExtensionAPI, ExtensionDialogProps } from '@dorkos/extension-api';
@@ -507,6 +507,8 @@ export function activate(api: ExtensionAPI): void {
   api.registerCommand('pause', 'Pause flow', () => pause.open());
 }
 ```
+
+One extension dialog is open at a time, across every extension: opening one closes any other first, so two never fight over Escape or focus. If your component throws while it renders, the host closes it and logs the error; the rest of the app keeps working, and `open()` tries again with a fresh mount.
 
 `registerComponent('dialog', …)` is refused with a console warning: a dialog added that way would have no `open()`.
 

@@ -183,14 +183,41 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('keeps two dialogs apart', () => {
-    const { api } = createExtensionAPI('flow', makeDeps());
-    const pause = api.registerDialog('pause', PauseDialog);
-    api.registerDialog('careless', CarelessDialog);
+  it('keeps one extension dialog open at a time, across extensions', () => {
+    const flow = createExtensionAPI('flow', makeDeps()).api;
+    const other = createExtensionAPI('other', makeDeps()).api;
+    const pause = flow.registerDialog('pause', PauseDialog);
+    const careless = other.registerDialog('careless', CarelessDialog);
     render(<DialogHost />);
 
     act(() => pause.open());
     expect(screen.getByRole('dialog', { name: 'Pause' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Careless' })).not.toBeInTheDocument();
+
+    act(() => careless.open());
+    expect(screen.getByRole('dialog', { name: 'Careless' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Pause' })).not.toBeInTheDocument();
+  });
+
+  it('closes a dialog that throws, leaving the host and other dialogs working', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    function Broken(): never {
+      throw new Error('boom');
+    }
+    const { api } = createExtensionAPI('flow', makeDeps());
+    const broken = api.registerDialog('broken', Broken);
+    const pause = api.registerDialog('pause', PauseDialog);
+    render(<DialogHost />);
+
+    act(() => broken.open());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(errors).toHaveBeenCalledWith(
+      expect.stringContaining('flow:broken crashed and was closed'),
+      expect.any(Error)
+    );
+
+    act(() => pause.open());
+    expect(screen.getByRole('dialog', { name: 'Pause' })).toBeInTheDocument();
+    errors.mockRestore();
   });
 });

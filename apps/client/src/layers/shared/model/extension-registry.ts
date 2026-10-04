@@ -135,9 +135,11 @@ export interface DialogOpenState {
 /**
  * Make a closed {@link DialogOpenState}.
  *
+ * @param options - `onOpen` runs each time it goes from closed to open, before
+ *   subscribers hear of it, whichever caller opened it.
  * @returns An open flag that starts false.
  */
-export function createDialogOpenState(): DialogOpenState {
+export function createDialogOpenState(options?: { onOpen?: () => void }): DialogOpenState {
   let open = false;
   const listeners = new Set<() => void>();
   return {
@@ -145,6 +147,7 @@ export function createDialogOpenState(): DialogOpenState {
     set: (next) => {
       if (next === open) return;
       open = next;
+      if (open) options?.onOpen?.();
       for (const listener of listeners) listener();
     },
     subscribe: (listener) => {
@@ -390,13 +393,16 @@ export const useExtensionRegistry = create<ExtensionRegistryState>()(
           `register/${slotId}/${contribution.id}`
         );
 
-        // Return unsubscribe function
+        // Removes this exact entry, never a later one that replaced it under the
+        // same id: a reload that registers before the old cleanup runs must not
+        // lose the new contribution to the stale unsubscribe.
         return () => {
+          if (!get().slots[slotId].includes(withDefaults)) return;
           set(
             (state) => ({
               slots: {
                 ...state.slots,
-                [slotId]: state.slots[slotId].filter((c) => c.id !== contribution.id),
+                [slotId]: state.slots[slotId].filter((c) => c !== withDefaults),
               },
             }),
             undefined,
