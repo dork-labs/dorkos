@@ -23,6 +23,7 @@ import type {
   ListNotificationsResponse,
   NotificationDTO,
 } from '@dorkos/shared/notification-schemas';
+import type { ExtensionDecisionDTO } from '@dorkos/shared/extension-decision-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
 // The attention rows navigate, and the session list reads `?session=`. Neither
@@ -299,6 +300,48 @@ function renderQuiet({
   return { transport, queryClient, setPresence, ...view };
 }
 
+/** Open extension decisions the stubbed `/extension-decisions` route answers with. */
+let mockExtensionDecisions: ExtensionDecisionDTO[] = [];
+/** When true, the extension routes never answer — a first load still in flight. */
+let extensionReadsHang = false;
+
+/**
+ * The two extension reads in the Inbox's waiting queue are plain `fetch` calls,
+ * not transport methods, so they are answered here by path.
+ */
+function fakeFetch(input: RequestInfo | URL): Promise<Response> {
+  if (extensionReadsHang) return new Promise<Response>(() => {});
+  const url = String(input);
+  const json = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body)));
+  if (url.endsWith('/extensions/pending-approvals')) return json({ approvals: [] });
+  if (url.endsWith('/extension-decisions')) {
+    return json({ decisions: mockExtensionDecisions, offers: [] });
+  }
+  return Promise.resolve(new Response('{}', { status: 404 }));
+}
+
+/** One open decision an extension asked about — it waits in the Inbox, not the header. */
+function buildDecision(): ExtensionDecisionDTO {
+  return {
+    id: '01J0000000000000000000000D',
+    extensionId: 'flow',
+    extensionName: 'Flow',
+    key: 'ship',
+    title: 'Ship it?',
+    why: 'Review passed. Saying no keeps it in review.',
+    detail: null,
+    project: null,
+    projectLabel: null,
+    since: null,
+    actions: { kind: 'yes-no', approveLabel: 'Ship', rejectLabel: 'Keep in review' },
+    link: null,
+    raisedAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
+    needsYou: false,
+    watch: null,
+    revision: 0,
+  };
+}
+
 /** The quiet line, or `null` when it drew nothing at all. */
 function quietLine(): HTMLElement | null {
   return document.querySelector('[data-slot="home-quiet-state"]');
@@ -307,11 +350,15 @@ function quietLine(): HTMLElement | null {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 beforeEach(() => {
   vi.useRealTimers();
   suggestionQualifies = true;
+  mockExtensionDecisions = [];
+  extensionReadsHang = false;
+  vi.stubGlobal('fetch', vi.fn(fakeFetch));
 });
 
 describe('HomeQuietState — when it speaks', () => {
@@ -398,6 +445,54 @@ describe('HomeQuietState — when it stands down', () => {
 
     await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
     await waitFor(() => expect(quietLine()).toBeNull());
+  });
+
+  // DOR-2578: the Inbox pill read "1 waiting" while a surface beside it said
+  // all was quiet. Anything the pill counts silences this line, including the
+  // kinds the header does not draw. Seeded defect: read only approvals
+  // (`approvals.length > 0`) instead of the waiting queue's `items`.
+  it('draws nothing when an extension decision is waiting in the Inbox', async () => {
+    mockExtensionDecisions = [buildDecision()];
+    renderQuiet();
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/extension-decisions$/))
+    );
+    // Long enough for the line to have appeared if it were going to.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(quietLine()).toBeNull();
+  });
+
+  it('draws nothing when an agent is waiting on an answer', async () => {
+    const { transport } = renderQuiet({
+      transport: {
+        listPendingInteractions: vi.fn().mockResolvedValue({
+          interactions: [
+            {
+              sessionId: 'ses-1',
+              cwd: '/work',
+              interaction: { id: 'int-1', type: 'question', toolCallId: 'tc-1' },
+              raisedAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
+            },
+          ],
+        }),
+      },
+    });
+
+    await waitFor(() => expect(transport.listPendingInteractions).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(quietLine()).toBeNull();
+  });
+
+  it('says nothing until the waiting queue has loaded', async () => {
+    // Seeded defect: drop `waitingLoading ||` from the gate and "All quiet."
+    // is drawn before the Inbox's reads have answered.
+    extensionReadsHang = true;
+    renderQuiet();
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(quietLine()).toBeNull();
   });
 
   it('draws nothing when something needs attention', async () => {

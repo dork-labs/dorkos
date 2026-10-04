@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLoadedRoomEntries } from '@/layers/entities/room';
 import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
-import { usePendingApprovals } from '@/layers/entities/attention';
+import { useWaitingQueue } from '@/layers/entities/attention';
 import { useAttentionRows } from '@/layers/features/dashboard-attention';
 import { QuietSuggestion } from '@/layers/features/feature-promos';
 import { useNow } from '@/layers/shared/model';
@@ -71,11 +71,18 @@ export interface HomeQuietStateProps {
  * one is a fresh arrival on a fresh page. The fade in {@link QuietStateLine}
  * therefore plays exactly once, on the mount it belongs to.
  *
- * **The reads are the header's own reads.** `usePendingApprovals`,
- * `useAttentionRows`, and `useShiftReport` are the same cached queries the
- * header holds, so asking them here costs no request — and asking them,
- * rather than being told, is what keeps this component's rule in one place
- * instead of split across a prop the host would have to compute.
+ * **Anything the Inbox pill counts silences it too** — every kind in
+ * {@link useWaitingQueue}, the one answer to "is anything waiting on me?" that
+ * the pill and Pulse also read. Not only the approvals the header draws: an
+ * extension decision is not in the header, but "All quiet." under a pill
+ * reading "1 waiting" is the contradiction DOR-2578 removed from Pulse. And
+ * nothing is said until that queue has loaded, for the same reason.
+ *
+ * **The reads are cached reads.** `useWaitingQueue`, `useAttentionRows`, and
+ * `useShiftReport` are the same queries the header and the pill hold, so
+ * asking them here costs no request — and asking them, rather than being
+ * told, is what keeps this component's rule in one place instead of split
+ * across a prop the host would have to compute.
  *
  * **DorkBot's one suggestion rides inside this state** (spec D5.3), on a second
  * line under the first, which is how it inherits every gate above without
@@ -90,7 +97,11 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
   // this list, and the stream keeps it current.
   const entries = useLoadedRoomEntries(roomId);
   const frozenSeq = useFrozenRoomCursor(roomId);
-  const { approvals, isError: approvalsUnavailable } = usePendingApprovals();
+  const {
+    items: waiting,
+    isLoading: waitingLoading,
+    isError: approvalsUnavailable,
+  } = useWaitingQueue();
   const { total: headerRows } = useAttentionRows();
   const shiftReport = useShiftReport();
 
@@ -102,7 +113,8 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
   const caughtUp =
     frozenSeq !== null && entries !== undefined && entries.every((entry) => entry.seq <= frozenSeq);
   const headerSpeaks =
-    approvals.length > 0 ||
+    waiting.length > 0 ||
+    waitingLoading ||
     approvalsUnavailable ||
     headerRows > 0 ||
     shiftReport !== undefined ||
