@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { BrowserBinding } from '../../contracts.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
-import { createTabInput, type InputPorts, type NativeInputStep } from '../index.js';
+import { type NativeInputStep } from '../index.js';
+import {
+  createOwnedFixtureInput as createTabInput,
+  type FixtureInputPorts as InputPorts,
+} from '../../__tests__/parent-fixture.js';
 
 const RELEASES = [
   'mouseUp:left',
@@ -52,7 +56,7 @@ function fixture() {
       },
     },
   };
-  const input = createTabInput(ports);
+  const input = createTabInput(ports, () => binding);
   const command = (steps: NativeInputStep[]) => ({
     kind: 'input',
     requestId: 'request_subject_A_00000000000000',

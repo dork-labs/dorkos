@@ -16,14 +16,23 @@ function time() {
 it('enters context, proxy and every available input close before waiting for observation', async () => {
   const h = tabFixture(),
     c = configuration(),
-    observer = deferred<Awaited<ReturnType<typeof c.processes.descendants>>>();
+    observer = deferred<Awaited<ReturnType<typeof c.processes.descendants>>>(),
+    observationEntered = deferred<void>();
   await composeInput(c, h.record, h.tab).readiness;
   const second = tabFixture(h.record);
   await composeInput(c, h.record, second.tab).readiness;
-  c.processes.descendants = vi.fn(() => observer.promise);
+  c.processes.descendants = vi.fn(() => {
+    observationEntered.resolve();
+    return observer.promise;
+  });
   const proxy = { url: 'http://127.0.0.1:9002', close: vi.fn(async () => {}) };
   h.record.proxy = proxy;
   const closing = closeRecord(c, h.record);
+  expect(h.record.lifetime.ordinary.phase).toBe('retiring');
+  expect(h.session.detach).not.toHaveBeenCalled();
+  expect(second.session.detach).not.toHaveBeenCalled();
+  // Genuine cohort drain precedes terminal detach; observation remains held throughout.
+  await observationEntered.promise;
   expect(h.session.detach).toHaveBeenCalledTimes(1);
   expect(second.session.detach).toHaveBeenCalledTimes(1);
   expect(h.record.context!.close).toHaveBeenCalledTimes(1);
@@ -190,20 +199,30 @@ it('late session acquisition is retained after bounded cleanup with no stale adm
   expect(h.record.closePromise).toBe(closing);
   expect(h.record.lifetime.inputs.get(h.tab)).toBe(slot);
 });
-it('preexisting child close promise/end remains exact while parent wait gets no renewed deadline', async () => {
+it('parent-installed child close promise/end remains exact across later parent entry', async () => {
   time();
   const h = tabFixture(),
     c = configuration();
   const slot = composeInput(c, h.record, h.tab);
   await slot.readiness;
-  const detach = deferred<void>();
-  h.session.detach.mockImplementation(() => detach.promise);
-  const child = slot.handle!.close();
-  await vi.advanceTimersByTimeAsync(1000);
-  const closing = closeRecord(c, h.record),
+  const detach = deferred<void>(),
+    detachEntered = deferred<void>();
+  h.session.detach.mockImplementation(() => {
+    detachEntered.resolve();
+    return detach.promise;
+  });
+  // Ordinary direct terminal close remains refused and requests the genuine parent driver.
+  expect(() => slot.handle!.close()).toThrow('INPUT_TERMINAL_ONLY_CLOSE');
+  const closing = closeRecord(c, h.record);
+  await detachEntered.promise;
+  const child = slot.closePromise!,
     end = h.record.lifetime.inputEnd;
+  expect(child).toBeDefined();
+  expect(end).toBe(2000);
+  expect(h.record.lifetime.parentEnd).toBe(5000);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(closeRecord(c, h.record)).toBe(closing);
   expect(slot.closePromise).toBe(child);
-  expect(end).toBe(3000);
   await vi.advanceTimersByTimeAsync(1001);
   expect((await child).uncertain).toBe(true);
   expect((await closing).cleanup).toBe('unverified');
@@ -252,7 +271,8 @@ it('later parent entry clamps to caller barrier without shortening an already in
   const prior = closeRecord(c, first, 5000),
     closing = closeRecord(c, second, 5000);
   expect(second.lifetime.parentEnd).toBe(5000);
-  expect(second.lifetime.inputEnd).toBe(3000);
+  // Both original ends were installed before the first context callback advanced time.
+  expect(second.lifetime.inputEnd).toBe(2000);
   expect(closeRecord(c, second, 1100)).toBe(closing);
   expect(second.lifetime.parentEnd).toBe(5000);
   await vi.advanceTimersByTimeAsync(2001);

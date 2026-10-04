@@ -4,7 +4,8 @@ import { BrowserValidationError } from '../errors.js';
 import { sameBinding } from './binding.js';
 import { INPUT_BUDGET_MS, InputDeadline, within } from './budget.js';
 import { expandInput } from './expand.js';
-import { HeldInput } from './held.js';
+import { HeldInput, type ReleaseLedger } from './held.js';
+import type { CleanupAttempt, CleanupObservation, CleanupPermit } from '../lifecycle/ownership.js';
 import type {
   InputPorts,
   InputReason,
@@ -30,7 +31,8 @@ export function createTabInput(ports: InputPorts): TabInput {
   return Object.freeze({
     submit: (command: unknown, signal?: AbortSignal) => queue.submit(command, signal),
     reset: () => queue.reset(),
-    stop: () => ports.stopGate.stop(),
+    retire: (end: number) => queue.retire(end),
+    stop: () => ports.cleanup.requestRetirement('explicitStop'),
   });
 }
 
@@ -43,11 +45,18 @@ class InputQueue implements TabInput {
   private stopped = false;
   private barrier = false;
   private resetPromise: Promise<ResetResult> | null = null;
+  private resetLedger: ReleaseLedger | null = null;
+  private resetBinding: BrowserBinding | null = null;
+  private resetEnd: number | undefined;
+  private retired = false;
+  private retirement: Promise<CleanupObservation> | null = null;
+  private permit: CleanupPermit | null = null;
+  private drainUncertain = false;
   private unregister: (() => void) | null;
 
   constructor(private readonly ports: InputPorts) {
     const initial = ports.readBinding();
-    if (!initial) throw new BrowserValidationError('INVALID_COMMAND');
+    if (!initial || !ports.cleanup.ordinary()) throw new BrowserValidationError('INVALID_COMMAND');
     this.initial = Object.freeze({ ...initial });
     this.unregister = ports.stopGate.register(this.initial, () => this.stop());
     if (!this.unregister) this.stopped = true;
@@ -90,6 +99,8 @@ class InputQueue implements TabInput {
   }
 
   reset(): Promise<ResetResult> {
+    if (this.retired || !this.ports.cleanup.ordinary())
+      return Promise.resolve(Object.freeze({ binding: this.initial, status: 'stopped' }));
     if (this.resetPromise) return this.resetPromise;
     let complete!: (result: ResetResult) => void;
     const operation = new Promise<ResetResult>((resolve) => {
@@ -100,10 +111,18 @@ class InputQueue implements TabInput {
     this.barrier = true;
     this.rejectPending('staleBinding');
     void operation.then(() => {
-      if (this.resetPromise === operation) this.resetPromise = null;
+      if (this.resetPromise === operation) {
+        this.resetPromise = null;
+        if (!this.retired && this.ports.cleanup.ordinary()) {
+          if (this.resetLedger) this.ports.cleanup.releaseLedger(this.resetLedger);
+          this.resetLedger = null;
+          this.resetEnd = undefined;
+          this.resetBinding = null;
+        }
+      }
     });
     const failed = () => {
-      this.ports.stopGate.stop();
+      if (!this.retired) this.ports.cleanup.requestRetirement('cleanupFailure');
       complete(Object.freeze({ binding: this.initial, status: 'stopped' }));
     };
     try {
@@ -118,35 +137,50 @@ class InputQueue implements TabInput {
     const observed = this.readBinding();
     const current = observed ?? this.initial;
     if (!observed || this.stopped || !this.identityMatches(current)) {
-      this.ports.stopGate.stop();
+      if (!this.retired) this.ports.cleanup.requestRetirement('cleanupFailure');
       return Promise.resolve(
         Object.freeze({ binding: Object.freeze({ ...current }), status: 'stopped' })
       );
     }
     let next: BrowserBinding;
     try {
+      const entry = performance.now();
+      if (!Number.isFinite(entry) || entry < 0 || !this.ports.cleanup.ordinary())
+        throw new Error('INPUT_RESET_CLOCK_UNAVAILABLE');
+      this.resetEnd = entry + INPUT_BUDGET_MS;
+      this.resetLedger = this.held.prepare(this.resetEnd);
+      if (!this.ports.cleanup.registerLedger(this.resetLedger))
+        throw new Error('INPUT_RESET_LEDGER_UNAVAILABLE');
       next = Object.freeze({
         ...current,
         epoch: advanceCounter(current.epoch),
         inputGeneration: advanceCounter(current.inputGeneration),
       });
-      this.ports.publishResetBinding(next);
+      this.resetBinding = next;
+      const publish = this.ports.publishResetBinding;
+      if (
+        !this.ports.cleanup.ordinary() ||
+        this.retired ||
+        !sameBinding(this.readBinding(), current) ||
+        !this.ports.cleanup.ordinary()
+      )
+        throw new Error('INPUT_RESET_TARGET_REFUSED');
+      Reflect.apply(publish, this.ports, [next]);
     } catch {
-      this.ports.stopGate.stop();
+      if (!this.retired) this.ports.cleanup.requestRetirement('cleanupFailure');
       return Promise.resolve(
         Object.freeze({ binding: Object.freeze({ ...current }), status: 'stopped' })
       );
     }
     this.active?.cancel.abort();
-    const end = performance.now() + INPUT_BUDGET_MS;
-    return this.resetHeld(next, end);
+    return this.resetHeld(next, this.resetEnd!, this.resetLedger!);
   }
 
   private readBinding(): BrowserBinding | null {
     try {
       return this.ports.readBinding();
     } catch {
-      this.ports.stopGate.stop();
+      this.ports.cleanup.requestRetirement('cleanupFailure');
       return null;
     }
   }
@@ -160,11 +194,23 @@ class InputQueue implements TabInput {
   }
 
   private refusal(binding: BrowserBinding): InputReason | null {
-    if (this.stopped || !this.ports.stopGate.accepts(binding)) return 'stopped';
+    if (
+      this.stopped ||
+      this.retired ||
+      !this.ports.cleanup.ordinary() ||
+      !this.ports.stopGate.accepts(binding)
+    )
+      return 'stopped';
     if (this.barrier || !this.identityMatches(binding)) return 'staleBinding';
     const observed = this.readBinding();
     // Registry observation can synchronously stop or reset admission before returning.
-    if (this.stopped || !this.ports.stopGate.accepts(binding)) return 'stopped';
+    if (
+      this.stopped ||
+      this.retired ||
+      !this.ports.cleanup.ordinary() ||
+      !this.ports.stopGate.accepts(binding)
+    )
+      return 'stopped';
     if (this.barrier || !sameBinding(observed, binding)) return 'staleBinding';
     return null;
   }
@@ -243,7 +289,7 @@ class InputQueue implements TabInput {
         await within(native, work.end, work.cancel.signal);
       } catch (error) {
         // A cancelled/failed started call may already have changed native state.
-        if (!this.barrier) this.ports.stopGate.stop();
+        if (!this.barrier) this.ports.cleanup.requestRetirement('engineFault');
         return this.result(
           work.command,
           'uncertain',
@@ -251,10 +297,11 @@ class InputQueue implements TabInput {
         );
       }
       completed++;
+      // Exact transport ACK may settle existing custody during retirement, never successor IO.
+      this.held.settled(step);
       const afterDispatch = this.refusal(work.command.binding);
       if (afterDispatch || work.cancel.signal.aborted)
         return this.result(work.command, 'aborted', afterDispatch ?? 'deadline');
-      this.held.settled(step);
       try {
         const approved = await within(
           Promise.resolve(this.ports.authorize(work.command.binding, step, work.cancel.signal)),
@@ -298,41 +345,213 @@ class InputQueue implements TabInput {
 
   private cleanupCurrent(binding: BrowserBinding): boolean {
     try {
-      const current = this.readBinding();
-      if (!this.stopped && this.ports.stopGate.accepts(binding) && sameBinding(current, binding))
-        return true;
+      const current = this.retired ? this.ports.cleanup.binding() : this.readBinding();
+      const phase = this.retired ? this.ports.cleanup.retiring() : this.ports.cleanup.ordinary();
+      return (
+        !this.stopped &&
+        phase &&
+        this.ports.stopGate.accepts(binding) &&
+        sameBinding(current, binding) &&
+        (this.retired ? this.ports.cleanup.retiring() : this.ports.cleanup.ordinary())
+      );
     } catch {
-      // An uncertain current target cannot authorize a release onto another lifetime.
+      return false;
     }
-    this.ports.stopGate.stop();
-    return false;
   }
 
-  private async resetHeld(binding: BrowserBinding, end: number): Promise<ResetResult> {
-    let drained = true;
+  /** Install the permanent ordinary barrier/shared observation before any route or clock getter. */
+  retire(parentEnd: number): Promise<CleanupObservation> {
+    if (this.retirement) return this.retirement;
+    let complete!: (value: CleanupObservation) => void;
+    this.retirement = new Promise((done) => {
+      complete = done;
+    });
+    this.retired = true;
+    this.barrier = true;
+    this.rejectPending('staleBinding');
+    this.active?.cancel.abort();
+    try {
+      const binding = this.ports.cleanup.binding();
+      const end = Math.min(parentEnd, this.resetEnd ?? parentEnd);
+      if (
+        !binding ||
+        !Number.isFinite(end) ||
+        end < 0 ||
+        !this.ports.cleanup.retiring() ||
+        !this.cleanupCurrent(binding)
+      ) {
+        complete(
+          Object.freeze({
+            state: 'unverified',
+            binding: null,
+            reason: 'permitUnavailable',
+            pending: true,
+            uncertainty: true,
+          })
+        );
+      } else {
+        const ledger = this.resetLedger ?? this.held.prepare(end);
+        this.resetLedger = ledger;
+        this.resetBinding = Object.freeze({ ...binding });
+        this.permit = this.ports.cleanup.permit(this.resetBinding, end);
+        if (!this.permit || !this.ports.cleanup.registerLedger(ledger)) {
+          complete(
+            Object.freeze({
+              state: 'unverified',
+              binding: this.resetBinding,
+              reason: 'permitUnavailable',
+              pending: true,
+              uncertainty: true,
+            })
+          );
+        } else {
+          void this.drainRelease(this.resetBinding, end, ledger).then(
+            (known) => {
+              const pending =
+                this.nativePending !== null || ledger.attempts.some((attempt) => attempt.pending);
+              const exact = this.cleanupCurrent(this.resetBinding!);
+              if (known && exact && !pending && !this.drainUncertain && !ledger.uncertain)
+                complete(
+                  Object.freeze({
+                    state: 'settled',
+                    binding: this.resetBinding!,
+                    drain: 'acknowledged',
+                    release: 'acknowledged',
+                    pending: false,
+                    uncertainty: false,
+                  })
+                );
+              else
+                complete(
+                  Object.freeze({
+                    state: 'unverified',
+                    binding: this.resetBinding!,
+                    reason: exact
+                      ? pending
+                        ? 'custodyPending'
+                        : 'releaseTimeout'
+                      : 'targetChanged',
+                    pending,
+                    uncertainty: true,
+                  })
+                );
+            },
+            () =>
+              complete(
+                Object.freeze({
+                  state: 'unverified',
+                  binding: this.resetBinding!,
+                  reason: 'observationUnavailable',
+                  pending: true,
+                  uncertainty: true,
+                })
+              )
+          );
+        }
+      }
+    } catch {
+      complete(
+        Object.freeze({
+          state: 'unverified',
+          binding: null,
+          reason: 'observationUnavailable',
+          pending: true,
+          uncertainty: true,
+        })
+      );
+    }
+    return this.retirement;
+  }
+
+  /** The operation slot exists before method capture; an entered attempt is never replayed. */
+  private dispatchRelease(attempt: CleanupAttempt, signal: AbortSignal): Promise<void> {
+    if (attempt.operation) return attempt.operation;
+    let acknowledge!: () => void, refuse!: (error: unknown) => void;
+    const shared = new Promise<void>((done, failed) => {
+      acknowledge = done;
+      refuse = failed;
+    });
+    attempt.operation = shared;
+    attempt.pending = true;
+    try {
+      const native = this.ports.native;
+      const cleanup = this.retired;
+      let enter: () => Promise<void>;
+      if (cleanup) {
+        const call = native.cleanup;
+        enter = () => Reflect.apply(call, native, [this.permit!, attempt, signal]);
+      } else if (attempt.step.kind === 'cancelComposition') {
+        const call = native.cancelComposition;
+        enter = () => Reflect.apply(call, native, [signal]);
+      } else if (attempt.step.kind === 'cancelDrag') {
+        const call = native.cancelDrag;
+        enter = () => Reflect.apply(call, native, [signal]);
+      } else {
+        const call = native.dispatch;
+        enter = () => Reflect.apply(call, native, [attempt.step, signal]);
+      }
+      if (
+        !this.resetBinding ||
+        !this.cleanupCurrent(this.resetBinding) ||
+        signal.aborted ||
+        cleanup !== this.retired ||
+        (cleanup && !this.permit)
+      )
+        throw new Error('INPUT_RELEASE_TARGET_REFUSED');
+      if (!cleanup) attempt.entered = true;
+      void enter().then(acknowledge, refuse);
+    } catch (error) {
+      refuse(error);
+    }
+    return shared;
+  }
+
+  private async drainRelease(
+    binding: BrowserBinding,
+    end: number,
+    ledger: ReleaseLedger
+  ): Promise<boolean> {
     const native = this.nativePending;
     if (native) {
       try {
-        // Reserve half the single budget so a hung call cannot prevent all release attempts.
         await within(native, end - INPUT_BUDGET_MS / 2);
       } catch {
-        drained = false;
+        this.drainUncertain = true;
       }
     }
-    // Draining can outlive this target; never release held state onto a replacement lifetime.
-    if (!this.cleanupCurrent(binding)) return Object.freeze({ binding, status: 'stopped' });
     const cancel = new AbortController();
-    const released = await this.held.release(this.ports.native, end, cancel.signal, () =>
-      this.cleanupCurrent(binding)
-    );
-    cancel.abort();
-    const ready = drained && released && this.cleanupCurrent(binding);
-    if (!ready) this.ports.stopGate.stop();
-    else {
+    try {
+      const release = this.held.release(ledger, {
+        register: (value) => this.ports.cleanup.registerLedger(value),
+        permits: () => this.cleanupCurrent(binding),
+        enter: (attempt) => this.dispatchRelease(attempt, cancel.signal),
+      });
+      const acknowledged = await within(release, end);
+      return acknowledged && !this.drainUncertain && this.cleanupCurrent(binding);
+    } catch {
+      ledger.uncertain = true;
+      return false;
+    } finally {
+      cancel.abort();
+    }
+  }
+
+  private async resetHeld(
+    binding: BrowserBinding,
+    end: number,
+    ledger: ReleaseLedger
+  ): Promise<ResetResult> {
+    const acknowledged = await this.drainRelease(binding, end, ledger);
+    const ready =
+      acknowledged &&
+      !this.retired &&
+      this.ports.cleanup.ordinary() &&
+      this.cleanupCurrent(binding);
+    if (ready) {
       this.held.clear();
       this.barrier = false;
       this.pump();
-    }
+    } else if (!this.retired) this.ports.cleanup.requestRetirement('cleanupFailure');
     return Object.freeze({ binding, status: ready ? 'ready' : 'stopped' });
   }
 }

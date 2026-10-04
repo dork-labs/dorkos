@@ -2,7 +2,12 @@ import { expect, it, vi } from 'vitest';
 import type { BrowserBinding } from '../../contracts.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
-import { createTabInput, type InputPorts, type ResetResult } from '../index.js';
+import { type ResetResult } from '../index.js';
+import {
+  createOwnedFixtureInput as createTabInput,
+  settleFixtureRetirement,
+  type FixtureInputPorts as InputPorts,
+} from '../../__tests__/parent-fixture.js';
 function fixture() {
   let binding: BrowserBinding = {
     browserId: parseBrowserId('browser_subject_A_000000000000000'),
@@ -34,7 +39,7 @@ function fixture() {
       },
     },
   };
-  const input = createTabInput(ports);
+  const input = createTabInput(ports, () => binding);
   return {
     input,
     ports,
@@ -87,6 +92,7 @@ it('independent dispatch-entry reset cannot certify ready while started native e
     expect((await action).outcome).toBe('uncertain');
     late();
     await tick();
+    await settleFixtureRetirement(h.input);
     expect(h.gate.stopped).toBe(true);
     expect((await h.input.submit(h.command())).outcome).toBe('rejected');
   } finally {
@@ -105,6 +111,7 @@ it('independent stopped observer on ordinary dispatch path never adds native IO'
   const r = await h.input.submit(h.command());
   expect(r.outcome).toBe('rejected');
   expect(h.calls).toEqual([]);
+  await settleFixtureRetirement(h.input);
   expect(h.gate.stopped).toBe(true);
 });
 it('independent unknown authority with held modifier forces exact release and no successor effect', async () => {
@@ -157,12 +164,13 @@ it('independent reentrant started effect remains live after ready and successor 
   );
   expect(resetResult.status, 'REENTRANT_NATIVE_RESTORED_AFTER_READY').toBe('stopped');
   expect(successor.outcome).toBe('rejected');
+  await settleFixtureRetirement(h.input);
   expect(h.gate.stopped).toBe(true);
   expect(held).toBe(true); // A late effect is uncertain, never proof that reset restored readiness.
   expect((await h.input.submit(h.command())).outcome).toBe('rejected');
   h.gate.stop();
 });
-it('actual dispatch settlement during reentrant reset permits exact cleanup and fresh input', async () => {
+it('old-binding dispatch settlement during reset permits current cleanup but never a stale success ACK', async () => {
   const h = fixture();
   let reset: Promise<ResetResult> | undefined;
   h.ports.native.dispatch = (s) => {
@@ -172,10 +180,11 @@ it('actual dispatch settlement during reentrant reset permits exact cleanup and 
   };
   const action = await h.input.submit(h.command('mouseDown'));
   expect(action.outcome).toBe('uncertain');
-  expect((await reset!).status).toBe('ready');
+  expect((await reset!).status).toBe('stopped');
+  await settleFixtureRetirement(h.input);
   expect(h.calls).toEqual(['mouseDown', 'mouseUp', 'composition', 'drag']);
-  expect((await h.input.submit(h.command())).outcome).toBe('completed');
-  expect(h.gate.stopped).toBe(false);
+  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
+  expect(h.gate.stopped).toBe(true);
 });
 it.each(['reject', 'throw', 'thenableThrow'] as const)(
   'reentrant native %s never acknowledges drain or admits a successor',
@@ -199,12 +208,13 @@ it.each(['reject', 'throw', 'thenableThrow'] as const)(
     expect(action.outcome).toBe('uncertain');
     expect((await reset!).status, 'FAILED_NATIVE_DRAIN_CERTIFIED').toBe('stopped');
     expect(h.calls).toEqual(['mouseDown', 'mouseUp', 'composition', 'drag']);
+    await settleFixtureRetirement(h.input);
     expect(h.gate.stopped).toBe(true);
     expect((await h.input.submit(h.command())).outcome).toBe('rejected');
     expect((await h.input.reset()).status).toBe('stopped');
   }
 );
-it('pending started operation blocks successor and only its actual acknowledgement permits reset ready', async () => {
+it('pending old-binding completion drains custody but cannot resurrect reset readiness', async () => {
   const h = fixture();
   let reset: Promise<ResetResult> | undefined;
   let acknowledge!: () => void;
@@ -230,9 +240,10 @@ it('pending started operation blocks successor and only its actual acknowledgeme
   expect(h.calls).toEqual(['mouseDown']);
   expect((await h.input.submit(h.command())).outcome).toBe('rejected');
   acknowledge();
-  expect((await reset!).status).toBe('ready');
+  expect((await reset!).status).toBe('stopped');
+  await settleFixtureRetirement(h.input);
   expect((await action).outcome).toBe('uncertain');
   expect(h.calls).toEqual(['mouseDown', 'mouseUp', 'composition', 'drag']);
-  expect(h.gate.stopped).toBe(false);
-  expect((await h.input.submit(h.command())).outcome).toBe('completed');
+  expect(h.gate.stopped).toBe(true);
+  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
 });
