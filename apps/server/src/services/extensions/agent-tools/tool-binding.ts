@@ -72,15 +72,49 @@ function toolError(message: string, code: string): CapabilityToolError {
 }
 
 /**
- * Replace absolute file paths in a message with `<path>`, so a handler's
+ * Where a file path may start: a `file:` URL, an absolute or home-relative
+ * POSIX path, a Windows drive path with either slash (`C:\…`, `C:/…`), or a
+ * UNC share (`\\server\share`). A web URL is not a start: its first `/`
+ * follows a `:`, and every later one follows a word character or a `/`.
+ */
+const PATH_START =
+  /file:\/\/|(?<![\w:/.~\\-])(?:~|\.{1,2})?\/(?=[^\s/])|\b[A-Za-z]:[\\/]|(?<![\w\\])\\\\(?=[^\s\\])/gi;
+
+/** What ends the clause a path sits in: a quote, a line break, or punctuation followed by a space. */
+const CLAUSE_END = /["'`\n<>|]|[,;:)] |\s\(/;
+
+/**
+ * Replace file paths in a message with `<path>`, so a handler's
  * `ENOENT: no such file, open '/Users/…'` tells the agent what failed without
- * telling it where this machine keeps things. A URL is left alone: its first
- * `/` follows a `:`, and every later one follows a word character.
+ * telling it where this machine keeps things.
+ *
+ * A path may hold spaces (`/Users/ana lee/My Documents/x`), so each one is
+ * redacted through the last word of its clause that still holds a slash or
+ * backslash. That errs toward hiding a word too many rather than leaving the
+ * end of a path behind.
  */
 function redactPaths(message: string): string {
-  return message
-    .replace(/(?<![\w:/.~-])(?:~|\.{1,2})?(?:\/[^\s'"`<>|:*?/]+){2,}\/?/g, '<path>')
-    .replace(/\b[A-Za-z]:\\(?:[^\s'"`<>|:*?\\]+\\?)+/g, '<path>');
+  let out = '';
+  let cursor = 0;
+  PATH_START.lastIndex = 0;
+  for (let match = PATH_START.exec(message); match; match = PATH_START.exec(message)) {
+    const start = match.index;
+    if (start < cursor) continue;
+    const rest = message.slice(start);
+    const clauseEnd = rest.slice(match[0].length).search(CLAUSE_END);
+    const clause = clauseEnd === -1 ? rest : rest.slice(0, match[0].length + clauseEnd);
+    // Through the last word of the clause that still holds a separator.
+    let end = 0;
+    let offset = 0;
+    for (const word of clause.split(/(\s+)/)) {
+      offset += word.length;
+      if (/[\\/]/.test(word)) end = offset;
+    }
+    out += message.slice(cursor, start) + '<path>';
+    cursor = start + Math.max(end, match[0].length);
+    PATH_START.lastIndex = cursor;
+  }
+  return out + message.slice(cursor);
 }
 
 /**
@@ -347,6 +381,10 @@ export class RunningExtensionTools {
         });
     });
 
+    // Spec 2.3 reads the id off `context.identity`, but an identity carries the
+    // agent's folder, not its Mesh id; the folder is resolved to the Mesh id
+    // the rest of DorkOS (and `ctx.agent.send`) uses, and `null` when no
+    // registered agent lives there.
     let agentId: string | null;
     try {
       agentId = resolveAgentIdForPath(context.agent?.path) ?? null;

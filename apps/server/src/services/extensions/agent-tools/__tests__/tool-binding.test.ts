@@ -206,6 +206,44 @@ describe('RunningExtensionTools', () => {
     expect(payload.error).not.toMatch(/Users|\n/);
   });
 
+  it.each([
+    ['a file URL', 'import failed: file:///Users/ana/secret/x.mjs', 'import failed: <path>'],
+    [
+      'a Windows path with backslashes',
+      'open C:\\Users\\ana\\secret.txt failed',
+      'open <path> failed',
+    ],
+    [
+      'a Windows path with forward slashes',
+      'open C:/Users/ana/secret.txt failed',
+      'open <path> failed',
+    ],
+    ['a UNC share', 'cannot reach \\\\fileserver\\share\\ana\\x.db now', 'cannot reach <path> now'],
+    [
+      'a quoted path with spaces',
+      "ENOENT: no such file, open '/Users/ana lee/My Documents/x.txt'",
+      "ENOENT: no such file, open '<path>'",
+    ],
+    [
+      'an unquoted path with spaces',
+      'could not read /Users/ana lee/My Documents/x.txt because it moved',
+      'could not read <path> because it moved',
+    ],
+    ['a home-relative path', 'missing ~/.mail/config.json', 'missing <path>'],
+  ])('redacts %s', async (_label, message, expected) => {
+    // Purpose: none of the path shapes a handler's error can carry, on any
+    // platform, tells the agent where this machine keeps things.
+    const registry = newRegistry();
+    start(registry, {
+      read: () => {
+        throw new Error(message);
+      },
+    });
+    const payload = await errorOf(registry.invoke('ext_mail_app.read', {}));
+    expect(payload.error).toBe(`Mail: ${expected}`);
+    expect(payload.error).not.toMatch(/ana|secret|fileserver/);
+  });
+
   it('keeps a URL in an error message intact', async () => {
     // Purpose: path redaction must not mangle the most useful part of an API error.
     const registry = newRegistry();
