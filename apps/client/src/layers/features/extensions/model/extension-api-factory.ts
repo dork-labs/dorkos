@@ -4,6 +4,8 @@ import type {
   DecisionAnswerResult,
   ExtensionAPI,
   ExtensionDecisionView,
+  ExtensionDialogControls,
+  ExtensionDialogProps,
   ExtensionPointId,
   ExtensionReadableState,
   ExtensionEvent,
@@ -26,8 +28,11 @@ import {
   StartWorkResponseSchema,
   type StartWorkErrorCode,
 } from '@dorkos/shared/extension-decision-schemas';
+import { createDialogOpenState } from '@/layers/shared/model';
 import type {
   CommandPaletteContribution,
+  DialogContribution,
+  DialogOpenState,
   ExtensionPageContribution,
   StatusBarContribution,
 } from '@/layers/shared/model';
@@ -49,6 +54,19 @@ const FALLBACK_ICON = 'puzzle';
 
 /** Default order of an extension's status-bar item among the others (spec §11.1). */
 const DEFAULT_STATUS_BAR_PRIORITY = 100;
+
+/**
+ * Every registered extension dialog's open flag, across all extensions. Only
+ * one is open at a time: two would fight over Escape and focus.
+ */
+const openExtensionDialogs = new Set<DialogOpenState>();
+
+/** Close every extension dialog except `keep`. */
+function closeOtherDialogs(keep: DialogOpenState): void {
+  for (const state of openExtensionDialogs) {
+    if (state !== keep) state.set(false);
+  }
+}
 
 /**
  * Construct a per-extension API object wrapping host primitives.
@@ -83,6 +101,14 @@ export function createExtensionAPI(
         visibleWhen?: () => boolean;
       }
     ): () => void {
+      // A dialog added here would have no way to open, so it is refused with a
+      // pointer to the call that returns its controls.
+      if (slot === 'dialog') {
+        console.warn(
+          `[extensions] ${extId}: registerComponent('dialog', '${id}') cannot open; use registerDialog, which returns open() and close()`
+        );
+        return () => {};
+      }
       const contribution = adaptToContribution(slot, `${extId}:${id}`, component, options);
       const unsub = deps.registry.register(slot, contribution);
       cleanups.push(unsub);
@@ -114,32 +140,28 @@ export function createExtensionAPI(
       return fullCleanup;
     },
 
-    registerDialog(id: string, component: ComponentType): { open: () => void; close: () => void } {
-      const dialogId = `${extId}:${id}`;
-      const contribution = {
-        id: dialogId,
+    registerDialog(
+      id: string,
+      component: ComponentType<ExtensionDialogProps>
+    ): ExtensionDialogControls {
+      // The open flag lives here, not in the app store: an extension cannot add
+      // a store key, and DialogHost mounts the dialog only while this is true.
+      const openState = createDialogOpenState({ onOpen: () => closeOtherDialogs(openState) });
+      openExtensionDialogs.add(openState);
+      const contribution: DialogContribution = {
+        id: `${extId}:${id}`,
         component,
-        openStateKey: `ext-dialog:${dialogId}`,
+        openState,
       };
-      const unsub = deps.registry.register('dialog', contribution);
-      cleanups.push(unsub);
-
-      // Track open state locally — dialog open/close is managed here since
-      // DialogContribution.openStateKey ties into the app store, but extensions
-      // provide their own open control surface.
-      let openState = false;
+      const unregister = deps.registry.register('dialog', contribution);
+      cleanups.push(() => {
+        openExtensionDialogs.delete(openState);
+        unregister();
+      });
       return {
-        open: () => {
-          openState = true;
-        },
-        close: () => {
-          openState = false;
-        },
-        // Expose for testing without polluting the public interface type
-        get _openState() {
-          return openState;
-        },
-      } as { open: () => void; close: () => void };
+        open: () => openState.set(true),
+        close: () => openState.set(false),
+      };
     },
 
     registerSettingsTab(
@@ -509,7 +531,8 @@ function projectState(store: unknown): ExtensionReadableState {
  * contribution shape. Each slot has its own required fields.
  */
 function adaptToContribution(
-  slot: ExtensionPointId,
+  // `registerComponent` refuses `dialog` before it gets here (no way to open it).
+  slot: Exclude<ExtensionPointId, 'dialog'>,
   id: string,
   component: ComponentType,
   options?: {
@@ -561,8 +584,6 @@ function adaptToContribution(
         // Absent group is resolved to "Add-ons" by the Settings dialog itself.
         group: options?.group,
       };
-    case 'dialog':
-      return { ...base, component, openStateKey: `ext:${id}` };
     case 'command-palette.items':
       return {
         ...base,

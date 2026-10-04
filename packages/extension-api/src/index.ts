@@ -26,6 +26,8 @@ export type {
 } from './manifest-schema.js';
 export type {
   ExtensionAPI,
+  ExtensionDialogControls,
+  ExtensionDialogProps,
   ExtensionPointId,
   ExtensionReadableState,
   ExtensionPageProps,

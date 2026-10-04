@@ -1,7 +1,7 @@
 /**
  * Top-level dispatcher for the `dorkos marketplace <subcommand>` namespace:
  * the one home for everything marketplace — packages (`install`, `update`,
- * `uninstall`, `installed`, `outdated`) and sources (`add`, `remove`, `list`,
+ * `uninstall`, `installed`, `outdated`, `link`, `unlink`) and sources (`add`, `remove`, `list`,
  * `refresh`, `validate`).
  *
  * `dorkos install`, `dorkos update` and `dorkos uninstall` are shorthand for the
@@ -58,6 +58,9 @@ Packages:
                                 (exits 1 when any do, for scripts)
   held-back                   List global packages held back from sessions,
                                 and allow or turn one down
+  link <path>                 Run a package straight from a folder on this
+                                computer, while you work on it
+  unlink <name>               Stop running it from the folder
 
 Sources:
   add <url> [--name <name>]   Register a marketplace source
@@ -79,6 +82,7 @@ Examples:
   dorkos marketplace outdated
   dorkos marketplace update --apply
   dorkos marketplace installed --project .
+  dorkos marketplace link ~/code/my-plugin
   dorkos marketplace add https://github.com/acme/plugins --name acme
   dorkos marketplace refresh dorkos-community
   dorkos marketplace validate https://github.com/dork-labs/marketplace
@@ -176,11 +180,55 @@ Examples:
   dorkos marketplace uninstall --purge code-review-suite
   dorkos marketplace uninstall code-review-suite --approval appr_tok_...
 `,
+  link: `
+Usage: dorkos marketplace link <path> [options]
+
+Run a marketplace package straight from a folder on this computer, so you can
+work on it without reinstalling. It shows the package, the folder, everything
+it runs and what it replaces, then asks before linking. If the folder changes
+while it asks, nothing is linked.
+
+An agent has to get a person's approval first: the command answers with an
+approval id and a token, and you run it again with --approval once the person
+has said yes in DorkOS. An agent is never asked here; the approval is its yes.
+
+Options:
+      --project <path>     Link it for this project only (default: every session)
+      --replace-installed  Set the installed copy aside while linked; unlinking
+                           brings it back
+  -y, --yes                Do not ask first (it still prints what runs)
+      --approval <token>   Retry a link a person approved in DorkOS; like --yes,
+                           it is not asked again here
+      --json               Print the answer as JSON. With no one to ask, a
+                           person adds --yes; an agent does not need it
+
+Examples:
+  dorkos marketplace link ~/code/my-plugin
+  dorkos marketplace link . --project ~/code/web
+  dorkos marketplace link ~/code/flow --replace-installed
+`,
+  unlink: `
+Usage: dorkos marketplace unlink <name> [options]
+
+Stop running a package from a folder on this computer. The installed copy set
+aside when you linked comes back; with none, the package is removed. Your
+folder is never touched. Only you can unlink, not an agent.
+
+Options:
+      --project <path>  Unlink it from this project (for a link made with --project)
+      --json            Print the answer as JSON
+
+Examples:
+  dorkos marketplace unlink my-plugin
+  dorkos marketplace unlink my-plugin --project ~/code/web
+`,
   installed: `
 Usage: dorkos marketplace installed [options]
 
 List every installed marketplace package: its version, its type, and where it
 is installed. A package installed globally and for two agents is three rows.
+A package running from a folder on this computer is marked "dev link" with
+its folder.
 
 Options:
       --project <path>  List what this project sees (global installs plus its own)
@@ -270,7 +318,7 @@ Examples:
 
 /** Every subcommand, in the order the one-line usage names them. */
 const SUBCOMMANDS =
-  'install|update|uninstall|installed|outdated|held-back|check-files|keep-files|add|remove|list|refresh|validate';
+  'install|update|uninstall|installed|outdated|held-back|check-files|keep-files|link|unlink|add|remove|list|refresh|validate';
 
 /**
  * Dispatch a `dorkos marketplace <subcommand>` invocation.
@@ -339,6 +387,16 @@ export async function runMarketplaceDispatcher(
       const { runMarketplaceKeepFiles, parseMarketplaceKeepFilesArgs } =
         await import('./marketplace-keep-files.js');
       return await runMarketplaceKeepFiles(parseMarketplaceKeepFilesArgs(subArgs));
+    }
+    if (subcommand === 'link') {
+      const { runMarketplaceLink, parseMarketplaceLinkArgs } =
+        await import('./marketplace-link.js');
+      return await runMarketplaceLink(parseMarketplaceLinkArgs(subArgs));
+    }
+    if (subcommand === 'unlink') {
+      const { runMarketplaceUnlink, parseMarketplaceUnlinkArgs } =
+        await import('./marketplace-unlink.js');
+      return await runMarketplaceUnlink(parseMarketplaceUnlinkArgs(subArgs));
     }
     if (subcommand === 'add') {
       const { runMarketplaceAdd, parseMarketplaceAddArgs } = await import('./marketplace-add.js');

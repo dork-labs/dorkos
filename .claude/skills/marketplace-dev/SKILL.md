@@ -331,7 +331,7 @@ Extensions receive an `ExtensionAPI` object with methods for:
 
 - `registerComponent(slot, id, component, options?)` — place React component in a slot
 - `registerCommand(id, label, callback, options?)` — add command palette item
-- `registerDialog(id, component)` — register modal dialog
+- `registerDialog(id, component)` — register a modal dialog, closed until the returned `open()`; mounted only while open, closes via `onOpenChange(false)`
 - `registerSettingsTab(id, label, component)` — add settings tab
 - `getState()` / `subscribe(selector, callback)` — read and watch host state (cwd, activeSession, agent)
 - `loadData<T>()` / `saveData<T>(data)` — scoped persistent storage

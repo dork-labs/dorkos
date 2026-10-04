@@ -12,6 +12,8 @@ import type {
   DecisionAnswerResult,
   ExtensionAPI,
   ExtensionDecisionView,
+  ExtensionDialogControls,
+  ExtensionDialogProps,
   ExtensionPageOptions,
   ExtensionPageProps,
   ExtensionPointId,
@@ -109,6 +111,8 @@ describe('extension seam contract', () => {
   it('matches the client seams (pages, status bar, tab marker, navigate) both ways', () => {
     expectTypeOf<ExtensionPointId>().toEqualTypeOf<Contract.ExtensionPointId>();
     expectTypeOf<ExtensionPageProps>().toEqualTypeOf<Contract.ExtensionPageProps>();
+    expectTypeOf<ExtensionDialogProps>().toEqualTypeOf<Contract.ExtensionDialogProps>();
+    expectTypeOf<ExtensionDialogControls>().toEqualTypeOf<Contract.ExtensionDialogControls>();
     expectTypeOf<ExtensionPageOptions>().toEqualTypeOf<Contract.ExtensionPageOptions>();
     expectTypeOf<StatusBarSlotContext>().toEqualTypeOf<Contract.StatusBarSlotContext>();
     expectTypeOf<StatusBarItemOptions>().toEqualTypeOf<Contract.StatusBarItemOptions>();
@@ -119,6 +123,7 @@ describe('extension seam contract', () => {
       Pick<
         ExtensionAPI,
         | 'registerPage'
+        | 'registerDialog'
         | 'registerStatusBarItem'
         | 'setTabMarker'
         | 'navigate'
