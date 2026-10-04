@@ -14,6 +14,17 @@
  */
 export { EXTENSION_TRUST_COPY, extensionConsentCopy } from './lib/consent-copy';
 export {
+  AGENT_TOOL_TIER_LABEL,
+  agentGiftsFromApproval,
+  agentGiftsFromRecord,
+  agentGiftsLine,
+  type AgentGifts,
+  type AgentGiftSkill,
+  type AgentGiftTool,
+  type AgentToolTier,
+} from './lib/agent-gifts';
+export { ExtensionAgentGifts, type ExtensionAgentGiftsProps } from './ui/ExtensionAgentGifts';
+export {
   parseExtensionApprovalSubject,
   canTurnOnInPlace,
   type ExtensionApprovalSubject,

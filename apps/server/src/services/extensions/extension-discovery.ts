@@ -12,6 +12,7 @@ import {
 } from './extension-enable-resolution.js';
 import { isApprovedCopy, isFromTrustedSource } from './extension-load-policy.js';
 import { mergePluginRecords, type DiscoveredRecord } from './extension-precedence.js';
+import { checkDeclaredSkills } from './agent-skills/skill-checks.js';
 import {
   inspectCopy,
   installRootOf,
@@ -597,6 +598,9 @@ export class ExtensionDiscovery {
       const toolChecks = manifest.tools?.length
         ? checkDeclaredTools(manifest).map(summarizeToolCheck)
         : undefined;
+      // Each declared skill is checked against its folder by the harness's own
+      // rules, so the card can say which skill is left out before any sync.
+      const skillChecks = checkDeclaredSkills(extDir, manifest);
 
       // An extension asking to run separately needs server code to run
       // (DOR-2686). The schema cannot see the disk, so the check is here: a
@@ -639,6 +643,7 @@ export class ExtensionDiscovery {
         serverEntryPath: hasServerEntry ? resolvedPath : undefined,
         ...(toolChecks ? { toolChecks } : {}),
         isolation,
+        ...(skillChecks ? { skillChecks } : {}),
       };
     } catch (err) {
       return {

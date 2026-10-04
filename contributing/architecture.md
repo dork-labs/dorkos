@@ -598,6 +598,16 @@ store.set(resolveCaller(req, res).id, 'room', roomId, seq);
 
 There is no `PUT /api/rooms/:id/read-cursor`. It was removed once every client wrote through the generic route; a test in `rooms.test.ts` keeps it gone.
 
+## Capability Registry: a frozen core and a live extension layer
+
+The capability registry (`apps/server/src/services/core/capabilities/registry.ts`) is the one list every agent surface projects its tools from: the in-session MCP server, the external `/mcp` server, the Codex and OpenCode tool lists, `GET /api/capabilities`, `dorkos call` and the permissions pages. It has two layers, and they never mix.
+
+- **The core is composed once and frozen.** `composeRegistry` assembles every DorkOS domain's capabilities at boot, checks their claim tables (ids, MCP names, CLI verbs, HTTP routes) for collisions, and freezes the list. Nothing adds a core capability after boot, and no core domain may use the reserved `ext_` prefix.
+- **Extensions add a live layer on top (DOR-2685).** A running extension's tools reach the registry through `contribute`, never as raw definitions: `extension-contribution.ts` builds each definition field by field from what an author may decide, under the extension's own `ext_<id>` namespace, with `source` naming the extension and the area fixed to **Extension tools**. One extension's tools are checked against the same claim tables and join all together or not at all, and they leave (idempotently) before the extension's own cleanup runs when it stops, reloads, is turned off or is removed. A call to a tool whose extension has stopped gets a plain "not available" tool error.
+- **Everything downstream follows the live list.** The catalog cache and its `catalogVersion` are rebuilt from core plus the current contributions, and `onChange` reports a monotonic surface version that the server broadcasts as `capabilities_changed` on `/api/events`, so the permissions pages re-read and an open Claude Code chat compares its tool list before its next message. The tier and permission gate is the same for both layers: an extension tool is gated exactly like a core one, and a destructive extension tool asks on every call.
+
+Author guide: `contributing/extension-authoring.md` (`ctx.tools`). Spec: `specs/extension-agent-tools-and-skills/`.
+
 ## Per-Agent Tool Visibility
 
 **What a Blocked permission hides from an agent's tool list is decided by permissions (spec `agent-permissions`), not by a tool-group config.** The four `enabledToolGroups` manifest switches and the global `agentContext.*Tools` config section that used to gate this are retired (D13): what an agent may do — and therefore what it is shown and told about — now lives entirely in the ten permission areas (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, DorkOS settings, Safety limits, Permissions, Reach & secrets). The resolution pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:

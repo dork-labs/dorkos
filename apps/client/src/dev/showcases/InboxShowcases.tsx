@@ -20,6 +20,7 @@ import {
   groupActivityRows,
 } from '@/layers/features/inbox';
 import type { AgentVisualSource } from '@/layers/entities/agent';
+import { ExtensionAgentGifts, agentGiftsLine, type AgentGifts } from '@/layers/entities/extension';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { InboxBellPill } from '@/layers/widgets/inbox-bell';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -366,6 +367,26 @@ function InboxRowsShowcase() {
   );
 }
 
+/** What a mail extension would give agents, with one refusal and one skill left out. */
+const MAIL_GIFTS: AgentGifts = {
+  running: false,
+  tools: [
+    { name: 'list_inbox', title: 'List your inbox', tier: 'observe' },
+    { name: 'send_message', title: 'Send an email', tier: 'act' },
+    { name: 'delete_message', title: 'Delete an email', tier: 'destructive' },
+    {
+      name: 'open_ended',
+      title: 'Take anything',
+      tier: 'observe',
+      leftOutReason: 'Its input must list every field.',
+    },
+  ],
+  skills: [
+    { name: 'triage-inbox' },
+    { name: 'old-skill', leftOutReason: 'Its SKILL.md file is missing.' },
+  ],
+};
+
 /**
  * The one short row that asks (DOR-2517): an extension waiting to be turned
  * on, then the same row answered, as the Activity list keeps it.
@@ -393,6 +414,34 @@ function DecisionRowShowcase() {
               onReject: () => {},
             }}
           />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Waiting: one that gives agents tools and skills (DOR-2685)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          <InboxDecisionRow
+            icon={Puzzle}
+            title="Turn on Mail?"
+            why="You installed the mail plugin from dork-labs/marketplace. It runs as you."
+            meta={agentGiftsLine(MAIL_GIFTS) ?? undefined}
+            sourceLine="mail plugin · dork-labs/marketplace"
+            more={<ExtensionAgentGifts gifts={MAIL_GIFTS} variant="list" />}
+            actions={{
+              kind: 'yes-no',
+              approveLabel: 'Turn it on',
+              rejectLabel: 'Not now',
+              onApprove: () => {},
+              onReject: () => {},
+            }}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>The same list as the Settings card draws it, closed until asked</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-[min(30rem,100%)]">
+          <ExtensionAgentGifts gifts={{ ...MAIL_GIFTS, running: true }} />
         </div>
       </ShowcaseDemo>
 

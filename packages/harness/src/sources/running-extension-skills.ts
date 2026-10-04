@@ -255,8 +255,58 @@ function declaresSchedule(frontmatter: Record<string, unknown>): boolean {
   return hasSchedule({ schedule }) || isInvalidSchedule(schedule);
 }
 
+/**
+ * Why a declared skill was left out, as a code a surface can word for a person
+ * (Settings → Extensions says it without the absolute paths `reason` carries).
+ *
+ * - `invalid-name`: the name is not a SKILL.md slug.
+ * - `missing-folder`: `skills/<name>` is not there.
+ * - `not-a-folder`: it is a link, a file, or resolves outside `skills/`.
+ * - `missing-file`: its `SKILL.md` is not there, or is not a regular file.
+ * - `unreadable`: the folder or its `SKILL.md` could not be read.
+ * - `invalid-file`: its `SKILL.md` does not parse as a skill.
+ */
+export type ExtensionSkillDropCode =
+  | 'invalid-name'
+  | 'missing-folder'
+  | 'not-a-folder'
+  | 'missing-file'
+  | 'unreadable'
+  | 'invalid-file';
+
 /** One checked skill, or why it was refused. */
-type SkillCheck = { ok: true; skill: InstalledSkill } | { ok: false; reason: string };
+type SkillCheck =
+  { ok: true; skill: InstalledSkill } | { ok: false; code: ExtensionSkillDropCode; reason: string };
+
+/** Whether a declared extension skill can be projected, and if not, why not. */
+export type ExtensionSkillFolderCheck =
+  { ok: true } | { ok: false; code: ExtensionSkillDropCode; reason: string };
+
+/**
+ * Check one skill an extension declares, by exactly the rules a projection
+ * applies (DOR-2685): first that `skills/` is the extension's own folder
+ * ({@link ownSkillsFolderProblem}), then the skill's own folder and `SKILL.md`.
+ * The server runs it at discovery so Settings can say which skill is left out
+ * and why before any harness sync.
+ *
+ * @param skillsDir - the extension's `skills/` folder, absolute.
+ * @param name - the declared skill name.
+ * @param owner - the extension whose folder `skillsDir` must belong to.
+ * @returns ok, or the code and the full reason it is dropped.
+ */
+export function checkExtensionSkillFolder(
+  skillsDir: string,
+  name: string,
+  owner: { id: string }
+): ExtensionSkillFolderCheck {
+  // A missing `skills/` is judged per skill below ("is not there").
+  if (lstatSync(skillsDir, { throwIfNoEntry: false }) !== undefined) {
+    const problem = ownSkillsFolderProblem(owner.id, skillsDir);
+    if (problem !== undefined) return { ok: false, code: 'not-a-folder', reason: problem };
+  }
+  const checked = checkExtensionSkill(skillsDir, name, join(skillsDir, name));
+  return checked.ok ? { ok: true } : { ok: false, code: checked.code, reason: checked.reason };
+}
 
 /**
  * Check one declared skill of a running extension and describe it.
@@ -277,35 +327,59 @@ type SkillCheck = { ok: true; skill: InstalledSkill } | { ok: false; reason: str
  * @returns the skill, or the reason it is dropped.
  */
 function checkExtensionSkill(skillsDir: string, name: string, sourceDir: string): SkillCheck {
-  if (!validateSlug(name)) return { ok: false, reason: 'its name is not a valid skill name' };
+  if (!validateSlug(name))
+    return { ok: false, code: 'invalid-name', reason: 'its name is not a valid skill name' };
   const dir = join(skillsDir, name);
   const stats = lstatSync(dir, { throwIfNoEntry: false });
-  if (stats === undefined) return { ok: false, reason: `${dir} is not there` };
-  if (stats.isSymbolicLink()) return { ok: false, reason: `${dir} is a link, not a folder` };
-  if (!stats.isDirectory()) return { ok: false, reason: `${dir} is not a folder` };
+  if (stats === undefined)
+    return { ok: false, code: 'missing-folder', reason: `${dir} is not there` };
+  if (stats.isSymbolicLink())
+    return { ok: false, code: 'not-a-folder', reason: `${dir} is a link, not a folder` };
+  if (!stats.isDirectory())
+    return { ok: false, code: 'not-a-folder', reason: `${dir} is not a folder` };
   let realRoot: string;
   let realDir: string;
   try {
     realRoot = realpathSync(skillsDir);
     realDir = realpathSync(dir);
   } catch (err) {
-    return { ok: false, reason: `${dir} could not be read (${messageOf(err)})` };
+    return {
+      ok: false,
+      code: 'unreadable',
+      reason: `${dir} could not be read (${messageOf(err)})`,
+    };
   }
   if (!isInside(realDir, realRoot) || realDir === realRoot) {
-    return { ok: false, reason: `${dir} is outside the extension's skills folder` };
+    return {
+      ok: false,
+      code: 'not-a-folder',
+      reason: `${dir} is outside the extension's skills folder`,
+    };
   }
   const file = join(dir, 'SKILL.md');
   const fileStats = lstatSync(file, { throwIfNoEntry: false });
-  if (fileStats === undefined) return { ok: false, reason: `${file} is not there` };
-  if (!fileStats.isFile()) return { ok: false, reason: `${file} is not a regular file` };
+  if (fileStats === undefined)
+    return { ok: false, code: 'missing-file', reason: `${file} is not there` };
+  if (!fileStats.isFile())
+    return { ok: false, code: 'missing-file', reason: `${file} is not a regular file` };
   let content: string;
   try {
     content = readTextFileWithinSync(file, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
   } catch (err) {
-    return { ok: false, reason: `${file} could not be read (${messageOf(err)})` };
+    return {
+      ok: false,
+      code: 'unreadable',
+      reason: `${file} could not be read (${messageOf(err)})`,
+    };
   }
   const parsed = parseSkillFile(file, content, SkillFrontmatterSchema);
-  if (!parsed.ok) return { ok: false, reason: `${file} is not a valid skill: ${parsed.error}` };
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      code: 'invalid-file',
+      reason: `${file} is not a valid skill: ${parsed.error}`,
+    };
+  }
   const frontmatter = readRawFrontmatter(content)?.data ?? {};
   return {
     ok: true,
@@ -327,24 +401,38 @@ function checkExtensionSkill(skillsDir: string, name: string, sourceDir: string)
  * `.dork/extensions/<id>`, and a verified snapshot of one), and still inside
  * that folder once links are resolved, so a `skills` link out of the extension
  * never becomes a source.
+ *
+ * @returns why it is not, or `undefined` when it is.
  */
-function isOwnSkillsFolder(entry: RunningExtensionSkillsEntry): boolean {
-  const skillsDir = resolve(entry.skillsDir);
+function ownSkillsFolderProblem(id: string, skillsDirIn: string): string | undefined {
+  const skillsDir = resolve(skillsDirIn);
   const extensionDir = dirname(skillsDir);
   if (
     basename(skillsDir) !== 'skills' ||
-    basename(extensionDir) !== entry.id ||
+    basename(extensionDir) !== id ||
     basename(dirname(extensionDir)) !== 'extensions'
   ) {
-    return false;
+    return `${skillsDir} is not the skills folder of the "${id}" extension's own folder`;
   }
   try {
     const real = realpathSync(skillsDir);
     const realExtension = realpathSync(extensionDir);
-    return real !== realExtension && isInside(real, realExtension);
-  } catch {
-    return false;
+    if (real !== realExtension && isInside(real, realExtension)) return undefined;
+    return `${skillsDir} links outside the "${id}" extension's folder`;
+  } catch (err) {
+    return `${skillsDir} could not be read (${messageOf(err)})`;
   }
+}
+
+/** The warning one dropped extension skill earns. */
+function droppedSkillWarning(id: string, name: string, reason: string): ProjectionWarning {
+  return {
+    artifact: 'skill',
+    harness: EXTENSION_WARNING_ATTRIBUTION,
+    harnessAgnostic: true,
+    name: `${id}__${name}`,
+    reason: `the "${id}" extension's skill "${name}" was left out: ${reason}`,
+  };
 }
 
 /**
@@ -364,7 +452,15 @@ function toPackages(
     // A skills folder that is gone contributes nothing, so the next sweep
     // removes its links: the extension stopped, or its files went.
     if (lstatSync(entry.skillsDir, { throwIfNoEntry: false }) === undefined) continue;
-    if (!isOwnSkillsFolder(entry)) continue;
+    // A `skills/` that is not the extension's own folder contributes nothing,
+    // and says so once per declared skill, as discovery does.
+    const folderProblem = ownSkillsFolderProblem(entry.id, entry.skillsDir);
+    if (folderProblem !== undefined) {
+      for (const name of [...entry.skills].sort()) {
+        warnings.push(droppedSkillWarning(entry.id, name, folderProblem));
+      }
+      continue;
+    }
     const skills: InstalledSkill[] = [];
     for (const name of [...entry.skills].sort()) {
       const checked = checkExtensionSkill(entry.skillsDir, name, sourceOf(entry, name));
@@ -372,13 +468,7 @@ function toPackages(
         skills.push(checked.skill);
         continue;
       }
-      warnings.push({
-        artifact: 'skill',
-        harness: EXTENSION_WARNING_ATTRIBUTION,
-        harnessAgnostic: true,
-        name: `${entry.id}__${name}`,
-        reason: `the "${entry.id}" extension's skill "${name}" was left out: ${checked.reason}`,
-      });
+      warnings.push(droppedSkillWarning(entry.id, name, checked.reason));
     }
     if (skills.length === 0) continue;
     packages.push({

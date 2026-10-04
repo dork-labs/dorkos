@@ -3112,6 +3112,28 @@
           "roomId": {
             "type": "string"
           },
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ]
+          },
           "requestedAt": {
             "type": "string"
           },
@@ -10879,6 +10901,20 @@
           },
           "added": {
             "$ref": "#/components/schemas/ExtensionApprovalAdditions"
+          },
+          "agentTools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentToolSummary"
+            },
+            "default": []
+          },
+          "agentSkills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
+            },
+            "default": []
           }
         },
         "required": [
@@ -10890,9 +10926,7 @@
           "runsInServer",
           "adds",
           "since",
-          "why",
-          "permissions",
-          "added"
+          "why"
         ]
       },
       "ExtensionApprovalPermissions": {
@@ -10939,6 +10973,7 @@
             "type": "boolean"
           }
         },
+        "default": null,
         "required": [
           "runtime",
           "net",
@@ -10972,11 +11007,56 @@
             "type": "boolean"
           }
         },
+        "default": null,
         "required": [
           "net",
           "run",
           "agents",
           "runtime"
+        ]
+      },
+      "ExtensionAgentToolSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "refusedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "tier"
+        ]
+      },
+      "ExtensionAgentSkillSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "droppedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ]
       },
       "ExtensionTrustOffer": {

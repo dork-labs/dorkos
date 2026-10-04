@@ -276,9 +276,12 @@ describe('a local extension skill at project scope', () => {
         skills: ['triage-inbox'],
       },
     ]);
-    expect(
-      project(repo, { dorkHome: home }).actions.some((a) => a.name === 'mail__triage-inbox')
-    ).toBe(false);
+    const linked = project(repo, { dorkHome: home });
+    expect(linked.actions.some((a) => a.name === 'mail__triage-inbox')).toBe(false);
+    // Never silently: the same warning a dropped skill earns, as Settings says.
+    expect(linked.warnings.find((w) => w.name === 'mail__triage-inbox')?.reason).toMatch(
+      /links outside the "mail" extension's folder/
+    );
   });
 
   it('keeps the links when the ledger is garbled or deleted, and sweeps them once it says the extension stopped', () => {

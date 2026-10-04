@@ -76,7 +76,10 @@ export interface InboxDecisionRowProps {
   why?: string;
   /** The muted mono line: "flow plugin · dork-labs/marketplace", or the extension's name. */
   sourceLine?: string;
-  /** A muted line of timing: "since 09:14 · asked after 1h". */
+  /**
+   * A muted line under the why: timing ("since 09:14 · asked after 1h"), or a
+   * short fact about what is asked ("Would give agents 3 tools and 1 skill").
+   */
   meta?: string;
   /** A line that needs the reader: "The agent couldn't go ahead. It needs you." */
   notice?: string;

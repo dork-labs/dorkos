@@ -156,5 +156,6 @@ export function toPublic(
     ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),
     ...(tools ? { tools } : {}),
     isolation: record.isolation ?? null,
+    ...(record.skillChecks ? { skills: record.skillChecks.map((skill) => ({ ...skill })) } : {}),
   };
 }

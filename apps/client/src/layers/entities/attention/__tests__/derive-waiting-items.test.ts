@@ -19,6 +19,8 @@ const FLOW: PendingExtensionApproval = {
   why: 'You installed the flow plugin. It runs as you.',
   permissions: { runtime: 'in-process', net: [], run: [], agents: false, hasPage: false },
   added: null,
+  agentTools: [],
+  agentSkills: [],
 };
 
 describe('deriveWaitingItems — extensions waiting to be turned on', () => {

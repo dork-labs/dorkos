@@ -3228,7 +3228,14 @@ async function start() {
     projectForFolder: (cwd) => projectRegistry.peek(cwd),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
-      if (capability) return { title: capability.title, tier: capability.tier };
+      if (capability) {
+        return {
+          title: capability.title,
+          tier: capability.tier,
+          // An extension's tool names its extension, so its card can say so.
+          ...(capability.source ? { source: capability.source } : {}),
+        };
+      }
       // Two ids that are not capabilities anyone can invoke: the card raised when
       // an installed package wants to write shell commands into a coding agent's
       // hook files (DOR-522), and the one a global package raises before its

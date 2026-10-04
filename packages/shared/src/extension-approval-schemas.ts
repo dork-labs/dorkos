@@ -55,6 +55,41 @@ export const ExtensionApprovalAdditionsSchema = z
 
 /** What an extension asks for that its last approval did not cover. */
 export type ExtensionApprovalAdditions = z.infer<typeof ExtensionApprovalAdditionsSchema>;
+/**
+ * One tool an extension would give agents, as the approval row lists it
+ * (DOR-2685). Built by the server from discovery's check of the manifest.
+ */
+export const ExtensionAgentToolSummarySchema = z
+  .object({
+    /** The tool's name inside the extension, e.g. `send_message`. Lowercase words and underscores. */
+    name: z.string().min(1),
+    /**
+     * The title a person reads, e.g. "Send an email". Checked to one safe line
+     * only when the tool was accepted, so a surface shows `name` for a refused one.
+     */
+    title: z.string().min(1),
+    /** Its permission tier, which picks the row's label ("Reads", "Acts", "Asks you first"). */
+    tier: z.enum(['observe', 'act', 'destructive']),
+    /** Why DorkOS refused it, when it did. A refused tool never reaches an agent. */
+    refusedReason: z.string().optional(),
+  })
+  .openapi('ExtensionAgentToolSummary');
+
+/** One tool an extension would give agents. */
+export type ExtensionAgentToolSummary = z.infer<typeof ExtensionAgentToolSummarySchema>;
+
+/** One skill an extension would give agents, as the approval row lists it (DOR-2685). */
+export const ExtensionAgentSkillSummarySchema = z
+  .object({
+    /** The skill's folder name, e.g. "tidy-notes". */
+    name: z.string().min(1),
+    /** Why it is left out, when it is. A dropped skill never reaches an agent. */
+    droppedReason: z.string().optional(),
+  })
+  .openapi('ExtensionAgentSkillSummary');
+
+/** One skill an extension would give agents. */
+export type ExtensionAgentSkillSummary = z.infer<typeof ExtensionAgentSkillSummarySchema>;
 
 /** One extension waiting for a person to allow it to run. */
 export const PendingExtensionApprovalSchema = z
@@ -90,15 +125,27 @@ export const PendingExtensionApprovalSchema = z
      * lists are empty); `subprocess` is limited to the lists. `run` says, per
      * program, whether it was found on this computer. `hasPage` says it has
      * screens, which run in DorkOS with the person's access either way.
-     * `null` only when DorkOS has no record of what it declares.
+     * `null` when DorkOS has no record of what it declares — which is also
+     * what a server one version behind, that never sends it, reads as, so
+     * one missing field cannot empty the whole inbox.
      */
-    permissions: ExtensionApprovalPermissionsSchema.nullable(),
+    permissions: ExtensionApprovalPermissionsSchema.nullable().default(null),
     /**
      * What it asks for that the person's last approval of this copy did not
      * cover (DOR-2686), so a re-ask card leads with what changed. `null` on a
-     * first ask, or when nothing in the permission set changed.
+     * first ask, or when nothing in the permission set changed. Defaults to
+     * `null` for a server that never sends it.
      */
-    added: ExtensionApprovalAdditionsSchema.nullable(),
+    added: ExtensionApprovalAdditionsSchema.nullable().default(null),
+    /**
+     * The tools it would give agents once it runs, in manifest order, so a
+     * person sees each tool and its tier before saying yes (DOR-2685).
+     * Defaults to empty so an older server that never sends it still lists
+     * every waiting extension instead of failing the whole response.
+     */
+    agentTools: z.array(ExtensionAgentToolSummarySchema).default([]),
+    /** The skills it would give agents once it runs, in manifest order (DOR-2685). Defaults to empty. */
+    agentSkills: z.array(ExtensionAgentSkillSummarySchema).default([]),
   })
   .openapi('PendingExtensionApproval');
 

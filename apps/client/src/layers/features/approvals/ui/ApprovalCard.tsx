@@ -261,6 +261,17 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               </Badge>
             )}
           </div>
+          {/* An extension's tool says which extension it is from (DOR-2685),
+              right under its title. The name was checked to one plain line
+              when the extension started, and is drawn as text. */}
+          {approval.source && (
+            <p
+              data-slot="approval-source"
+              className="text-muted-foreground mt-0.5 text-xs break-words"
+            >
+              From {approval.source.name}
+            </p>
+          )}
           {/* WHAT this would act on, named, directly under the title — the first
               thing the eye lands on after "cannot be undone". Above the summary
               and never instead of it: the summary is still the whole sentence,

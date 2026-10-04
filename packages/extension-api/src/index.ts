@@ -100,6 +100,7 @@ export type {
   ExtensionToolStatus,
   ExtensionIsolation,
   ExtensionResolvedProgram,
+  ExtensionSkillStatus,
 } from './types.js';
 export type {
   SecretStore,
