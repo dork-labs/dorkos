@@ -360,6 +360,32 @@ async function describeCopy(record: ExtensionRecord, dorkHome: string): Promise<
     added: nouns.length > 0 ? `${joinPlainly(nouns)} added` : null,
     since,
     why: whyLine(record, name, nouns, provenance),
+    ...agentGiftsOf(record),
+  };
+}
+
+/**
+ * What the copy would give agents once it runs: each declared tool with its
+ * tier, and each declared skill, with the reason for any DorkOS refused or left
+ * out (DOR-2685). Read from discovery's checks, which ran before any of its
+ * code, so the row can show them before the person says yes.
+ *
+ * @param record - The extension record.
+ */
+function agentGiftsOf(
+  record: ExtensionRecord
+): Pick<PendingExtensionApproval, 'agentTools' | 'agentSkills'> {
+  return {
+    agentTools: (record.toolChecks ?? []).map((check) => ({
+      name: check.name,
+      title: check.title,
+      tier: check.tier,
+      ...(check.ok ? {} : { refusedReason: check.reason ?? 'DorkOS refused it.' }),
+    })),
+    agentSkills: (record.skillChecks ?? []).map((skill) => ({
+      name: skill.name,
+      ...(skill.status === 'dropped' && skill.reason ? { droppedReason: skill.reason } : {}),
+    })),
   };
 }
 

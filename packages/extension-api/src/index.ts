@@ -77,6 +77,7 @@ export type {
   ExtensionOrigin,
   ExtensionToolCheckSummary,
   ExtensionToolStatus,
+  ExtensionSkillStatus,
 } from './types.js';
 export type {
   SecretStore,

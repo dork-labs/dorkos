@@ -55,7 +55,11 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
-import { isExtensionCapabilityId, type CapabilityTier } from '@dorkos/shared/capabilities';
+import {
+  isExtensionCapabilityId,
+  type CapabilitySource,
+  type CapabilityTier,
+} from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
@@ -312,7 +316,7 @@ export interface ApprovalConnectorAuthority {
  */
 type CapabilityDescriptorLookup = (
   capabilityId: string
-) => { title: string; tier: CapabilityTier } | undefined;
+) => { title: string; tier: CapabilityTier; source?: CapabilitySource } | undefined;
 
 /** Construction options for {@link ApprovalService}. */
 export interface ApprovalServiceOptions {
@@ -624,12 +628,15 @@ function recordedArea(area: string | null): PermissionAreaId | null {
  * @param roomId - The room whose turn raised it, when there is one.
  * @param suggestAlways - Whether the card should suggest Always allow; asked
  *   only of a card that offers it.
+ * @param projectForFolder - The project an asking session's folder belongs to.
+ * @param sourceOf - The running extension an `ext_` capability comes from.
  */
 function toPendingApproval(
   row: ApprovalRow,
   roomId?: string,
   suggestAlways?: (row: ApprovalRow) => { allowedThisWeek: number } | null,
-  projectForFolder?: (cwd: string) => ProjectRef | null | undefined
+  projectForFolder?: (cwd: string) => ProjectRef | null | undefined,
+  sourceOf?: (capabilityId: string) => CapabilitySource | undefined
 ): PendingApproval {
   const alwaysOffered = isAlwaysOffered(row);
   const suggestion = alwaysOffered ? (suggestAlways?.(row) ?? null) : null;
@@ -637,6 +644,11 @@ function toPendingApproval(
     ? row.requestingCwd
       ? projectForFolder(row.requestingCwd)
       : null
+    : undefined;
+  // Only an extension's tool names a source, and only while it runs: the card
+  // then says which extension it is from. Read live, like the room above.
+  const source = isExtensionCapabilityId(row.capabilityId)
+    ? sourceOf?.(row.capabilityId)
     : undefined;
   return {
     approvalId: row.id,
@@ -669,6 +681,7 @@ function toPendingApproval(
     ...(row.blockedRequest && row.requestReason ? { requestReason: row.requestReason } : {}),
     ...(roomId ? { roomId } : {}),
     ...(project !== undefined ? { project } : {}),
+    ...(source ? { source: { kind: source.kind, id: source.id, name: source.name } } : {}),
     requestedAt: row.createdAt,
     expiresAt: row.expiresAt,
   };
@@ -1337,7 +1350,8 @@ export class ApprovalService {
       row,
       this.roomFor(row.requestingSessionId),
       (r) => this.suggestsAlways(r),
-      this.options.projectForFolder
+      this.options.projectForFolder,
+      (capabilityId) => this.options.describeCapability?.(capabilityId)?.source
     );
   }
 

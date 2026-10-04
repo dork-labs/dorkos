@@ -634,6 +634,59 @@ describe('an extension waiting to run asks in the inbox', () => {
   });
 });
 
+describe('what it would give agents (DOR-2685)', () => {
+  /**
+   * Install a direct copy that declares tools and skills, then ask what is
+   * waiting. A person decides on the row, so each tool, its tier and every
+   * refusal has to be on it before the extension has run at all.
+   */
+  async function installWithTools(): Promise<Record<string, unknown>> {
+    const fixture = path.resolve(HERE, '../__fixtures__/agent-tools-ext');
+    const dir = path.join(dorkHome, 'extensions', 'agent-tools-ext');
+    fs.cpSync(fixture, dir, { recursive: true });
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'extension.json'), 'utf-8'));
+    // One tool DorkOS refuses (an open input schema) and one declared skill
+    // with no folder, so the row carries both reasons.
+    manifest.tools.push({
+      name: 'open_ended',
+      title: 'Take anything',
+      description: 'Accepts any input at all.',
+      tier: 'observe',
+      inputSchema: { type: 'object' },
+    });
+    manifest.skills.push('missing-skill');
+    fs.writeFileSync(path.join(dir, 'extension.json'), JSON.stringify(manifest));
+    await manager.enable('agent-tools-ext');
+    await queue.sync();
+    const approvals = await pending();
+    expect(approvals).toHaveLength(1);
+    return approvals[0];
+  }
+
+  it('lists each tool with its tier, and each skill, before it ever runs', async () => {
+    const approval = await installWithTools();
+
+    expect(approval.agentTools).toEqual([
+      { name: 'echo', title: 'Echo a message', tier: 'observe' },
+      { name: 'bump_counter', title: 'Add to the counter', tier: 'act' },
+      { name: 'delete_note', title: 'Delete a note', tier: 'destructive' },
+      expect.objectContaining({ name: 'open_ended', refusedReason: expect.any(String) }),
+    ]);
+    expect(approval.agentSkills).toEqual([
+      { name: 'tidy-notes' },
+      { name: 'missing-skill', droppedReason: 'Its folder is missing from skills/.' },
+    ]);
+  });
+
+  it('says nothing is given when the manifest declares no tools or skills', async () => {
+    await installPlugin();
+
+    const [approval] = await pending();
+    expect(approval.agentTools).toEqual([]);
+    expect(approval.agentSkills).toEqual([]);
+  });
+});
+
 describe('the why line', () => {
   it('uses the purpose after what it adds', async () => {
     await installPlugin('flow', {

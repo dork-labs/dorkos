@@ -3112,6 +3112,28 @@
           "roomId": {
             "type": "string"
           },
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ]
+          },
           "requestedAt": {
             "type": "string"
           },
@@ -10873,6 +10895,18 @@
           },
           "why": {
             "type": "string"
+          },
+          "agentTools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentToolSummary"
+            }
+          },
+          "agentSkills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
+            }
           }
         },
         "required": [
@@ -10884,7 +10918,53 @@
           "runsInServer",
           "adds",
           "since",
-          "why"
+          "why",
+          "agentTools",
+          "agentSkills"
+        ]
+      },
+      "ExtensionAgentToolSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "refusedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "tier"
+        ]
+      },
+      "ExtensionAgentSkillSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "droppedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ]
       },
       "ExtensionTrustOffer": {
