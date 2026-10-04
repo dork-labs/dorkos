@@ -50,6 +50,7 @@ import runtimesRouter from '../runtimes.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { projectRegistry } from '../../services/projects/project-registry.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 
@@ -202,6 +203,21 @@ describe('GET /api/runtimes/claude-code/account-eligibility', () => {
     });
     expect(row(res.body, 'personal')).toMatchObject({ eligible: true });
     expect(row(res.body, 'default')).toMatchObject({ eligible: true });
+  });
+
+  // Purpose: any caller may read this GET, so it must never be a way to make
+  // the registry remember a folder (DOR-2547).
+  it('names a folder the registry does not know without recording it, even for an agent', async () => {
+    const unrecorded = path.join(tmp, 'unrecorded.repo');
+    await fs.mkdir(unrecorded);
+    gitInit(unrecorded);
+    const res = await request(server)
+      .get('/api/runtimes/claude-code/account-eligibility')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .query({ project: path.join(unrecorded) });
+    expect(res.status).toBe(200);
+    expect(res.body.project).toEqual({ root: unrecorded, name: 'unrecorded.repo' });
+    expect(projectRegistry.get(unrecorded)).toBeUndefined();
   });
 
   it('a folder in no repository is also no project', async () => {

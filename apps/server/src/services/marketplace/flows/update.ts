@@ -53,7 +53,7 @@ import { disclosedEffectsOf, type DisclosedEffects } from '../preview/disclosed-
 import { packageContentHash } from '../lib/content-hash.js';
 import { readRunnableDeclarations } from '../preview/permission-preview.js';
 import type { InstallationRecord } from '../installed-scanner.js';
-import { Slots } from '../lib/slots.js';
+import { Slots } from '../../../lib/concurrency/slots.js';
 import {
   compareVersions,
   installedVersionOf,

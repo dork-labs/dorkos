@@ -571,7 +571,10 @@ import { onSessionAccountLaunched } from './services/runtimes/claude-code/accoun
 import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
 import { renameAccountInProjectAccounts } from './services/core/usage/account-eligibility-writes.js';
-import { warnMalformedAccountRules } from './services/core/usage/account-eligibility.js';
+import {
+  accountRuleRoots,
+  warnMalformedAccountRules,
+} from './services/core/usage/account-eligibility.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
 import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
@@ -1162,6 +1165,8 @@ async function start() {
   // here, before extensions start, because a name handed out earlier could
   // belong to a saved project and would change on the next read.
   projectRegistry.attachStore(new KnownProjectsStore(db));
+  // A root an account rule names is never forgotten by the lookup cap.
+  projectRegistry.protectRoots(() => accountRuleRoots(configManager.get('runtimes')?.claudeCode));
 
   // The inbox extensions ask a person through (`ctx.inbox`, spec
   // `flow-multiproject` §7). Before extensions start, so an extension that
