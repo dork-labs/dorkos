@@ -613,6 +613,11 @@ describe('directMessageTitle', () => {
   it('answers nothing for nobody', () => {
     expect(directMessageTitle([])).toBe('');
   });
+
+  it('answers nothing for an empty or sparse singleton name', () => {
+    expect(directMessageTitle([''])).toBe('');
+    expect(directMessageTitle(Array<string>(1))).toBe('');
+  });
 });
 
 describe('isDirectMessageTitleDerived', () => {
@@ -622,7 +627,7 @@ describe('isDirectMessageTitleDerived', () => {
   });
 
   it('recognises one written in a different order', () => {
-    // The cockpit names a conversation in the order the agents were picked; the
+    // The app names a conversation in the order the agents were picked; the
     // server reads the roster back in its own order. Compared as one string this
     // would read as a person's rename about half the time.
     expect(isDirectMessageTitleDerived('Ana and Kai', ['Kai', 'Ana'])).toBe(true);

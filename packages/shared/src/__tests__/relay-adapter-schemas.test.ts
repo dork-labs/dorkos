@@ -282,6 +282,31 @@ describe('AdapterBindingSchema — bridge field (chats-as-channels spec §3.1)',
     expect(result.success).toBe(true);
   });
 
+  it.each([
+    { name: 'AdapterBindingSchema', schema: AdapterBindingSchema },
+    { name: 'CreateBindingRequestSchema', schema: CreateBindingRequestSchema },
+  ])('$name accepts a present undefined chatId while the bridge is off', ({ schema }) => {
+    const result = schema.safeParse({ ...baseBinding, bridge: 'off', chatId: undefined });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.bridge).toBe('off');
+      expect(result.data).toHaveProperty('chatId', undefined);
+    }
+  });
+
+  it.each([
+    { name: 'AdapterBindingSchema', schema: AdapterBindingSchema },
+    { name: 'CreateBindingRequestSchema', schema: CreateBindingRequestSchema },
+  ])('$name rejects a present undefined chatId for a room bridge', ({ schema }) => {
+    const result = schema.safeParse({ ...baseBinding, bridge: 'room', chatId: undefined });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual([
+        expect.objectContaining({ message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE, path: ['chatId'] }),
+      ]);
+    }
+  });
+
   it('UpdateBindingRequestSchema accepts bridge and roomId as partial fields, unrefined', () => {
     // A PATCH body is partial by design (spec §3.1's note on
     // `UpdateBindingRequestSchema`): setting `bridge` alone, with no `chatId`
@@ -304,6 +329,7 @@ describe('bridgeAllowsChatId — the merged-state predicate the PATCH route uses
   it('allows bridge: off regardless of chatId', () => {
     expect(bridgeAllowsChatId({ bridge: 'off' })).toBe(true);
     expect(bridgeAllowsChatId({ bridge: 'off', chatId: '' })).toBe(true);
+    expect(bridgeAllowsChatId({ bridge: 'off', chatId: undefined })).toBe(true);
   });
 
   it('allows bridge: room with a non-empty chatId', () => {
@@ -314,6 +340,7 @@ describe('bridgeAllowsChatId — the merged-state predicate the PATCH route uses
     expect(bridgeAllowsChatId({ bridge: 'room' })).toBe(false);
     expect(bridgeAllowsChatId({ bridge: 'room', chatId: '' })).toBe(false);
     expect(bridgeAllowsChatId({ bridge: 'room', chatId: null })).toBe(false);
+    expect(bridgeAllowsChatId({ bridge: 'room', chatId: undefined })).toBe(false);
   });
 });
 
