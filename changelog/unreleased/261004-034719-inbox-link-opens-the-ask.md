@@ -3,6 +3,7 @@ covers:
   - 'fix(client): let a link open the Inbox on the ask it names (DOR-2577)'
   - 'fix(client): solid ring on the linked ask, and list inbox as a dialog param (DOR-2577)'
   - 'fix(client): open for a link read before the bell mounts; respect where focus is (DOR-2577 review)'
+  - 'fix(client): late ask takes focus unless typing; expire stale Inbox links (DOR-2577 re-review)'
 ---
 
 ### Fixed
