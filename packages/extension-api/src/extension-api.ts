@@ -24,6 +24,30 @@ export type ExtensionPointId =
   | 'right-panel'
   | 'status-bar';
 
+/**
+ * Props the host gives a dialog registered with `registerDialog`. The host
+ * mounts the dialog only while it is open, so `open` is always true when your
+ * component renders; it is passed for components shared with other hosts.
+ */
+export interface ExtensionDialogProps {
+  /** Whether the dialog is open. Always true while the host has it mounted. */
+  readonly open: boolean;
+  /**
+   * Report a change. Call `onOpenChange(false)` when the person closes the
+   * dialog (Escape, a click outside, your own close button); the host then
+   * unmounts it. Never throws.
+   */
+  readonly onOpenChange: (open: boolean) => void;
+}
+
+/** Controls returned by `registerDialog`. Safe to call before the dialog first renders. */
+export interface ExtensionDialogControls {
+  /** Show the dialog. Does nothing when it is already open. */
+  open(): void;
+  /** Hide and unmount the dialog. Does nothing when it is already closed. */
+  close(): void;
+}
+
 /** A project as core knows it: a git main checkout. */
 export interface ProjectRef {
   /** Absolute, canonical path of the main checkout. */
@@ -246,6 +270,9 @@ export interface ExtensionAPI {
    * Register a React component in a UI slot.
    * Returns an unsubscribe function (auto-called on deactivate).
    *
+   * The `dialog` slot is not registered here: a dialog needs controls to open,
+   * so use `registerDialog`. The host warns and adds nothing.
+   *
    * @param slot - The UI slot to contribute to.
    * @param id - Slot-local id; the host namespaces it as `${extId}:${id}`.
    * @param component - The React component to render.
@@ -292,10 +319,24 @@ export interface ExtensionAPI {
   ): () => void;
 
   /**
-   * Register a dialog component.
-   * Returns an object with open/close controls.
+   * Register a dialog, closed until you open it.
+   *
+   * The host keeps whether it is open. It mounts `component` while the dialog
+   * is open and unmounts it once it closes, so the component never needs to
+   * hide itself, and its state starts fresh each time it opens. The component
+   * draws its own dialog (backdrop, frame, Escape) and reports a close through
+   * `onOpenChange(false)`; see {@link ExtensionDialogProps}.
+   *
+   * Removed when the extension deactivates.
+   *
+   * @param id - Unique within this extension.
+   * @param component - The dialog, mounted only while it is open.
+   * @returns Controls that open and close it, from anywhere and at any time.
    */
-  registerDialog(id: string, component: ComponentType): { open: () => void; close: () => void };
+  registerDialog(
+    id: string,
+    component: ComponentType<ExtensionDialogProps>
+  ): ExtensionDialogControls;
 
   /**
    * Register a tab in the settings dialog.

@@ -38,7 +38,8 @@ interface ExtensionAPI {
   // strip falls back to a default puzzle-piece.
   registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }): () => void;
   registerCommand(id: string, label: string, callback: () => void, options?: { icon?: string; shortcut?: string }): () => void;
-  registerDialog(id: string, component: ComponentType): { open: () => void; close: () => void };
+  // Mounted only while open; draw your own frame, call onOpenChange(false) to close.
+  registerDialog(id: string, component: ComponentType<{ onOpenChange: (open: boolean) => void }>): { open: () => void; close: () => void };
   registerSettingsTab(id: string, label: string, component: ComponentType): () => void;
 
   // --- UI Control ---

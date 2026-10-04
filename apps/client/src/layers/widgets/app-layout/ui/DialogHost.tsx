@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import {
   useAppStore,
   useSlotContributions,
@@ -6,6 +6,7 @@ import {
   useTasksDeepLink,
   useProfileDeepLink,
   type DialogContribution,
+  type DialogOpenState,
 } from '@/layers/shared/model';
 
 /**
@@ -49,10 +50,16 @@ function useDialogUrlSignal(urlParam: DialogContribution['urlParam']): {
  * dual signal — the store flag (via `openStateKey`) OR the URL signal (via
  * `urlParam`). Closing clears both so deep-linked dialogs don't stick around.
  */
-function RegistryDialog({ contribution }: { contribution: DialogContribution }) {
-  const storeOpen = useAppStore((s) => s[contribution.openStateKey as keyof typeof s] as boolean);
+function StoreDialog({
+  contribution,
+  openStateKey,
+}: {
+  contribution: DialogContribution;
+  openStateKey: string;
+}) {
+  const storeOpen = useAppStore((s) => s[openStateKey as keyof typeof s] as boolean);
   const setStoreOpen = useAppStore(
-    (s) => s[toSetterKey(contribution.openStateKey) as keyof typeof s] as (open: boolean) => void
+    (s) => s[toSetterKey(openStateKey) as keyof typeof s] as (open: boolean) => void
   );
 
   const urlSignal = useDialogUrlSignal(contribution.urlParam);
@@ -76,6 +83,32 @@ function RegistryDialog({ contribution }: { contribution: DialogContribution }) 
 
   const Component = contribution.component;
   return <Component open={open} onOpenChange={onOpenChange} />;
+}
+
+/**
+ * Renders a dialog that keeps its own open flag (an extension dialog). It is
+ * mounted only while open: an extension cannot be trusted to honour `open`, and
+ * one that ignored it would otherwise sit on screen for good.
+ */
+function OwnStateDialog({
+  contribution,
+  openState,
+}: {
+  contribution: DialogContribution;
+  openState: DialogOpenState;
+}) {
+  const open = useSyncExternalStore(openState.subscribe, openState.getSnapshot);
+  const Component = contribution.component;
+  if (!open) return null;
+  return <Component open onOpenChange={openState.set} />;
+}
+
+/** Renders one registry dialog from whichever open state it keeps. */
+function RegistryDialog({ contribution }: { contribution: DialogContribution }) {
+  if (contribution.openState) {
+    return <OwnStateDialog contribution={contribution} openState={contribution.openState} />;
+  }
+  return <StoreDialog contribution={contribution} openStateKey={contribution.openStateKey} />;
 }
 
 /**
