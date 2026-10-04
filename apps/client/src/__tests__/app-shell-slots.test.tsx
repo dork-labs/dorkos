@@ -303,7 +303,10 @@ let mockPendingApprovals: Array<{ approvalId: string }> = [];
 let mockApprovalsError = false;
 // The queue itself is an ENTITY now, so its stub lives on the entity — the
 // approvals feature owns the cards it is rendered into and nothing else.
-vi.mock('@/layers/entities/attention', () => ({
+vi.mock('@/layers/entities/attention', async () => ({
+  // Pure: the sentence the pill's popover says about the queue, kept real.
+  describeWaitingQueue: (await import('@/layers/entities/attention/model/describe-waiting-queue'))
+    .describeWaitingQueue,
   // Nothing waiting on anybody, and nothing on its way out: the tray and the
   // pill both read these now.
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
@@ -330,6 +333,7 @@ vi.mock('@/layers/entities/attention', () => ({
       id: `approval:${a.approvalId}`,
       kind: 'permission-prompt' as const,
     })),
+    isLoading: false,
     isError: mockApprovalsError,
     retry: vi.fn(),
   }),
