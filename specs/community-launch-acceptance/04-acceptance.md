@@ -10,23 +10,22 @@ This file holds ids, digests, versions, pass or fail, and messages with names re
 
 ## Summary
 
-| Row | Acceptance item                              | Status  | Evidence                                                                                                                         | Release |
-| --- | -------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| A1  | Fresh account path                           | PENDING | L4 not yet run (operator only)                                                                                                   | n/a     |
-| A2  | Interruption and resume                      | PASS    | L3 (c): Control-C during `fly deploy`, then one immediate `--resume` that finished. Sub-case DOR-2701 pending                    | v0.97.0 |
-| A3  | Failed provisioning                          | PASS    | L3 (c): the recovery table after the stop matched the real inventory line by line, then resumed to completion                    | v0.97.0 |
-| A4  | Non-admin credentials                        | PASS    | L3 (a) Fly read-only token refused at the first write; L3 (b) Neon project-scoped key stopped before consent (operator decision) | v0.97.0 |
-| A5  | First two people and one local agent         | PASS    | L2 gate receipt `dorkos-gate-0781c780f1f1` (`secondMemberProof`); driver run `run-1791067459626` steps 5–13, 20, 22              | v0.96.0 |
-| A6  | Backup and upgrade guidance                  | PASS    | L2 steps 4–6: backup, restore into local Docker with matching bytes, same-image redeploy                                         | v0.96.0 |
-| A7  | Keyboard and mobile use                      | PASS    | L2 driver steps 17 and 18, live sign-in and channel at 390 × 844 with no sideways scroll                                         | v0.96.0 |
-| A8  | Standalone account path without DorkOS Cloud | PASS    | L2 gate receipt: `dorkosHostsContacted` is `[]`, `singleSignOnOffered` is `false`                                                | v0.96.0 |
+| Row | Acceptance item                              | Status  | Evidence                                                                                                                         | Release          |
+| --- | -------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| A1  | Fresh account path                           | PENDING | L4 not yet run (operator only)                                                                                                   | n/a              |
+| A2  | Interruption and resume                      | PASS    | L3 (c): Control-C during `fly deploy`, then one immediate `--resume` that finished. Sub-case DOR-2701 pending                    | v0.97.0          |
+| A3  | Failed provisioning                          | PASS    | L3 (c): the recovery table after the stop matched the real inventory line by line, then resumed to completion                    | v0.97.0          |
+| A4  | Non-admin credentials                        | PASS    | L3 (a) Fly read-only token refused at the first write; L3 (b) Neon project-scoped key stopped before consent (operator decision) | v0.97.0          |
+| A5  | First two people and one local agent         | PASS    | L2 gate receipt `dorkos-gate-0781c780f1f1` (`secondMemberProof`); driver run `run-1791067459626` steps 5–13, 20, 22              | v0.96.0          |
+| A6  | Backup and upgrade guidance                  | PASS    | L2 steps 4–6 (backup, restore with matching bytes); cross-version upgrade v0.96.0 → v0.97.0, receipt `dorkos-gate-0559fb4140df`  | v0.96.0, v0.97.0 |
+| A7  | Keyboard and mobile use                      | PASS    | L2 driver steps 17 and 18, live sign-in and channel at 390 × 844 with no sideways scroll                                         | v0.96.0          |
+| A8  | Standalone account path without DorkOS Cloud | PASS    | L2 gate receipt: `dorkosHostsContacted` is `[]`, `singleSignOnOffered` is `false`                                                | v0.96.0          |
 
 ## Platform and what was not verified
 
 - Every run: macOS 26.6.2 on Apple Silicon (arm64), Node v24.14.1, flyctl v0.4.110, neonctl 7.0.1, Tigris CLI 3.14.0, gh 2.101.0. L2 also used Docker 29.5.2 and Google Chrome 154.
 - Not verified: Windows, Linux, and fresh accounts (A1).
-- Not verified: an upgrade from one release to another on a guided-setup community. L2 ran on v0.96.0 when v0.95.0's migration fingerprint differed, so by Open question 4 it rehearsed a same-image redeploy. The guide keeps "not yet rehearsed on guided setup" for the cross-version upgrade. v0.97.0 now shares v0.96.0's fingerprint, so a later run could rehearse v0.96.0 to v0.97.0.
-- Not verified: Control-C right after setup saves a create intent and before the create's outcome is known (DOR-2701). The fix is #2528, open and in no release.
+- Not verified: Control-C right after setup saves a create intent and before the create's outcome is known (DOR-2701). The fix is #2528, merged but in no release yet.
 
 ## The runs
 
@@ -83,7 +82,7 @@ Earlier live runs also interrupted and resumed owner setup (gate runs 7 and 8, D
 
 Automated tests: `packages/cli/src/commands/community-deploy/__tests__/resume.test.ts`, `execute.test.ts`, `fly-lease.test.ts`, `stop-launch.test.ts`, `stop-wording.test.ts`, and the second resume run in `packages/cli/scripts/test-community-deploy-package.ts`.
 
-**Pending sub-case (DOR-2701).** A Control-C that lands just after setup saves a create intent, before the create's outcome is known, left v0.96.0 with a run that `--resume` could not continue. The fix is #2528, still open. This sub-case needs one more attended run on the first release that contains it.
+**Pending sub-case (DOR-2701).** A Control-C that lands just after setup saves a create intent, before the create's outcome is known, left v0.96.0 with a run that `--resume` could not continue. The fix is #2528, merged but not yet released. This sub-case needs one more attended run on the first release that contains it.
 
 ### A3: failed provisioning — PASS
 
@@ -148,6 +147,8 @@ Followed `apps/community/FLY.md`, "Back up and upgrade a community made with gui
 - **Restore (step 6) into local Docker:** health 200; both people sign in; history 200 with 48 entries whose ids match the live community; both threads read; both files download with sha256 values matching the checksum file.
 - **Upgrade (step 7):** a same-image redeploy, by Open question 4 (see "Platform and what was not verified"). Attestations verified, `fly deploy --image …@sha256:e2fd… --ha=false` exited 0, and exactly one Machine ran the amd64 digest afterwards. The `OPERATIONS.md` checks passed: `/health` 200, sign-in for both people, a post (201), the live update seen by the member, and both files with matching bytes.
 - The local copies, containers, volumes and built image were all removed afterwards.
+- **Cross-version upgrade (step 7), a separate run on 2026-10-04:** gate on v0.96.0 with a hold, receipt `dorkos-gate-0559fb4140df` (all four proof flags true, `held.endedBy` `done`, `dorkosHostsContacted` `[]`). v0.96.0 and v0.97.0 share `migrationCompatibilityId` `sha256:970a13c4…77511`, so by Open question 4 the community was upgraded from v0.96.0 (image `sha256:e2fdb80b…b7c7`, amd64 `sha256:139f652b…b4bb`) to v0.97.0 (image `sha256:b65d5353…087d`, amd64 `sha256:46238402…3bc1`). Steps 1–6 were repeated first and passed. Every step 7 command worked as written; `fly deploy` exited 0 in 29 s. Afterwards exactly one Machine ran the v0.97.0 amd64 digest; `/health` 200; owner and member sign in; the message and 4,142-byte file written before the upgrade were unchanged for both people; a new post (201) reached the member live. A first gate attempt on the same day stopped before its hold with a launcher `TIMEOUT` and was cleaned up by hand; the retry is the evidence.
+- Roll-back (step 8) is not yet rehearsed.
 
 Automated tests: `pnpm --filter @dorkos/community test:backup-restore`.
 
@@ -172,15 +173,15 @@ Automated tests: `packages/cli/src/__tests__/community-deploy-no-dorkos-hosts.te
 
 The runs in order. Each defect a run found was filed, fixed and released before the next try, except DOR-2701.
 
-| Run | Release | Date       | Result                          | Defect found                                                                                                                                                      | Fixed in     | Released in |
-| --- | ------- | ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------- |
-| L3  | v0.94.0 | 2026-10-01 | Stopped at (a)                  | A refused Fly create ended in "creation outcome requires manual reconciliation", and `--remove-uncertain` could not clear the run (DOR-2656, DOR-2657)            | #2447        | v0.96.0     |
-| L2  | v0.95.0 | 2026-10-02 | Stopped at the driver           | Step 15: a channel reopened at an old saved row after the reader caught up. Step 17: the driver expected the wrong first menu row (a test fix, not a product bug) | #2476        | v0.96.0     |
-| L2  | v0.96.0 | 2026-10-03 | PASS                            | none                                                                                                                                                              |              |             |
-| L3  | v0.96.0 | 2026-10-03 | (a) passed; (b) and (c) stopped | DOR-2700: the Neon preflight message was a race, vague 6 times in 9, and an organization key could never pass                                                     | #2526        | v0.97.0     |
-|     |         |            |                                 | DOR-2701: Control-C right after a create intent left a run that `--resume` could not continue                                                                     | #2528 (open) | not yet     |
-|     |         |            |                                 | DOR-2702: resuming right after a stopped `fly deploy` failed while Fly held the Machine's lease, and ended on a raw error code                                    | #2529        | v0.97.0     |
-| L3  | v0.97.0 | 2026-10-04 | PASS ((a), (b), (b2), (c), (d)) | none                                                                                                                                                              |              |             |
+| Run | Release | Date       | Result                          | Defect found                                                                                                                                                      | Fixed in | Released in |
+| --- | ------- | ---------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- |
+| L3  | v0.94.0 | 2026-10-01 | Stopped at (a)                  | A refused Fly create ended in "creation outcome requires manual reconciliation", and `--remove-uncertain` could not clear the run (DOR-2656, DOR-2657)            | #2447    | v0.96.0     |
+| L2  | v0.95.0 | 2026-10-02 | Stopped at the driver           | Step 15: a channel reopened at an old saved row after the reader caught up. Step 17: the driver expected the wrong first menu row (a test fix, not a product bug) | #2476    | v0.96.0     |
+| L2  | v0.96.0 | 2026-10-03 | PASS                            | none                                                                                                                                                              |          |             |
+| L3  | v0.96.0 | 2026-10-03 | (a) passed; (b) and (c) stopped | DOR-2700: the Neon preflight message was a race, vague 6 times in 9, and an organization key could never pass                                                     | #2526    | v0.97.0     |
+|     |         |            |                                 | DOR-2701: Control-C right after a create intent left a run that `--resume` could not continue                                                                     | #2528    | not yet     |
+|     |         |            |                                 | DOR-2702: resuming right after a stopped `fly deploy` failed while Fly held the Machine's lease, and ended on a raw error code                                    | #2529    | v0.97.0     |
+| L3  | v0.97.0 | 2026-10-04 | PASS ((a), (b), (b2), (c), (d)) | none                                                                                                                                                              |          |             |
 
 ## Findings that did not block
 
