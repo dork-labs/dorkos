@@ -86,5 +86,13 @@ export function usePendingScheduleApprovals(): PendingScheduleApprovals {
     return parked.length === 0 ? NO_SCHEDULES : parked;
   }, [data]);
 
-  return { schedules, isLoading: configLoading || isLoading, isError };
+  return {
+    schedules,
+    isLoading: configLoading || isLoading,
+    // **Only while Tasks is on.** The `['tasks']` query is shared: with Tasks
+    // off the route answers 404, and any other observer that reads it ungated
+    // leaves the query in error — which a disabled observer still reports.
+    // Tasks being off is "no schedules", never "could not check".
+    isError: enabled && isError,
+  };
 }

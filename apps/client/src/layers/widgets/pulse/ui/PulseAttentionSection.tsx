@@ -154,9 +154,22 @@ export function PulseAttentionSection() {
       {/* Said whether or not anything else is drawn: with one read failed, the
           line below may be counting short. */}
       {unreadable && (
-        <p data-slot="pulse-waiting-unreadable" className="text-muted-foreground mb-2 px-2 text-xs">
-          Couldn’t check everything waiting on you.
-        </p>
+        <div
+          data-slot="pulse-waiting-unreadable"
+          className="mb-2 flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1"
+        >
+          <span className="text-muted-foreground min-w-0 flex-1 text-xs">
+            Couldn’t check everything waiting on you.
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 shrink-0 px-2 text-xs"
+            onClick={waitingQueue.retryFailed}
+          >
+            Try again
+          </Button>
+        </div>
       )}
       {waitingCount > 0 && (
         <div

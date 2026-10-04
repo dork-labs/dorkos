@@ -11,6 +11,7 @@ import {
 } from '@dorkos/shared/extension-approval-schemas';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
+import { createRefreshLeader } from './refresh-leader';
 
 /**
  * Query keys for the extension entity.
@@ -23,6 +24,9 @@ export const extensionQueryKeys = {
   list: () => [...extensionQueryKeys.all, 'list'] as const,
   pendingApprovals: () => [...extensionQueryKeys.all, 'pending-approvals'] as const,
 };
+
+/** Which mounted copy of {@link usePendingExtensionApprovals} answers an event. */
+const useIsApprovalsRefreshLeader = createRefreshLeader();
 
 /** Shared empty list, so an inbox with nothing waiting never mints a fresh array. */
 const NO_APPROVALS: readonly PendingExtensionApproval[] = [];
@@ -65,6 +69,7 @@ async function fetchPendingApprovals(signal?: AbortSignal): Promise<PendingExten
  */
 export function usePendingExtensionApprovals(): PendingExtensionApprovalsState {
   const queryClient = useQueryClient();
+  const isRefreshLeader = useIsApprovalsRefreshLeader();
   const { data, isLoading, isError } = useQuery({
     queryKey: extensionQueryKeys.pendingApprovals(),
     queryFn: ({ signal }) => fetchPendingApprovals(signal),
@@ -73,12 +78,10 @@ export function usePendingExtensionApprovals(): PendingExtensionApprovalsState {
   const refresh = (raw: unknown) => {
     const kind = (raw as { kind?: unknown } | null)?.kind;
     if (kind !== undefined && kind !== 'extension.approval') return;
-    // One read per event, however many copies of this hook heard it (see the
-    // same call in `use-extension-decisions`).
-    void queryClient.invalidateQueries(
-      { queryKey: extensionQueryKeys.pendingApprovals() },
-      { cancelRefetch: false }
-    );
+    // One copy answers each event, with a plain invalidate, so the read that
+    // follows always starts after the latest event (see `refresh-leader`).
+    if (!isRefreshLeader()) return;
+    void queryClient.invalidateQueries({ queryKey: extensionQueryKeys.pendingApprovals() });
   };
   useEventSubscription('standing_pending', refresh);
   useEventSubscription('standing_resolved', refresh);

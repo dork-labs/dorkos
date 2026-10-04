@@ -14,7 +14,8 @@
  *
  * @module entities/attention/model/use-waiting-queue
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { Task } from '@dorkos/shared/types';
@@ -23,10 +24,16 @@ import type {
   ExtensionDecisionDTO,
   PendingDecisionOffer,
 } from '@dorkos/shared/extension-decision-schemas';
-import { useExtensionDecisions, usePendingExtensionApprovals } from '@/layers/entities/extension';
+import {
+  extensionDecisionsKey,
+  extensionQueryKeys,
+  useExtensionDecisions,
+  usePendingExtensionApprovals,
+} from '@/layers/entities/extension';
+import { TASKS_KEY } from '@/layers/entities/tasks';
 import { deriveWaitingItems, type WaitingItem } from './derive-waiting-items';
-import { usePendingApprovals } from './use-pending-approvals';
-import { usePendingInteractions } from './use-pending-interactions';
+import { PENDING_APPROVALS_QUERY_KEY, usePendingApprovals } from './use-pending-approvals';
+import { PENDING_INTERACTIONS_QUERY_KEY, usePendingInteractions } from './use-pending-interactions';
 import { usePendingScheduleApprovals } from './use-pending-schedule-approvals';
 
 /** What {@link useWaitingQueue} hands its consumer. */
@@ -85,9 +92,20 @@ export interface WaitingQueueState {
    * says all is quiet must not say it while this is true.
    */
   isAnyError: boolean;
+  /** Read again every one of the five queues whose last read failed. */
+  retryFailed: () => void;
   /** Retry the approval queue read. */
   retry: () => void;
 }
+
+/** The five reads the queue is built from, by query key. */
+const WAITING_QUERY_KEYS: readonly QueryKey[] = [
+  PENDING_APPROVALS_QUERY_KEY,
+  PENDING_INTERACTIONS_QUERY_KEY,
+  TASKS_KEY,
+  extensionQueryKeys.pendingApprovals(),
+  extensionDecisionsKey(),
+];
 
 /**
  * Everything waiting on the operator: capability approvals, prompts agents are
@@ -107,6 +125,7 @@ export interface WaitingQueueState {
  * rather than letting a caller re-sum the lengths by hand.
  */
 export function useWaitingQueue(): WaitingQueueState {
+  const queryClient = useQueryClient();
   const { approvals, isLoading: approvalsLoading, isError, retry } = usePendingApprovals();
   const {
     interactions: asks,
@@ -130,6 +149,17 @@ export function useWaitingQueue(): WaitingQueueState {
     isError: decisionsError,
   } = useExtensionDecisions();
 
+  // Only the reads that failed, and only enabled ones: a disabled query (Tasks
+  // switched off) is never refetched by `refetchQueries`.
+  const retryFailed = useCallback(() => {
+    for (const queryKey of WAITING_QUERY_KEYS) {
+      void queryClient.refetchQueries({
+        queryKey,
+        predicate: (query) => query.state.status === 'error',
+      });
+    }
+  }, [queryClient]);
+
   const items = useMemo(
     () =>
       deriveWaitingItems({ approvals, asks, schedules, extensionApprovals, extensionDecisions }),
@@ -152,6 +182,7 @@ export function useWaitingQueue(): WaitingQueueState {
       decisionsLoading,
     isError,
     isAnyError: isError || asksError || schedulesError || extensionApprovalsError || decisionsError,
+    retryFailed,
     retry,
   };
 }

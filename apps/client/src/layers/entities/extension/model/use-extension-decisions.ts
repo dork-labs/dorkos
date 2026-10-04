@@ -23,6 +23,10 @@ import {
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
+import { createRefreshLeader } from './refresh-leader';
+
+/** Which mounted copy of {@link useExtensionDecisions} answers an event. */
+const useIsDecisionsRefreshLeader = createRefreshLeader();
 
 /** Shared empty lists, so a quiet inbox never mints fresh arrays. */
 const NO_DECISIONS: readonly ExtensionDecisionDTO[] = [];
@@ -71,6 +75,7 @@ async function fetchDecisions(signal?: AbortSignal): Promise<ListExtensionDecisi
  */
 export function useExtensionDecisions(): ExtensionDecisionsState {
   const queryClient = useQueryClient();
+  const isRefreshLeader = useIsDecisionsRefreshLeader();
   const { data, isLoading, isError } = useQuery({
     queryKey: extensionDecisionsKey(),
     queryFn: ({ signal }) => fetchDecisions(signal),
@@ -79,14 +84,10 @@ export function useExtensionDecisions(): ExtensionDecisionsState {
   const refresh = (raw: unknown) => {
     const kind = (raw as { kind?: unknown } | null)?.kind;
     if (kind !== undefined && kind !== 'extension.decision') return;
-    // `cancelRefetch: false`: the bell, Pulse and Home each mount this hook,
-    // every copy hears the same event and invalidates, and the default would
-    // cancel the read in flight and start another for each one — two or three
-    // requests per event. One read per event is enough.
-    void queryClient.invalidateQueries(
-      { queryKey: extensionDecisionsKey() },
-      { cancelRefetch: false }
-    );
+    // One copy answers each event, with a plain invalidate, so the read that
+    // follows always starts after the latest event (see `refresh-leader`).
+    if (!isRefreshLeader()) return;
+    void queryClient.invalidateQueries({ queryKey: extensionDecisionsKey() });
   };
   useEventSubscription('standing_pending', refresh);
   useEventSubscription('standing_resolved', refresh);

@@ -58,6 +58,7 @@ let mockWaiting: {
 /** Whether the panel is a modal sheet (below desktop width) in this case. */
 let mockBelowDesktop = false;
 const mockRequestInbox = vi.fn();
+const mockRetryFailed = vi.fn();
 
 function emptyWaiting() {
   return {
@@ -108,6 +109,7 @@ vi.mock('@/layers/entities/attention', async (importOriginal) => {
       decisionOffers: [],
       items: deriveWaitingItems(mockWaiting as Parameters<typeof deriveWaitingItems>[0]),
       isError: false,
+      retryFailed: mockRetryFailed,
       retry: () => {},
     }),
   };
@@ -421,6 +423,18 @@ describe('PulsePanel', () => {
 
     expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
     expect(screen.getByText('Couldn’t check everything waiting on you.')).toBeInTheDocument();
+  });
+
+  it('offers to try the failed reads again', async () => {
+    // Seeded defect: render the line without its button.
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    mockWaiting = { ...emptyWaiting(), isAnyError: true };
+
+    render(<PulsePanel />);
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(mockRetryFailed).toHaveBeenCalledTimes(1);
   });
 
   it('does not flash the all-clear while the waiting queue is still loading', () => {
