@@ -463,7 +463,7 @@ it('engine stable outer-await retains exact Page and publishes genuine capture o
   await fixture.engine.shutdown();
 });
 
-it('candidate: a known ordinary fence refuses capture before screenshot observation', async () => {
+it('a known ordinary fence refuses capture before screenshot observation', async () => {
   const h = tabFixture(),
     c = configuration();
   captureRetirement(h.record, performance.now() + 2000);
@@ -473,6 +473,6 @@ it('candidate: a known ordinary fence refuses capture before screenshot observat
       requestId: h.command().requestId,
       binding: h.tab.binding,
     })
-  ).rejects.toThrow();
+  ).rejects.toMatchObject({ code: 'STALE_BINDING' });
   expect(h.raw.screenshot).toHaveBeenCalledTimes(0);
 });
