@@ -276,4 +276,11 @@ describe('PackageCard', () => {
     expect(card.className).toContain('p-6');
     expect(card.className).not.toContain('p-4');
   });
+
+  it('says "Dev link" instead of "Installed" for a package running from a folder', () => {
+    // Purpose: the browse card shows the dev link state (DOR-2696).
+    render(<PackageCard pkg={makePackage()} installed devLinked onClick={() => {}} />);
+    expect(screen.getByText('Dev link')).toBeInTheDocument();
+    expect(screen.queryByText('Installed')).toBeNull();
+  });
 });

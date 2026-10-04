@@ -27,7 +27,11 @@ import {
   Trash2,
   User,
 } from 'lucide-react';
-import type { InstalledPackage, PackageProvides } from '@dorkos/shared/marketplace-schemas';
+import type {
+  AggregatedPackage,
+  InstalledPackage,
+  PackageProvides,
+} from '@dorkos/shared/marketplace-schemas';
 import {
   Sheet,
   SheetContent,
@@ -40,6 +44,7 @@ import {
   ExternalLinkAnchor,
   Skeleton,
   MarkdownContent,
+  DevLinkTag,
 } from '@/layers/shared/ui';
 import { packageDisplayLabel } from '@/layers/shared/lib';
 import {
@@ -54,7 +59,10 @@ import { useConfig } from '@/layers/entities/config';
 import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
+import { useDevLinkActions } from '../model/use-dev-link-actions';
 import { PackageTypeBadge } from './PackageTypeBadge';
+import { DevLinkActionButtons, DevLinkDetails } from './DevLinkRow';
+import { UnlinkDialog } from './UnlinkDialog';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
 
 // ---------------------------------------------------------------------------
@@ -143,6 +151,9 @@ function InstallationRow({
   disabled,
   onReinstall,
   onUninstallClick,
+  published,
+  onUnlink,
+  onInstallPublished,
 }: {
   installation: InstalledPackage;
   isRemoving: boolean;
@@ -150,6 +161,12 @@ function InstallationRow({
   disabled: boolean;
   onReinstall: () => void;
   onUninstallClick: () => void;
+  /** The package as its marketplace lists it, for "Install published version". */
+  published: AggregatedPackage;
+  /** For a dev link: open the unlink dialog. */
+  onUnlink: () => void;
+  /** For a dev link: unlink, then install the published package. */
+  onInstallPublished: (published: AggregatedPackage) => void;
 }) {
   const isGlobal = isGlobalInstallation(installation);
   const title = installationTitle(installation);
@@ -161,6 +178,35 @@ function InstallationRow({
         year: 'numeric',
       })
     : null;
+
+  if (installation.devLink) {
+    // A dev link runs from the person's folder: "Dev link" replaces the
+    // installed version, and it is switched, never reinstalled (DOR-2696).
+    return (
+      <div className="space-y-2 rounded-lg border p-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <ScopeIcon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-medium">{title}</span>
+              <DevLinkTag />
+            </div>
+            <DevLinkDetails installation={installation} />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          <DevLinkActionButtons
+            installation={installation}
+            published={published}
+            label={title}
+            onUnlink={onUnlink}
+            onInstallPublished={onInstallPublished}
+            disabled={disabled}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
@@ -220,6 +266,9 @@ function InstallationsPanel({
   anyMutationPending,
   onReinstall,
   onUninstall,
+  published,
+  onUnlink,
+  onInstallPublished,
 }: {
   installations: InstalledPackage[];
   /** installPath of the installation whose uninstall is in flight, if any. */
@@ -227,6 +276,9 @@ function InstallationsPanel({
   anyMutationPending: boolean;
   onReinstall: (installation: InstalledPackage) => void;
   onUninstall: (installation: InstalledPackage) => void;
+  published: AggregatedPackage;
+  onUnlink: (installation: InstalledPackage) => void;
+  onInstallPublished: (installation: InstalledPackage, published: AggregatedPackage) => void;
 }) {
   const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
 
@@ -256,9 +308,11 @@ function InstallationsPanel({
     <section className="space-y-3">
       <div className="text-status-success-fg flex items-center gap-2 text-sm font-medium">
         <Check className="size-4 shrink-0" aria-hidden />
-        {installations.length === 1
-          ? 'Installed'
-          : `Installed in ${installations.length} locations`}
+        {installations.every((i) => i.devLink)
+          ? 'Dev link'
+          : installations.length === 1
+            ? 'Installed'
+            : `Installed in ${installations.length} locations`}
       </div>
 
       <div className="space-y-2" role="list" aria-label="Installations">
@@ -271,6 +325,9 @@ function InstallationsPanel({
               disabled={anyMutationPending}
               onReinstall={() => onReinstall(installation)}
               onUninstallClick={() => handleUninstallClick(installation)}
+              published={published}
+              onUnlink={() => onUnlink(installation)}
+              onInstallPublished={(pkg) => onInstallPublished(installation, pkg)}
             />
           </div>
         ))}
@@ -357,6 +414,7 @@ export function PackageDetailSheet() {
   const { data: config } = useConfig();
 
   const uninstall = useUninstallWithToast();
+  const devLinkActions = useDevLinkActions();
 
   // While the installed list is still loading the install-state is unknown, so
   // the body must not pick a render branch yet: `isInstalled` is `false` during
@@ -475,6 +533,9 @@ export function PackageDetailSheet() {
                   anyMutationPending={uninstall.isPending}
                   onReinstall={handleReinstall}
                   onUninstall={handleUninstall}
+                  published={pkg}
+                  onUnlink={devLinkActions.askUnlink}
+                  onInstallPublished={devLinkActions.askInstallPublished}
                 />
               ) : previewError ? (
                 // Never a preview (or "no special permissions") over a package
@@ -542,6 +603,11 @@ export function PackageDetailSheet() {
           </>
         )}
       </SheetContent>
+      <UnlinkDialog
+        target={devLinkActions.target}
+        onClose={devLinkActions.close}
+        onUnlinked={devLinkActions.onUnlinked}
+      />
     </Sheet>
   );
 }

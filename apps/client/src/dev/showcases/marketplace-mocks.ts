@@ -11,6 +11,9 @@
  */
 import type {
   AggregatedPackage,
+  DevLinkListing,
+  DevLinkPreviewResponse,
+  DevLinkReloadedEvent,
   DisclosedEffects,
   InstallationUpdateCheck,
   InstalledPackage,
@@ -754,3 +757,102 @@ export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UP
   }
   return { ...pkg, integrity: { status: 'clean' as const, customized: [] } };
 });
+
+// ---------------------------------------------------------------------------
+// Dev links (DOR-2696)
+// ---------------------------------------------------------------------------
+
+/** One dev link in each state the Installed row says out loud. */
+export const MOCK_DEV_LINKED_INSTALLED: InstalledPackage[] = [
+  {
+    name: 'flow',
+    version: '0.8.0-dev',
+    type: 'plugin',
+    scope: 'global',
+    installPath: '/Users/kai/.dork/plugins/flow',
+    devLink: {
+      path: '/Users/kai/Keep/dork-os/marketplace/plugins/flow-with-a-long-folder-name-that-wraps',
+      state: 'active',
+      parked: true,
+    },
+  },
+  {
+    name: 'release-notes',
+    version: '0.1.0',
+    type: 'plugin',
+    scope: 'global',
+    installPath: '/Users/kai/.dork/plugins/release-notes',
+    devLink: { path: '/Users/kai/code/release-notes', state: 'active', parked: false },
+  },
+  {
+    name: 'review-kit',
+    version: '0.2.0',
+    type: 'skill-pack',
+    scope: 'agent-local',
+    agentPath: '/Users/kai/work/release-bot',
+    agentName: 'Release Bot',
+    installPath: '/Users/kai/work/release-bot/.dork/plugins/review-kit',
+    devLink: { path: '/Users/kai/code/review-kit', state: 'active', parked: false },
+  },
+  {
+    name: 'old-experiment',
+    version: '0.0.1',
+    type: 'plugin',
+    scope: 'global',
+    installPath: '/Users/kai/.dork/plugins/old-experiment',
+    devLink: { path: '/Users/kai/code/old-experiment', state: 'folder-missing', parked: false },
+  },
+];
+
+/** The listing behind those rows: `flow` reloaded a moment ago. */
+export function mockDevLinkListing(now: number): DevLinkListing {
+  return {
+    links: [
+      {
+        name: 'flow',
+        type: 'plugin',
+        scope: 'global',
+        path: MOCK_DEV_LINKED_INSTALLED[0]!.devLink!.path,
+        state: 'active',
+        parked: { version: '0.7.3' },
+        linkedAt: '2026-10-03T09:00:00Z',
+        lastReloadAt: new Date(now - 4_000).toISOString(),
+      },
+      {
+        name: 'review-kit',
+        type: 'skill-pack',
+        scope: 'project',
+        projectPath: '/Users/kai/work/release-bot',
+        path: '/Users/kai/code/review-kit',
+        state: 'active',
+        parked: null,
+        linkedAt: '2026-10-03T09:00:00Z',
+      },
+    ],
+  };
+}
+
+/** A reload whose extension didn't build, for `release-notes`. */
+export function mockFailedReload(now: number): DevLinkReloadedEvent {
+  return {
+    name: 'release-notes',
+    scope: 'global',
+    at: new Date(now - 30_000).toISOString(),
+    actions: ['extension'],
+    errors: ["release-notes-panel didn't build: Unexpected token (12:4)"],
+  };
+}
+
+/** A preview of linking a folder over an installed copy. */
+export const MOCK_DEV_LINK_PREVIEW: DevLinkPreviewResponse = {
+  name: 'flow',
+  type: 'plugin',
+  version: '0.8.0-dev',
+  path: '/Users/kai/Keep/dork-os/marketplace/plugins/flow',
+  scope: 'global',
+  slot: '/Users/kai/.dork/plugins/flow',
+  replaces: { version: '0.7.3' },
+  effects: null,
+  extensions: ['flow-dashboard'],
+  change: 'Run flow from /Users/kai/Keep/dork-os/marketplace/plugins/flow',
+};

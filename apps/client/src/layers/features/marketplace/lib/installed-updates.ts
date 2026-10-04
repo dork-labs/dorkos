@@ -122,7 +122,8 @@ export function rowUpdateState(
  * Count where the listed installations stand. Only rows still in the list,
  * with a check that still describes them ({@link currentCheckFor}), count, so
  * an uninstalled or since-updated package drops out as soon as the list
- * refreshes, with no new check.
+ * refreshes, with no new check. A dev link is left out: it runs from the
+ * person's folder, so there is nothing for it to update to (DOR-2696).
  *
  * @param installed - The rows, in the order they are shown.
  * @param checks - The check's answer, indexed by {@link indexChecks}.
@@ -133,6 +134,7 @@ export function summarizeUpdates(
 ): UpdatesSummary {
   const summary: UpdatesSummary = { available: [], current: 0, unknown: 0 };
   for (const pkg of installed) {
+    if (pkg.devLink) continue;
     const check = currentCheckFor(pkg, checks);
     if (check?.status === 'update-available') summary.available.push({ installation: pkg, check });
     else if (check?.status === 'current') summary.current += 1;

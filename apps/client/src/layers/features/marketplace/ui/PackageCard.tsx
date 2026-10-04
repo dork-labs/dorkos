@@ -1,5 +1,5 @@
 import { Star, Check, Store, User } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { Button, DevLinkTag } from '@/layers/shared/ui';
 import { cn, packageDisplayLabel } from '@/layers/shared/lib';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { PackageTypeBadge } from './PackageTypeBadge';
@@ -31,6 +31,11 @@ interface PackageCardProps {
   pkg: AggregatedPackage;
   /** Whether this package is already installed. */
   installed?: boolean;
+  /**
+   * Whether it runs from a folder on this computer (a dev link, DOR-2696).
+   * Shown as "Dev link" in place of "Installed".
+   */
+  devLinked?: boolean;
   /** Called when the card body is clicked (opens detail sheet). */
   onClick: () => void;
   /**
@@ -82,12 +87,14 @@ interface PackageCardProps {
  *
  * @param pkg - The package to render.
  * @param installed - Whether the package is currently installed.
+ * @param devLinked - Whether it runs from a dev link instead.
  * @param onClick - Handler for card-body clicks (opens detail sheet).
  * @param onInstallClick - Handler for the Install button click.
  */
 export function PackageCard({
   pkg,
   installed,
+  devLinked,
   onClick,
   onInstallClick,
   variant = 'comfortable',
@@ -212,7 +219,9 @@ export function PackageCard({
       {/* Action row */}
       {!isCompact && (
         <div className="mt-auto flex items-center justify-end gap-2">
-          {installed ? (
+          {devLinked ? (
+            <DevLinkTag />
+          ) : installed ? (
             <span className="text-status-success-fg flex items-center gap-1 text-xs">
               <Check className="size-3" aria-hidden />
               Installed

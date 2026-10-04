@@ -20,6 +20,13 @@ import type {
   KeepFilesOptions,
   KeepFilesResult,
   HeldBackPackage,
+  DevLinkCreateInput,
+  DevLinkListing,
+  DevLinkPreviewInput,
+  DevLinkPreviewResponse,
+  DevLinkScopeInput,
+  DevLinkStatus,
+  DevUnlinkResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -29,6 +36,7 @@ import type {
   ListedMarketplaceSource,
   RefreshedMarketplaceSource,
 } from '@dorkos/shared/marketplace-schemas';
+import type { CapabilityApprovalRequired, DevLinkCreateResult } from '@dorkos/shared/transport';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 
 /** Create all Marketplace methods bound to a base URL. */
@@ -137,6 +145,41 @@ export function createMarketplaceMethods(baseUrl: string) {
         baseUrl,
         `/marketplace/held-back/${encodeURIComponent(name)}/review`,
         { method: 'POST' }
+      );
+    },
+
+    // --- Dev links (DOR-2696) ---
+
+    listDevLinks(): Promise<DevLinkListing> {
+      return fetchJSON<DevLinkListing>(baseUrl, '/marketplace/dev-links');
+    },
+
+    previewDevLink(input: DevLinkPreviewInput): Promise<DevLinkPreviewResponse> {
+      return fetchJSON<DevLinkPreviewResponse>(baseUrl, '/marketplace/dev-links/preview', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+    },
+
+    async linkDevLink(input: DevLinkCreateInput): Promise<DevLinkCreateResult> {
+      // `fetchJSON` treats `201` and `202` alike (`res.ok`), so the two
+      // outcomes are told apart by the body: the tier gate's `202` carries
+      // `status: 'approval_required'`, a made link never has a `status`.
+      const body = await fetchJSON<DevLinkStatus | CapabilityApprovalRequired>(
+        baseUrl,
+        '/marketplace/dev-links',
+        { method: 'POST', body: JSON.stringify(input) }
+      );
+      return 'status' in body && body.status === 'approval_required'
+        ? { status: 'approval_required', approval: body }
+        : { status: 'linked', link: body as DevLinkStatus };
+    },
+
+    unlinkDevLink(name: string, input: DevLinkScopeInput): Promise<DevUnlinkResult> {
+      return fetchJSON<DevUnlinkResult>(
+        baseUrl,
+        `/marketplace/dev-links/${encodeURIComponent(name)}/unlink`,
+        { method: 'POST', body: JSON.stringify(input) }
       );
     },
 

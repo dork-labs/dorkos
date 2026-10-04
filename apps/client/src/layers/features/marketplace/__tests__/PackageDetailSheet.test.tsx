@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {
   AggregatedPackage,
@@ -38,6 +38,14 @@ vi.mock('@/layers/entities/marketplace', async () => ({
   usePermissionPreview: vi.fn(),
   useInstalledPackages: vi.fn(),
   usePackageInstallations: vi.fn(),
+  // Dev links (DOR-2696): inert unless a test sets them.
+  useDevLinks: () => ({ data: { links: [] } }),
+  useUnlinkDevLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  usePreviewDevLink: () => ({ mutateAsync: vi.fn(), isPending: false, reset: vi.fn() }),
+  useLinkFolder: () => ({ mutateAsync: vi.fn(), isPending: false, reset: vi.fn() }),
+  useDevLinkReloadStore: (select: (s: { latest: Record<string, unknown> }) => unknown) =>
+    select({ latest: {} }),
+  devLinkKey: () => 'key',
 }));
 
 vi.mock('../model/use-uninstall-with-toast', () => ({
@@ -503,6 +511,32 @@ describe('PackageDetailSheet', () => {
     expect(screen.getByText('Overrides global')).toBeInTheDocument();
     // Per-row versions render independently.
     expect(screen.getByText(/v1\.1\.0/)).toBeInTheDocument();
+  });
+
+  it('shows "Dev link" with the folder in place of the installed version, and switches only', async () => {
+    // Purpose: the sheet repeats the path and the dev-link switches (DOR-2696).
+    const devLinked: InstalledPackage = {
+      ...GLOBAL_INSTALLATION,
+      devLink: { path: '/work/code-reviewer', state: 'active', parked: false },
+    };
+    openPackage(makePackage());
+    setDetailState({ data: makeDetail() });
+    setInstalledState([devLinked]);
+    setInstallationsState([devLinked]);
+
+    render(<PackageDetailSheet />);
+
+    expect(screen.getAllByText('Dev link').length).toBeGreaterThan(0);
+    expect(screen.getByText('/work/code-reviewer')).toBeInTheDocument();
+    // The header keeps the catalog's version; the installation row does not
+    // claim one, because the folder is what runs.
+    const rows = screen.getByRole('list', { name: 'Installations' });
+    expect(within(rows).queryByText(/v1\.0\.0/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Reinstall for/ })).toBeNull();
+    expect(screen.getByText('Install published version')).toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByText('Install published version'));
+    expect(await screen.findByText('Install the published Code Reviewer?')).toBeInTheDocument();
   });
 
   it('uninstalling an agent row passes the agent projectPath and scope label', async () => {

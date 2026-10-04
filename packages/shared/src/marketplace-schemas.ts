@@ -1935,6 +1935,58 @@ export interface DevLinkPreviewResponse extends DevLinkPreview {
   change: string;
 }
 
+/** Where a dev link goes: every session, or one project. */
+export interface DevLinkScopeInput {
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The project folder. Required for, and only for, `scope: 'project'`. */
+  projectPath?: string;
+}
+
+/** The body of `POST /api/marketplace/dev-links/preview`. */
+export interface DevLinkPreviewInput extends DevLinkScopeInput {
+  /** The folder's absolute real path. */
+  path: string;
+  /** Describe the link as setting an installed copy aside, as the link would. */
+  replaceInstalled?: boolean;
+}
+
+/** The body of `POST /api/marketplace/dev-links`. */
+export interface DevLinkCreateInput extends DevLinkPreviewInput {
+  /** Where the person is linking from, for the record. */
+  via?: 'app' | 'terminal';
+  /**
+   * The preview's `change` text the person said yes to. The link is refused
+   * with `dev_link_changed` when the folder no longer describes the same way.
+   */
+  expectedChange?: string;
+}
+
+/** What `GET /api/marketplace/dev-links` answers: every recorded dev link and its state. */
+export interface DevLinkListing {
+  /** One entry per record. */
+  links: DevLinkStatus[];
+  /** Set when the registry file cannot be read; no slot counts as dev-linked then. */
+  registryUnreadable?: string;
+}
+
+/** What `POST /api/marketplace/dev-links/:name/unlink` answers. */
+export interface DevUnlinkResult {
+  /** `installed` when the set-aside copy is back, `removed` when the package is gone. */
+  restored: 'installed' | 'removed';
+  /**
+   * Set when an installed copy was set aside but could not be put back,
+   * because something else now holds the slot: where it still is.
+   */
+  parkedLeftAt?: string;
+  /**
+   * Set when the link had already been replaced by something else in its
+   * place (a real folder, or a link elsewhere). That was left as it is: only
+   * the record of the dev link was dropped.
+   */
+  leftInPlace?: true;
+}
+
 /** Refusal codes a dev link can answer with, each with one plain sentence. */
 export type DevLinkErrorCode =
   | 'dev_link_path_not_real'

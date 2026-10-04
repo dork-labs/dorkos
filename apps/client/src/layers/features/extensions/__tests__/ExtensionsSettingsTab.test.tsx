@@ -166,6 +166,41 @@ describe('ExtensionsSettingsTab', () => {
     );
   });
 
+  it('badges a dev-linked extension with its folder, and links to where it is switched', async () => {
+    // Purpose: Settings shows the dev link tag and path (DOR-2696), whether or not it is approved.
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          approvedToRun: true,
+          originProblem: 'dev-link',
+          devLink: { path: '/work/flow' },
+          sourcePlugin: 'flow',
+        }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    const devLink = await screen.findByTestId('extension-dev-link-test-ext');
+    expect(devLink).toHaveTextContent('Dev link: /work/flow');
+    expect(within(devLink).getByRole('button', { name: 'Unlink or switch' })).toBeInTheDocument();
+    expect(screen.getByText('Dev link')).toBeInTheDocument();
+  });
+
+  it('says a waiting dev-linked extension runs from your folder, not from a shortcut', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({ approvedToRun: false, originProblem: 'dev-link', devLink: { path: '/w' } }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    expect(await screen.findByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
+      'It runs from your folder'
+    );
+  });
+
   it('tells a person who approved a changed copy that any further change asks again', async () => {
     mockFetch({
       '/api/extensions': [makeExtension({ approvedToRun: true, originProblem: 'changed' })],
