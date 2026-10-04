@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(client): per-tab back, forward and history in the desktop app (DOR-2107)'
+  - 'fix(client): tab history review fixes — dialogs, duplicates, traversals (DOR-2107)'
+  - "fix(client): keep profile Back steps and step the tab's own cursor first (DOR-2107)"
 ---
 
 ### Added
