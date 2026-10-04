@@ -238,6 +238,13 @@ interface SessionBundle {
    * D1). Emptied when the process dies; a replacement process gets a fresh bundle.
    */
   seenTaskTypes: Set<string>;
+  /**
+   * The busy spell (its `busySince`) this process was already warned about for
+   * holding a stale tool list past the four-hour ceiling, so the warning is
+   * said once rather than on every message (DOR-2685). A replacement process
+   * gets a fresh bundle.
+   */
+  staleToolListWarnedFor?: number;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -611,11 +618,29 @@ export class PersistentDispatch {
       live !== undefined && busy !== undefined && !busy.quiet
         ? withLiveToolSurface(live, plan.fingerprint)
         : plan.fingerprint;
+    // Deliberately NO ceiling on this hold. The reaper takes a process back at
+    // the four-hour ceiling, but a dispatch is not the reaper: tearing down a
+    // process whose helper or Monitor is still working is exactly the DOR-2705
+    // bug, and a stale tool list costs far less than lost work (the gate still
+    // refuses any call a person blocked). So past the ceiling the hold goes on,
+    // and the only change is one warning per busy spell saying the list is stale.
     if (busy !== undefined && !busy.quiet) {
+      const busyForMs = Date.now() - busy.busySince;
       logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
         session: sessionId,
         because: busy.because,
+        busyForMs,
       });
+      if (
+        bundle.pump.isPastCeiling(Date.now()) &&
+        bundle.staleToolListWarnedFor !== busy.busySince
+      ) {
+        bundle.staleToolListWarnedFor = busy.busySince;
+        logger.warn(
+          '[persistent-dispatch] tool list is stale until this session’s background work ends',
+          { session: sessionId, because: busy.because, busyForMs }
+        );
+      }
     }
     const reuse = decideProcessReuse(bundle.fingerprint, compared, {
       holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),

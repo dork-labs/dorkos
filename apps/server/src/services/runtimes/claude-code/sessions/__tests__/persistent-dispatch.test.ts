@@ -1237,6 +1237,41 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     expect(process.ended).toBe(true);
   });
 
+  it('keeps holding past the four-hour ceiling, and warns once that the list is stale', async () => {
+    // Purpose: a dispatch never tears down working background (DOR-2705), so
+    // the hold has no ceiling. Past the reaper's ceiling it only says, once,
+    // that this session's tool list is stale until the work ends.
+    const { logger } = await import('../../../../../lib/logger.js');
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+    listed = [...listed, 'ext_mail_app__send'];
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
+      vi.mocked(logger.warn).mockClear();
+      const staleWarnings = () =>
+        vi
+          .mocked(logger.warn)
+          .mock.calls.filter(([message]) => String(message).includes('tool list is stale'));
+
+      await turn(sessionId, 'long after the ceiling');
+      expect(cli.launches).toBe(1);
+      expect(process.ended).toBe(false);
+      expect(staleWarnings()).toHaveLength(1);
+      expect(staleWarnings()[0]![1]).toMatchObject({ session: sessionId });
+
+      await turn(sessionId, 'and again');
+      expect(cli.launches).toBe(1);
+      expect(staleWarnings()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('still applies a live change while the relaunch is held', async () => {
     // Purpose: holding the tool list must not hold anything else. A permission
     // mode changed at the same time reaches the busy process live.

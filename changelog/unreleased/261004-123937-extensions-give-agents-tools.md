@@ -16,6 +16,7 @@ covers:
   - 'fix(claude-code): leave the per-turn connector tools out of the tool-surface digest (DOR-2685)'
   - 'fix(claude-code): never tear down a working process for a tool-list change (DOR-2685)'
   - 'fix(claude-code): list connector tools on a session-long fact so a staged warm-up is not relaunched (DOR-2685)'
+  - 'fix(claude-code): warn once when a held tool list outlives the background ceiling (DOR-2685)'
 ---
 
 ### Added
