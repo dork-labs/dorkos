@@ -12,7 +12,8 @@
  *    first message. The host refuses to go on unless the model is on and
  *    every capability is off; there is no fallback to running in-process.
  * 2. Wait for `init`, which the host sends only after accepting the report.
- * 3. **Guards.** Install the network guard and build the `child_process` shim.
+ * 3. **Guards.** Install the network guard, the process guard (signals only
+ *    to itself), and build the `child_process` shim.
  * 4. **Load the bundle** with the injected `require`.
  *
  * Exporting `register` and carrying `ctx` across the boundary arrive in a
@@ -33,6 +34,7 @@ import type { ChildMessage, HostMessage, InitMessage, PermissionReport } from '.
 import { createChildProcessShim } from './child-process-shim.js';
 import { createInjectedRequire, loadBundle } from './load-bundle.js';
 import { installNetGuard } from './net-guard.js';
+import { installProcessGuard } from './process-guard.js';
 
 /** The shape of Node's permission API, which `@types/node` may not declare. */
 interface PermissionApi {
@@ -139,6 +141,7 @@ function main(): void {
       dorkosPort: init.dorkosPort,
       ownAddresses: localAddresses(),
     });
+    installProcessGuard();
     const shim = createChildProcessShim(
       { send: (message) => send(message as ChildMessage) },
       { platform: process.platform, allowRun: init.allowRun }

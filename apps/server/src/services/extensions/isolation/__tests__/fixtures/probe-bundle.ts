@@ -228,6 +228,16 @@ exports.probes = {
   crash: () => { setTimeout(() => process.abort(), 10); return 'crashing'; },
   flood: (n) => { for (let i = 0; i < n; i++) console.log('line ' + i); return n; },
   floodMessages: (n) => { for (let i = 0; i < n; i++) process.send({ type: 'pong', n: i }); return n; },
+  signalParent: (signal) => attempt(() => process.kill(process.ppid, signal)),
+  signalGroup: () => attempt(() => process.kill(0, 0)),
+  rawKillParent: () => attempt(() => process._kill(process.ppid, 0)),
+  reniceParent: () =>
+    attempt(() => {
+      const os = require('os');
+      os.setPriority(process.ppid, os.getPriority(process.ppid));
+      return true;
+    }),
+  signalSelf: () => attempt(() => process.kill(process.pid, 0)),
   sendRaw: (message) => { process.send(message); return true; },
   sendStdin: (rid, bytes, times) => {
     for (let i = 0; i < times; i++) process.send({ type: 'run-stdin', rid, chunk: new Uint8Array(bytes) });
