@@ -228,5 +228,6 @@ exports.probes = {
   flood: (n) => { for (let i = 0; i < n; i++) console.log('line ' + i); return n; },
   floodMessages: (n) => { for (let i = 0; i < n; i++) process.send({ type: 'pong', n: i }); return n; },
   sendRaw: (message) => { process.send(message); return true; },
+  sendBig: (bytes) => { process.send({ type: 'run-stdin', rid: 999, chunk: new Uint8Array(bytes) }); return true; },
 };
 `;
