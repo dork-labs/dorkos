@@ -3,8 +3,8 @@
  * kind sends the message the protocol says, answers settle the right promise,
  * errors come back as the extension API's own classes, reverse calls answer
  * (and drop a cancelled answer), and the local members behave like
- * in-process (`schedule`'s 5-second floor, cancelled on stop) or fail closed
- * (`requirePerson`). The real child runs this same code in the conformance
+ * in-process (`schedule`'s 5-second floor, cancelled on stop) or read the
+ * host's verdict and fail closed without one (`requirePerson`). The real child runs this same code in the conformance
  * suite.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -16,7 +16,13 @@ import {
 } from '@dorkos/extension-api/server';
 import { createProxyCtx, rebuildError } from '../child/proxy-ctx.js';
 import { TOOLS_REFUSAL } from '../ctx-protocol.js';
-import type { ChildMessage } from '../ipc-protocol.js';
+import { PERSON_VERDICT_HEADER, type ChildMessage } from '../ipc-protocol.js';
+
+const PERSON_REFUSAL = {
+  error: "Only a person can change Ext A's settings.",
+  code: 'extension_person_required',
+  message: 'Ask them to do it in DorkOS.',
+};
 
 const errors = {
   AgentSendError: AgentSendError as never,
@@ -37,6 +43,7 @@ function setup(options: { allowAgents?: boolean; failSend?: boolean } = {}) {
       extensionId: 'ext-a',
       displayName: 'Ext A',
       allowAgents: options.allowAgents ?? false,
+      personRefusal: PERSON_REFUSAL,
       ctx: {
         extensionDir: '/ext',
         dorkHome: '/dork',
@@ -206,14 +213,44 @@ describe('proxy ctx local members', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  // Purpose: requirePerson fails closed until the host verdict exists.
-  it('refuses every request in requirePerson', () => {
+  /** Run requirePerson on a request carrying `header` as the verdict. */
+  function person(header: string | undefined) {
     const t = setup();
     const res = { status: vi.fn(() => res), json: vi.fn() };
     const next = vi.fn();
-    t.ctx.requirePerson({} as never, res as never, next);
+    const headers = header === undefined ? {} : { [PERSON_VERDICT_HEADER]: header };
+    t.ctx.requirePerson({ headers } as never, res as never, next);
+    return { res, next };
+  }
+
+  // Purpose: the host's yes lets the request through, and only a yes does.
+  it('lets a person through on the host verdict', () => {
+    const { res, next } = person(JSON.stringify({ ok: true }));
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  // Purpose: the host's refusal is answered word for word.
+  it('answers the host refusal as is', () => {
+    const body = { error: 'e', code: 'operator_cookie_required', message: 'm' };
+    const { res, next } = person(JSON.stringify({ ok: false, status: 401, body }));
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(body);
+  });
+
+  // Purpose: fail closed — no verdict, an unreadable one, or one with a
+  // status outside 4xx/5xx refuses with the in-process agent refusal.
+  it.each([
+    ['missing', undefined],
+    ['not JSON', '{ok:true'],
+    ['a 200 refusal', JSON.stringify({ ok: false, status: 200, body: PERSON_REFUSAL })],
+    ['a truthy non-boolean', JSON.stringify({ ok: 'yes' })],
+  ])('refuses when the verdict is %s', (_label, header) => {
+    const { res, next } = person(header);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(PERSON_REFUSAL);
   });
 
   // Purpose: stop rejects calls still waiting and refuses new ones.
