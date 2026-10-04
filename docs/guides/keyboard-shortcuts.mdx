@@ -99,6 +99,25 @@ Keep several agents open in one window and switch between them.
   }}
 />
 
+### Back and forward
+
+Each desktop tab remembers the pages it has shown, separately from your other tabs. The arrows at the top left go back and forward, and the clock button lists the tab's pages so you can jump to one. In a web browser, use the browser's own Back and Forward instead.
+
+<TypeTable
+  type={{
+    '⌘[ / Ctrl+[ / Alt+←': {
+      description: 'Go back one page in this tab. Your mouse’s back button does the same.',
+      type: 'key',
+    },
+    '⌘] / Ctrl+] / Alt+→': {
+      description: 'Go forward one page in this tab. Your mouse’s forward button does the same.',
+      type: 'key',
+    },
+  }}
+/>
+
+`Alt+←` and `Alt+→` are for Windows and Linux, and do nothing while you are typing in a text box. On a Mac, `⌥←` stays word-jump. If you are in a code editor that uses `⌘[` itself, the editor keeps it.
+
 ## Session
 
 While you have a session open. These need a session on screen, so they do nothing on the Agents, Tasks, or Marketplace pages.
