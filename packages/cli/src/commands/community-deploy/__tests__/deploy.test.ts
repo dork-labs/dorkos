@@ -119,6 +119,8 @@ function harness(initial = journal()) {
     }),
     resolvePlatformDigest: vi.fn(async () => PLATFORM_DIGEST),
     verifyNewRuntime: vi.fn((value) => value),
+    waitForMachineLeases: vi.fn(async () => undefined),
+    explainDeployFailure: vi.fn(async (error: unknown) => error),
     isInterruptedDeploy: vi.fn(() => false),
     verifyExistingRuntime: vi.fn((value) => value),
     verifyHealth: vi.fn(),
@@ -257,12 +259,34 @@ describe('Community deploy phase', () => {
     );
     expect(test.dependencies.deploy).toHaveBeenCalledOnce();
     expect(test.dependencies.deploy).toHaveBeenCalledWith(plan.imageDigest);
+    // The stopped deploy may still hold the Machine's lease: setup waits for it first (DOR-2702).
+    expect(test.dependencies.waitForMachineLeases).toHaveBeenCalledWith(['machine-id']);
+    expect(
+      vi.mocked(test.dependencies.waitForMachineLeases).mock.invocationCallOrder[0]
+    ).toBeLessThan(vi.mocked(test.dependencies.deploy).mock.invocationCallOrder[0]!);
     expect(test.dependencies.verifyNewRuntime).toHaveBeenCalledWith(
       interrupted,
       interrupted.releases,
       PLATFORM_DIGEST
     );
     expect(result.journal.state).toBe('healthy');
+
+    // A redeploy that still fails is reported through the lease check, never as the raw error.
+    const busy = harness(staged);
+    applied(busy);
+    vi.mocked(busy.dependencies.readRuntime).mockReset().mockResolvedValue(interrupted);
+    vi.mocked(busy.dependencies.verifyExistingRuntime).mockImplementation(() => {
+      throw new ProviderMutationError('INVALID_RESPONSE');
+    });
+    vi.mocked(busy.dependencies.isInterruptedDeploy).mockReturnValue(true);
+    const failed = new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
+    const explained = new Error('Fly is still finishing an earlier deploy');
+    vi.mocked(busy.dependencies.deploy).mockRejectedValue(failed);
+    vi.mocked(busy.dependencies.explainDeployFailure).mockResolvedValue(explained);
+    await expect(executeCommunityDeployPhase(plan, staged, busy.dependencies)).rejects.toBe(
+      explained
+    );
+    expect(busy.dependencies.explainDeployFailure).toHaveBeenCalledWith(failed, ['machine-id']);
 
     // Any other failed proof (another image, no Machine or several, a stopped or unhealthy one)
     // is not setup's to overwrite: it stops with an error that says what to check.

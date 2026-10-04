@@ -26,6 +26,13 @@ import type { LaunchPlan } from '../plan.js';
 import { ProviderMutationError } from '../provider-mutation.js';
 import { FLY_MACHINE_PLATFORM, resolvePlatformImageDigest } from './image-platform.js';
 import type { CompatibleCommunityRelease } from '../release-resolver.js';
+import {
+  FlyMachineBusyError,
+  cancellableSleep,
+  heldLeaseMinutes,
+  readFlyMachineLease,
+  waitForFlyMachineLeases,
+} from './fly-lease.js';
 
 const COMMUNITY_IMAGE_REPOSITORY = 'ghcr.io/dork-labs/dorkos-community';
 
@@ -71,7 +78,18 @@ export function createDefaultCommunityDeployDependencies(input: {
   now(): string;
   /** Settles the platform digest Fly will report; see {@link resolveCommunityPlatformDigest}. */
   resolvePlatformDigest(): Promise<string>;
+  /** Writes one progress line; standard output by default. */
+  progress?(line: string): void;
+  /** Wall clock and sleep for the lease wait; the real ones by default. Tests pass a fake. */
+  leaseClock?: { now(): number; sleep(ms: number): Promise<void> };
 }): CommunityDeployPhaseDependencies {
+  const readLease = (machineId: string) =>
+    readFlyMachineLease(input.options.fly, input.plan.fly.appName, machineId);
+  const progress = input.progress ?? ((line: string) => void process.stdout.write(`${line}\n`));
+  const clock = input.leaseClock ?? {
+    now: Date.now,
+    sleep: (ms: number) => cancellableSleep(ms, input.options.fly.signal),
+  };
   return {
     persist: input.persist,
     now: input.now,
@@ -111,6 +129,22 @@ export function createDefaultCommunityDeployDependencies(input: {
           configPath
         );
       }),
+    waitForMachineLeases: (machineIds) =>
+      waitForFlyMachineLeases({
+        appName: input.plan.fly.appName,
+        machineIds,
+        readLease,
+        progress,
+        now: clock.now,
+        sleep: clock.sleep,
+      }),
+    explainDeployFailure: async (error, machineIds) => {
+      // A cancelled deploy keeps its own error with no extra branch: the lease read shares the
+      // aborted signal, fails as cancelled, and `heldLeaseMinutes` treats that as no lease.
+      if (machineIds.length === 0) return error;
+      const minutes = await heldLeaseMinutes({ machineIds, readLease, now: clock.now });
+      return minutes === false ? error : new FlyMachineBusyError(input.plan.fly.appName, minutes);
+    },
     resolvePlatformDigest: input.resolvePlatformDigest,
     verifyNewRuntime: (inventory, previous, platformDigest) =>
       verifyFlyDeployment(inventory, previous, COMMUNITY_IMAGE_REPOSITORY, platformDigest),

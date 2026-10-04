@@ -80,7 +80,9 @@ export const NO_LAUNCH_RECORD_SUFFIX = ' before writing a launch record';
 /**
  * Say which error the launcher exited with, from its own terminal output. This is what explains a
  * launcher that refused its release (for example `COMMUNITY_RELEASE_INVALID`, DOR-2169) before it
- * wrote a journal, and a resumed launcher whose journal holds no saved error.
+ * wrote a journal. Since DOR-2702 a failed Fly, Neon or Tigris change prints plain words with no
+ * code, and the launcher saves that code in its journal instead, so `describeLauncherStop` (read
+ * first) is what names it.
  *
  * Only a code token is ever returned: the last failure line of the transcript (any prefix in
  * {@link LAUNCHER_FAILURE_PREFIXES}), its final `(CODE)`, checked against this checkout's error
