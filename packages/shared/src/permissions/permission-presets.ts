@@ -14,7 +14,7 @@ import type { PermissionAreaId, PermissionPreset, PermissionState } from './perm
 
 /** One preset: a state for every area, and the trust stop it sets for files. */
 export interface PermissionPresetTable {
-  /** A state for each of the ten state areas. */
+  /** A state for each of the eleven state areas. */
   readonly areas: Readonly<Record<PermissionAreaId, PermissionState>>;
   /** Action-level entries that beat the area entry. */
   readonly actions: Readonly<Record<string, PermissionState>>;
@@ -34,6 +34,7 @@ const CAREFUL: PermissionPresetTable = Object.freeze({
     messages: 'allowed',
     connections: 'ask',
     packages: 'ask',
+    extensions: 'ask',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -55,6 +56,7 @@ const BALANCED: PermissionPresetTable = Object.freeze({
     messages: 'allowed',
     connections: 'ask',
     packages: 'ask',
+    extensions: 'allowed',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -77,6 +79,7 @@ const FULL: PermissionPresetTable = Object.freeze({
     messages: 'allowed',
     connections: 'allowed',
     packages: 'ask',
+    extensions: 'allowed',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -106,6 +109,12 @@ export const PERMISSION_PRESET_TABLES: Readonly<Record<PermissionPreset, Permiss
  * its own (it is `destructive`), so an undecided install keeps asking for it
  * rather than losing it.
  *
+ * Extension tools (DOR-2685) did not exist before permissions, so there is no
+ * old behaviour to reproduce; they take the same answer as every other
+ * non-floor area here, Allowed, so their tier alone decides. A destructive
+ * extension tool still asks: the resolver turns an area-level Allowed on a
+ * destructive action into Ask.
+ *
  * `filesStop: null`: the stored trust stop stays untouched.
  */
 export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
@@ -116,6 +125,7 @@ export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
     messages: 'allowed',
     connections: 'allowed',
     packages: 'allowed',
+    extensions: 'allowed',
     settings: 'allowed',
     safety: 'blocked',
     permissions: 'blocked',
