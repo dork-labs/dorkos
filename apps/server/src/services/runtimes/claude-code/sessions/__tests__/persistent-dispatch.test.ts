@@ -163,6 +163,7 @@ import { SessionStateProjector } from '../../../../session/session-state-project
 import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
 import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
+import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
 
 const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
@@ -1093,6 +1094,97 @@ describe('a global plugin withdrawn from a warm process (DOR-2306, I-2)', () => 
         (opts) => (opts as { holdOnCacheImpact?: boolean } | undefined)?.holdOnCacheImpact !== true
       )
     ).toBe(true);
+  });
+});
+
+describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
+  /** What the next build of the `dorkos` server lists. */
+  let listed: string[];
+
+  beforeEach(() => {
+    optIn.persistentSession = true;
+    listed = ['ping', 'relay_send'];
+    // A fresh instance per launch, as the real factory builds, recording the
+    // tool surface the real factory would record for it.
+    runtime.setMcpServerFactory(() => {
+      const instance = {};
+      recordToolSurface(
+        instance,
+        listed.map((name) => ({ name, inputSchema: {} }))
+      );
+      return { dorkos: { type: 'sdk', name: 'dorkos', instance } as never };
+    });
+  });
+
+  it('rides the warm process while the list stays the same', async () => {
+    // Purpose: the server is rebuilt for every dispatch, so an unchanged list
+    // must still compare equal, or every message would relaunch.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    await turn(sessionId, 'second');
+    await turn(sessionId, 'third');
+    expect(cli.launches).toBe(1);
+  });
+
+  it('relaunches before the next turn when a tool joined, keeping the permission mode', async () => {
+    // Purpose: an extension started while the session was warm. The next
+    // message runs on a process that lists its tool, and the person's
+    // permission mode survives the relaunch.
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+    await turn(sessionId);
+    expect(cli.launches).toBe(1);
+
+    listed = [...listed, 'ext_mail_app__send'];
+    const events = await turn(sessionId, 'after the extension started');
+
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(cli.processes[1]!.options.permissionMode).toBe('acceptEdits');
+    // The message that triggered the relaunch is the one the new process ran.
+    expect(cli.processes[1]!.inbox.map((m) => m.content).join('\n')).toContain(
+      'after the extension started'
+    );
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('relaunches when a tool left the list', async () => {
+    // Purpose: a stopped extension, or a tool a permission now hides, must not
+    // stay listed in a warm process.
+    listed = [...listed, 'ext_mail_app__send'];
+    const sessionId = nextSession();
+    await turn(sessionId);
+
+    listed = ['ping', 'relay_send'];
+    await turn(sessionId, 'after the extension stopped');
+
+    expect(cli.launches).toBe(2);
+  });
+
+  it('never relaunches mid-turn: a change during a running turn waits for it to end', async () => {
+    // Purpose: the relaunch is decided at dispatch, so a turn already running
+    // finishes on the process it started on.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'a long turn');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    listed = [...listed, 'ext_mail_app__send'];
+    // Give anything that might react to the change a chance to.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(process.ended).toBe(false);
+    expect(cli.launches).toBe(1);
+
+    process.answer(process.received[1]!);
+    const events = await running;
+    expect(spokenText(events)).toContain('ok');
+    expect(process.ended).toBe(false);
+
+    await turn(sessionId, 'the next message');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
   });
 });
 

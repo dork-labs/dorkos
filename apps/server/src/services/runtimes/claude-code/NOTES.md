@@ -161,6 +161,27 @@ same toolkit, which keeps the server name and URL — compared EQUAL: `setMcpSer
 fired and the warm process went on using the old credential. Fields are hashed rather than
 spelled so no secret lands in the fingerprint.
 
+### `toolSurface` (what the `dorkos` server lists) — RELAUNCH (DOR-2685)
+
+Because `mcpServers` drops `instance`, an in-process (`sdk`) server compares by its name alone,
+so its tool list never reached a warm process: an extension's tools arriving or leaving, or a
+permission change hiding a tool, rode the process that listed the old set. The factory now
+records a digest of the list it built (each tool's name and input JSON Schema, sorted;
+`mcp-tools/tool-surface.ts`) against the instance, and the `toolSurface` pin compares it.
+
+**LIVE-VERIFY, resolved toward relaunch.** `setMcpServers` handed an `sdk` server under the
+SAME name might replace its tool list in place, but no run has shown the CLI doing that, and
+the pin would also have to fire it for a server whose declared config did not change. A
+differing surface therefore reaps the process at its next dispatch, before the turn opens, never
+mid-turn (`persistent-dispatch.test.ts` pins both). Move the pin to `live` only once a live test
+shows a warm process listing a new tool after `setMcpServers`.
+
+The cost is one prompt-cache loss per change per warm session. Changes are rare: an extension
+installed, updated, turned on or off, or a dev-link save that edits its tool declarations. The
+digest is a pure function of names and schemas, so two builds of an unchanged list compare equal
+(`mcp-tools/__tests__/tool-surface.test.ts`) and a `server.ts`-only extension restart, which
+re-registers the same declarations, does not relaunch anything.
+
 ### The agent identity token is pinned by IDENTITY, not by value
 
 `agent-identity-service.mint()` returns fresh random bytes on every call
