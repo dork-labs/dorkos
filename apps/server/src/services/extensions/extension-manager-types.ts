@@ -8,9 +8,11 @@ import type {
   ExtensionRecordPublic,
   ExtensionPointId,
   ExtensionStatus,
+  ExtensionToolStatus,
 } from '@dorkos/extension-api';
 import type { Router } from 'express';
 import { mayRunExtensionCode, type ExtensionApprovals } from './extension-load-policy.js';
+import type { RunningExtensionTools } from './agent-tools/tool-binding.js';
 
 /** Tracks an active server-side extension instance. */
 export interface ActiveServerExtension {
@@ -33,6 +35,12 @@ export interface ActiveServerExtension {
    * init request from cycling every server-side extension.
    */
   sourceKey: string;
+  /**
+   * The tools this instance gives agents (DOR-2685): contributed to the
+   * capability registry once it is active, and taken out first on shutdown.
+   * Absent for a proxy-only extension, which binds no handlers.
+   */
+  agentTools?: RunningExtensionTools;
 }
 
 /**
@@ -122,10 +130,13 @@ export interface TestExtensionResult {
  *   for), so the public record can carry the load-approval answer the cockpit
  *   renders. Passed in rather than read here to keep this module free of config
  *   I/O.
+ * @param tools - Where each declared tool stands right now
+ *   (`ExtensionServerLifecycle.toolStatuses`), when it declares any.
  */
 export function toPublic(
   record: ExtensionRecord,
-  approvals: ExtensionApprovals
+  approvals: ExtensionApprovals,
+  tools?: ExtensionToolStatus[]
 ): ExtensionRecordPublic {
   return {
     id: record.id,
@@ -143,5 +154,6 @@ export function toPublic(
     shadowedBy: record.shadowedBy ?? null,
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
     ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),
+    ...(tools ? { tools } : {}),
   };
 }

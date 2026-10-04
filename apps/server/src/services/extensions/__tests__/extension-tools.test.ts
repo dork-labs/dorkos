@@ -87,6 +87,34 @@ function parseResponse(result: {
 // --- Tests ---
 
 describe('list_extensions handler', () => {
+  it('shows each tool an extension gives agents, with why a refused one is not offered', async () => {
+    // Purpose: the API reference sends an agent here to debug a refused tool
+    // (DOR-2685), so the status and reason must be in the answer.
+    const manager = createMockManager({
+      listPublic: vi.fn(() => [
+        makePublicRecord('mail', {
+          tools: [
+            { name: 'send', title: 'Send', tier: 'act', status: 'active' },
+            {
+              name: 'dump',
+              title: 'Dump',
+              tier: 'observe',
+              status: 'refused',
+              reason: 'the input schema uses patternProperties',
+            },
+          ],
+        }),
+        makePublicRecord('plain'),
+      ]),
+    });
+    const data = parseResponse(await createListExtensionsHandler(createDeps(manager))());
+    expect(data.extensions[0].tools).toEqual([
+      { name: 'send', status: 'active' },
+      { name: 'dump', status: 'refused', reason: 'the input schema uses patternProperties' },
+    ]);
+    expect(data.extensions[1]).not.toHaveProperty('tools');
+  });
+
   it('returns extensions with count when manager is available', async () => {
     const manager = createMockManager({
       listPublic: vi.fn(() => [

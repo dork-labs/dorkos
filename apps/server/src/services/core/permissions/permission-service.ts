@@ -38,7 +38,11 @@ import {
 } from '@dorkos/shared/permissions';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
-import type { CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
+import {
+  extensionDomainName,
+  type CapabilitySource,
+  type CapabilityTier,
+} from '@dorkos/shared/capabilities';
 import type { z } from 'zod';
 
 import {
@@ -59,6 +63,8 @@ import {
   ARRIVAL_WRITE_FAILED_NOTE,
   ARRIVAL_WRITER,
   AUTONOMY_ACK_MESSAGE,
+  EXTENSION_REMOVAL_WRITER,
+  extensionRemovedNote,
   PermissionError,
   compact,
   isState,
@@ -757,6 +763,85 @@ export class PermissionService {
         input,
         writer
       );
+    });
+  }
+
+  /**
+   * Clear every permission setting kept for one extension's tools: the
+   * per-tool defaults and each agent's own (DOR-2685). Called when the
+   * extension is uninstalled, so a standing Allowed keyed by tool id never
+   * carries over to a later extension installed under the same id. Records
+   * one history line with no Undo (putting the settings back would re-grant a
+   * tool nobody chose for the new code).
+   *
+   * Matches ids by the extension's own domain plus the dot, so `ext_mail.`
+   * never touches `ext_mail_app.*`. Reads each agent's settings best-effort:
+   * one unreadable file is skipped, not fatal.
+   *
+   * @param extensionId - The extension being removed.
+   * @param extensionName - Its display name, for the history line.
+   * @returns Every change the write made.
+   */
+  async forgetExtensionActions(
+    extensionId: string,
+    extensionName: string
+  ): Promise<PermissionChange[]> {
+    const prefix = `${extensionDomainName(extensionId)}.`;
+    const owned = (id: string): boolean => id.startsWith(prefix);
+    return this.exclusive(async () => {
+      const config = this.deps.config.get();
+      const defaults = { ...(config.defaults.actions ?? {}) };
+      const changes: PermissionChange[] = [];
+      for (const [id, state] of Object.entries(defaults)) {
+        if (!owned(id)) continue;
+        delete defaults[id];
+        changes.push({
+          target: { kind: 'default' },
+          key: { kind: 'action', action: id, area: 'extensions' },
+          before: state,
+          after: null,
+        });
+      }
+      const keys = new Set<string>();
+      const agents: PermissionAgentRef[] = [];
+      for (const agent of this.deps.agents.list()) {
+        let stored: AgentPermissions | undefined;
+        try {
+          stored = await this.deps.agents.readPermissions(agent.projectPath);
+        } catch {
+          continue;
+        }
+        const mine = Object.keys(stored?.actions ?? {}).filter(owned);
+        if (mine.length === 0) continue;
+        agents.push(agent);
+        for (const id of mine) keys.add(id);
+      }
+      // The tools are already out of the registry, so their area is supplied
+      // here for the history rows rather than read from the action list.
+      const actions = new Map<string, PermissionActionInfo>(
+        [...keys].map((id) => [
+          id,
+          { id, title: id, tier: 'act', area: 'extensions' } satisfies PermissionActionInfo,
+        ])
+      );
+      const cleared = await this.clearAgentKeys(agents, { areas: [], actions: [...keys] }, actions);
+      if (changes.length === 0 && cleared.changes.length === 0) return [];
+      if (changes.length > 0) {
+        this.deps.config.set({ ...config, defaults: { ...config.defaults, actions: defaults } });
+      }
+      await cleared.write();
+      const all = [...changes, ...cleared.changes];
+      await this.record(
+        {
+          changes: all,
+          surface: 'upgrade',
+          writer: EXTENSION_REMOVAL_WRITER,
+          origin: 'extension-removed',
+          note: extensionRemovedNote(extensionName),
+        },
+        (id) => id
+      );
+      return all;
     });
   }
 

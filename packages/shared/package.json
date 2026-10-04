@@ -113,6 +113,10 @@
       "types": "./src/extension-id.ts",
       "default": "./dist/extension-id.js"
     },
+    "./portable-input-shape": {
+      "types": "./src/portable-input-shape.ts",
+      "default": "./dist/portable-input-shape.js"
+    },
     "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
       "default": "./dist/relay-schemas.js"

@@ -12,6 +12,10 @@ export {
   SettingDeclarationSchema,
   StorageMigrationSchema,
   StorageDeclarationSchema,
+  ExtensionToolDeclarationSchema,
+  ExtensionSkillDeclarationSchema,
+  EXTENSION_TOOL_TIMEOUT_MAX_SECONDS,
+  EXTENSION_TOOL_TIMEOUT_DEFAULT_SECONDS,
 } from './manifest-schema.js';
 export type {
   ExtensionManifest,
@@ -23,6 +27,7 @@ export type {
   ExtensionCapabilities,
   StorageMigration,
   StorageDeclaration,
+  ExtensionToolDeclaration,
 } from './manifest-schema.js';
 export type {
   ExtensionAPI,
@@ -70,6 +75,8 @@ export type {
   ExtensionRecordPublic,
   ExtensionModule,
   ExtensionOrigin,
+  ExtensionToolCheckSummary,
+  ExtensionToolStatus,
 } from './types.js';
 export type {
   SecretStore,
@@ -103,3 +110,4 @@ export type {
   ProjectSettingsReader,
   SessionsApi,
 } from './server-extension-api.js';
+export type { ToolsApi, ExtensionToolHandler, ExtensionToolCall } from './extension-tools.js';

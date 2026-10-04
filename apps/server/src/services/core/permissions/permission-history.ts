@@ -41,7 +41,7 @@ import {
 import type { ActivityItem, ActorType } from '@dorkos/shared/activity-schemas';
 
 import type { ActivityService } from '../../activity/activity-service.js';
-import { isArrivalScreenLine } from './permission-values.js';
+import { isArrivalScreenLine, isExtensionRemovalLine } from './permission-values.js';
 
 /** Who made a permission change, as the Activity row records it. */
 export interface PermissionWriter {
@@ -412,8 +412,12 @@ function toHistoryLine(row: ActivityItem, agentId: string | undefined): HistoryL
         ...base,
         actorDetail: actorDetailFor(parsed.data.attribution),
         metadata: parsed.data,
-        // An arrival screen's line has no Undo (see `isArrivalScreenLine`).
-        undoable: parsed.data.changes.length > 0 && !isArrivalScreenLine(parsed.data),
+        // An arrival screen's line has no Undo (see `isArrivalScreenLine`), nor
+        // does the clearing of a removed extension's tool settings.
+        undoable:
+          parsed.data.changes.length > 0 &&
+          !isArrivalScreenLine(parsed.data) &&
+          !isExtensionRemovalLine(parsed.data),
       };
     }
     default:

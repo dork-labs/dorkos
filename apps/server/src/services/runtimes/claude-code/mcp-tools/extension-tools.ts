@@ -231,6 +231,14 @@ interface DataProviderContext {
   // Message an agent: send({ to, text, context?, idempotencyKey }) → { messageId, status };
   // subscribe(fn) → turn.started / turn.done / turn.failed by messageId
   readonly agent: AgentApi;
+  // Bind handlers for the tools extension.json declares (call during register)
+  readonly tools: {
+    handle(
+      name: string,
+      handler: (input: unknown, call: { signal: AbortSignal; agentId: string | null })
+        => unknown | Promise<unknown>
+    ): void;
+  };
 }
 \`\`\`
 
@@ -262,6 +270,32 @@ interface DataProviderContext {
 \`\`\`
 
 Proxy routes are auto-mounted at \`/api/ext/{id}/proxy/*\`.
+
+### Manifest: tools and skills (give agents tools)
+
+\`\`\`json
+{
+  "serverCapabilities": { "serverEntry": "./server.ts" },
+  "tools": [{
+    "name": "send_message", "title": "Send an email", "tier": "act",
+    "description": "Send an email from the person's mail account.",
+    "inputSchema": { "type": "object", "properties": { "to": { "type": "string" } },
+      "required": ["to"], "additionalProperties": false },
+    "approvalDisplayFields": ["to"], "timeoutSeconds": 60
+  }],
+  "skills": ["triage-inbox"]
+}
+\`\`\`
+
+Bind each tool in \`register()\`: \`ctx.tools.handle('send_message', async (input, call) => ({ sent: true }))\`.
+Agents see \`ext_<id, - as _>__<name>\` once register() finishes; it goes when the extension stops.
+Name tools by that bare name in skills. \`name\`: lowercase words joined by single underscores;
+\`mcp__dorkos__ext_<id>__<name>\` fits 64 chars. \`tier\`: observe | act (can be set to ask) |
+destructive (asks every call). \`inputSchema\`: closed JSON Schema; every object sets
+\`"additionalProperties": false\`; no patternProperties, propertyNames, $ref. Act and destructive
+tools need \`approvalDisplayFields\`. \`timeoutSeconds\`: 1-300, default 60. A throw becomes a tool
+error prefixed with the extension's name; results are plain JSON up to 256 KB; \`call.signal\` aborts
+on timeout or stop. \`list_extensions\` shows each tool's status and why one was refused.
 `;
 
 /**
@@ -300,6 +334,14 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
       serverStatus: manager.getServerRouter(ext.id) ? ('active' as const) : ('inactive' as const),
       ...(ext.manifest.description && { description: ext.manifest.description }),
       ...(ext.error && { error: ext.error }),
+      // What it gives agents, and why a tool is not offered (DOR-2685).
+      ...(ext.tools && {
+        tools: ext.tools.map((tool) => ({
+          name: tool.name,
+          status: tool.status,
+          ...(tool.reason ? { reason: tool.reason } : {}),
+        })),
+      }),
     }));
     return jsonContent({ extensions, count: extensions.length });
   };

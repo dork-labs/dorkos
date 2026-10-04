@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { checkDeclaredTools, summarizeToolCheck } from '@dorkos/extension-api/tool-check';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { ExtensionRecord, ExtensionManifest } from '@dorkos/extension-api';
 import {
@@ -589,6 +590,12 @@ export class ExtensionDiscovery {
       const manifest = result.data;
       const { hasServerEntry, resolvedPath } = await this.detectServerEntry(extDir, manifest);
       const hasDataProxy = !!manifest.dataProxy;
+      // Every declared tool is judged here, before any code runs, so a card
+      // can say which tool was refused and why (DOR-2685). The lifecycle runs
+      // the same check again when it binds handlers.
+      const toolChecks = manifest.tools?.length
+        ? checkDeclaredTools(manifest).map(summarizeToolCheck)
+        : undefined;
 
       return {
         id: manifest.id,
@@ -600,6 +607,7 @@ export class ExtensionDiscovery {
         hasServerEntry,
         hasDataProxy,
         serverEntryPath: hasServerEntry ? resolvedPath : undefined,
+        ...(toolChecks ? { toolChecks } : {}),
       };
     } catch (err) {
       return {

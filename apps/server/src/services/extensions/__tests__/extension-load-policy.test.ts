@@ -65,6 +65,7 @@ vi.mock('../extension-server-api-factory.js', () => ({
     },
     getScheduledCleanups: () => [],
     releaseListeners: () => {},
+    tools: { seal: () => ({ handled: [], unhandled: [] }), close: () => {} },
   }),
 }));
 

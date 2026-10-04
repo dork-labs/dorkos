@@ -1,5 +1,13 @@
 import { z } from 'zod';
+import {
+  CAPABILITY_TIERS,
+  EXTENSION_MCP_TOOL_NAME_MAX,
+  EXTENSION_TOOL_NAME_PATTERN,
+  EXTENSION_TOOL_TITLE_MAX,
+  extensionMcpToolName,
+} from '@dorkos/shared/capabilities';
 import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
+import { validateSlug } from '@dorkos/skills/slug';
 import { EXTENSION_EVENT_DECLARATIONS } from './extension-events.js';
 
 /**
@@ -133,6 +141,70 @@ export const StorageDeclarationSchema = z
     message: 'storage.migrations must be numbered 1..N in order with no gaps',
   });
 
+/** The longest a tool may run before DorkOS stops waiting, in seconds. */
+export const EXTENSION_TOOL_TIMEOUT_MAX_SECONDS = 300;
+
+/** How long a tool may run when its declaration does not say, in seconds. */
+export const EXTENSION_TOOL_TIMEOUT_DEFAULT_SECONDS = 60;
+
+/**
+ * One tool an extension gives the person's agents (DOR-2685).
+ *
+ * Declared here, handled in `server.ts` with `ctx.tools.handle(name, handler)`.
+ * Agents see it as `ext_<extension id>__<name>`. The input schema is checked
+ * again by DorkOS when the extension is discovered: it must be a closed JSON
+ * Schema (every object says `"additionalProperties": false`), because one
+ * open-ended schema would hide every DorkOS tool from Claude Code agents.
+ */
+export const ExtensionToolDeclarationSchema = z.object({
+  /**
+   * The tool's name inside this extension, e.g. `send_message`: lowercase
+   * words joined by single underscores.
+   */
+  name: z
+    .string()
+    .regex(
+      EXTENSION_TOOL_NAME_PATTERN,
+      'Use lowercase letters and digits, with single underscores between words'
+    ),
+  /** The label a person reads on approval cards and the permissions page. One line. */
+  title: z.string().min(1).max(EXTENSION_TOOL_TITLE_MAX),
+  /** What the tool does and when an agent should use it. */
+  description: z.string().min(1).max(1024),
+  /**
+   * `observe` only reads; `act` changes something and can be set to ask first;
+   * `destructive` deletes or removes something and asks a person every time.
+   */
+  tier: z.enum(CAPABILITY_TIERS),
+  /** The input as a JSON Schema object. DorkOS checks the full rules at discovery. */
+  inputSchema: z.object({ type: z.literal('object') }).passthrough(),
+  /**
+   * Top-level input fields the approval card shows, most important first.
+   * Required for `act` and `destructive` tools.
+   */
+  approvalDisplayFields: z.array(z.string()).optional(),
+  /**
+   * How long one call may run before DorkOS stops waiting, in seconds
+   * (1 to {@link EXTENSION_TOOL_TIMEOUT_MAX_SECONDS}, default
+   * {@link EXTENSION_TOOL_TIMEOUT_DEFAULT_SECONDS}). There is no way to turn
+   * the limit off.
+   */
+  timeoutSeconds: z
+    .number()
+    .int()
+    .min(1)
+    .max(EXTENSION_TOOL_TIMEOUT_MAX_SECONDS)
+    .default(EXTENSION_TOOL_TIMEOUT_DEFAULT_SECONDS),
+});
+
+/**
+ * One skill an extension ships: the name of a folder under `<extension>/skills/`
+ * holding a `SKILL.md`, following the SKILL.md naming rule.
+ */
+export const ExtensionSkillDeclarationSchema = z
+  .string()
+  .refine(validateSlug, 'Use 1-64 lowercase letters, digits and single hyphens');
+
 /**
  * Re-exported from `@dorkos/shared/extension-id`, which owns the single
  * definition: the stores that name a file after an extension id sit below this
@@ -140,8 +212,11 @@ export const StorageDeclarationSchema = z
  */
 export { EXTENSION_ID_REGEX };
 
-/** Zod schema for `extension.json` manifest files. */
-export const ExtensionManifestSchema = z.object({
+/**
+ * The fields of `extension.json`, before the checks that span several fields
+ * ({@link ExtensionManifestSchema} adds those).
+ */
+const ExtensionManifestObjectSchema = z.object({
   /** Unique extension identifier (kebab-case). Used as directory name and registry key. */
   id: z.string().min(1).regex(EXTENSION_ID_REGEX),
   /** Human-readable display name. */
@@ -177,7 +252,83 @@ export const ExtensionManifestSchema = z.object({
   defaultEnabled: z.boolean().optional(),
   /** Whether the user may disable this extension. Defaults to true. false = always on, no toggle shown. */
   canDisable: z.boolean().optional(),
+  /**
+   * Tools this extension gives the person's agents while it runs (DOR-2685).
+   * Needs a server entry (`serverCapabilities`), where `ctx.tools.handle`
+   * binds each one. Not the same as
+   * `capabilities`, which declares the host events the extension may subscribe to.
+   */
+  tools: z.array(ExtensionToolDeclarationSchema).optional(),
+  /** Skills this extension ships, by folder name under `<extension>/skills/`. */
+  skills: z.array(ExtensionSkillDeclarationSchema).optional(),
 });
+
+/**
+ * Check the rules that span fields: tool names are unique, tools need a server
+ * entry, every approval display field is a top-level input property, and every
+ * tool's full MCP name fits the model API's limit.
+ */
+function checkToolDeclarations(
+  manifest: z.infer<typeof ExtensionManifestObjectSchema>,
+  ctx: z.RefinementCtx
+): void {
+  const tools = manifest.tools ?? [];
+  if (tools.length > 0 && !manifest.serverCapabilities) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['tools'],
+      message: 'Tools need a server entry: add "serverCapabilities" and handle them in server.ts',
+    });
+  }
+  const seen = new Set<string>();
+  tools.forEach((tool, index) => {
+    if (seen.has(tool.name)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['tools', index, 'name'],
+        message: `Tool "${tool.name}" is declared more than once`,
+      });
+    }
+    seen.add(tool.name);
+    const properties = tool.inputSchema.properties;
+    const keys =
+      properties && typeof properties === 'object' && !Array.isArray(properties)
+        ? Object.keys(properties)
+        : [];
+    (tool.approvalDisplayFields ?? []).forEach((field, fieldIndex) => {
+      if (!keys.includes(field)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['tools', index, 'approvalDisplayFields', fieldIndex],
+          message: `Tool "${tool.name}" shows "${field}" on its approval card, but its input has no such property`,
+        });
+      }
+    });
+    const mcpName = extensionMcpToolName(manifest.id, tool.name);
+    if (mcpName.length > EXTENSION_MCP_TOOL_NAME_MAX) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['tools', index, 'name'],
+        message: `Tool "${tool.name}" makes the name ${mcpName} (${mcpName.length} characters); agents allow at most ${EXTENSION_MCP_TOOL_NAME_MAX}`,
+      });
+    }
+  });
+  const skills = new Set<string>();
+  (manifest.skills ?? []).forEach((skill, index) => {
+    if (skills.has(skill)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['skills', index],
+        message: `Skill "${skill}" is listed more than once`,
+      });
+    }
+    skills.add(skill);
+  });
+}
+
+/** Zod schema for `extension.json` manifest files. */
+export const ExtensionManifestSchema =
+  ExtensionManifestObjectSchema.superRefine(checkToolDeclarations);
 
 export type ExtensionManifest = z.infer<typeof ExtensionManifestSchema>;
 export type SecretDeclaration = z.infer<typeof SecretDeclarationSchema>;
@@ -188,3 +339,4 @@ export type ServerCapabilities = z.infer<typeof ServerCapabilitiesSchema>;
 export type ExtensionCapabilities = z.infer<typeof ExtensionCapabilitiesSchema>;
 export type StorageMigration = z.infer<typeof StorageMigrationSchema>;
 export type StorageDeclaration = z.infer<typeof StorageDeclarationSchema>;
+export type ExtensionToolDeclaration = z.infer<typeof ExtensionToolDeclarationSchema>;

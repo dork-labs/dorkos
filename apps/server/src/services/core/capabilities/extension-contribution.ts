@@ -23,13 +23,19 @@
  */
 import { z } from 'zod';
 import {
-  CAPABILITY_TIERS,
   EXTENSION_CAPABILITY_ID_PREFIX,
-  isSecretInputKey,
+  EXTENSION_MCP_TOOL_NAME_MAX,
+  EXTENSION_TOOL_NAME_PATTERN,
+  EXTENSION_TOOL_TITLE_MAX,
+  extensionDomainName,
   type CapabilitySource,
   type CapabilityTier,
 } from '@dorkos/shared/capabilities';
-import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
+import {
+  checkContributionShape,
+  EXTENSION_DISPLAY_NAME_MAX,
+  type Checked,
+} from '@dorkos/extension-api/tool-check';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 
 import type { CapabilityDefinition } from './capability-definition.js';
@@ -48,55 +54,16 @@ export const EXTENSION_DOMAIN_PREFIX = EXTENSION_CAPABILITY_ID_PREFIX;
 export const EXTENSION_TOOLS_AREA: PermissionAreaId = 'extensions';
 
 /**
- * The shape of one tool's name inside its extension, e.g. `send_message`:
- * lowercase words joined by single underscores. No `__` and no leading or
- * trailing `_`, so the first `__` in `ext_<id>__<tool>` always marks where the
- * extension ends and the tool begins.
+ * Re-exported from `@dorkos/shared/capabilities`, which owns them so the
+ * manifest schema and this check read one definition and cannot drift.
  */
-export const EXTENSION_TOOL_NAME_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
-
-/**
- * The prefix a harness puts in front of a tool from the `dorkos` MCP server
- * (Claude Code's form, the longest of the three runtimes').
- */
-const MCP_TOOL_PREFIX = 'mcp__dorkos__';
-
-/** The longest tool name the model API accepts, prefix included. */
-const MCP_QUALIFIED_NAME_MAX = 64;
-
-/**
- * The longest MCP tool name (`ext_<id>__<tool>`) an extension tool may have, so
- * the name a harness sends the model API stays within its 64-character limit.
- * One name over it would fail every turn of every session that lists it.
- */
-export const EXTENSION_MCP_TOOL_NAME_MAX = MCP_QUALIFIED_NAME_MAX - MCP_TOOL_PREFIX.length;
+export { EXTENSION_TOOL_NAME_PATTERN, EXTENSION_MCP_TOOL_NAME_MAX, extensionDomainName };
 
 /** The longest title, which a person reads on cards and the permissions page. */
-export const EXTENSION_TITLE_MAX = 80;
+export const EXTENSION_TITLE_MAX = EXTENSION_TOOL_TITLE_MAX;
 
 /** The longest extension display name, shown beside every one of its tools. */
-export const EXTENSION_DISPLAY_NAME_MAX = 40;
-
-/**
- * Names an extension may not call itself, compared after lowercasing and
- * dropping everything but letters and digits: a row or card reading "From
- * DorkOS" would claim the tool is DorkOS's own.
- */
-const RESERVED_DISPLAY_NAMES: ReadonlySet<string> = new Set(['dorkos', 'dorkbot']);
-
-/**
- * The registry domain an extension's tools live under: `ext_` plus the
- * extension id with every `-` turned into `_`.
- *
- * Injective because an extension id can never contain `_`
- * (`EXTENSION_ID_REGEX`), so two different extensions can never share a domain.
- *
- * @param extensionId - A valid extension id, e.g. `mail-app`.
- * @returns The domain, e.g. `ext_mail_app`.
- */
-export function extensionDomainName(extensionId: string): string {
-  return EXTENSION_DOMAIN_PREFIX + extensionId.replaceAll('-', '_');
-}
+export { EXTENSION_DISPLAY_NAME_MAX };
 
 /**
  * Whether an action is an extension's destructive tool, which asks a person on
@@ -176,194 +143,13 @@ export interface ExtensionContribution {
   tools: readonly ExtensionToolSpec[];
 }
 
-/** Either a usable value or the sentence saying why it was refused. */
-type Checked<T> = { ok: true; value: T } | { ok: false; reason: string };
-
-/**
- * Characters author text on a card may not contain: the straight double quote
- * and every typographic quote mark (`“ ” „ ‟ ‘ ’ ‚ ‛ « » ‹ ›`, CJK and
- * full-width quotes), C0/C1 controls (`\p{Cc}`), the line and paragraph separators, and
- * every format character (`\p{Cf}`).
- */
-const CARD_TEXT_REFUSED =
-  /["\p{Cc}\u00ab\u00bb\u2018-\u201f\u2039\u203a\u2028\u2029\u300c-\u300f\u301d-\u301f\uff02\uff07\p{Cf}]/u;
-
-/**
- * Whether a display name contains a letter outside ASCII, after NFKC folds
- * compatibility forms (full-width letters, ligatures) to their plain letters.
- * Refused because a look-alike letter — a Cyrillic `о` in "DоrkOS" — would let
- * a name read as one the reserved-name check refuses.
- */
-function hasNonAsciiLetter(value: string): boolean {
-  return /[^\p{ASCII}]/u.test(value.normalize('NFKC').replace(/[^\p{L}]/gu, ''));
-}
-
-/** Whether a value is a non-empty string after trimming. */
-function isText(value: unknown): value is string {
-  return typeof value === 'string' && value.trim() !== '';
-}
-
-/**
- * Whether author text is safe to put on a card: a non-empty single line within
- * `max` characters, with no quote mark, no control character and no invisible
- * format character. A quote, straight or typographic, could close (or look as
- * if it closed) the card's quoted title and forge a field after it; a newline
- * or control character could fake a second line; a format character (Unicode
- * category Cf: zero-width spaces, bidi overrides and isolates, the BOM, soft
- * hyphens) can hide text or reorder what a person reads.
- */
-function isCardText(value: unknown, max: number): value is string {
-  return (
-    isText(value) && value.length <= max && value === value.trim() && !CARD_TEXT_REFUSED.test(value)
-  );
-}
-
-/**
- * Find the first JSON Schema construct an agent tool list cannot carry.
- *
- * `propertyNames` is what `z.record` (and `z.json`) render to, and a record
- * anywhere in any in-session tool's input empties the whole `dorkos` tool list
- * on the current Claude SDK (`tool-exposure.ts`). `$ref` and `patternProperties`
- * come from the same family, and an `additionalProperties` that is anything but
- * `false` is an open map (catchall, loose) the spec refuses as well (§2).
- *
- * @returns The offending keyword, or `undefined` when the schema is closed.
- */
-function openSchemaKeyword(node: unknown): string | undefined {
-  if (Array.isArray(node)) {
-    for (const item of node) {
-      const found = openSchemaKeyword(item);
-      if (found) return found;
-    }
-    return undefined;
-  }
-  if (!node || typeof node !== 'object') return undefined;
-  const record = node as Record<string, unknown>;
-  for (const keyword of ['propertyNames', 'patternProperties', '$ref', '$defs']) {
-    if (keyword in record) return keyword;
-  }
-  if ('additionalProperties' in record && record.additionalProperties !== false) {
-    return 'additionalProperties';
-  }
-  for (const value of Object.values(record)) {
-    const found = openSchemaKeyword(value);
-    if (found) return found;
-  }
-  return undefined;
-}
-
-/**
- * Check that an input schema renders as closed JSON Schema.
- *
- * Rendering here, once, is what keeps one tool from breaking everyone else's:
- * the catalog renders every capability's schema on every read, and an
- * unrepresentable type (`z.date()`, a `.transform()`) throws there.
- */
-function checkSchema(name: string, input: z.ZodObject): string | undefined {
-  let rendered: unknown;
-  try {
-    rendered = z.toJSONSchema(input);
-  } catch (err) {
-    const why = err instanceof Error ? err.message : String(err);
-    return `tool "${name}" input cannot be written as JSON Schema: ${why}`;
-  }
-  const keyword = openSchemaKeyword(rendered);
-  return keyword
-    ? `tool "${name}" input uses ${keyword}, which agent tool lists cannot carry`
-    : undefined;
-}
-
-/**
- * Read one tool spec into a fresh plain object, checking every field once.
- *
- * Reading each field exactly once matters: a contribution is author-supplied,
- * and a getter that answered one way to the check and another way to the build
- * would otherwise slip past the check.
- */
-function checkTool(raw: unknown, index: number): Checked<ExtensionToolSpec> {
-  if (!raw || typeof raw !== 'object') {
-    return { ok: false, reason: `tool ${index + 1} is not an object` };
-  }
-  const spec = raw as Record<string, unknown>;
-  const name = spec.name;
-  const title = spec.title;
-  const description = spec.description;
-  const tier = spec.tier;
-  const input = spec.input;
-  const displayFields = spec.approvalDisplayFields;
-  const invoke = spec.invoke;
-
-  if (typeof name !== 'string' || !EXTENSION_TOOL_NAME_PATTERN.test(name)) {
-    return { ok: false, reason: `tool ${index + 1} has an invalid name` };
-  }
-  if (!isCardText(title, EXTENSION_TITLE_MAX)) {
-    return {
-      ok: false,
-      reason: `tool "${name}" title must be one line of at most ${EXTENSION_TITLE_MAX} characters, with no quotes`,
-    };
-  }
-  if (!isText(description)) return { ok: false, reason: `tool "${name}" has no description` };
-  if (typeof tier !== 'string' || !(CAPABILITY_TIERS as readonly string[]).includes(tier)) {
-    return { ok: false, reason: `tool "${name}" has an unknown tier` };
-  }
-  if (!(input instanceof z.ZodObject)) {
-    return { ok: false, reason: `tool "${name}" input is not an object schema` };
-  }
-  const schemaProblem = checkSchema(name, input);
-  if (schemaProblem) return { ok: false, reason: schemaProblem };
-  if (typeof invoke !== 'function') {
-    return { ok: false, reason: `tool "${name}" has no handler` };
-  }
-
-  const keys = Object.keys(input.shape);
-  let fields: readonly string[] | undefined;
-  if (displayFields !== undefined) {
-    if (!Array.isArray(displayFields)) {
-      return { ok: false, reason: `tool "${name}" display fields are not a list` };
-    }
-    const copy = [...(displayFields as unknown[])];
-    for (const field of copy) {
-      if (typeof field !== 'string' || !keys.includes(field)) {
-        return { ok: false, reason: `tool "${name}" shows a field its input does not have` };
-      }
-      // A display field reaches the broadcast approval card and the
-      // agent-readable pending list, so one named like a secret is refused
-      // here exactly as conformance refuses it on a core capability.
-      if (isSecretInputKey(field)) {
-        return { ok: false, reason: `tool "${name}" shows a secret field on its card` };
-      }
-    }
-    fields = Object.freeze(copy as string[]);
-  }
-  // The same rule capability conformance holds core actions to: anything that
-  // can raise a card says what the card shows, and a destructive card always
-  // shows something. Only an `act` tool that takes no arguments may show none.
-  if (tier !== 'observe') {
-    if (!fields) {
-      return { ok: false, reason: `tool "${name}" must say which fields its approval card shows` };
-    }
-    if (fields.length === 0 && (tier === 'destructive' || keys.length > 0)) {
-      return { ok: false, reason: `tool "${name}" approval card would show none of its fields` };
-    }
-  }
-
-  const handler = invoke as ExtensionToolSpec['invoke'];
-  return {
-    ok: true,
-    value: {
-      name,
-      title,
-      description,
-      tier: tier as CapabilityTier,
-      input,
-      ...(fields ? { approvalDisplayFields: fields } : {}),
-      invoke: (parsed, ctx) => handler(parsed, ctx),
-    },
-  };
-}
-
 /**
  * Check a contribution and copy it into a fresh, frozen plain value.
+ *
+ * The rules live in `@dorkos/extension-api/tool-check`
+ * ({@link checkContributionShape}), which discovery and `dorkos marketplace
+ * validate` run too; this adds the one thing only the server has, each tool's
+ * handler, read once right after its input schema passes.
  *
  * Never throws: anything wrong, including a field that throws when read, comes
  * back as a refusal sentence the caller reports on the extension.
@@ -372,75 +158,25 @@ function checkTool(raw: unknown, index: number): Checked<ExtensionToolSpec> {
  * @returns The checked copy, or the reason it was refused.
  */
 export function checkExtensionContribution(contribution: unknown): Checked<ExtensionContribution> {
-  try {
-    if (!contribution || typeof contribution !== 'object') {
-      return { ok: false, reason: 'the contribution is not an object' };
-    }
-    const raw = contribution as Record<string, unknown>;
-    const owner = raw.owner;
-    const displayName = raw.displayName;
-    const tools = raw.tools;
-    // `--` or a trailing `-` would put `__` in, or `_` at the end of, the
-    // domain, and the MCP name `ext_<id>__<tool>` could then be read two ways.
-    if (
-      typeof owner !== 'string' ||
-      !EXTENSION_ID_REGEX.test(owner) ||
-      owner.includes('--') ||
-      owner.endsWith('-')
-    ) {
-      return { ok: false, reason: 'the extension id is invalid' };
-    }
-    if (!isCardText(displayName, EXTENSION_DISPLAY_NAME_MAX)) {
-      return {
-        ok: false,
-        reason: `${owner} display name must be one line of at most ${EXTENSION_DISPLAY_NAME_MAX} characters, with no quotes`,
-      };
-    }
-    if (hasNonAsciiLetter(displayName)) {
-      return { ok: false, reason: `${owner} display name must use plain letters A to Z` };
-    }
-    if (
-      RESERVED_DISPLAY_NAMES.has(
-        displayName
-          .normalize('NFKC')
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, '')
-      )
-    ) {
-      return { ok: false, reason: `${owner} may not call itself ${displayName}` };
-    }
-    if (!Array.isArray(tools) || tools.length === 0) {
-      return { ok: false, reason: `${displayName} contributes no tools` };
-    }
-    const domain = extensionDomainName(owner);
-    const checked: ExtensionToolSpec[] = [];
-    const names = new Set<string>();
-    for (const [index, tool] of [...(tools as unknown[])].entries()) {
-      const result = checkTool(tool, index);
-      if (!result.ok) return { ok: false, reason: `${displayName}: ${result.reason}` };
-      if (names.has(result.value.name)) {
-        return { ok: false, reason: `${displayName} declares "${result.value.name}" twice` };
-      }
-      const toolName = `${domain}__${result.value.name}`;
-      if (toolName.length > EXTENSION_MCP_TOOL_NAME_MAX) {
-        return {
-          ok: false,
-          reason: `${displayName}: tool "${result.value.name}" makes the name ${toolName}, longer than ${EXTENSION_MCP_TOOL_NAME_MAX} characters`,
-        };
-      }
-      names.add(result.value.name);
-      checked.push(result.value);
-    }
-    return {
-      ok: true,
-      value: Object.freeze({ owner, displayName, tools: Object.freeze(checked) }),
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      reason: `the contribution could not be read: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
+  const checked = checkContributionShape(contribution, (spec, name) => {
+    const invoke = spec.invoke;
+    return typeof invoke === 'function'
+      ? { ok: true, value: invoke as ExtensionToolSpec['invoke'] }
+      : { ok: false, reason: `tool "${name}" has no handler` };
+  });
+  if (!checked.ok) return checked;
+  const tools: ExtensionToolSpec[] = checked.value.tools.map(({ extra: handler, ...fields }) => ({
+    ...fields,
+    invoke: (parsed, ctx) => handler(parsed, ctx),
+  }));
+  return {
+    ok: true,
+    value: Object.freeze({
+      owner: checked.value.owner,
+      displayName: checked.value.displayName,
+      tools: Object.freeze(tools),
+    }),
+  };
 }
 
 /**

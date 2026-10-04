@@ -20,9 +20,12 @@ import path from 'node:path';
 import { z } from 'zod';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { validateSkillStructure } from '@dorkos/skills/validator';
+import { ExtensionManifestSchema } from '@dorkos/extension-api/manifest';
+import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import {
   AGENT_MANIFEST_PATH,
   CLAUDE_PLUGIN_MANIFEST_PATH,
+  EFFECT_BEARING_PATHS,
   PACKAGE_MANIFEST_PATH,
 } from './constants.js';
 import {
@@ -539,8 +542,84 @@ async function validatePackageFiles(
     }
   }
 
+  // 12. Every bundled extension's manifest, and each tool it gives agents,
+  //     judged by the same checks DorkOS discovery runs (DOR-2685), so a
+  //     package that validates here loads its extensions and tools as written.
+  await checkBundledExtensions(packagePath, issues);
+
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest, declaredVersion };
+}
+
+/**
+ * Check every `.dork/extensions/<id>/extension.json` the package ships with
+ * `ExtensionManifestSchema` and, for each declared tool, `checkDeclaredTools`:
+ * the exact functions DorkOS's extension discovery runs.
+ *
+ * A manifest that fails the schema is an `EXTENSION_MANIFEST_INVALID` error
+ * (DorkOS would not load that extension at all). A tool the tool check refuses
+ * is an `EXTENSION_TOOL_REFUSED` error (DorkOS would load the extension
+ * without that tool), so an author hears about it before publishing.
+ *
+ * @param packagePath - Absolute path to the package root.
+ * @param issues - Where findings are added.
+ * @internal
+ */
+async function checkBundledExtensions(
+  packagePath: string,
+  issues: ValidationIssue[]
+): Promise<void> {
+  const root = EFFECT_BEARING_PATHS.extensions;
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(path.join(packagePath, root), { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const relPath = path.posix.join(root, entry.name, 'extension.json');
+    let text: string;
+    try {
+      text = await readPackageFile(packagePath, relPath);
+    } catch (err) {
+      if (err instanceof RefusedPackageFileError) throw err;
+      continue;
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (err) {
+      issues.push({
+        level: 'error',
+        code: 'EXTENSION_MANIFEST_INVALID',
+        message: `Invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
+        path: relPath,
+      });
+      continue;
+    }
+    const parsed = ExtensionManifestSchema.safeParse(raw);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        issues.push({
+          level: 'error',
+          code: 'EXTENSION_MANIFEST_INVALID',
+          message: `${issue.path.join('.') || '<root>'}: ${issue.message}`,
+          path: relPath,
+        });
+      }
+      continue;
+    }
+    for (const check of checkDeclaredTools(parsed.data)) {
+      if (check.ok) continue;
+      issues.push({
+        level: 'error',
+        code: 'EXTENSION_TOOL_REFUSED',
+        message: `Tool "${check.name}" would not be offered to agents: ${check.reason}`,
+        path: relPath,
+      });
+    }
+  }
 }
 
 /**

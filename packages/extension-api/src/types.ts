@@ -23,6 +23,44 @@ export interface ExtensionOrigin {
   source: string;
 }
 
+/**
+ * What DorkOS decided about one tool an extension declares, read from its
+ * `extension.json` before any of its code runs (DOR-2685).
+ */
+export interface ExtensionToolCheckSummary {
+  /** The tool's name inside the extension. */
+  name: string;
+  /** The title a person reads. */
+  title: string;
+  /** Its permission tier. */
+  tier: 'observe' | 'act' | 'destructive';
+  /** Whether DorkOS accepted the declaration. */
+  ok: boolean;
+  /** Why it was refused, when it was. */
+  reason?: string;
+}
+
+/**
+ * Where one declared tool stands right now, as `GET /api/extensions` reports it:
+ *
+ * - `active`: agents can use it.
+ * - `inactive`: accepted, but the extension is not running (off, waiting for
+ *   approval, or not started), so agents cannot use it yet.
+ * - `refused`: DorkOS will not offer it; `reason` says why.
+ */
+export interface ExtensionToolStatus {
+  /** The tool's name inside the extension. */
+  name: string;
+  /** The title a person reads. */
+  title: string;
+  /** Its permission tier. */
+  tier: 'observe' | 'act' | 'destructive';
+  /** Where it stands. */
+  status: 'active' | 'inactive' | 'refused';
+  /** Why it was refused, when it was. */
+  reason?: string;
+}
+
 /** Server-side record for a discovered extension. */
 export interface ExtensionRecord {
   id: string;
@@ -119,6 +157,11 @@ export interface ExtensionRecord {
   hasDataProxy: boolean;
   /** Absolute path to the resolved server entry point (if hasServerEntry is true). */
   serverEntryPath?: string;
+  /**
+   * What discovery decided about each tool the manifest declares, before any
+   * code ran (DOR-2685). Absent when the manifest declares none.
+   */
+  toolChecks?: ExtensionToolCheckSummary[];
 }
 
 /** The subset of ExtensionRecord sent to the client (excludes server-internal fields). */
@@ -173,6 +216,11 @@ export interface ExtensionRecordPublic {
   originProblem?: 'changed' | 'linked' | 'dev-link';
   /** Set when the copy runs from a dev link: the real path of its folder. */
   devLink?: { path: string };
+  /**
+   * The tools this extension gives agents and where each stands (DOR-2685).
+   * Absent when its manifest declares none.
+   */
+  tools?: ExtensionToolStatus[];
 }
 
 /** The interface an extension module must export. */

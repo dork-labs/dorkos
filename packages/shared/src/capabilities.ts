@@ -162,6 +162,54 @@ export interface CapabilitySource {
 export const EXTENSION_CAPABILITY_ID_PREFIX = 'ext_';
 
 /**
+ * The shape of one tool's name inside its extension, e.g. `send_message`:
+ * lowercase words joined by single underscores. No `__` and no leading or
+ * trailing `_`, so the first `__` in `ext_<id>__<tool>` always marks where the
+ * extension ends and the tool begins.
+ *
+ * Shared by the manifest schema (`@dorkos/extension-api`) and the registry's
+ * contribution check, so a manifest that parses never names a tool the
+ * registry would refuse.
+ */
+export const EXTENSION_TOOL_NAME_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
+
+/**
+ * The longest MCP tool name (`ext_<id>__<tool>`) an extension tool may have:
+ * 64 characters, the model API's limit, less the `mcp__dorkos__` prefix the
+ * longest-spelling harness (Claude Code) puts in front. One name over it would
+ * fail every turn of every session that lists it.
+ */
+export const EXTENSION_MCP_TOOL_NAME_MAX = 64 - 'mcp__dorkos__'.length;
+
+/** The longest extension tool title, which a person reads on cards and the permissions page. */
+export const EXTENSION_TOOL_TITLE_MAX = 80;
+
+/**
+ * The registry domain an extension's tools live under: `ext_` plus the
+ * extension id with every `-` turned into `_`.
+ *
+ * Injective because an extension id can never contain `_`
+ * (`EXTENSION_ID_REGEX`), so two different extensions can never share a domain.
+ *
+ * @param extensionId - A valid extension id, e.g. `mail-app`.
+ * @returns The domain, e.g. `ext_mail_app`.
+ */
+export function extensionDomainName(extensionId: string): string {
+  return EXTENSION_CAPABILITY_ID_PREFIX + extensionId.replaceAll('-', '_');
+}
+
+/**
+ * The MCP tool name an extension tool is listed under, e.g.
+ * `ext_mail_app__send_message`.
+ *
+ * @param extensionId - A valid extension id.
+ * @param toolName - The tool's name inside the extension.
+ */
+export function extensionMcpToolName(extensionId: string, toolName: string): string {
+  return `${extensionDomainName(extensionId)}__${toolName}`;
+}
+
+/**
  * What a caller is told when it names an extension tool that is not registered
  * right now: its extension stopped, is restarting, or never ran. One sentence for
  * every surface — the in-session tool, `POST /api/capabilities/:id/invoke` and

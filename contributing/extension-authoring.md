@@ -97,6 +97,8 @@ my-extension/
 | `canDisable`         | No       | **Core extensions only.** Defaults to `true`. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. See [Core Extensions](#core-extensions).                       |
 | `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration).                                                               |
 | `dataProxy`          | No       | Declarative API proxy config. See [Declarative Proxy](#declarative-proxy).                                                                                                                                         |
+| `tools`              | No       | Tools the extension gives the person's agents while it runs. Needs `serverCapabilities`. See [`ctx.tools`](#ctxtools).                                                                                             |
+| `skills`             | No       | Skill folder names under `<extension>/skills/`. See [`ctx.tools`](#ctxtools).                                                                                                                                      |
 
 ## Entry Point (`activate`)
 
@@ -971,9 +973,58 @@ if (ctx.agent !== undefined) {
 - **It cannot shape the turn.** Any field other than `to`, `text`, `context` and `idempotencyKey` (a `cwd`, a `permissionMode`, a `forAgent`) is refused with `invalid_input`. The agent reads your words inside a fence that labels them as data from your app, not instructions, and a chat your extension opens starts with no permission mode of its own.
 - **Refusals** throw `AgentSendError` with `code` `invalid_input`, `not_found`, `not_allowed`, `unavailable` or `stopped`; nothing was sent. No manifest capability is needed, on the same terms as `ctx.sessions`.
 
+#### `ctx.tools`
+
+Give the person's agents typed tools while your extension runs (DOR-2685). Declare each tool in `extension.json`, then bind its handler with `ctx.tools.handle` while `register()` runs:
+
+```jsonc
+{
+  "id": "mail-app",
+  "serverCapabilities": { "serverEntry": "./server.ts" },
+  "tools": [
+    {
+      "name": "send_message",
+      "title": "Send an email",
+      "description": "Send an email from the person's mail account. Use it when they ask you to reply.",
+      "tier": "act",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "to": { "type": "string" }, "subject": { "type": "string" } },
+        "required": ["to"],
+        "additionalProperties": false,
+      },
+      "approvalDisplayFields": ["to", "subject"],
+      "timeoutSeconds": 60,
+    },
+  ],
+}
+```
+
+```typescript
+export default function register(router: Router, ctx: DataProviderContext) {
+  ctx.tools.handle('send_message', async (input, call) => {
+    const { to, subject } = input as { to: string; subject?: string };
+    await mail.send({ to, subject }, { signal: call.signal });
+    return { sent: true };
+  });
+}
+```
+
+- **Naming.** `name` is lowercase words joined by single underscores. Agents see the tool as `ext_<id with - as _>__<name>` (`ext_mail_app__send_message`), and `mcp__dorkos__` plus that name must fit 64 characters, which the manifest checks. In a skill, name the tool by that bare name: the prefix in front of it differs per agent runtime.
+- **Tiers.** `observe` only reads. `act` changes something, and sits in the **Extension tools** permission area, so a person can set it to Ask or Blocked. `destructive` deletes or removes something and asks a person on every call, bound to that call's input. The tier is your claim; the area lets a person block all of your tools at once. `act` and `destructive` tools must name `approvalDisplayFields`, top-level input fields the approval card shows.
+- **The schema subset.** `inputSchema` must be closed JSON Schema: `type`, `properties`, `required`, `items`, `enum`, `const`, `description`, `title`, `default`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `format`, `minItems`/`maxItems`, `anyOf`, and on every object `"additionalProperties": false`. Every node says its `type` (or lists its values with `enum`, `const` or `anyOf`), every array says its `items`, and a `default` must fit its own schema. An open object, `patternProperties`, `propertyNames`, `$ref` and `$defs` are refused, because each becomes an open-ended map, and one open-ended map anywhere on the `dorkos` server hides every DorkOS tool from Claude Code agents. DorkOS checks each tool when it discovers the extension, before any of its code runs, with the same check (`@dorkos/extension-api/tool-check`) the capability registry runs when the tools register and `dorkos marketplace validate` runs on a package, so a tool that passes one passes the others. A refused tool is reported on `GET /api/extensions` (`tools[].status: 'refused'` and a `reason`); your other tools still load. Titles are one line with no quote marks, and the extension's display name must be plain A to Z letters and may not be "DorkOS".
+- **Which problems cost what.** A problem the manifest schema catches makes the whole extension invalid, its client half included: a tool name that breaks the pattern, a name too long for 64 characters, a tool declared twice, an approval display field the input does not have, `timeoutSeconds` out of range, or `tools` with no `serverCapabilities`. A problem with one tool's schema, title or card fields (the subset above, a quoted title, a missing `approvalDisplayFields`) refuses only that tool, and the rest of the extension loads. A display name the registry refuses ("DorkOS", non-ASCII letters, quotes) refuses every tool but loads the extension. `dorkos marketplace validate` reports all of these as errors before you publish.
+- **Binding.** `ctx.tools.handle` throws for a name the manifest does not declare, a tool DorkOS refused, a second handler for one tool, or a call after `register()` finished. A declared tool you never handle is not offered, and its status says why. A `register()` that throws or times out offers no tools.
+- **Calls.** `input` is already parsed against your schema. `call` carries only `signal` and `agentId` (the calling agent's Mesh id, or `null`): no session id, folder or token. Return plain JSON; a string passes through as text. A result over 256 KB serialized, or one that is not JSON, becomes an error. A throw becomes a tool error the agent reads as `<your extension name>: <message>`, capped at 500 characters, with absolute file paths replaced by `<path>` and never a stack.
+- **Time and stops.** A call runs at most `timeoutSeconds` (1 to 300, default 60), counted after any approval. Past that, or when the agent's turn is cancelled, or when your extension stops, `call.signal` aborts and any later result is thrown away. On stop, reload, turn-off, revoke or uninstall, your tools leave the registry first, before your cleanup runs. An uninstall also clears every per-tool permission setting kept for your tools, so nothing carries over to whatever is installed under the same id next.
+- **When agents see them.** Tools join once `register()` finishes. Codex and OpenCode chats should see a change the next time they ask DorkOS for its tool list (not yet proven by a test). A Claude Code chat whose process is already running keeps the tool list it started with until it next starts; relaunching warm processes on a tool change is the next phase of DOR-2685.
+- **The dev loop.** Editing `server.ts` restarts the extension. Editing only the `tools` or `skills` in `extension.json` restarts it too (the restart key includes a digest of those declarations), so a dev-linked extension picks up a new tool on save.
+
+`skills` lists folder names under `<extension>/skills/`, each holding a `SKILL.md`. The manifest checks the names today; delivering those skills to agents lands in a later phase of DOR-2685.
+
 #### Feature detection
 
-Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `ctx.agent !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
+Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `ctx.agent !== undefined`, `ctx.tools !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
 
 ### Route Conventions
 
