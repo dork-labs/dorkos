@@ -44,3 +44,4 @@ export * from './projects.js';
 export * from './extensions/extension-decisions.js';
 export * from './extensions/extension-agent-sends.js';
 export * from './canvas/channel.js';
+export * from './browser/registry.js';
