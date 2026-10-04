@@ -140,7 +140,15 @@ function refusal(message: string, code?: string): WireError {
  */
 export function toWireError(err: unknown): WireError {
   const source = (typeof err === 'object' && err !== null ? err : {}) as Record<string, unknown>;
-  const rawName = source.name;
+  // A getter on a thrown object can throw; reading a field never may.
+  const read = (key: string): unknown => {
+    try {
+      return source[key];
+    } catch {
+      return undefined;
+    }
+  };
+  const rawName = read('name');
   const name = typeof rawName === 'string' && IDENTIFIER.test(rawName) ? rawName : 'Error';
   let message: string;
   try {
@@ -150,19 +158,20 @@ export function toWireError(err: unknown): WireError {
   }
   message = redactPaths(message).slice(0, MAX_ERROR_MESSAGE) || 'Something went wrong.';
   const out: WireError = { name, message };
-  const code = source.code;
+  const code = read('code');
   if (typeof code === 'string' && code.length <= 64) out.code = code;
   const props: Record<string, string | number | boolean | null> = {};
   let count = 0;
-  for (const key of Object.keys(source)) {
+  let keys: string[];
+  try {
+    keys = Object.keys(source);
+  } catch {
+    keys = [];
+  }
+  for (const key of keys) {
     if (count >= MAX_ERROR_PROPS) break;
     if (DROPPED_ERROR_FIELDS.has(key) || !IDENTIFIER.test(key)) continue;
-    let value: unknown;
-    try {
-      value = source[key];
-    } catch {
-      continue;
-    }
+    const value = read(key);
     if (typeof value === 'string') props[key] = redactPaths(value).slice(0, MAX_ERROR_MESSAGE);
     else if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
       props[key] = value;
@@ -318,6 +327,13 @@ export class CtxDispatcher {
   /**
    * The child is gone (or going): remove everything it registered on the real
    * ctx, reject every reverse call waiting on it, and send nothing more.
+   *
+   * NOT done here, and required of the lifecycle's isolated stop AND its
+   * unexpected-exit path (Phase 5, task 5.3): `getExtensionInbox()?.markStopped(id)`
+   * and `getAgentSendService()?.extensionStopped(id)`. A call already running
+   * in the real ctx (an `agent.send` waiting for room) keeps its effect after
+   * the child is gone unless agent-send is told, exactly as for an in-process
+   * stop (`extension-server-lifecycle.ts` shutdown).
    */
   close(): void {
     if (this.closed) return;

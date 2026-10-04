@@ -373,6 +373,26 @@ describe('CtxDispatcher errors', () => {
     );
     expect(toWireError('C:\\Users\\kai\\x failed').message).toBe('<path> failed');
     expect(toWireError(undefined)).toEqual({ name: 'Error', message: 'Something went wrong.' });
+    // A thrown object whose getters throw still becomes a plain error.
+    const hostile = Object.defineProperties(new Error('boom'), {
+      name: {
+        get: () => {
+          throw new Error('x');
+        },
+      },
+      code: {
+        get: () => {
+          throw new Error('x');
+        },
+      },
+      extra: {
+        enumerable: true,
+        get: () => {
+          throw new Error('x');
+        },
+      },
+    });
+    expect(toWireError(hostile)).toEqual({ name: 'Error', message: 'boom' });
   });
 
   // Purpose: an AgentSendError's class name and code survive, so the child

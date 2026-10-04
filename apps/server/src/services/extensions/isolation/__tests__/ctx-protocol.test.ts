@@ -78,7 +78,40 @@ const extraEntry = {
   ghost: fixtureCall,
 } as const satisfies ProtocolFor<FixtureCtx>;
 
-void [missingMember, missingNested, functionAsConst, extraEntry];
+// Purpose: an entry for a nested member the context does not have is refused too.
+const extraNestedEntry = {
+  ping: fixtureCall,
+  extra: fixtureCall,
+  name: { kind: 'const' },
+  nested: {
+    kind: 'object',
+    // @ts-expect-error `nested.ghost` is not a member of the context
+    members: { get: fixtureCall, added: fixtureCall, ghost: fixtureCall },
+  },
+} as const satisfies ProtocolFor<FixtureCtx>;
+
+/** A context with an optional function member. */
+interface OptionalCtx {
+  maybe?: () => Promise<void>;
+}
+
+// Purpose: an optional function member is still a function: `const` (which
+// would copy `undefined` into the child) is refused, a function kind accepted.
+const optionalAsConst = {
+  // @ts-expect-error an optional function member cannot be `const`
+  maybe: { kind: 'const' },
+} as const satisfies ProtocolFor<OptionalCtx>;
+const optionalAsCall = { maybe: fixtureCall } as const satisfies ProtocolFor<OptionalCtx>;
+
+void [
+  missingMember,
+  missingNested,
+  functionAsConst,
+  extraEntry,
+  extraNestedEntry,
+  optionalAsConst,
+  optionalAsCall,
+];
 
 // --- Run time -----------------------------------------------------------------
 

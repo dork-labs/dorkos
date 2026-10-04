@@ -765,7 +765,7 @@ The resolved DorkOS data directory (`~/.dork` in production, `apps/server/.temp/
 
 #### `ctx.filesDir`
 
-A folder only your extension writes to: `{dorkHome}/extension-data/<id>/files`. DorkOS creates it before `register()` runs. Put files you write yourself (downloads, caches, a SQLite file of your own) here rather than next to your code. An extension that runs separately (`serverCapabilities.runtime: "subprocess"`) can write nowhere else.
+A folder only your extension writes to: `{dorkHome}/extension-data/<id>/files`. DorkOS creates it before `register()` runs. Put files you write yourself (downloads, caches, a SQLite file of your own) here rather than next to your code. An extension that runs separately (`serverCapabilities.runtime: "subprocess"`) can write nowhere else. In such an extension, an account advisor's methods are fixed when `registerAdvisor` is called: DorkOS calls only the methods the advisor had then, so add every method before registering it.
 
 #### `ctx.accounts`
 

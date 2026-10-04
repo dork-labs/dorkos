@@ -112,10 +112,14 @@ export type LeafKind = Exclude<Kind, ObjectKind>;
  * object literal checked with `satisfies` also refuses keys `T` lacks.
  */
 export type ProtocolFor<T> = {
-  readonly [K in keyof T]-?: T[K] extends (...args: never[]) => unknown
+  // NonNullable: an optional member (`x?: () => void`) is still a function,
+  // and must not fall through to `const` because its type includes undefined.
+  readonly [K in keyof T]-?: NonNullable<T[K]> extends (...args: never[]) => unknown
     ? FunctionKind
-    : T[K] extends object
-      ? { readonly kind: 'object'; readonly members: ProtocolFor<T[K]> } | LocalKind | RefusedKind
+    : NonNullable<T[K]> extends object
+      ? | { readonly kind: 'object'; readonly members: ProtocolFor<NonNullable<T[K]>> }
+        | LocalKind
+        | RefusedKind
       : ConstKind;
 };
 
