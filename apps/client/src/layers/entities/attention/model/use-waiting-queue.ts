@@ -67,6 +67,13 @@ export interface WaitingQueueState {
    * reassembled at every call site.
    */
   items: readonly WaitingItem[];
+  /**
+   * True while any of the five reads is still on its first load.
+   *
+   * Every read, deliberately: a surface that says "Nothing needs you" the
+   * moment four of them answer is claiming something it has not checked.
+   */
+  isLoading: boolean;
   /** True when the approval queue could not be read. */
   isError: boolean;
   /** Retry the approval queue read. */
@@ -74,10 +81,14 @@ export interface WaitingQueueState {
 }
 
 /**
- * Everything waiting on the operator that the Inbox popover renders and
- * counts: capability approvals, prompts agents are parked on, schedules an
- * agent proposed and never armed, and installed extensions waiting to be
- * turned on (DOR-2517).
+ * Everything waiting on the operator: capability approvals, prompts agents are
+ * parked on, schedules an agent proposed and never armed, installed extensions
+ * waiting to be turned on (DOR-2517), and decisions extensions asked about.
+ *
+ * **The one answer to "is anything waiting on me?"** The Inbox popover renders
+ * and counts it, and the Pulse panel reads the same `items` before it may say
+ * "Nothing needs you" — so the two cannot disagree about whether something is
+ * waiting (DOR-2578). A new kind added here reaches both at once.
  *
  * Wraps the same three reads `useAttentionSignals` gathers beside it
  * (`usePendingApprovals`, `usePendingInteractions`, `usePendingScheduleApprovals`)
@@ -87,11 +98,16 @@ export interface WaitingQueueState {
  * rather than letting a caller re-sum the lengths by hand.
  */
 export function useWaitingQueue(): WaitingQueueState {
-  const { approvals, isError, retry } = usePendingApprovals();
-  const { interactions: asks } = usePendingInteractions();
-  const { schedules } = usePendingScheduleApprovals();
-  const { approvals: extensionApprovals } = usePendingExtensionApprovals();
-  const { decisions: extensionDecisions, offers: decisionOffers } = useExtensionDecisions();
+  const { approvals, isLoading: approvalsLoading, isError, retry } = usePendingApprovals();
+  const { interactions: asks, isLoading: asksLoading } = usePendingInteractions();
+  const { schedules, isLoading: schedulesLoading } = usePendingScheduleApprovals();
+  const { approvals: extensionApprovals, isLoading: extensionApprovalsLoading } =
+    usePendingExtensionApprovals();
+  const {
+    decisions: extensionDecisions,
+    offers: decisionOffers,
+    isLoading: decisionsLoading,
+  } = useExtensionDecisions();
 
   const items = useMemo(
     () =>
@@ -107,6 +123,12 @@ export function useWaitingQueue(): WaitingQueueState {
     extensionDecisions,
     decisionOffers,
     items,
+    isLoading:
+      approvalsLoading ||
+      asksLoading ||
+      schedulesLoading ||
+      extensionApprovalsLoading ||
+      decisionsLoading,
     isError,
     retry,
   };

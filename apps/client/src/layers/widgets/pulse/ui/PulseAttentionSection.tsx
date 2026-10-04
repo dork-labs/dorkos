@@ -1,8 +1,11 @@
+import type { Task } from '@dorkos/shared/types';
 import { useNavigate } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
 
-import { useIsMobile, usePendingRead, useSafePathname } from '@/layers/shared/model';
+import { useAppStore, useIsMobile, usePendingRead, useSafePathname } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
+import { describeWaitingQueue, useWaitingQueue } from '@/layers/entities/attention';
+import { requestInbox } from '@/layers/entities/notifications';
 import { useAttentionRows, AttentionSignalRow } from '@/layers/features/dashboard-attention';
 import {
   ScheduleApprovalCard,
@@ -10,6 +13,9 @@ import {
 } from '@/layers/features/schedule-approval';
 import { InboxRow, useOpenNotification } from '@/layers/features/inbox';
 import { PulseSection } from './PulseSection';
+
+/** Shared empty, so leaving schedules out of the line never mints a fresh array. */
+const NO_SCHEDULES: readonly Task[] = [];
 
 /** Max rows shown in the Pulse teaser (overflow lives on the home surface). */
 const PULSE_ATTENTION_CAP = 5;
@@ -31,9 +37,21 @@ const staggerContainer = {
  *
  * **Blocking first.** A schedule an agent parked and a session that stopped
  * come before what merely went wrong, and the cap is spent in that order — so a
- * teaser that can only show five shows the five that matter most. Capability
- * approvals and the prompts agents are parked on are deliberately absent: they
- * live in the header pill, which is on screen beside this panel.
+ * teaser that can only show five shows the five that matter most.
+ *
+ * **What waits in the Inbox is one line here, never a second set of cards.**
+ * Capability approvals, the prompts agents are parked on, extensions waiting to
+ * be turned on and the decisions extensions ask about are answered in the Inbox
+ * popover behind the header pill, so their cards stay there. But they still
+ * need the person, so this section reads the SAME queue the pill counts
+ * ({@link useWaitingQueue}) and says what is in it, in the pill's own sentence,
+ * with a door to it. "Nothing needs you" is only said when that queue is empty
+ * too: the pill reading "1 waiting" beside an all-clear was DOR-2578.
+ *
+ * Parked schedules are the one kind left out of the line, on purpose: this
+ * section already draws each one as its own card, and "1 schedule wants your
+ * approval" directly above that card says it twice. Every item the pill counts
+ * still shows here, either as a card or in the line — never neither.
  *
  * "View all →" opens the home surface where the full header and its detail
  * sheets live. Collapses to a calm all-clear line when nothing needs you.
@@ -57,10 +75,18 @@ export function PulseAttentionSection() {
   // never applies there.
   const isMobile = useIsMobile();
   const { schedules, errors, activity, isLoading: isFetchingRows, total } = useAttentionRows();
+  const waitingQueue = useWaitingQueue();
+  // The pill's queue minus parked schedules, which draw as cards below (see
+  // the component doc for why they are not named twice).
+  const inboxOnly = { ...waitingQueue, schedules: NO_SCHEDULES };
+  const waitingCount = waitingQueue.items.filter(
+    (item) => item.kind !== 'schedule-approval'
+  ).length;
   // A paused read during the boot-cache restore is not an empty list (DOR-1914).
   // Why `isLoading` cannot answer that on its own is in `usePendingRead`.
-  const isLoading = usePendingRead(isFetchingRows);
+  const isLoading = usePendingRead(isFetchingRows || waitingQueue.isLoading);
   const openActivity = useOpenNotification();
+  const setRightPanelOpen = useAppStore((state) => state.setRightPanelOpen);
 
   // A just-approved proposal leaves the server's parked list within a frame,
   // and this panel would swap to its all-clear line over the receipt. The hold
@@ -92,7 +118,9 @@ export function PulseAttentionSection() {
       // (mirrors PulseActivitySection's loading gate).
       // A card still saying it was approved is not an all-clear, even though
       // the server has already stopped counting it.
-      empty={!isLoading && total === 0 && shownSchedules.length === 0}
+      // Something waiting in the Inbox is not an all-clear either, whichever
+      // kind it is — the same `items` the pill beside this panel counts.
+      empty={!isLoading && total === 0 && shownSchedules.length === 0 && waitingCount === 0}
       allClear="All quiet. Nothing needs you."
       action={
         <Button
@@ -105,6 +133,30 @@ export function PulseAttentionSection() {
         </Button>
       }
     >
+      {waitingCount > 0 && (
+        <div
+          data-slot="pulse-waiting-line"
+          className="mb-2 flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1"
+        >
+          <span className="bg-status-warning size-1.5 shrink-0 rounded-full" aria-hidden />
+          <span className="text-foreground/90 min-w-0 flex-1 text-xs">
+            {describeWaitingQueue(inboxOnly)}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 shrink-0 px-2 text-xs"
+            onClick={() => {
+              // On a phone this panel is a sheet over the page, and the Inbox
+              // is a sheet too: close this one so the two never stack.
+              if (isMobile) setRightPanelOpen(false);
+              requestInbox();
+            }}
+          >
+            Open Inbox
+          </Button>
+        </div>
+      )}
       {/* The schedules are CARDS, and sit above the rows in their own presence
           group: `AskCard.Root` declares a hold-and-melt exit, and an exit with
           no `AnimatePresence` watching for it never runs — a decided card would

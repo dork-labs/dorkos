@@ -41,6 +41,32 @@ let mockActivity: { groups: { label: string; items: MockActivityItem[] }[]; isLo
   isLoading: false,
 };
 
+/**
+ * What the Inbox's waiting queue holds — the queue the bell's pill counts.
+ * `items` is derived by the real `deriveWaitingItems` in the mock below, so this
+ * suite counts exactly what the pill counts rather than a hand-kept number.
+ */
+let mockWaiting: {
+  approvals: unknown[];
+  asks: unknown[];
+  schedules: unknown[];
+  extensionApprovals: unknown[];
+  extensionDecisions: unknown[];
+  isLoading: boolean;
+} = emptyWaiting();
+const mockRequestInbox = vi.fn();
+
+function emptyWaiting() {
+  return {
+    approvals: [],
+    asks: [],
+    schedules: [],
+    extensionApprovals: [],
+    extensionDecisions: [],
+    isLoading: false,
+  };
+}
+
 const mockNavigate = vi.fn();
 // Current route the sections read to hide their self-referential overflow link.
 // Default to a neutral route so both "View all" links render unless a test opts in.
@@ -55,6 +81,29 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: mockPathname } }),
+}));
+
+// The waiting queue is the bell's own hook. Stubbed at its data, but its `items`
+// come from the real derivation and the sentence from the real describer, so a
+// kind the bell counts cannot be forgotten here without this suite noticing.
+vi.mock('@/layers/entities/attention', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/attention')>();
+  const { deriveWaitingItems } =
+    await import('@/layers/entities/attention/model/derive-waiting-items');
+  return {
+    ...actual,
+    useWaitingQueue: () => ({
+      ...mockWaiting,
+      decisionOffers: [],
+      items: deriveWaitingItems(mockWaiting as Parameters<typeof deriveWaitingItems>[0]),
+      isError: false,
+      retry: () => {},
+    }),
+  };
+});
+
+vi.mock('@/layers/entities/notifications', () => ({
+  requestInbox: () => mockRequestInbox(),
 }));
 
 // dashboard-attention: stub the composed model + faithful rows that surface
@@ -150,6 +199,7 @@ beforeEach(() => {
   mockAttentionLoading = false;
   mockActivity = { groups: [], isLoading: false };
   mockPathname = '/team';
+  mockWaiting = emptyWaiting();
 });
 
 describe('PulsePanel', () => {
@@ -237,6 +287,80 @@ describe('PulsePanel', () => {
 
     expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
     expect(screen.getByTestId('schedule-row')).toBeInTheDocument();
+  });
+
+  it('does not say nothing needs you while an extension decision waits in the Inbox', () => {
+    // DOR-2578: the pill read "1 waiting" while this section said all quiet.
+    // Seeded defect: drop `&& waitingCount === 0` from the `empty` gate.
+    mockWaiting = { ...emptyWaiting(), extensionDecisions: [{ id: 'dec-1' }] };
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.getByText('1 decision is waiting on you.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Inbox' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['a capability approval', { approvals: [{ approvalId: 'a1' }] }],
+    [
+      'a question an agent is parked on',
+      { asks: [{ interaction: { id: 'i1', type: 'question' } }] },
+    ],
+    [
+      'an extension waiting to be turned on',
+      { extensionApprovals: [{ id: 'flow', plugin: null, path: '/p', version: '1.0.0' }] },
+    ],
+  ])('counts %s the bell counts, so it never says all quiet over it', (_label, queue) => {
+    mockWaiting = { ...emptyWaiting(), ...queue };
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Inbox' })).toBeInTheDocument();
+  });
+
+  it("names every waiting kind in the bell's own sentence", () => {
+    mockWaiting = {
+      ...emptyWaiting(),
+      approvals: [{ approvalId: 'a1' }],
+      extensionDecisions: [{ id: 'dec-1' }],
+    };
+
+    render(<PulsePanel />);
+
+    expect(screen.getByText('1 request and 1 decision are waiting on you.')).toBeInTheDocument();
+  });
+
+  it('draws a parked schedule as its card only, not again in the waiting line', () => {
+    // The bell counts the schedule too, but here it already has a card, and a
+    // line saying so above that card says it twice.
+    mockSchedules = [{ id: 'task-1', displayName: 'Nightly sweep' }];
+    mockWaiting = { ...emptyWaiting(), schedules: [{ id: 'task-1' }] };
+
+    render(<PulsePanel />);
+
+    expect(screen.getByTestId('schedule-row')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open Inbox' })).not.toBeInTheDocument();
+  });
+
+  it('opens the Inbox from the waiting line', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    mockWaiting = { ...emptyWaiting(), extensionDecisions: [{ id: 'dec-1' }] };
+
+    render(<PulsePanel />);
+
+    await user.click(screen.getByRole('button', { name: 'Open Inbox' }));
+    expect(mockRequestInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not flash the all-clear while the waiting queue is still loading', () => {
+    mockWaiting = { ...emptyWaiting(), isLoading: true };
+
+    render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
   });
 
   it('collapses activity to a calm all-clear line when there is nothing recent', () => {

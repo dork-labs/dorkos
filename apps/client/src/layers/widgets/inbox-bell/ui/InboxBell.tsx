@@ -11,7 +11,12 @@ import {
 } from '@/layers/shared/ui';
 import { internalRoutePath, listWaitingKinds, toSession } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
-import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
+import {
+  describeWaitingQueue,
+  useAskAgentNames,
+  useSettlingAsks,
+  useWaitingQueue,
+} from '@/layers/entities/attention';
 import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
   useInboxRequest,
@@ -102,53 +107,6 @@ function waitingLabel(
       : `${asks} questions need your answer. Open to answer them.`;
   }
   return `${listWaitingKinds(asks, approvals, schedules)} are waiting on you. Open to answer them.`;
-}
-
-/**
- * The one-line summary inside the pinned section, under the same rule.
- *
- * @param approvals - Capability approvals waiting.
- * @param schedules - Parked schedules waiting.
- * @param asks - Prompts agents are parked on.
- * @param extensions - Installed extensions waiting to be turned on.
- * @param decisions - Decisions extensions are asking a person about.
- */
-function waitingSummary(
-  approvals: number,
-  schedules: number,
-  asks: number,
-  extensions: number,
-  decisions: number
-): string {
-  if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
-    const subject = decisions === 1 ? '1 decision is' : `${decisions} decisions are`;
-    return `${subject} waiting on you.`;
-  }
-  if (decisions > 0) {
-    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions)} are waiting on you.`;
-  }
-  if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
-    const subject = extensions === 1 ? '1 extension is' : `${extensions} extensions are`;
-    return `${subject} waiting to be turned on. None of it runs until you decide.`;
-  }
-  if (extensions > 0) {
-    return `${listWaitingKinds(asks, approvals, schedules, extensions)} are waiting on you. Nothing runs until you decide.`;
-  }
-  if (schedules === 0 && asks === 0 && approvals > 0) {
-    const subject = approvals === 1 ? '1 request is' : `${approvals} requests are`;
-    return `${subject} waiting for your approval. Nothing runs until you decide.`;
-  }
-  if (approvals === 0 && asks === 0 && schedules > 0) {
-    const subject = schedules === 1 ? '1 schedule wants' : `${schedules} schedules want`;
-    return `${subject} your approval. Nothing runs until you decide.`;
-  }
-  if (approvals === 0 && schedules === 0 && asks > 0) {
-    // Same noun as the pill above and the mixed sentence below — one prompt is
-    // one question, however many agents raised them.
-    const subject = asks === 1 ? '1 question is' : `${asks} questions are`;
-    return `${subject} waiting on your answer. Nothing carries on until you answer.`;
-  }
-  return `${listWaitingKinds(asks, approvals, schedules)} are waiting on you. Nothing runs until you decide.`;
 }
 
 /**
@@ -305,7 +263,7 @@ export function InboxBell() {
 
   // A parked schedule counts toward the number on the badge — it is a
   // request for a decision just like a capability approval — but the SENTENCE
-  // no longer calls it one; `waitingLabel`/`waitingSummary` below name a
+  // no longer calls it one; `waitingLabel` and `describeWaitingQueue` below name a
   // schedule as a schedule. The count itself comes from `useWaitingQueue`'s
   // `items`, and `resolvePill` below is handed this SAME number rather than
   // re-summing the three lengths itself — one variable, not two arithmetic
@@ -408,7 +366,7 @@ export function InboxBell() {
                     Needs you
                   </h2>
                   {/* While only a receipt is left the count is zero, and
-                      `waitingSummary(0, 0, 0)` has nothing to report. It says
+                      `describeWaitingQueue` has nothing to report. It says
                       what just happened instead of counting nothing.
                       (`listWaitingKinds` answers `''` for the all-zero case
                       rather than the ", and undefined are waiting on you" it
@@ -419,13 +377,13 @@ export function InboxBell() {
                       <p className="text-muted-foreground text-xs md:mt-1">Answered.</p>
                     ) : (
                       <p className="text-muted-foreground text-xs md:mt-1">
-                        {waitingSummary(
-                          approvals.length,
-                          schedules.length,
-                          asks.length,
-                          extensionApprovals.length,
-                          extensionDecisions.length
-                        )}
+                        {describeWaitingQueue({
+                          approvals,
+                          schedules,
+                          asks,
+                          extensionApprovals,
+                          extensionDecisions,
+                        })}
                       </p>
                     ))}
                   {/* Shown alongside the cards when a refresh failed but earlier
