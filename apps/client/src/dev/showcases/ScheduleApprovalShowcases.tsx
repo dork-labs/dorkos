@@ -136,6 +136,8 @@ function testRunTransport(outcome: TaskRunStatus): Transport {
     resolvedRuntime: null,
     resolvedModel: null,
     refusedTools: null,
+    scheduledFor: null,
+    missedTicks: null,
     createdAt: minutesFromLoad(-2),
   });
 

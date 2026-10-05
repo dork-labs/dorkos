@@ -49,6 +49,8 @@ function makeRun(createdAt: string): TaskRun {
     resolvedRuntime: null,
     resolvedModel: null,
     refusedTools: null,
+    scheduledFor: null,
+    missedTicks: null,
     createdAt,
   };
 }

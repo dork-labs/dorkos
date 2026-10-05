@@ -652,4 +652,78 @@ describe('TaskRunHistoryPanel', () => {
       expect(screen.queryByText(/Claude Code|Codex|OpenCode/)).toBeNull();
     });
   });
+  // A computer asleep when a schedule came round fires it once on wake, late;
+  // the row says so instead of passing a 09:40 run off as the 09:00 one
+  // (DOR-2718).
+  describe('a scheduled run that fired late (DOR-2718)', () => {
+    const STARTED = '2026-10-05T09:40:00.000Z';
+    const minutesBefore = (iso: string, minutes: number) =>
+      new Date(Date.parse(iso) - minutes * 60_000).toISOString();
+
+    async function renderRun(overrides: Partial<TaskRun>) {
+      const transport = createMockTransport({
+        listTaskRuns: vi
+          .fn()
+          .mockResolvedValue([createMockRun({ id: 'run-late', startedAt: STARTED, ...overrides })]),
+      });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+      await screen.findByText('Schedule');
+    }
+
+    it('says how late it ran, beside when it ran', async () => {
+      await renderRun({ scheduledFor: minutesBefore(STARTED, 12), missedTicks: 0 });
+      expect(screen.getByText('Ran 12m late')).toBeInTheDocument();
+    });
+
+    it('says nothing about lateness for a run that started on time', async () => {
+      // Seconds of drift between the occurrence and the start are normal, and
+      // a "Ran 0m late" on every row would be noise.
+      await renderRun({
+        scheduledFor: new Date(Date.parse(STARTED) - 3_000).toISOString(),
+        missedTicks: 0,
+      });
+      expect(screen.queryByText(/late/)).toBeNull();
+      expect(screen.queryByText(/Missed/)).toBeNull();
+    });
+
+    it('says nothing for a run recorded before runs kept their occurrence', async () => {
+      await renderRun({ scheduledFor: null, missedTicks: null });
+      expect(screen.queryByText(/late/)).toBeNull();
+      expect(screen.queryByText(/Missed/)).toBeNull();
+    });
+
+    it('a run skipped for being too late says the computer was asleep, not how late it ran', async () => {
+      const STALE = 'Skipped: this computer was asleep when it was due.';
+      await renderRun({
+        status: 'skipped',
+        sessionId: null,
+        durationMs: 0,
+        error: STALE,
+        scheduledFor: minutesBefore(STARTED, 100),
+        missedTicks: 0,
+      });
+      expect(screen.getByText(STALE)).toBeInTheDocument();
+      expect(screen.queryByText(/Ran .* late/)).toBeNull();
+    });
+
+    it('counts the earlier runs it missed while asleep', async () => {
+      await renderRun({ scheduledFor: minutesBefore(STARTED, 12), missedTicks: 3 });
+      expect(screen.getByText('Missed 3 earlier runs while asleep.')).toBeInTheDocument();
+    });
+
+    it('says one missed run in the singular', async () => {
+      await renderRun({ scheduledFor: minutesBefore(STARTED, 12), missedTicks: 1 });
+      expect(screen.getByText('Missed 1 earlier run while asleep.')).toBeInTheDocument();
+    });
+
+    it('says "1000+" when the count reached its cap', async () => {
+      await renderRun({ scheduledFor: minutesBefore(STARTED, 0.2), missedTicks: 1000 });
+      expect(screen.getByText('Missed 1000+ earlier runs while asleep.')).toBeInTheDocument();
+    });
+  });
 });

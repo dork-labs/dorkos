@@ -1,0 +1,15 @@
+---
+covers:
+  - 'feat(tasks): late scheduled runs say so, and very late ones are skipped (DOR-2718)'
+  - 'fix(tasks): a late fire croner cannot walk back from still resolves (DOR-2718)'
+  - 'fix(tasks): a run under a minute late is on time, never skipped as asleep (DOR-2718)'
+  - 'chore(changelog): fold the on-time grace fix into the late-runs fragment (DOR-2718)'
+---
+
+### Changed
+
+- Scheduled tasks that ran late now say so, and very late ones are skipped instead of running at odd hours. A run that wakes up under an hour late, and less than halfway to the next scheduled time, still runs, and anything under a minute late counts as on time. Its history row says how late it was and how many runs were missed while the computer slept (DOR-2718)
+
+### Fixed
+
+- Stop a scheduled task from running twice after the computer wakes, and from being filed under the wrong time (DOR-2718)

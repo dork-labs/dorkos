@@ -100,6 +100,8 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
     resolvedRuntime: null,
     resolvedModel: null,
     refusedTools: null,
+    scheduledFor: null,
+    missedTicks: null,
     createdAt: minutesFromLoad(-1),
     ...overrides,
   };

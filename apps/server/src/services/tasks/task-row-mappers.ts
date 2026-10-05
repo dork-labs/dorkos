@@ -154,6 +154,8 @@ export function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
     resolvedRuntime: row.resolvedRuntime ?? null,
     resolvedModel: row.resolvedModel ?? null,
     refusedTools: readRefusedTools(row.refusedTools),
+    scheduledFor: row.scheduledFor ?? null,
+    missedTicks: row.missedTicks ?? null,
     createdAt: row.createdAt,
   };
 }

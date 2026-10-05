@@ -239,7 +239,9 @@ describe('a "Run now" ask reaches the person waiting for it', () => {
 
     await (service as unknown as { dispatch(t: typeof task, when: Date): Promise<void> }).dispatch(
       task,
-      new Date(1_700_000_000_000)
+      // An on-time fire of the task's 03:00 occurrence: a fire far from any
+      // occurrence would be skipped as stale and never reach the bus (DOR-2718).
+      new Date('2023-11-14T03:00:00.000Z')
     );
     await vi.waitFor(() => expect(publish).toHaveBeenCalledOnce());
 
@@ -256,7 +258,9 @@ describe('a "Run now" ask reaches the person waiting for it', () => {
 
     await (service as unknown as { dispatch(t: typeof task, when: Date): Promise<void> }).dispatch(
       task,
-      new Date(1_700_000_000_000)
+      // An on-time fire of the task's 03:00 occurrence: a fire far from any
+      // occurrence would be skipped as stale and never reach the bus (DOR-2718).
+      new Date('2023-11-14T03:00:00.000Z')
     );
     await vi.waitFor(() => expect(agent.ensureSession).toHaveBeenCalledOnce());
 

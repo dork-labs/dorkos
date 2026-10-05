@@ -142,6 +142,8 @@ function makeRun(overrides: Partial<TaskRun> & { id: string; scheduleId: string 
     resolvedRuntime: null,
     resolvedModel: null,
     refusedTools: null,
+    scheduledFor: null,
+    missedTicks: null,
     createdAt: '2026-01-01T00:00:00Z',
     ...overrides,
   };

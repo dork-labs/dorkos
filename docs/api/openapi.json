@@ -8779,6 +8779,20 @@
             },
             "default": null
           },
+          "scheduledFor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "missedTicks": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          },
           "createdAt": {
             "type": "string"
           }
