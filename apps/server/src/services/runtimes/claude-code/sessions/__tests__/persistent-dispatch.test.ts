@@ -462,10 +462,15 @@ describe('warmth is answered honestly', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       runtime.checkSessionHealth();
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
 
     const events = await hanging;
@@ -1426,6 +1431,10 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     listed = [...listed, 'ext_mail_app__send'];
 
     vi.useFakeTimers({ toFake: ['Date'] });
+    // The ceiling is measured on the awake clock (DOR-2717).
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
     try {
       vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
       vi.mocked(logger.warn).mockClear();
@@ -1444,6 +1453,7 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
       expect(cli.launches).toBe(1);
       expect(staleWarnings()).toHaveLength(1);
     } finally {
+      awake.mockRestore();
       vi.useRealTimers();
     }
   });
@@ -2737,15 +2747,130 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     await vi.waitFor(() => expect(records()).toEqual([]));
   });
 
+  it('is what the runtime answers when asked whether more may follow a turn (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    expect(runtime.holdsBackgroundWork(sessionId)).toBe(false);
+
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
+    // Under the transcript id too: a caller may know the session by either.
+    expect(runtime.holdsBackgroundWork(runtime.getInternalSessionId(sessionId)!)).toBe(true);
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(false));
+  });
+
+  it('reads false by the time the turn that delivers a helper`s report settles (DOR-2717)', async () => {
+    // The order a caller following later turns depends on: the helper's settle
+    // and the delivery segment both land BEFORE the report turn ends, so the
+    // turn that carries the report is seen as the last one, not as "more to come".
+    const sessionId = nextSession();
+    let atSettle: boolean | undefined;
+    runtime.onRuntimeTurn((id, events) => {
+      void (async () => {
+        for await (const _event of events) {
+          // drained, as the projection would
+        }
+        atSettle = runtime.holdsBackgroundWork(id);
+      })();
+    });
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
+
+    process.emit({
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'helper-1',
+      status: 'completed',
+      uuid: 'notify-helper-1',
+      session_id: 'sess-notify',
+    } as unknown as SDKMessage);
+    // The CLI opens a delivery segment, and the agent reports.
+    process.startSegment();
+    process.say('the helper says the build is green');
+    process.closeEmpty(undefined);
+
+    await vi.waitFor(() => expect(atSettle).toBeDefined());
+    expect(atSettle).toBe(false);
+  });
+
+  it('reads true at settle while another helper is still running (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    let atSettle: boolean | undefined;
+    runtime.onRuntimeTurn((id, events) => {
+      void (async () => {
+        for await (const _event of events) {
+          // drained
+        }
+        atSettle = runtime.holdsBackgroundWork(id);
+      })();
+    });
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([
+      { task_id: 'helper-1', task_type: 'local_agent' },
+      { task_id: 'helper-2', task_type: 'local_agent' },
+    ]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
+
+    process.reportTasks([{ task_id: 'helper-2', task_type: 'local_agent' }]);
+    process.startSegment();
+    process.say('one of two is done');
+    process.closeEmpty(undefined);
+
+    await vi.waitFor(() => expect(atSettle).toBeDefined());
+    expect(atSettle).toBe(true);
+  });
+
+  it('tells its listener when a dispatched turn opens, and not for a turn the agent starts (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    const dispatched: string[] = [];
+    runtime.onDispatchedTurn((id) => dispatched.push(id));
+    await turn(sessionId);
+    expect(dispatched).toEqual([sessionId]);
+
+    const process = cli.processes[0]!;
+    process.say('picking my own work back up');
+    process.closeEmpty(undefined);
+    await vi.waitFor(() => expect(process.spoke).toBeGreaterThan(0));
+    expect(dispatched).toEqual([sessionId]);
+  });
+
+  it('tells every dispatched-turn listener, each unsubscribing only itself (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    const heard: string[] = [];
+    const first = runtime.onDispatchedTurn(() => heard.push('first'));
+    runtime.onDispatchedTurn(() => {
+      throw new Error('a careless listener');
+    });
+    runtime.onDispatchedTurn(() => heard.push('second'));
+
+    await turn(sessionId);
+    expect(heard).toEqual(['first', 'second']);
+
+    first();
+    await turn(sessionId, 'again');
+    expect(heard).toEqual(['first', 'second', 'second']);
+  });
+
   it('is cleared when the ceiling reap takes a process still holding work', async () => {
     const { sessionId } = await warmWithShell();
     await new Promise<void>((resolve) => setImmediate(resolve));
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       await runtime.reapSession(sessionId);
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
 
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
@@ -2769,10 +2894,15 @@ describe('the record of background work a process holds (DOR-2065)', () => {
 
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       await runtime.reapSession(sessionId);
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
     expect(session.pendingTimers).toBeUndefined();

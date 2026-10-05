@@ -34,6 +34,19 @@ export interface AgentSession {
    * (`messaging/launch-resolver.ts`), and nowhere earlier.
    */
   permissionMode: PermissionModeId;
+  /**
+   * The model Auto was CONFIRMED to work on at this session's last launch
+   * (`''` for the SDK's default model), or undefined when it was not.
+   *
+   * `permissionMode` can read `'auto'` while the turn runs at `'default'`: the
+   * launcher coerces Auto down for a model that cannot do it, per query, and
+   * deliberately leaves the stored choice alone (`messaging/launch-resolver.ts`).
+   * Anything that needs the mode the turn REALLY runs at — `session_start`'s
+   * ceiling — reads this beside `permissionMode` and `model`, and counts Auto
+   * only when this names the session's current model. Written by the launcher
+   * on every launch; never by a person.
+   */
+  autoModeConfirmedFor?: string;
   model?: string;
   effort?: EffortLevel;
   fastMode?: boolean;
@@ -171,6 +184,12 @@ export interface AgentSession {
    * (DOR-2681). A getter, not a count, so the answer is never stale.
    */
   liveHelperCount?: () => number;
+  /**
+   * When the running resume-path turn started, on the awake clock
+   * (`performance.now()`), which stops while the machine sleeps. What that
+   * path's background-work ceiling is measured from (DOR-2717).
+   */
+  turnStartedAwake?: number;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */
   lastQuery?: Query;
   /**

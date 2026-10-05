@@ -22,6 +22,12 @@ apps/server/src/core-extensions/
 docs/api/openapi.json
 docs/api/api/
 
+# The Codex app-server protocol snapshot — written by `pnpm
+# codex:protocol-snapshot` from the vendored binary, sorted and deterministic.
+# Same reasoning: a reformat would make the regenerate-and-compare check read a
+# file nobody's generator wrote.
+apps/server/src/services/runtimes/codex/app-server/protocol/schema-snapshot.json
+
 # Drizzle's migration bookkeeping — written by `drizzle-kit generate`, read by
 # drizzle, never by a person. The lefthook pre-commit hook regenerates and
 # `git add`s these AFTER its format step, so every new migration would land an

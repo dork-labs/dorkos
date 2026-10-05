@@ -37,11 +37,12 @@ Two architectural decisions shape an adapter. Decide both before writing code.
 
 **How does the backend run?**
 
-| Backend shape                             | Pattern                                                      | Worked example                              |
-| ----------------------------------------- | ------------------------------------------------------------ | ------------------------------------------- |
-| SDK spawns a fresh subprocess per turn    | Facade + durable id map; no process lifecycle to own         | `codex/` (`thread-map.ts`, ADR-0309)        |
-| Long-lived server the adapter must manage | Managed sidecar: lazy spawn, health check, backoff, teardown | `opencode/` (`server-manager.ts`, ADR-0308) |
-| SDK manages its own long-lived process    | Facade over the SDK's process (no sidecar code)              | `claude-code/`                              |
+| Backend shape                             | Pattern                                                                                                                  | Worked example                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| SDK spawns a fresh subprocess per turn    | Facade + durable id map; no process lifecycle to own                                                                     | `codex/` exec transport (`transport/exec-transport.ts`, ADR-0309)               |
+| Long-lived server the adapter must manage | Managed sidecar: lazy spawn, health check, backoff, teardown                                                             | `opencode/` (`server-manager.ts`, ADR-0308)                                     |
+| Long-lived JSON-RPC child over stdio      | Supervised pool keyed per home, hand-written protocol pinned by a schema snapshot, a thread key for config fixed at load | `codex/` app-server transport (`app-server/process-pool.ts`, ADR 261005-113107) |
+| SDK manages its own long-lived process    | Facade over the SDK's process (no sidecar code)                                                                          | `claude-code/`                                                                  |
 
 **Where does session history live?** (ADR-0310: storage is always runtime-owned; there is no unified DorkOS transcript store)
 
@@ -336,6 +337,7 @@ A pinned SDK version is a verified claim, so a bump re-verifies it. Checklist fo
 5. Run the runtime conformance suites: `pnpm vitest run apps/server/src/services/runtimes/codex`.
    Add the runtime as a column of the capabilities matrix (`packages/test-utils/src/runtime-capability-matrix.ts`): one cell per row saying what it does, why, and what proves it. Start every cell you have not proven as `unverified`, run `pnpm docs:runtime-capabilities`, and let `runtime-capability-census.test.ts` say what is left.
 6. Run one live smoke turn against a real `codex` binary: `DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/conformance.test.ts` (from `apps/server`).
+7. **Codex only: regenerate the app-server protocol snapshot** (ADR 261005-113107). The app-server transport speaks `codex app-server` JSON-RPC by hand, so no `.d.ts` diff can see a protocol change, and the server drops an unknown param silently. Run `pnpm codex:protocol-snapshot`, read the diff of `app-server/protocol/schema-snapshot.json` before committing it, bump `PINNED_CODEX_APP_SERVER_VERSION` in `app-server/protocol/methods.ts`, and update its method and item unions until `notification-mapper.ts` compiles. `protocol-snapshot.binary.test.ts` fails on any drift until you do; `app-server.binary.test.ts` and the app-server leg of `credits-provider.binary.test.ts` re-check the spike verdicts (trust write, thread key, credits relay) for free.
 
 **The family, in full.** A runtime SDK is never one entry in one manifest. Every version below has to land on the same number in the same commit, or the packaged desktop app ships a bundled binary that does not match the SDK talking to it:
 

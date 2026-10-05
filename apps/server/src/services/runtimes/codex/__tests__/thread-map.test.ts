@@ -30,6 +30,19 @@ describe('CodexThreadMap', () => {
     expect(threadMap.getThreadId(SESSION_ID)).toBe(THREAD_ID);
   });
 
+  it('replaces a binding only while it still names the thread the caller replaced', () => {
+    threadMap.setThreadId(SESSION_ID, THREAD_ID, '/project', { title: 'Kept' });
+    expect(threadMap.replaceThreadId(SESSION_ID, 'thread_someone_else', 'thread_new')).toBe(false);
+    expect(threadMap.getThreadId(SESSION_ID)).toBe(THREAD_ID);
+    expect(threadMap.replaceThreadId(SESSION_ID, THREAD_ID, 'thread_new')).toBe(true);
+    expect(threadMap.get(SESSION_ID)).toMatchObject({
+      threadId: 'thread_new',
+      cwd: '/project',
+      title: 'Kept',
+    });
+    expect(threadMap.replaceThreadId('unknown-session', THREAD_ID, 'thread_x')).toBe(false);
+  });
+
   it('stores independent mappings for different sessions', () => {
     const otherSessionId = '22222222-2222-4222-8222-222222222222';
     threadMap.setThreadId(SESSION_ID, THREAD_ID);

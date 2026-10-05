@@ -325,3 +325,37 @@ export function resolveManagedMcpServers(
   }
   return { servers, env };
 }
+
+/**
+ * The same managed servers with their header values written in as literal
+ * `http_headers`, for the app-server transport (spec
+ * `codex-app-server-transport` §9).
+ *
+ * The environment indirection above exists because exec turns config into
+ * argv. On app-server, config travels as a JSON-RPC message over stdin and
+ * never reaches argv or the process environment, so the values go straight
+ * into the thread's config — and the process environment, which every thread
+ * in that process shares, carries none of them.
+ *
+ * @param managed - The converted servers and their header values.
+ * @returns A fresh record; `managed` is not modified.
+ */
+export function withLiteralHeaders(managed: CodexManagedMcpServers): CodexMcpServerRecord {
+  const servers: CodexMcpServerRecord = {};
+  for (const [name, entry] of Object.entries(managed.servers)) {
+    const { env_http_headers: names, ...rest } = entry as CodexConfigObject & {
+      env_http_headers?: Record<string, string>;
+    };
+    if (!names) {
+      servers[name] = rest;
+      continue;
+    }
+    const headers: Record<string, string> = {};
+    for (const [header, envVar] of Object.entries(names)) {
+      const value = managed.env[envVar];
+      if (value !== undefined) headers[header] = value;
+    }
+    servers[name] = { ...rest, http_headers: headers };
+  }
+  return servers;
+}

@@ -658,6 +658,12 @@ export async function resolveLaunch(args: {
       data: { message: AUTO_DOWNGRADE_STATUS[autoDowngrade] },
     });
   }
+  // Which model Auto is confirmed for, recorded for what reads the mode this
+  // turn REALLY runs at (the `session_start` ceiling): the coercion above leaves
+  // `session.permissionMode` at `'auto'` on purpose, so the stored choice alone
+  // would overstate the turn. Confirmed only on a definite `true`, so a model
+  // nothing could vouch for counts as no Auto at all.
+  session.autoModeConfirmedFor = modelSupportsAutoMode === true ? (launchModel ?? '') : undefined;
   // Every value that reaches here is one the SDK accepts: `narrowToClaudeCodeMode`
   // checked the id and the guard above resolved Auto, so no allowlist is needed.
   sdkOptions.permissionMode = effectivePermissionMode;

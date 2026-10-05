@@ -1410,6 +1410,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  onDispatchedTurn(listener: (sessionId: string) => void): () => void {
+    return this.persistent.onDispatchedTurn(listener);
+  }
+
+  /** @inheritdoc */
+  holdsBackgroundWork(sessionId: string): boolean {
+    // The warm path only. A resumed turn's process ends with its turn, and the
+    // CLI ends its own background work with it, so nothing can follow.
+    return this.persistent.holdsBackgroundWork(sessionId);
+  }
+
+  /** @inheritdoc */
   isHelperWorking(sessionId: string): boolean {
     if (this.persistent.isHelperWorking(sessionId)) return true;
     // The resume path: the running turn's own tracker. Its ceiling is measured
@@ -1419,7 +1431,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     if (session?.liveHelperCount === undefined) return false;
     return (
       session.liveHelperCount() > 0 &&
-      Date.now() - session.lastActivity < SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
+      // Awake time, so a laptop asleep mid-turn does not end the wait on waking (DOR-2717).
+      performance.now() - (session.turnStartedAwake ?? performance.now()) <
+        SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
     );
   }
 

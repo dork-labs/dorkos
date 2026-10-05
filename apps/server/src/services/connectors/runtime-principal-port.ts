@@ -114,3 +114,53 @@ export interface ConnectorRuntimeBindingBootPort {
   /** Initialize this process generation before the internal listener is reachable. */
   initializeBoot(): Promise<{ readonly bootEpoch: string }>;
 }
+
+/**
+ * What one thread key may ever stand for (ADR 261005-113107): one runtime, one
+ * session, one working directory, inside one long-lived runtime process.
+ */
+export interface ConnectorThreadKeyScope {
+  /** Runtime whose loaded thread carries the key. */
+  readonly runtime: ConnectorRuntime;
+  /** Canonical session the thread belongs to. */
+  readonly canonicalSessionId: string;
+  /** Canonical working directory the thread was loaded in. */
+  readonly canonicalCwd: string;
+  /** Opaque key of the runtime process holding the thread; revokes with it. */
+  readonly processKey: string;
+}
+
+/** A freshly minted thread key. `key` is the secret; `keyId` is safe to log. */
+export interface MintedConnectorThreadKey {
+  /** Non-secret identifier for logs and lifecycle calls. */
+  readonly keyId: string;
+  /** Secret bearer, sent once in the thread's config and never persisted. */
+  readonly key: string;
+}
+
+/** Why a thread key stopped existing. */
+export type RevokeConnectorThreadKeyReason =
+  'thread_unloaded' | 'process_exited' | 'shutdown' | 'superseded';
+
+/**
+ * Lifecycle of thread keys: the bearer a long-lived runtime process holds for
+ * a loaded thread, which authorizes nothing by itself. Each turn attaches its
+ * own turn binding to the key and detaches it when the turn ends; the listener
+ * resolves the key to whichever binding is attached and refuses it when none
+ * is. Memory only.
+ */
+export interface ConnectorThreadKeyPort {
+  /** Mint a 256-bit key bound to one scope. */
+  mint(scope: ConnectorThreadKeyScope): MintedConnectorThreadKey;
+  /**
+   * Attach the open turn's binding. Refuses (throws) a key that is unknown,
+   * revoked, owned by another session, or still attached to another turn.
+   */
+  attach(keyId: string, binding: { bindingId: string; canonicalSessionId: string }): void;
+  /** Detach a binding; a no-op unless that exact binding is attached. */
+  detach(keyId: string, bindingId: string): void;
+  /** Revoke one key for good. Idempotent. */
+  revoke(keyId: string, reason: RevokeConnectorThreadKeyReason): void;
+  /** Revoke every key minted for one runtime process. Idempotent. */
+  revokeProcess(processKey: string, reason: RevokeConnectorThreadKeyReason): void;
+}

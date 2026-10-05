@@ -3,7 +3,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
-import { toCodexMcpServerConfig, toCodexMcpServers } from '../mcp-server-config.js';
+import {
+  toCodexMcpServerConfig,
+  toCodexMcpServers,
+  withLiteralHeaders,
+} from '../mcp-server-config.js';
 
 describe('toCodexMcpServerConfig', () => {
   it('maps a stdio connection to command/args/env', () => {
@@ -194,5 +198,31 @@ describe('toCodexMcpServers', () => {
       skipped: [],
       reserved: [],
     });
+  });
+});
+
+describe('withLiteralHeaders (app-server)', () => {
+  it('writes each header value into its server and drops the env indirection', () => {
+    const managed = toCodexMcpServers(
+      {
+        notion: {
+          transport: 'http',
+          url: 'https://n.example/mcp',
+          headers: { Authorization: 'Bearer N' },
+        },
+        github: { transport: 'http', url: 'https://g.example/mcp', headers: { 'X-Key': 'G' } },
+        local: { transport: 'stdio', command: 'run-me', args: ['--x'] },
+      },
+      new Set()
+    );
+    const literal = withLiteralHeaders(managed);
+    expect(literal).toEqual({
+      notion: { url: 'https://n.example/mcp', http_headers: { Authorization: 'Bearer N' } },
+      github: { url: 'https://g.example/mcp', http_headers: { 'X-Key': 'G' } },
+      local: { command: 'run-me', args: ['--x'] },
+    });
+    expect(JSON.stringify(literal)).not.toContain('DORKOS_MCP_HDR_');
+    // The input is untouched: exec still reads the env form.
+    expect(JSON.stringify(managed.servers)).toContain('env_http_headers');
   });
 });

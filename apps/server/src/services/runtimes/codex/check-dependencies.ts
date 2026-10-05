@@ -193,3 +193,28 @@ export async function checkCodexDependencies(): Promise<DependencyCheck[]> {
   const binary = await resolveCodexBinaryPath();
   return Promise.all([checkCliBinary(binary), checkLoginState(binary)]);
 }
+
+/**
+ * A note for the status card when the app-server Codex is running is not the
+ * version DorkOS pins its protocol to (spec `codex-app-server-transport` §5).
+ * Not a refusal: the protocol is additive and a newer binary usually works, but
+ * a person debugging a Codex chat should be able to see the difference.
+ *
+ * @param observed - The version the running app-server reported, or `null`.
+ * @param pinned - The version DorkOS's protocol snapshot was taken from.
+ * @returns A satisfied check carrying both versions, or `null` when they match
+ *   or nothing has run yet.
+ */
+export function codexAppServerVersionNote(
+  observed: string | null,
+  pinned: string
+): DependencyCheck | null {
+  if (observed === null || observed === pinned) return null;
+  return {
+    name: 'Codex app-server',
+    description: `DorkOS is tested with Codex ${pinned}. This Codex is ${observed}, which usually works.`,
+    status: 'satisfied',
+    version: observed,
+    requiredVersion: pinned,
+  };
+}

@@ -316,6 +316,12 @@ export class PersistentDispatch {
    */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;
   /**
+   * Everyone who wants to know a dispatched turn opened (DOR-2717). A set, not
+   * one slot: unlike a runtime turn, which exactly one projector may own, this
+   * is a notice any number of followers can act on.
+   */
+  private readonly dispatchedTurnListeners = new Set<(sessionId: string) => void>();
+  /**
    * Build the dispatcher over a runtime's pump registry.
    *
    * @param registry - The runtime's registry; this never creates its own, so
@@ -399,6 +405,24 @@ export class PersistentDispatch {
   }
 
   /**
+   * Listen for a dispatched turn opening on a held process (DOR-2717). Only
+   * this path matters: a session without a held process has no background work
+   * for a later turn to come from.
+   *
+   * @param listener - Told which session took a dispatched turn
+   * @returns Unsubscribes this listener, and only this one
+   */
+  onDispatchedTurn(listener: (sessionId: string) => void): () => void {
+    // Wrapped, so subscribing the same function twice yields two independent
+    // subscriptions rather than one that the first unsubscribe removes.
+    const entry = (sessionId: string): void => listener(sessionId);
+    this.dispatchedTurnListeners.add(entry);
+    return () => {
+      this.dispatchedTurnListeners.delete(entry);
+    };
+  }
+
+  /**
    * The live query of a RUNTIME turn open on this session, or `undefined` when
    * none is (spec `warm-process-lifecycle` D6, the Stop rule).
    *
@@ -447,6 +471,22 @@ export class PersistentDispatch {
    */
   isHelperWorking(sessionId: string): boolean {
     return this.registry.peek(this.sessionKeyOf(sessionId))?.isHelperWorking() === true;
+  }
+
+  /**
+   * Does this session's held process still hold work that can wake the agent
+   * after its turn — a helper, shell, Monitor or other task, or a delivery owed
+   * (DOR-2717)? The same flag the durable background-work record mirrors, so
+   * the answer and the record cannot disagree. False for a session holding no
+   * process: a process that is gone can wake nobody.
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  holdsBackgroundWork(sessionId: string): boolean {
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
+    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
+    return bundle.heldWork === true;
   }
 
   /**
@@ -680,10 +720,7 @@ export class PersistentDispatch {
         because: busy.because,
         busyForMs,
       });
-      if (
-        bundle.pump.isPastCeiling(Date.now()) &&
-        bundle.staleToolListWarnedFor !== busy.busySince
-      ) {
+      if (bundle.pump.isPastCeiling() && bundle.staleToolListWarnedFor !== busy.busySince) {
         bundle.staleToolListWarnedFor = busy.busySince;
         logger.warn(
           '[persistent-dispatch] tool list is stale until this session’s background work ends',
@@ -761,6 +798,19 @@ export class PersistentDispatch {
       return;
     } finally {
       bundle.booting = false;
+    }
+    // Told once the window is open, so a turn the process refused never ends
+    // anybody's follow of the session's later turns. A throw stays out here, and
+    // never keeps the next listener from hearing.
+    for (const listener of [...this.dispatchedTurnListeners]) {
+      try {
+        listener(sessionId);
+      } catch (err) {
+        logger.warn('[PersistentDispatch] a dispatched-turn listener threw', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     yield* streamTurnWindow({

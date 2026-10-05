@@ -15,7 +15,9 @@ const expected: Record<string, number> = {
   'claude-code/sdk/sdk-utils.ts': 1,
   'claude-code/tooling/provision.ts': 1,
   'codex/model-catalog.ts': 1,
-  'codex/codex-runtime.ts': 3,
+  'codex/transport/exec-transport.ts': 3,
+  'codex/app-server/process-pool.ts': 1,
+  'codex/app-server/protocol/snapshot.ts': 2,
   'codex/provision.ts': 1,
   'connect/delegated-login.ts': 2,
   'opencode/server-manager.ts': 1,
@@ -69,6 +71,16 @@ function census(text: string, name: string): { count: number; unprojected: strin
         (name === 'claude-code/sessions/pump-launch.ts' && call.includes('...plan.sdkOptions')) ||
         (name === 'claude-code/sessions/tracked-spawn.ts' && /\benv,/.test(call)) ||
         (name === 'codex/model-catalog.ts' && call === "{ stdio: 'pipe', env: environment }") ||
+        // The app-server pool forwards the spec's complete environment, built
+        // by the transport through `runtimeEnvironment` (or the credits
+        // projection over it) and fingerprinted into the process key.
+        (name === 'codex/app-server/process-pool.ts' &&
+          call === "{ env: options.env, cwd: options.cwd, stdio: 'pipe' }") ||
+        // The protocol-snapshot generator runs the vendored binary with a
+        // scratch HOME/CODEX_HOME and nothing inherited at all — stricter than
+        // any projection, and never on a turn's path.
+        (name === 'codex/app-server/protocol/snapshot.ts' &&
+          /^\{[^}]*\benv,?\s*\}$/.test(call.replace(/\s+/g, ' '))) ||
         // The sidecar's env is built by `buildSidecarSpawnEnv`, which projects
         // through `runtimeEnvironment` on both sides (own sign-in and credits).
         (name === 'opencode/server-manager.ts' && /env: buildSidecarSpawnEnv\(/.test(call));
