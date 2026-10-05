@@ -117,13 +117,15 @@ export function selfCheckPassed(hello: HelloMessage): boolean {
  * @param extensionId - The extension id.
  * @param filesDir - Its files folder (real path).
  * @param source - The host environment to copy locale and time zone from.
+ * @param platform - Host platform; Windows prevents libuv's host-variable refill.
  * @param electronRunAsNode - Whether the binary is Electron, run as plain Node.
  */
 export function buildChildEnv(
   extensionId: string,
   filesDir: string,
   source: NodeJS.ProcessEnv,
-  electronRunAsNode: boolean = Boolean(process.versions.electron)
+  electronRunAsNode: boolean = Boolean(process.versions.electron),
+  platform: NodeJS.Platform = process.platform
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   // SystemRoot and windir name the Windows folder, not a secret; without them
@@ -133,6 +135,15 @@ export function buildChildEnv(
   }
   for (const [key, value] of Object.entries(source)) {
     if (key.startsWith('LC_') && value !== undefined) env[key] = value;
+  }
+  if (platform === 'win32') {
+    // libuv refills these from the host if omitted. Explicit empty values
+    // preserve the scrubbed environment without leaking host identity or PATH.
+    // https://github.com/libuv/libuv/blob/v1.x/src/win/process.c#L47
+    for (const key of ['PATH', 'USERNAME', 'USERDOMAIN', 'LOGONSERVER']) env[key] = '';
+    const drive = path.win32.parse(filesDir).root.replace(/\\$/, '');
+    env.HOMEDRIVE = drive;
+    env.HOMEPATH = filesDir.slice(drive.length);
   }
   const tmp = path.join(filesDir, '.tmp');
   env.HOME = filesDir;

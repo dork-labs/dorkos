@@ -132,7 +132,7 @@ describe('IsolatedExtensionHost (real child processes)', () => {
       await startOk(host);
       const report = await probe(host, 'env');
       const env = report.value as Record<string, string>;
-      expect(env.PATH).toBeUndefined();
+      expect(env.PATH).toBe(process.platform === 'win32' ? '' : undefined);
       expect(env.NODE_OPTIONS).toBeUndefined();
       expect(env.ANTHROPIC_API_KEY).toBeUndefined();
       expect(env.DORKOS_AGENT_TOKEN_TEST).toBeUndefined();

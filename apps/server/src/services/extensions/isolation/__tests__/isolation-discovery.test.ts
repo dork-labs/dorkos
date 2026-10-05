@@ -16,6 +16,9 @@ import type { CoreExtensionInfo, ExtensionsConfig } from '../../extension-enable
 const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [], approvedToRun: [] };
 const EMPTY_CORE = new Map<string, CoreExtensionInfo>();
 
+/** Real host fixtures follow its executable suffix and path rules. */
+const programFile = (name: string): string => (process.platform === 'win32' ? `${name}.exe` : name);
+
 /** Write a file, creating its folder; `mode` makes it executable. */
 async function writeFile(file: string, content: string, mode?: number): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
@@ -33,7 +36,7 @@ describe('record.isolation', () => {
     dorkHome = path.join(tmp, '.dork');
     bin = path.join(tmp, 'bin');
     await fs.mkdir(path.join(dorkHome, 'extensions'), { recursive: true });
-    await writeFile(path.join(bin, 'fake-git'), '#!/bin/sh\nexit 0\n', 0o755);
+    await writeFile(path.join(bin, programFile('fake-git')), '#!/bin/sh\nexit 0\n', 0o755);
     vi.stubEnv('PATH', bin);
   });
 
@@ -74,7 +77,7 @@ describe('record.isolation', () => {
       net: ['imap.fastmail.com:993'],
       run: ['fake-git', 'no-such-program'],
       resolvedRun: [
-        { name: 'fake-git', path: path.join(bin, 'fake-git') },
+        { name: 'fake-git', path: path.join(bin, programFile('fake-git')) },
         { name: 'no-such-program', path: null, reason: PROGRAM_NOT_FOUND },
       ],
       agents: true,
@@ -88,7 +91,7 @@ describe('record.isolation', () => {
   // named by absolute path, so the card says it will not run (review fix 3).
   it('refuses a program bundled in the extension’s package', async () => {
     const plugin = path.join(dorkHome, 'plugins', 'mail');
-    const tool = path.join(plugin, 'bin', 'tool');
+    const tool = path.join(plugin, 'bin', programFile('tool'));
     await writeFile(tool, '#!/bin/sh\n', 0o755);
     const dir = path.join(plugin, '.dork', 'extensions', 'mail-app');
     await writeFile(
@@ -105,7 +108,7 @@ describe('record.isolation', () => {
     const record = records.find((r) => r.id === 'mail-app')!;
     expect(record.isolation?.resolvedRun).toEqual([
       { name: tool, path: null, reason: PROGRAM_INSIDE_EXTENSION },
-      { name: 'fake-git', path: path.join(bin, 'fake-git') },
+      { name: 'fake-git', path: path.join(bin, programFile('fake-git')) },
     ]);
   });
 
@@ -113,7 +116,7 @@ describe('record.isolation', () => {
   // freely, so a program inside the project is refused too.
   it('refuses a program inside the project of a project copy', async () => {
     const project = path.join(tmp, 'project');
-    const tool = path.join(project, 'scripts', 'tool');
+    const tool = path.join(project, 'scripts', programFile('tool'));
     await writeFile(tool, '#!/bin/sh\n', 0o755);
     const dir = path.join(project, '.dork', 'extensions', 'local-app');
     await writeFile(
@@ -186,22 +189,22 @@ describe('resolveProgram', () => {
   // Purpose: relative PATH folders (empty, ".", "bin") never resolve a name,
   // so the answer cannot depend on the server's working directory.
   it('ignores relative PATH folders', async () => {
-    await writeFile(path.join(tmp, 'tool'), '#!/bin/sh\n', 0o755);
+    await writeFile(path.join(tmp, programFile('tool')), '#!/bin/sh\n', 0o755);
     const cwd = process.cwd();
     process.chdir(tmp);
     try {
       expect(
         await find('tool', {
           dorkHome,
-          env: { PATH: `:.:./:${tmp}x` },
-          platform: 'linux',
+          env: { PATH: ['', '.', './', `${tmp}x`].join(path.delimiter) },
+          platform: process.platform,
         })
       ).toBeNull();
     } finally {
       process.chdir(cwd);
     }
-    expect(await find('tool', { dorkHome, env: { PATH: tmp }, platform: 'linux' })).toBe(
-      path.join(tmp, 'tool')
+    expect(await find('tool', { dorkHome, env: { PATH: tmp }, platform: process.platform })).toBe(
+      path.join(tmp, programFile('tool'))
     );
   });
 
@@ -211,58 +214,72 @@ describe('resolveProgram', () => {
     const a = path.join(tmp, 'a');
     const b = path.join(tmp, 'b');
     const c = path.join(tmp, 'c');
-    await writeFile(path.join(a, 'tool'), 'not runnable', 0o644);
-    await fs.mkdir(path.join(b, 'tool'), { recursive: true });
-    await writeFile(path.join(c, 'tool'), '#!/bin/sh\n', 0o755);
+    await writeFile(
+      path.join(a, process.platform === 'win32' ? 'tool.txt' : 'tool'),
+      'not runnable',
+      0o644
+    );
+    await fs.mkdir(path.join(b, programFile('tool')), { recursive: true });
+    await writeFile(path.join(c, programFile('tool')), '#!/bin/sh\n', 0o755);
     expect(
       await find('tool', {
         dorkHome,
-        env: { PATH: [a, b, c].join(':') },
-        platform: 'linux',
+        env: { PATH: [a, b, c].join(path.delimiter) },
+        platform: process.platform,
       })
-    ).toBe(path.join(c, 'tool'));
+    ).toBe(path.join(c, programFile('tool')));
   });
 
   // Purpose: an absolute entry is kept as written when runnable, else null.
   it('keeps an absolute path that exists and is runnable', async () => {
-    const tool = path.join(tmp, 'opt', 'tool');
+    const tool = path.join(tmp, 'opt', programFile('tool'));
     await writeFile(tool, '#!/bin/sh\n', 0o755);
-    expect(await find(tool, { dorkHome, env: { PATH: '' }, platform: 'linux' })).toBe(tool);
+    expect(await find(tool, { dorkHome, env: { PATH: '' }, platform: process.platform })).toBe(
+      tool
+    );
     expect(
-      await find(path.join(tmp, 'opt', 'nope'), { dorkHome, env: {}, platform: 'linux' })
+      await find(path.join(tmp, 'opt', 'nope'), { dorkHome, env: {}, platform: process.platform })
     ).toBeNull();
   });
 
   // Purpose: a program an extension could write — in DorkOS's extension data
   // folder or a project's — is refused, directly, via PATH, or via a link.
   it('refuses programs inside extension data folders', async () => {
-    const owned = path.join(dorkHome, 'extension-data', 'mail-app', 'files', 'tool');
+    const owned = path.join(dorkHome, 'extension-data', 'mail-app', 'files', programFile('tool'));
     await writeFile(owned, '#!/bin/sh\n', 0o755);
-    expect(await find(owned, { dorkHome, env: {}, platform: 'linux' })).toBeNull();
+    expect(await find(owned, { dorkHome, env: {}, platform: process.platform })).toBeNull();
     expect(
       await find('tool', {
         dorkHome,
         env: { PATH: path.dirname(owned) },
-        platform: 'linux',
+        platform: process.platform,
       })
     ).toBeNull();
-    const project = path.join(tmp, 'proj', '.dork', 'extension-data', 'x', 'tool');
+    const project = path.join(tmp, 'proj', '.dork', 'extension-data', 'x', programFile('tool'));
     await writeFile(project, '#!/bin/sh\n', 0o755);
-    expect(await find(project, { dorkHome, env: {}, platform: 'linux' })).toBeNull();
-    const link = path.join(tmp, 'links', 'tool');
+    expect(await find(project, { dorkHome, env: {}, platform: process.platform })).toBeNull();
+    const link = path.join(tmp, 'links', programFile('tool'));
     await fs.mkdir(path.dirname(link), { recursive: true });
     await fs.symlink(owned, link);
-    expect(await find(link, { dorkHome, env: {}, platform: 'linux' })).toBeNull();
+    expect(await find(link, { dorkHome, env: {}, platform: process.platform })).toBeNull();
   });
 
   // Purpose: an entry the schema would refuse never resolves, and a POSIX
   // path means nothing under Windows rules.
   it('resolves nothing for invalid or foreign entries', async () => {
-    await writeFile(path.join(tmp, 'tool'), '#!/bin/sh\n', 0o755);
+    await writeFile(path.join(tmp, programFile('tool')), '#!/bin/sh\n', 0o755);
     for (const entry of ['../tool', './tool', 'tool arg', `${tmp}/../${path.basename(tmp)}/tool`]) {
-      expect(await find(entry, { dorkHome, env: { PATH: tmp }, platform: 'linux' })).toBeNull();
+      expect(
+        await find(entry, { dorkHome, env: { PATH: tmp }, platform: process.platform })
+      ).toBeNull();
     }
-    expect(await find(path.join(tmp, 'tool'), { dorkHome, env: {}, platform: 'win32' })).toBeNull();
+    expect(
+      await find(path.join(tmp, programFile('tool')), {
+        dorkHome,
+        env: {},
+        platform: process.platform === 'win32' ? 'linux' : 'win32',
+      })
+    ).toBeNull();
   });
 
   // Purpose: review fix 3 — a program the extension ships (its own folder,
@@ -272,11 +289,11 @@ describe('resolveProgram', () => {
   it('refuses programs inside extension files, with a reason', async () => {
     const pkg = path.join(tmp, 'work', 'mail');
     const extDir = path.join(pkg, '.dork', 'extensions', 'mail-app');
-    const inExt = path.join(extDir, 'bin', 'tool');
-    const inPkg = path.join(pkg, 'bin', 'tool');
+    const inExt = path.join(extDir, 'bin', programFile('tool'));
+    const inPkg = path.join(pkg, 'bin', programFile('tool'));
     await writeFile(inExt, '#!/bin/sh\n', 0o755);
     await writeFile(inPkg, '#!/bin/sh\n', 0o755);
-    const roots = { dorkHome, env: {}, platform: 'linux' as const, refusedRoots: [pkg] };
+    const roots = { dorkHome, env: {}, platform: process.platform, refusedRoots: [pkg] };
     expect(await resolveProgram(inExt, roots)).toEqual({
       path: null,
       reason: PROGRAM_INSIDE_EXTENSION,
@@ -286,21 +303,28 @@ describe('resolveProgram', () => {
       reason: PROGRAM_INSIDE_EXTENSION,
     });
     // Without the package named as refused, its bin/ is just a folder.
-    expect(await find(inPkg, { dorkHome, env: {}, platform: 'linux' })).toBe(inPkg);
+    expect(await find(inPkg, { dorkHome, env: {}, platform: process.platform })).toBe(inPkg);
     // A dev link: the slot under DorkOS's plugins folder points at the
     // working folder; the program is refused either way it is named.
     const slot = path.join(dorkHome, 'plugins', 'mail');
     await fs.mkdir(path.dirname(slot), { recursive: true });
     await fs.symlink(pkg, slot);
     expect(
-      await find(path.join(slot, 'bin', 'tool'), { dorkHome, env: {}, platform: 'linux' })
+      await find(path.join(slot, 'bin', programFile('tool')), {
+        dorkHome,
+        env: {},
+        platform: process.platform,
+      })
     ).toBeNull();
     // A program found first on PATH inside extension files is reported, not
     // skipped for a later folder the card never named.
     const later = path.join(tmp, 'later');
-    await writeFile(path.join(later, 'tool'), '#!/bin/sh\n', 0o755);
+    await writeFile(path.join(later, programFile('tool')), '#!/bin/sh\n', 0o755);
     expect(
-      await resolveProgram('tool', { ...roots, env: { PATH: `${path.dirname(inPkg)}:${later}` } })
+      await resolveProgram('tool', {
+        ...roots,
+        env: { PATH: [path.dirname(inPkg), later].join(path.delimiter) },
+      })
     ).toEqual({ path: null, reason: PROGRAM_INSIDE_EXTENSION });
     expect(await resolveProgram('nothing-here', { ...roots, env: { PATH: later } })).toEqual({
       path: null,
