@@ -54,7 +54,8 @@ const CASES: Array<[string, string]> = [
   ['server_out_of_memory', 'Mail ran out of memory and stopped. Reload it to try again.'],
   ['server_unresponsive', 'Mail stopped responding, so DorkOS stopped it.'],
   ['isolation_unavailable', 'Mail can’t run with its limits on this computer.'],
-  ['isolation_not_ready', 'Mail needs a newer DorkOS to run its server part.'],
+  ['server_start_failed', 'Mail couldn’t start. Reload it to try again.'],
+  ['server_start_timeout', 'Mail took too long to start. Reload it to try again.'],
 ];
 
 describe('ExtensionCard: a stopped server half (DOR-2686)', () => {

@@ -19,9 +19,12 @@
  *    every member is decided by the protocol table; report `registered`. The
  *    host measures how long it takes.
  *
- * On `stop`: run the cleanup `register()` returned, cancel every scheduled
- * task, then exit. The router is not reachable yet (requests arrive in a
- * later phase). A test seam (`init.testSeams`) lets the host call the
+ * The router `register()` filled is served by a virtual HTTP server that
+ * never listens (`virtual-server.ts`): the host opens connections to it over
+ * the IPC channel.
+ *
+ * On `stop`: cancel every scheduled task, drop open connections, run the
+ * cleanup `register()` returned, then exit. A test seam (`init.testSeams`) lets the host call the
  * bundle's exported `probes`, so the suites can drive a real child; with it, a
  * bundle without `register` still starts.
  *
@@ -38,6 +41,7 @@ import type { ChildMessage, HostMessage, InitMessage, PermissionReport } from '.
 import { createChildProcessShim } from './child-process-shim.js';
 import { createProxyCtx, type ProxyCtx } from './proxy-ctx.js';
 import { createTrackedSend } from './tracked-send.js';
+import { createVirtualServer, type VirtualServer } from './virtual-server.js';
 import { createInjectedRequire, loadBundle } from './load-bundle.js';
 import { installNetGuard } from './net-guard.js';
 import { installProcessGuard } from './process-guard.js';
@@ -59,9 +63,10 @@ const tracked = sendRaw
  * Send one message to the host.
  *
  * @param message - The message.
+ * @param onWritten - Called once it is written to the channel.
  */
-function send(message: ChildMessage): void {
-  tracked?.send(message);
+function send(message: ChildMessage, onWritten?: () => void): void {
+  tracked?.send(message, onWritten);
 }
 
 /**
@@ -143,6 +148,7 @@ function main(): void {
   let receiveRun: ((message: HostMessage) => void) | null = null;
   let probes: Record<string, (...args: unknown[]) => unknown> | null = null;
   let proxy: ProxyCtx | null = null;
+  let virtual: VirtualServer | null = null;
   let cleanup: (() => unknown) | null = null;
   let stopping = false;
 
@@ -216,6 +222,9 @@ function main(): void {
       return;
     }
     const router = express.Router();
+    // Requests reach the router over virtual connections the host opens once
+    // `registered` says it is ready (spec §7).
+    virtual = createVirtualServer({ extensionId: init.extensionId, express, router, send });
     const ctx = proxy.ctx;
     Promise.resolve()
       .then(() => (candidate as (r: unknown, c: unknown) => unknown)(router, ctx))
@@ -249,6 +258,7 @@ function main(): void {
     const exit = () => process.exit(0);
     setTimeout(exit, 2_000).unref();
     proxy?.cancelScheduled();
+    virtual?.closeAll();
     Promise.resolve()
       .then(() => cleanup?.())
       .catch((err: unknown) => console.error('Cleanup error:', err))
@@ -297,6 +307,7 @@ function main(): void {
         break;
       }
       default:
+        if (virtual?.receive(message)) break;
         if (proxy?.receive(message)) break;
         receiveRun?.(message);
     }

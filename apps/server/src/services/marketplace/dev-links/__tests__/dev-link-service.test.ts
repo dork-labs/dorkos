@@ -888,9 +888,7 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     await declare({ runtime: 'subprocess', allow: { net: ['api.example.com:443'] } });
     const svc = service();
     const shown = await svc.describeApproval({ path: work, scope: 'global' });
-    expect(shown).toContain(
-      'flow-dash: will run separately (its server part can’t run in this version yet); connects to api.example.com:443'
-    );
+    expect(shown).toContain('flow-dash: runs separately; connects to api.example.com:443');
 
     await declare({
       runtime: 'subprocess',

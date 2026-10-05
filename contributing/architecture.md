@@ -608,6 +608,15 @@ The capability registry (`apps/server/src/services/core/capabilities/registry.ts
 
 Author guide: `contributing/extension-authoring.md` (`ctx.tools`). Spec: `specs/extension-agent-tools-and-skills/`.
 
+## Extension server halves: inside DorkOS or in their own process
+
+An extension's `server.ts` runs one of two ways, chosen by `serverCapabilities.runtime` after the approval gate and the compile (`services/extensions/extension-server-lifecycle.ts`):
+
+- **In-process (the default, ADR 0213).** `require()`d into the server process with its full access. Most extensions, every core extension.
+- **Separately (`runtime: "subprocess"`, DOR-2686).** `services/extensions/isolation/` forks it as its own Node process with Node's permission model on and fixed grants (read its staged run folder, write its files folder), a scrubbed environment and a heap cap. The child reports what the permission model allows before any extension code runs, and the host refuses to go on unless every limit is confirmed: there is no fallback to running in-process. The host builds the extension's **real** `ctx` with `createDataProviderContext`, exactly as in-process, and `ctx-dispatcher.ts` routes each call from the child's proxy into it through one protocol table (`ctx-protocol.ts`), so the two runtimes differ only in transport. Its router is served over the IPC channel as real HTTP on virtual sockets (`isolated-router.ts`, `child/virtual-server.ts`), with credentials stripped going in and a sandboxing CSP added coming out. Programs in `allow.run` are started by the host (`run-broker.ts`); `allow.net` is enforced by a guard inside the child (`child/net-guard.ts`), not an OS firewall. A watchdog stops a hung child, and an exit DorkOS did not ask for runs the full stop bookkeeping, then restarts on a 1 s / 5 s / 30 s backoff until a third inside 10 minutes leaves it stopped (`restart-policy.ts`). Only the extension's own child, and programs it started, are ever signalled. Its client bundle is not isolated, and it cannot offer agents tools yet.
+
+Author guide: `contributing/extension-authoring.md` ("Running separately"). Spec: `specs/isolated-extension-backends/`.
+
 ## Per-Agent Tool Visibility
 
 **What a Blocked permission hides from an agent's tool list is decided by permissions (spec `agent-permissions`), not by a tool-group config.** The four `enabledToolGroups` manifest switches and the global `agentContext.*Tools` config section that used to gate this are retired (D13): what an agent may do — and therefore what it is shown and told about — now lives entirely in the ten permission areas (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, DorkOS settings, Safety limits, Permissions, Reach & secrets). The resolution pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:

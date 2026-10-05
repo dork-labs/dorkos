@@ -19,11 +19,8 @@ import {
   type ExtensionPermissionView,
 } from '../lib/permission-lines';
 
-/** The lead lines every separate-runtime card carries while its server part can't run yet. */
-const NOT_YET = [
-  'Its server part can’t run in this version yet.',
-  'Will run separately from DorkOS.',
-];
+/** The lead line every separate-runtime card carries. */
+const SEPARATE = ['Runs separately from DorkOS.'];
 
 const ISOLATED: ExtensionPermissionView = {
   runtime: 'subprocess',
@@ -80,7 +77,7 @@ describe('ExtensionPermissionLines', () => {
   // can't connect — and claims no programs, agents or screens.
   it('says it runs separately and cannot connect when it declares nothing', () => {
     const { container } = render(<ExtensionPermissionLines permissions={ISOLATED} />);
-    expect(linesOf(container)).toEqual([...NOT_YET, 'Can’t connect to the internet.']);
+    expect(linesOf(container)).toEqual([...SEPARATE, 'Can’t connect to the internet.']);
   });
 
   // Purpose: each declared reach gets its line, and only then.
@@ -97,7 +94,7 @@ describe('ExtensionPermissionLines', () => {
       />
     );
     expect(linesOf(container)).toEqual([
-      ...NOT_YET,
+      ...SEPARATE,
       'Can connect to: imap.fastmail.com, *.googleapis.com',
       'Can run: git',
       'Can message your agents and start chats.',
@@ -171,8 +168,8 @@ describe('ExtensionPermissionLines', () => {
       'Now also wants to run: git',
       'Now also wants to message your agents.',
     ]);
-    // Then, before the lists, that its server part can't run in this version.
-    expect(lines.slice(3, 5)).toEqual(NOT_YET);
+    // Then, before the lists, where it runs.
+    expect(lines.slice(3, 4)).toEqual(SEPARATE);
   });
 
   // Purpose: moving back inside DorkOS is the widest change, said first.

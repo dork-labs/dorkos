@@ -523,18 +523,18 @@ describe('ExtensionsSettingsTab', () => {
   });
 
   /**
-   * An extension that asks to run separately does not run yet (DOR-2686), and
-   * DorkOS stopped any older version, so "the last version still runs" would
-   * be false. Its own sentence is shown, once, with no doubled period.
+   * A server half that stopped after crashing too often (DOR-2686) is not
+   * running, so "the last version still runs" would be false. Its own
+   * sentence is shown, once, with no doubled period.
    */
-  it('says plainly that an extension waiting on isolation does not run', async () => {
+  it('says plainly that a stopped server half does not run', async () => {
     const ext = makeExtension({
       id: 'iso-ext',
       status: 'compiled',
       hasServerEntry: true,
       serverError: {
-        code: 'isolation_not_ready',
-        message: 'Mail needs a newer DorkOS to run its server part.',
+        code: 'server_crashed',
+        message: 'Mail stopped unexpectedly 3 times. Reload it to try again.',
       },
     });
     mockFetch({ '/api/extensions': [ext] });
@@ -544,7 +544,7 @@ describe('ExtensionsSettingsTab', () => {
     await waitFor(() => {
       expect(screen.getByTestId('extension-card-iso-ext')).toBeInTheDocument();
     });
-    const line = screen.getByText('Mail needs a newer DorkOS to run its server part.');
+    const line = screen.getByText('Mail stopped unexpectedly 3 times. Reload it to try again.');
     expect(line.textContent).not.toMatch(/\.\./);
     expect(screen.queryByText(/last version still runs/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/couldn’t rebuild/i)).not.toBeInTheDocument();
@@ -908,8 +908,8 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
     const box = await screen.findByTestId('extension-needs-approval-mail');
     const lines = within(box).getByTestId('extension-permissions-mail');
-    expect(lines).toHaveTextContent('Its server part can’t run in this version yet.');
-    expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+    expect(lines).toHaveTextContent('Runs separately from DorkOS.');
+    expect(lines).not.toHaveTextContent('Will run separately');
     expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com');
     expect(lines).toHaveTextContent('Can run bash, which can run any program.');
     expect(within(box).queryByText(/anything DorkOS can/)).not.toBeInTheDocument();
