@@ -35482,7 +35482,8 @@
                           "type": "string",
                           "enum": [
                             "service_not_ready",
-                            "account_link_required"
+                            "account_link_required",
+                            "service_unavailable"
                           ]
                         },
                         "completedAt": {
@@ -35845,7 +35846,8 @@
                           "type": "string",
                           "enum": [
                             "service_not_ready",
-                            "account_link_required"
+                            "account_link_required",
+                            "service_unavailable"
                           ]
                         },
                         "completedAt": {
@@ -37730,7 +37732,8 @@
                           "type": "string",
                           "enum": [
                             "service_not_ready",
-                            "account_link_required"
+                            "account_link_required",
+                            "service_unavailable"
                           ]
                         },
                         "completedAt": {

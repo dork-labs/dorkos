@@ -238,6 +238,7 @@ describe('ConnectorAuthenticationFlowService', () => {
   it.each([
     ['service_not_ready', SIGN_IN_COPY.serviceNotReady],
     ['account_link_required', SIGN_IN_COPY.accountLinkRequired],
+    ['service_unavailable', SIGN_IN_COPY.serviceUnavailable],
   ] as const)(
     'ends a start the service refused for good (%s) as failed, with its code',
     async (refusal, reason) => {

@@ -133,12 +133,12 @@ function providerAccount(account: ManagedConnectorAccount): ProviderConnectedAcc
 
 /**
  * The service's own refusal codes that mean it will not connect this app from
- * here, whatever the person does in DorkOS: its sign-in setup for the app
- * could not be confirmed (`unavailable`, sent with a 503 and a reason), or
- * managed connections are switched off for this account.
+ * here EVER, whatever the person does in DorkOS: it has no sign-in setup for
+ * the app (`connection_setup_missing`), or managed connections are switched
+ * off for this account.
  */
 const SERVICE_NOT_READY_CODES: ReadonlySet<string> = new Set([
-  'unavailable',
+  MANAGED_CONNECTOR_ERROR_CODES.connectionSetupMissing,
   MANAGED_CONNECTOR_ERROR_CODES.managedConnectorsUnavailable,
 ]);
 
@@ -146,6 +146,11 @@ const SERVICE_NOT_READY_CODES: ReadonlySet<string> = new Set([
  * Turn a refusal the service gave for good into the port's typed refusal, or
  * `undefined` for anything trying again could fix: no answer, a timeout, a
  * bare 5xx from something in front of the service, an answer that made no sense.
+ *
+ * A bare `unavailable` cloud code (sent with a 503) means the service hit a
+ * transient failure — a network error or timeout — while looking up its own
+ * sign-in setup; that is temporary, so it maps to `service_unavailable`
+ * rather than the permanent `service_not_ready`.
  *
  * The service's `reason` text is never passed on. It is written for its own
  * logs and can be technical, so the person is shown copy chosen by the code.
@@ -155,12 +160,13 @@ function finalStartRefusal(error: unknown): ConnectStartRefusedError | undefined
   if (error.code === 'unauthorized' || error.code === 'permission_upgrade_required') {
     return new ConnectStartRefusedError('account_link_required', { cause: error });
   }
-  if (
-    error.code === 'unavailable' &&
-    error.cloudCode !== undefined &&
-    SERVICE_NOT_READY_CODES.has(error.cloudCode)
-  ) {
-    return new ConnectStartRefusedError('service_not_ready', { cause: error });
+  if (error.code === 'unavailable' && error.cloudCode !== undefined) {
+    if (SERVICE_NOT_READY_CODES.has(error.cloudCode)) {
+      return new ConnectStartRefusedError('service_not_ready', { cause: error });
+    }
+    if (error.cloudCode === 'unavailable') {
+      return new ConnectStartRefusedError('service_unavailable', { cause: error });
+    }
   }
   return undefined;
 }

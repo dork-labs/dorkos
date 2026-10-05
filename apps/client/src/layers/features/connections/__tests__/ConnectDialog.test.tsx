@@ -832,6 +832,35 @@ describe('ConnectDialog when a connection can’t start (DOR-2713)', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   });
 
+  it('offers a retry that restarts the flow when the service was briefly unavailable', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const refused = {
+      ...base,
+      state: 'failed' as const,
+      reason: 'Nothing was connected. Try again in a few minutes.',
+      failureCode: 'service_unavailable' as const,
+      completedAt: '2026-09-06T00:00:01.000Z',
+    };
+    vi.mocked(transport.startConnectorAuthentication).mockResolvedValue(refused);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(refused);
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('Gmail isn’t available right now')).toBeInTheDocument();
+    expect(
+      screen.getByText('Nothing was connected. Try again in a few minutes.')
+    ).toBeInTheDocument();
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    expect(retry).toBeInTheDocument();
+
+    await user.click(retry);
+
+    // Retrying clears the failed flow and returns to the form, ready to start again.
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeInTheDocument();
+  });
+
   it('keeps the retry for a start that may pass next time', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

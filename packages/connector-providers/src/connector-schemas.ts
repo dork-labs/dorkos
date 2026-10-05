@@ -895,6 +895,8 @@ export const SIGN_IN_COPY = {
   serviceNotReady: 'This app can’t be connected yet. This isn’t something you can fix here.',
   /** This computer has to be linked to its DorkOS account before sign-in can start. */
   accountLinkRequired: 'Link this computer to your DorkOS account, then connect again.',
+  /** The service hit a brief, transient failure trying to start sign-in. */
+  serviceUnavailable: 'Nothing was connected. Try again in a few minutes.',
 } as const;
 
 /** The service behind each way, by the way's type: what its key or server is called. */

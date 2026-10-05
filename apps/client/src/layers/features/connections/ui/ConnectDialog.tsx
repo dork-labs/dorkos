@@ -445,10 +445,23 @@ export function ConnectDialog({
                 />
               </div>
             ) : activeFlow.state === 'failed' && activeFlow.failureCode ? (
-              <ConnectFailure
-                copy={connectRefusalCopy(activeFlow.failureCode, serviceName)}
-                onClose={finish}
-              />
+              (() => {
+                const refusalCopy = connectRefusalCopy(activeFlow.failureCode, serviceName);
+                return (
+                  <ConnectFailure
+                    copy={refusalCopy}
+                    onRetry={
+                      refusalCopy.canRetry
+                        ? () => {
+                            onFlowIdChange(null);
+                            start.reset();
+                          }
+                        : undefined
+                    }
+                    onClose={finish}
+                  />
+                );
+              })()
             ) : (
               <div className="space-y-3">
                 <p role="alert" className="text-destructive text-sm font-medium">

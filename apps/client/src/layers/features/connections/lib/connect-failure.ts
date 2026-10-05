@@ -49,6 +49,12 @@ export function connectRefusalCopy(
         canRetry: false,
         action: 'relink',
       };
+    case 'service_unavailable':
+      return {
+        title: `${serviceName} isn’t available right now`,
+        description: 'Nothing was connected. Try again in a few minutes.',
+        canRetry: true,
+      };
   }
 }
 

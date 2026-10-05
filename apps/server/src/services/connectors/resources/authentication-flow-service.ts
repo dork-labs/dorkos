@@ -60,6 +60,7 @@ export class ConnectorAuthenticationFlowError extends Error {
 const REFUSAL_COPY: Readonly<Record<ConnectStartRefusal, string>> = {
   service_not_ready: SIGN_IN_COPY.serviceNotReady,
   account_link_required: SIGN_IN_COPY.accountLinkRequired,
+  service_unavailable: SIGN_IN_COPY.serviceUnavailable,
 };
 
 /** Construction options for restart-safe local authentication flows. */

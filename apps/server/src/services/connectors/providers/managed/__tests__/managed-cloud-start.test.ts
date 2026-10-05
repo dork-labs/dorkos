@@ -113,13 +113,12 @@ describe('ManagedCloudConnectorProvider.startConnect', () => {
     expect(bodies).toHaveLength(1);
   });
 
-  it('says the service is not ready when it refuses to start this app', async () => {
+  it('says the service is not ready when it has no sign-in setup for this app', async () => {
     const { provider } = harness(() =>
       Response.json(
         {
-          error: 'unavailable',
-          reason:
-            'Account setup could not be confirmed. Check this service’s setup before trying again.',
+          error: 'connection_setup_missing',
+          reason: 'No sign-in setup is configured for this app.',
         },
         { status: 503 }
       )
@@ -127,6 +126,30 @@ describe('ManagedCloudConnectorProvider.startConnect', () => {
     const error = await provider.startConnect('slack').catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ConnectStartRefusedError);
     expect((error as ConnectStartRefusedError).refusal).toBe('service_not_ready');
+  });
+
+  it('says the service is not ready when managed connections are switched off', async () => {
+    const { provider } = harness(() =>
+      Response.json({ error: 'managed_connectors_unavailable' }, { status: 503 })
+    );
+    const error = await provider.startConnect('slack').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConnectStartRefusedError);
+    expect((error as ConnectStartRefusedError).refusal).toBe('service_not_ready');
+  });
+
+  it('says the service is briefly unavailable on a bare transient `unavailable` refusal', async () => {
+    const { provider } = harness(() =>
+      Response.json(
+        {
+          error: 'unavailable',
+          reason: 'Timed out looking up this app’s sign-in setup.',
+        },
+        { status: 503 }
+      )
+    );
+    const error = await provider.startConnect('slack').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConnectStartRefusedError);
+    expect((error as ConnectStartRefusedError).refusal).toBe('service_unavailable');
   });
 
   it('says the computer must be linked when the service no longer knows it', async () => {

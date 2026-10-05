@@ -35,7 +35,7 @@ export const connectorAuthenticationFlows = sqliteTable(
     failureReason: text('failure_reason'),
     /** Set only on a `failed` start the service refused for good; trying again won't help. */
     failureCode: text('failure_code', {
-      enum: ['service_not_ready', 'account_link_required'],
+      enum: ['service_not_ready', 'account_link_required', 'service_unavailable'],
     }),
     createdAt: text('created_at').notNull(),
     expiresAt: text('expires_at').notNull(),
