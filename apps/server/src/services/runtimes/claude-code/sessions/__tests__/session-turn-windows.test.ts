@@ -1556,7 +1556,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     ).toBe(true);
   });
 
-  it('survives an auto compaction taken ahead of the continuation', async () => {
+  it('L-04: survives an auto compaction taken ahead of the continuation', async () => {
     // The other shape that precedes a continuation's first word, and one the
     // pump already drives end to end elsewhere: the CLI compacts to make room
     // for the steer's turn, then runs it.

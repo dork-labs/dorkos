@@ -219,7 +219,7 @@ describe('the vendored maps against each vendor’s documented hook set (HK-13)'
   });
 
   it('HK-13: reaches 12 of Claude’s 30 events on Copilot and 11 on Codex', () => {
-    // The count is the claim `meta/harness-sync-capabilities.md` HK-02/HK-13
+    // The count is the claim `contributing/capabilities/harness-sync.md` HK-02/HK-13
     // makes, so it is asserted rather than described.
     const everyClaudeEvent: ClaudeHooksConfig = Object.fromEntries(
       Object.values(CANONICAL_TO_CLAUDE_EVENT_NAMES).map((event) => [event, group('x')])

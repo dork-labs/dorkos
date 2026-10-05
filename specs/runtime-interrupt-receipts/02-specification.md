@@ -108,7 +108,7 @@ An escalated close means the CLI never received the interrupt, so it never wrote
 `[Request interrupted by user]` into its own JSONL. The FACT survives on the durable
 `turn_end{terminalReason}`, and the projector settles a cold hydrate to `interrupted` from
 it — but the transcript TEXT reads as an ordinary reply. Come back tomorrow and a stopped
-turn looks finished (`meta/chat-capabilities.md` §1, wind-down row, named limit).
+turn looks finished (`contributing/capabilities/chat.md` §1, wind-down row, named limit).
 
 ### The named per-runtime gaps
 
@@ -664,7 +664,7 @@ browser leg able to stage all five endings deterministically.
   (`TURN_EVENT_TYPES`), `packages/shared/src/transport.ts` (`interruptSession`)
 - `apps/server/src/services/tasks/run-stream.ts` (`interruptRun`)
 - `apps/client/src/layers/features/chat/model/use-session-submit.ts` (`stop()`)
-- `meta/chat-capabilities.md` §1 (C-10, the five-phase Stop matrix and its named limits)
+- `contributing/capabilities/chat.md` §1 (C-10, the five-phase Stop matrix and its named limits)
 - ADR-0310 (runtime-owned session storage), ADR-0308 (managed OpenCode sidecar),
   ADR `260816-143752` (receipts at the runtime boundary — `MessageDeliveryOutcome`)
 - DOR-1244, DOR-1299, DOR-1300, DOR-1301, DOR-1302, DOR-1319, DOR-1320, DOR-1425, DOR-1435

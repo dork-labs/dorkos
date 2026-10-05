@@ -45,7 +45,7 @@
  *
  * **This bound is not free, and the cost is not confined to the wind-down it
  * was written for.** `interruptGivenQuery` is the bounded Stop for EVERY phase
- * of a turn (`meta/chat-capabilities.md` §1). In the wind-down the graceful
+ * of a turn (`contributing/capabilities/chat.md` §1). In the wind-down the graceful
  * attempt is already undeliverable, so expiring it loses nothing. In the other
  * phases the CLI is alive and would very likely have acked, and expiring on a
  * healthy-but-slow one KILLS a process that was about to stop politely. What

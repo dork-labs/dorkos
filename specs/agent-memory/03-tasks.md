@@ -45,7 +45,7 @@ pnpm --filter @dorkos/server typecheck
 
 - The shared test asserts the block is present for a directory holding an agent manifest and **absent** for one that does not — the no-manifest guard is inherited from `buildAgentBlock`'s early `if (!manifest) return ''` and must be asserted rather than assumed.
 - **The codex and opencode spread is the point of the placement fix, so it gets its own assertions in their own suites.** Asserting only through `buildAgentContextAppend` in the shared suite cannot fail for the claude-code-only placement this task exists to avoid — the shared builder returns the same string either way if you call it directly. Assert the block appears in what each adapter actually sends: the codex turn-input string and the opencode `synthetic` text part.
-- **Test-mode is structurally outside this path** and that is expected, not a gap: `test-mode` never calls `buildAgentContextAppend` (review I11). So there is no e2e coverage for this block, and the `meta/chat-capabilities.md` §7.1 coverage cells must not claim e2e evidence for it. Say so in the PR rather than leaving a reader to infer it.
+- **Test-mode is structurally outside this path** and that is expected, not a gap: `test-mode` never calls `buildAgentContextAppend` (review I11). So there is no e2e coverage for this block, and the `contributing/capabilities/chat.md` §7.1 coverage cells must not claim e2e evidence for it. Say so in the PR rather than leaving a reader to infer it.
 
 ## Dependencies
 
@@ -458,7 +458,7 @@ pnpm --filter @dorkos/client lint
   - **What does not cross** — conversations themselves never cross between rooms, DMs and direct chats. Only the memory file does.
 - **Never "Wing", never the banned vocabulary.** Wing is the litepaper's name for an unshipped vision; nothing ships under it here. And `scripts/check-banned-words.sh` runs in the `typecheck` workflow — "mission control" and "cockpit" are refused in user-facing prose.
 - **A changelog fragment** at `changelog/unreleased/<id>-<slug>.md`, with the id from `.claude/scripts/id.ts`. Never edit `CHANGELOG.md` directly. `fragment-present` is a required check.
-- **`meta/chat-capabilities.md` §7.1 coverage cells updated honestly for this phase** — X-09 and X-12 become covered by the evals task 1.10 lands; X-10 and X-13 stay uncovered until Phase 2. **No cell may claim e2e evidence for the injection path**, because `test-mode` never calls `buildAgentContextAppend` (review I11).
+- **`contributing/capabilities/chat.md` §7.1 coverage cells updated honestly for this phase** — X-09 and X-12 become covered by the evals task 1.10 lands; X-10 and X-13 stay uncovered until Phase 2. **No cell may claim e2e evidence for the injection path**, because `test-mode` never calls `buildAgentContextAppend` (review I11).
 - The `contributing/interactive-tools.md` count fix belongs to task 1.5 and is not repeated here. The `contributing/` seam section belongs to Phase 3.
 
 ## Verification
@@ -483,9 +483,9 @@ grep -ri "wing" docs/ --include="*.mdx"
 
 ### Task 1.10: Prove it with three evals, including the adversarial one
 
-> **Parent:** DOR-632 · **Spec:** `specs/agent-memory/02-specification.md` · **Plan of record:** §Testing Strategy, Evals bullet; X-09/X-12 from `meta/chat-capabilities.md` §7.1 and X-11b from review C1. Phase 1c.
+> **Parent:** DOR-632 · **Spec:** `specs/agent-memory/02-specification.md` · **Plan of record:** §Testing Strategy, Evals bullet; X-09/X-12 from `contributing/capabilities/chat.md` §7.1 and X-11b from review C1. Phase 1c.
 
-`meta/chat-capabilities.md` §7.1 asks for X-09 through X-13. This task lands the three that Phase 1 can answer. X-10 and X-13 land with Phase 2.
+`contributing/capabilities/chat.md` §7.1 asks for X-09 through X-13. This task lands the three that Phase 1 can answer. X-10 and X-13 land with Phase 2.
 
 ## Scope
 

@@ -2,12 +2,12 @@
 date: 2026-08-13
 type: architecture-review
 status: current
-topic: DorkOS room/agent-participation architecture reviewed against meta/chat-capabilities.md, Block's Buzz, and YC's QM
+topic: DorkOS room/agent-participation architecture reviewed against contributing/capabilities/chat.md, Block's Buzz, and YC's QM
 ---
 
 # Room architecture review: DorkOS vs Buzz vs QM
 
-**Question asked:** is the rooms architecture set up to handle everything in `meta/chat-capabilities.md`? Is it simple, bloated, elegant, sound? Where are the gaps and how could it be better?
+**Question asked:** is the rooms architecture set up to handle everything in `contributing/capabilities/chat.md`? Is it simple, bloated, elegant, sound? Where are the gaps and how could it be better?
 
 **Method:** three parallel source dives on 2026-08-13 — (1) a file-level trace of `apps/server/src/services/rooms/` + `communities/` against the capability list; (2) Block's Buzz at `github.com/block/buzz` (via opensrc checkout + the four existing `research/2026072*_buzz-*.md` / `20260807_room_context_delivery_buzz_and_patterns.md` reports, which remain current); (3) YC's QM at `github.com/yc-software/qm` (MIT, open-sourced 2026-07-31; multiplayer agent harness for Slack + web, drives Pi/OpenCode/Codex/Claude Code through one core).
 
@@ -66,4 +66,4 @@ Weaknesses: 3,043-line orchestrator; 45-field turn-input struct; a declared-but-
 
 ## 6. Capability-list impact
 
-States corrected in `meta/chat-capabilities.md` (2026-08-13): A-01 mechanism complete (needs e2e only); A-03 not built (refuse-not-steer); A-04 blocked by `requireSeedingAllowed`; A-06 seeing built / adding explicitly refused (E16b); A-07 built but budgets non-durable; A-09 contradicts I1 (ADR required); A-12 impossible today (append-only, no edit route); A-15 implemented (fence + nonce + defuse) but untested; A-16 halt built (route + `RoomHeader`), per-room mute server-only (no client caller).
+States corrected in `contributing/capabilities/chat.md` (2026-08-13): A-01 mechanism complete (needs e2e only); A-03 not built (refuse-not-steer); A-04 blocked by `requireSeedingAllowed`; A-06 seeing built / adding explicitly refused (E16b); A-07 built but budgets non-durable; A-09 contradicts I1 (ADR required); A-12 impossible today (append-only, no edit route); A-15 implemented (fence + nonce + defuse) but untested; A-16 halt built (route + `RoomHeader`), per-room mute server-only (no client caller).

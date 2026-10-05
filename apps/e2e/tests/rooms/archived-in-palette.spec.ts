@@ -27,7 +27,7 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * is silent, so nothing here can trigger an agent turn.
  */
 test.describe('Archived rows in the command palette @smoke', () => {
-  test('labels a closed channel, names it once, and keeps it under a live one', async ({
+  test('M-10: labels a closed channel, names it once, and keeps it under a live one', async ({
     page,
     basePage,
     roomsApi,

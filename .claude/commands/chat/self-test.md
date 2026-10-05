@@ -41,7 +41,7 @@ Parse `$ARGUMENTS` for two optional inputs:
 
    When no focus is specified, run the full default test suite.
 
-3. **`mode:sandbox|live`** — which stack the run drives (`meta/chat-capabilities.md` §11).
+3. **`mode:sandbox|live`** — which stack the run drives (`contributing/capabilities/chat.md` §11).
    - `mode:sandbox` — the **test-mode runtime**: throwaway data dir, deterministic, **no model spend**. Verifies UI plumbing (rendering, history reload, stream lifecycle).
    - `mode:live` — the dev stack with a real runtime. Model defaults to `claude-haiku-4-5` (Phase 3). Verifies streaming feel, real tool loops, timing.
    - **If the invocation does not state a mode, ASK the user before spending anything** (`AskUserQuestion`, offering both, with the cost of each). Never assume `live`.

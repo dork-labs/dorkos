@@ -57,7 +57,7 @@ function open(opts: { ownerUserId?: string; reply?: (agentPath: string) => strin
 }
 
 describe('the three-way rule — an agent may open a room with an agent, with you in it', () => {
-  it('lets an agent open a room with a colleague when the owner is on the roster', () => {
+  it('A-04: lets an agent open a room with a colleague when the owner is on the roster', () => {
     const { service, human, ana, bo } = open();
     const room = service.createRoom(
       { kind: 'channel', title: 'Pair', members: [human], agentPaths: ['/agents/bo'] },

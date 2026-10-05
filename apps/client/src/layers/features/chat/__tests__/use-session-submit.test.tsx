@@ -256,7 +256,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(postMessage.mock.calls[0]![3]).not.toHaveProperty('create');
   });
 
-  it('DOR-74 dual-id elimination + restore send: calls postMessage and renders the optimistic user message immediately', async () => {
+  it('C-01: DOR-74 dual-id elimination + restore send: calls postMessage and renders the optimistic user message immediately', async () => {
     const postMessage = vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));

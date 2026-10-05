@@ -66,7 +66,7 @@ carrying both made DOR-144 too big to start for fourteen months.
 
 ## 2) Pre-reading Log
 
-- `meta/harness-sync-capabilities.md` §11 (VC-01…VC-09), §10 (TR-08), §12 (J-01…J-15), §16 D3/D6 — the
+- `contributing/capabilities/harness-sync.md` §11 (VC-01…VC-09), §10 (TR-08), §12 (J-01…J-15), §16 D3/D6 — the
   contract. VC-01 is the eight-state model and its verdict today is _"nothing assembles the eight into one
   answer"_. TR-08 ("a person asks from the app") is `not built`. D6 is the shape this spec implements.
 - `plans/harness-sync-test-plan.md` §9 (T7) and §11 line 9 — the browser tier and this PR's place in the

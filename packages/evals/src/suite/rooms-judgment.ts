@@ -773,7 +773,7 @@ export const roomsChannelMentionedQuestionPostsCase: EvalCase = {
  *
  * **Standing down had no representation before the flip.** A turn that ran
  * always spoke, so an agent watching a person already answer could only add to
- * the pile; `meta/chat-capabilities.md` A-08 has read `not built` since the file
+ * the pile; `contributing/capabilities/chat.md` A-08 has read `not built` since the file
  * existed. An unmade tool call is what makes yielding expressible, and this is
  * the case that measures whether a model actually does it.
  *
@@ -855,7 +855,7 @@ export const roomsChannelYieldsToHumanCase: EvalCase = {
  * `rooms-ack-only-reacts-under-the-flip` — A-06, closed by mechanism rather than
  * by prompt.
  *
- * **The headline case of the whole feature.** `meta/chat-capabilities.md` A-06
+ * **The headline case of the whole feature.** `contributing/capabilities/chat.md` A-06
  * recorded the measured failure — "having reacted, the agent still wrote 'Done —
  * release notes acknowledged.', and a room turn's text is posted" — and
  * concluded it was model-tuning territory. It was a mechanism gap: three rounds

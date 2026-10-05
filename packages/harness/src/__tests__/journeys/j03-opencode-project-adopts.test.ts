@@ -6,7 +6,7 @@
  * command in `.opencode/commands/`, and an `opencode.json` carrying an MCP
  * server. No `.claude/`, no `.agents/`.
  *
- * The contract's J-03 row (`meta/harness-sync-capabilities.md` §12) makes three
+ * The contract's J-03 row (`contributing/capabilities/harness-sync.md` §12) makes three
  * claims about that tree, and this journey measures all three as exact tree
  * diffs. All three hold:
  *

@@ -49,7 +49,7 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * opened here triggers nobody.
  */
 test.describe('Rooms — starting a direct message @smoke', () => {
-  test('picking one agent opens that agent’s session, not a second conversation', async ({
+  test('M-07: picking one agent opens that agent’s session, not a second conversation', async ({
     page,
     roomsApi,
     roomsPage,

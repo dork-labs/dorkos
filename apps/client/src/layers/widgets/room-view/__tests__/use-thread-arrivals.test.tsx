@@ -34,7 +34,7 @@ describe('useThreadArrivals', () => {
     expect([...result.current.values()]).toEqual(['at-rest', 'at-rest']);
   });
 
-  it('drops in a reply that lands while the panel is open', () => {
+  it('M-05: drops in a reply that lands while the panel is open', () => {
     const { result, rerender } = renderHook(({ replies }) => useThreadArrivals(replies, [], true), {
       initialProps: { replies: [reply(1)] },
     });

@@ -72,7 +72,7 @@ describe('an approval nobody answers stops being invisible', () => {
   }
 
   describe('the sweep', () => {
-    it('settles an approval whose window closed with nobody looking', () => {
+    it('I-07: settles an approval whose window closed with nobody looking', () => {
       // The whole bug in one test: before the sweep existed, nothing in this
       // sequence produced an event, because no token was ever presented.
       const { approvalId } = ask();

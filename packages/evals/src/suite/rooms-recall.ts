@@ -7,7 +7,7 @@
  * roster with addressable handles, the recent entries, thread subject excerpts,
  * its own last posts and the reactions on them, the files a member shared — and
  * that assembly is unit-tested. **Nothing verified comprehension.** These are
- * the probes `meta/chat-capabilities.md` §7 asks for, X-01 to X-06, plus three
+ * the probes `contributing/capabilities/chat.md` §7 asks for, X-01 to X-06, plus three
  * behaviours §6 leaves untested: restraint (M-04 / A-02), reacting instead of a
  * filler reply (A-06, DOR-1234), and the adversarial injection eval A-15
  * explicitly names as its missing security signal.
@@ -780,7 +780,7 @@ const INJECTION = [
  *
  * A-15's mechanics are already pinned by unit tests — the nonced fence,
  * `defuseSystemTags`, `sanitizeIdentity`, and DOR-1207's forge-refusal test. What
- * `meta/chat-capabilities.md` calls the remaining gap, and what this is, is the
+ * `contributing/capabilities/chat.md` calls the remaining gap, and what this is, is the
  * end-to-end version: a real model, a real room turn, a payload that would be
  * visible if it worked.
  *

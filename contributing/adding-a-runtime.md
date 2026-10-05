@@ -8,28 +8,28 @@ Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-co
 
 ## Key Files
 
-| Concept                             | Location                                                                                                               |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| The contract                        | `packages/shared/src/agent-runtime.ts` (`AgentRuntime`, `RuntimeCapabilities`, `DependencyCheck`)                      |
-| StreamEvent vocabulary              | `packages/shared/src/schemas.ts` (`StreamEventSchema`, `StreamEventTypeSchema`)                                        |
-| Conformance suite                   | `packages/test-utils/src/runtime-conformance.ts` (`runtimeConformance`, `RuntimeConformanceOpts`)                      |
-| Capabilities matrix                 | `packages/test-utils/src/runtime-capability-matrix.ts`, rendered to [runtime-capabilities.md](runtime-capabilities.md) |
-| Worked example: per-turn subprocess | `apps/server/src/services/runtimes/codex/`                                                                             |
-| Worked example: managed sidecar     | `apps/server/src/services/runtimes/opencode/`                                                                          |
-| Reference stateless implementation  | `apps/server/src/services/runtimes/test-mode/`                                                                         |
-| Runtime registry (composition)      | `apps/server/src/services/core/runtime-registry.ts` (`runtimeRegistry`)                                                |
-| Composition root registration       | `apps/server/src/index.ts` (registration blocks + `shutdownServices()`)                                                |
-| SDK confinement (ESLint)            | `apps/server/eslint.config.js`                                                                                         |
-| Config schema                       | `packages/shared/src/config-schema.ts` (`runtimes` block)                                                              |
-| Config migrations                   | `apps/server/src/services/core/config-manager.ts` (`CONFIG_MIGRATIONS`)                                                |
-| Shared session infrastructure       | `apps/server/src/services/session/` (lock manager, EventLog, projector, aggregation)                                   |
-| Status-line label bound             | `packages/shared/src/constants.ts` (`STATUS_VALUE_MAX_CHARS`)                                                          |
-| Status-line compaction              | `apps/client/src/layers/features/status/lib/status-labels.ts`                                                          |
-| Client visual identity              | `apps/client/src/layers/entities/runtime/config/runtime-descriptors.ts`                                                |
-| Adapter icons                       | `packages/icons/src/adapter-logos.tsx`                                                                                 |
-| Needs-setup UX                      | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                                                    |
-| Runtime enum (mesh/discovery)       | `packages/shared/src/mesh-schemas.ts` (`AgentRuntimeSchema`)                                                           |
-| Connections turn lease              | `apps/server/src/services/runtimes/connectors/connector-turn-lease-supervisor.ts`                                      |
+| Concept                             | Location                                                                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| The contract                        | `packages/shared/src/agent-runtime.ts` (`AgentRuntime`, `RuntimeCapabilities`, `DependencyCheck`)                        |
+| StreamEvent vocabulary              | `packages/shared/src/schemas.ts` (`StreamEventSchema`, `StreamEventTypeSchema`)                                          |
+| Conformance suite                   | `packages/test-utils/src/runtime-conformance.ts` (`runtimeConformance`, `RuntimeConformanceOpts`)                        |
+| Capabilities matrix                 | `packages/test-utils/src/runtime-capability-matrix.ts`, rendered to [capabilities/runtimes.md](capabilities/runtimes.md) |
+| Worked example: per-turn subprocess | `apps/server/src/services/runtimes/codex/`                                                                               |
+| Worked example: managed sidecar     | `apps/server/src/services/runtimes/opencode/`                                                                            |
+| Reference stateless implementation  | `apps/server/src/services/runtimes/test-mode/`                                                                           |
+| Runtime registry (composition)      | `apps/server/src/services/core/runtime-registry.ts` (`runtimeRegistry`)                                                  |
+| Composition root registration       | `apps/server/src/index.ts` (registration blocks + `shutdownServices()`)                                                  |
+| SDK confinement (ESLint)            | `apps/server/eslint.config.js`                                                                                           |
+| Config schema                       | `packages/shared/src/config-schema.ts` (`runtimes` block)                                                                |
+| Config migrations                   | `apps/server/src/services/core/config-manager.ts` (`CONFIG_MIGRATIONS`)                                                  |
+| Shared session infrastructure       | `apps/server/src/services/session/` (lock manager, EventLog, projector, aggregation)                                     |
+| Status-line label bound             | `packages/shared/src/constants.ts` (`STATUS_VALUE_MAX_CHARS`)                                                            |
+| Status-line compaction              | `apps/client/src/layers/features/status/lib/status-labels.ts`                                                            |
+| Client visual identity              | `apps/client/src/layers/entities/runtime/config/runtime-descriptors.ts`                                                  |
+| Adapter icons                       | `packages/icons/src/adapter-logos.tsx`                                                                                   |
+| Needs-setup UX                      | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                                                      |
+| Runtime enum (mesh/discovery)       | `packages/shared/src/mesh-schemas.ts` (`AgentRuntimeSchema`)                                                             |
+| Connections turn lease              | `apps/server/src/services/runtimes/connectors/connector-turn-lease-supervisor.ts`                                        |
 
 ## When to Use What
 

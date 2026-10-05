@@ -10,7 +10,7 @@
  *
  * Three things read this registry:
  *
- * - `contributing/runtime-capabilities.md`, rendered from it by
+ * - `contributing/capabilities/runtimes.md`, rendered from it by
  *   {@link renderRuntimeCapabilityMatrix} (`pnpm docs:runtime-capabilities`);
  * - the census in `apps/server/src/services/runtimes/__tests__/`, which holds
  *   every `U` claim to a test title that names the row, every flag-backed row
@@ -808,7 +808,7 @@ function md(text: string): string {
 }
 
 /**
- * Renders `contributing/runtime-capabilities.md` from the registry.
+ * Renders `contributing/capabilities/runtimes.md` from the registry.
  *
  * Deterministic and dependency-free, so the census can compare the committed
  * file to it byte for byte.

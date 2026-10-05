@@ -282,7 +282,7 @@ describe('the opt-in decides which path a message takes', () => {
     expect(cli.processes[0]!.ended).toBe(false);
   });
 
-  it('leaves a session that is already warm on the pump when the setting goes off', async () => {
+  it('L-14: leaves a session that is already warm on the pump when the setting goes off', async () => {
     optIn.persistentSession = true;
     const sessionId = nextSession();
     await turn(sessionId);
@@ -1569,7 +1569,7 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     optIn.persistentSession = true;
   });
 
-  it('pushes the person’s words into the open turn, pristine, context out of band', async () => {
+  it('C-09b: pushes the person’s words into the open turn, pristine, context out of band', async () => {
     const sessionId = nextSession();
     await turn(sessionId); // warms the process
     const process = cli.processes[0]!;
@@ -1720,7 +1720,7 @@ describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 
     optIn.persistentSession = true;
   });
 
-  it('warms a COLD session and appends, without running a turn (AC1, AC6)', async () => {
+  it('C-11: warms a COLD session and appends, without running a turn (AC1, AC6)', async () => {
     const sessionId = nextSession();
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
 
@@ -2138,7 +2138,7 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
     optIn.persistentSession = true;
   });
 
-  it('(a) reaches the process turn 1 warmed when turn 2 arrives under the CANONICAL id', async () => {
+  it('L-11: (a) reaches the process turn 1 warmed when turn 2 arrives under the CANONICAL id', async () => {
     const sessionId = nextSession();
     await turn(sessionId);
     const canonical = runtime.getInternalSessionId(sessionId)!;

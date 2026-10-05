@@ -406,7 +406,7 @@ Reply-mode resolution is a boolean read plus a field already computed per turn �
 
 - `.claude/rules/room-conduct.md` — the fifth permitted release (D10), the re-argued named exception, the mode-conditional DM clause.
 - `specs/room-participation/02-specification.md` — inline amendments to §2.6, §10.2, §10.2.1, §10.2.2 in the DOR-1202 house style, recording what DOR-1613 delivered and that §10.2.1's runtime constraint is dissolved.
-- `meta/chat-capabilities.md` — §6 A-06 (verdict rewritten: mechanism gap, not model tuning), A-08 (`not built` → reachable), A-02/A-10/A-12/A-16; §5 M-07 (the DM reversal), M-04 (first mechanism and first coverage); §2 R-09 (ninth notice code), R-08. **§1/§4's `Path` column is untouched** — the flip is orthogonal to resume/pump (`:113`), and no row is added to either section or split. One drive-by correction while in the file: the column's copy still calls the pump "the experiment", which graduated.
+- `contributing/capabilities/chat.md` — §6 A-06 (verdict rewritten: mechanism gap, not model tuning), A-08 (`not built` → reachable), A-02/A-10/A-12/A-16; §5 M-07 (the DM reversal), M-04 (first mechanism and first coverage); §2 R-09 (ninth notice code), R-08. **§1/§4's `Path` column is untouched** — the flip is orthogonal to resume/pump (`:113`), and no row is added to either section or split. One drive-by correction while in the file: the column's copy still calls the pump "the experiment", which graduated.
 - `contributing/configuration.md` + `docs/getting-started/configuration.mdx` — three new settings rows.
 - `docs/concepts/rooms.mdx` — how an agent decides to speak, in plain language.
 - Changelog fragments in `changelog/unreleased/`, one per PR.
@@ -539,7 +539,7 @@ None. The three flagged in `01-ideation.md` §9 were ruled on by the orchestrato
 - `DOR-1613` (this work); **`DOR-1212`** (absorbed); `DOR-1202` (shipped the tool, deferred the flip); `DOR-1234` (the A-06 case); `DOR-723` (the `127.0.0.1` mint); `DOR-892`/`DOR-893` (codex/opencode MCP injection); `DOR-1611` (the choke point); `DOR-1203` (noted, not built); `DOR-1434` (multiple posts cost one turn); `DOR-1313`/`DOR-1424`/`DOR-1425` (the stop path); `DOR-1222` (append-only migrations); `DOR-1267` (nested `rooms` leaves reappearing).
 - `specs/tool-only-room-replies/01-ideation.md` — the evidence trail behind every decision here.
 - `specs/room-participation/02-specification.md` §2.6, §10.2, §10.2.1, §10.2.2; `specs/rooms-management-tools/02-specification.md` D1.
-- `.claude/rules/room-conduct.md`; `meta/agent-etiquette.md` E1/E4/E7/E8/E16a/E16b/E21; `meta/chat-capabilities.md`.
+- `.claude/rules/room-conduct.md`; `meta/agent-etiquette.md` E1/E4/E7/E8/E16a/E16b/E21; `contributing/capabilities/chat.md`.
 - `contributing/configuration.md`; `.claude/skills/adding-config-fields/SKILL.md`; `packages/evals/README.md`.
 
 ---
@@ -571,7 +571,7 @@ The flag was the only gate between an agent-bound Codex/OpenCode session and the
 
 ### A3. Docs, ADR, meta (PR 3)
 
-`docs/concepts/rooms.mdx` describes the one behaviour and drops the "turn on DorkOS tools first" caveat; `docs/getting-started/configuration.mdx` and `contributing/configuration.md` drop both rows; `meta/chat-capabilities.md` rows M-04, A-06, A-08 record graduation; `.claude/rules/room-conduct.md` loses its flag references; ADR `260829-025020` is amended to "graduated, flag removed 2026-09" and a new ADR records the D2 and D12 reversals; this spec's manifest gains `linearIssue: DOR-2099` and status `implemented` once PR 3 merges.
+`docs/concepts/rooms.mdx` describes the one behaviour and drops the "turn on DorkOS tools first" caveat; `docs/getting-started/configuration.mdx` and `contributing/configuration.md` drop both rows; `contributing/capabilities/chat.md` rows M-04, A-06, A-08 record graduation; `.claude/rules/room-conduct.md` loses its flag references; ADR `260829-025020` is amended to "graduated, flag removed 2026-09" and a new ADR records the D2 and D12 reversals; this spec's manifest gains `linearIssue: DOR-2099` and status `implemented` once PR 3 merges.
 
 ### A4. Acceptance (from DOR-2099, made precise)
 

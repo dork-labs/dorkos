@@ -15,7 +15,7 @@
  *   this harness yet, or the harness genuinely has nowhere for the artifact to
  *   go (OpenCode has no hook file, so a hook that did not fire is the CORRECT
  *   outcome). Reported loudly, never counted as a pass:
- *   `meta/harness-sync-capabilities.md` calls an unverified row unverified, and
+ *   `contributing/capabilities/harness-sync.md` calls an unverified row unverified, and
  *   so does this.
  * - `finding` — the run noticed something that does not fail it: the calibration
  *   diff disagreed, or the corroborating sentinel was absent. The calibration
@@ -33,7 +33,7 @@ import type { ListingObservation, SmokeHarness, TurnObservation } from './harnes
  * What the two spend-gate verdicts cite instead of a contract row.
  *
  * They are properties of THIS RUNNER, not capabilities of the projection engine,
- * and `meta/harness-sync-capabilities.md` is a list of the latter. Adding a
+ * and `contributing/capabilities/harness-sync.md` is a list of the latter. Adding a
  * `MONEY-01` row there would put a non-capability into the one document whose
  * value is that every row is one — and the census that parses it would have to
  * learn about the exception. So they name their sources directly instead.
@@ -55,7 +55,7 @@ export interface Verdict {
   /**
    * What a verdict with no contract row is evidence about, in words.
    *
-   * `meta/harness-sync-capabilities.md`'s rows are capabilities of the
+   * `contributing/capabilities/harness-sync.md`'s rows are capabilities of the
    * projection engine. The credential and ceiling verdicts are properties of
    * THIS RUNNER's spend gate, and the authored-hook verdict is a positive
    * control on the probe itself — inventing rows for them would put three

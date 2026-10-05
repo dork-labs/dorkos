@@ -436,7 +436,7 @@ Then the flip is a `CONFIG_MIGRATIONS` entry that moves only the exact shipped `
 
 ---
 
-## 7) `meta/chat-capabilities.md` — the rows this touches
+## 7) `contributing/capabilities/chat.md` — the rows this touches
 
 The doc re-audit rides the implementation PRs (§12 of that file: _"New chat feature → add its rows here in the same PR"_).
 

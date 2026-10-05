@@ -185,7 +185,7 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
     );
   });
 
-  it('reconnect with Last-Event-ID replays only seq > cursor and does NOT resend the snapshot', async () => {
+  it('L-08: reconnect with Last-Event-ID replays only seq > cursor and does NOT resend the snapshot', async () => {
     // Core resumability guarantee: a resume signal skips hydration and replays
     // only the gap, so no duplicate snapshot and no re-streamed history.
     fakeRuntime.subscribeSession = finiteSubscribe([

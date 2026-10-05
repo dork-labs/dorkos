@@ -508,4 +508,4 @@ via `/adr:from-spec`.
 `research/20260824_agent-memory-cross-session-context.md` ·
 `specs/message-search/02-specification.md` §7 and §9.4 "Search is not memory"
 (cited by heading per that spec's own rule) · `meta/agent-etiquette.md` E7 ·
-`meta/chat-capabilities.md` §7.1 · DOR-632 · DOR-672/684 (Tier 2 substrate).
+`contributing/capabilities/chat.md` §7.1 · DOR-632 · DOR-672/684 (Tier 2 substrate).

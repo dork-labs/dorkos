@@ -1,7 +1,7 @@
 /**
  * The prompts a turn STOPS on, answered through the real UI (DOR-1214).
  *
- * Backs six rows of `meta/chat-capabilities.md` that had only unit or
+ * Backs six rows of `contributing/capabilities/chat.md` that had only unit or
  * live-self-test coverage:
  *
  * - **I-01** — the tool-approval card renders; Approve runs the tool and the

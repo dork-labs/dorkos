@@ -333,7 +333,7 @@ describe('approval receipts', () => {
     expect(screen.getByRole('button', { name: /^Don’t allow/ })).toBeDefined();
   });
 
-  it('one batch answer reads as one line, with the individual asks behind an expander', async () => {
+  it('I-02: one batch answer reads as one line, with the individual asks behind an expander', async () => {
     // Purpose: "Approve all" resolves each request separately, but three
     // identical lines at the same second is noise. The combined line still owes
     // the reader the detail on demand.
