@@ -37,6 +37,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { initConfigManager } from '../../../core/config-manager.js';
+import { accountDefaultModel } from './live-model.js';
 
 const LIVE = process.env.DORKOS_CODEX_LIVE === '1';
 
@@ -61,16 +62,28 @@ afterAll(async () => {
   for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
 });
 
+/**
+ * The account's own default model, read once (free), so these scenarios run
+ * on a model the sign-in can use whatever `~/.codex/config.toml` names.
+ */
+let model: Promise<string | undefined> | undefined;
+
 /** A runtime on app-server, a session in its own project at a level. */
-function session(permissionMode: PermissionMode) {
+async function session(permissionMode: PermissionMode) {
   const runtime = new CodexRuntime({
     threadMap: new CodexThreadMap(createTestDb()),
     transport: 'app-server',
   });
   runtimes.push(runtime);
+  model ??= accountDefaultModel(runtime);
+  const chosen = await model;
   const cwd = fresh('dorkos-codex-live-');
   const sessionId = randomUUID();
-  runtime.ensureSession(sessionId, { permissionMode, cwd });
+  runtime.ensureSession(sessionId, {
+    permissionMode,
+    cwd,
+    ...(chosen !== undefined ? { model: chosen } : {}),
+  });
   return { runtime, cwd, sessionId };
 }
 
@@ -83,7 +96,7 @@ const dones = (events: StreamEvent[]) => events.filter((event) => event.type ===
 
 describe.skipIf(!LIVE)('Codex on app-server, live (DORKOS_CODEX_LIVE=1)', () => {
   it('(a) Ask first stops on a card before a change, and runs it once approved', async () => {
-    const { runtime, cwd, sessionId } = session('default');
+    const { runtime, cwd, sessionId } = await session('default');
     const events: StreamEvent[] = [];
     for await (const event of runtime.sendMessage(
       sessionId,
@@ -106,7 +119,7 @@ describe.skipIf(!LIVE)('Codex on app-server, live (DORKOS_CODEX_LIVE=1)', () => 
   });
 
   it('(b) a steer mid-reply lands in that reply: one turn, one done', async () => {
-    const { runtime, cwd, sessionId } = session('default');
+    const { runtime, cwd, sessionId } = await session('default');
     const gen = runtime.sendMessage(
       sessionId,
       'Write the numbers from 1 to 400, one per line, and nothing else.',
@@ -131,7 +144,7 @@ describe.skipIf(!LIVE)('Codex on app-server, live (DORKOS_CODEX_LIVE=1)', () => 
   });
 
   it('(c) Stop mid-command is acknowledged and the turn ends with one done', async () => {
-    const { runtime, cwd, sessionId } = session('bypassPermissions');
+    const { runtime, cwd, sessionId } = await session('bypassPermissions');
     const gen = runtime.sendMessage(
       sessionId,
       'Run exactly this shell command and wait for it to finish: sleep 60',
@@ -156,14 +169,16 @@ describe.skipIf(!LIVE)('Codex on app-server, live (DORKOS_CODEX_LIVE=1)', () => 
   });
 
   it('(d) a background command finishing after the reply wakes the chat with a turn of its own', async () => {
-    const { runtime, cwd, sessionId } = session('bypassPermissions');
+    const { runtime, cwd, sessionId } = await session('bypassPermissions');
     const woken: Array<{ sessionId: string; events: AsyncIterable<StreamEvent> }> = [];
     runtime.onRuntimeTurn!((id, events) => woken.push({ sessionId: id, events }));
     const first: StreamEvent[] = [];
     for await (const event of runtime.sendMessage(
       sessionId,
-      'Start this shell command in the background without waiting for it: ' +
-        'sleep 20 && echo done-in-background. Then end your reply at once with the word STARTED.',
+      'Use your exec_command tool to run `sleep 20 && echo done-in-background` with ' +
+        'yield_time_ms set to 1000, so it keeps running in the background. Do not add `&`, ' +
+        'nohup or a subshell, and do not wait for it or poll it. As soon as the tool returns, ' +
+        'end your reply with the word STARTED.',
       { cwd }
     )) {
       first.push(event);
@@ -171,7 +186,13 @@ describe.skipIf(!LIVE)('Codex on app-server, live (DORKOS_CODEX_LIVE=1)', () => 
     expect(dones(first)).toHaveLength(1);
     expect(
       first.some((event) => event.type === 'background_task_started'),
-      'precondition: Codex left the command running past its reply'
+      // Model drift, not DorkOS, when this fails: say what Codex actually ran.
+      'precondition: Codex left the command running past its reply. It ran: ' +
+        JSON.stringify(
+          first
+            .filter((event) => event.type === 'tool_call_start' || event.type === 'tool_result')
+            .map((event) => event.data)
+        )
     ).toBe(true);
     expect(runtime.holdsBackgroundWork!(sessionId)).toBe(true);
 

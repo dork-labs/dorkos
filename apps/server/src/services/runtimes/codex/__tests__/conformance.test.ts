@@ -258,6 +258,7 @@ import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { CodexThreadMap } from '../thread-map.js';
+import { accountDefaultModel, onModel } from './live-model.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import { initConfigManager } from '../../../core/config-manager.js';
 import { CONFORMANCE_CREDITS_TOKEN } from '@dorkos/test-utils';
@@ -369,17 +370,30 @@ describe('what codex says it does with media', () => {
   });
 });
 
+/**
+ * LIVE only: the signed-in account's own default model, so a live run proves
+ * DorkOS rather than whatever `~/.codex/config.toml` names (`live-model.ts`).
+ */
+const LIVE_MODEL = LIVE
+  ? await accountDefaultModel(new CodexRuntime({ threadMap: new CodexThreadMap(createTestDb()) }))
+  : undefined;
+
 runtimeConformance(
   // Fresh runtime per test over an isolated in-memory thread map; binaryPath
   // null lets the SDK resolve its own binary (vendored or PATH) in live mode.
   () =>
-    new CodexRuntime({
-      threadMap: new CodexThreadMap(createTestDb()),
-      // LIVE runs resolve the real binary through the shared ladder (the
-      // default); mocked runs never spawn anything, so any path will do.
-      ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
-      ...(ATTACHMENT_HOME ? { attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME) } : {}),
-    }),
+    onModel(
+      new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        // LIVE runs resolve the real binary through the shared ladder (the
+        // default); mocked runs never spawn anything, so any path will do.
+        ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
+        ...(ATTACHMENT_HOME
+          ? { attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME) }
+          : {}),
+      }),
+      LIVE_MODEL
+    ),
   {
     name: LIVE
       ? 'CodexRuntime (LIVE codex binary) — AgentRuntime conformance'
@@ -668,7 +682,13 @@ function arrangeCredits(scenario: { runsOn: 'credits' | 'own-sign-in'; heldToken
 runtimeConformance(
   () =>
     LIVE
-      ? new CodexRuntime({ threadMap: new CodexThreadMap(createTestDb()), transport: 'app-server' })
+      ? onModel(
+          new CodexRuntime({
+            threadMap: new CodexThreadMap(createTestDb()),
+            transport: 'app-server',
+          }),
+          LIVE_MODEL
+        )
       : makeAppServerRuntime(
           ATTACHMENT_HOME ? { attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME) } : {}
         ),
