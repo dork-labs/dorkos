@@ -1,0 +1,8 @@
+{
+  "id": "261005-120219",
+  "slug": "keep-awake",
+  "title": "Keep the computer awake while agents work, and wake it for scheduled runs",
+  "created": "2026-10-05",
+  "status": "specified",
+  "linearIssue": "DOR-2718"
+}
