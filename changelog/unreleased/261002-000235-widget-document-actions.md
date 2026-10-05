@@ -3,6 +3,7 @@ covers:
   - 'feat(canvas): stream document updates and native widget actions'
   - 'fix(canvas): reuse retained event rows within each replay page'
   - 'perf(server): batch checked document replay page reads'
+  - 'perf(server): reuse compiled current document identity reads'
 ---
 
 ### Added

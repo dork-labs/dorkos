@@ -42,6 +42,47 @@ afterEach(() => {
 const file = { type: 'file', sourcePath: '/src/tasks.md' } as const;
 
 describe('atomic document authority closure', () => {
+  it('rereads identity movement and readiness after prepared reads were already used', () => {
+    const h = setup();
+    const doc = h.canvas.open(FROM, 'agent', file);
+    expect(h.documents.lifecycle.resolveScope(FROM)).toBe(FROM);
+    expect(() => h.documents.lifecycle.assertReady(doc.id)).not.toThrow();
+    h.store.insertIdentityIntent({
+      intentId: 'fresh-identity',
+      documentId: doc.id,
+      fromScope: FROM,
+      toScope: TO,
+      sourceId: doc.id,
+      sourceGeneration: 'ownership',
+      evidence: {},
+      status: 'pending',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(() => h.documents.lifecycle.resolveScope(FROM)).toThrow(/recovery/);
+    expect(() => h.documents.lifecycle.assertReady(doc.id)).toThrow(/recovery/);
+    h.db
+      .update(canvasDocIdentityIntents)
+      .set({ status: 'applied' })
+      .where(eq(canvasDocIdentityIntents.intentId, 'fresh-identity'))
+      .run();
+    expect(h.documents.lifecycle.resolveScope(FROM)).toBe(TO);
+    expect(() => h.documents.lifecycle.assertReady(doc.id)).not.toThrow();
+    h.store.insertIdentityIntent({
+      intentId: 'ambiguous-identity',
+      documentId: doc.id,
+      fromScope: FROM,
+      toScope: 'session:other',
+      sourceId: doc.id,
+      sourceGeneration: 'ownership',
+      evidence: {},
+      status: 'applied',
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(() => h.documents.lifecycle.resolveScope(FROM)).toThrow(/recovery/);
+  });
+
   it.each(['person', 'agent', 'sweep'] as const)(
     '%s removal closes, revokes and cancels before physical deletion',
     (kind) => {

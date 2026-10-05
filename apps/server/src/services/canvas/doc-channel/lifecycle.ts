@@ -10,6 +10,7 @@ import {
   eq,
   inArray,
   isNull,
+  sql,
   canvasDocuments,
   canvasDocChannels,
   canvasDocGrants,
@@ -61,6 +62,8 @@ import { DocChannelIdentityBlockedError } from './identity/identity-error.js';
 export class DocChannelLifecycle {
   private readonly store: DocChannelStore;
   private readonly now: () => string;
+  #readScopeMoves?: (scope: string) => (typeof canvasDocIdentityIntents.$inferSelect)[];
+  #readBlockedIdentity?: (documentId: string) => { id: string } | undefined;
   /** Construct lifecycle policy without enabling any event admission source. */
   constructor(
     private readonly db: Db,
@@ -179,11 +182,17 @@ export class DocChannelLifecycle {
     let current = scope;
     while (!visited.has(current)) {
       visited.add(current);
-      const moves = this.db
-        .select()
-        .from(canvasDocIdentityIntents)
-        .where(eq(canvasDocIdentityIntents.fromScope, current))
-        .all();
+      if (!this.#readScopeMoves) {
+        const query = this.db
+          .select()
+          .from(canvasDocIdentityIntents)
+          .where(eq(canvasDocIdentityIntents.fromScope, sql.placeholder('scope')))
+          .prepare();
+        const read = query.all.bind(query);
+        this.#readScopeMoves = (scope) => read({ scope });
+      }
+      // Reuse compilation only: every chain step reads the current native rows.
+      const moves = this.#readScopeMoves(current);
       if (!moves.length) return current;
       if (moves.some((move) => move.status !== 'applied'))
         throw new DocChannelIdentityBlockedError();
@@ -196,16 +205,21 @@ export class DocChannelLifecycle {
 
   /** Refuse new authority while any recoverable ownership operation is incomplete. */
   assertReady(documentId: string): void {
-    const blocked = this.db
-      .select({ id: canvasDocIdentityIntents.intentId })
-      .from(canvasDocIdentityIntents)
-      .where(
-        and(
-          eq(canvasDocIdentityIntents.documentId, documentId),
-          inArray(canvasDocIdentityIntents.status, ['pending', 'in_doubt', 'failed'])
+    if (!this.#readBlockedIdentity) {
+      const query = this.db
+        .select({ id: canvasDocIdentityIntents.intentId })
+        .from(canvasDocIdentityIntents)
+        .where(
+          and(
+            eq(canvasDocIdentityIntents.documentId, sql.placeholder('documentId')),
+            inArray(canvasDocIdentityIntents.status, ['pending', 'in_doubt', 'failed'])
+          )
         )
-      )
-      .get();
+        .prepare();
+      const read = query.get.bind(query);
+      this.#readBlockedIdentity = (documentId) => read({ documentId });
+    }
+    const blocked = this.#readBlockedIdentity(documentId);
     if (blocked) throw new DocChannelIdentityBlockedError();
   }
 
