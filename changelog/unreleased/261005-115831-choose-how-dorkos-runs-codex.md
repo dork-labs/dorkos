@@ -13,6 +13,7 @@ covers:
   - 'fix(codex): every app-server turn ends with one done, and no stopped turn is ever joined (DOR-2719)'
   - 'fix(codex): fingerprint loads without credential values, and mint identity only on load (DOR-2719)'
   - 'fix(codex): unambiguous thread keys, fuller stderr redaction, and review test gaps (DOR-2719)'
+  - 'fix(codex): reload one thread on refreshed credentials, bound stuck stops, honest probes (DOR-2719)'
 ---
 
 ### Added
