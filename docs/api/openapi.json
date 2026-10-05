@@ -7020,6 +7020,9 @@
           },
           "enqueuedBy": {
             "type": "string"
+          },
+          "waitingOn": {
+            "$ref": "#/components/schemas/QueuedWaitingOn"
           }
         },
         "required": [
@@ -7036,6 +7039,64 @@
           "queue",
           "steer",
           "stage"
+        ]
+      },
+      "QueuedWaitingOn": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "background-work"
+            ]
+          },
+          "holding": {
+            "type": "object",
+            "properties": {
+              "agents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "shells": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "other": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "agents",
+              "shells",
+              "other"
+            ]
+          },
+          "pins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetFolderName": {
+            "type": "string"
+          },
+          "because": {
+            "type": "string"
+          },
+          "since": {
+            "type": "number"
+          },
+          "releaseAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "reason",
+          "holding",
+          "pins",
+          "since",
+          "releaseAt"
         ]
       },
       "MessageDeliveryOutcome": {
