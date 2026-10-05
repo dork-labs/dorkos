@@ -79,11 +79,15 @@ export interface LoadedThread {
   readonly replaces: string | undefined;
   /** Something to tell the person before the turn, if any. */
   readonly notice: StreamEvent | undefined;
+  /** A thread this load retired (reloaded as this one); stop routing it. */
+  readonly retired?: string;
 }
 
 interface LoadedRecord {
   readonly sessionId: string;
   readonly fingerprint: string;
+  /** Digest of the credential VALUES it loaded with (see `credentialsOf`). */
+  readonly credentials: string;
   readonly keyId: string | undefined;
   /** Not yet persisted (no turn has started on it). */
   unbound: boolean;
@@ -148,6 +152,7 @@ export class CodexThreadLoader {
   async ensureLoaded(input: ThreadLoadInput): Promise<LoadedThread> {
     const records = this.recordsFor(input.process);
     const desired = this.fingerprintOf(input);
+    const credentials = credentialsOf(input);
 
     // A thread this session already has loaded here: bound, or started for a
     // first turn that never got as far as `turn/started`.
@@ -159,6 +164,19 @@ export class CodexThreadLoader {
           )?.[0];
     if (existingId !== undefined) {
       const record = records.get(existingId)!;
+      // Only a credential VALUE changed (a managed server's OAuth bearer was
+      // refreshed): reload just this thread, never the whole home (§9).
+      if (record.fingerprint === desired && record.credentials !== credentials) {
+        try {
+          return await this.reload(input, existingId);
+        } catch (err) {
+          logger.warn('[CodexAppServer] could not reload a thread with refreshed credentials', {
+            sessionId: input.sessionId,
+            err: String(err),
+          });
+          input.process.stale = true;
+        }
+      }
       if (record.fingerprint !== desired && !input.process.stale) {
         input.process.stale = true;
         logger.info(
@@ -177,8 +195,62 @@ export class CodexThreadLoader {
       };
     }
 
-    if (input.boundThreadId === undefined) return this.start(input, records, desired, undefined);
-    return this.resume(input, records, desired, input.boundThreadId);
+    if (input.boundThreadId === undefined) {
+      return this.start(input, records, desired, credentials, undefined);
+    }
+    return this.resume(input, records, desired, credentials, input.boundThreadId);
+  }
+
+  /**
+   * Reload one loaded thread with the config this turn wants, leaving every
+   * other thread in the process alone.
+   *
+   * A loaded thread ignores new config on `thread/resume` (spike 1b), and
+   * 0.154 has no unload method, so the reload is a `thread/fork` with the new
+   * config: verified on the vendored binary, the fork's MCP servers receive
+   * the new header, the conversation carries over, and it works even while
+   * the old thread still has a turn Codex will not stop. The session is
+   * re-bound to the fork at its first `turn/started` (the binding names the
+   * thread it replaces); the old thread's key is revoked and it is
+   * unsubscribed, so Codex unloads it after its idle window.
+   *
+   * @param input - The turn's load inputs.
+   * @param threadId - The loaded thread to reload.
+   */
+  async reload(input: ThreadLoadInput, threadId: string): Promise<LoadedThread> {
+    const records = this.recordsFor(input.process);
+    const old = records.get(threadId);
+    const key = this.mintKey(input);
+    let forked: string;
+    try {
+      const overrides = await this.overrides(input, key?.key);
+      forked = (await input.process.client.request('thread/fork', { threadId, ...overrides }))
+        .thread.id;
+    } catch (err) {
+      if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
+      throw err;
+    }
+    // The DB binding to replace: the old thread if it was bound, else whatever
+    // the old unbound thread itself was going to replace.
+    const replaces = old && old.unbound ? old.replaces : threadId;
+    this.dropThread(input.process, threadId);
+    void input.process.client.request('thread/unsubscribe', { threadId }).catch(() => undefined);
+    records.set(forked, {
+      sessionId: input.sessionId,
+      fingerprint: this.fingerprintOf(input),
+      credentials: credentialsOf(input),
+      keyId: key?.keyId,
+      unbound: true,
+      replaces,
+    });
+    return {
+      threadId: forked,
+      keyId: key?.keyId,
+      needsBinding: true,
+      replaces,
+      notice: undefined,
+      retired: threadId,
+    };
   }
 
   /** Cold resume, falling back to a fresh thread when Codex cannot continue it. */
@@ -186,6 +258,7 @@ export class CodexThreadLoader {
     input: ThreadLoadInput,
     records: Map<string, LoadedRecord>,
     fingerprint: string,
+    credentials: string,
     threadId: string
   ): Promise<LoadedThread> {
     const key = this.mintKey(input);
@@ -196,11 +269,11 @@ export class CodexThreadLoader {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       // The thread never got a first turn: nothing was lost, start it again.
       if (isCodexRpcError(err, 'no-rollout')) {
-        return this.start(input, records, fingerprint, threadId);
+        return this.start(input, records, fingerprint, credentials, threadId);
       }
       // The person deleted it in Codex. DorkOS's own history stays visible.
       if (isCodexRpcError(err, 'thread-not-found')) {
-        const fresh = await this.start(input, records, fingerprint, threadId);
+        const fresh = await this.start(input, records, fingerprint, credentials, threadId);
         return {
           ...fresh,
           notice: { type: 'system_status', data: { message: THREAD_STARTS_FRESH_NOTICE } },
@@ -211,6 +284,7 @@ export class CodexThreadLoader {
     records.set(threadId, {
       sessionId: input.sessionId,
       fingerprint,
+      credentials,
       keyId: key?.keyId,
       unbound: false,
       replaces: undefined,
@@ -228,6 +302,7 @@ export class CodexThreadLoader {
     input: ThreadLoadInput,
     records: Map<string, LoadedRecord>,
     fingerprint: string,
+    credentials: string,
     replaces: string | undefined
   ): Promise<LoadedThread> {
     const key = this.mintKey(input);
@@ -242,6 +317,7 @@ export class CodexThreadLoader {
     records.set(threadId, {
       sessionId: input.sessionId,
       fingerprint,
+      credentials,
       keyId: key?.keyId,
       unbound: true,
       replaces,
@@ -385,11 +461,10 @@ export class CodexThreadLoader {
    *   their values would make every turn look different.
    * - Managed MCP header values and stdio `env` values are left out on
    *   purpose: a managed server's OAuth bearer is refreshed while a thread
-   *   stays loaded, and a refresh must not recycle every chat in the home. A
-   *   loaded thread keeps the headers it loaded with until its next cold load
-   *   (its process recycled when idle, or Codex's 30-minute unload), which is
-   *   when an edit to managed servers reaches it anyway (spec §9). A changed
-   *   server, URL, command or header NAME still marks the process stale.
+   *   stays loaded, and a refresh must not recycle every chat in the home.
+   *   Those values have their own digest ({@link credentialsOf}); when only
+   *   it changes, just that thread is reloaded ({@link CodexThreadLoader.reload}).
+   *   A changed server, URL, command or header NAME marks the process stale.
    * - The trust verdict is derived from the mode, which is already in it.
    */
   private fingerprintOf(input: ThreadLoadInput): string {
@@ -487,4 +562,19 @@ export function buildLoadOverrides(
     sandbox: sandboxFor(input.settings),
     config,
   };
+}
+
+/**
+ * Digest of the credential VALUES a load carries: managed MCP header values
+ * and stdio `env` values. Never stored or logged; compared only, so a refreshed
+ * OAuth bearer can reload its one thread (spec §9).
+ *
+ * @param input - The load inputs.
+ */
+function credentialsOf(input: Pick<ThreadLoadInput, 'tools'>): string {
+  const servers = Object.entries(input.tools.managed.servers)
+    .map(([name, server]) => [name, (server as { env?: unknown }).env ?? null])
+    .sort(([a], [b]) => String(a).localeCompare(String(b)));
+  const headers = Object.entries(input.tools.managed.env).sort(([a], [b]) => a.localeCompare(b));
+  return createHash('sha256').update(JSON.stringify({ servers, headers })).digest('hex');
 }

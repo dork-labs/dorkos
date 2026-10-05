@@ -103,6 +103,12 @@ export const OUTBOUND_PARAMS: Record<ClientMethod, z.ZodType | null> = {
   // Experimental (DorkOS opts in at initialize): whether a thread still has
   // background terminals running, so the reaper never kills one (spec §5).
   'thread/backgroundTerminals/list': z.strictObject({ threadId: z.string() }),
+  // A loaded thread ignores new config, so a thread whose credentials changed
+  // is reloaded as a fork with the new config (verified on 0.154: the fork's
+  // MCP servers receive the new header, history carries over).
+  'thread/fork': ThreadResumeParamsSchema,
+  // Lets a retired thread unload once Codex's idle window passes.
+  'thread/unsubscribe': z.strictObject({ threadId: z.string() }),
 };
 
 // --- Inbound -----------------------------------------------------------------

@@ -362,6 +362,39 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     expect(JSON.parse(fs.readFileSync(report, 'utf8'))).toEqual({ sawToken: false });
   });
 
+  // A refreshed OAuth header on a managed server reaches a loaded thread by
+  // reloading just that thread as a fork (a loaded resume ignores config).
+  it('reloads a thread whose managed header value changed, and its MCP server sees the new one', async () => {
+    const transport = makeTransport();
+    const managed = (value: string) => ({
+      servers: { refreshed: { url: `${base}/mcp`, env_http_headers: { Authorization: 'H' } } },
+      env: { H: value },
+    });
+    const bound: string[] = [];
+    const turn = (value: string, boundThreadId?: string) =>
+      request('s4', undefined, {
+        boundThreadId,
+        tools: {
+          agentTokenEnv: {},
+          managed: managed(value),
+          dorkosTools: null,
+          connectorTools: null,
+        },
+        onThreadBound: (threadId) => bound.push(threadId),
+      });
+    for await (const _event of transport.runTurn(turn('Bearer first-oauth'))) {
+      // drained
+    }
+    expect(seen.mcpAuthorizations).toContain('Bearer first-oauth');
+    const events: StreamEvent[] = [];
+    for await (const event of transport.runTurn(turn('Bearer refreshed-oauth', bound[0])))
+      events.push(event);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(seen.mcpAuthorizations).toContain('Bearer refreshed-oauth');
+    expect(bound).toHaveLength(2);
+    expect(bound[1]).not.toBe(bound[0]);
+  });
+
   it('acknowledges a stop: Codex winds the turn down and the turn ends with one done', async () => {
     const transport = makeTransport();
     stallNext = true;

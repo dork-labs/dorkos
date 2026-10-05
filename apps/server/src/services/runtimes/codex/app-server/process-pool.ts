@@ -33,6 +33,9 @@ import { logger } from '../../../../lib/logger.js';
 import { CodexJsonRpcClient, lastLine, type CodexClientClose } from './json-rpc-client.js';
 import { initializeCodexClient } from './handshake.js';
 
+/** Consecutive failed liveness probes after which a process counts as idle. */
+export const PROBE_FAILURE_LIMIT = 3;
+
 /** The argv every app-server is spawned with. Nothing else, ever. */
 export const APP_SERVER_ARGS = ['app-server', '--listen', 'stdio://'] as const;
 
@@ -141,6 +144,7 @@ export class CodexAppServerProcess {
   private readonly exitListeners = new Set<(close: CodexClientClose) => void>();
   private readonly idleListeners = new Set<() => void>();
   private readonly livenessProbes = new Set<() => Promise<boolean>>();
+  private probeFailures = 0;
   private readonly exitedPromise: Promise<void>;
 
   /**
@@ -231,8 +235,8 @@ export class CodexAppServerProcess {
    * Register a check the reaper runs before closing an unheld process: work
    * that lives in Codex rather than in a DorkOS hold (a background terminal
    * still running after its turn) keeps the process alive when it answers
-   * `true`. A probe that throws counts as live — reaping is never the safe
-   * guess.
+   * `true`. A probe that throws counts as live (reaping is not the safe
+   * guess), up to {@link PROBE_FAILURE_LIMIT} failures in a row.
    *
    * @param probe - Resolves whether something in the process is still live.
    */
@@ -240,15 +244,25 @@ export class CodexAppServerProcess {
     this.livenessProbes.add(probe);
   }
 
-  /** Whether any liveness probe reports live work (see {@link addLivenessProbe}). */
+  /**
+   * Whether any liveness probe reports live work (see {@link addLivenessProbe}).
+   * A probe that fails counts as live — but only {@link PROBE_FAILURE_LIMIT}
+   * times in a row, so a Codex that stops answering cannot keep itself alive
+   * for ever.
+   */
   async hasLiveWork(): Promise<boolean> {
     for (const probe of this.livenessProbes) {
       try {
-        if (await probe()) return true;
+        if (await probe()) {
+          this.probeFailures = 0;
+          return true;
+        }
       } catch {
-        return true;
+        this.probeFailures += 1;
+        return this.probeFailures < PROBE_FAILURE_LIMIT;
       }
     }
+    this.probeFailures = 0;
     return false;
   }
 

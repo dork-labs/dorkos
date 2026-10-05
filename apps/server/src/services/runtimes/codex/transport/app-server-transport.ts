@@ -89,6 +89,22 @@ interface OpenTurn {
   interrupting: Promise<InterruptReceipt> | undefined;
 }
 
+/** A turn DorkOS stopped waiting on that Codex has not reported finished. */
+interface LingeringTurn {
+  readonly turnId: string;
+  readonly process: CodexAppServerProcess;
+  /** How many turns were refused because of it so far. */
+  refusals: number;
+  /** Stops listening for the process's exit. */
+  readonly stopWatching: () => void;
+}
+
+/**
+ * Refusals of a new turn (`turn_stopping`) before DorkOS gives up on a turn
+ * Codex will not stop and reloads just that thread as a fork instead.
+ */
+const LINGERING_REFUSAL_LIMIT = 3;
+
 /** Codex turns on `codex app-server`. */
 export class AppServerCodexTransport implements CodexTransport {
   readonly kind = 'app-server' as const;
@@ -109,10 +125,7 @@ export class AppServerCodexTransport implements CodexTransport {
    * yet reported finished, by thread. A new `turn/start` on such a thread
    * would silently join it, so the next turn re-sends the stop and waits.
    */
-  private readonly lingering = new Map<
-    string,
-    { turnId: string; process: CodexAppServerProcess }
-  >();
+  private readonly lingering = new Map<string, LingeringTurn>();
   /** Last full rate-limit reading per person-home process. */
   private readonly rateLimits = new Map<string, unknown>();
   /** Relay keys per credits process, revoked when it stops. */
@@ -168,6 +181,34 @@ export class AppServerCodexTransport implements CodexTransport {
     }
 
     if (!(await this.settleLingering(process, loaded.threadId))) {
+      const lingering = this.lingering.get(loaded.threadId);
+      if (lingering && ++lingering.refusals >= LINGERING_REFUSAL_LIMIT) {
+        // Codex will not stop that turn. Reload just this thread (a fork,
+        // with the conversation) rather than block the session indefinitely.
+        try {
+          loaded = await this.loader.reload(
+            {
+              process,
+              home: onCredits ? 'credits' : 'person',
+              sessionId,
+              boundThreadId: request.boundThreadId,
+              cwd: request.cwd,
+              settings: request.settings,
+              tools: request.tools,
+              ...(relay ? { creditsRelay: relay } : {}),
+            },
+            loaded.threadId
+          );
+        } catch (err) {
+          logger.warn('[CodexAppServer] could not reload a thread stuck stopping', {
+            sessionId,
+            err: String(err),
+          });
+        }
+      }
+    }
+    if (loaded.retired !== undefined) this.retire(process, loaded.retired);
+    if (this.lingering.has(loaded.threadId)) {
       release();
       yield {
         type: 'error',
@@ -432,10 +473,20 @@ export class AppServerCodexTransport implements CodexTransport {
     // the chat wake are spec phase P3.
     process.addLivenessProbe(async () => {
       for (const threadId of this.loader.threadsInProcess(process.key)) {
-        const result = await process.client.request('thread/backgroundTerminals/list', {
-          threadId,
-        });
-        if (result.data.length > 0) return true;
+        try {
+          const result = await process.client.request(
+            'thread/backgroundTerminals/list',
+            { threadId },
+            { timeoutMs: 5_000 }
+          );
+          if (result.data.length > 0) return true;
+        } catch (err) {
+          // Codex no longer has the thread loaded: nothing of it is live, and
+          // the record is stale.
+          if (!isCodexRpcError(err, 'thread-not-found')) throw err;
+          this.loader.dropThread(process, threadId);
+          this.disposeChannel(process, threadId);
+        }
       }
       return false;
     });
@@ -542,6 +593,7 @@ export class AppServerCodexTransport implements CodexTransport {
             // Codex unloaded it after its idle window: forget it, revoke its key.
             this.loader.dropThread(process, threadId);
             this.disposeChannel(process, threadId);
+            this.clearLingering(threadId);
           }
         },
         (notification) => {
@@ -552,7 +604,7 @@ export class AppServerCodexTransport implements CodexTransport {
             lingering !== undefined &&
             turnIdOf(notification) === lingering.turnId
           ) {
-            this.lingering.delete(threadId);
+            this.clearLingering(threadId);
           }
         }
       );
@@ -606,14 +658,33 @@ export class AppServerCodexTransport implements CodexTransport {
     if (this.openByThread.get(turn.threadId) === turn) this.openByThread.delete(turn.threadId);
     if (this.openBySession.get(turn.sessionId) === turn) this.openBySession.delete(turn.sessionId);
     if (turn.abandoned && !turn.sawTerminal && turn.turnId !== undefined && turn.process.isOpen) {
-      this.lingering.set(turn.threadId, { turnId: turn.turnId, process: turn.process });
-      turn.process.onExit(() => {
+      const stopWatching = turn.process.onExit(() => {
         if (this.lingering.get(turn.threadId)?.process === turn.process) {
-          this.lingering.delete(turn.threadId);
+          this.clearLingering(turn.threadId);
         }
+      });
+      this.lingering.set(turn.threadId, {
+        turnId: turn.turnId,
+        process: turn.process,
+        refusals: 0,
+        stopWatching,
       });
     }
     turn.markCompleted('closed');
+  }
+
+  /** Forget a lingering turn and stop watching its process. */
+  private clearLingering(threadId: string): void {
+    const lingering = this.lingering.get(threadId);
+    if (!lingering) return;
+    lingering.stopWatching();
+    this.lingering.delete(threadId);
+  }
+
+  /** Stop routing a thread the loader reloaded as a fork. */
+  private retire(process: CodexAppServerProcess, threadId: string): void {
+    this.disposeChannel(process, threadId);
+    this.clearLingering(threadId);
   }
 
   /**
@@ -628,7 +699,7 @@ export class AppServerCodexTransport implements CodexTransport {
     const lingering = this.lingering.get(threadId);
     if (!lingering) return true;
     if (lingering.process !== process || !process.isOpen) {
-      this.lingering.delete(threadId);
+      this.clearLingering(threadId);
       return true;
     }
     try {
@@ -638,8 +709,11 @@ export class AppServerCodexTransport implements CodexTransport {
         { timeoutMs: this.stopAckMs }
       );
     } catch (err) {
-      if (isCodexRpcError(err, 'no-active-turn')) {
-        this.lingering.delete(threadId);
+      // Verified on 0.154: a turn id that is no longer running (finished, or
+      // never existed) answers "no active turn to interrupt". A different
+      // active turn would answer a mismatch; either way that turn is gone.
+      if (isCodexRpcError(err, 'no-active-turn', 'turn-mismatch')) {
+        this.clearLingering(threadId);
         return true;
       }
     }

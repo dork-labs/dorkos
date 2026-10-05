@@ -489,3 +489,98 @@ describe('review fixes: every early exit ends with one done, and no turn is join
     expect(h.host.home(PERSON_HOME).processes[0]!.requestsOf('turn/start')).toHaveLength(2);
   });
 });
+
+describe('re-review fixes', () => {
+  const withManaged = (value: string) => ({
+    agentTokenEnv: {},
+    managed: {
+      servers: {
+        notion: {
+          url: 'https://n.example/mcp',
+          env_http_headers: { Authorization: 'DORKOS_MCP_HDR_N' },
+        },
+      },
+      env: { DORKOS_MCP_HDR_N: value },
+    },
+    dorkosTools: null,
+    connectorTools: null,
+  });
+
+  it('reloads just the thread whose OAuth header was refreshed, never the whole home (N1)', async () => {
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1', tools: withManaged('Bearer old') }));
+    await h.run(h.request({ sessionId: 's2' }));
+    const first = h.bindings[0]!.threadId;
+    const events = await h.run(
+      h.request({ sessionId: 's1', boundThreadId: first, tools: withManaged('Bearer fresh') })
+    );
+    expect(texts(events)).toBe('pong');
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    expect(h.pool.list()[0]!.stale).toBe(false);
+    expect(fake.hasExited).toBe(false);
+    const fork = fake.requestsOf('thread/fork')[0]!;
+    expect(fork.threadId).toBe(first);
+    expect(JSON.stringify(fork.config)).toContain('Bearer fresh');
+    expect(fake.unsubscribed.has(first)).toBe(true);
+    // The session is re-bound to the fork, replacing the old thread.
+    expect(h.bindings.at(-1)).toMatchObject({ sessionId: 's1', replaces: first });
+    // The other session's thread was not touched.
+    expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+  });
+
+  it('counts a thread Codex no longer has as not live, and drops it (N2)', async () => {
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1' }));
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    fake.loaded.clear();
+    h.pool.list()[0]!.stale = true;
+    await h.pool.reapOnce();
+    expect(fake.hasExited).toBe(true);
+    expect(h.transport.getSessionWarmth('s1')).toBe('cold');
+  });
+
+  it('gives up on a turn Codex will not stop after a few refusals and reloads that thread (N3)', async () => {
+    const h = harness({ stopAckMs: 60 });
+    h.host.home(PERSON_HOME).nextTurn(hangingTurn);
+    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
+    await until(gen, 'text_delta');
+    await h.transport.interrupt('s1');
+    await rest(gen);
+    const bound = h.bindings[0]!.threadId;
+    for (let refusal = 0; refusal < 2; refusal += 1) {
+      const refused = await h.run(h.request({ sessionId: 's1', boundThreadId: bound }));
+      expect(refused[0]).toMatchObject({ data: { code: 'turn_stopping' } });
+    }
+    const next = await h.run(h.request({ sessionId: 's1', boundThreadId: bound }));
+    expect(texts(next)).toBe('pong');
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    expect(fake.requestsOf('thread/fork')[0]).toMatchObject({ threadId: bound });
+    expect(h.bindings.at(-1)).toMatchObject({ replaces: bound });
+  });
+
+  it('forgets a lingering turn when Codex unloads its thread, and stops watching its process (N3, N4)', async () => {
+    const h = harness({ stopAckMs: 60 });
+    h.host.home(PERSON_HOME).nextTurn(hangingTurn);
+    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
+    await until(gen, 'text_delta');
+    const proc = h.pool.list()[0]!;
+    const realOnExit = proc.onExit.bind(proc);
+    let watching = 0;
+    proc.onExit = (listener) => {
+      watching += 1;
+      const stop = realOnExit(listener);
+      return () => {
+        watching -= 1;
+        stop();
+      };
+    };
+    await h.transport.interrupt('s1');
+    await rest(gen);
+    expect(watching).toBe(1);
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    fake.send({ method: 'thread/closed', params: { threadId: h.bindings[0]!.threadId } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(watching).toBe(0);
+    expect(h.transport.getSessionWarmth('s1')).toBe('cold');
+  });
+});

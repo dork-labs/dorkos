@@ -81,6 +81,16 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
   },
   'turn/interrupt': { threadId: 't', turnId: 'u' },
   'thread/backgroundTerminals/list': { threadId: 't' },
+  'thread/fork': {
+    threadId: 't',
+    cwd: '/project',
+    model: 'gpt-x',
+    approvalPolicy: 'never',
+    approvalsReviewer: 'user',
+    sandbox: 'read-only',
+    config: {},
+  },
+  'thread/unsubscribe': { threadId: 't' },
 };
 
 /** The object keys a zod schema names, recursively, as dotted paths. */

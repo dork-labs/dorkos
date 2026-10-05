@@ -294,3 +294,19 @@ describe('review fixes', () => {
     expect(host.spawns).toHaveLength(1);
   });
 });
+
+describe('re-review: probe failures (N2)', () => {
+  it('stops counting a failing probe as live after a few failures in a row', async () => {
+    const { pool, host } = makePool();
+    const proc = await pool.acquire(PERSON);
+    proc.addLivenessProbe(async () => {
+      throw new Error('timed out');
+    });
+    proc.stale = true;
+    await pool.reapOnce();
+    await pool.reapOnce();
+    expect(host.processes[0]!.hasExited).toBe(false);
+    await pool.reapOnce();
+    expect(host.processes[0]!.hasExited).toBe(true);
+  });
+});

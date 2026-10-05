@@ -506,7 +506,8 @@ export class CodexJsonRpcClient {
 /**
  * Redact what Codex's stderr could echo back: the shared token patterns and
  * URL queries, plus the two DorkOS secrets those miss — a thread key
- * (`dtk_…`) and the agent identity token (a bare 64-hex string).
+ * (`dtk_…`) and the agent identity token (16 random bytes, a bare 32-character
+ * hex string).
  *
  * @param text - A stderr line or tail.
  */

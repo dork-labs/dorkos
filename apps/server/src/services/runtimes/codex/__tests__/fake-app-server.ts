@@ -179,6 +179,8 @@ export class FakeAppServer extends EventEmitter {
   readonly loaded = new Map<string, FakeLoadedThread>();
   /** Replies to server requests this process sent, by request id. */
   readonly replies = new Map<number | string, unknown>();
+  /** Threads a client unsubscribed from. */
+  readonly unsubscribed = new Set<string>();
   /** Background terminals each thread reports as still running. */
   readonly backgroundTerminals = new Map<string, unknown[]>();
   /** Exit (as a crash) instead of answering the next `turn/start`. */
@@ -330,10 +332,19 @@ export class FakeAppServer extends EventEmitter {
           },
         });
       case 'thread/backgroundTerminals/list':
+        // Like the binary: a thread this process has not loaded is not found.
+        if (!this.loaded.has(params.threadId as string)) {
+          return this.fail(id, `thread not found: ${String(params.threadId)}`);
+        }
         return this.reply(id, {
           data: this.backgroundTerminals.get(params.threadId as string) ?? [],
           nextCursor: null,
         });
+      case 'thread/fork':
+        return this.threadFork(id, params);
+      case 'thread/unsubscribe':
+        this.unsubscribed.add(params.threadId as string);
+        return this.reply(id, { status: 'unsubscribed' });
       case 'model/list':
         return this.reply(id, { data: [], nextCursor: null });
       default:
@@ -352,6 +363,22 @@ export class FakeAppServer extends EventEmitter {
     });
     this.reply(id, { thread: { id: threadId }, model: params.model ?? 'fake-model' });
     this.send({ method: 'thread/started', params: { thread: { id: threadId } } });
+  }
+
+  private threadFork(id: number | string, params: Record<string, unknown>): void {
+    const source = this.home.threads.get(params.threadId as string);
+    if (!source) return this.fail(id, `thread not found: ${String(params.threadId)}`);
+    // A fork is a new thread, loaded with the config it was given, carrying
+    // the source's history (so it is resumable at once).
+    const threadId = randomUUID();
+    this.home.threads.set(threadId, { id: threadId, hasRollout: source.hasRollout });
+    this.loaded.set(threadId, {
+      id: threadId,
+      loadParams: params,
+      activeTurn: undefined,
+      turnStarts: [],
+    });
+    this.reply(id, { thread: { id: threadId }, model: params.model ?? 'fake-model' });
   }
 
   private threadResume(id: number | string, params: Record<string, unknown>): void {
