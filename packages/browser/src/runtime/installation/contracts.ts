@@ -169,6 +169,8 @@ export const InstallationConfigurationSchema = z
   })
   .refine((v) => v.workMilliseconds <= v.finalMilliseconds);
 export interface InstallOptions {
+  /** Refuse missing/invalid installations before reservation or installer entry; never download or repair. */
+  readonly existingOnly?: boolean;
   readonly repair?: boolean;
   readonly signal?: AbortSignal;
 }
@@ -229,6 +231,8 @@ export type InstallResult =
       readiness: typeof READINESS_UNAVAILABLE;
     }>;
 export interface RuntimeInstallation {
+  /** Freshly verify only an existing installation; no implicit download, repair or mode readiness. */
+  verifyExisting(options?: InspectOptions): Promise<InstallResult>;
   install(options?: InstallOptions): Promise<InstallResult>;
   inspectExisting(options?: InspectOptions): Promise<RuntimeInstallationStatus>;
 }

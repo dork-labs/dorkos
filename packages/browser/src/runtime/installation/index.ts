@@ -8,6 +8,7 @@ import {
   InstallationFailure,
   type InstallationConfiguration,
   type InstallOptions,
+  type InspectOptions,
   type InstallResult,
   type RuntimeInstallation,
   type InstallationFilesystem,
@@ -35,6 +36,7 @@ export function createRuntimeInstallation(
   });
   const status = createRuntimeStatus(config);
   let active: Promise<InstallResult> | null = null;
+  let activeExistingOnly = false;
   // Strong references preserve original duties after uncertainty. No recovery is inferred
   // from a resolved DTO or from garbage collection; the same result blocks a new attempt.
   const owners = new Set<
@@ -45,7 +47,24 @@ export function createRuntimeInstallation(
     }>
   >();
   let generation = 0;
-  return Object.freeze({
+  const facade: RuntimeInstallation = Object.freeze({
+    verifyExisting(options: InspectOptions = {}): Promise<InstallResult> {
+      if (active && !activeExistingOnly) {
+        // Another operation is not this fresh existing-only verification. Do not borrow its result.
+        return Promise.resolve(
+          Object.freeze({
+            state: 'refused' as const,
+            cause: 'PUBLICATION_BUSY' as const,
+            publicationMayHaveChanged: false,
+            readiness: Object.freeze({
+              state: 'unavailable' as const,
+              cause: 'VERIFICATION_UNAVAILABLE' as const,
+            }),
+          })
+        );
+      }
+      return facade.install({ signal: options.signal, existingOnly: true });
+    },
     inspectExisting: status.inspectExisting.bind(status),
     install(options: InstallOptions = {}): Promise<InstallResult> {
       if (active) return active;
@@ -85,6 +104,7 @@ export function createRuntimeInstallation(
         owners.add(owner);
         return transaction.install(copied);
       });
+      activeExistingOnly = copied.existingOnly === true;
       active = operation;
       void operation
         .then(
@@ -115,4 +135,5 @@ export function createRuntimeInstallation(
       return operation;
     },
   });
+  return facade;
 }
