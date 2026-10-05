@@ -12,6 +12,10 @@
     "./runtime-installation": {
       "types": "./src/runtime/installation/index.ts",
       "default": "./dist/runtime/installation/index.js"
+    },
+    "./server-owner": {
+      "types": "./src/server-owner.ts",
+      "default": "./dist/server-owner.js"
     }
   },
   "scripts": {

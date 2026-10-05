@@ -789,6 +789,9 @@ importers:
       '@dorkos/a2a-gateway':
         specifier: workspace:*
         version: link:../../packages/a2a-gateway
+      '@dorkos/browser':
+        specifier: workspace:*
+        version: link:../../packages/browser
       '@dorkos/connector-providers':
         specifier: workspace:*
         version: link:../../packages/connector-providers
