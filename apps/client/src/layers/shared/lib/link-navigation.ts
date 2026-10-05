@@ -606,9 +606,11 @@ function reportRefusal(href: string, reason: LinkRefusal): void {
  * that loud on the day it happens rather than on the day someone notices.
  *
  * @param url - A URL {@link classifyLink} has already accepted.
+ * @param keepOpener - On the web, open the tab with its opener kept. See
+ *   {@link OpenExternalLinkOptions.keepOpener}; the desktop shell ignores it.
  * @returns `true` if it was handed onward, `false` if this surface refused it.
  */
-function openInBrowser(url: string): boolean {
+function openInBrowser(url: string, keepOpener = false): boolean {
   const openExternal = desktopOpenExternal();
   if (openExternal) {
     if (!isWebUrl(url)) {
@@ -630,6 +632,12 @@ function openInBrowser(url: string): boolean {
         // as an unhandled rejection with no context.
         console.error('[dorkos:link] the desktop shell could not open', redactForLog(url), err);
       });
+    return true;
+  }
+  if (keepOpener) {
+    // Two arguments: the new tab keeps `window.opener`. Only reached when a
+    // caller asked for it — read OpenExternalLinkOptions.keepOpener first.
+    window.open(url, '_blank');
     return true;
   }
   window.open(url, '_blank', 'noopener,noreferrer');
@@ -736,6 +744,25 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
   return true;
 }
 
+/** How to open a link outside the app. */
+export interface OpenExternalLinkOptions {
+  /**
+   * Keep `window.opener` on the new tab (web only; the desktop shell hands
+   * links to the system browser, where there is no opener to keep).
+   *
+   * Every other external link cuts it, because a page holding our opener can
+   * point this tab somewhere else (reverse tabnabbing). Keep it only for a page
+   * that is DorkOS's own and needs it: the managed-connection page, which tries
+   * to close its own tab once the account is connected, and a script can only
+   * close a tab another page opened. The cost is real and bounded: the same tab
+   * passes through the service's sign-in pages on the way, and while it shows
+   * them they could also reach the opener. They are the sign-in pages of the
+   * service the person chose to connect, and the referrer still carries only
+   * our origin (the default `strict-origin-when-cross-origin`).
+   */
+  keepOpener?: boolean;
+}
+
 /**
  * Open a link outside the app, whatever it points at.
  *
@@ -745,16 +772,17 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
  * agent-authored prose link clears exactly the gate a first-party button does.
  *
  * @param href - The link to hand to the browser.
+ * @param options - See {@link OpenExternalLinkOptions}.
  * @returns `true` if the link was handed to the browser, `false` if its scheme
  * is outside {@link DISPATCHABLE_PROTOCOLS} or it could not be parsed. A
  * refusal tells the person why on its own; callers that report an outcome of
  * their own must still gate it on this.
  */
-export function openExternalLink(href: string): boolean {
+export function openExternalLink(href: string, options: OpenExternalLinkOptions = {}): boolean {
   const link = classifyLink(href);
   if (link.kind === 'blocked') {
     reportRefusal(href, link.reason);
     return false;
   }
-  return openInBrowser(link.url);
+  return openInBrowser(link.url, options.keepOpener);
 }

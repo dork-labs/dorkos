@@ -891,6 +891,10 @@ export const SIGN_IN_COPY = {
     'The way DorkOS reaches this app isn’t set up or isn’t working right now. Check it in Settings › Connections, then try again.',
   /** The service said the sign-in didn't finish. */
   failed: 'Sign-in didn’t finish. Try again.',
+  /** The service that handles sign-in isn't set up to connect this app. */
+  serviceNotReady: 'This app can’t be connected yet. This isn’t something you can fix here.',
+  /** This computer has to be linked to its DorkOS account before sign-in can start. */
+  accountLinkRequired: 'Link this computer to your DorkOS account, then connect again.',
 } as const;
 
 /** The service behind each way, by the way's type: what its key or server is called. */

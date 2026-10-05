@@ -354,6 +354,14 @@ Digits come from `BigInt` alone, so no amount ever becomes a JavaScript number. 
 only for a currency's symbol and its minor-unit digits, never to format an amount. Numbers are
 grouped the way `en-US` groups them. The module imports nothing.
 
+### Where a connection sends the person back
+
+`AuthenticationFlowRequestSchema.returnTo` is optional. It says where in the DorkOS app the person
+started connecting: a `dorkos://` link into the desktop app, or the address they reached the app
+at, with its route. The page that finishes the connection offers it as the way back. It is never
+followed automatically, and the service checks it before showing it. A service that predates the
+field strips it and starts the connection as before.
+
 ### No origin baked in
 
 No host, origin or URL literal appears in this package. Inference endpoints are runtime values

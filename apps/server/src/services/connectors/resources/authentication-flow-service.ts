@@ -23,7 +23,11 @@ import type {
   ConnectorProvider,
   ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-provider';
-import { ProviderConnectedAccountSchema } from '@dorkos/shared/connector-provider';
+import {
+  ConnectStartRefusedError,
+  ProviderConnectedAccountSchema,
+  type ConnectStartRefusal,
+} from '@dorkos/shared/connector-provider';
 import {
   CONNECTOR_AUTHENTICATION_FLOW_TTL_MS,
   SIGN_IN_COPY,
@@ -51,6 +55,12 @@ export class ConnectorAuthenticationFlowError extends Error {
     this.code = code;
   }
 }
+
+/** What a flow refused for good says, for every surface that shows its reason. */
+const REFUSAL_COPY: Readonly<Record<ConnectStartRefusal, string>> = {
+  service_not_ready: SIGN_IN_COPY.serviceNotReady,
+  account_link_required: SIGN_IN_COPY.accountLinkRequired,
+};
 
 /** Construction options for restart-safe local authentication flows. */
 export interface ConnectorAuthenticationFlowServiceOptions {
@@ -107,7 +117,14 @@ export class ConnectorAuthenticationFlowService {
     this.createId = options.createId ?? ulid;
   }
 
-  /** Start or recover one idempotent owner authentication request. */
+  /**
+   * Start or recover one idempotent owner authentication request.
+   *
+   * `input.returnTo` is forwarded to the provider as given, so a caller passes
+   * only a link it has already checked (`resolveConnectReturnTo`). It is not
+   * part of the request's identity: repeating a start with another one
+   * recovers the same flow.
+   */
   async start(
     owner: ConnectorOwnerAuthority,
     input: ConnectorAuthenticationFlowCreateRequest
@@ -140,11 +157,15 @@ export class ConnectorAuthenticationFlowService {
     return row ? this.currentPublicState(owner, row.id) : undefined;
   }
 
-  /** Start or recover one idempotent reconnect for an owned stable connection. */
+  /**
+   * Start or recover one idempotent reconnect for an owned stable connection.
+   * `opts.returnTo` follows the same rule as in {@link start}.
+   */
   async reconnect(
     owner: ConnectorOwnerAuthority,
     connectionId: ConnectionId,
-    idempotencyKey: string
+    idempotencyKey: string,
+    opts?: { returnTo?: string }
   ): Promise<ConnectorAuthenticationFlowState> {
     const owned = this.ownedConnection(owner, connectionId, { includeDisconnected: true });
     if (!owned) {
@@ -164,6 +185,7 @@ export class ConnectorAuthenticationFlowService {
         toolkit: owned.toolkit,
         label: owned.label,
         idempotencyKey,
+        ...(opts?.returnTo !== undefined && { returnTo: opts.returnTo }),
       },
       connectionId,
       // The account pauses only while this sign-in runs. A pause the owner
@@ -518,10 +540,10 @@ export class ConnectorAuthenticationFlowService {
     });
 
     try {
-      const started = await provider.startConnect(
-        input.toolkit,
-        input.label ? { label: input.label } : undefined
-      );
+      const started = await provider.startConnect(input.toolkit, {
+        ...(input.label ? { label: input.label } : {}),
+        ...(input.returnTo ? { returnTo: input.returnTo } : {}),
+      });
       const afterStart = this.now();
       if (afterStart.getTime() >= now.getTime() + this.flowTtlMs) {
         this.finishPending(flowId, 'expired', afterStart);
@@ -547,22 +569,31 @@ export class ConnectorAuthenticationFlowService {
           )
           .run();
       }
-    } catch {
-      this.finishStarting(
-        flowId,
-        'start_unknown',
-        this.now(),
-        'The service did not confirm whether sign-in started. Check Connections before trying again.'
-      );
+    } catch (error) {
+      if (error instanceof ConnectStartRefusedError) {
+        // The service said no, and why, before anything started: say so, and
+        // let the person see that starting again would end the same way.
+        this.finishStarting(flowId, 'failed', this.now(), REFUSAL_COPY[error.refusal], {
+          failureCode: error.refusal,
+        });
+      } else {
+        this.finishStarting(
+          flowId,
+          'start_unknown',
+          this.now(),
+          'The service did not confirm whether sign-in started. Check Connections before trying again.'
+        );
+      }
     }
     return this.toPublic(this.ownedFlow(owner, flowId)!);
   }
 
   private finishStarting(
     flowId: string,
-    state: 'start_unknown',
+    state: 'start_unknown' | 'failed',
     now: Date,
-    failureReason: string
+    failureReason: string,
+    opts?: { failureCode?: ConnectStartRefusal }
   ): void {
     this.db
       .update(connectorAuthenticationFlows)
@@ -571,6 +602,7 @@ export class ConnectorAuthenticationFlowService {
         providerFlowId: null,
         authorizeUrl: null,
         failureReason,
+        failureCode: opts?.failureCode ?? null,
         completedAt: now.toISOString(),
         updatedAt: now.toISOString(),
       })
@@ -882,6 +914,13 @@ export class ConnectorAuthenticationFlowService {
           completedAt: row.completedAt,
         });
       case 'failed':
+        return ConnectorAuthenticationFlowStateSchema.parse({
+          ...base,
+          state: row.state,
+          reason: row.failureReason,
+          ...(row.failureCode ? { failureCode: row.failureCode } : {}),
+          completedAt: row.completedAt,
+        });
       case 'start_unknown':
         return ConnectorAuthenticationFlowStateSchema.parse({
           ...base,

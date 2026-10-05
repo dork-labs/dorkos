@@ -775,3 +775,136 @@ describe('ConnectDialog', () => {
     });
   });
 });
+
+describe('ConnectDialog when a connection can’t start (DOR-2713)', () => {
+  const base = {
+    flowId: 'flow-1',
+    providerInstanceId: 'managed-1' as never,
+    toolkit: 'gmail',
+    createdAt: '2026-09-06T00:00:00.000Z',
+    expiresAt: '2026-09-06T01:00:00.000Z',
+  };
+
+  it('says the app can’t be connected yet, without a retry that would fail the same way', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const refused = {
+      ...base,
+      state: 'failed' as const,
+      reason: 'This app can’t be connected yet. This isn’t something you can fix here.',
+      failureCode: 'service_not_ready' as const,
+      completedAt: '2026-09-06T00:00:01.000Z',
+    };
+    vi.mocked(transport.startConnectorAuthentication).mockResolvedValue(refused);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(refused);
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const refusal = await screen.findByTestId('connect-refusal');
+    expect(refusal).toHaveTextContent('Gmail can’t be connected yet');
+    expect(refusal).toHaveTextContent('This isn’t something you can fix here.');
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start again' })).not.toBeInTheDocument();
+    expect(within(refusal).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  it('offers to link the account again when this computer has to be linked first', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const refused = {
+      ...base,
+      state: 'failed' as const,
+      reason: 'Link this computer to your DorkOS account, then connect again.',
+      failureCode: 'account_link_required' as const,
+      completedAt: '2026-09-06T00:00:01.000Z',
+    };
+    vi.mocked(transport.startConnectorAuthentication).mockResolvedValue(refused);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(refused);
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByTestId('connect-refusal')).toHaveTextContent(
+      'This computer isn’t linked to DorkOS'
+    );
+    expect(screen.getByRole('button', { name: 'Link my DorkOS account again' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the retry for a start that may pass next time', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.startConnectorAuthentication).mockRejectedValue(
+      Object.assign(new Error('Request timed out'), { status: 504 })
+    );
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('Couldn’t start the connection')).toBeInTheDocument();
+    expect(screen.getByText('Nothing was connected. Try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('drops the retry when the way to connect isn’t working', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.startConnectorAuthentication).mockRejectedValue(
+      Object.assign(new Error('Provider unavailable'), {
+        status: 422,
+        code: 'authentication_unavailable',
+      })
+    );
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(
+      await screen.findByText(
+        'The way DorkOS reaches Gmail isn’t working. Check Settings › Connections.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ConnectDialog and the way back (DOR-2721)', () => {
+  it('tells the server where the person started', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.startConnectorAuthentication).mockReturnValue(new Promise(() => undefined));
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(transport.startConnectorAuthentication).toHaveBeenCalledWith(
+      expect.objectContaining({ returnTo: `${window.location.origin}/connections` })
+    );
+  });
+
+  it('opens a DorkOS-account sign-in with its opener kept, so that page can close its tab', async () => {
+    const user = userEvent.setup();
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    const transport = createMockTransport();
+    const pending = {
+      flowId: 'flow-1',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'pending' as const,
+      authorizeUrl: 'https://provider.example/auth',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+    };
+    vi.mocked(transport.startConnectorAuthentication).mockResolvedValue(pending);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(pending);
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(await screen.findByRole('link', { name: 'Open sign-in' }));
+
+    expect(open).toHaveBeenCalledWith('https://provider.example/auth', '_blank');
+    vi.unstubAllGlobals();
+  });
+});

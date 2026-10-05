@@ -53,6 +53,21 @@ describe('ExternalLinkAnchor', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  it('keeps the opener only when asked, for a page that closes its own tab', () => {
+    render(
+      <ExternalLinkAnchor href="https://dorkos.ai/connect" keepOpener>
+        Connect
+      </ExternalLinkAnchor>
+    );
+
+    const link = screen.getByText('Connect');
+    // A modified click is the reader's own new tab, and still cuts the opener.
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+
+    fireEvent.click(link);
+    expect(open).toHaveBeenCalledWith('https://dorkos.ai/connect', '_blank');
+  });
+
   it.each(HOSTILE)('renders no href at all for %s, and refuses it out loud', (href) => {
     render(<ExternalLinkAnchor href={href}>Open</ExternalLinkAnchor>);
 
