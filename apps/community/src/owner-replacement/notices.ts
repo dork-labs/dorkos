@@ -114,6 +114,9 @@ function optionParagraphs(
  */
 function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'claim_reissued') {
   const composer: NoticeComposer = async ({ pool, notice, now }) => {
+    // Every owner-replacement notice belongs to a community; the table refuses one without.
+    const communityId = notice.communityId;
+    if (communityId === null) return null;
     const subject = await readSubject(pool, notice);
     if (!subject || !OPEN_REPLACEMENT_STATES.includes(subject.state)) return null;
     const account = await pool.query<{ emailVerified: boolean }>(
@@ -144,7 +147,7 @@ function composeOpenNotice(settings: Settings, kind: 'notice' | 'reminder' | 'cl
     );
     const date = formatReplacementDate(earliest);
     const link = await mintObjectToken(pool, {
-      communityId: notice.communityId,
+      communityId,
       replacementId: notice.subjectId,
       outboxId: notice.id,
       publicUrl: settings.publicUrl,

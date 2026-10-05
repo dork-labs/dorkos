@@ -10,8 +10,32 @@ import { clearAccountAccess } from './account-access.js';
 import { recordSignInLinked } from './linked.js';
 import { markAccessCleared } from './request-start.js';
 
-/** The cookie that carries a sign-in waiting for the matched account's password. */
+/** The cookie that carries a sign-in waiting for the matched account's password (plain HTTP). */
 export const PENDING_LINK_COOKIE = 'community_pending_link';
+
+/**
+ * The name of the cookie that carries a held sign-in: `__Host-community_pending_link` on an
+ * HTTPS host, `community_pending_link` on a plain-HTTP development host. Every read and write
+ * goes through this one helper.
+ *
+ * The `__Host-` prefix makes a browser accept the cookie only with `Secure`, `Path=/` and no
+ * `Domain`, set by this very host, so a sibling subdomain cannot plant one ("cookie tossing")
+ * and have the victim's mailed sign-in link complete the attacker's held identity. On an HTTPS
+ * host a cookie under the unprefixed name is never read.
+ */
+export function linkCookieName(config: Pick<CommunityConfig, 'publicUrl'>): string {
+  return config.publicUrl.startsWith('https:')
+    ? `__Host-${PENDING_LINK_COOKIE}`
+    : PENDING_LINK_COOKIE;
+}
+
+/**
+ * The SQL predicate that keeps a pending link to a sign-in hold, ANDed into every query that
+ * reads one for the mailed sign-in path (the request route, the resolver and the use). Today
+ * every row is a sign-in hold, so it is `TRUE`; a later kind of hold (a Settings link, DOR-2711)
+ * narrows it to its own purpose, so mail never approves a hold meant for a signed-in session.
+ */
+export const signInHoldOnly = 'TRUE';
 /** The cookie that tells the next page a trusted sign-in was linked, read once. */
 export const LINK_NOTICE_COOKIE = 'community_link_notice';
 /** How long a sign-in waits for the matched account's password, and the cookie lives. */
@@ -105,6 +129,10 @@ export async function settleTrustedLink(
     return;
   trustedLinks.delete(ctx);
   await transaction(deps.pool, async (client) => {
+    // The issuer verified the email, and the account is now the issuer's identity's. Better Auth
+    // can no longer mark an email confirmed (`user.update.before` in auth.ts strips it), so the
+    // trusted link does it here, by SQL, once its row exists.
+    await client.query('UPDATE "user" SET "emailVerified"=true WHERE id=$1', [pending.userId]);
     const members = await client.query<{ id: string }>(
       'SELECT id FROM members WHERE user_id=$1 ORDER BY community_id,id',
       [pending.userId]
@@ -140,7 +168,11 @@ export interface LinkGateDeps {
   now: () => Date;
 }
 
-function cookieOptions(config: CommunityConfig, maxAgeMs: number): CookieOptions {
+/** The attributes of the pending-link and link-notice cookies: host-only, `Path=/`. */
+export function cookieOptions(
+  config: Pick<CommunityConfig, 'publicUrl'>,
+  maxAgeMs: number
+): CookieOptions {
   return {
     path: '/',
     maxAge: Math.floor(maxAgeMs / 1000),
@@ -215,15 +247,15 @@ export async function gateAccountLink(
       if (again) throw new APIError('FORBIDDEN', { code: SIGN_IN_REFUSED_CODE, message: again });
       const unconfirmed = !user.emailVerified;
       if (unconfirmed) {
-        // This request's own session, made after the link, is the one the clean-out is for.
-        markAccessCleared(account.userId);
-        await clearAccountAccess(
+        const { xid } = await clearAccountAccess(
           client,
           account.userId,
           memberIds,
           { password: false, links: false },
           'system'
         );
+        // This request's own session, made after the link, is the one the clean-out is for.
+        markAccessCleared(account.userId, xid);
       }
       return unconfirmed;
     });
@@ -246,7 +278,7 @@ export async function gateAccountLink(
     ]
   );
   ctx.setCookie(
-    PENDING_LINK_COOKIE,
+    linkCookieName(deps.config),
     signValue(token, deps.config.authSecret),
     cookieOptions(deps.config, PENDING_LINK_TTL_MS)
   );

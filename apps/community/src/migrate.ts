@@ -35,6 +35,7 @@ export const COMMUNITY_MIGRATIONS = [
   [29, '0029_agent_enrolling_grant.sql'],
   [30, '0030_host_account_closure.sql'],
   [31, '0031_sign_in_links.sql'],
+  [32, '0032_email_links.sql'],
 ] as const;
 
 /**

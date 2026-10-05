@@ -453,6 +453,27 @@ describe('community startup config', () => {
     ).toBe(1000);
   });
 
+  it('limits mailed-link requests per caller and mailed links per host, within ceilings', () => {
+    // Purpose (DOR-2710): fails if either limit loses its default, can be switched off, or can be
+    // raised past its ceiling.
+    const { limits } = parseConfig(valid);
+    expect(limits.emailLinkRequestsPerMinute).toBe(5);
+    expect(limits.emailLinksPerHour).toBe(300);
+    for (const [name, bad] of [
+      ['COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE', '0'],
+      ['COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE', '101'],
+      ['COMMUNITY_EMAIL_LINKS_PER_HOUR', '0'],
+      ['COMMUNITY_EMAIL_LINKS_PER_HOUR', '10001'],
+    ])
+      expect(() => parseConfig({ ...valid, [name]: bad })).toThrow(new RegExp(name));
+    const raised = parseConfig({
+      ...valid,
+      COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE: '100',
+      COMMUNITY_EMAIL_LINKS_PER_HOUR: '10000',
+    }).limits;
+    expect([raised.emailLinkRequestsPerMinute, raised.emailLinksPerHour]).toEqual([100, 10_000]);
+  });
+
   it('keeps a community takedown reversible for at least a day and limits takedowns per day', () => {
     // Purpose (AC-13): fails if a host could set a reversal window under a day (a takedown that
     // cannot be undone) or over thirty days, or turn the per-actor daily limit off.
