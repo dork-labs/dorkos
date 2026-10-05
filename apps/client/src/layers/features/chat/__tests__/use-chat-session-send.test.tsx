@@ -255,6 +255,28 @@ describe('useChatSession — steer and add context (the other two dispositions)'
     expect((options.context as { queued?: boolean } | undefined)?.queued).toBeUndefined();
   });
 
+  it('Add context on a chat that has not started says create, so it is not a 404 (DOR-2712)', async () => {
+    // Nothing lists this session yet: the staged words are what start it.
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('unstarted-session'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    await act(async () => {
+      await result.current.addContextContent('mind the rate limit');
+    });
+
+    expect(postMessage.mock.calls.at(-1)?.[3]).toMatchObject({
+      disposition: 'stage',
+      create: true,
+    });
+  });
+
   it('names the right failure when a steer does not go through', async () => {
     const postMessage = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
     const transport = createMockTransport({ postMessage });

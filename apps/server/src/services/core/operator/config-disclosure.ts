@@ -220,6 +220,7 @@ export const CONFIG_DISCLOSURE = {
   'relay.maxAgentTurnsPerAgentPerHour': 'expose',
   'relay.maxAgentTurnsTotalPerHour': 'expose',
 
+  'browser.enabled': 'expose',
   // Whether outside agents may reach the ones here over A2A. A plain boolean:
   // it names no credential and no host, and an agent that learns the gate is
   // shut is no closer to opening it — the write side is where that is decided.

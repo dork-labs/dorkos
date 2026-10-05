@@ -3923,7 +3923,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(42);
+    expect(Object.keys(bodies)).toHaveLength(43);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -6292,12 +6292,12 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
 
 describe('seedCodexTransport migration (ADR 261005-113107)', () => {
   /**
-   * Run the real upgrade to `'0.99.0'` over a file last written at `from`, and
+   * Run the real upgrade to `'0.100.0'` over a file last written at `from`, and
    * return what is on disk.
    */
   function upgrade(
     runtimes: Record<string, unknown>,
-    from = '0.98.0'
+    from = '0.99.0'
   ): { runtimes: { codex: Record<string, unknown> } } {
     const dir = path.join(os.tmpdir(), 'test-dork-codex-transport-' + Date.now() + Math.random());
     const cfgPath = path.join(dir, 'config.json');
@@ -6314,7 +6314,7 @@ describe('seedCodexTransport migration (ADR 261005-113107)', () => {
         schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
         defaults: USER_CONFIG_DEFAULTS,
         clearInvalidConfig: false,
-        projectVersion: '0.99.0',
+        projectVersion: '0.100.0',
         migrations: CONFIG_MIGRATIONS,
       });
       return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {

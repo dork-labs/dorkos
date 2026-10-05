@@ -190,6 +190,10 @@ import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
 import { recordSessionUsage } from '../accounts/account-usage-feed.js';
+import {
+  sharedBackgroundWorkLedger,
+  type BackgroundWorkLedger,
+} from '../messaging/background-work-ledger.js';
 
 /** One session's pump, its windower, and its crash policy, wired together. */
 interface SessionBundle {
@@ -250,6 +254,12 @@ interface SessionBundle {
    * gets a fresh bundle.
    */
   staleToolListWarnedFor?: number;
+  /**
+   * True while this process holds background work, mirroring its durable
+   * record in `background-work.json` (DOR-2065), so ending the process can
+   * tell whether there is a record to clear without reading the file.
+   */
+  heldWork?: boolean;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -305,7 +315,6 @@ export class PersistentDispatch {
    * `undefined` when nothing is listening (spec `warm-process-lifecycle` D1).
    */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;
-
   /**
    * Build the dispatcher over a runtime's pump registry.
    *
@@ -328,6 +337,12 @@ export class PersistentDispatch {
         contextTokens: number | undefined
       ) => void)
     | undefined;
+  /**
+   * The durable record of chats holding background work (DOR-2065), asked for
+   * on each use so the runtime can hand over the one for its own data
+   * directory after this is built.
+   */
+  private readonly backgroundWork: () => BackgroundWorkLedger;
 
   constructor(
     registry: SessionPumpRegistry,
@@ -336,11 +351,13 @@ export class PersistentDispatch {
       sessionId: string,
       impact: PluginReloadCacheImpact,
       contextTokens: number | undefined
-    ) => void
+    ) => void,
+    backgroundWork: () => BackgroundWorkLedger = sharedBackgroundWorkLedger
   ) {
     this.registry = registry;
     this.sessionKeyOf = sessionKeyOf;
     this.onPluginReloadHeld = onPluginReloadHeld;
+    this.backgroundWork = backgroundWork;
   }
 
   /**
@@ -630,7 +647,14 @@ export class PersistentDispatch {
       live !== undefined && (toolSurfaceMoved || skillWithdrawal)
         ? bundle.pump.quietness()
         : undefined;
-    const holding = live !== undefined && busy !== undefined && !busy.quiet;
+    // A background shell alone does not hold it (DOR-2065): a shell can run for
+    // ever (a dev server, a `tail -f`), so it would pin a stale list for good.
+    // It dies with the relaunch, and the CLI's own notice tells the agent.
+    const holding =
+      live !== undefined &&
+      busy !== undefined &&
+      !busy.quiet &&
+      !bundle.pump.isHoldingOnlyReclaimable();
     let compared = plan.fingerprint;
     if (holding && toolSurfaceMoved) compared = withLiveToolSurface(live, compared);
     if (holding && skillWithdrawal) {
@@ -649,7 +673,7 @@ export class PersistentDispatch {
     // bug, and a stale tool list costs far less than lost work (the gate still
     // refuses any call a person blocked). So past the ceiling the hold goes on,
     // and the only change is one warning per busy spell saying the list is stale.
-    if (busy !== undefined && !busy.quiet && toolSurfaceMoved) {
+    if (holding && busy !== undefined && !busy.quiet && toolSurfaceMoved) {
       const busyForMs = Date.now() - busy.busySince;
       logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
         session: sessionId,
@@ -1158,6 +1182,23 @@ export class PersistentDispatch {
     bundle.pump = this.registry.acquire(key, {
       maxWarmSessions: SESSIONS.MAX_WARM_SESSIONS,
       warmIdleMs: SESSIONS.WARM_IDLE_MS,
+      // Mirrored into a durable record so a server that goes away while the
+      // work runs can wake the chat at its next boot (DOR-2065).
+      onBackgroundWorkChange: (holding) => {
+        bundle.heldWork = holding;
+        if (!holding) {
+          this.backgroundWork().release(key);
+          return;
+        }
+        this.backgroundWork().hold({
+          key,
+          // The transcript id, not the key: a restarted server can still find
+          // the chat by it, while the key may be a first turn's request id.
+          sessionId: session.sdkSessionId || key,
+          cwd: bundle.plan?.effectiveCwd ?? session.cwd ?? opts.cwd,
+          since: Date.now(),
+        });
+      },
       launch: createPumpLauncher(
         session,
         opts,
@@ -1210,6 +1251,9 @@ export class PersistentDispatch {
         // The relaunch is a new process, and "once per process" starts over.
         bundle.seenTaskTypes.clear();
         bundle.recovery.handleCrash(stopRequested ? { ...crash, stopRequested } : crash);
+        // Only a restart wakes a chat. The CLI's own "stopped" notice reaches
+        // the agent on its next turn.
+        this.clearBackgroundWork(key, bundle);
       },
       onStateChange: (change) => {
         // `session.activeQuery` means "a turn is in flight", and on the resume
@@ -1239,6 +1283,23 @@ export class PersistentDispatch {
         // through `this.bundles`: eviction forgets the bundle before it tears
         // the process down.
         if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
+        // Session timers live in the process, so they end with it; the next
+        // process has none until its own first Stop hook says otherwise.
+        if (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed') {
+          session.pendingTimers = undefined;
+        }
+        // Work still held when DorkOS ends the process dies with it. Only a
+        // shutdown keeps the record, for the next boot to wake the chat; every
+        // other ending (the ceiling, an eviction, a replace, a slot reclaim)
+        // clears it, and the CLI's own "stopped" notice reaches the agent on
+        // its next turn. Waking for those could loop on a shell that never
+        // ends, every four hours.
+        if (
+          change.to === 'reaped' ||
+          (change.to === 'cold' && bundle.pump.teardownReason !== 'shutdown')
+        ) {
+          this.clearBackgroundWork(key, bundle);
+        }
         bundle.recovery.noteStateChange(change);
       },
       // The map's raw SIZE was the wrong answer, for the same reason it is
@@ -1252,6 +1313,9 @@ export class PersistentDispatch {
       // pump's own state machine never left WARM and would read a process
       // mid-sentence as idle (spec `warm-process-lifecycle` D6).
       hasRuntimeTurnOpen: () => bundle.windows?.openWindow?.origin === 'runtime',
+      // Read off the Stop hook (`launch-resolver.ts`): the only place the CLI
+      // names the timers that will wake this session later (DOR-2717).
+      hasPendingTimer: () => (session.pendingTimers ?? 0) > 0,
       // The owed-delivery clock giving up is the one hold release nothing else
       // observes: the session may be idle, with no turn boundary coming to pump
       // its queue (spec `warm-process-lifecycle` D1).
@@ -1338,6 +1402,19 @@ export class PersistentDispatch {
   private async replaceProcess(key: string): Promise<void> {
     await this.registry.evict(key);
     this.forget(key);
+  }
+
+  /**
+   * Clear the durable record of a process's background work as the process
+   * ends, if it held any (DOR-2065).
+   *
+   * @param key - The resolved key the record is held under
+   * @param bundle - The session's wiring
+   */
+  private clearBackgroundWork(key: string, bundle: SessionBundle): void {
+    if (bundle.heldWork !== true) return;
+    bundle.heldWork = false;
+    this.backgroundWork().release(key);
   }
 }
 

@@ -69,7 +69,11 @@ function planFleetTurns(): FleetTurn[] {
 /** Trigger one agent's turn through the test-mode seam. */
 async function startFleetTurn(turn: FleetTurn): Promise<void> {
   await post('/api/test/scenario', { name: turn.scenario, sessionId: turn.id });
-  await post(`/api/sessions/${turn.id}/messages`, { content: turn.prompt, cwd: turn.cwd });
+  await post(`/api/sessions/${turn.id}/messages`, {
+    content: turn.prompt,
+    cwd: turn.cwd,
+    create: true,
+  });
 }
 
 /**

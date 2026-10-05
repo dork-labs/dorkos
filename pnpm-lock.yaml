@@ -407,6 +407,9 @@ importers:
       '@dork-labs/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@dorkos/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
       '@dorkos/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -786,15 +789,15 @@ importers:
       '@dork-labs/cloud-api':
         specifier: workspace:*
         version: link:../../packages/cloud-api
+      '@dork-labs/connector-providers':
+        specifier: workspace:*
+        version: link:../../packages/connector-providers
       '@dorkos/a2a-gateway':
         specifier: workspace:*
         version: link:../../packages/a2a-gateway
       '@dorkos/browser':
         specifier: workspace:*
         version: link:../../packages/browser
-      '@dorkos/connector-providers':
-        specifier: workspace:*
-        version: link:../../packages/connector-providers
       '@dorkos/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -1003,12 +1006,12 @@ importers:
       '@better-auth/api-key':
         specifier: 1.7.6
         version: 1.7.6(@better-auth/core@1.7.6(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(@opentelemetry/api@1.9.1)(better-call@1.4.0(zod@4.6.5))(jose@6.2.12)(kysely@0.29.2)(nanostores@1.4.0))(@better-auth/utils@0.5.0)(better-auth@1.7.6(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0))(next@16.3.6(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@24.13.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(solid-js@1.9.15)(vitest@4.1.11)(vue@3.5.39(typescript@5.9.3)))(better-call@1.4.0(zod@4.6.5))
+      '@dork-labs/connector-providers':
+        specifier: workspace:*
+        version: link:../../packages/connector-providers
       '@dork-labs/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@dorkos/connector-providers':
-        specifier: workspace:*
-        version: link:../../packages/connector-providers
       '@dorkos/icons':
         specifier: workspace:*
         version: link:../../packages/icons
@@ -1416,12 +1419,9 @@ importers:
       '@composio/core':
         specifier: 0.21.0
         version: 0.21.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.5)
-      '@dorkos/shared':
+      '@dork-labs/cloud-api':
         specifier: workspace:*
-        version: link:../shared
-      zod:
-        specifier: ^4.6.2
-        version: 4.6.5
+        version: link:../cloud-api
     devDependencies:
       '@dorkos/eslint-config':
         specifier: workspace:*
@@ -1432,9 +1432,15 @@ importers:
       '@types/node':
         specifier: ^24
         version: 24.13.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.5)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@7.3.6(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      zod:
+        specifier: ^4.6.2
+        version: 4.6.5
 
   packages/db:
     dependencies:
@@ -1772,6 +1778,9 @@ importers:
       '@dork-labs/cloud-api':
         specifier: workspace:*
         version: link:../cloud-api
+      '@dork-labs/connector-providers':
+        specifier: workspace:*
+        version: link:../connector-providers
       ajv:
         specifier: ^8.20.0
         version: 8.20.0

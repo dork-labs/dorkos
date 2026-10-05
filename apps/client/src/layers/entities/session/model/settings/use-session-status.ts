@@ -146,8 +146,14 @@ export function useSessionStatus(
   // (DOR-2636) makes that model the session's own on the server; until the
   // record is read again, the substitution the stream carried says so here.
   const substitution = useSessionModelSubstitution(sessionId ?? '');
+  // A model belongs to one runtime's menu. A record read off another runtime
+  // than the one shown names a model this session cannot run, and showing it
+  // would pair, say, Codex with Opus (DOR-2712). The shown runtime's default
+  // stands in until the two agree.
+  const sessionOnShownRuntime = !runtime || !session?.runtime || session.runtime === runtime;
+  const recordedModel = sessionOnShownRuntime ? session?.model : undefined;
   const storedModel =
-    substitution && session?.model === substitution.from ? substitution.to : session?.model;
+    substitution && recordedModel === substitution.from ? substitution.to : recordedModel;
   const model =
     overrides.model ?? (isStreaming ? streamingStatus?.model : null) ?? storedModel ?? defaultModel;
 
@@ -277,11 +283,8 @@ export function useSessionStatus(
         // time the list refreshed. That module's own header names this hazard.
         // A stale caveat is worse than no caveat: it would call a settled
         // runtime a guess, which is the fixed bug pointing the other way.
-        const {
-          permissionModePendingUntilNextTurn,
-          runtimeUnbound: _runtimeUnbound,
-          ...updated
-        } = await transport.updateSession(sessionId, request, selectedCwd ?? undefined);
+        const { permissionModePendingUntilNextTurn, runtimeUnbound, ...updated } =
+          await transport.updateSession(sessionId, request, selectedCwd ?? undefined);
         if (permissionModePendingUntilNextTurn) {
           // The dial moves either way — the choice IS saved, and reverting it
           // would be the bigger lie. What the person is owed is the one thing
@@ -296,11 +299,17 @@ export function useSessionStatus(
           (old: Session | undefined) => ({
             ...old,
             ...updated,
-            // Preserve client-side model when not part of this PATCH request.
-            // The PATCH response reads model from the disk transcript which may
-            // use a different format (e.g. SDK ID "claude-opus-4-6") than the
-            // option value the client selected (e.g. "default").
-            ...(opts.model === undefined && old?.model !== undefined ? { model: old.model } : {}),
+            // A write that did not name a model never changes the model shown,
+            // even when nothing was on record before it (DOR-2712). The PATCH
+            // response reads model from the disk transcript, which may use a
+            // different format (e.g. SDK ID "claude-opus-4-6") than the option
+            // value the client selected (e.g. "default"), or, for a session no
+            // runtime owns yet, come from a runtime other than the one shown.
+            ...(opts.model === undefined ? { model: old?.model } : {}),
+            // Nor does it ever say which runtime runs the session. On a session
+            // no runtime owns yet, the answer's `runtime` is the server's guess
+            // (DOR-1693), and a cached guess would read as a started session.
+            ...(runtimeUnbound ? { runtime: old?.runtime } : {}),
           })
         );
         // Optimistic state cleared by convergence effect below, not here.

@@ -17,7 +17,7 @@ import {
   serviceNameFromToolkit,
   decodeConnectorReviewAction,
   encodeConnectorReviewAction,
-} from '../connector-schemas.js';
+} from '@dork-labs/connector-providers/connector-schemas';
 import { ConnectorAgentRequestDecisionSchema } from '../connector-agent-request-schemas.js';
 
 describe('connector reconciliation apply contracts', () => {

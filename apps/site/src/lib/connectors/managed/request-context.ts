@@ -6,7 +6,7 @@
 import {
   ComposioEventClient,
   createComposioHostedClients,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 
 import { getTransactionDb } from '@/db/transaction-client';
 import { getAuth } from '@/lib/auth';

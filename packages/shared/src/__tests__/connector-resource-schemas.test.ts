@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CONNECTION_READINESS_COPY, ConnectionReadinessSchema } from '../connector-schemas.js';
+import {
+  CONNECTION_READINESS_COPY,
+  ConnectionReadinessSchema,
+} from '@dork-labs/connector-providers/connector-schemas';
 import {
   ConnectorAuthoritySyncStateSchema,
   ConnectorAuthenticationFlowStateSchema,

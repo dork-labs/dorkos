@@ -10,7 +10,7 @@ import {
   type ComposioManagedAccount,
   type ComposioManagedAccountClient,
   type ComposioOperationClient,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 import * as schema from '@/db/schema';
 import { provisionManagedTestDatabase } from './managed-database-fixture';
 import { resolveManagedAuthenticationConfiguration } from '../auth-config-resolver';

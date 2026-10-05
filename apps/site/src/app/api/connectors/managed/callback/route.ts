@@ -1,5 +1,5 @@
 /** Fixed signed-in browser callback for managed provider account completion. */
-import { createComposioHostedClients } from '@dorkos/connector-providers/composio';
+import { createComposioHostedClients } from '@dork-labs/connector-providers/composio';
 
 import { getTransactionDb } from '@/db/transaction-client';
 import { getAuth } from '@/lib/auth';

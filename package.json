@@ -7,7 +7,7 @@
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "dev": "dotenv -- turbo dev --filter=!@dorkos/desktop --filter=!@dorkos/community --filter=!@dorkos/design-system",
-    "dev:community": "pnpm --filter @dorkos/shared build && dotenv -- concurrently --names api,web --kill-others \"pnpm --filter @dorkos/community dev\" \"pnpm --filter @dorkos/community dev:web\"",
+    "dev:community": "pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && dotenv -- concurrently --names api,web --kill-others \"pnpm --filter @dorkos/community dev\" \"pnpm --filter @dorkos/community dev:web\"",
     "dev:desktop": "dotenv -- turbo dev --filter=@dorkos/desktop",
     "dev:dogfood": "concurrently --names preview,cockpit --prefix-colors cyan,magenta --kill-others \"pnpm dev\" \"pnpm cli:dev\"",
     "build": "dotenv -- turbo build",
@@ -61,6 +61,7 @@
     "docker:run": "docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY -v dorkos-data:/home/node/.dork dorkos",
     "publish:cli": "pnpm publish --filter=dorkos",
     "publish:cloud-api": "pnpm publish --filter=@dork-labs/cloud-api",
+    "publish:connector-providers": "pnpm publish --filter=@dork-labs/connector-providers",
     "cli:dev": "pnpm --filter=./packages/cli run build && node packages/cli/dist/bin/cli.js"
   },
   "dependencies": {

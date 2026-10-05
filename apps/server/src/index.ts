@@ -21,6 +21,7 @@ import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-clie
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
+import { sharedBackgroundWorkLedger } from './services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
 import { previewListeners } from './services/workbench-serve/index.js';
 import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
@@ -380,6 +381,7 @@ import {
   onProjectorInteractionChange,
 } from './services/session/session-state-projector.js';
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
+import { wakeChatsCutShort } from './services/session/runtime-turns/wake-cut-short-work.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { globalConsentRecorder } from './services/marketplace/consent/global-plugin-consent.js';
@@ -983,6 +985,15 @@ async function start() {
       error: error instanceof Error ? error.message : String(error),
     });
   });
+
+  // The chats whose agent process was still holding background work when the
+  // previous run ended — a graceful restart or a hard kill — each owed a turn
+  // (DOR-2065). Read HERE, beside the sweep that just ended those processes and
+  // before anything can warm a new one, so a record this run writes is never
+  // mistaken for one. Not cleared: each record is removed only once its chat is
+  // settled, so a boot that dies midway wakes the rest next time. The wakes go
+  // out once the server is listening.
+  const backgroundWorkCutShort = sharedBackgroundWorkLedger().read();
 
   // Empty the hosted-community move staging directory. A copy a previous run
   // left behind can never be sent: its upload token died with that process.
@@ -6083,6 +6094,25 @@ async function start() {
   if (schedulerService) {
     await schedulerService.start();
     logger.info('[Tasks] Scheduler started');
+  }
+
+  // Wake the chats the boot found owed a turn (DOR-2065), now that every
+  // runtime and session service is up. A room's chat (`room_sessions`) and a
+  // scheduled task's (`pulse_runs`) have no person waiting on the work, so they
+  // are skipped. Detached, and it never rejects.
+  if (backgroundWorkCutShort.length > 0) {
+    const leftoverLedger = sharedBackgroundWorkLedger();
+    logger.info('[DorkOS] waking chats whose background work a restart stopped', {
+      sessions: backgroundWorkCutShort.map((record) => record.sessionId),
+    });
+    void wakeChatsCutShort(backgroundWorkCutShort, {
+      release: (record) => leftoverLedger.release(record.key, record.since),
+      drivenElsewhere: (sessionIds) =>
+        new Set([
+          ...roomStore.resolveRoomOrigins(sessionIds).keys(),
+          ...(taskStore?.resolveTaskOrigins(sessionIds).keys() ?? []),
+        ]),
+    });
   }
 
   // Run session health check periodically. Only ClaudeCodeRuntime needs the

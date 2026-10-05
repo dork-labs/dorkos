@@ -1,5 +1,5 @@
 /** Internal seams between the hosted owner page and authentication service. */
-import type { ComposioAuthenticationDescriptor } from '@dorkos/connector-providers/composio';
+import type { ComposioAuthenticationDescriptor } from '@dork-labs/connector-providers/composio';
 import type { ManagedConnectorDatabase } from './authority-service';
 
 /** Hosted-only field page; OAuth keeps its existing callback endpoint. */

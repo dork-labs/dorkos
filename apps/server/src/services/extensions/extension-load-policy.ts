@@ -28,7 +28,16 @@
  *   ({@link testClientExtension}). This one is the sharpest: an agent writes
  *   arbitrary TypeScript to `~/.dork/extensions/foo/index.ts`, calls the tool, and
  *   that code runs in Node with the server's own privileges — no sandbox, no
- *   boundary check, no tier gate, whatever the manifest claims.
+ *   boundary check, no tier gate, whatever the manifest claims. That holds
+ *   even for an extension that asks to run separately (DOR-2686): only its
+ *   `server.ts` runs in its own process with limits; the client bundle this
+ *   tool activates runs here.
+ *
+ * The first two start a server entry. For an in-process extension that is
+ * `require()` in this process with the server's privileges; for one that
+ * asks to run separately it is a child process with only the limits its
+ * manifest declares (`isolation/isolated-host.ts`). Either way it is code a
+ * person must approve first, which is what this gate decides.
  * - `relay_reload_adapters` reaches a dynamic `import()` of an adapter plugin.
  *   Deliberately NOT covered here; see "Not covered" below.
  *

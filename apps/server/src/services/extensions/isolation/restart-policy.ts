@@ -8,8 +8,8 @@
  * exit inside 10 minutes leaves it stopped
  * (`server_crashed`, or `server_out_of_memory` / `server_unresponsive` when
  * that is what happened). A reload, enable, approve or dev-link reload resets
- * the count; those triggers are wired where the lifecycle starts isolated
- * extensions.
+ * the count (`ExtensionServerLifecycle.resetRestarts`, called by the
+ * manager's reload, enable and approve; a dev link's save is a reload).
  *
  * Pure: it holds timestamps, never timers, so the host decides when to act.
  *

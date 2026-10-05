@@ -429,17 +429,17 @@ describe('SessionPump — guards', () => {
     expect(h.live().closed).toBe(1);
   });
 
-  // Purpose: background SHELLS are out of scope. The CLI kills them shortly
-  // after stdin ends and always has; a reap must not start waiting on one.
-  it('reaps a session whose only background task is a shell', async () => {
+  // Purpose: a background SHELL is work its agent is waiting on (DOR-2065).
+  // The CLI wakes the model when it finishes, and reaping kills it first.
+  it('declines to reap a session whose only background task is a shell', async () => {
     const h = harness();
     await warmed(h);
 
     h.live().emit(backgroundTasksMessage([{ id: 'shell-1', type: 'local_bash' }]));
     await vi.waitFor(() => expect(h.messages).toHaveLength(2));
 
-    await expect(h.pump.reap()).resolves.toBe(true);
-    expect(h.live().closed).toBe(1);
+    await expect(h.pump.reap()).resolves.toBe(false);
+    expect(h.live().closed).toBe(0);
   });
 
   // Purpose: the level signal is per-PROCESS and is not replayed at startup, so

@@ -114,6 +114,7 @@ import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import { browserSettingRefusal } from './config/browser-setting.js';
 import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
@@ -4822,13 +4823,28 @@ export const CONFIG_MIGRATIONS = {
     // approval covers (DOR-2686). See `seedExtensionsApprovedPermissions`.
     seedExtensionsApprovedPermissions(store);
   },
-  // 0.98.0 has merged and v0.97.0 is the newest tag, so 0.99.0 is the next
-  // key. Frozen from merge, for the reason `'0.60.0'` above states; anything
-  // further opens `'0.100.0'`.
+  // New top-level defaults are persisted by conf before migration selection.
+  // This anchor also heals a stored browser section missing its enabled leaf.
+  '0.99.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    const browser = store.get('browser');
+    if (browser !== null && typeof browser === 'object' && !Array.isArray(browser)) {
+      // Ajv may fill the leaf in the getter's copy; persist that copy explicitly.
+      store.set('browser', {
+        ...browser,
+        enabled: (browser as { enabled?: unknown }).enabled === true,
+      });
+    }
+  },
+  // 0.99.0 has merged (the browser leaf above), so 0.100.0 is the next key.
+  // Frozen from merge, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.101.0'`.
   //
   // Disjoint from every other key here: it adds one nested leaf under
   // `runtimes.codex`, beside the fields it preserves.
-  '0.99.0': (store: {
+  '0.100.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
   }) => {
@@ -5600,6 +5616,8 @@ export class ConfigManager {
    * @param value - The value to store.
    */
   private write(keyPath: string, value: unknown): void {
+    const browserRefusal = browserSettingRefusal(keyPath, value);
+    if (browserRefusal) throw new Error(browserRefusal);
     const stored = this.store.get(keyPath as keyof UserConfig);
     const { skewed } = repairWidenedLeaves(keyPath, stored, WIDENED_LEAF_POLICY);
     const kept = preserveWidenedLeaves(skewed, keyPath, value);

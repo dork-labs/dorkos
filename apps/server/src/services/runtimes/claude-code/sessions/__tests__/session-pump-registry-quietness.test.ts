@@ -123,6 +123,26 @@ describe('the idle timer counts what the process says, not only what DorkOS aske
   });
 });
 
+// DOR-2065, as it happened on 2026-10-05: a builder started a PR watcher in the
+// background, ended its turn, and five minutes later the idle timer retired the
+// process and the watcher with it. The chat never woke.
+describe('the idle timer leaves a process with a background shell running', () => {
+  it('keeps the process warm past the idle window while the shell runs', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    await warmHolding(registry, queries, 's1', 'local_bash');
+
+    await vi.advanceTimersByTimeAsync(IDLE_MS * 3);
+    expect(registry.warmth('s1')).toBe('warm');
+
+    // The shell finishes: the level frame drops it, and the process is
+    // measured as idle from there, as any other quiet process is.
+    queries.get('s1')!.emit(backgroundTasksMessage([]));
+    await vi.advanceTimersByTimeAsync(IDLE_MS * 2);
+    expect(registry.warmth('s1')).toBe('cold');
+  });
+});
+
 // T7. Warmth is a cache and LRU is what a cache does — but only over processes
 // that are genuinely reclaimable, and a process holding work is not one.
 describe('the warm ceiling reclaims only processes that are not working', () => {
@@ -145,21 +165,48 @@ describe('the warm ceiling reclaims only processes that are not working', () => 
     }
   });
 
-  it('reclaims a process holding only background shells', async () => {
+  it('reclaims a process held only by a background shell, as a last resort', async () => {
     const queries = new Map<string, FakeQuery>();
     const registry = new SessionPumpRegistry(identity);
     for (let i = 0; i < CEILING; i += 1) {
       await warmHolding(registry, queries, `shell-${i}`, 'local_bash');
     }
 
-    // Shells hold nothing, so the least recently used process goes and the
-    // thirteenth session gets its slot. The reclaim closes a process, which
-    // waits out its drain grace — a fake clock has to be advanced through it.
+    // A shell can run forever (a dev server, a `tail -f`), so twelve of them
+    // must not lock every other chat out. The least recently used one goes;
+    // the CLI's own "stopped" notice reaches its agent on its next turn.
     const latecomer = registry.acquire('late', launchOpts(queries, 'late'));
+    // The reclaimed process gets its drain grace window on the fake clock.
     const warming = latecomer.warm();
-    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(1_000);
     await warming;
     expect(registry.warmth('late')).toBe('warm');
     expect(registry.warmth('shell-0')).toBe('cold');
+    for (let i = 1; i < CEILING; i += 1) {
+      expect(registry.warmth(`shell-${i}`)).toBe('warm');
+    }
+  });
+
+  it('never reclaims a process a helper or Monitor holds, even when it is the oldest', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    await warmHolding(registry, queries, 'agent-0', 'local_agent');
+    await warmHolding(registry, queries, 'monitor-1', 'monitor');
+    for (let i = 2; i < CEILING - 1; i += 1) {
+      await warmHolding(registry, queries, `monitor-${i}`, 'monitor');
+    }
+    await warmHolding(registry, queries, 'shell-last', 'local_bash');
+
+    const latecomer = registry.acquire('late', launchOpts(queries, 'late'));
+    // The reclaimed process gets its drain grace window on the fake clock.
+    const warming = latecomer.warm();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await warming;
+    expect(registry.warmth('late')).toBe('warm');
+    expect(registry.warmth('shell-last')).toBe('cold');
+    expect(registry.warmth('agent-0')).toBe('warm');
+    for (let i = 1; i < CEILING - 1; i += 1) {
+      expect(registry.warmth(`monitor-${i}`)).toBe('warm');
+    }
   });
 });

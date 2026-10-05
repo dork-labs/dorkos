@@ -171,9 +171,17 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
  * first three are the vocab gate's own scan roots; `packages/shared/src` joins
  * them because schema-level copy (an enum's human label, a Zod error message)
  * renders verbatim in the cockpit and would otherwise read as "deleted from the
- * app" the moment a component stopped inlining it.
+ * app" the moment a component stopped inlining it. `packages/connector-providers/src`
+ * joins for the same reason: the connector schemas, and the labels they carry,
+ * moved there from shared and `@dorkos/shared` only re-exports them.
  */
-const COPY_ROOTS = ['apps/client/src', 'apps/site/src', 'apps/server/src', 'packages/shared/src'];
+const COPY_ROOTS = [
+  'apps/client/src',
+  'apps/site/src',
+  'apps/server/src',
+  'packages/shared/src',
+  'packages/connector-providers/src',
+];
 
 /**
  * Everything the browser suite is built from — specs, page objects and
@@ -762,7 +770,7 @@ if (isMain) {
         'nearly every case — the merge-queue shards would otherwise fail on it, and a queue\n' +
         'failure ejects the PR and disarms auto-merge (DOR-1647).\n\n' +
         'If the copy genuinely still renders — assembled somewhere this gate cannot read, or\n' +
-        'produced outside apps/ and packages/shared — say so on the PR: this check is advisory\n' +
+        'produced outside the roots this gate reads — say so on the PR: this check is advisory\n' +
         'and does not block the merge queue.'
     );
     process.exit(1);

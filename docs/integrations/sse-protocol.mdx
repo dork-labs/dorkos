@@ -35,8 +35,10 @@ POST /api/sessions/:id/messages
 Content-Type: application/json
 X-Client-Id: your-client-uuid
 
-{ "content": "Hello, Claude", "cwd": "/path/to/project" }
+{ "content": "Hello, Claude", "cwd": "/path/to/project", "create": true }
 ```
+
+`create: true` says this message may start a new session under that id. Send it on the first message. Without it, an id the server doesn't know gets `404 SESSION_NOT_FOUND` and nothing starts, so a stale or mistyped id can never open a stray session. It is harmless on a session that already exists.
 
 `X-Client-Id` is optional. Omit it and the server generates a UUID for you, but then it can't tell your own reconnects apart from a fresh client, so you lose track of which queued messages are yours across a page reload. Send a stable id if your integration reconnects.
 
@@ -485,7 +487,7 @@ Connect to `GET /api/sessions/:id/events`. Process the `snapshot` event to hydra
 <Step>
 ### Trigger a turn
 
-Send `POST /api/sessions/:id/messages`. On `202`, record the returned canonical `sessionId` and `messageId`, and read `queuePosition` to know whether the turn started now or the message is waiting. Either way its events arrive on the stream you already hold.
+Send `POST /api/sessions/:id/messages`, with `create: true` on the message that starts the session. On `202`, record the returned canonical `sessionId` and `messageId`, and read `queuePosition` to know whether the turn started now or the message is waiting. Either way its events arrive on the stream you already hold.
 
 </Step>
 

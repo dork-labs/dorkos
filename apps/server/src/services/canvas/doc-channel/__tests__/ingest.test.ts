@@ -253,6 +253,8 @@ describe('compact pending coalescing', () => {
     f.ingest.accept(event('task.toggle', { checked: false }, 'same'), f.authority);
     expect(f.store.getBatch(id)!.inputEventIds).toHaveLength(100);
   });
+  // A thousand same-key inputs is deliberately heavy: it takes 5-7 seconds on a loaded CI runner
+  // (and on a laptop), past Vitest's 5-second default, so it gets its own ceiling.
   it('settles999 same-key originals as superseded/no-turn and offers only one exact input', () => {
     const f = fixture();
     const inputs = Array.from({ length: 1000 }, (_, index) =>
@@ -272,7 +274,7 @@ describe('compact pending coalescing', () => {
         selectBatchSlice(f.store, tx, batch, 100, 'Tasks').context.events.map((input) => input.id)
       ).toEqual([inputs[999]!.id])
     );
-  });
+  }, 30_000);
   it('preserves every comment ID even when the route declares comments coalescible', () => {
     const f = fixture();
     f.access.routes[0]!.route = { ...route, coalescibleTypes: ['task.comment'] };

@@ -340,6 +340,7 @@ async function runOneTurn(
     body: JSON.stringify({
       content,
       cwd,
+      create: true,
       ...(plan.testMode ? {} : { runtime: plan.runtime }),
     }),
   });

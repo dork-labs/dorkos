@@ -112,13 +112,15 @@ Use the same origin for `COMMUNITY_PUBLIC_URL`. Do not register a preview, inter
 
 You can let people sign in through your own OpenID Connect provider, beside email and password. Set all three of these, or none:
 
-| Setting                        | Must be                                                                           |
-| ------------------------------ | --------------------------------------------------------------------------------- |
-| `COMMUNITY_OIDC_ISSUER_URL`    | The issuer's `https://` address (`http://` only on localhost)                     |
-| `COMMUNITY_OIDC_CLIENT_ID`     | The client ID your provider gave this Community                                   |
-| `COMMUNITY_OIDC_CLIENT_SECRET` | That client's secret                                                              |
-| `COMMUNITY_OIDC_LABEL`         | Optional. The button text, 1 to 40 characters. Default: "Single sign-on"          |
-| `COMMUNITY_OIDC_SCOPES`        | Optional. Space-separated, must include `openid`. Default: `openid email profile` |
+| Setting                              | Must be                                                                                |
+| ------------------------------------ | -------------------------------------------------------------------------------------- |
+| `COMMUNITY_OIDC_ISSUER_URL`          | The issuer's `https://` address (`http://` only on localhost)                          |
+| `COMMUNITY_OIDC_CLIENT_ID`           | The client ID your provider gave this Community                                        |
+| `COMMUNITY_OIDC_CLIENT_SECRET`       | That client's secret                                                                   |
+| `COMMUNITY_OIDC_LABEL`               | Optional. The button text, 1 to 40 characters. Default: "Single sign-on"               |
+| `COMMUNITY_OIDC_SCOPES`              | Optional. Space-separated, must include `openid`. Default: `openid email profile`      |
+| `COMMUNITY_OIDC_MARK`                | Optional. `dorkos` shows the DorkOS mark on the button. Unset shows a key              |
+| `COMMUNITY_OIDC_LINK_VERIFIED_EMAIL` | Optional. `1` trusts this provider to link existing accounts (see below). Default: off |
 
 Register this redirect URI with your provider. The service also prints it when it starts:
 
@@ -128,9 +130,17 @@ https://community.example.com/api/auth/callback/oidc
 
 The service reads `<issuer>/.well-known/openid-configuration` the first time someone uses the button, not at startup, so a provider outage never stops the Community. That document must name exactly the issuer you set, and every address in it must be `https://`. If the provider does not answer within 10 seconds, or the document fails those checks, the button says single sign-on is unavailable, and the service asks again 30 seconds later. Sign-in uses PKCE, and every sign-in needs an ID token signed with the provider's published keys. People sign in only through the provider's own page; the service never accepts an ID token handed to it directly.
 
-Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused. If someone's email already belongs to an account here, single sign-on does not attach to it on its own: they sign in with their password, then choose **Link** under Settings, Account.
+Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused.
 
-The Community does not check email addresses when someone signs up with a password. So a person holding an invitation could create a password account with someone else's email, and the real owner of that email would then be refused by single sign-on. If that happens, and the password account has not joined any community, remove it with this command, then ask the real owner to sign in again:
+### When the email already has an account here
+
+Someone may sign in with Google, GitHub or single sign-on using an email that already belongs to an account here. Unless you trust your provider (below), the sign-in page then asks for that account's password, once, and links the new sign-in to it. Wrong guesses there share the same count as every other password check for that account (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`), and the waiting sign-in lasts 10 minutes. An account with no password is told to ask the space's owner for help. A provider that did not verify the email never links, whatever you set. Google and GitHub always ask for the password.
+
+Set `COMMUNITY_OIDC_LINK_VERIFIED_EMAIL=1` to trust your own single sign-on provider instead. A sign-in through it with a verified email then links to the matching account at once, without the password. This is a real grant: whoever controls an account at that provider with someone's email gets their account here. Only trust a provider that proves people own their email, such as one you run.
+
+The Community does not check email addresses when someone signs up with a password, so anyone holding an invitation could make an account with someone else's email first. With trust on, the first sign-in through your provider to an account whose email was never confirmed takes it over cleanly: its old password, sessions, other sign-ins, connections, agent credentials, the server API keys and the invitation links it made are all removed first, and then the sign-in is linked and the email marked confirmed. The person who signs in keeps what the account held: its memberships, roles and messages. They see a note saying what was removed, and, where mail is set up, get an email saying so. An account whose email was confirmed keeps its password and gains the new sign-in. Every link is recorded in the audit log of each community the account belongs to.
+
+Without trust, the real owner of an email someone else used first would be asked for a password they never set. If that happens, and the password account has not joined any community, remove it with this command, then ask the real owner to sign in again:
 
 ```bash
 docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/host/release-unverified-account.js <email>
@@ -144,7 +154,7 @@ To turn single sign-on off, unset the variables. Accounts made through it stay, 
 
 ## Optional mail
 
-The Community sends no email unless you set this up. Mail lets it reach a person who no longer opens the community. Set both of these, or neither:
+The Community sends no email unless you set this up. Mail lets it reach a person who no longer opens the community, and tells a person when a new sign-in was linked to their account. Set both of these, or neither:
 
 | Setting               | Must be                                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

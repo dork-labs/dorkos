@@ -156,7 +156,7 @@ async function seedTurns(
   const before = await historyCount(api, request, sessionId, agentDir);
   for (const [index, word] of words.entries()) {
     const res = await request.post(`${api}/api/sessions/${sessionId}/messages`, {
-      data: { content: tallPrompt(word), cwd: agentDir, agentPath: agentDir },
+      data: { content: tallPrompt(word), cwd: agentDir, agentPath: agentDir, create: true },
     });
     if (res.status() !== 202) {
       throw new Error(`Turn "${word}" answered ${res.status()}: ${await res.text()}`);

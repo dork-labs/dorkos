@@ -173,3 +173,28 @@ it('refuses closing original before its asynchronous close event', async () => {
   expect(revokeLocal).toHaveBeenCalled();
   await closure;
 });
+
+it('separately binds HTTP and WS consent to the same original listener and revokes both on close', async () => {
+  const origins = createFixtureOriginCustody(),
+    original = await endpoint();
+  const binding = {
+    ownerId: 'owner',
+    workspaceId: 'workspace',
+    browserId: 'browser',
+    browserGeneration: 1,
+  };
+  const grantLocal = vi.fn(),
+    revokeLocal = vi.fn(),
+    broker = { grantLocal, revokeLocal };
+  const http = origins.grant(original.server, binding, broker, 1000);
+  const ws = origins.grant(original.server, binding, broker, 1000, 'websocket');
+  expect(ws).toBe(http.replace(/^http:/, 'ws:'));
+  expect(grantLocal.mock.calls).toEqual([
+    [http, 'http', 1000],
+    [ws, 'websocket', 1000],
+  ]);
+  expect(() => origins.grant(original.server, binding, broker, 1000, 'websocket')).toThrow();
+  await original.close();
+  expect(() => origins.check(binding)).toThrow('AUTHORITY_REFUSED');
+  expect(revokeLocal).toHaveBeenCalled();
+});

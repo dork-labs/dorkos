@@ -23,6 +23,15 @@ vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOrigi
   useSessions: () => mockSessionList() as never,
 }));
 
+// The session's own record, read when the list does not carry the session.
+const mockDetail = vi.fn<() => unknown>(() => undefined);
+vi.mock('@/layers/entities/session/model/query/use-session-detail', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/layers/entities/session/model/query/use-session-detail')
+  >()),
+  useSessionDetail: () => ({ data: mockDetail() }) as never,
+}));
+
 const mockCaps = vi.fn<() => unknown>(() => ({
   capabilities: { 'claude-code': { type: 'claude-code' }, codex: { type: 'codex' } },
   defaultRuntime: 'claude-code',
@@ -93,11 +102,44 @@ beforeEach(() => {
   useAppStore.setState({ selectedCwd: '/test/dir', pendingRuntime: null, pendingAccount: null });
   window.history.replaceState(null, '', '/');
   mockSessionList.mockReturnValue({ sessions: [], isLoading: false });
+  mockDetail.mockReturnValue(undefined);
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+describe('useResolvedSessionRuntime — a session the list does not carry (DOR-2712)', () => {
+  function Readout({ sessionId }: { sessionId: string }) {
+    const resolved = useResolvedSessionRuntime(sessionId);
+    return (
+      <span data-testid="readout">
+        {`${resolved.runtime ?? 'none'}|${resolved.model ?? 'none'}|${resolved.canSelect}`}
+      </span>
+    );
+  }
+
+  it('reads the runtime and model off the session record, not the default', () => {
+    // An agent started this session in another folder, so the list here does
+    // not carry it, and the server default is Codex.
+    mockCaps.mockReturnValueOnce({
+      capabilities: { 'claude-code': { type: 'claude-code' }, codex: { type: 'codex' } },
+      defaultRuntime: 'codex',
+    });
+    mockDetail.mockReturnValue({ id: 'elsewhere', runtime: 'claude-code', model: 'claude-opus' });
+    render(<Readout sessionId="elsewhere" />);
+
+    expect(screen.getByTestId('readout')).toHaveTextContent('claude-code|claude-opus|false');
+  });
+
+  it('does not count a record with no runtime as a started session', () => {
+    // A settings change before the first message caches no runtime.
+    mockDetail.mockReturnValue({ id: 'draft', permissionMode: 'plan' });
+    render(<Readout sessionId="draft" />);
+
+    expect(screen.getByTestId('readout')).toHaveTextContent('claude-code|none|true');
+  });
 });
 
 describe('useRuntimeChip — shared pending selection', () => {

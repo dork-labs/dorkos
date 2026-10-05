@@ -344,12 +344,17 @@ cd apps/desktop && npm version X.Y.Z --no-git-tag-version && cd ../..
 
 # packages/cloud-api/package.json (@dork-labs/cloud-api, the public wire contract)
 cd packages/cloud-api && npm version X.Y.Z --no-git-tag-version && cd ../..
+
+# packages/connector-providers/package.json (@dork-labs/connector-providers, the connector contract and Composio adapter)
+cd packages/connector-providers && npm version X.Y.Z --no-git-tag-version && cd ../..
 ```
 
-`@dork-labs/cloud-api` is versioned in **lockstep** with the CLI: the contract version equals the
-app version, published atomically with it or not at all. `packages/cloud-api/src/__tests__/packaging.test.ts`
-fails if this file, `VERSION` and `packages/cli/package.json` ever disagree, so a forgotten bump
-here is caught by `test` rather than discovered on npm.
+`@dork-labs/cloud-api` and `@dork-labs/connector-providers` are versioned in **lockstep** with the
+CLI: each package's version equals the app version, published atomically with it or not at all.
+`packages/cloud-api/src/__tests__/packaging.test.ts` and
+`packages/connector-providers/src/__tests__/packaging.test.ts` fail if either file, `VERSION` and
+`packages/cli/package.json` ever disagree, and the second also fails if the two packages differ
+from each other, so a forgotten bump here is caught by `test` rather than discovered on npm.
 
 Bumping the desktop app keeps its artifact version (`DorkOS-X.Y.Z-arm64.dmg`) and electron-updater's version comparison in lockstep with the product version — the macOS build rides the `vX.Y.Z` tag (see Phase 4 and the "Desktop Release" workflow).
 
@@ -486,7 +491,7 @@ cd .claude/worktrees/release-vX.Y.Z && pnpm install   # or the pre-push hook die
 # Stage all version-related changes. If Check 6 scaffolded a config migration,
 # also stage apps/server/src/services/core/config-manager.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
-git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json packages/cloud-api/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
+git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json packages/cloud-api/package.json packages/connector-providers/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
 
 git commit -m "$(cat <<'EOF'
 chore(release): vX.Y.Z
@@ -532,6 +537,7 @@ section via a small follow-up PR (this happened on v0.62.0, fixed in #1118).
 ```bash
 pnpm run publish:cli
 pnpm run publish:cloud-api
+pnpm run publish:connector-providers
 ```
 
 The `prepublishOnly` hook in each package builds before publishing.
@@ -542,6 +548,14 @@ version tagged here and absent there leaves the two sides describing different w
 contract publish fails where the CLI succeeded, that is a broken release to finish, not a
 follow-up to file — retry it with the same auth guidance below. It is a small, dependency-free
 package, so nothing about it can fail slowly. (If the publish itself fails — e.g. an expired token — that is a genuine failure: report it and retry per the auth guidance below; do not silently skip it.)
+
+`@dork-labs/connector-providers` publishes **after** `@dork-labs/cloud-api` and is **not** allowed
+to be skipped either, on any release. It depends on `@dork-labs/cloud-api` at the exact same
+version (`pnpm publish` rewrites its `workspace:*` range), so publishing it first would ship a
+package nobody can install until the contract lands. Hosted services install it from public npm at the same
+version as the cloud contract, so a release that publishes one and not the other leaves them
+unable to install a matching pair. If it fails where the others succeeded, that is a broken release
+to finish, not a follow-up to file — retry it with the same auth guidance below.
 
 **npm takes ~10-15 minutes to make the ~19 MB package fetchable.** `+ dorkos@X.Y.Z`
 and exit 0 mean accepted, not live. `publish-docker.yml` waits only ~5 minutes, so

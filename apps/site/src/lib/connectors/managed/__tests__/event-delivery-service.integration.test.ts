@@ -8,7 +8,7 @@ import { applyCurrentManagedMigrations } from './managed-database-fixture';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConnectorEventPayloadProtector } from '@dorkos/connector-providers';
+import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import type {
   ConnectorEventCapability,
   ConnectorVerifiedEvent,

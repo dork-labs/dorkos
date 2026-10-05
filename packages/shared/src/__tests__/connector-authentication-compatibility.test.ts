@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
   projectConnectorAuthentication,
   ConnectorAuthenticationSetupSchema,
-} from '../connector-authentication-setup.js';
+} from '@dork-labs/connector-providers/connector-authentication-setup';
 import { ManagedConnectorCatalogPageSchema } from '../connector-managed-discovery-schemas.js';
 
 // Exact pre-DOR1958 wire shape at57171c4. Keeping this frozen catches compatibility breaks in new schemas.

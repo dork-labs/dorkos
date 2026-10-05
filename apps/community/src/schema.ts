@@ -146,6 +146,8 @@ export const users = pgTable('user', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('emailVerified').notNull().default(false),
   image: text('image'),
+  /** The transaction that last cleared every way into the account (0031); see request-start.ts. */
+  accessClearedXid: customType<{ data: string }>({ dataType: () => 'xid8' })('access_cleared_xid'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 });
@@ -186,7 +188,42 @@ export const accounts = pgTable(
     createdAt: timestamp('createdAt').notNull().defaultNow(),
     updatedAt: timestamp('updatedAt').notNull().defaultNow(),
   },
-  (table) => [index('account_user_idx').on(table.userId)]
+  (table) => [
+    index('account_user_idx').on(table.userId),
+    // One outside identity links to one account (0031).
+    uniqueIndex('account_provider_account_key').on(table.providerId, table.accountId),
+  ]
+);
+/**
+ * A provider sign-in whose email matched an existing account, held until the person proves that
+ * account's password (0031). Only the browser token's hash is stored; single use, 10 minutes.
+ */
+export const pendingSignInLinks = pgTable(
+  'pending_sign_in_links',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    providerId: text('provider_id').notNull(),
+    accountId: text('account_id').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check('pending_sign_in_links_token_hash_check', sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'pending_sign_in_links_provider_id_check',
+      sql`${table.providerId} IN ('google','github','oidc')`
+    ),
+    check(
+      'pending_sign_in_links_account_id_check',
+      sql`char_length(${table.accountId}) BETWEEN 1 AND 255`
+    ),
+    index('pending_sign_in_links_user_idx').on(table.userId),
+    index('pending_sign_in_links_expires_idx').on(table.expiresAt),
+  ]
 );
 /** Better Auth verification codes. */
 export const verifications = pgTable('verification', {
@@ -2070,7 +2107,7 @@ export const noticeOutbox = pgTable(
   (table) => [
     check(
       'notice_outbox_kind_check',
-      sql`${table.kind} IN ('owner_replacement.notice','owner_replacement.reminder','owner_replacement.claim_reissued','owner_replacement.ended','owner_replacement.completed')`
+      sql`${table.kind} IN ('owner_replacement.notice','owner_replacement.reminder','owner_replacement.claim_reissued','owner_replacement.ended','owner_replacement.completed','account.sign_in_linked')`
     ),
     check('notice_outbox_state_check', sql`${table.state} IN ('pending','accepted','failed')`),
     check('notice_outbox_attempts_check', sql`${table.attempts} >= 0`),

@@ -73,16 +73,15 @@ export function createInboxApi(
 }
 
 /**
- * `ctx.requirePerson`: the bar that guards approving an extension, in front of
- * one of the extension's own routes, worded with its name (§7.6). It has the
- * same residuals: with Require login off, a local caller that does not name
- * itself an agent passes, and in any posture the extension's own page code
- * passes.
+ * What `ctx.requirePerson` says when it refuses, worded with the extension's
+ * name. Shared by the in-process bar and the verdict the host computes for an
+ * isolated extension (`isolation/isolated-router.ts`), so both refuse with the
+ * same words.
  *
  * @param extensionName - The extension's manifest name.
  */
-export function createRequirePerson(extensionName: string): RequestHandler {
-  const copy: PersonBarCopy = {
+export function requirePersonCopy(extensionName: string): PersonBarCopy {
+  return {
     error: `Only a person can change ${extensionName}'s settings.`,
     code: 'extension_person_required',
     subject: `${extensionName}'s settings`,
@@ -93,6 +92,19 @@ export function createRequirePerson(extensionName: string): RequestHandler {
       `DorkOS changed nothing. Only a person can change ${extensionName}'s settings. ` +
       `Ask them to do it in DorkOS.`,
   };
+}
+
+/**
+ * `ctx.requirePerson`: the bar that guards approving an extension, in front of
+ * one of the extension's own routes, worded with its name (§7.6). It has the
+ * same residuals: with Require login off, a local caller that does not name
+ * itself an agent passes, and in any posture the extension's own page code
+ * passes.
+ *
+ * @param extensionName - The extension's manifest name.
+ */
+export function createRequirePerson(extensionName: string): RequestHandler {
+  const copy = requirePersonCopy(extensionName);
   return (req, res, next) => {
     if (refuseIfNotAPerson(req, res, copy)) return;
     next();

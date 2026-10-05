@@ -23,6 +23,15 @@ const managedCredentials = credentials.extend({
     ])
     .optional(),
 });
+/**
+ * Composio's managed Slack app also stores Slack's legacy `verification_token`.
+ * Like `client_secret` it is the provider app's own material, so it is checked
+ * for shape and never retained. Accepted for the `slack` toolkit only: on any
+ * other toolkit an unexpected credential key still means the policy is unknown.
+ */
+const managedSlackCredentials = managedCredentials.extend({
+  verification_token: z.string().max(16_384).optional(),
+});
 const toolAccess = z
   .object({
     tools_available_for_execution: z.array(z.string()).max(0).optional(),
@@ -89,8 +98,17 @@ export function projectComposioAuthenticationConfigPolicy(
     envelope.type === 'default' &&
     envelope.is_composio_managed === true &&
     envelope.auth_scheme === 'OAUTH2';
+  const slack =
+    managed &&
+    typeof envelope.toolkit === 'object' &&
+    envelope.toolkit !== null &&
+    (envelope.toolkit as Record<string, unknown>).slug === 'slack';
   const parsed = (
-    managed ? policy.extend({ credentials: managedCredentials.optional() }) : policy
+    managed
+      ? policy.extend({
+          credentials: (slack ? managedSlackCredentials : managedCredentials).optional(),
+        })
+      : policy
   ).safeParse(raw);
   if (!parsed.success) return undefined;
   return {

@@ -127,3 +127,40 @@ export class SessionRootIndex {
     return undefined;
   }
 }
+
+/**
+ * Whether any account already holds a transcript named `sessionId`, in ANY
+ * project folder.
+ *
+ * Asked before a new session is launched under the id DorkOS handed out
+ * (DOR-2712). The per-folder probe can miss a transcript a conversation left
+ * in another folder (it moved, or the caller named another cwd), and launching
+ * under an id already on disk would give two transcripts one id. A taken id is
+ * left to the SDK, which mints its own.
+ *
+ * Walks every project folder of every registered account: a few hundred
+ * `access` calls on a cold launch, the only time it is asked. An account or
+ * folder that cannot be read counts as not holding it.
+ *
+ * @param sessionId - The id a new session would launch under.
+ */
+export async function transcriptIdTaken(sessionId: string): Promise<boolean> {
+  for (const root of resolveClaudeRootSet()) {
+    const projectsRoot = path.join(root, 'projects');
+    let slugs: string[];
+    try {
+      slugs = await fs.readdir(projectsRoot);
+    } catch {
+      continue;
+    }
+    for (const slug of slugs) {
+      try {
+        await fs.access(path.join(projectsRoot, slug, `${sessionId}.jsonl`));
+        return true;
+      } catch {
+        // Not in this folder.
+      }
+    }
+  }
+  return false;
+}

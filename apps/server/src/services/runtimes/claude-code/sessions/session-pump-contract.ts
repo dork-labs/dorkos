@@ -62,9 +62,9 @@ export type Quietness =
   | {
       quiet: true;
       /**
-       * Background shells alive right now. Reported because ending the process
-       * ends them, and the operator is told so (D4) — never because they hold
-       * it open, which they deliberately do not.
+       * Background shells alive right now: always 0 here, because a live shell
+       * holds the process (DOR-2065). Kept so both arms answer the same
+       * question the same way.
        */
       shells: number;
       /** When this process last produced any frame at all, as epoch ms. */
@@ -74,9 +74,9 @@ export type Quietness =
       quiet: false;
       /** The first reason found, in the order {@link SessionPump.quietness} checks them. */
       because: QuietnessBlocker;
-      /** Live tasks that HOLD the process, split by kind. Shells are excluded by design. */
+      /** Live helper agents and other non-shell tasks holding the process, by kind. */
       holding: { agents: number; other: number };
-      /** Background shells alive right now, which hold nothing. */
+      /** Background shells alive right now. They hold the process too (DOR-2065). */
       shells: number;
       /**
        * When this busy spell began, as epoch ms — what the four-hour ceiling is
@@ -102,6 +102,8 @@ export type QuietnessBlocker =
   | 'background-work'
   /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
   | 'delivery-owed'
+  /** A session timer the agent set (CronCreate, ScheduleWakeup, /loop) has not fired yet (DOR-2717). */
+  | 'timer-pending'
   /** Somebody was asked a question and has not answered it. */
   | 'waiting-on-person';
 
@@ -284,6 +286,16 @@ export interface PumpCrash {
   stopRequested?: boolean;
 }
 
+/**
+ * Why a pump was torn down (`SessionPump.teardown`), for whoever decides what
+ * survives it (DOR-2065).
+ *
+ * - `evict` — the session record went away, a dispatch is relaunching the
+ *   process, or a caller ended it for good.
+ * - `shutdown` — the server is stopping; the next boot picks up what is owed.
+ */
+export type PumpTeardownReason = 'evict' | 'shutdown';
+
 /** One message being dispatched into the pump. */
 export interface PumpDispatch {
   /** The person's words, exactly as they will reach the model. */
@@ -342,6 +354,12 @@ export interface SessionPumpOptions {
    */
   hasRuntimeTurnOpen?: () => boolean;
   /**
+   * True while a session timer the agent set has not fired yet (DOR-2717). The
+   * CLI reports pending timers only to its Stop hook, so the dispatch layer that
+   * owns the session answers this; the pump cannot see them on the stream.
+   */
+  hasPendingTimer?: () => boolean;
+  /**
    * Claims a slot under the warm ceiling before a process is booted; throws
    * {@link PumpRefusedError} with `warm-ceiling` when there is none. The
    * registry supplies it, and task 3.4 makes it reclaim the least recently used
@@ -359,6 +377,14 @@ export interface SessionPumpOptions {
    * from it is logged and swallowed, like every other observer here.
    */
   onDispatchGateChange?: () => void;
+  /**
+   * The live process started or stopped holding background work — a helper,
+   * shell, Monitor or other task, or a delivery owed (DOR-2065). Fired only on
+   * the flip, and never once the process is being ended: the frames a dying CLI
+   * sends on its way out describe work that is about to die, not work that
+   * finished. A throw is logged and swallowed.
+   */
+  onBackgroundWorkChange?: (holding: boolean) => void;
   /** Override the grace window between the polite close and the forceful one. */
   drainGraceMs?: number;
   /** Override how long an owed delivery is waited for. Tests only. */

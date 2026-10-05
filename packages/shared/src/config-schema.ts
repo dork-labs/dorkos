@@ -2405,6 +2405,8 @@ export const UserConfigSchema = z.object({
       maxAgentTurnsPerAgentPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsPerAgentPerHour,
       maxAgentTurnsTotalPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsTotalPerHour,
     })),
+  /** Shared browser opt-in. A stored choice does not establish mode readiness. */
+  browser: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
   /**
    * Letting agents on other systems talk to the agents on this one.
    *

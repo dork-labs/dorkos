@@ -153,13 +153,42 @@ describe('reap declines while the process is still working', () => {
     expect(await reapNow(harness.pump)).toBe(false);
   });
 
-  it('proceeds when only background shells are running', async () => {
+  // DOR-2065. A warm process never closes stdin, so its background shells live
+  // on, and when one finishes the CLI wakes the model with the result, as it
+  // does in the bare CLI. Reaping took that wake away: a PR watcher started
+  // before a turn ended died with the process five minutes later, and the chat
+  // never heard back (the 2026-10-05 overnight builders).
+  it('declines while a background shell is running', async () => {
     const harness = await warmPump();
     await runTask(harness, 'local_bash');
 
-    // Shells are reported so the operator can be told they ended, and they hold
-    // nothing: the CLI kills them shortly after stdin closes either way.
-    expect(harness.pump.quietness()).toMatchObject({ quiet: true, shells: 1 });
+    expect(harness.pump.quietness()).toMatchObject({
+      quiet: false,
+      because: 'background-work',
+      holding: { agents: 0, other: 0 },
+      shells: 1,
+    });
+    expect(await reapNow(harness.pump)).toBe(false);
+    expect(harness.pump.isHoldingWork()).toBe(true);
+  });
+});
+
+// DOR-2717. A session timer lives inside the CLI and is no task, so only the
+// Stop hook's report says one is pending. Reaping before it fires loses it.
+describe('a pending session timer holds the process', () => {
+  it('declines to reap while a timer is pending, and counts it as held work', async () => {
+    const harness = await warmPump({ hasPendingTimer: () => true });
+
+    expect(harness.pump.quietness()).toMatchObject({ quiet: false, because: 'timer-pending' });
+    expect(await reapNow(harness.pump)).toBe(false);
+    expect(harness.pump.isHoldingWork()).toBe(true);
+    // A timer alone is reclaimable as a last resort, like a shell.
+    expect(harness.pump.isHoldingOnlyReclaimable()).toBe(true);
+  });
+
+  it('lets the process go once no timer is pending', async () => {
+    const harness = await warmPump({ hasPendingTimer: () => false });
+
     expect(await reapNow(harness.pump)).toBe(true);
   });
 });
@@ -201,6 +230,24 @@ describe('isHelperWorking, the question the stall watchdog asks', () => {
     expect(harness.pump.isHelperWorking()).toBe(true);
 
     vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+    expect(harness.pump.isHelperWorking()).toBe(false);
+  });
+
+  // DOR-2717. A Monitor, a Workflow or a backgrounded MCP task is just as
+  // silent between its steps as a helper, and the watchdog cut them at ten
+  // minutes. Every live task type now excuses a silent turn.
+  it.each(['monitor', 'local_workflow', 'mcp_task'])(
+    'answers yes while a %s task runs',
+    async (type) => {
+      const harness = await warmPump();
+      await runTask(harness, type as BackgroundTaskType);
+      expect(harness.pump.isHelperWorking()).toBe(true);
+    }
+  );
+
+  it('answers no for a background shell alone, so a dev server cannot hide a hung turn', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_bash');
     expect(harness.pump.isHelperWorking()).toBe(false);
   });
 });
