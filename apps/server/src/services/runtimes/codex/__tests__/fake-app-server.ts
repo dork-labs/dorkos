@@ -179,6 +179,8 @@ export class FakeAppServer extends EventEmitter {
   readonly loaded = new Map<string, FakeLoadedThread>();
   /** Replies to server requests this process sent, by request id. */
   readonly replies = new Map<number | string, unknown>();
+  /** Background terminals each thread reports as still running. */
+  readonly backgroundTerminals = new Map<string, unknown[]>();
   /** Set to refuse every request with `Server overloaded` this many times. */
   overloadNext = 0;
   /** Signals passed to `kill`. */
@@ -317,6 +319,11 @@ export class FakeAppServer extends EventEmitter {
             planType: 'pro',
             rateLimitReachedType: null,
           },
+        });
+      case 'thread/backgroundTerminals/list':
+        return this.reply(id, {
+          data: this.backgroundTerminals.get(params.threadId as string) ?? [],
+          nextCursor: null,
         });
       case 'model/list':
         return this.reply(id, { data: [], nextCursor: null });

@@ -383,6 +383,18 @@ export class AppServerCodexTransport implements CodexTransport {
   private watch(process: CodexAppServerProcess): CodexAppServerProcess {
     if (this.watched.has(process)) return process;
     this.watched.add(process);
+    // Work Codex runs past a turn (a background terminal) keeps the process
+    // alive: the reaper asks before closing it (spec §5). Full tracking and
+    // the chat wake are spec phase P3.
+    process.addLivenessProbe(async () => {
+      for (const threadId of this.loader.threadsInProcess(process.key)) {
+        const result = await process.client.request('thread/backgroundTerminals/list', {
+          threadId,
+        });
+        if (result.data.length > 0) return true;
+      }
+      return false;
+    });
     const unsubscribe = process.client.subscribeProcess((notification) =>
       this.onProcessNotification(process, notification)
     );

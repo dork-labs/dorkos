@@ -161,6 +161,33 @@
         "type": "object"
       }
     },
+    "thread/backgroundTerminals/list": {
+      "params": {
+        "$ref": "#/definitions/ThreadBackgroundTerminalsListParams"
+      },
+      "result": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/definitions/ThreadBackgroundTerminal"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Opaque cursor to pass to the next call to continue after the last item. If None, there are no more items to return.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ThreadBackgroundTerminalsListResponse",
+        "type": "object"
+      }
+    },
     "thread/resume": {
       "params": {
         "$ref": "#/definitions/ThreadResumeParams"
@@ -7013,6 +7040,79 @@
         "waitingOnUserInput"
       ],
       "type": "string"
+    },
+    "ThreadBackgroundTerminal": {
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cpuPercent": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cwd": {
+          "$ref": "#/definitions/LegacyAppPathString"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "osPid": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "processId": {
+          "type": "string"
+        },
+        "rssKb": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "command",
+        "cwd",
+        "itemId",
+        "processId"
+      ],
+      "type": "object"
+    },
+    "ThreadBackgroundTerminalsListParams": {
+      "properties": {
+        "cursor": {
+          "description": "Opaque pagination cursor returned by a previous call.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Optional page size.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
     },
     "ThreadClosedNotification": {
       "properties": {

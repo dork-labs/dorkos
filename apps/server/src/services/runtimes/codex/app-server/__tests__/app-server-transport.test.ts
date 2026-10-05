@@ -405,3 +405,20 @@ describe('credits', () => {
     expect(h.host.spawns).toHaveLength(0);
   });
 });
+
+describe('reaping respects background terminals', () => {
+  it('keeps a process whose thread still runs a background terminal', async () => {
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1' }));
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    const threadId = h.bindings[0]!.threadId;
+    fake.backgroundTerminals.set(threadId, [{ itemId: 'bg', processId: 'p1' }]);
+    h.pool.list()[0]!.stale = true;
+    await h.pool.reapOnce();
+    expect(fake.hasExited).toBe(false);
+    expect(fake.requestsOf('thread/backgroundTerminals/list')).toEqual([{ threadId }]);
+    fake.backgroundTerminals.delete(threadId);
+    await h.pool.reapOnce();
+    expect(fake.hasExited).toBe(true);
+  });
+});

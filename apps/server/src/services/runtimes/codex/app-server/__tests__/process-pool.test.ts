@@ -242,3 +242,55 @@ describe('shutdown', () => {
     expect(stubborn[0]!.hasExited).toBe(true);
   });
 });
+
+describe('review fixes', () => {
+  it('never orphans a stale-but-held process: shutdown still stops it', async () => {
+    const { pool, host } = makePool();
+    const old = await pool.acquire(PERSON);
+    const release = old.hold();
+    old.stale = true;
+    const next = await pool.acquire(PERSON);
+    expect(next).not.toBe(old);
+    expect(pool.list()).toContain(old);
+    await pool.reapOnce();
+    expect(host.processes[0]!.hasExited).toBe(false);
+    await pool.shutdown();
+    expect(host.processes[0]!.hasExited).toBe(true);
+    expect(host.processes[1]!.hasExited).toBe(true);
+    release();
+  });
+
+  it('closes a draining process the moment its last hold releases', async () => {
+    const { pool, host } = makePool();
+    const old = await pool.acquire(PERSON);
+    const release = old.hold();
+    old.stale = true;
+    await pool.acquire(PERSON);
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(host.processes[0]!.hasExited).toBe(true);
+    expect(pool.list()).toHaveLength(1);
+  });
+
+  it('does not reap a process whose liveness probe reports background work', async () => {
+    let clock = 0;
+    const { pool, host } = makePool(new FakeAppServerHost(), () => clock);
+    const proc = await pool.acquire(PERSON);
+    let busy = true;
+    proc.addLivenessProbe(async () => busy);
+    clock += 10_000;
+    await pool.reapOnce();
+    expect(host.processes[0]!.hasExited).toBe(false);
+    busy = false;
+    await pool.reapOnce();
+    expect(host.processes[0]!.hasExited).toBe(true);
+  });
+
+  it('stays shut after shutdown: nothing respawns', async () => {
+    const { pool, host } = makePool();
+    await pool.acquire(PERSON);
+    await pool.shutdown();
+    await expect(pool.acquire(PERSON)).rejects.toThrow(/shutting down/);
+    expect(host.spawns).toHaveLength(1);
+  });
+});

@@ -80,6 +80,7 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
     summary: 'auto',
   },
   'turn/interrupt': { threadId: 't', turnId: 'u' },
+  'thread/backgroundTerminals/list': { threadId: 't' },
 };
 
 /** The object keys a zod schema names, recursively, as dotted paths. */

@@ -30,6 +30,7 @@ export const CLIENT_REQUEST_METHODS = [
   'thread/resume',
   'turn/start',
   'turn/interrupt',
+  'thread/backgroundTerminals/list',
 ] as const;
 
 /** Client → server notifications DorkOS sends. */
@@ -308,6 +309,10 @@ export interface ClientMethodMap {
   'thread/resume': { params: ThreadResumeParams; result: ThreadLoadResult };
   'turn/start': { params: TurnStartParams; result: TurnStartResult };
   'turn/interrupt': { params: TurnInterruptParams; result: Record<string, never> };
+  'thread/backgroundTerminals/list': {
+    params: { threadId: string };
+    result: { data: unknown[]; nextCursor?: string | null };
+  };
 }
 
 /** One notification as it arrives. */

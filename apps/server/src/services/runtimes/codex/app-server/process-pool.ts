@@ -14,8 +14,11 @@
  *   transport turns that into an honest error and one `done` per open turn).
  *   Three crashes inside a minute refuse a respawn for 30 s.
  * - **Idle reaping.** A process is live while anything holds it (an open turn,
- *   a pending server request; later, background work). One with no hold for 10
- *   minutes is closed; one marked stale is closed as soon as it has no hold.
+ *   a pending server request) or a liveness probe reports work Codex is still
+ *   running (a background terminal, `thread/backgroundTerminals/list`). One that
+ *   is not live for 10 minutes is closed; one marked stale is closed as soon as
+ *   it is not live. A replaced process is kept in a draining set until then,
+ *   so the reaper and shutdown always see it.
  * - **Shutdown.** End stdin, wait 3 s, SIGTERM, wait 3 s, SIGKILL — only ever
  *   the PID this pool spawned (Hard Rule 7).
  *
@@ -136,6 +139,8 @@ export class CodexAppServerProcess {
   private exitRequested = false;
   private exited = false;
   private readonly exitListeners = new Set<(close: CodexClientClose) => void>();
+  private readonly idleListeners = new Set<() => void>();
+  private readonly livenessProbes = new Set<() => Promise<boolean>>();
   private readonly exitedPromise: Promise<void>;
 
   /**
@@ -206,8 +211,45 @@ export class CodexAppServerProcess {
     const token = Symbol('hold');
     this.holds.add(token);
     return () => {
-      if (this.holds.delete(token) && this.holds.size === 0) this.idleSince = this.now();
+      if (this.holds.delete(token) && this.holds.size === 0) {
+        this.idleSince = this.now();
+        for (const listener of [...this.idleListeners]) listener();
+      }
     };
+  }
+
+  /**
+   * Be told each time the last hold is released.
+   *
+   * @param listener - Called with no arguments.
+   */
+  onIdle(listener: () => void): void {
+    this.idleListeners.add(listener);
+  }
+
+  /**
+   * Register a check the reaper runs before closing an unheld process: work
+   * that lives in Codex rather than in a DorkOS hold (a background terminal
+   * still running after its turn) keeps the process alive when it answers
+   * `true`. A probe that throws counts as live — reaping is never the safe
+   * guess.
+   *
+   * @param probe - Resolves whether something in the process is still live.
+   */
+  addLivenessProbe(probe: () => Promise<boolean>): void {
+    this.livenessProbes.add(probe);
+  }
+
+  /** Whether any liveness probe reports live work (see {@link addLivenessProbe}). */
+  async hasLiveWork(): Promise<boolean> {
+    for (const probe of this.livenessProbes) {
+      try {
+        if (await probe()) return true;
+      } catch {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -293,11 +335,18 @@ export class CodexAppServerPool {
   private readonly now: () => number;
   private readonly timing: CodexPoolTiming;
   private readonly processes = new Map<string, CodexAppServerProcess>();
+  /**
+   * Processes replaced by a newer one for their key or home, kept until
+   * nothing in them is live and then closed. Never forgotten: the reaper,
+   * `closeWhere` and `shutdown` walk these too, so no child is orphaned.
+   */
+  private readonly draining = new Set<CodexAppServerProcess>();
   private readonly booting = new Map<string, Promise<CodexAppServerProcess>>();
   private readonly crashes = new Map<string, number[]>();
   private readonly cooldownUntil = new Map<string, number>();
   private reaper: ReturnType<typeof setInterval> | undefined;
-  private shuttingDown = false;
+  /** Set by {@link shutdown} and never cleared: a stopped pool spawns nothing. */
+  private shutDown = false;
   /** The last version a process reported, for the status card's note. */
   lastSeenVersion: string | null = null;
 
@@ -319,15 +368,20 @@ export class CodexAppServerPool {
    * @throws {CodexCrashLoopError} while the home's crash guard is tripped.
    */
   async acquire(spec: CodexProcessSpec): Promise<CodexAppServerProcess> {
-    if (this.shuttingDown) throw new Error('DorkOS is shutting down.');
+    if (this.shutDown) throw new Error('DorkOS is shutting down.');
     const key = processKeyOf(spec);
     const existing = this.processes.get(key);
     if (existing?.isOpen && !existing.stale) return existing;
     const inFlight = this.booting.get(key);
     if (inFlight) return inFlight;
     // A process for the same home on an older key: drain it.
-    for (const other of this.processes.values()) {
-      if (other.spec.codexHome === spec.codexHome && other.key !== key) other.stale = true;
+    for (const other of [...this.processes.values()]) {
+      if (other.spec.codexHome === spec.codexHome && other.key !== key) {
+        other.stale = true;
+        this.processes.delete(other.key);
+        this.draining.add(other);
+        void this.closeIfIdle(other);
+      }
     }
     const cooldown = this.cooldownUntil.get(spec.codexHome) ?? 0;
     if (this.now() < cooldown) throw new CodexCrashLoopError();
@@ -356,7 +410,17 @@ export class CodexAppServerPool {
       throw err;
     }
     this.lastSeenVersion = proc.version;
+    const replaced = this.processes.get(key);
+    if (replaced && replaced !== proc) {
+      replaced.stale = true;
+      this.draining.add(replaced);
+      void this.closeIfIdle(replaced);
+    }
     this.processes.set(key, proc);
+    // A stale process is closed the moment nothing in it is live (§5).
+    proc.onIdle(() => {
+      if (proc.stale) void this.closeIfIdle(proc);
+    });
     this.ensureReaper();
     logger.info('[CodexAppServer] started', { pid: proc.pid, version: proc.version });
     return proc;
@@ -364,6 +428,7 @@ export class CodexAppServerPool {
 
   private onProcessExit(proc: CodexAppServerProcess, close: CodexClientClose): void {
     if (this.processes.get(proc.key) === proc) this.processes.delete(proc.key);
+    this.draining.delete(proc);
     if (close.kind === 'requested') return;
     const home = proc.spec.codexHome;
     const now = this.now();
@@ -386,21 +451,28 @@ export class CodexAppServerPool {
     }
   }
 
-  /** Every open process (diagnostics and tests). */
+  /** Every process this pool holds, current or draining (diagnostics and tests). */
   list(): CodexAppServerProcess[] {
-    return [...this.processes.values()];
+    return [...this.processes.values(), ...this.draining];
+  }
+
+  private async closeIfIdle(proc: CodexAppServerProcess): Promise<void> {
+    if (proc.isLive || !proc.isOpen) return;
+    if (await proc.hasLiveWork()) return;
+    if (!proc.isLive) await this.close(proc);
   }
 
   /**
    * One reaper pass: close stale processes with no hold, and any with no hold
-   * for the idle window. Never touches a held (live) process.
+   * for the idle window. Never touches a held (live) process, nor one whose
+   * liveness probes report work still running in Codex (a background terminal).
    */
   async reapOnce(): Promise<void> {
     const now = this.now();
-    const victims = this.list().filter(
+    const candidates = this.list().filter(
       (proc) => !proc.isLive && (proc.stale || now - proc.idleSinceMs >= this.timing.idleMs)
     );
-    await Promise.all(victims.map((proc) => this.close(proc)));
+    await Promise.all(candidates.map((proc) => this.closeIfIdle(proc)));
   }
 
   /**
@@ -417,18 +489,18 @@ export class CodexAppServerPool {
   }
 
   private async close(proc: CodexAppServerProcess): Promise<void> {
-    this.processes.delete(proc.key);
+    if (this.processes.get(proc.key) === proc) this.processes.delete(proc.key);
+    this.draining.delete(proc);
     await proc.stop(this.timing.shutdownStepMs);
   }
 
   /** Stop every process (server shutdown and admin restart). */
   async shutdown(): Promise<void> {
-    this.shuttingDown = true;
+    this.shutDown = true;
     if (this.reaper) clearInterval(this.reaper);
     this.reaper = undefined;
     await Promise.allSettled([...this.booting.values()]);
     await Promise.all(this.list().map((proc) => this.close(proc)));
-    this.shuttingDown = false;
   }
 
   private ensureReaper(): void {

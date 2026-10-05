@@ -305,6 +305,15 @@ export class CodexThreadLoader {
     return out;
   }
 
+  /**
+   * The threads loaded in one process.
+   *
+   * @param processKey - The process's pool key.
+   */
+  threadsInProcess(processKey: string): string[] {
+    return [...(this.byProcess.get(processKey)?.keys() ?? [])];
+  }
+
   private recordsFor(process: CodexAppServerProcess): Map<string, LoadedRecord> {
     let records = this.byProcess.get(process.key);
     if (!records) {
