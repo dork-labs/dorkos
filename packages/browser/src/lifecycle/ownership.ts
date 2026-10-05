@@ -417,9 +417,16 @@ export function closeOwned(
   });
   map.set(subject, shared);
   void shared.catch(() => {});
-  void ownOperation(record, () => {
-    const call = subject.close;
-    return Reflect.apply(call, subject, []) as Promise<void>;
+  void ownOperation(record, async () => {
+    if (kind === 'context' && record.supervisor) await record.supervisorStopBarrier;
+    // The supervisor owns persistent-context termination. The controller owns only its
+    // public CDP connection; closing the default context here would race that owner.
+    const resource =
+      kind === 'context' && record.supervisor && record.controllerBrowser
+        ? record.controllerBrowser
+        : subject;
+    const call = resource.close;
+    return Reflect.apply(call, resource, []) as Promise<void>;
   }).then(resolve, (error: unknown) => {
     owner.closeFailed = true;
     reject(error);

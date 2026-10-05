@@ -1,5 +1,13 @@
+import { navigateOwnedInitial } from './lifecycle/initial-navigation.js';
+import { initialNavigationPending } from './lifecycle/initial-navigation-state.js';
+import { currentAuthorityCustody } from './lifecycle/live-custody.js';
 import { createDiagnosticsBudget } from './tabs/diagnostics-budget.js';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import {
+  createDarwinGenerationReturnOwner,
+  type DarwinGenerationReturn,
+  type DarwinGenerationBinding,
+} from './runtime/darwin-generation-return.js';
 import { validateEngineConfiguration } from './configuration.js';
 import {
   parseBrowserBinding,
@@ -9,6 +17,7 @@ import {
   type BrowserResult,
 } from './contracts.js';
 import { parseBrowserId } from './ids.js';
+import { createDarwinEngineProcesses } from './runtime/darwin-engine-processes.js';
 import { hostIdentity } from './runtime/host-identity.js';
 import { acquireBrowser } from './lifecycle/acquisition.js';
 import { closeRecord } from './lifecycle/close.js';
@@ -45,12 +54,38 @@ export interface PrivateBrowserRetirementReceiver {
   readonly browserGeneration: number;
   readonly observation: Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   isOrdinary(): boolean;
+  isAuthorityCurrent(): boolean;
+  navigateInitial(command: unknown): Promise<Readonly<BrowserBinding>>;
+  verifiedBrowserAdminEndpoint(): Readonly<{
+    url: string;
+    root: import('./configuration.js').ProcessIdentity;
+    supervisor: import('./configuration.js').ProcessIdentity;
+  }> | null;
+  verifiedRuntimeBinding(): Readonly<{ runtimeIdentity: string; policyRevision: number }> | null;
   disabled(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   authorityRevoked(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   persistenceFailure(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
+  generationReturned(): Promise<DarwinGenerationReturn | null>;
+  consumeGenerationReturn(token: unknown, binding: DarwinGenerationBinding): boolean;
+}
+/** Original trusted network peer; credentials stay in the private owned composition. */
+export interface PrivateBrowserNetworkPeer {
+  readonly url: string;
+  readonly credentials: Readonly<{ username: string; password: string }>;
+  isCustodyKnown(): boolean;
+  close(): Promise<void>;
+}
+/** Captured before births; cold preparation conveys no ready authority. */
+export interface PrivateBrowserNetworkOwner {
+  bindBeforeLaunch(receiver: PrivateBrowserRetirementReceiver): Promise<PrivateBrowserNetworkPeer>;
+  activateReady(
+    receiver: PrivateBrowserRetirementReceiver,
+    peer: PrivateBrowserNetworkPeer
+  ): Promise<void>;
 }
 /** Trusted server constructor owns both synchronous callbacks before any engine birth. */
 export interface PrivateBrowserBirthOwner {
+  readonly network?: PrivateBrowserNetworkOwner;
   registerBirth(receiver: PrivateBrowserRetirementReceiver): void;
   refuseBirth(receiver: PrivateBrowserRetirementReceiver): void;
 }
@@ -61,6 +96,11 @@ type EngineConstruction =
       owner: PrivateBrowserBirthOwner;
       registerBirth: PrivateBrowserBirthOwner['registerBirth'];
       refuseBirth: PrivateBrowserBirthOwner['refuseBirth'];
+      network?: Readonly<{
+        owner: PrivateBrowserNetworkOwner;
+        bindBeforeLaunch: PrivateBrowserNetworkOwner['bindBeforeLaunch'];
+        activateReady: PrivateBrowserNetworkOwner['activateReady'];
+      }>;
     }>;
 
 /** Existing fixture command surface; this is not the future authenticated server constructor. */
@@ -78,9 +118,22 @@ export function constructOwnedBrowserEngine(
   const refuseBirth = owner.refuseBirth;
   if (typeof registerBirth !== 'function' || typeof refuseBirth !== 'function')
     throw new BrowserLifecycleError('ENGINE_STOPPED');
+  const networkOwner = owner.network;
+  const network = networkOwner
+    ? Object.freeze({
+        owner: networkOwner,
+        bindBeforeLaunch: networkOwner.bindBeforeLaunch,
+        activateReady: networkOwner.activateReady,
+      })
+    : undefined;
+  if (
+    network &&
+    (typeof network.bindBeforeLaunch !== 'function' || typeof network.activateReady !== 'function')
+  )
+    throw new BrowserLifecycleError('ENGINE_STOPPED');
   return constructEngine(
     configuration,
-    Object.freeze({ kind: 'serverOwned', owner, registerBirth, refuseBirth })
+    Object.freeze({ kind: 'serverOwned', owner, registerBirth, refuseBirth, network })
   );
 }
 
@@ -89,9 +142,22 @@ function constructEngine(
   configuration: unknown,
   construction: EngineConstruction
 ): BrowserLifecycleEngine {
-  const config = validateEngineConfiguration(configuration);
+  const validated = validateEngineConfiguration(configuration);
+  const native = validated.nativeJournal
+    ? createDarwinEngineProcesses(validated.nativeJournal.artifact)
+    : null;
+  const config = native ? { ...validated, processes: native.processes } : validated;
+  if (
+    config.network.kind === 'owned' &&
+    (construction.kind !== 'serverOwned' || !construction.network)
+  )
+    throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
   const diagnosticsBudget = createDiagnosticsBudget();
   const records = new Map<string, BrowserRecord>();
+  const generationReturns = new WeakMap<
+    BrowserRecord,
+    ReturnType<typeof createDarwinGenerationReturnOwner>
+  >();
   const opening = new Set<Promise<OpenedResult>>();
   let stopping = false;
   let shutdownPromise: ReturnType<BrowserLifecycleEngine['shutdown']> | undefined;
@@ -129,9 +195,40 @@ function constructEngine(
       browserGeneration: generation,
       observation,
       isOrdinary: () => current() && ordinaryRecord(record),
+      isAuthorityCurrent: () => currentAuthorityCustody(record, current),
+      navigateInitial: (command: unknown) => navigateOwnedInitial(config, record, current, command),
+      verifiedBrowserAdminEndpoint: () => {
+        if (
+          !current() ||
+          !ordinaryRecord(record) ||
+          lifetime.gate.stopped ||
+          lifetime.uncertain ||
+          !record.rootAttributed ||
+          !record.root ||
+          !record.supervisor ||
+          !record.controllerBrowser ||
+          !record.context ||
+          record.supervisor.custody().uncertain ||
+          !record.supervisor.custody().pending
+        )
+          return null;
+        const endpoint = new URL(record.supervisor.reportedEndpointURL);
+        return Object.freeze({
+          url: `http://${endpoint.host}`,
+          root: Object.freeze({ ...record.root }),
+          supervisor: Object.freeze({ ...record.supervisor.reportedSupervisor }),
+        });
+      },
+      verifiedRuntimeBinding: () =>
+        current() && ordinaryRecord(record) && !lifetime.gate.stopped
+          ? (record.verifiedRuntime ?? null)
+          : null,
       disabled: () => retire('disabled'),
       authorityRevoked: () => retire('authorityRevoked'),
       persistenceFailure: () => retire('persistenceFailure'),
+      generationReturned: () => generationReturns.get(record)?.completion ?? Promise.resolve(null),
+      consumeGenerationReturn: (token: unknown, binding: DarwinGenerationBinding) =>
+        current() && (generationReturns.get(record)?.consume(token, binding) ?? false),
     });
   };
   const result = async (
@@ -157,7 +254,7 @@ function constructEngine(
       )
     )
       throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
-    const manager = hostIdentity(process.pid);
+    const manager = native ? await native.identity(process.pid) : hostIdentity(process.pid);
     if (!manager) throw new BrowserLifecycleError('PROCESS_OBSERVATION_UNAVAILABLE');
     const browserId = parseBrowserId(randomBytes(16).toString('base64url'));
     const record: BrowserRecord = {
@@ -211,8 +308,67 @@ function constructEngine(
           stopping ||
           !ordinaryRecord(record) ||
           record.lifetime.gate.stopped ||
-          record.status !== 'opening'
+          record.status !== 'opening',
+        construction.kind === 'serverOwned' && construction.network && birthReceiver
+          ? async () => {
+              const network = construction.network!;
+              const peer = await Reflect.apply(network.bindBeforeLaunch, network.owner, [
+                birthReceiver,
+              ]);
+              record.networkPeer = peer;
+              const close = peer.close;
+              record.networkClose = () => Reflect.apply(close, peer, []);
+              if (
+                !ordinaryRecord(record) ||
+                record.lifetime.gate.stopped ||
+                record.status !== 'opening'
+              ) {
+                record.lifetime.uncertain = true;
+                record.networkClosePromise ??= ownOperation(record, async () => {
+                  await record.networkClose!();
+                  record.networkReturned = true;
+                });
+                void record.networkClosePromise.catch(() => {
+                  record.lifetime.closeFailed = true;
+                });
+                throw new BrowserLifecycleError('ENGINE_STOPPED');
+              }
+              const custody = peer.isCustodyKnown;
+              record.networkCustody = () => Reflect.apply(custody, peer, []) === true;
+              const endpoint = new URL(peer.url);
+              if (
+                !Object.isFrozen(peer) ||
+                endpoint.protocol !== 'http:' ||
+                endpoint.hostname !== '127.0.0.1' ||
+                !endpoint.port ||
+                endpoint.origin !== peer.url ||
+                typeof close !== 'function' ||
+                typeof custody !== 'function' ||
+                !peer.credentials ||
+                peer.credentials.username !== 'dorkos' ||
+                typeof peer.credentials.password !== 'string' ||
+                peer.credentials.password.length < 1 ||
+                peer.credentials.password.length > 4096
+              )
+                throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
+              record.networkEndpoint = Object.freeze({
+                url: peer.url,
+                credentials: Object.freeze({ ...peer.credentials }),
+              });
+            }
+          : undefined
       );
+      // Generation returns belong to the opt-in native journal composition, not legacy fixtures.
+      if (config.nativeJournal && record.reservation && !generationReturns.has(record)) {
+        generationReturns.set(
+          record,
+          createDarwinGenerationReturnOwner(
+            records,
+            record,
+            createHash('sha256').update(JSON.stringify(config.runtime)).digest('hex')
+          )
+        );
+      }
       if (
         stopping ||
         !ordinaryRecord(record) ||
@@ -220,6 +376,21 @@ function constructEngine(
         record.lifetime.gate.stopped
       )
         throw new BrowserLifecycleError('ENGINE_STOPPED');
+      if (config.network.kind === 'owned') {
+        if (
+          construction.kind !== 'serverOwned' ||
+          !construction.network ||
+          !birthReceiver ||
+          !record.networkPeer ||
+          !birthReceiver.isAuthorityCurrent()
+        )
+          throw new BrowserLifecycleError('ENGINE_STOPPED');
+        const network = construction.network;
+        await ownOperation(record, () =>
+          Reflect.apply(network.activateReady, network.owner, [birthReceiver, record.networkPeer])
+        );
+        if (!birthReceiver.isAuthorityCurrent()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+      }
       const first = record.tabs.values().next().value;
       if (!first) throw new BrowserLifecycleError('PAGE_UNAVAILABLE');
       if (!record.lifetime.inputs.get(first)?.ready)
@@ -284,7 +455,8 @@ function constructEngine(
       const command = parseBrowserCommand(value);
       if (command.kind !== 'capture') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
       const record = find(command.binding.browserId, command.binding.browserGeneration);
-      if (!ordinaryRecord(record)) throw new BrowserLifecycleError('BROWSER_STOPPED');
+      if (!ordinaryRecord(record) || initialNavigationPending(record))
+        throw new BrowserLifecycleError('BROWSER_STOPPED');
       const tab = record.tabs.get(command.binding.tabId);
       const page = tab?.page;
       const capture = await ownOperation(record, () => captureTab(config, record, command)).catch(

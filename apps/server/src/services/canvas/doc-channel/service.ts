@@ -5,16 +5,19 @@ import {
   CanvasChannelReplayResponseSchema,
   type CanvasChannelEventReceipt,
   type CanvasChannelReplayResponse,
+  type CanvasChannelRouting,
 } from '@dorkos/shared/canvas-channel-schemas';
 import { DocChannelIngest } from './ingest.js';
 import { DocIngestRefusal } from './ingest-types.js';
 import type { DocChannelGrants } from './grants.js';
+import { DocRouteGrantError } from './grant-policy.js';
 import { replayDocChannel } from './replay.js';
 import type { DocDeliveryRow } from './store.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
 import {
   DocChannelAuthorization,
   DocChannelNotFoundError,
+  DocChannelArchivedError,
   type DocChannelActor,
 } from './authorization.js';
 import { DocChannelStore, type DocChannelRow } from './store.js';
@@ -147,10 +150,59 @@ export class DocChannelService {
     limit = 200
   ): Promise<CanvasChannelReplayResponse> {
     await this.authorization.require(documentId, actor);
+    let routingAvailable = true;
+    if (this.events) {
+      try {
+        this.events.grants.refreshAuthority(documentId, actor);
+      } catch (error) {
+        if (!(error instanceof DocRouteGrantError) && !(error instanceof DocChannelArchivedError))
+          throw error;
+        routingAvailable = false;
+      }
+    }
+    let routing: CanvasChannelRouting = {
+      enabled: false,
+      approvedEventTypes: [],
+      destinationLabel: 'Actions unavailable',
+    };
     const snapshot = replayDocChannel(
       this.channels,
       (tx) => {
         const identity = this.authorization.requireCurrent(documentId, actor, false, tx);
+        if (routingAvailable && this.events) {
+          try {
+            const routes = this.events.grants.getCurrentRoutes(documentId, undefined, actor, tx);
+            // Cross-target Relay and room admission remain unavailable until their distinct transport gates land.
+            const ready = routes.filter(
+              (row) =>
+                row.grantId &&
+                !row.reason &&
+                (row.route.to === 'log' ||
+                  (identity.scope.startsWith('session:') &&
+                    row.targetSessionId !== null &&
+                    row.targetSessionId !== undefined &&
+                    this.documents.lifecycle.resolveScope(`session:${row.targetSessionId}`) ===
+                      identity.scope))
+            );
+            const types = [...new Set(ready.flatMap((row) => row.allowedTypes ?? []))];
+            routing = {
+              enabled: types.length > 0,
+              approvedEventTypes: types,
+              destinationLabel: ready.some((row) => row.route.to !== 'log')
+                ? 'This document’s agent'
+                : ready.length
+                  ? 'Saved in this document'
+                  : 'Approval needed',
+            };
+          } catch (error) {
+            if (
+              !(error instanceof DocRouteGrantError) &&
+              !(error instanceof DocChannelArchivedError)
+            )
+              throw error;
+          }
+        }
+
         return {
           ...identity,
           documentId: identity.id,
@@ -164,6 +216,7 @@ export class DocChannelService {
     );
     return CanvasChannelReplayResponseSchema.parse({
       ...snapshot,
+      routing,
       receipts: snapshot.receipts.map((row) => ({
         receipt: { id: row.id, status: 'recorded', docSeq: row.docSeq },
         deliveries: row.deliveries.map(publicDelivery),

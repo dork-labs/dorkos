@@ -24,6 +24,10 @@ cloud-api: the `community-pg` job in `test.yml`, `apps/community/Dockerfile`
 beside `packages/cloud-api/`, for the same reason that one is there: the image
 builds it before shared. Its fixture suite pins the new entry.
 
+`scripts/check-copy-spec-drift.ts` adds `packages/connector-providers/src` to
+its copy roots. Without it, the move reads as the connector labels being
+deleted from the app, and the advisory check goes red on copy that still renders.
+
 Hygiene, not an experiment: no gate timing or catch rate should move beyond the
 few seconds one more `tsc` costs. Revert the order change only together with the
 move itself; without it, those jobs fail to build shared at all.

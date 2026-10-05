@@ -1109,14 +1109,24 @@ export interface Transport
   mediaUrl(cwd: string, filePath: string): string | null;
 
   /** Record a document event; its receipt does not imply a completed agent turn. */
-  ingestCanvasEvent(documentId: string, event: PageEvent): Promise<CanvasChannelEventReceipt>;
+  ingestCanvasEvent(
+    documentId: string,
+    event: PageEvent,
+    condition: { readonly expectedGeneration: string },
+    signal: AbortSignal
+  ): Promise<CanvasChannelEventReceipt>;
   /** Read a bounded document event page and current state. Honor resetRequired before retrying old inputs. */
   getCanvasChannel(
     documentId: string,
     query?: { since?: number; limit?: number }
   ): Promise<CanvasChannelReplayResponse>;
   /** Inspect a retained event receipt without replaying or launching work. */
-  getCanvasEventReceipt(documentId: string, eventId: string): Promise<CanvasChannelEventReceipt>;
+  getCanvasEventReceipt(
+    documentId: string,
+    eventId: string,
+    condition: { readonly expectedGeneration: string },
+    signal: AbortSignal
+  ): Promise<CanvasChannelEventReceipt>;
 
   // --- Session canvas (server-owned; spec `canvas-agent-seat` §1.6) ---
 

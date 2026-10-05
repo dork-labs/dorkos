@@ -1,3 +1,4 @@
+import { initialNavigationPending } from './initial-navigation-state.js';
 import type { BrowserBinding, BrowserCommand } from '../contracts.js';
 import type { BrowserRecord } from './records.js';
 import { sameBinding } from '../input/binding.js';
@@ -13,6 +14,7 @@ export function submitInput(
   signal?: AbortSignal
 ): Promise<InputResult> {
   try {
+    if (initialNavigationPending(record)) throw new BrowserLifecycleError('STALE_BINDING');
     const slot = readyInput(record, command.binding);
     if (slot.resetPromise) throw new BrowserLifecycleError('STALE_BINDING');
     const submit = slot.handle!.submit;
@@ -35,6 +37,8 @@ export function submitInput(
 
 /** Coalesce reset with synchronous child publication before its first drain; failures retire admission. */
 export function resetInput(record: BrowserRecord, binding: BrowserBinding): Promise<ResetResult> {
+  if (initialNavigationPending(record))
+    return Promise.resolve(Object.freeze({ binding, status: 'stopped' }));
   const slot = readyInput(record, binding);
   if (slot.resetPromise) return slot.resetPromise;
   let resolve!: (result: ResetResult) => void;

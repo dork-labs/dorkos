@@ -7,7 +7,7 @@ import {
   checkIngestCapacity,
   protectedCapacityQuery,
   protectedEventSql,
-} from '../accounting.js';
+} from '../current/accounting.js';
 import { DocIngestRefusal } from '../ingest-types.js';
 
 const NOW = '2026-10-01T12:00:00.000Z';

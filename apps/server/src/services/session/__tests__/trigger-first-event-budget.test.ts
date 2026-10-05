@@ -79,6 +79,34 @@ async function flush(): Promise<void> {
 const CANONICAL_ID_WAIT_MS = 5_000;
 
 describe('the trigger seams hand the stall guard a first-event window', () => {
+  it('retires the losing canonical-id deadline after the original first event and turn settle', async () => {
+    const releaseLock = vi.fn();
+    const projector = getOrCreateProjector(SESSION);
+    const result = await triggerTurn({
+      sessionId: SESSION,
+      clientId: CLIENT,
+      content: 'finish without retaining a deadline',
+      projector,
+      deps: {
+        acquireLock: () => true,
+        releaseLock,
+        sendMessage: async function* () {
+          yield { type: 'done', data: { sessionId: SESSION } };
+        },
+        interruptQuery: async () => mockInterruptReceipt('acked'),
+        getInternalSessionId: () => SESSION,
+        rekeyProjector: () => {},
+        getCapabilities: () => ({ nativeContext: [] }) as unknown as RuntimeCapabilities,
+      },
+    });
+    expect(result).toEqual({ accepted: true, canonicalId: SESSION });
+    await flush();
+    expect(releaseLock).toHaveBeenCalledTimes(1);
+    disposeProjector(SESSION);
+    // No clock advancement: the original five-second loser must already be cancelled.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('ends a turn that never yields at the first-event budget, visibly', async () => {
     const interruptQuery = vi.fn(async () => mockInterruptReceipt('acked'));
     const deps: TriggerTurnDeps = {

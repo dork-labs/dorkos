@@ -1,4 +1,4 @@
-import { binding, type EgressBinding } from '../settings.js';
+import { binding, type EgressBinding, type EgressPolicyOptions } from '../settings.js';
 import { BrokerError } from './errors.js';
 import { brokerLimits, type BrokerLimits } from './limits.js';
 import { checkedClock, bounded } from './clock.js';
@@ -17,6 +17,20 @@ export interface RunHandle {
 export interface Permit {
   readonly kind: 'broker-permit';
 }
+/** Private original engine receiver; serialized readiness fields cannot stand in for it. */
+export interface PreparedRunReceiver {
+  readonly browserId: string;
+  readonly browserGeneration: number;
+  isAuthorityCurrent(): boolean;
+}
+/** Expected trusted configuration, never a positive observation of a pending browser. */
+export interface RunPreparation {
+  readonly runtimeIdentity: string;
+  readonly authorizationEpoch: number;
+  readonly policyRevision: number;
+  readonly inventoryRevision: number;
+  readonly receiver: PreparedRunReceiver;
+}
 interface RunRecord {
   binding: Readonly<EgressBinding>;
   runtime: string;
@@ -25,7 +39,9 @@ interface RunRecord {
   inventory: number;
   sequence: number;
   deadline: number;
-  state: 'active' | 'suspended' | 'terminal';
+  state: 'prepared' | 'active' | 'suspended' | 'terminal';
+  receiver?: PreparedRunReceiver;
+  ready?: () => boolean;
   listeners: Set<(state: 'suspended' | 'terminal') => void>;
   renewing: boolean;
   charge: ReturnType<ReturnType<typeof createLedger>['reserve']>;
@@ -48,6 +64,7 @@ export function createBrokerIssuer(options: {
   now: () => number;
   limits?: Partial<Record<keyof BrokerLimits, number>>;
 }) {
+  const readPreparedPolicy = options.ports?.readPreparedPolicy;
   const limits = brokerLimits(options.limits);
   const ledger = createLedger(limits);
   const runs = new Map<RunHandle, RunRecord>();
@@ -63,7 +80,7 @@ export function createBrokerIssuer(options: {
     const r = runs.get(run);
     if (!r) return;
     if (r.state === 'terminal') return;
-    r.state = terminal ? 'terminal' : 'suspended';
+    r.state = terminal || r.state === 'prepared' ? 'terminal' : 'suspended';
     invalidate(run);
     for (const close of [...r.listeners]) {
       try {
@@ -134,6 +151,20 @@ export function createBrokerIssuer(options: {
     });
   };
   const validate = (a: AuthorityObservation, b: EgressBinding) => authoritySnapshot(a, b, now());
+  const checkPrepared = (run: RunHandle, receiver: PreparedRunReceiver) => {
+    const r = get(run);
+    try {
+      if (r.state !== 'prepared' || r.receiver !== receiver) throw new BrokerError('CLOSED');
+      if (now() >= r.deadline) throw new BrokerError('EXPIRED');
+      const i = inventory();
+      if (r.state !== 'prepared' || (!readPreparedPolicy && i.revision !== r.inventory))
+        throw new BrokerError('AUTHORITY_REFUSED');
+      return Object.freeze({ binding: r.binding, deadline: r.deadline });
+    } catch (error) {
+      suspend(run, true);
+      throw error;
+    }
+  };
   const expirePermits = () => {
     const current = now();
     for (const [permit, p] of permits)
@@ -142,22 +173,27 @@ export function createBrokerIssuer(options: {
         ledger.release(p.charge);
       }
   };
-  const read = async (b: EgressBinding) => {
+  const read = async (b: EgressBinding, parent?: { run: RunHandle; record: RunRecord }) => {
     if (!options.ports) throw new BrokerError('UNAVAILABLE');
     const charge = ledger.reserve('permit');
     const done = ledger.pending(charge);
+    const parentDone = parent ? ledger.pending(parent.record.charge) : () => {};
+    const returned = () => {
+      done();
+      parentDone();
+      ledger.release(charge);
+      if (
+        parent &&
+        parent.record.state === 'terminal' &&
+        !parent.record.renewing &&
+        !parent.record.listeners.size &&
+        ledger.release(parent.record.charge)
+      )
+        runs.delete(parent.run);
+    };
     const abort = new AbortController();
     const task = Promise.resolve().then(() => options.ports!.readAuthority(b, abort.signal));
-    task.then(
-      () => {
-        done();
-        ledger.release(charge);
-      },
-      () => {
-        done();
-        ledger.release(charge);
-      }
-    );
+    task.then(returned, returned);
     try {
       const a = await bounded(task, limits.authorityMs);
       return validate(a, b);
@@ -179,6 +215,118 @@ export function createBrokerIssuer(options: {
     ledger,
     now,
     inventory,
+    prepareRun(
+      context: EgressBinding,
+      preparation: RunPreparation,
+      ttl = limits.leaseMs
+    ): RunHandle {
+      const b = binding(context);
+      if (
+        !options.ports ||
+        typeof preparation.runtimeIdentity !== 'string' ||
+        !preparation.runtimeIdentity.length ||
+        preparation.runtimeIdentity.length > 128 ||
+        ![
+          preparation.authorizationEpoch,
+          preparation.policyRevision,
+          preparation.inventoryRevision,
+        ].every((value) => Number.isSafeInteger(value) && value >= 0) ||
+        !Number.isSafeInteger(ttl) ||
+        ttl <= 0 ||
+        ttl > limits.leaseMs
+      )
+        throw new BrokerError('AUTHORITY_REFUSED');
+      const receiver = preparation.receiver;
+      const ready = receiver.isAuthorityCurrent;
+      if (
+        typeof ready !== 'function' ||
+        receiver.browserId !== b.browserId ||
+        receiver.browserGeneration !== b.browserGeneration
+      )
+        throw new BrokerError('AUTHORITY_REFUSED');
+      const i = inventory();
+      if (i.revision !== preparation.inventoryRevision) throw new BrokerError('AUTHORITY_REFUSED');
+      const deadline = now() + ttl;
+      if (!Number.isSafeInteger(deadline)) throw new BrokerError('EXPIRED');
+      const charge = ledger.reserve('principal');
+      const run = Object.freeze({ kind: 'retained-run' as const });
+      ledger.bindBrowser(
+        run,
+        JSON.stringify([b.ownerId, b.workspaceId, b.browserId, b.browserGeneration])
+      );
+      runs.set(run, {
+        binding: b,
+        runtime: preparation.runtimeIdentity,
+        epoch: preparation.authorizationEpoch,
+        policy: preparation.policyRevision,
+        inventory: preparation.inventoryRevision,
+        receiver,
+        ready: () => Reflect.apply(ready, receiver, []) === true,
+        deadline,
+        sequence: 0,
+        state: 'prepared',
+        listeners: new Set(),
+        renewing: false,
+        charge,
+      });
+      return run;
+    },
+    checkPrepared,
+    async activatePrepared(
+      run: RunHandle,
+      receiver: PreparedRunReceiver,
+      installPolicy?: (policy: EgressPolicyOptions) => void
+    ) {
+      checkPrepared(run, receiver);
+      const r = get(run);
+      if (r.renewing) throw new BrokerError('PERMIT_REFUSED');
+      r.renewing = true;
+      try {
+        if (!r.ready?.()) throw new BrokerError('AUTHORITY_REFUSED');
+        checkPrepared(run, receiver);
+        const sealedPolicy = readPreparedPolicy?.call(options.ports, r.binding, receiver);
+        if (
+          readPreparedPolicy &&
+          (!sealedPolicy || !installPolicy || sealedPolicy.revision !== r.policy)
+        )
+          throw new BrokerError('AUTHORITY_REFUSED');
+        const finalInventory = inventory();
+        const a = await read(r.binding, { run, record: r });
+        checkPrepared(run, receiver);
+        const raw = options.ports?.readCurrent(r.binding);
+        if (!raw) throw new BrokerError('AUTHORITY_REFUSED');
+        const current = validate(raw, r.binding);
+        for (const observed of [a, current])
+          if (
+            observed.runtimeIdentity !== r.runtime ||
+            observed.authorizationEpoch !== r.epoch ||
+            observed.policyRevision !== r.policy ||
+            observed.inventoryRevision !== finalInventory.revision
+          )
+            throw new BrokerError('AUTHORITY_REFUSED');
+        const deadline = Math.min(
+          r.deadline,
+          expiry(a, limits.leaseMs),
+          expiry(current, limits.leaseMs)
+        );
+        if (!r.ready?.()) throw new BrokerError('AUTHORITY_REFUSED');
+        checkPrepared(run, receiver);
+        if (inventory().revision !== finalInventory.revision)
+          throw new BrokerError('AUTHORITY_REFUSED');
+        if (sealedPolicy) installPolicy!(sealedPolicy);
+        r.inventory = finalInventory.revision;
+        r.deadline = deadline;
+        r.state = 'active';
+        check(run);
+      } catch (error) {
+        suspend(run, true);
+        throw error;
+      } finally {
+        r.renewing = false;
+        if (r.state === 'terminal' && !r.listeners.size && ledger.release(r.charge))
+          runs.delete(run);
+      }
+    },
     async retainRun(context: EgressBinding, ttl = limits.leaseMs): Promise<RunHandle> {
       const b = binding(context);
       const charge = ledger.reserve('principal');

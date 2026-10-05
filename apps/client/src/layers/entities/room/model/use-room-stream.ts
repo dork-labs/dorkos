@@ -20,7 +20,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
-import { isFatalStreamError, streamManager } from '@/layers/shared/lib/transport';
+import {
+  isFatalStreamError,
+  streamManager,
+  openOwnedRoomDocStream,
+} from '@/layers/shared/lib/transport';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { mergeRoomReactions } from '../lib/reactions';
@@ -449,6 +453,8 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
     if (roomId === null || !hydrated) return;
 
     const controller = new AbortController();
+    let cycleLive = true;
+    let currentOwned: ReturnType<typeof openOwnedRoomDocStream> | undefined;
 
     void (async () => {
       // A fresh subscription cycle is starting, so no room is dead right now.
@@ -474,7 +480,7 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         setStalledRoomId((held) => (held === roomId ? null : held));
       };
 
-      while (!controller.signal.aborted) {
+      while (cycleLive && !controller.signal.aborted) {
         const openedAt = Date.now();
         // The wait is over and a subscription is about to exist. Cleared HERE
         // rather than once the stream has proved itself, because proof takes up
@@ -494,18 +500,31 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         // window is the other, and it is the one that takes the notice back down
         // over a quiet room whose server has come back.
         const stable = setTimeout(declareHealthy, SSE_RESILIENCE.STABILITY_WINDOW_MS);
+        let owned: ReturnType<typeof openOwnedRoomDocStream> | undefined;
         try {
-          const stream = transport.subscribeRoom(
+          owned = openOwnedRoomDocStream(
+            transport,
             roomId,
             cursorFromCache(queryClient, roomId),
             controller.signal
           );
-          for await (const event of stream) {
-            if (controller.signal.aborted) return;
+          currentOwned = owned;
+          if (!cycleLive || controller.signal.aborted) {
+            owned.retire();
+            return;
+          }
+          for await (const event of owned.stream) {
+            if (!cycleLive || controller.signal.aborted) return;
             // Anything arriving is proof the socket is alive, which is the fast
             // path out of a stall — a busy room recovers on its first message
             // rather than ten seconds later.
             declareHealthy();
+            if (!owned.current()) return;
+            if (event.type === 'canvas_event' || event.type === 'canvas_channel_snapshot') {
+              owned.publish(event);
+              if (!owned.current()) return;
+              continue;
+            }
             // Signals (typing, presence) are live-only and carry no `seq`, so
             // they never enter the history — they go to the presence store,
             // which expires them rather than keeping them.
@@ -613,7 +632,11 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             return;
           }
         } finally {
-          clearTimeout(stable);
+          try {
+            owned?.retire();
+          } finally {
+            clearTimeout(stable);
+          }
         }
         if (controller.signal.aborted) return;
 
@@ -639,7 +662,14 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
       }
     })();
 
-    return () => controller.abort();
+    return () => {
+      cycleLive = false;
+      try {
+        currentOwned?.retire();
+      } finally {
+        controller.abort();
+      }
+    };
   }, [roomId, hydrated, transport, queryClient, attempt]);
 
   return {

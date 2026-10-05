@@ -1,3 +1,4 @@
+import { createDarwinEngineProcesses } from '../runtime/darwin-engine-processes.js';
 import { assertDirectory } from '../profiles/owned-directory.js';
 import { rm } from 'node:fs/promises';
 import type { EngineConfiguration, ProcessIdentity } from '../configuration.js';
@@ -65,7 +66,14 @@ async function observeGone(
         Promise.all(
           record.identities.map((identity) =>
             ownOperation(record, () => {
-              const observe = config.processes.observe;
+              const observer =
+                record.supervisor &&
+                config.nativeJournal &&
+                !record.supervisor.custody().pending &&
+                !record.supervisor.custody().uncertain
+                  ? createDarwinEngineProcesses(config.nativeJournal.artifact).observeTerminated
+                  : config.processes.observe;
+              const observe = observer;
               if (performance.now() >= end) throw new Error();
               return Reflect.apply(observe, config.processes, [
                 identity,
@@ -92,6 +100,11 @@ async function observeGone(
 function custodySettled(record: BrowserRecord): boolean {
   const owner = record.lifetime;
   return (
+    (!record.networkPeer || record.networkReturned === true) &&
+    !record.supervisor?.custody().pending &&
+    !record.supervisor?.custody().uncertain &&
+    !record.journal?.custody().pending &&
+    !record.journal?.custody().uncertain &&
     !owner.uncertain &&
     !owner.closeFailed &&
     !owner.releasePending &&
@@ -114,10 +127,6 @@ async function performClose(
     ? snapshot(config, record, Math.min(end, performance.now() + 1000))
     : Promise.resolve();
   void observed.catch(() => {});
-  const context = record.context
-    ? closeOwned(record, 'context', record.context)
-    : Promise.resolve();
-  const proxy = record.proxy ? closeOwned(record, 'proxy', record.proxy) : Promise.resolve();
   const inputs = Promise.all([
     ...[...record.tabs.values()].map((tab) => tab.tail),
     ...[...owner.inputs.values()].map(async (slot) => {
@@ -127,6 +136,41 @@ async function performClose(
     }),
   ]);
   void inputs.catch(() => {});
+  if (record.supervisor) {
+    // Enter all original closes now, but preserve the attributable snapshot and exact
+    // input-session detach before asking the separate owner to terminate Chromium.
+    record.supervisorStopBarrier = until(
+      Promise.all([observed, inputs]),
+      inputEnd,
+      'CONTEXT_CLOSE_TIMEOUT'
+    ).then(
+      () => {},
+      () => {
+        owner.uncertain = true;
+      }
+    );
+  }
+  const context = record.context
+    ? closeOwned(record, 'context', record.context)
+    : Promise.resolve();
+  const network = record.networkPeer
+    ? (record.networkClosePromise ??= ownOperation(record, async () => {
+        if (!record.networkClose) throw new Error('NETWORK_CUSTODY_UNAVAILABLE');
+        await record.networkClose();
+        record.networkReturned = true;
+      }))
+    : Promise.resolve();
+  void network.catch(() => {
+    record.lifetime.closeFailed = true;
+  });
+  const proxy = record.proxy ? closeOwned(record, 'proxy', record.proxy) : Promise.resolve();
+  const connection =
+    !record.context && record.controllerBrowser
+      ? ownOperation(record, () => record.controllerBrowser!.close())
+      : Promise.resolve();
+  void connection.catch(() => {
+    owner.uncertain = true;
+  });
   let observationFailed = record.setupCleanupUncertain === true;
   try {
     await until(observed, end, 'PROCESS_OBSERVATION_UNAVAILABLE');
@@ -147,6 +191,42 @@ async function performClose(
     await until(proxy, end, 'FIXTURE_PROXY_CLOSE_FAILED');
   } catch {
     if (!owner.closeFailed) owner.uncertain = true;
+  }
+  try {
+    await until(connection, end, 'CONTEXT_CLOSE_TIMEOUT');
+  } catch {
+    owner.uncertain = true;
+  }
+  try {
+    await until(network, end, 'NETWORK_CLOSE_FAILED');
+  } catch {
+    owner.uncertain = true;
+  }
+  if (record.journal) {
+    const journal = ownOperation(record, () => record.journal!.stop(record.launchEntered));
+    void journal.catch(() => {});
+    try {
+      const result = await until(journal, end, 'PROCESS_OBSERVATION_UNAVAILABLE');
+      if (result === 'campaign-closed-gapped') {
+        const manager = await until(
+          ownOperation(record, () =>
+            config.processes.observe(record.manager, new AbortController().signal)
+          ),
+          end,
+          'PROCESS_OBSERVATION_UNAVAILABLE'
+        );
+        if (
+          !record.supervisor ||
+          record.supervisor.custody().pending ||
+          record.supervisor.custody().uncertain ||
+          manager.status !== 'alive'
+        )
+          observationFailed = true;
+      } else if (result !== 'campaign-closed' && result !== 'recorded-gone')
+        observationFailed = true;
+    } catch {
+      observationFailed = true;
+    }
   }
   let outcome: CloseOutcome =
     observationFailed || owner.uncertain
@@ -202,6 +282,8 @@ async function performClose(
   if (outcome.cleanup === 'observed') {
     record.tabs.clear();
     owner.inputs.clear();
+    record.supervisor = undefined;
+    record.controllerBrowser = undefined;
     record.context = undefined;
     record.proxy = undefined;
     record.reservation = undefined;

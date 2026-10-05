@@ -16,3 +16,7 @@ export {
   type DurableStreamConnection,
   type StreamManagerListeners,
 } from './stream-manager';
+
+export { subscribeDocChannelNotifications } from './doc-channel-notifications';
+
+export { openOwnedRoomDocStream } from './doc-channel-ownership';

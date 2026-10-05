@@ -4,8 +4,8 @@ import type {
   CanvasChannelFrame,
   CanvasChannelJsonValue,
 } from '@dorkos/shared/canvas-channel-schemas';
-import { protectedEventSql } from './accounting.js';
-import { DocChannelStore, DocChannelClosedError } from './store.js';
+import { protectedEventSql } from './current/accounting.js';
+import { DocChannelStore, DocChannelClosedError, DocChannelCorruptionError } from './store.js';
 import type { DocIngestAuthority } from './ingest-types.js';
 
 /** Snapshot includes separate payload/receipt floors and at most one bounded page of receipt summaries. */
@@ -74,9 +74,30 @@ export function replayDocChannel(
     const failed =
       !!tx.get(sql`SELECT 1 FROM canvas_doc_deliveries WHERE document_id=${access.documentId}
       AND status IN ('failed','expired','unavailable') LIMIT 1`);
+    // Compile/read each bounded selection once. These maps live only inside
+    // this page's original transaction; authority and rows are reread next page.
+    const selectedIds = [...new Set([...rows, ...receipts].map(({ eventId }) => eventId))];
+    const retainedEvents = new Map(
+      store.readReplayEvents(access.documentId, selectedIds, tx).map((row) => [row.eventId, row])
+    );
+    const readRetainedEvent = (eventId: string) => {
+      const row = retainedEvents.get(eventId);
+      if (!row) throw new DocChannelCorruptionError('canvas_doc_events', eventId);
+      return row;
+    };
+    const retainedDeliveries = new Map<string, ReturnType<DocChannelStore['listDeliveries']>>();
+    for (const row of store.readReplayDeliveries(
+      access.documentId,
+      receipts.map(({ eventId }) => eventId),
+      tx
+    )) {
+      const outcomes = retainedDeliveries.get(row.eventId) ?? [];
+      outcomes.push(row);
+      retainedDeliveries.set(row.eventId, outcomes);
+    }
     return {
       events: rows.map(({ eventId }) => {
-        const row = store.getEvent(access.documentId, eventId, tx)!;
+        const row = readRetainedEvent(eventId);
         return {
           type: 'canvas_event' as const,
           documentId: row.documentId,
@@ -98,12 +119,12 @@ export function replayDocChannel(
       receiptRetentionFloor: channel.receiptRetentionFloor,
       resetRequired,
       receipts: receipts.map(({ eventId }) => {
-        const row = store.getEvent(access.documentId, eventId, tx)!;
+        const row = readRetainedEvent(eventId);
         return {
           id: row.eventId,
           docSeq: row.docSeq,
           payloadAvailable: row.payloadPrunedAt === null,
-          deliveries: store.listDeliveries(access.documentId, row.eventId, tx),
+          deliveries: retainedDeliveries.get(row.eventId) ?? [],
         };
       }),
       health: {

@@ -545,3 +545,99 @@ it('candidate: forged matching cleanup shape cannot enter exact owned transport'
   expect(h.session.send).toHaveBeenCalledTimes(0);
   expect(attempt.entered).toBe(false);
 });
+
+it('distinguishes original known native custody from a pending observation DTO', async () => {
+  const h = fixture();
+  await h.ready;
+  const original = h.owner;
+  expect(original.isCustodyKnown()).toBe(true);
+  expect(h.input.isCustodyKnown()).toBe(true);
+  const pending = deferred<void>();
+  h.keyboard.insertText.mockImplementation(() => pending.promise);
+  const call = original.native.dispatch({ kind: 'text', text: 'FIXTURE' }, signal());
+  expect(original.custody()).toMatchObject({ nativePending: 1, uncertain: true });
+  expect(original.isCustodyKnown()).toBe(true);
+  expect(h.input.isCustodyKnown()).toBe(true);
+  pending.resolve();
+  await call;
+  expect(original.isCustodyKnown()).toBe(true);
+  expect(h.input.isCustodyKnown()).toBe(true);
+  await h.close();
+  expect(original.isCustodyKnown()).toBe(false);
+  expect(h.input.isCustodyKnown()).toBe(false);
+});
+
+it('refuses known custody until the original session acquisition completes', async () => {
+  const acquired = deferred<CDPSession>();
+  const h = fixture(undefined, undefined, (context) =>
+    context.newCDPSession.mockImplementation(() => acquired.promise)
+  );
+  expect(h.input.isCustodyKnown()).toBe(false);
+  acquired.resolve(h.session as unknown as CDPSession);
+  await h.ready;
+  expect(h.owner.isCustodyKnown()).toBe(true);
+  expect(h.input.isCustodyKnown()).toBe(true);
+  await h.close();
+});
+
+it.each(['native', 'cleanup'] as const)(
+  'retains original %s failure without healing custody after a later ACK',
+  async (kind) => {
+    const h = fixture();
+    await h.ready;
+    const original = h.owner;
+    const failure = new Error('ORIGINAL_FAILURE');
+    const call =
+      kind === 'native'
+        ? (h.keyboard.insertText.mockRejectedValueOnce(failure),
+          original.native.dispatch({ kind: 'text', text: 'FIXTURE' }, signal()))
+        : (h.session.send.mockRejectedValueOnce(failure),
+          original.native.cancelComposition(signal()));
+    await expect(call).rejects.toThrow('ORIGINAL_FAILURE');
+    expect(original.isCustodyKnown()).toBe(false);
+    expect(h.input.isCustodyKnown()).toBe(false);
+    await original.native.dispatch({ kind: 'text', text: 'LATER' }, signal());
+    expect(original.custody().nativePending).toBe(0);
+    const forgedObservation = vi.spyOn(original, 'custody').mockReturnValue({
+      acquisitionPending: false,
+      nativePending: 0,
+      detachPending: false,
+      detached: false,
+      uncertain: false,
+    });
+    expect(original.isCustodyKnown()).toBe(false);
+    expect(h.input.isCustodyKnown()).toBe(false);
+    forgedObservation.mockRestore();
+    expect(original.isCustodyKnown()).toBe(false);
+    expect(h.input.isCustodyKnown()).toBe(false);
+    await h.close();
+  }
+);
+
+it('refuses original custody during detach and after genuine retirement', async () => {
+  const h = fixture();
+  await h.ready;
+  const original = h.owner;
+  const detached = deferred<void>();
+  h.session.detach.mockImplementation(() => detached.promise);
+  const close = h.close();
+  await tick();
+  expect(original.custody().detachPending).toBe(true);
+  expect(original.isCustodyKnown()).toBe(false);
+  expect(h.input.isCustodyKnown()).toBe(false);
+  detached.resolve();
+  await close;
+  expect(original.custody().detached).toBe(true);
+  expect(original.isCustodyKnown()).toBe(false);
+  expect(h.input.isCustodyKnown()).toBe(false);
+});
+
+it('refuses known custody after genuine session acquisition rejection', async () => {
+  const h = fixture(undefined, undefined, (context) =>
+    context.newCDPSession.mockRejectedValueOnce(new Error('ACQUISITION_FAILED'))
+  );
+  expect(h.input.isCustodyKnown()).toBe(false);
+  await expect(h.ready).rejects.toThrow('ACQUISITION_FAILED');
+  expect(h.input.isCustodyKnown()).toBe(false);
+  await h.close();
+});

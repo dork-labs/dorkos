@@ -291,7 +291,7 @@ Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkou
 
 ### Task 5.6: Implement explicit pinned runtime installation and status
 
-Status: pending · Size: medium · Priority: high · Phase: Runtime network and identity gates
+Status: in_progress · Size: medium · Priority: high · Phase: Runtime network and identity gates
 
 Dependencies: 4.2. Parallel with: 5.1.
 
@@ -303,6 +303,8 @@ install, stale/mismatched receipt and repair. Status distinguishes installed fro
 platform acceptance; installing a rejected candidate cannot make it usable in production. Keep acceptance records separately keyed executable hash/platform/policy/identity mode; installed does not mean ready. Native fallback is never silent.
 
 Use GPT-6.1 Sol with Medium reasoning. Keep work in an isolated assigned checkout with disjoint ownership and normal hooks; parent owns integration, tracker writes, review, PR/merge and cleanup. Use fictitious fixture subjects and private profile/artifact roots; no paid inference, personal accounts, operator clipboard contents or public raw CDP. Each exported operation must be implemented and verified rather than stubbed. Record exact source/runtime/platform, nonzero subject/sample counts and pass/fail/unverified receipts; negative controls must fail the intended named cause, not unrelated setup assertions. Install cleanup before fallible acquisition; preserve primary errors while attempting every cleanup and report observation gaps honestly. This slice permits private fixture integration only, not public production activation; activation requires that exact identity mode's complete identity/network/distribution/native-platform readiness. Preserve original prototype failures and completed task history.
+
+Installer partial shipment: PR #2558 merged at 8167f142acd2c48ac17eeafa5fca818b69c9e37a on 2026-10-05T01:28:26Z, reviewed head 846654dd0b367faab8694f91ebb959d2bdd9f7b4. Explicit pinned Apple Silicon installation, fresh executable verification, atomic publication, reuse, repair, concurrent refusal and files-only runtime status shipped. Genuine live installation and a cold packed CLI consumer passed. All 28 whole owned blobs match the merge; the 29th own isolated-host abort hunk matches with unrelated extension additions retained. Shipment receipt: /Users/doriancollier/Keep/dork-os/.workspace/browser-channel-evidence/installer-cli-first-development-snapshot-20261004/merged-shipment.json. Installation remains distinct from readiness: VERIFICATION_UNAVAILABLE stays truthful, production activation and task 4.3/native/Chrome identity acceptance remain open. Task 5.6 is in progress for remaining acceptance-record integration; this is not full-parent completion.
 
 ### Task 5.7: Prove unchanged explicit native identity across all lifetimes
 

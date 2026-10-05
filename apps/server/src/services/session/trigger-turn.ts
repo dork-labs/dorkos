@@ -1016,7 +1016,19 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // it — which stays fully functional because the per-event `tryRekey` above
   // converges the registry as soon as the id is known, and the runtime resolves
   // snapshots/subscriptions through the id alias in both directions.
-  await Promise.race([firstEvent, delay(CANONICAL_ID_TIMEOUT_MS)]);
+  let canonicalTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      firstEvent,
+      new Promise<void>((resolve) => {
+        canonicalTimer = setTimeout(resolve, CANONICAL_ID_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    // The first event normally wins. Its losing deadline remains our timer,
+    // so retire it before returning the accepted canonical id.
+    if (canonicalTimer !== undefined) clearTimeout(canonicalTimer);
+  }
   tryRekey();
   const canonicalId = deps.getInternalSessionId(sessionId) ?? sessionId;
 
@@ -1116,9 +1128,4 @@ export async function* guardTurnErrors(
     };
     yield { type: 'done', data: { sessionId: projector.sessionId } };
   }
-}
-
-/** A sleep used only to bound the canonical-id wait. */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

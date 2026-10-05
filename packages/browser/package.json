@@ -8,10 +8,18 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./runtime-installation": {
+      "types": "./src/runtime/installation/index.ts",
+      "default": "./dist/runtime/installation/index.js"
+    },
+    "./server-owner": {
+      "types": "./src/server-owner.ts",
+      "default": "./dist/server-owner.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node --experimental-strip-types scripts/build-native-observer.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",

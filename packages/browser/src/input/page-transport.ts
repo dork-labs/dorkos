@@ -27,6 +27,8 @@ export interface PageTransportOptions {
 export interface OwnedPageTransport {
   readonly native: NativeInputTransport;
   readonly ready: Promise<void>;
+  /** Original session attribution; pending calls may be known, without authorizing effects. */
+  isCustodyKnown(): boolean;
   custody(): PageInputCustody;
   close(deadline?: number): Promise<PageInputCustody>;
 }
@@ -39,6 +41,7 @@ export function createPageTransport(options: PageTransportOptions): OwnedPageTra
   return Object.freeze({
     native: owner.native,
     ready: owner.ready,
+    isCustodyKnown: () => owner.isCustodyKnown(),
     custody: () => owner.custody(),
     close: (deadline?: number) => owner.close(deadline),
   });
@@ -146,6 +149,19 @@ class PageTransportOwner {
         // The parent driver enters terminal detach after eligible sibling cleanup.
         // Possession/session uncertainty remains retained meanwhile.
       });
+  }
+
+  isCustodyKnown(): boolean {
+    return (
+      this.session !== undefined &&
+      !this.acquisitionPending &&
+      !this.retired &&
+      !this.uncertain &&
+      !this.detachPending &&
+      !this.detached &&
+      this.detachPromise === undefined &&
+      this.closePromise === undefined
+    );
   }
 
   custody(): PageInputCustody {

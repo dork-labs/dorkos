@@ -11,7 +11,7 @@ import {
   type SQL,
 } from '@dorkos/db';
 import { DocChannelStore } from './store.js';
-import { protectedEventSql, backfillEnvelopeAccounting } from './accounting.js';
+import { protectedEventSql, backfillEnvelopeAccounting } from './current/accounting.js';
 import { DocIngestRefusal } from './ingest-types.js';
 
 /** Completed history caps include compact headers and receipt outcomes, not only app payloads. */

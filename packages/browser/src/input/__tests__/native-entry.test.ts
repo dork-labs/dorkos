@@ -4,7 +4,7 @@ import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
 import { type ResetResult } from '../index.js';
 import {
-  createOwnedFixtureInput as createTabInput,
+  createOwnedFixtureCohort,
   settleFixtureRetirement,
   type FixtureInputPorts as InputPorts,
 } from '../../__tests__/parent-fixture.js';
@@ -39,9 +39,12 @@ function fixture() {
       },
     },
   };
-  const input = createTabInput(ports, () => binding);
+  const { input, transport } = createOwnedFixtureCohort([
+    { ports, readCanonicalBinding: () => binding },
+  ])[0];
   return {
     input,
+    transport,
     ports,
     calls,
     gate,
@@ -247,3 +250,62 @@ it('pending old-binding completion drains custody but cannot resurrect reset rea
   expect(h.gate.stopped).toBe(true);
   expect((await h.input.submit(h.command())).outcome).toBe('rejected');
 });
+
+it('method capture reset refuses the unstarted old-generation effect without charging held input', async () => {
+  const h = fixture();
+  let reset: Promise<ResetResult> | undefined;
+  const dispatch = h.transport.dispatch;
+  Object.defineProperty(h.transport, 'dispatch', {
+    configurable: true,
+    get() {
+      Object.defineProperty(h.transport, 'dispatch', { configurable: true, value: dispatch });
+      reset = h.input.reset();
+      return dispatch;
+    },
+  });
+  const result = await h.input.submit(h.command('mouseDown'));
+  expect(result).toMatchObject({ outcome: 'rejected', reason: 'staleBinding' });
+  expect(reset).toBeDefined();
+  expect((await reset!).status).toBe('ready');
+  expect(h.calls).toEqual(['composition', 'drag']);
+  expect((await h.input.submit(h.command())).outcome).toBe('completed');
+  expect(h.calls).toEqual(['composition', 'drag', 'text']);
+});
+
+it.each(['binding-observation', 'method-capture'] as const)(
+  'refuses an unstarted effect when %s crosses its original execution deadline',
+  async (boundary) => {
+    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
+    try {
+      const h = fixture();
+      if (boundary === 'binding-observation') {
+        const read = h.ports.readBinding;
+        h.ports.authorize = async () => {
+          h.ports.readBinding = () => {
+            h.ports.readBinding = read;
+            vi.advanceTimersByTime(2000);
+            return read();
+          };
+          return 'allowed';
+        };
+      } else {
+        const dispatch = h.transport.dispatch;
+        Object.defineProperty(h.transport, 'dispatch', {
+          configurable: true,
+          get() {
+            vi.advanceTimersByTime(2000);
+            return dispatch;
+          },
+        });
+      }
+      expect(await h.input.submit(h.command())).toMatchObject({
+        outcome: 'rejected',
+        reason: 'deadline',
+      });
+      expect(h.calls).toEqual([]);
+      expect(h.gate.stopped).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+);

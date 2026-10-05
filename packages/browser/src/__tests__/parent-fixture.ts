@@ -533,6 +533,9 @@ export function createOwnedFixtureCohort(members: readonly FixtureMember[]) {
       submit: (command: unknown, signal?: AbortSignal) => queue.submit(command, signal),
       reset: () => queue.reset(),
       retire: (end: number) => queue.retire(end),
+      // Queue-only fixtures do not acquire an original Page transport session.
+      isCustodyKnown: () => false,
+      hasNeverEnteredInput: () => false,
       custody,
       close: () => {
         if (!route.terminal()) {

@@ -14,6 +14,7 @@ import {
   matchesCanvasChannelEvent,
   type CanvasChannelRoute,
 } from '@dorkos/shared/canvas-channel-schemas';
+import { redactSecretsInText } from '../../core/approvals/approval-summary.js';
 import { hashApprovalInput } from '../../core/approvals/approval-input-hash.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
 import { DocChannelStore, type DocGrantRow, type DocBatchRow } from './store.js';
@@ -25,14 +26,21 @@ import {
   type DocGrantActor,
   type DocGrantAuthority,
   type DocGrantTarget,
+  type DocOriginalWriteObservation,
 } from './grant-policy.js';
 import { DocChannelNotFoundError } from './authorization.js';
+import {
+  checkboxAuthorityClock,
+  captureCheckboxGrantContext,
+} from './writes/authority-snapshot.js';
 const PLATFORM_LIMITS = { envelopeBytes: 16384, eventsPerMinute: 60, turnsPerHour: 10 };
 /** Current route selection, including explicit reasons saved input must not dispatch. */
 export interface DocGrantedRoute {
   route: CanvasChannelRoute;
   grantId?: string;
   grantRevision?: number;
+  allowedTypes?: string[];
+  targetSessionId?: string | null;
   reason?: string;
 }
 
@@ -251,15 +259,18 @@ export class DocChannelGrantRevalidation {
     documentId: string,
     grantId: string,
     scope: string,
-    tx: DbTransaction
+    tx: DbTransaction,
+    observed?: DocOriginalWriteObservation
   ): DocGrantRow {
-    const manifest = this.manifest(documentId, tx);
+    const manifestHash = observed
+      ? observed.manifestHash
+      : (this.manifest(documentId, tx)?.hash ?? null);
     const channel = this.services.store.getChannel(documentId, tx)!;
     const grant = this.services.store.getGrant(grantId, tx);
     if (!grant || grant.documentId !== documentId)
       throw new DocRouteGrantError('GRANT_NOT_FOUND', 404);
     this.verifyEvidence(grant, scope, tx);
-    if (grant.manifestHash !== (manifest?.hash ?? null))
+    if (grant.manifestHash !== manifestHash || channel.manifestHash !== manifestHash)
       throw new DocRouteGrantError('MANIFEST_CHANGED');
     const route = declaredRoute(channel, grant.routeId);
     if (
@@ -296,12 +307,69 @@ export class DocChannelGrantRevalidation {
       throw new DocRouteGrantError('TARGET_IDENTITY_CHANGED');
     if (
       grant.writeOperation &&
-      hashApprovalInput(this.services.authority.resolveWriteBinding?.(documentId, tx) ?? null) !==
-        hashApprovalInput(grant.writeOperation)
+      hashApprovalInput(
+        observed
+          ? observed.write
+          : (this.services.authority.resolveWriteBinding?.(documentId, tx) ?? null)
+      ) !== hashApprovalInput(grant.writeOperation)
     )
       throw new DocRouteGrantError('WRITE_BINDING_MISMATCH');
     return grant;
   }
+  /** Pure original write grant check: supplied observation replaces ONLY legacy filesystem ports. */
+  revalidateOriginalWriteGrant(
+    documentId: string,
+    grantId: string,
+    revision: number,
+    scope: string,
+    observed: DocOriginalWriteObservation,
+    tx: DbTransaction
+  ): DocGrantRow {
+    const capturedTime = checkboxAuthorityClock(() => this.services.now?.() ?? new Date());
+    const original = this.services.store.getGrant(grantId, tx);
+    if (
+      !original ||
+      original.documentId !== documentId ||
+      original.revision !== revision ||
+      !original.routeId
+    )
+      throw new DocRouteGrantError('GRANT_BINDING_CHANGED');
+    const channel = this.services.store.getChannel(documentId, tx);
+    if (!channel) throw new DocRouteGrantError('GRANT_NOT_FOUND', 404);
+    const context = captureCheckboxGrantContext(
+      this.services.authority,
+      original,
+      channel,
+      scope,
+      tx
+    );
+    const fresh = this.services.store.getGrant(grantId, tx);
+    if (!fresh || fresh.documentId !== documentId || fresh.revision !== revision)
+      throw new DocRouteGrantError('GRANT_BINDING_CHANGED');
+    const evidence = fresh.approvalEvidence as {
+      kind?: string;
+      binding?: unknown;
+      approvalId?: string;
+      inputHash?: string;
+    };
+    const approval = fresh.approvalId
+      ? tx.select().from(approvals).where(eq(approvals.id, fresh.approvalId)).get()
+      : undefined;
+    if (
+      evidence.kind !== 'operator_approval' ||
+      !approval ||
+      !approval.detail ||
+      approval.detail !== redactSecretsInText(JSON.stringify(evidence.binding))
+    )
+      throw new DocRouteGrantError('GRANT_EVIDENCE_MISMATCH');
+    const checker = new DocChannelGrantRevalidation({
+      ...this.services,
+      authority: { ...this.services.authority, ...context },
+      now: () => new Date(capturedTime),
+    });
+    return checker.verifyCurrentGrant(documentId, grantId, scope, tx, observed);
+  }
+
   /**
    * Background dispatch uses persisted server grant evidence, never an expired
    * opener-turn proof or a freshly minted broad operator identity.
@@ -374,7 +442,7 @@ export class DocChannelGrantRevalidation {
   /** Return current granted or saved-only route outcomes; never enqueue or replay old input. */
   getCurrentRoutes(
     documentId: string,
-    type: string,
+    type: string | undefined,
     actor: DocGrantActor,
     tx?: DbTransaction
   ): DocGrantedRoute[] {
@@ -390,7 +458,7 @@ export class DocChannelGrantRevalidation {
     const declaration = CanvasChannelDeclarationSchema.safeParse(channel.declaration);
     if (!declaration.success) return [];
     return declaration.data.routes
-      .filter((route) => matchesCanvasChannelEvent(route.on, type))
+      .filter((route) => type === undefined || matchesCanvasChannelEvent(route.on, type))
       .map((route) => {
         const grants = tx
           .select()
@@ -405,11 +473,20 @@ export class DocChannelGrantRevalidation {
           try {
             const current = this.revalidateGrant(documentId, grant.grantId, actor, tx);
             const patterns = current.allowedTypes as string[];
-            if (!patterns.some((pattern) => matchesCanvasChannelEvent(pattern, type))) {
+            if (
+              type !== undefined &&
+              !patterns.some((pattern) => matchesCanvasChannelEvent(pattern, type))
+            ) {
               reason = 'TYPE_NOT_GRANTED';
               continue;
             }
-            return { route, grantId: current.grantId, grantRevision: current.revision };
+            return {
+              route,
+              grantId: current.grantId,
+              grantRevision: current.revision,
+              allowedTypes: patterns,
+              targetSessionId: current.targetSessionId,
+            };
           } catch (error) {
             if (!(error instanceof DocRouteGrantError)) throw error;
             reason = error.code;

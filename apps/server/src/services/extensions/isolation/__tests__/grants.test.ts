@@ -56,6 +56,32 @@ describe('ancestorsOf', () => {
 });
 
 describe('buildChildEnv', () => {
+  it('supplies empty Windows host identifiers so libuv cannot refill them', () => {
+    const env = buildChildEnv(
+      'mail',
+      'C:\\data\\files',
+      {
+        PATH: 'private',
+        USERNAME: 'private',
+        USERDOMAIN: 'private',
+        LOGONSERVER: 'private',
+        SystemRoot: 'C:\\Windows',
+      },
+      false,
+      'win32'
+    );
+    expect(env).toMatchObject({
+      PATH: '',
+      USERNAME: '',
+      USERDOMAIN: '',
+      LOGONSERVER: '',
+      HOMEDRIVE: 'C:',
+      HOMEPATH: '\\data\\files',
+      SystemRoot: 'C:\\Windows',
+    });
+    expect(env.NODE_OPTIONS).toBeUndefined();
+  });
+
   // Purpose: nothing but locale, time zone, the files folder and the id.
   it('copies nothing else from the host', () => {
     const env = buildChildEnv(
@@ -70,7 +96,8 @@ describe('buildChildEnv', () => {
         LC_TIME: 'C',
         NODE_ENV: 'production',
       },
-      false
+      false,
+      'linux'
     );
     expect(env).toEqual({
       NODE_ENV: 'production',
@@ -79,9 +106,9 @@ describe('buildChildEnv', () => {
       LC_TIME: 'C',
       HOME: '/data/files',
       USERPROFILE: '/data/files',
-      TMPDIR: '/data/files/.tmp',
-      TMP: '/data/files/.tmp',
-      TEMP: '/data/files/.tmp',
+      TMPDIR: path.join('/data/files', '.tmp'),
+      TMP: path.join('/data/files', '.tmp'),
+      TEMP: path.join('/data/files', '.tmp'),
       DORKOS_EXT_ID: 'mail',
     });
     expect(buildChildEnv('mail', '/d', {}, true).ELECTRON_RUN_AS_NODE).toBe('1');
@@ -91,7 +118,7 @@ describe('buildChildEnv', () => {
     ).toMatchObject({
       SystemRoot: 'C:\\Windows',
     });
-    expect(buildChildEnv('mail', '/d', { USERNAME: 'x' }, false).USERNAME).toBeUndefined();
+    expect(buildChildEnv('mail', '/d', { USERNAME: 'x' }, false, 'linux').USERNAME).toBeUndefined();
   });
 });
 
