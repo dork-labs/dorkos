@@ -92,6 +92,8 @@ async function observeGone(
 function custodySettled(record: BrowserRecord): boolean {
   const owner = record.lifetime;
   return (
+    !record.journal?.custody().pending &&
+    !record.journal?.custody().uncertain &&
     !owner.uncertain &&
     !owner.closeFailed &&
     !owner.releasePending &&
@@ -147,6 +149,16 @@ async function performClose(
     await until(proxy, end, 'FIXTURE_PROXY_CLOSE_FAILED');
   } catch {
     if (!owner.closeFailed) owner.uncertain = true;
+  }
+  if (record.journal) {
+    const journal = ownOperation(record, () => record.journal!.stop(record.launchEntered));
+    void journal.catch(() => {});
+    try {
+      const result = await until(journal, end, 'PROCESS_OBSERVATION_UNAVAILABLE');
+      if (result !== 'campaign-closed' && result !== 'recorded-gone') observationFailed = true;
+    } catch {
+      observationFailed = true;
+    }
   }
   let outcome: CloseOutcome =
     observationFailed || owner.uncertain

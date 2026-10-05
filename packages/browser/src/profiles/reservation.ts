@@ -7,6 +7,7 @@ import type { ProfileId } from '../ids.js';
 import { BrowserLifecycleError } from '../lifecycle/errors.js';
 import { deadline } from '../lifecycle/deadline.js';
 import { nativeHolder } from '../runtime/host-identity.js';
+import { createDarwinEngineProcesses } from '../runtime/darwin-engine-processes.js';
 import { ownDirectory, assertDirectory } from './owned-directory.js';
 import { privateDirectory } from './paths.js';
 
@@ -58,6 +59,7 @@ function readOwner(file: string): Owner {
 /** An acquired atomic reservation, never a public filesystem capability. */
 export interface ProfileReservation {
   readonly profileDir: string;
+  readonly nonce: string;
   beginLaunch(): void;
   recordBrowser(browser: ProcessIdentity): void;
   release(): Promise<void>;
@@ -83,9 +85,26 @@ export async function reserveProfile(
   if (!acquired) {
     privateDirectory(directory);
     const prior = readOwner(ownerFile);
+    if (config.recordedRecovery) {
+      let disposition: string;
+      try {
+        disposition = await config.recordedRecovery({
+          profileId,
+          reservationNonce: prior.nonce,
+          manager: prior.manager,
+          ...(prior.browser ? { browser: prior.browser } : {}),
+        });
+      } catch {
+        disposition = 'unknown';
+      }
+      // Even matching recorded disappearance does not cover unrecorded descendants or external duties.
+      throw new BrowserLifecycleError(
+        disposition === 'live-recorded' ? 'PROFILE_IN_USE' : 'PROFILE_UNCERTAIN'
+      );
+    }
     await assertDead(config, prior.manager);
     if (prior.browser) await assertDead(config, prior.browser);
-    // Reconciliation/recovery belongs to the next slice. A dead owner is not a repair instruction.
+    // A dead owner without complete recovery evidence is not a repair instruction.
     throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
   }
   let reservationDirectory: ReturnType<typeof ownDirectory> | undefined;
@@ -109,7 +128,9 @@ export async function reserveProfile(
     persist();
     privateDirectory(profileDir);
     profileDirectory = ownDirectory(profileDir);
-    const native = nativeHolder(profileDir);
+    const native = config.nativeJournal
+      ? await createDarwinEngineProcesses(config.nativeJournal.artifact).holder(profileDir)
+      : nativeHolder(profileDir);
     if (native) await assertDead(config, native);
   } catch (error) {
     try {
@@ -125,6 +146,7 @@ export async function reserveProfile(
   }
   return {
     profileDir,
+    nonce: owner.nonce,
     beginLaunch() {
       assertOwned();
       owner.phase = 'launching';
@@ -140,7 +162,9 @@ export async function reserveProfile(
       assertOwned();
       if (owner.phase === 'launching') throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
       if (owner.browser) await assertDead(config, owner.browser);
-      const native = nativeHolder(profileDir);
+      const native = config.nativeJournal
+        ? await createDarwinEngineProcesses(config.nativeJournal.artifact).holder(profileDir)
+        : nativeHolder(profileDir);
       if (native) await assertDead(config, native);
       assertOwned();
       rmSync(directory, { recursive: true });
