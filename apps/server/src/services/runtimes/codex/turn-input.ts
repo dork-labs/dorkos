@@ -31,7 +31,7 @@ import { formatStagedContext } from '../shared/staged-context-block.js';
  * Keyed loosely (`string`) so modes Codex does not support (`plan`,
  * `dontAsk`, `auto`) fall through to the conservative read-only default.
  */
-const MODE_TO_SANDBOX: Record<string, SandboxMode> = {
+export const MODE_TO_SANDBOX: Record<string, SandboxMode> = {
   default: 'read-only',
   acceptEdits: 'workspace-write',
   bypassPermissions: 'danger-full-access',
@@ -55,7 +55,7 @@ const MODE_TO_SANDBOX: Record<string, SandboxMode> = {
  * on the other. Keep both mappings documented, and change neither without the
  * other: the divergence is a fact about the two APIs, not a bug to reconcile.
  */
-const EFFORT_TO_REASONING: Record<EffortLevel, ModelReasoningEffort> = {
+export const EFFORT_TO_REASONING: Record<EffortLevel, ModelReasoningEffort> = {
   none: 'minimal',
   minimal: 'minimal',
   low: 'low',
@@ -95,7 +95,23 @@ export function projectThreadOptions(
   cwd?: string,
   grants?: readonly DirectoryGrant[]
 ): ThreadOptions {
-  const writable = grantedWritableDirectories(grants, cwd);
+  return projectThreadOptionsFor(settings, cwd, grantedWritableDirectories(grants, cwd));
+}
+
+/**
+ * {@link projectThreadOptions} for grants already validated into the folders
+ * Codex may write — the half the exec transport runs once the runtime has
+ * checked the grants (`transport/exec-transport.ts`).
+ *
+ * @param settings - Effective settings for the turn
+ * @param cwd - Working directory for the turn, when known
+ * @param writable - Validated writable folders (`grantedWritableDirectories`)
+ */
+export function projectThreadOptionsFor(
+  settings: SessionSettings,
+  cwd: string | undefined,
+  writable: readonly string[]
+): ThreadOptions {
   return {
     sandboxMode: MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only',
     approvalPolicy: 'never',
@@ -105,12 +121,19 @@ export function projectThreadOptions(
     ...(settings.effort !== undefined
       ? { modelReasoningEffort: EFFORT_TO_REASONING[settings.effort] }
       : {}),
-    ...(writable.length > 0 ? { additionalDirectories: writable } : {}),
+    ...(writable.length > 0 ? { additionalDirectories: [...writable] } : {}),
   };
 }
 
-/** Validate a turn's grants and keep the folders Codex must be told it may write. */
-function grantedWritableDirectories(
+/**
+ * Validate a turn's grants and keep the folders Codex must be told it may
+ * write. Throws before anything starts when the grant set is invalid.
+ *
+ * @param grants - This turn's folder grants; absent means none
+ * @param cwd - Working directory the grants are checked against
+ * @throws DirectoryGrantError when the grant set is invalid
+ */
+export function grantedWritableDirectories(
   grants: readonly DirectoryGrant[] | undefined,
   cwd: string | undefined
 ): string[] {
