@@ -319,6 +319,8 @@ describe('private browser package boundaries', () => {
           // Only pinned public types/library imports in these reviewed internal modules.
           // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [
+            // Public Request identity for the private one-shot navigation owner.
+            'lifecycle/initial-navigation.ts',
             'runtime/darwin-supervisor-worker.ts',
             'runtime/darwin-supervisor-browser.ts',
 
