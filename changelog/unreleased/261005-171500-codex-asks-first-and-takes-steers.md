@@ -25,7 +25,7 @@ covers:
 
 ### Added
 
-- Codex can ask before it changes things, and you can steer it mid-reply, when the `runtimes.codex.transport` setting is `app-server` (DOR-2719). In Ask first, Codex asks before every change; it still runs read-only commands, and tools marked read-only, without asking. In Workspace write, it asks before it reaches outside your project or goes online. You approve or deny from a card in the chat. Questions Codex asks you, and forms from its tools, show up as cards too. A question that asks for a password or other secret is skipped for now, and the chat says so. A message you send while Codex is replying joins that reply instead of waiting for the next one. On `auto`, the default, Codex works exactly as before.
+- Codex can ask before it changes things, and you can steer it mid-reply (DOR-2719). In Ask first, Codex asks before every change; it still runs read-only commands, and tools marked read-only, without asking. In Workspace write, it asks before it reaches outside your project or goes online. You approve or deny from a card in the chat. Questions Codex asks you, and forms from its tools, show up as cards too. A question that asks for a password or other secret is skipped for now, and the chat says so. A message you send while Codex is replying joins that reply instead of waiting for the next one.
 
 ### Note for people upgrading
 
