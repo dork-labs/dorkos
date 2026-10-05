@@ -247,11 +247,19 @@ export function handRegisteredInSessionToolSet(
     // the agent that started the session, even from its room worktree. The
     // calling chat is what the new one says started it (spec
     // `flow-multiproject` §7.7), read at call time for the first-turn rekey
-    // reason the task provenance above gives.
+    // reason the task provenance above gives. So is the calling chat's live
+    // permission mode, the ceiling of what it may start (spec
+    // `inherited-start-permission`): read off the live session object at the
+    // moment of the call, so a chat lowered mid-turn is held to its new level.
     ...getSessionTools(deps, () => {
       if (!identityPath) return undefined;
       const callingSession = session?.sdkSessionId || sessionId;
-      return { agentPath: identityPath, ...(callingSession ? { sessionId: callingSession } : {}) };
+      return {
+        agentPath: identityPath,
+        runtime: 'claude-code',
+        ...(callingSession ? { sessionId: callingSession } : {}),
+        ...(session?.permissionMode ? { permissionMode: session.permissionMode } : {}),
+      };
     }),
     ...getTasksTools(deps, resolveTaskProvenance),
     ...getRelayTools(deps, relayIdentity, resolveInboundBudget),

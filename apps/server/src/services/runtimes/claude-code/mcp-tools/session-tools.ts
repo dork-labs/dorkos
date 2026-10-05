@@ -14,10 +14,18 @@
  *   home (or inside one) is refused. A caller DorkOS cannot name as a registered
  *   agent is refused outright. Otherwise an agent could start work as DorkBot or
  *   as another agent, with that agent's permissions and its account.
- * - **No trust stop of the operator's.** The session is launched with the
- *   `agent-launch` origin, which seeds no permission mode. The only power it
- *   gets is the tool's own `permissionMode`, clamped by the same rule an
- *   agent-proposed schedule gets (never `bypassPermissions`).
+ * - **Never above the calling chat's own level** (spec
+ *   `inherited-start-permission`). The session is launched with the
+ *   `agent-launch` origin, which seeds no trust stop of the operator's; its
+ *   power is the permission mode this tool grants, and that mode may be the
+ *   calling chat's own or lower, never higher. The ceiling is the calling chat's
+ *   LIVE mode, read by the server at call time (its stored row when the live
+ *   session is gone, the runtime's default when neither is known), never
+ *   anything in the tool's input. A caller with no chat — the external `/mcp`
+ *   server, an agent token — has no level to inherit and is held to
+ *   `acceptEdits`. Leaving `permissionMode` out means "the same as me"; a mode
+ *   above the ceiling is refused, never quietly lowered. Full autonomy still
+ *   needs the person's standing acknowledgement.
  * - **No account the operator has not opened to agents.** A named account is
  *   checked by `checkAccountLaunch`: with no account advisor registered (the
  *   Flow extension), naming one is refused. Leaving it out walks the usual
@@ -68,8 +76,13 @@ import {
   resolveRuntimeTypeForNewSession,
   AGENT_LAUNCH_CAP_MESSAGE,
 } from '../../../session/launch/launch-session.js';
-import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
+import {
+  NO_CHAT_CEILING_RUNTIME,
+  resolveStartPermission,
+  type CallingChat,
+  type SessionStartPermission,
+} from './session-start-permission.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -93,11 +106,22 @@ export const OTHER_AGENTS_HOME_MESSAGE =
  * In session, the session's identity anchor; on the external `/mcp` server, the
  * agent the request's token names. `undefined` when neither names one.
  *
- * `sessionId` is the chat the call is made from, in session only: it is who
- * the new chat says started it. The external server has no chat to name.
+ * The other three fields come from the chat the call is made from, in session
+ * only, and only from server-bound state — never from the tool's input, a
+ * header or a token:
+ *
+ * - `sessionId` is who the new chat says started it.
+ * - `permissionMode` is that chat's LIVE mode, the ceiling of what it may
+ *   start. Absent when the live session object has none; the stored row is
+ *   asked next.
+ * - `runtime` is the runtime that chat runs on, whose declared modes give the
+ *   ceiling its meaning.
+ *
+ * The external server can produce none of them: it has no chat, so its caller
+ * is held to `acceptEdits` (`NO_CHAT_CEILING_MODE`).
  */
 export type SessionStartCallerResolver = () =>
-  { agentPath?: string; sessionId?: string } | undefined;
+  { agentPath?: string; sessionId?: string; permissionMode?: string; runtime?: string } | undefined;
 
 /** The input `session_start` accepts. */
 export const SessionStartInputShape = {
@@ -123,14 +147,10 @@ export const SessionStartInputShape = {
     .describe('The runtime to start on (e.g. `claude-code`). Absent: the usual choice.'),
   model: z.string().min(1).optional().describe('The model the session starts with.'),
   effort: EffortLevelSchema.optional().describe('The reasoning effort the session starts with.'),
-  // Clamped in the schema, not only in the handler, so the arguments the tier
-  // gate shows on an approval card are the mode the session actually gets.
-  permissionMode: PermissionModeSchema.transform((mode) => clampSchedulePermissionMode(mode).mode)
-    .optional()
-    .describe(
-      'The permission mode the session starts in. `bypassPermissions` is lowered to ' +
-        '`acceptEdits`. Absent: the runtime default, which asks before acting.'
-    ),
+  permissionMode: PermissionModeSchema.optional().describe(
+    'The permission mode the session starts in. The session runs at your own permission level ' +
+      'unless you ask for a lower one; a higher one is refused. Absent: your own level.'
+  ),
   seedContext: z
     .string()
     .min(1)
@@ -179,6 +199,8 @@ export interface SessionStartResult {
   runtime: string;
   /** The account it was started on, or `null` when the usual choice decides. */
   account: { id: string; label: string | null } | null;
+  /** The permission level it runs at. */
+  permission: SessionStartPermission;
   /** Always `started`: a refusal is an error result instead. */
   status: 'started';
 }
@@ -211,18 +233,29 @@ interface CallerAgent {
 function callerOf(
   deps: McpToolDeps,
   resolveCaller: SessionStartCallerResolver | undefined
-): (CallerAgent & { sessionId: string | null }) | null {
+): (CallerAgent & { chat: CallingChat | null }) | null {
   const resolved = resolveCaller?.();
   const agentPath = resolved?.agentPath;
   if (!agentPath) return null;
   const agent = deps.meshCore?.listWithPaths().find((a) => a.projectPath === agentPath);
-  return agent
-    ? {
-        agentPath,
-        label: agent.displayName ?? agent.name,
-        sessionId: resolved.sessionId ?? null,
-      }
-    : null;
+  if (!agent) return null;
+  // Any one of the three marks a call from inside a chat: only the in-session
+  // resolver can name them, and the external server names none.
+  const inChat =
+    resolved.sessionId !== undefined ||
+    resolved.permissionMode !== undefined ||
+    resolved.runtime !== undefined;
+  return {
+    agentPath,
+    label: agent.displayName ?? agent.name,
+    chat: inChat
+      ? {
+          sessionId: resolved.sessionId ?? null,
+          permissionMode: resolved.permissionMode ?? null,
+          runtime: resolved.runtime ?? NO_CHAT_CEILING_RUNTIME,
+        }
+      : null,
+  };
 }
 
 /**
@@ -235,11 +268,19 @@ function callerOf(
 function reserveChatStart(
   sessionId: string,
   parentSessionId: string | null,
-  reason: string | undefined
+  reason: string | undefined,
+  permission: SessionStartPermission
 ): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
   const service = getStartWorkService();
   if (!parentSessionId || !service) return { ok: true, reservation: null };
-  const claimed = service.reserveFromChat({ sessionId, parentSessionId, reason: reason ?? null });
+  const claimed = service.reserveFromChat({
+    sessionId,
+    parentSessionId,
+    reason: reason ?? null,
+    permissionMode: permission.mode,
+    starterPermissionMode: permission.callerMode,
+    permissionSameAsStarter: permission.sameAsCaller,
+  });
   return claimed.ok
     ? { ok: true, reservation: claimed.reservation }
     : { ok: false, message: claimed.error.message };
@@ -304,9 +345,10 @@ async function discardUnstartedSession(sessionId: string): Promise<void> {
  * Handler factory for `session_start`.
  *
  * Every check runs before anything is written, in this order: the caller, the
- * folder, the agent, the runtime, the account (and its policy), the launch cap.
- * Only then does the new session's settings row take the model, effort and
- * clamped mode, and the launch service start the turn. A launch that is refused
+ * folder, the agent, the runtime, the account (and its policy), the launch cap,
+ * the permission level (and the Full autonomy acknowledgement). Only then does
+ * the new session's settings row take the model, effort and granted mode, and
+ * the launch service start the turn. A launch that is refused
  * after that, throws, or is not accepted has its row removed again.
  *
  * @param deps - Shared MCP tool dependencies (Mesh, Activity).
@@ -391,6 +433,13 @@ export function createSessionStartHandler(
     // row behind. The launch service's own check is the one that holds a slot.
     if (isAgentLaunchCapFull()) return refuse(AGENT_LAUNCH_CAP_MESSAGE, 'LAUNCH_CAP_FULL');
 
+    // The level it runs at: the calling chat's own or lower, never higher (spec
+    // `inherited-start-permission`). The ceiling is read here, at the moment of
+    // the call, from server-bound state; nothing in `args` can raise it.
+    const level = await resolveStartPermission(args.permissionMode, caller.chat, runtimeType);
+    if (!level.ok) return refuse(level.error, level.code);
+    const permission = level.permission;
+
     const sessionId = crypto.randomUUID();
     // A session that will run on DorkOS credits names a model credits serve
     // (DOR-2636), the same rule the session picker applies. Asked before the
@@ -407,22 +456,24 @@ export function createSessionStartHandler(
     // Who started it, and the start limits of the extension at the root of the
     // calling chat's chain: asked before the settings write, so a refused start
     // leaves nothing behind.
-    const claimed = reserveChatStart(sessionId, caller.sessionId, args.reason);
+    const claimed = reserveChatStart(
+      sessionId,
+      caller.chat?.sessionId ?? null,
+      args.reason,
+      permission
+    );
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
-    // Already clamped by the schema on a real call; clamped again for a direct
-    // caller of this handler.
-    const permissionMode = args.permissionMode
-      ? clampSchedulePermissionMode(args.permissionMode).mode
-      : undefined;
     // What the pre-launch picker saves, saved the same way: an unbound settings
     // row the first send reads and the binding write fills around. Only the row:
-    // no runtime holds an in-memory session for this id until the send.
+    // no runtime holds an in-memory session for this id until the send. The
+    // granted mode is always written, so the level the result states is exactly
+    // the level the chat runs at, whatever a default would otherwise seed.
     try {
       await runtimeRegistry.saveSessionSettings(sessionId, {
         ...(args.model !== undefined ? { model: args.model } : {}),
         ...(args.effort !== undefined ? { effort: args.effort } : {}),
-        ...(permissionMode !== undefined ? { permissionMode } : {}),
+        permissionMode: permission.mode,
       });
     } catch (err) {
       reservation?.cancel();
@@ -486,13 +537,19 @@ export function createSessionStartHandler(
         ? `Started a session in ${cwd} on the account ${accountName}`
         : `Started a session in ${cwd}`,
       linkPath: sessionPath({ session: canonicalId }),
-      metadata: { cwd, runtime: runtimeType, account: account?.id ?? null },
+      metadata: {
+        cwd,
+        runtime: runtimeType,
+        account: account?.id ?? null,
+        permissionMode: permission.mode,
+      },
     });
 
     const body: SessionStartResult = {
       sessionId: canonicalId,
       runtime: runtimeType,
       account: account ? { id: account.id, label: account.label } : null,
+      permission,
       status: 'started',
     };
     return jsonContent(body);
@@ -513,9 +570,8 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
       'Start a new session of your own (it runs as you) with a first message, in a folder, and ' +
         'return its id at once (the session then works on its own). Optionally on a named account (the account usage ' +
         'tool lists them), which the account policy must allow; otherwise the usual account is ' +
-        'used. The session gets no permission mode it was not given here, and ' +
-        '`bypassPermissions` is lowered to `acceptEdits`. At most 8 sessions started this way ' +
-        'run at once.',
+        'used. The session runs at your own permission level unless you ask for a lower one; a ' +
+        'higher one is refused. At most 8 sessions started this way run at once.',
       SessionStartInputShape,
       createSessionStartHandler(deps, resolveCaller)
     ),

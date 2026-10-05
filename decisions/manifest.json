@@ -6994,6 +6994,23 @@
         "apps/client/src/layers/features/app-tabs/",
         "apps/client/src/AppShell.tsx"
       ]
+    },
+    {
+      "id": "261004-235818",
+      "slug": "started-chat-inherits-starter-level-as-ceiling",
+      "title": "A started chat inherits its starter's live permission level as a ceiling",
+      "status": "accepted",
+      "created": "2026-10-04",
+      "extractedFrom": "inherited-start-permission",
+      "specSlug": "inherited-start-permission",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/session-tools.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/index.ts",
+        "packages/shared/src/permission-semantics.ts",
+        "packages/db/src/schema/session/session-started-by.ts",
+        "apps/client/src/layers/features/chat/ui/StartedByLine.tsx"
+      ]
     }
   ]
 }

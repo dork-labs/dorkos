@@ -124,6 +124,37 @@ export function isTightening(
 }
 
 /**
+ * Whether `candidate` is NOT ABOVE `ceiling` — it asks at least as often, and
+ * reaches no further. Identity is not above.
+ *
+ * The rule a chat starting another chat is held to (spec
+ * `inherited-start-permission`, ADR "a started chat inherits its starter's live
+ * permission level as a ceiling"): the new chat may run at the starter's own
+ * level or lower, never higher. Descriptors, never ids, so it holds across
+ * runtimes — Claude's `acceptEdits` and Codex's `acceptEdits` share an id and
+ * not a level.
+ *
+ * Both halves must hold, the same two ranks {@link isTightening} reads. One
+ * deliberate exception, the one {@link isDivergent} and
+ * {@link needsConsentRitual} already make: a mode that can only READ is judged
+ * on reach alone. It never asks because it has nothing to ask about — Codex's
+ * read-only sandbox declares `asks: 'never'` for exactly that reason — and
+ * ranking that as "asks less than Accept edits" would put the safest mode on
+ * offer above every ceiling but Full autonomy.
+ *
+ * @param ceiling - The level that may not be exceeded.
+ * @param candidate - The level being asked for.
+ */
+export function isNoLooserThan(
+  ceiling: Pick<PermissionModeDescriptor, 'asks' | 'reach'>,
+  candidate: Pick<PermissionModeDescriptor, 'asks' | 'reach'>
+): boolean {
+  if (REACH_RANK[candidate.reach] > REACH_RANK[ceiling.reach]) return false;
+  if (candidate.reach === 'read') return true;
+  return ASKS_RANK[candidate.asks] >= ASKS_RANK[ceiling.asks];
+}
+
+/**
  * {@link isTightening}, asked about two mode IDS against the modes a runtime
  * declares — the form every adapter actually needs, because what a session
  * stores is an id and what the rule reads is a descriptor.
