@@ -17,6 +17,7 @@ const SERVER_SOURCE_PACKAGES = new Set([
   'a2a-gateway',
   'extension-api',
   'harness',
+  'keep-awake',
   'marketplace',
   'memory',
   'mesh',
