@@ -49,8 +49,8 @@ export const PERMISSIONS_TOOL_NAME = 'Permissions';
 export interface ServerRequestTurnView {
   /** The input a tool start carried for an item, if the turn saw one. */
   inputOf(itemId: string): string | undefined;
-  /** The id of an MCP tool call of this server still running in the turn, if any. */
-  runningMcpCall(server: string): { id: string; tool: string } | undefined;
+  /** The MCP tool calls of one server still running in the turn. */
+  runningMcpCalls(server: string): Array<{ id: string; tool: string; arguments: unknown }>;
 }
 
 /** How each answer is written back, per request. */
@@ -71,7 +71,12 @@ interface ReplyPlan {
 
 /** A request mapped to a card, or refused at once. */
 export type MappedServerRequest =
-  | { readonly refuse: unknown; readonly why: string }
+  | {
+      readonly refuse: unknown;
+      readonly why: string;
+      /** A line to tell the person in the turn, when the refusal is theirs to know about. */
+      readonly notice?: string;
+    }
   | {
       readonly kind: CodexInteractionKind;
       readonly interactionId: string;
@@ -236,33 +241,11 @@ function elicitation(
   const meta = (params._meta ?? null) as Params | null;
   const cancel = { action: 'cancel', content: null, _meta: null };
   const decline = { action: 'decline', content: null, _meta: null };
-  if (meta?.codex_approval_kind === 'mcp_tool_call') {
-    // An MCP tool call waiting on the person: drawn as an approval on the
-    // call's own card when the turn has seen it start.
-    const running = turn.runningMcpCall(server);
-    const tool = str(meta.tool_name) ?? running?.tool ?? str(meta.tool_title) ?? 'tool';
-    const toolName = `mcp__${server}__${tool}`;
-    return {
-      kind: 'approval',
-      interactionId: running?.id ?? `codex-request-${String(request.id)}`,
-      toolName,
-      card: {
-        type: 'approval_required',
-        data: {
-          toolName,
-          input: (running && turn.inputOf(running.id)) ?? '{}',
-          ...(str(params.message) ? { description: str(params.message) } : {}),
-          hasSuggestions: false,
-        },
-      },
-      replies: {
-        approve: () => ({ action: 'accept', content: null, _meta: null }),
-        deny: decline,
-        expired: decline,
-        cancelled: cancel,
-      },
-    };
-  }
+  const approval =
+    meta?.codex_approval_kind === 'mcp_tool_call'
+      ? mcpToolApproval(request, params, server, turn)
+      : undefined;
+  if (approval) return approval;
   const mode = params.mode;
   if (mode !== 'form' && mode !== 'url') {
     return { refuse: cancel, why: `DorkOS cannot draw a ${String(mode)} elicitation` };
@@ -300,16 +283,98 @@ function elicitation(
   };
 }
 
+/** `Allow the srv MCP server to run tool "delete_repo"?` (0.154's wording). */
+const MCP_APPROVAL_TOOL = /run tool "([^"]+)"/;
+
+/**
+ * An MCP tool call waiting on the person (0.154: a `form` elicitation with an
+ * empty schema, `_meta.codex_approval_kind: "mcp_tool_call"`, the call's
+ * arguments in `_meta.tool_params`, and the tool named only in the message).
+ *
+ * The kind is a label any MCP server can put on its own elicitation, so it is
+ * trusted only when the request asks for nothing (no fields, no url) AND the
+ * turn has a running call of that server and that tool. One such call: the
+ * card is that call's, with that call's input. Several: a card of its own,
+ * with the request's own arguments, so the person never approves one call
+ * while looking at another. None: not an approval at all (`undefined`), and
+ * it is drawn as the plain elicitation it is.
+ */
+function mcpToolApproval(
+  request: ServerRequest,
+  params: Params,
+  server: string,
+  turn: ServerRequestTurnView
+): MappedServerRequest | undefined {
+  const meta = params._meta as Params;
+  const schema = params.requestedSchema as { properties?: object } | undefined;
+  const asksForFields =
+    schema !== undefined &&
+    schema !== null &&
+    typeof schema.properties === 'object' &&
+    schema.properties !== null &&
+    Object.keys(schema.properties).length > 0;
+  if (params.mode !== 'form' || params.url !== undefined || asksForFields) return undefined;
+  const tool = str(meta.tool_name) ?? MCP_APPROVAL_TOOL.exec(str(params.message) ?? '')?.[1];
+  if (tool === undefined) return undefined;
+  const matches = turn.runningMcpCalls(server).filter((call) => call.tool === tool);
+  if (matches.length === 0) return undefined;
+  const only = matches.length === 1 ? matches[0]! : undefined;
+  const toolName = `mcp__${server}__${tool}`;
+  const decline = { action: 'decline', content: null, _meta: null };
+  return {
+    kind: 'approval',
+    interactionId: only?.id ?? `codex-request-${String(request.id)}`,
+    toolName,
+    card: {
+      type: 'approval_required',
+      data: {
+        toolName,
+        input: JSON.stringify(only ? (only.arguments ?? {}) : (meta.tool_params ?? {})),
+        ...(str(params.message) ? { description: str(params.message) } : {}),
+        hasSuggestions: false,
+      },
+    },
+    replies: {
+      approve: () => ({ action: 'accept', content: null, _meta: null }),
+      deny: decline,
+      expired: decline,
+      cancelled: { action: 'cancel', content: null, _meta: null },
+    },
+  };
+}
+
 interface CodexQuestion {
   id: string;
   header?: string;
   question: string;
+  isOther?: boolean;
+  isSecret?: boolean;
   options?: Array<{ label: string; description?: string }> | null;
 }
 
+/** What the person reads when Codex asks for a secret (app copy, one block). */
+export const SECRET_QUESTION_NOTICE =
+  'Codex asked for a secret. DorkOS can’t take secrets here yet, so it was skipped.';
+
+/**
+ * `item/tool/requestUserInput` → a question card. Every card offers a typed
+ * "Other" answer, which is Codex's `isOther`; a typed answer is passed through
+ * as written either way.
+ *
+ * A question marked `isSecret` is not drawn: the card has no masked input
+ * (DOR-2726), so a password typed there would sit in the transcript in the
+ * clear. The request is answered with nothing, and the person is told why.
+ */
 function userInput(request: ServerRequest, params: Params): MappedServerRequest {
   const questions = (Array.isArray(params.questions) ? params.questions : []) as CodexQuestion[];
   const none = { answers: {} };
+  if (questions.some((question) => question.isSecret === true)) {
+    return {
+      refuse: none,
+      why: 'a secret question needs masked input (DOR-2726)',
+      notice: SECRET_QUESTION_NOTICE,
+    };
+  }
   return {
     kind: 'question',
     interactionId: interactionIdOf(request, params),
@@ -329,12 +394,14 @@ function userInput(request: ServerRequest, params: Params): MappedServerRequest 
       },
     },
     replies: {
-      // Canonical answers are keyed by question index; Codex keys by id.
+      // Canonical answers are keyed by question index, and only by index;
+      // Codex keys by question id.
       answer: (answers) => ({
         answers: Object.fromEntries(
           questions.flatMap((question, index) => {
-            const value = answers[String(index)] ?? answers[question.id];
-            return value === undefined ? [] : [[question.id, { answers: [value] }]];
+            const key = String(index);
+            const value = Object.hasOwn(answers, key) ? answers[key] : undefined;
+            return typeof value === 'string' ? [[question.id, { answers: [value] }]] : [];
           })
         ),
       }),
@@ -357,13 +424,6 @@ interface PendingRequest {
   readonly settle: (result: unknown) => void;
   readonly emit: (events: StreamEvent[]) => void;
   readonly timer: ReturnType<typeof setTimeout>;
-}
-
-/** A pending request, as a snapshot or a test reads it. */
-export interface PendingCodexInteraction {
-  readonly interactionId: string;
-  readonly kind: CodexInteractionKind;
-  readonly startedAt: number;
 }
 
 /** Options for {@link CodexServerRequestBroker}. */
@@ -406,8 +466,9 @@ export class CodexServerRequestBroker {
     emit: (events: StreamEvent[]) => void;
   }): Promise<unknown> {
     const { mapped, sessionId } = entry;
-    // A re-sent id replaces the record it would otherwise shadow.
-    this.take(sessionId, mapped.interactionId)?.settle(mapped.replies.cancelled);
+    // A re-sent id replaces the record it would otherwise shadow. The old
+    // request is declined, never cancelled: a cancel stops the whole turn.
+    this.take(sessionId, mapped.interactionId)?.settle(mapped.replies.expired);
     const startedAt = Date.now();
     let settle!: (result: unknown) => void;
     const reply = new Promise<unknown>((resolve) => (settle = resolve));
@@ -552,19 +613,6 @@ export class CodexServerRequestBroker {
    */
   dropSession(sessionId: string): void {
     for (const entry of this.drain(sessionId)) entry.settle(entry.replies.cancelled);
-  }
-
-  /**
-   * The session's pending requests, oldest first.
-   *
-   * @param sessionId - The session.
-   */
-  pendingFor(sessionId: string): PendingCodexInteraction[] {
-    return [...(this.pending.get(sessionId)?.values() ?? [])].map((entry) => ({
-      interactionId: entry.interactionId,
-      kind: entry.kind,
-      startedAt: entry.startedAt,
-    }));
   }
 
   private expire(sessionId: string, interactionId: string): void {

@@ -153,7 +153,10 @@ export class AppServerTurnMapper {
   /** The input each tool start carried, for an approval card about it. */
   private readonly toolInputs = new Map<string, string>();
   /** MCP tool calls still running, by item id. */
-  private readonly runningMcp = new Map<string, { server: string; tool: string }>();
+  private readonly runningMcp = new Map<
+    string,
+    { server: string; tool: string; arguments: unknown }
+  >();
   /** Command items still running, with their process id when they have one. */
   private readonly runningCommands = new Map<
     string,
@@ -505,7 +508,11 @@ export class AppServerTurnMapper {
     const toolName = `mcp__${String(item.server)}__${String(item.tool)}`;
     const events = this.toolStart(id, toolName, JSON.stringify(item.arguments ?? {}));
     if (phase === 'started') {
-      this.runningMcp.set(id, { server: String(item.server), tool: String(item.tool) });
+      this.runningMcp.set(id, {
+        server: String(item.server),
+        tool: String(item.tool),
+        arguments: item.arguments ?? {},
+      });
       return events;
     }
     this.runningMcp.delete(id);
@@ -579,14 +586,14 @@ export class AppServerTurnMapper {
   }
 
   /**
-   * The most recent MCP tool call of one server still running in this turn.
+   * The MCP tool calls of one server still running in this turn.
    *
    * @param server - The MCP server's name.
    */
-  runningMcpCall(server: string): { id: string; tool: string } | undefined {
-    const running = [...this.runningMcp.entries()].filter(([, call]) => call.server === server);
-    const last = running.at(-1);
-    return last ? { id: last[0], tool: last[1].tool } : undefined;
+  runningMcpCalls(server: string): Array<{ id: string; tool: string; arguments: unknown }> {
+    return [...this.runningMcp.entries()]
+      .filter(([, call]) => call.server === server)
+      .map(([id, call]) => ({ id, tool: call.tool, arguments: call.arguments }));
   }
 
   private toolStart(toolCallId: string, toolName: string, input: string): StreamEvent[] {

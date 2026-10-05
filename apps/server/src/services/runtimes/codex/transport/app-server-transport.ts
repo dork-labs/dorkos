@@ -64,7 +64,6 @@ import {
   CodexServerRequestBroker,
   logRefusedServerRequest,
   mapServerRequest,
-  type PendingCodexInteraction,
   type ServerRequestTurnView,
 } from '../app-server/server-requests.js';
 import type { CodexTransport, CodexTurnRequest } from './codex-transport.js';
@@ -324,7 +323,7 @@ export class AppServerCodexTransport implements CodexTransport {
     };
     turn.view = {
       inputOf: (itemId) => mapper.inputOf(itemId),
-      runningMcpCall: (server) => mapper.runningMcpCall(server),
+      runningMcpCalls: (server) => mapper.runningMcpCalls(server),
     };
     (turn as { abandon: () => void }).abandon = () => {
       turn.abandoned = true;
@@ -586,15 +585,6 @@ export class AppServerCodexTransport implements CodexTransport {
   }
 
   /**
-   * The requests the session's turn is waiting on a person for.
-   *
-   * @param sessionId - The session.
-   */
-  pendingInteractions(sessionId: string): PendingCodexInteraction[] {
-    return this.requests.pendingFor(sessionId);
-  }
-
-  /**
    * Give the session's thread back: forget it here (its key is revoked) and
    * mark its process stale so the pool recycles it once nothing in it is
    * live. The next turn resumes the thread cold. Never called with an
@@ -713,6 +703,9 @@ export class AppServerCodexTransport implements CodexTransport {
     const mapped = mapServerRequest(request, turn.view);
     if ('refuse' in mapped) {
       logRefusedServerRequest(request.method, mapped.why);
+      if (mapped.notice) {
+        turn.deliver([{ type: 'system_status', data: { message: mapped.notice } }]);
+      }
       return mapped.refuse;
     }
     return this.requests.open({
@@ -858,7 +851,7 @@ export class AppServerCodexTransport implements CodexTransport {
       sawTerminal: false,
       interrupting: undefined,
       deliver: () => {},
-      view: { inputOf: () => undefined, runningMcpCall: () => undefined },
+      view: { inputOf: () => undefined, runningMcpCalls: () => [] },
     };
     this.openByThread.set(threadId, turn);
     this.openBySession.set(sessionId, turn);

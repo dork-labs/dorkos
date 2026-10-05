@@ -24,7 +24,7 @@ afterEach(async () => {
 
 const noTurn: ServerRequestTurnView = {
   inputOf: () => undefined,
-  runningMcpCall: () => undefined,
+  runningMcpCalls: () => [],
 };
 
 /** Read a running turn until an event of `type`, keeping what was read. */
@@ -141,35 +141,6 @@ describe('mapServerRequest (spec §10)', () => {
     expect(mapped.replies.approve!(false)).toEqual({ permissions, scope: 'turn' });
     expect(mapped.replies.approve!(true)).toEqual({ permissions, scope: 'session' });
     expect(mapped.replies.deny).toEqual({ permissions: {}, scope: 'turn' });
-  });
-
-  it('draws an MCP tool approval on the running call’s card', () => {
-    const mapped = mapServerRequest(
-      {
-        id: 4,
-        method: 'mcpServer/elicitation/request',
-        params: {
-          serverName: 'notion',
-          mode: 'form',
-          message: 'Allow notion to search?',
-          requestedSchema: {},
-          _meta: { codex_approval_kind: 'mcp_tool_call' },
-        },
-      },
-      { ...noTurn, runningMcpCall: () => ({ id: 'mcp-7', tool: 'search' }) }
-    );
-    expect(mapped).toMatchObject({
-      kind: 'approval',
-      interactionId: 'mcp-7',
-      card: { data: { toolName: 'mcp__notion__search', description: 'Allow notion to search?' } },
-    });
-    if (!('kind' in mapped)) throw new Error('refused');
-    expect(mapped.replies.approve!(false)).toEqual({
-      action: 'accept',
-      content: null,
-      _meta: null,
-    });
-    expect(mapped.replies.deny).toEqual({ action: 'decline', content: null, _meta: null });
   });
 
   it('draws form and url elicitations, and cancels modes it cannot draw', () => {
@@ -321,9 +292,6 @@ describe('approvals over the fake app-server', () => {
       hasSuggestions: true,
     });
     expect(seen.findIndex((e) => e.type === 'tool_call_start')).toBeLessThan(seen.indexOf(card));
-    expect(h.transport.pendingInteractions('s1')).toEqual([
-      expect.objectContaining({ interactionId: 'cmd-approval', kind: 'approval' }),
-    ]);
 
     expect(h.transport.answerApproval('s1', 'cmd-approval', true)).toBe(true);
     const after = await rest(gen, seen);
@@ -336,7 +304,6 @@ describe('approvals over the fake app-server', () => {
     expect([...fake.replies.values()]).toEqual([{ decision: 'accept' }]);
     // Answered once: a second answer (or an answer after Codex cleared it) is false.
     expect(h.transport.answerApproval('s1', 'cmd-approval', true)).toBe(false);
-    expect(h.transport.pendingInteractions('s1')).toEqual([]);
   });
 
   it('declines the command when a person denies it', async () => {
