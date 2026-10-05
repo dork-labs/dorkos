@@ -122,10 +122,40 @@ export const ExtensionApprovedSourceSchema = z.object({
    * asks again, because a path alone no longer says what is there.
    */
   digest: z.string().min(1).optional(),
+  /**
+   * The real path of the dev link this approval was given to (DOR-2696);
+   * absent for an installed copy. A dev link sits at its package's normal
+   * folder, so without this an approval of the installed copy would cover the
+   * link's files at the same path, and the other way round.
+   */
+  devLink: z.string().min(1).optional(),
 });
 
 /** The one copy of an extension a person approved to run code. */
 export type ExtensionApprovedSource = z.infer<typeof ExtensionApprovedSourceSchema>;
+
+/**
+ * The permission set a person approved for one extension (DOR-2686): where it
+ * runs and, when it runs separately, what it may reach. Recorded at the
+ * moment of approval from what the extension declared then, so a later
+ * version that declares MORE (a new host, a new program, agent access, or a
+ * move back inside DorkOS) waits for a person again, while one that declares
+ * less keeps running. See
+ * `apps/server/src/services/extensions/isolation/permission-coverage.ts`.
+ */
+export const ApprovedPermissionSetSchema = z.object({
+  /** Where it was approved to run: `in-process` is full access, and covers everything. */
+  runtime: z.enum(['in-process', 'subprocess']),
+  /** The `allow.net` entries approved. */
+  net: z.array(z.string()),
+  /** The `allow.run` entries approved, by the name the manifest wrote. */
+  run: z.array(z.string()),
+  /** Whether agent access (`allow.agents`) was approved. */
+  agents: z.boolean(),
+});
+
+/** The permission set a person approved for one extension. */
+export type ApprovedPermissionSet = z.infer<typeof ApprovedPermissionSetSchema>;
 
 /**
  * A copy of an extension a person said "Not now" to (DOR-2517).
@@ -2928,6 +2958,21 @@ export const UserConfigSchema = z.object({
        */
       approvedSources: z.record(z.string(), ExtensionApprovedSourceSchema).default(() => ({})),
       /**
+       * The permission set each approval covers, keyed by extension id
+       * (DOR-2686): what the extension declared when a person said yes.
+       *
+       * A missing entry means the full in-process set: every approval given
+       * before this map existed was for an extension running inside DorkOS
+       * with full access, so it still covers anything. An extension whose
+       * declared set is wider than its entry (a new host, program or agent
+       * access) does not run until a person approves again; a narrower one
+       * keeps running with nothing to click.
+       *
+       * `operator-only` for the same reason as `approvedToRun`: a caller that
+       * could widen an entry would widen a person's yes.
+       */
+      approvedPermissions: z.record(z.string(), ApprovedPermissionSetSchema).default(() => ({})),
+      /**
        * The copies a person said "Not now" to in the Activity inbox, keyed by
        * extension id (DOR-2517). Each entry silences the inbox row for that
        * exact path, plugin and version; any change asks again. Cleared for an
@@ -2956,6 +3001,7 @@ export const UserConfigSchema = z.object({
       disabled: [],
       approvedToRun: [],
       approvedSources: {},
+      approvedPermissions: {},
       dismissedApprovals: {},
       trustedSources: [],
     })),

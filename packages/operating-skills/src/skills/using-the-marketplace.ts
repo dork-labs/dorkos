@@ -9,17 +9,16 @@ export const usingTheMarketplace: OperatingSkill = {
     '(agent, plugin, skill pack, or adapter), or reading marketplace sources. Covers search, ' +
     'the install confirmation flow, checking for and applying updates and what they keep, ' +
     'packages held back from sessions until a person approves them, the uninstall approval ' +
-    'flow, listing what is installed, and why only a person may add or remove a source.',
+    'flow, running a package from a folder (a dev link), listing what is installed, and why ' +
+    'only a person may add or remove a source.',
   body: `# Using the marketplace
 
 ${TOOL_NAME_NOTE}
 
-The marketplace distributes installable packages: agents, plugins, skill packs,
-and adapters. Every operation here is a capability, so it is also reachable
-with \`dorkos call marketplace.<verb> --input '<json>'\` from any runtime;
-\`dorkos capabilities\` lists them with their tiers. On the command line,
-\`dorkos marketplace <verb>\` is the home for all of it, and \`dorkos install\`,
-\`dorkos update\` and \`dorkos uninstall\` are shorthand for the same three verbs.
+The marketplace distributes agents, plugins, skill packs and adapters. Every
+operation is a capability (\`dorkos call marketplace.<verb> --input '<json>'\`
+from any runtime; \`dorkos capabilities\` lists the tiers). \`dorkos marketplace
+<verb>\` does it all, with \`dorkos install|update|uninstall\` as shorthand.
 
 ## Find a package (tier: observe)
 
@@ -103,29 +102,32 @@ that they can press **Review** on its row under Marketplace, then Installed.
 ## Remove a package (tier: destructive)
 
 Removing a package is gated on a person's approval and returns the APPROVAL
-payload, not a confirmation token. Two gated paths, pick the one your session has:
+payload, not a confirmation token. Pick the gated path your session has:
 
 - **In-session tool:** \`marketplace_uninstall\`, retried with an \`approvalToken\`.
 - **Any runtime, from a shell:** \`dorkos call marketplace.uninstall --input
   '{"name":"<pkg>"}'\`, retried with \`--approval <token>\`. This is the path for a
   Codex or OpenCode session, which has no \`marketplace_uninstall\` tool.
+- **The person's verb,** \`dorkos uninstall <name>\`, is gated for you the same way.
 
 1. Call it with \`name\` (and \`purge: true\` only if the user asked to delete what
    they added). It returns \`status: approval_required\` and an \`approvalToken\`.
 2. Tell the user what would be removed and that a card is waiting in DorkOS.
 3. Call again with the SAME arguments plus the token. Changing any argument,
-   \`purge\` included, invalidates the approval.
-
-Read \`reason\` and \`status\` as operating-dorkos describes: \`awaiting_decision\`
-means present the same token later, and \`status: "denied"\` means stop.
+   \`purge\` included, invalidates the approval. \`awaiting_decision\` means present
+   the same token later; \`status: "denied"\` means stop.
 
 Uninstall keeps what the person and their agents added (see above) and a later
 reinstall picks it up; \`purge: true\` removes it too, so say that out loud.
 Uninstalling an agent package also removes that agent from the team: its rooms,
 schedules, sign-ins and access go for good, even after a reinstall; say so first.
 
-\`dorkos uninstall <name>\` is the person's verb, and it is gated for you
-exactly like the paths above, so it is not a way around an approval.
+## Run a package from a folder (tier: destructive)
+
+\`marketplace_link\` with the folder's absolute real \`path\` (\`projectPath\` for one
+project) always returns \`approval_required\`, whatever the settings: retry with
+the SAME arguments plus the token. Install, update and uninstall refuse a
+dev-linked package (\`package_is_dev_linked\`); unlinking is the person's.
 
 ## Sources: you may read them, only a person may change them
 
@@ -156,8 +158,7 @@ marketplace is a separate step.
 
 ## Rule
 
-Installing, updating, uninstalling, and scaffolding all change the user's system.
-State plainly what you are about to do, complete whichever gate the tool asks for
-(\`confirmationToken\` for install, update and scaffold, \`approvalToken\` for
-uninstall), then report what landed.`,
+Every change here touches the user's system: say what you are about to do,
+complete the gate the tool asks for (\`confirmationToken\` for install, update and
+scaffold, \`approvalToken\` for uninstall and link), then report what landed.`,
 };

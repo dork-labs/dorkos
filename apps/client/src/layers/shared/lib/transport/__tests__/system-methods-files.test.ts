@@ -12,7 +12,7 @@
  * `copyEntry` is here for the other half of the same contract: its URL and
  * method are only checked at runtime, where a component test cannot see them.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createSystemMethods } from '../system-methods';
 
 const BASE = 'http://localhost:4242/api';
@@ -29,6 +29,10 @@ function lastCall(): [string, RequestInit] {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('revealEntry', () => {
@@ -99,6 +103,94 @@ describe('copyEntry', () => {
 
     await expect(setup().copyEntry('/repo', 'a.txt', 'b.txt')).rejects.toMatchObject({
       code: 'CONFLICT',
+    });
+  });
+});
+
+describe('writeFile', () => {
+  it.each(['changed', 'no_op'] as const)(
+    'preserves the actual server %s acknowledgement',
+    async (effect) => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(JSON.stringify({ ok: true, hash: 'server-hash', effect }), { status: 200 })
+          )
+      );
+
+      await expect(
+        setup().writeFile('/repo', 'doc.md', 'body', { expectedHash: 'previous' })
+      ).resolves.toEqual({ ok: true, hash: 'server-hash', effect });
+      const [url, init] = lastCall();
+      expect(url).toBe(`${BASE}/files/content`);
+      expect(init.method).toBe('PUT');
+      expect(JSON.parse(init.body as string)).toEqual({
+        cwd: '/repo',
+        path: 'doc.md',
+        content: 'body',
+        expectedHash: 'previous',
+      });
+    }
+  );
+
+  it.each([
+    null,
+    [],
+    123,
+    'not an object',
+    { hash: 'h', effect: 'changed' },
+    { ok: false, hash: 'h', effect: 'changed' },
+    { ok: true, effect: 'changed' },
+    { ok: true, hash: '', effect: 'changed' },
+    { ok: true, hash: 123, effect: 'changed' },
+    { ok: true, hash: 'h' },
+    { ok: true, hash: 'h', effect: 'saved' },
+    { ok: true, hash: 'h', effect: true },
+  ])('rejects malformed success evidence %j', async (body) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }))
+    );
+    await expect(setup().writeFile('/repo', 'doc.md', 'body')).rejects.toThrow(
+      'Invalid file save response'
+    );
+  });
+
+  it('rejects an undecodable success acknowledgement', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not JSON', { status: 200 })));
+    await expect(setup().writeFile('/repo', 'doc.md', 'body')).rejects.toThrow();
+  });
+
+  it('retains current disk bytes and hash on a 409', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ currentHash: 'disk-hash', currentContent: 'disk' }), {
+          status: 409,
+        })
+      )
+    );
+    await expect(setup().writeFile('/repo', 'doc.md', 'mine')).resolves.toEqual({
+      ok: false,
+      conflict: { currentHash: 'disk-hash', currentContent: 'disk' },
+    });
+  });
+
+  it('keeps genuine server errors as thrown failures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'Permission denied', code: 'EACCES' }), {
+          status: 403,
+        })
+      )
+    );
+    await expect(setup().writeFile('/repo', 'doc.md', 'mine')).rejects.toMatchObject({
+      message: 'Permission denied',
+      code: 'EACCES',
+      status: 403,
     });
   });
 });

@@ -35,8 +35,12 @@ import {
   createRequirePerson,
 } from './inbox/extension-inbox-context.js';
 import fs from 'fs/promises';
+import { mkdirSync } from 'fs';
 import path from 'path';
 import { logger } from '../../lib/logger.js';
+import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.js';
+import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
+import { isolatedFilesDir } from './isolation/grants.js';
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;
@@ -228,6 +232,12 @@ interface CreateContextDeps {
   dorkHome: string;
   /** The manifest name, which inbox rows, pushes and the person bar say. Defaults to the id. */
   extensionName?: string;
+  /**
+   * Discovery's decision on each tool the manifest declares
+   * (`checkDeclaredTools`), which `ctx.tools.handle` binds against. Omitted
+   * means the extension declares none, and every `handle` call is refused.
+   */
+  toolChecks?: readonly ExtensionToolCheck[];
 }
 
 /**
@@ -239,6 +249,7 @@ interface CreateContextDeps {
  * - Interval-based scheduler with a 5-second minimum floor
  * - SSE event emitter via EventFanOut with `ext:{id}:{event}` namespace
  * - The resolved DorkOS data directory (`dorkHome`)
+ * - `filesDir`: the one folder the extension writes to, created here
  * - `accounts`: the agent accounts, their usage, and the account advisor seam
  * - `projects`: the projects core knows, scoped to this extension
  * - `inbox`: decisions in the Activity inbox (spec `flow-multiproject` §7)
@@ -247,6 +258,9 @@ interface CreateContextDeps {
  * - `sessions`: start work in a new chat by the extension's own rules (§7.7)
  * - `agent`: send one of the person's agents a message, held while it is busy,
  *   and hear what became of it (DOR-2683)
+ * - `tools`: bind the handlers for the tools the manifest declares (DOR-2685);
+ *   the returned `tools` binding is sealed by the lifecycle once `register()`
+ *   finishes
  *
  * @param deps - Extension identity and directory info
  * @returns The context, a function to retrieve scheduled cleanup functions, and
@@ -258,6 +272,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   getScheduledCleanups: () => Array<() => void>;
   releaseListeners: () => void;
   dispose: () => void;
+  tools: ToolBinding;
 } {
   const scheduledCleanups: Array<() => void> = [];
   const { extensionId, extensionDir, dorkHome } = deps;
@@ -280,6 +295,16 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   const settings = new ExtensionSettingsStore(dorkHome, extensionId);
 
   const dataPath = path.join(dorkHome, 'extension-data', extensionId, 'data.json');
+
+  // The one folder the extension writes to. The same helper names the folder
+  // an isolated child is granted write access to, so the two cannot drift.
+  // Made here (synchronously) so it exists before register() runs.
+  const filesDir = isolatedFilesDir(dorkHome, extensionId);
+  try {
+    mkdirSync(filesDir, { recursive: true });
+  } catch (err) {
+    logger.warn(`[ext:${extensionId}] couldn't create its files folder:`, err);
+  }
 
   const storage = {
     async loadData<T = unknown>(): Promise<T | null> {
@@ -321,6 +346,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     dorkHome
   );
   const { agent, release: releaseAgent } = createAgentApi(extensionId);
+  const tools = createToolBinding(extensionId, deps.toolChecks ?? []);
 
   // Every way this instance can start something that outlives the call.
   const guardedAccounts = accounts && {
@@ -370,6 +396,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     extensionId,
     extensionDir,
     dorkHome,
+    filesDir,
     accounts: guardedAccounts,
     projects: guardedProjects,
     inbox: guardedInbox,
@@ -391,6 +418,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
       },
     },
     agent: guardedAgent,
+    tools: tools.api,
   };
 
   const releaseListeners = () => {
@@ -405,6 +433,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     ctx,
     getScheduledCleanups: () => [...scheduledCleanups],
     releaseListeners,
+    tools,
     /**
      * Give up on this instance: cancel what it scheduled, release what it
      * registered, and make every later `schedule` or listener registration a
@@ -413,6 +442,8 @@ export function createDataProviderContext(deps: CreateContextDeps): {
      */
     dispose: () => {
       disposed = true;
+      // A given-up instance never offers tools, whatever it binds later.
+      tools.close();
       for (const cancel of scheduledCleanups.splice(0)) {
         try {
           cancel();

@@ -103,7 +103,7 @@
  *
  * @module services/core/capabilities/tier-enforcement
  */
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
 import type {
   ApprovalOrigin,
   ApprovalServiceAction,
@@ -131,6 +131,7 @@ import {
   redactSecretsInText,
   renderRequesterLabel,
   joinSummaryFields,
+  extensionSourcePhrase,
   summaryFieldsNamingSubject,
   type ApprovalConsumeResult,
   type ApprovalConnectorAuthority,
@@ -174,6 +175,12 @@ export interface GatedAction {
   id: string;
   /** Human-facing title, as the operator's approval card shows it. */
   title: string;
+  /**
+   * Where the action came from, when a running extension contributed it
+   * (DOR-2685). Its title is then the extension author's text, and the card
+   * names the extension.
+   */
+  source?: CapabilitySource;
   /** Permission tier. This, and nothing about the caller, decides whether to gate. */
   tier: CapabilityTier;
   /**
@@ -685,9 +692,18 @@ export function describeGatedAttempt(
     )
   );
   const detail = clause ? ` with ${clause}` : '';
-  // The title is declared in DorkOS's own source, never by the caller, so it needs
-  // no escaping — but the whole sentence gets the secret sweep anyway, because
-  // this string is broadcast.
+  // A core title is declared in DorkOS's own source, so it is written as is. An
+  // extension's title and name are its author's text (DOR-2685): both are
+  // JSON-quoted, so neither can close the quote and forge a field after it,
+  // and the card says which extension the tool comes from. `contribute` also
+  // refuses quotes and control characters in both. The whole sentence gets
+  // the secret sweep either way, because this string is broadcast.
+  if (action.source) {
+    return redactSecretsInText(
+      `${who}wants to run ${JSON.stringify(action.title)}` +
+        `${extensionSourcePhrase(action.source.name)}${detail}`
+    );
+  }
   return redactSecretsInText(`${who}wants to run "${action.title}"${detail}`);
 }
 
@@ -1280,6 +1296,9 @@ export class CapabilityGateRefusal extends Error {
  * @param id - The capability id the caller is about to perform.
  * @param input - Raw input; parsed against the capability's `input` schema.
  * @param context - Who is calling, any approval token, and any trusted marker.
+ * @param options.change - For a capability with `describeApprovalChange`: the
+ *   description the caller computed with it, bound into the approval exactly as
+ *   `registry.invoke` binds it. Required for such a capability.
  * @returns What the gate decided. Proceed only on `allowed`.
  * @throws If no capability is registered under `id`, or if `input` fails schema
  *   validation (a `ZodError`).
@@ -1288,11 +1307,21 @@ export async function authorizeCapability(
   registry: CapabilityRegistry,
   id: string,
   input: unknown,
-  context: CapabilityInvocationContext
+  context: CapabilityInvocationContext,
+  options: { change?: string } = {}
 ): Promise<TierEnforcementDecision> {
   const capability = registry.get(id);
   if (!capability) {
     throw new Error(`Capability registry: no capability registered for id "${id}".`);
+  }
+  // A capability that binds its approval to a description of the change must
+  // be authorized with that description, or a token minted here would bind
+  // the input alone and never match one minted by `registry.invoke`.
+  if (capability.describeApprovalChange && options.change === undefined && !context.trusted) {
+    throw new Error(
+      `Capability gate: "${id}" binds its approval to a described change; pass it as ` +
+        '`options.change` (the same text its `describeApprovalChange` returns).'
+    );
   }
   // The same contradiction `registry.invoke` refuses, refused in this seam too.
   // Unreachable today — this function's only caller cannot produce the pair — but
@@ -1330,6 +1359,7 @@ export async function authorizeCapability(
     permission,
     ...(context.identity ? { identity: context.identity } : {}),
     ...(context.approvalToken ? { approvalToken: context.approvalToken } : {}),
+    ...(options.change !== undefined ? { change: options.change } : {}),
     retryChannel: context.retryChannel ?? 'http-header',
   });
 }

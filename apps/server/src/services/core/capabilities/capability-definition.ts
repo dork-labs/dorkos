@@ -29,7 +29,11 @@
  */
 import type { z } from 'zod';
 import type { Logger } from '@dorkos/shared/logger';
-import type { CapabilityTier, CapabilitySurfaces } from '@dorkos/shared/capabilities';
+import type {
+  CapabilitySource,
+  CapabilityTier,
+  CapabilitySurfaces,
+} from '@dorkos/shared/capabilities';
 import type {
   CapabilityHandlerContext,
   CapabilityInvocationContext,
@@ -274,6 +278,15 @@ export interface CapabilityDefinition<
     input: z.infer<In>,
     context: CapabilityInvocationContext
   ) => Promise<CapabilityPreflightResult>;
+  /**
+   * Where this capability came from, set only on a definition the host built
+   * for a running extension (`buildExtensionDefinitions`, DOR-2685).
+   *
+   * A core capability never declares one: {@link composeRegistry} refuses a
+   * core domain that does, so no core action can pass itself off as an
+   * extension's, and the field reaching the catalog always means what it says.
+   */
+  source?: CapabilitySource;
   /**
    * Execute the capability against the injected dependencies, returning PLAIN
    * typed output (see the module-level "result-wrapping seam" note — transport

@@ -36,14 +36,27 @@ export interface TabRouter {
  * `syncLocation` here closes that hole; when the location did change, the sync
  * effect got there first and this is a no-op.
  *
+ * It reconciles as a **replace**: the only way to land somewhere other than the
+ * tab's href is a redirect of that very page, so the tab's current history entry
+ * is rewritten rather than a second one added (DOR-2107). Otherwise a fresh tab
+ * on `/session?dir=…` would keep that transient href behind it, and Back would
+ * walk straight into the same redirect.
+ *
  * @param router - The router to drive.
  */
 export function goToActiveTab(router: TabRouter): void {
   const { tabs, activeTabId } = useAppTabsStore.getState();
   const active = tabs.find((tab) => tab.id === activeTabId);
   if (!active) return;
-  void router.navigate({ href: active.href }).then(() => {
-    useAppTabsStore.getState().syncLocation(router.state.location.href);
+  const { id, href } = active;
+  void router.navigate({ href }).then(() => {
+    // Only for the tab and page this navigation was for. If the person switched
+    // tabs or went somewhere else while it settled, the location belongs to
+    // that later move, and writing it here would overwrite the wrong entry.
+    const now = useAppTabsStore.getState();
+    const still = now.tabs.find((tab) => tab.id === now.activeTabId);
+    if (still?.id !== id || still.href !== href) return;
+    now.syncLocation(router.state.location.href, { replace: true });
   });
 }
 

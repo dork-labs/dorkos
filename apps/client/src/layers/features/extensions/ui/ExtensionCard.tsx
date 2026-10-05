@@ -1,9 +1,23 @@
 import { useState } from 'react';
 import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide-react';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { Badge, Button, Card, Switch } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
-import { EXTENSION_TRUST_COPY, extensionConsentCopy } from '@/layers/entities/extension';
+import {
+  extensionRestartingCopy,
+  extensionServerErrorCopy,
+  isExtensionServerErrorCode,
+} from '@dorkos/shared/extension-server-status';
+import { Badge, Button, Card, DevLinkPath, DevLinkTag, Switch } from '@/layers/shared/ui';
+import { cn, openLink } from '@/layers/shared/lib';
+import {
+  EXTENSION_TRUST_COPY,
+  ExtensionAgentGifts,
+  ExtensionPermissionLines,
+  agentGiftsFromRecord,
+  extensionConsentCopy,
+  approvedSetOf,
+  permissionViewFromRecord,
+  useAddedSinceSeen,
+} from '@/layers/entities/extension';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -16,9 +30,16 @@ interface ExtensionCardProps {
   onSetRunApproval: (id: string, approve: boolean) => void;
   /** Whether an approve/stop call for this extension is in progress. */
   isSettingApproval: boolean;
+  /** Reload extensions: the tab's existing Reload, offered beside a stopped server half. */
+  onReload: () => void;
+  /** Whether a reload is in progress. */
+  isReloading: boolean;
 }
 
 const TERMINAL_STATUSES = new Set(['disabled', 'discovered', 'incompatible', 'invalid']);
+
+/** Where a dev link is switched or unlinked: the Marketplace's Installed list (DOR-2696). */
+const INSTALLED_LINK = '/marketplace?view=installed';
 
 /** Per-extension card in the Extensions settings tab. */
 export function ExtensionCard({
@@ -27,6 +48,8 @@ export function ExtensionCard({
   isToggling,
   onSetRunApproval,
   isSettingApproval,
+  onReload,
+  isReloading,
 }: ExtensionCardProps) {
   const { manifest, status, scope, error, serverError, origin, approvedToRun } = extension;
   const [errorExpanded, setErrorExpanded] = useState(false);
@@ -47,6 +70,13 @@ export function ExtensionCard({
   // (DOR-516). This only picks which reach to name, because a server entry or data
   // proxy adds "anything DorkOS can" to acting as you in DorkOS.
   const runsInServer = extension.hasServerEntry || extension.hasDataProxy;
+  // Where it runs and what it may reach (DOR-2686). `null` from a server that
+  // never sends it, so the card adds nothing rather than guessing.
+  const permissions = permissionViewFromRecord(extension);
+  // After a stale refusal here, what the redrawn card lists that the one the
+  // person saw did not. A re-ask after an earlier approval has no such lead
+  // on this card: the record does not carry the approved set (the inbox row does).
+  const addedSinceSeen = useAddedSinceSeen(extension.id, approvedSetOf(permissions));
   // Health/availability state — communicated by a badge that is visually
   // distinct from the on/off toggle (an errored extension can still be "on").
   const healthLabel = hasError
@@ -87,12 +117,38 @@ export function ExtensionCard({
 
             <span className="font-medium">{manifest.name}</span>
             <span className="text-muted-foreground text-sm">v{manifest.version}</span>
+            {extension.devLink && <DevLinkTag />}
           </div>
+
+          {/* Runs from a folder the person linked (DOR-2696). The switch back
+              lives on the package's Installed row, which this links to. */}
+          {extension.devLink && (
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1"
+              data-testid={`extension-dev-link-${extension.id}`}
+            >
+              <DevLinkPath path={extension.devLink.path} className="min-w-0" />
+              <button
+                type="button"
+                onClick={() => void openLink(INSTALLED_LINK)}
+                className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-xs underline underline-offset-2"
+              >
+                Unlink or switch
+              </button>
+            </div>
+          )}
 
           {/* Description */}
           {manifest.description && (
             <p className="text-muted-foreground text-sm">{manifest.description}</p>
           )}
+
+          {/* The tools and skills it gives agents (DOR-2685), each with what
+              its tier means, and the reason for any DorkOS left out. */}
+          <ExtensionAgentGifts
+            gifts={agentGiftsFromRecord(extension)}
+            data-testid={`extension-agent-gifts-${extension.id}`}
+          />
 
           {/* Incompatible message */}
           {isIncompatible && manifest.minHostVersion && (
@@ -133,7 +189,36 @@ export function ExtensionCard({
               version it already had running. Said beside an otherwise healthy
               extension rather than through the status badge: everything else
               about it — including the part that draws in this window — is fine. */}
-          {serverError && (
+          {/* An extension that asks to run separately does not run yet
+              (DOR-2686, `isolation_not_ready`), and nothing of it is running, so
+              the rebuild sentence below would be false. Its message is complete. */}
+          {/* A server half that runs separately stopped or cannot start
+              (DOR-2686). The server's own sentence when it sent one, else the
+              shared copy for its code, with the tab's Reload beside it. */}
+          {serverError && isExtensionServerErrorCode(serverError.code) && (
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1"
+              data-testid={`extension-server-status-${extension.id}`}
+            >
+              <p className="text-status-warning-fg text-sm">
+                {serverError.message || extensionServerErrorCopy(serverError.code, manifest.name)}
+              </p>
+              <button
+                type="button"
+                onClick={onReload}
+                disabled={isReloading}
+                className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-xs underline underline-offset-2 disabled:opacity-50"
+              >
+                Reload
+              </button>
+            </div>
+          )}
+          {extension.restartingAt && !serverError && (
+            <p className="text-muted-foreground text-sm" role="status">
+              {extensionRestartingCopy(manifest.name)}
+            </p>
+          )}
+          {serverError && !isExtensionServerErrorCode(serverError.code) && (
             <p className="text-status-warning-fg text-sm">
               Couldn’t rebuild its server part: {serverError.message}. The last version still runs.
             </p>
@@ -160,6 +245,12 @@ export function ExtensionCard({
                 >
                   Stop it
                 </button>
+                {/* What the yes covers, so it can be checked again later. */}
+                <ExtensionPermissionLines
+                  permissions={permissions}
+                  className="basis-full"
+                  data-testid={`extension-permissions-${extension.id}`}
+                />
               </div>
             ) : (
               <div
@@ -178,14 +269,21 @@ export function ExtensionCard({
                   >
                     {extension.originProblem === 'changed'
                       ? 'Its files changed after install, so DorkOS can’t vouch for it. Look it over first.'
-                      : 'Its plugin links to files elsewhere, so DorkOS can’t vouch for its source.'}
+                      : extension.originProblem === 'dev-link'
+                        ? 'It runs from your folder, so DorkOS can’t vouch for its source.'
+                        : 'Its plugin links to files elsewhere, so DorkOS can’t vouch for its source.'}
                   </p>
                 )}
                 {/* The consent sentence and the trust warning are shared with
                     the Activity inbox's ⓘ panel (DOR-2517), so the two places
                     that ask say the same thing. */}
+                <ExtensionPermissionLines
+                  permissions={permissions}
+                  added={addedSinceSeen}
+                  data-testid={`extension-permissions-${extension.id}`}
+                />
                 <p className="text-muted-foreground text-sm">
-                  {extensionConsentCopy(runsInServer)}
+                  {extensionConsentCopy(runsInServer, permissions?.runtime === 'subprocess')}
                 </p>
                 <p className="text-muted-foreground text-sm">{EXTENSION_TRUST_COPY}</p>
                 <Button

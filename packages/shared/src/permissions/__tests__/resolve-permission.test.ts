@@ -229,6 +229,48 @@ describe('Unchanged (no preset chosen)', () => {
   });
 });
 
+describe('the Extension tools area (DOR-2685)', () => {
+  // A tool a running extension adds. The id shape matches what the host builds
+  // (`ext_<id>.<name>`); the resolver only needs the area, id and tier.
+  const extensionTool = (tier: ResolvePermissionInput['tier']) =>
+    input({ area: 'extensions', actionId: 'ext_mail_app.send_message', tier });
+
+  it.each([
+    ['careful', 'ask'],
+    ['balanced', 'allowed'],
+    ['full', 'allowed'],
+  ] as const)('resolves %s to %s for an act tool', (preset, state) => {
+    // Pins the operator's pick: Careful asks, Balanced and Full power allow.
+    const r = resolvePermission({
+      ...extensionTool('act'),
+      config: { preset, defaults: EMPTY },
+    });
+    expect(r).toMatchObject({ area: 'extensions', state, source: 'preset' });
+  });
+
+  it('still asks for a destructive extension tool when the area is Allowed', () => {
+    // An extension may register destructive tools only because the area's
+    // Allowed can never carry one past a card.
+    for (const preset of ['balanced', 'full'] as const) {
+      const r = resolvePermission({
+        ...extensionTool('destructive'),
+        config: { preset, defaults: EMPTY },
+      });
+      expect(r, preset).toMatchObject({ state: 'ask', destructiveAsk: true });
+    }
+  });
+
+  it('lets a person block every extension tool for one agent', () => {
+    // The area is one switch for all of them, at the agent layer too.
+    const r = resolvePermission({
+      ...extensionTool('observe'),
+      config: { preset: 'full', defaults: EMPTY },
+      agent: { areas: { extensions: 'blocked' }, actions: {} },
+    });
+    expect(r).toMatchObject({ state: 'blocked', source: 'agent-area' });
+  });
+});
+
 describe('resolveFilesAndCommands', () => {
   // The order a trust stop is looked up in: agent, runtime, global, then the
   // runtime's own behaviour.

@@ -454,8 +454,15 @@ describe('in-session tool exposure', () => {
     // DEFERRED: starting a session is a deliberate step a turn can search for.
     // Both counts move by the same one.
     // Five document-channel verbs are searchable deferred tools.
-    expect(tools).toHaveLength(118);
-    expect(deferred).toHaveLength(108);
+    // 118 -> 119 for `marketplace_link` (DOR-2696), DEFERRED: only someone
+    // building a package links a folder, and that turn can afford a search.
+    // Both counts move by the same one.
+    // Extension tools never move these counts (DOR-2685): this list is built
+    // from the docs registry, which composes no extension. Extension tools are
+    // guarded separately, against a contributed fixture, in
+    // `extension-tools-every-list.test.ts`.
+    expect(tools).toHaveLength(119);
+    expect(deferred).toHaveLength(109);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

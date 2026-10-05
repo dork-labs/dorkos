@@ -201,14 +201,18 @@ it('proxy release pending refuses same-profile reacquisition until exact closure
     engine = createBrowserEngine(h.config),
     opened = await engine.open(command),
     held = deferred<void>();
-  h.release.mockImplementation(() => held.promise);
+  const releaseEntered = deferred<void>();
+  h.release.mockImplementation(() => {
+    releaseEntered.resolve();
+    return held.promise;
+  });
   const closing = engine.close({
     kind: 'close',
     requestId,
     browserId: opened.browserId,
     browserGeneration: 0,
   });
-  await tick();
+  await releaseEntered.promise;
   expect(h.release).toHaveBeenCalledTimes(1);
   await expect(engine.open(command)).rejects.toMatchObject({ code: 'PROFILE_UNCERTAIN' });
   expect(mocks.launch).toHaveBeenCalledTimes(1);
@@ -236,8 +240,18 @@ it('shutdown enters all available closes before waiting for held opening, then r
     (error: unknown) => error
   );
   await tick();
+  const firstEntry = deferred<void>(),
+    secondEntry = deferred<void>();
+  h.proxyClose.mockImplementation(async () => {
+    firstEntry.resolve();
+  });
+  secondProxy.mockImplementation(async () => {
+    secondEntry.resolve();
+  });
   const shutdown = engine.shutdown();
   expect(engine.shutdown()).toBe(shutdown);
+  expect(() => engine.listTabs(opened.browserId, opened.browserGeneration)).toThrow();
+  await Promise.all([firstEntry.promise, secondEntry.promise]);
   expect(h.context.close).toHaveBeenCalledTimes(1);
   expect(h.proxyClose).toHaveBeenCalledTimes(1);
   expect(secondProxy).toHaveBeenCalledTimes(1);
@@ -317,13 +331,22 @@ it('shutdown keeps its original end across nonzero earlier synchronous close cal
     vi.advanceTimersByTime(1000);
     await operation;
   });
-  const proxy = deferred<void>();
-  second.proxyClose.mockImplementation(() => proxy.promise);
+  const proxy = deferred<void>(),
+    firstEntry = deferred<void>(),
+    secondEntry = deferred<void>();
+  first.proxyClose.mockImplementation(async () => {
+    firstEntry.resolve();
+  });
+  second.proxyClose.mockImplementation(() => {
+    secondEntry.resolve();
+    return proxy.promise;
+  });
   let settled = false;
   const shutdown = engine.shutdown();
   void shutdown.then(() => {
     settled = true;
   });
+  await Promise.all([firstEntry.promise, secondEntry.promise]);
   expect(first.context.close).toHaveBeenCalledTimes(1);
   expect(second.context.close).toHaveBeenCalledTimes(1);
   expect(first.proxyClose).toHaveBeenCalledTimes(1);

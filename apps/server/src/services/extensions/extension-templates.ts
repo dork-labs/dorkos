@@ -135,6 +135,7 @@ export function generateServerTemplate(name: string, description: string): strin
 //   ctx.emit(event, data)           — Broadcast an SSE event to connected clients
 //   ctx.extensionId                 — This extension's unique identifier
 //   ctx.extensionDir                — Absolute path to this extension's directory
+//   ctx.filesDir                    — A folder only this extension writes to
 
 import type { Router } from 'express';
 import type { DataProviderContext } from '@dorkos/extension-api/server';

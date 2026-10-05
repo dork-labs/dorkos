@@ -51,8 +51,12 @@ import { randomUUID } from 'node:crypto';
 // Auto-approved tool sets (module-level to avoid per-call reconstruction)
 // ---------------------------------------------------------------------------
 
-/** Read-only Claude Code tools — cannot modify filesystem or execute shell commands. */
-const READ_ONLY_TOOLS = new Set([
+/**
+ * Read-only Claude Code tools — cannot modify filesystem or execute shell
+ * commands. Auto-allowed in `canUseTool`, so exported for the census guard that
+ * keeps every extension tool out of it (DOR-2685).
+ */
+export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   'Read',
   'Grep',
   'Glob',

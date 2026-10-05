@@ -275,3 +275,41 @@ export function connectorAgentRequestsChangedAnnouncer(
     eventFanOut.broadcast('connector_agent_requests_changed', event, operatorAudience);
   };
 }
+
+/** The narrow slice of `CapabilityRegistry` the capabilities broadcast needs. */
+export interface CapabilitiesChangeSource {
+  /** Subscribe to every extension contribute and remove. Returns an unsubscribe. */
+  onChange(listener: (version: number) => void): () => void;
+}
+
+/**
+ * What `capabilities_changed` puts on the wire: the registry's new surface
+ * version and nothing else. Each reader re-fetches what it shows (the
+ * permissions page, the catalog) rather than trusting a payload to describe it.
+ */
+export interface CapabilitiesChangedEvent {
+  /** The registry's surface version after the change; it only ever grows. */
+  version: number;
+}
+
+/**
+ * Broadcast `capabilities_changed` whenever a running extension's tools join or
+ * leave the registry (DOR-2685), so an open permissions page or catalog
+ * re-fetches instead of showing a list that is no longer true.
+ *
+ * GLOBAL, with no audience: which tools exist is legitimate news for agents too
+ * (`list_capabilities` reads the same catalog), and the payload is a counter.
+ *
+ * @param registry - The capability registry whose changes are announced.
+ * @param eventFanOut - Where the event is written.
+ * @returns A function that stops the broadcast.
+ */
+export function wireCapabilitiesChangedBroadcast(
+  registry: CapabilitiesChangeSource,
+  eventFanOut: BroadcastSink
+): () => void {
+  return registry.onChange((version) => {
+    const event: CapabilitiesChangedEvent = { version };
+    eventFanOut.broadcast('capabilities_changed', event);
+  });
+}

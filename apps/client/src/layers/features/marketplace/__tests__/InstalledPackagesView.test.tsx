@@ -48,6 +48,15 @@ vi.mock('@/layers/entities/marketplace', () => ({
   }),
   useInstalledIntegrity: vi.fn(),
   useHeldBackPackages: () => heldBackQuery,
+  useMarketplacePackages: () => ({ data: [] }),
+  // Dev links (DOR-2696): inert unless a test sets them.
+  useDevLinks: () => ({ data: { links: [] } }),
+  useUnlinkDevLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  usePreviewDevLink: () => ({ mutateAsync: vi.fn(), isPending: false, reset: vi.fn() }),
+  useLinkFolder: () => ({ mutateAsync: vi.fn(), isPending: false, reset: vi.fn() }),
+  useDevLinkReloadStore: (select: (s: { latest: Record<string, unknown> }) => unknown) =>
+    select({ latest: {} }),
+  devLinkKey: () => 'key',
 }));
 
 vi.mock('../model/use-check-files-with-toast', () => ({
@@ -57,6 +66,10 @@ vi.mock('../model/use-check-files-with-toast', () => ({
 const keepMutate = vi.fn();
 vi.mock('../model/use-keep-files-with-toast', () => ({
   useKeepFilesWithToast: () => ({ mutate: keepMutate, isPending: false }),
+}));
+
+vi.mock('@/layers/entities/mesh', () => ({
+  useMeshAgentPaths: () => ({ data: { agents: [] } }),
 }));
 
 vi.mock('@/layers/entities/shapes', () => ({
@@ -1607,6 +1620,52 @@ describe('InstalledPackagesView', () => {
       expect(reviewerBtn).toBeDisabled();
       expect(reviewerBtn.textContent).toMatch(/removing/i);
       expect(formatterBtn).not.toBeDisabled();
+    });
+  });
+
+  describe('dev links (DOR-2696)', () => {
+    const devLinked = () =>
+      makeInstalled({
+        name: 'flow',
+        type: 'plugin',
+        installPath: '/tmp/.dork/plugins/flow',
+        devLink: { path: '/work/flow', state: 'active', parked: false },
+      });
+
+    it('badges a dev-linked row with its folder and offers no Update or Uninstall', () => {
+      // Purpose: a dev link is switched by unlinking, never updated or uninstalled.
+      const pkg = devLinked();
+      setInstalledState({ data: [pkg] });
+      setUpdatesState({ rows: [pkg], checks: [staleCheck(pkg, '2.0.0')] });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.getByText('Dev link')).toBeInTheDocument();
+      expect(screen.getByText('/work/flow')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Unlink Flow' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^uninstall/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^update/i })).toBeNull();
+    });
+
+    it('opens the unlink dialog from the row', async () => {
+      const pkg = devLinked();
+      setInstalledState({ data: [pkg] });
+      render(<InstalledPackagesView />);
+
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Unlink Flow' }));
+
+      expect(await screen.findByText('Unlink Flow?')).toBeInTheDocument();
+      expect(screen.getByText('Flow is removed. Your folder is not touched.')).toBeInTheDocument();
+    });
+
+    it('offers "Link a folder" even when nothing is installed', async () => {
+      // Purpose: the first dev link is made from an empty list.
+      setInstalledState({ data: [] });
+      render(<InstalledPackagesView />);
+
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Link a folder' }));
+
+      expect(await screen.findByLabelText('Folder')).toBeInTheDocument();
     });
   });
 });

@@ -85,6 +85,26 @@ describe('trait-renderer', () => {
       expect(result).toContain('**Spice** (Corporate)');
     });
 
+    it.each([0, 6, 1.5, NaN])('names an invalid trait level %s with a RangeError', (level) => {
+      let failure: unknown;
+      try {
+        renderTraits({ ...DEFAULT_TRAITS, verbosity: level });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(RangeError);
+      expect(failure).toHaveProperty('message', `Invalid verbosity trait level: ${level}`);
+    });
+
+    it.each([1, 2, 3, 4, 5])('preserves every trait directive at valid level %s', (level) => {
+      for (const name of TRAIT_ORDER) {
+        const entry = TRAIT_LEVELS[name][level];
+        if (entry === undefined) throw new Error(`Missing ${name} fixture at level ${level}`);
+        const result = renderTraits({ ...DEFAULT_TRAITS, [name]: level });
+        expect(result).toContain(`(${entry.label}): ${entry.directive}`);
+      }
+    });
+
     it('falls back to level 3 for missing trait values', () => {
       const partial = { verbosity: 1 } as Record<TraitName, number>;
       const result = renderTraits(partial);

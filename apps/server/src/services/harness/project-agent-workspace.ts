@@ -68,6 +68,9 @@
  *   marketplace plugins are not projected into every agent's home — only the
  *   workspace's own `.agents/` assets and its own `.dork/plugins`. Cross-agent
  *   projection of global installs is a separate decision (DOR-143 / DOR-174).
+ *   The registry of dev links IS read from the data directory, and passed on
+ *   its own, so a dev link a person made for this agent's folder projects like
+ *   an install there (DOR-2696); the global scope stays out.
  * - **One projection lands OUTSIDE `.claude/`, on purpose.** An installed
  *   package's skills are linked into `<agentDir>/.agents/skills/<pkg>__<name>`
  *   whatever harnesses the manifest enables — the engine plans that link
@@ -89,12 +92,19 @@
  *
  * @module services/harness/project-agent-workspace
  */
-import { applyPlan, project, scaffoldManifest, HARNESS_MANIFEST_PATH } from '@dorkos/harness';
+import {
+  applyPlan,
+  project,
+  readDevLinksSync,
+  scaffoldManifest,
+  HARNESS_MANIFEST_PATH,
+} from '@dorkos/harness';
 import type { HarnessId } from '@dorkos/harness';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
 import { existsSync, realpathSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
+import { resolveDorkHome } from '../../lib/dork-home.js';
 import { logger } from '../../lib/logger.js';
 import { adoptInOwnedWorkspace } from './adopt-owned-workspace.js';
 
@@ -304,9 +314,14 @@ async function seedAgentWorkspace(agentDir: string): Promise<SeedStatus> {
  * every boot, and the log line is the only place that says so.
  *
  * @param agentDir - Absolute path to the agent's workspace root.
+ * @param dorkHome - The DorkOS data directory whose dev-link registry is read;
+ *   defaults to the server's.
  * @returns What happened, for the caller to log or assert on.
  */
-export function projectAgentWorkspace(agentDir: string): AgentWorkspaceProjection {
+export function projectAgentWorkspace(
+  agentDir: string,
+  dorkHome: string = resolveDorkHome()
+): AgentWorkspaceProjection {
   if (!existsSync(join(agentDir, AGENT_SKILLS_DIR))) {
     return { status: 'skipped', applied: 0, conflicts: 0, scaffoldedManifest: false };
   }
@@ -329,7 +344,14 @@ export function projectAgentWorkspace(agentDir: string): AgentWorkspaceProjectio
       }
     }
 
-    const plan = project(agentDir, { allowPluginHooks: DENY_ALL_PLUGIN_HOOKS });
+    const plan = project(agentDir, {
+      allowPluginHooks: DENY_ALL_PLUGIN_HOOKS,
+      devLinks: readDevLinksSync(dorkHome),
+      // The running extensions' skills are read from the same ledger every
+      // other sync reads (DOR-2685), so this plan and the consent seam's agree
+      // about a workspace an extension runs in. Global plugins stay out.
+      extensionSkillsHome: dorkHome,
+    });
     const { applied, conflicts } = applyPlan(agentDir, plan);
 
     // A conflict means something real occupies a projection target, so that
@@ -452,7 +474,7 @@ export async function backfillAgentWorkspaceSkills(
     if (seedStatus === 'wrote') summary.seeded += 1;
     else if (seedStatus === 'failed') summary.seedFailed += 1;
 
-    const { status } = projectAgentWorkspace(agentDir);
+    const { status } = projectAgentWorkspace(agentDir, dorkHome);
     if (status === 'projected') summary.projected += 1;
     else if (status === 'skipped') summary.skipped += 1;
     else summary.failed += 1;

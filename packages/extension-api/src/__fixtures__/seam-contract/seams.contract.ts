@@ -14,7 +14,9 @@
  * navigation and `currentProject` (1.1.0). PR (b) adds the inbox,
  * `requirePerson`, per-project settings and `requireLogin` (1.2.0). Starting
  * work in a new chat adds `api.startWork`, `ctx.sessions`, `StartWorkInput` and
- * `StartWorkError` (1.3.0). Each later phase adds its own members here.
+ * `StartWorkError` (1.3.0). Dialogs that really open add `registerDialog`,
+ * `ExtensionDialogProps` and `ExtensionDialogControls` (1.4.0). Each later
+ * phase adds its own members here.
  *
  * @module extension-api/__fixtures__/seam-contract
  */
@@ -451,6 +453,22 @@ export interface StatusBarItemOptions {
   urgent?(ctx: StatusBarSlotContext): boolean;
 }
 
+/** Props a registered dialog receives; it is mounted only while open. */
+export interface ExtensionDialogProps {
+  /** Whether the dialog is open. Always true while mounted. */
+  readonly open: boolean;
+  /** Report a change; `false` closes and unmounts it. Never throws. */
+  readonly onOpenChange: (open: boolean) => void;
+}
+
+/** Controls `registerDialog` returns. */
+export interface ExtensionDialogControls {
+  /** Show the dialog. */
+  open(): void;
+  /** Hide and unmount the dialog. */
+  close(): void;
+}
+
 /** The `ExtensionAPI` members this contract covers. */
 export interface ExtensionAPISeams {
   /** Mount a full page at /x/<extensionId>/<path>. */
@@ -459,6 +477,11 @@ export interface ExtensionAPISeams {
     component: ComponentType<ExtensionPageProps>,
     options: ExtensionPageOptions
   ): () => void;
+  /** Add a dialog, closed until opened; the host keeps its open state. */
+  registerDialog(
+    id: string,
+    component: ComponentType<ExtensionDialogProps>
+  ): ExtensionDialogControls;
   /** Add an item to the chat status bar. */
   registerStatusBarItem(
     id: string,

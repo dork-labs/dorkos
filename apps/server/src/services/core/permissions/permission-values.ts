@@ -93,6 +93,28 @@ export const ARRIVAL_WRITER: PermissionWriter = {
   actorLabel: 'DorkOS',
 };
 
+/** Who clears an uninstalled extension's tool settings: DorkOS itself. */
+export const EXTENSION_REMOVAL_WRITER: PermissionWriter = {
+  attribution: 'upgrade',
+  actorType: 'system',
+  actorLabel: 'DorkOS',
+};
+
+/**
+ * The line an uninstalled extension's cleared tool settings carry (DOR-2685).
+ *
+ * @param extensionName - The extension's display name.
+ */
+export function extensionRemovedNote(extensionName: string): string {
+  const name =
+    extensionName
+      .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 60) || 'An extension';
+  return `${name} was removed, so its tool settings were cleared.`;
+}
+
 /** The line a declined-on-arrival event carries. */
 export const ARRIVAL_NOTE =
   "Permissions in this folder's settings file that were not stricter than everyone's " +
@@ -115,6 +137,19 @@ const PRE_MARKER_ARRIVAL_NOTES: ReadonlySet<string> = new Set([
   "DorkOS couldn't apply this folder's settings file, so this agent follows everyone's " +
     'defaults except where its file is stricter. Set its permissions in DorkOS.',
 ]);
+
+/**
+ * Whether a history line records DorkOS clearing an uninstalled extension's
+ * tool settings (DOR-2685). Such a line has no Undo: putting the settings back
+ * would re-grant tools of an id that may now hold different code.
+ *
+ * @param metadata - The line's `permission.changed` metadata.
+ */
+export function isExtensionRemovalLine(
+  metadata: Pick<PermissionChangedMetadata, 'origin'>
+): boolean {
+  return metadata.origin === 'extension-removed';
+}
 
 /**
  * Whether a history line records the arrival screen declining settings a new

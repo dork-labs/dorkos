@@ -6,13 +6,16 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type {
-  ExtensionTrustOffer,
-  PendingExtensionApproval,
+import {
+  STALE_APPROVAL_CODE,
+  type ApproveExtensionRequest,
+  type ExtensionTrustOffer,
+  type PendingExtensionApproval,
 } from '@dorkos/shared/extension-approval-schemas';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { useTrustOfferStore } from './trust-offer-store';
+import { useSeenBeforeStaleStore } from './seen-before-stale-store';
 
 /**
  * Which copy the person answered — the one their row showed — and the name to
@@ -32,16 +35,48 @@ export interface ExtensionAnswerInput {
   plugin: string | null;
 }
 
-/** Which copy to turn on. */
-export type ApproveExtensionInput = ExtensionAnswerInput;
+/**
+ * Which copy to turn on, and the permission set the person was shown
+ * (DOR-2686). The server refuses the yes as stale when the extension declares
+ * anything else by the time it lands, so a widening between the card and the
+ * click is never approved on a yes given to the old lists. Absent when the
+ * card showed no set (a server one version behind), so nothing is compared.
+ */
+export interface ApproveExtensionInput extends ExtensionAnswerInput {
+  /** The set the card showed. */
+  permissions?: ApproveExtensionRequest['permissions'];
+}
 
 /** Which copy to put off ("Not now"). */
 export type DismissExtensionInput = ExtensionAnswerInput;
 
+/** A refused request: its own sentence, and its code when it sent one. */
+class AnswerRefused extends Error {
+  constructor(
+    message: string,
+    /** The server's refusal code, e.g. `stale_approval`. */
+    readonly code: string | undefined
+  ) {
+    super(message);
+  }
+}
+
 /** A failed request's own sentence, or the status when it sent none. */
-async function failureOf(res: Response): Promise<Error> {
-  const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-  return new Error(body.message ?? body.error ?? `The server answered ${res.status}`);
+async function failureOf(res: Response): Promise<AnswerRefused> {
+  const body = (await res.json().catch(() => ({}))) as {
+    message?: string;
+    error?: string;
+    code?: string;
+  };
+  return new AnswerRefused(
+    body.message ?? body.error ?? `The server answered ${res.status}`,
+    body.code
+  );
+}
+
+/** Whether a refusal says the row went out of date while it was on screen. */
+function isStale(err: Error): boolean {
+  return err instanceof AnswerRefused && err.code === STALE_APPROVAL_CODE;
 }
 
 /**
@@ -89,13 +124,14 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
   const queryClient = useQueryClient();
 
   const approve = useMutation<void, Error, ApproveExtensionInput, () => void>({
-    mutationFn: async ({ id, path, version, plugin }) => {
+    mutationFn: async ({ id, path, version, plugin, permissions }) => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions/${id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, version, plugin }),
+        body: JSON.stringify({ path, version, plugin, ...(permissions ? { permissions } : {}) }),
       });
       if (!res.ok) throw await failureOf(res);
+      useSeenBeforeStaleStore.getState().forget(id);
       // The one-time "Next time, trust everything from <source>?" (spec
       // `flow-multiproject` §9.3): only this window heard it, so only this
       // window shows it, under the history row the answer leaves.
@@ -105,8 +141,16 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
       }
     },
     onMutate: ({ id }) => removeOptimistically(queryClient, id),
-    onError: (err, { name }, restore) => {
+    onError: (err, { id, name, permissions }, restore) => {
       restore?.();
+      // It changed while the card was on screen: nothing was turned on, and
+      // the refresh below redraws the row with what it asks for now, leading
+      // with what the card the person saw did not list.
+      if (isStale(err)) {
+        if (permissions) useSeenBeforeStaleStore.getState().remember(id, permissions);
+        toast.error(`${name} changed since you saw it. Check it again.`);
+        return;
+      }
       toast.error(`Couldn’t turn on ${name}. Try again.`, { description: err.message });
     },
     onSettled: () => {

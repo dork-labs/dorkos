@@ -78,13 +78,16 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
    * @param res - The response, for `sessionGate`'s resolved user.
    * @param id - The capability id whose tier governs this effect.
    * @param input - The effect's arguments, parsed against that capability's schema.
+   * @param change - For a capability that binds its approval to a described
+   *   change (`marketplace.link`): that description.
    * @returns What the gate decided. Proceed only on `allowed`.
    */
   const authorize = async (
     req: Request,
     res: Response,
     id: string,
-    input: unknown
+    input: unknown,
+    change?: string
   ): Promise<TierEnforcementDecision> => {
     const registry = capabilityRegistry();
     if (!registry) {
@@ -109,12 +112,18 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     const header = req.headers[APPROVAL_TOKEN_HEADER];
     const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
     const trusted = trustedCaller(readCallerAuthority(req, res));
-    return authorizeCapability(registry, id, input, {
-      ...(trusted ? { trusted } : {}),
-      ...(identity ? { identity } : {}),
-      ...(approvalToken ? { approvalToken } : {}),
-      retryChannel: 'http-header',
-    });
+    return authorizeCapability(
+      registry,
+      id,
+      input,
+      {
+        ...(trusted ? { trusted } : {}),
+        ...(identity ? { identity } : {}),
+        ...(approvalToken ? { approvalToken } : {}),
+        retryChannel: 'http-header',
+      },
+      change !== undefined ? { change } : {}
+    );
   };
 
   /**

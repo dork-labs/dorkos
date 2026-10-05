@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import portableConfig from '../../vitest.config.js';
 import nativeConfig from '../../vitest.fixture.config.js';
 import * as publicApi from '../index.js';
+import * as installationApi from '../runtime/installation/index.js';
 
 const packageRoot = path.resolve(import.meta.dirname, '../..');
 const repoRoot = path.resolve(packageRoot, '../..');
@@ -146,12 +147,18 @@ describe('private browser package boundaries', () => {
       string,
       { types: string; default: string },
     ][];
-    expect(exports).toHaveLength(1);
+    expect(manifest.exports).toEqual({
+      '.': { types: './src/index.ts', default: './dist/index.js' },
+      './runtime-installation': {
+        types: './src/runtime/installation/index.ts',
+        default: './dist/runtime/installation/index.js',
+      },
+    });
     for (const [subpath, target] of exports) {
-      expect(subpath).toBe('.');
+      expect(['.', './runtime-installation']).toContain(subpath);
       expect(existsSync(path.resolve(packageRoot, target.types))).toBe(true);
-      expect(target.default).toBe('./dist/index.js');
     }
+    expect(Object.keys(installationApi)).toEqual(['createRuntimeInstallation']);
     expect(Object.keys(publicApi).sort()).toEqual(
       [
         'BrowserValidationError',
@@ -196,6 +203,8 @@ describe('private browser package boundaries', () => {
             // Private envelope schemas/correlation; no installer backend or SDK imports.
             'runtime/installation-envelope/records.ts',
             'runtime/installation-envelope/correlation.ts',
+            'runtime/installation/contracts.ts',
+            'runtime/installation/filesystem.ts',
           ],
           'node:path': [
             'runtime-descriptor.ts',
@@ -204,6 +213,10 @@ describe('private browser package boundaries', () => {
             'profiles/paths.ts',
             'profiles/reservation.ts',
             'lifecycle/acquisition.ts',
+            'runtime/installation/filesystem.ts',
+            'runtime/installation/jobs.ts',
+            'runtime/installation/fresh-verifier.ts',
+            'runtime/installation/transaction.ts',
           ],
           'node:crypto': [
             'engine.ts',
@@ -214,20 +227,35 @@ describe('private browser package boundaries', () => {
             'runtime/installation-envelope/domain.ts',
             'profiles/reservation.ts',
             'tabs/registry.ts',
+            'runtime/installation/contracts.ts',
+            'runtime/installation/filesystem.ts',
+            'runtime/installation/jobs.ts',
+            'runtime/installation/fresh-verifier.ts',
+            'runtime/installation/index.ts',
           ],
-          'node:child_process': ['runtime/host-identity.ts'],
+          'node:child_process': ['runtime/host-identity.ts', 'runtime/installation/jobs.ts'],
           'node:fs': [
             'runtime/host-identity.ts',
             'runtime/public-library.ts',
             'profiles/paths.ts',
             'profiles/reservation.ts',
             'profiles/owned-directory.ts',
+            'runtime/installation/filesystem.ts',
+            'runtime/installation/jobs.ts',
+            'runtime/installation/fresh-verifier.ts',
           ],
           'node:fs/promises': [
             'runtime/public-library.ts',
             'lifecycle/acquisition.ts',
             'lifecycle/close.ts',
+            'runtime/installation/filesystem.ts',
+            'runtime/installation/jobs.ts',
+            'runtime/installation/fresh-verifier.ts',
           ],
+          'node:stream': ['runtime/installation/jobs.ts'],
+          'node:url': ['runtime/installation/fresh-verifier.ts'],
+          // Exact native Proxy rejection for owner-private final binding checks.
+          'node:util': ['lifecycle/input-owner.ts'],
           'node:os': ['runtime/host-identity.ts'],
           'node:module': ['runtime/public-library.ts'],
           'node:http': ['network/fixture-proxy.ts'],

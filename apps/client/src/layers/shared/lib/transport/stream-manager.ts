@@ -246,6 +246,10 @@ export const GENERIC_EVENTS = [
   // the Connections page's Needs you strip re-read their owner-scoped list on it,
   // so answering in one window retires the card in every other.
   'connector_agent_requests_changed',
+  // A running extension's tools joined or left the capability registry
+  // (DOR-2685). A counter only: the permissions page re-reads its list on it,
+  // so a tool an extension adds shows up, and one it takes away goes, live.
+  'capabilities_changed',
   // A blocking condition began or stopped standing (DOR-1570). A standing kind
   // stores no row while it stands, so these are the only live news that a
   // schedule was proposed or an approval is waiting — which is what the desktop
@@ -322,6 +326,13 @@ export const GENERIC_EVENTS = [
   // than on the next 30-second poll. ADDRESSED and CONTENT-FREE: a stamp only,
   // because this stream cannot tell one local owner's windows from another's.
   'community_connections_changed',
+  // An edit in a dev-linked folder was acted on (DOR-2696, spec
+  // `marketplace-dev-link` §6): which package, what reloaded, and any build
+  // error. `useDevLinkReloadSync` (entities/marketplace) keeps it for the
+  // Installed row ("Reloaded 4s ago", or that it couldn't reload) and refreshes
+  // the installed, dev link and extension lists. ADDRESSED like
+  // `config_changed`: it names folders, so no agent receives it.
+  'marketplace_dev_link_reloaded',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

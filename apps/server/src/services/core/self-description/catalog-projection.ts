@@ -102,6 +102,17 @@ const surfacesSchema = z.object({
     .optional(),
 });
 
+/**
+ * Where a capability came from, mirroring `CapabilitySource`: present only on
+ * one a running extension contributed (DOR-2685), so a reader can say which
+ * extension a tool belongs to. Core capabilities omit it.
+ */
+const capabilitySourceSchema = z.object({
+  kind: z.literal('extension'),
+  id: z.string(),
+  name: z.string(),
+});
+
 /** One FULL serialized capability entry, mirroring `SerializedCapability`. */
 export const serializedCapabilitySchema = z.object({
   id: z.string(),
@@ -120,6 +131,8 @@ export const serializedCapabilitySchema = z.object({
    * OpenAPI describes wrongly and the `SerializedEntry` type below cannot see.
    */
   area: z.string().nullable(),
+  /** The extension this capability came from; absent on a core capability. */
+  source: capabilitySourceSchema.optional(),
 });
 
 /**
@@ -152,6 +165,12 @@ export const compactCapabilitySchema = z.object({
   tier: z.enum(CAPABILITY_TIERS),
   /** First sentence of the description, elided to one line. */
   summary: z.string(),
+  /**
+   * The extension this capability came from; absent on a core capability. Kept
+   * on the compact entry because which extension a tool belongs to is part of
+   * deciding whether it is the one an agent wants.
+   */
+  source: capabilitySourceSchema.optional(),
 });
 
 /**
@@ -341,6 +360,7 @@ function toCompact(entry: SerializedEntry): z.infer<typeof compactCapabilitySche
     title: entry.title,
     tier: entry.tier,
     summary: summarize(entry.description),
+    ...(entry.source ? { source: entry.source } : {}),
   };
 }
 

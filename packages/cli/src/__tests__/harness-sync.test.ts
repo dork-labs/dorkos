@@ -785,6 +785,59 @@ describe('runHarnessSync', () => {
     expect((await runHarnessSync(syncArgs({ check: true, fix: false }))).exitCode).toBe(0);
   });
 
+  it('keeps the skills of a running extension the server listed, and sweeps them once it stops (DOR-2685)', async () => {
+    // Purpose: a terminal sync reads the same running-skills ledger the server
+    // writes, so it plans the same links and its sweep never removes a running
+    // extension's skills. A dev-linked copy says so in the drift it reports.
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+    const repo = fs.realpathSync(tmpDir);
+    const skillsDir = path.join(repo, '.dork', 'extensions', 'mail', 'skills');
+    fs.mkdirSync(path.join(skillsDir, 'triage-inbox'), { recursive: true });
+    fs.writeFileSync(
+      path.join(skillsDir, 'triage-inbox', 'SKILL.md'),
+      '---\nname: triage-inbox\ndescription: Sort the inbox.\n---\nSort it.\n'
+    );
+    const writeLedger = (extensions: unknown[]): void => {
+      fs.mkdirSync(path.join(homeDir, 'extensions'), { recursive: true });
+      fs.writeFileSync(
+        path.join(homeDir, 'extensions', 'running-skills.json'),
+        JSON.stringify({ version: 1, extensions })
+      );
+    };
+    writeLedger([
+      {
+        id: 'mail',
+        scope: 'local',
+        projectRoot: repo,
+        skillsDir,
+        skills: ['triage-inbox'],
+        devLink: '/work/mail',
+      },
+    ]);
+
+    const before = await runHarnessSync(syncArgs({ check: true, fix: false }));
+    expect(before.exitCode).toBe(1);
+    const drift = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(drift).toContain('mail__triage-inbox');
+    expect(drift).toContain('(dev link: /work/mail)');
+
+    expect((await runHarnessSync(syncArgs({ check: false, fix: true }))).exitCode).toBe(0);
+    const link = path.join(repo, '.claude', 'skills', 'mail__triage-inbox');
+    expect(fs.realpathSync(link)).toBe(path.join(skillsDir, 'triage-inbox'));
+    // Run again from the terminal: nothing to sweep, nothing drifted.
+    logSpy.mockClear();
+    expect((await runHarnessSync(syncArgs({ check: false, fix: true }))).exitCode).toBe(0);
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect((await runHarnessSync(syncArgs({ check: true, fix: false }))).exitCode).toBe(0);
+
+    // The extension stopped: the server's ledger no longer lists it.
+    writeLedger([]);
+    logSpy.mockClear();
+    expect((await runHarnessSync(syncArgs({ check: false, fix: true }))).exitCode).toBe(0);
+    expect(fs.existsSync(link)).toBe(false);
+  });
+
   it('--check --harness withholds orphans, because --fix --harness cannot sweep them', async () => {
     // The sweep runs only on a full plan. Naming an orphan under a filter meant
     // `--check --harness codex` exited 1 and told the person to run a `--fix`

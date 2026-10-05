@@ -92,6 +92,32 @@ afterEach(() => {
 });
 
 describe('ApprovalCard', () => {
+  describe('an extension tool (DOR-2685)', () => {
+    it('titles the card with the tool and says which extension it is from', () => {
+      // A destructive extension tool always asks, so this card is where a
+      // person learns WHOSE tool wants to delete something.
+      renderCard(
+        buildApproval({
+          capabilityId: 'ext_mail_app.delete_message',
+          capabilityTitle: 'Delete an email',
+          summary: 'wants to run "Delete an email" from "Mail"',
+          source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
+        })
+      );
+
+      expect(screen.getByText('Delete an email')).toBeInTheDocument();
+      const subtitle = document.querySelector('[data-slot="approval-source"]');
+      expect(subtitle).toHaveTextContent('From Mail');
+    });
+
+    it('adds no subtitle to a DorkOS action', () => {
+      renderCard(buildApproval());
+
+      expect(document.querySelector('[data-slot="approval-source"]')).toBeNull();
+      expect(screen.queryByText(/^From /)).not.toBeInTheDocument();
+    });
+  });
+
   it('swaps the buttons for a receipt the moment an answer is pressed', async () => {
     // Before the server has said anything: the confirmation is the whole point
     // of answering in place, and it cannot wait for a round trip.

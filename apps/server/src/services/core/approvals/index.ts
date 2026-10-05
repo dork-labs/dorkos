@@ -48,6 +48,7 @@ export {
   joinSummaryFields,
   summaryFieldsNamingSubject,
   REDACTED_SUMMARY_VALUE,
+  extensionSourcePhrase,
 } from './approval-summary.js';
 export {
   resolveDecisionAuthority,

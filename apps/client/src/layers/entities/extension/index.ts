@@ -14,6 +14,38 @@
  */
 export { EXTENSION_TRUST_COPY, extensionConsentCopy } from './lib/consent-copy';
 export {
+  AGENT_TOOL_TIER_LABEL,
+  agentGiftsFromApproval,
+  agentGiftsFromRecord,
+  agentGiftsLine,
+  type AgentGifts,
+  type AgentGiftSkill,
+  type AgentGiftTool,
+  type AgentToolTier,
+} from './lib/agent-gifts';
+export { ExtensionAgentGifts, type ExtensionAgentGiftsProps } from './ui/ExtensionAgentGifts';
+export {
+  approvedSetOf,
+  extensionPermissionLines,
+  permissionLineText,
+  permissionsAddedSince,
+  permissionViewFromApproval,
+  permissionViewFromRecord,
+  runsAnyProgram,
+  type ExtensionPermissionAdditions,
+  type ExtensionPermissionLine,
+  type ExtensionPermissionPart,
+  type ExtensionPermissionSet,
+  type ExtensionPermissionProgram,
+  type ExtensionPermissionTone,
+  type ExtensionPermissionView,
+} from './lib/permission-lines';
+export { useSeenBeforeStaleStore, useAddedSinceSeen } from './model/seen-before-stale-store';
+export {
+  ExtensionPermissionLines,
+  type ExtensionPermissionLinesProps,
+} from './ui/ExtensionPermissionLines';
+export {
   parseExtensionApprovalSubject,
   canTurnOnInPlace,
   type ExtensionApprovalSubject,

@@ -4,7 +4,7 @@
  * The marketplace tool surface itself (`marketplace_search`, `marketplace_get`,
  * `marketplace_list_marketplaces`, `marketplace_list_installed`,
  * `marketplace_recommend`, `marketplace_install`, `marketplace_update`,
- * `marketplace_uninstall`, `marketplace_create_package`) is declared once as the {@link marketplaceDomain}
+ * `marketplace_uninstall`, `marketplace_create_package`, `marketplace_link`) is declared once as the {@link marketplaceDomain}
  * capability set and generated onto both MCP servers by the Capability Registry
  * projection (`core/external-mcp/capability-mcp-tools.ts` and the in-session
  * `capability-mcp-tools.ts`) — there is no marketplace-specific registration
@@ -28,6 +28,7 @@ import type { UpdateFlow } from '../marketplace/flows/update.js';
 import type { GlobalConsentRecorder } from '../marketplace/consent/global-plugin-consent.js';
 import type { AgentScopeRef } from '../marketplace/installed-scanner.js';
 import type { NotifyPluginsChanged } from '../marketplace/types.js';
+import type { DevLinkService } from '../marketplace/dev-links/index.js';
 
 import type { ConfirmationProvider } from './confirmation-provider.js';
 
@@ -81,6 +82,12 @@ export interface MarketplaceMcpDeps {
    * disabled — `marketplace_list_installed` reports global installs only.
    */
   listAgentScopes?: () => AgentScopeRef[];
+  /**
+   * Creates and removes dev links (DOR-2696), shared with the HTTP routes.
+   * Absent where the marketplace runs without extensions; `marketplace_link`
+   * then refuses.
+   */
+  devLinks?: DevLinkService;
   /** Structured logger. */
   logger: Logger;
 }

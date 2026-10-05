@@ -353,6 +353,8 @@ export type {
   UseRovingTabListParams,
 } from './use-roving-tab-list';
 export type { TabsListProps } from './tabs';
+export { DevLinkTag, DevLinkPath } from './dev-link-tag';
+export type { DevLinkTagProps, DevLinkPathProps } from './dev-link-tag';
 export { DirectoryPicker } from './DirectoryPicker';
 export type { DirectoryPickerProps } from './DirectoryPicker';
 export { PageContainer, pageContainerVariants } from './page-container';

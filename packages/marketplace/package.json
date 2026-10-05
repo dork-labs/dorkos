@@ -71,6 +71,7 @@
     }
   },
   "dependencies": {
+    "@dorkos/extension-api": "workspace:*",
     "@dorkos/skills": "workspace:*",
     "zod": "^4.6.2"
   },

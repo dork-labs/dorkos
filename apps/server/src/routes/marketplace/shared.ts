@@ -35,6 +35,7 @@ import {
   PathEscapeError,
 } from '../../services/marketplace/lib/package-paths.js';
 import { BoundaryError } from '../../lib/boundary.js';
+import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
 import { AdapterError } from '../../services/relay/adapter-error.js';
 
 /** Machine-readable code on the 403 for a batch that would need approval per install. */
@@ -117,6 +118,12 @@ export function mapErrorToStatus(err: unknown): { status: number; body: Record<s
   }
   if (err instanceof ConflictError) {
     return { status: 409, body: { error: err.message, conflicts: err.conflicts } };
+  }
+  // A dev link refused, or an install, update or uninstall that would have
+  // replaced one (DOR-2696). The message is one plain sentence and names only
+  // the package and the folder the caller already sent.
+  if (err instanceof DevLinkError) {
+    return { status: err.status, body: err.toBody() };
   }
   // An adapter package whose name a connection the person already has is
   // using (DOR-2607). The preview reports it as a conflict first; this is what

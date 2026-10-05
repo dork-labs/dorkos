@@ -14,7 +14,7 @@ const CROSS_SLICE_KEYS = [
   'dorkos-auto-hide-tool-calls',
   'dorkos-promo-enabled',
   'dorkos-right-panel-state',
-  'dorkos-right-panel-layouts',
+  'dorkos-right-panel-layouts-v2',
   'dorkos-pip-panel-state',
   'dorkos-dismissed-promo-ids',
   'dorkos-settings-advanced-open',
@@ -28,7 +28,7 @@ function seed() {
   s.setPromoEnabled(false);
   s.setPipGeometry({ x: 1, y: 2, width: 300, height: 200 });
   localStorage.setItem('dorkos-right-panel-state', '{"open":true,"activeTab":"profile"}');
-  localStorage.setItem('dorkos-right-panel-layouts', '{"a1":{"open":true}}');
+  localStorage.setItem('dorkos-right-panel-layouts-v2', '{"a1":{"open":true}}');
   localStorage.setItem('dorkos-dismissed-promo-ids', '["welcome"]');
   localStorage.setItem('dorkos-settings-advanced-open', 'true');
   s.setFontSize('large');

@@ -12,7 +12,34 @@ export {
   SettingDeclarationSchema,
   StorageMigrationSchema,
   StorageDeclarationSchema,
+  ExtensionToolDeclarationSchema,
+  ExtensionSkillDeclarationSchema,
+  EXTENSION_TOOL_TIMEOUT_MAX_SECONDS,
+  EXTENSION_TOOL_TIMEOUT_DEFAULT_SECONDS,
+  WORKER_RUNTIME_REFUSAL,
+  ALLOW_NEEDS_SUBPROCESS,
+  EXTERNAL_HOSTS_NEED_ALLOW_NET,
+  NO_SERVER_CODE_TO_ISOLATE,
+  ALLOW_NET_MAX,
+  ALLOW_RUN_MAX,
+  ISOLATION_MEMORY_MB,
 } from './manifest-schema.js';
+export {
+  parseNetEntry,
+  isNetEntryError,
+  formatNetEntry,
+  matchesNetEntry,
+  isNetEntryCovered,
+  NET_ENTRY_JUST_HOST,
+  NET_ENTRY_LOCAL_NEEDS_PORT,
+} from './net-allowlist.js';
+export type { ParsedNetEntry, NetEntryError, NetEntryKind } from './net-allowlist.js';
+export {
+  runEntryProblem,
+  isAbsoluteProgramPath,
+  RUN_ENTRY_ONE_PROGRAM,
+  RUN_PROGRAM_NOT_FOUND,
+} from './run-allowlist.js';
 export type {
   ExtensionManifest,
   SecretDeclaration,
@@ -23,9 +50,15 @@ export type {
   ExtensionCapabilities,
   StorageMigration,
   StorageDeclaration,
+  ExtensionToolDeclaration,
+  IsolationRuntime,
+  ExtensionAllow,
+  ExtensionLimits,
 } from './manifest-schema.js';
 export type {
   ExtensionAPI,
+  ExtensionDialogControls,
+  ExtensionDialogProps,
   ExtensionPointId,
   ExtensionReadableState,
   ExtensionPageProps,
@@ -68,6 +101,11 @@ export type {
   ExtensionRecordPublic,
   ExtensionModule,
   ExtensionOrigin,
+  ExtensionToolCheckSummary,
+  ExtensionToolStatus,
+  ExtensionIsolation,
+  ExtensionResolvedProgram,
+  ExtensionSkillStatus,
 } from './types.js';
 export type {
   SecretStore,
@@ -101,3 +139,4 @@ export type {
   ProjectSettingsReader,
   SessionsApi,
 } from './server-extension-api.js';
+export type { ToolsApi, ExtensionToolHandler, ExtensionToolCall } from './extension-tools.js';

@@ -13,6 +13,10 @@ export { MarketplaceSidebar } from './ui/MarketplaceSidebar';
 export { PackageCard } from './ui/PackageCard';
 export { InstalledPackagesView } from './ui/InstalledPackagesView';
 export { MarketplaceSourcesView } from './ui/MarketplaceSourcesView';
+// The unlink confirmation, for surfaces outside the Marketplace that show a
+// dev link (the extension page strip, DOR-2696).
+export { UnlinkDialog } from './ui/UnlinkDialog';
+export type { UnlinkTarget, UnlinkDialogProps } from './ui/UnlinkDialog';
 export { useMarketplaceStore } from './model/marketplace-store';
 export { useMarketplaceParams } from './model/use-marketplace-params';
 export { marketplaceSearchSchema } from './model/marketplace-search';

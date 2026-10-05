@@ -149,6 +149,9 @@ describe('Database Migrations', () => {
       // Opaque author identities keyed on (kind, natural_key) — an agent's
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
       'authors',
+      'browser_attachments',
+      'browser_instances',
+      'browser_profiles',
       // Durable document channels, route authority, input outcomes and recovery
       // evidence (spec `doc-channel`, migration 0137). These survive physical
       // document removal so closure and accepted delivery history stay intact.

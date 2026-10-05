@@ -28,7 +28,7 @@ function seedNonDefaultState() {
   s.setPipGeometry({ x: 1, y: 2, width: 300, height: 200 });
   s.openPip({ kind: 'demo', title: 'Demo panel' });
   localStorage.setItem('dorkos-canvas-sessions', JSON.stringify(CANVAS_SESSIONS));
-  localStorage.setItem('dorkos-right-panel-layouts', JSON.stringify(RIGHT_PANEL_LAYOUTS));
+  localStorage.setItem('dorkos-right-panel-layouts-v2', JSON.stringify(RIGHT_PANEL_LAYOUTS));
   localStorage.setItem('dorkos-right-panel-state', JSON.stringify(RIGHT_PANEL_STATE));
   localStorage.setItem('dorkos-dismissed-promo-ids', '["welcome"]');
 
@@ -92,7 +92,7 @@ describe('AppearanceResetAction', () => {
     expect(s.pipGeometry).toEqual({ x: 1, y: 2, width: 300, height: 200 });
     expect(s.pipContent).toEqual({ kind: 'demo', title: 'Demo panel' });
     expect(JSON.parse(localStorage.getItem('dorkos-canvas-sessions')!)).toEqual(CANVAS_SESSIONS);
-    expect(JSON.parse(localStorage.getItem('dorkos-right-panel-layouts')!)).toEqual(
+    expect(JSON.parse(localStorage.getItem('dorkos-right-panel-layouts-v2')!)).toEqual(
       RIGHT_PANEL_LAYOUTS
     );
     expect(JSON.parse(localStorage.getItem('dorkos-right-panel-state')!)).toEqual(

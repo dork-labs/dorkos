@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { type BrowserBinding } from '../../contracts.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
-import { createTabInput, type InputPorts, type NativeInputStep } from '../index.js';
+import { type NativeInputStep } from '../index.js';
+import {
+  createOwnedFixtureInput as createTabInput,
+  settleFixtureRetirement,
+  type FixtureInputPorts as InputPorts,
+} from '../../__tests__/parent-fixture.js';
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -44,7 +49,7 @@ function harness() {
     native,
     stopGate,
   };
-  const input = createTabInput(ports);
+  const input = createTabInput(ports, () => binding);
   return {
     input,
     ports,
@@ -105,7 +110,11 @@ describe('reset drain target guard (transport doubles only)', () => {
     await active;
     const result = await reset;
     if (kind === 'same') {
-      expect(result.status).toBe('ready');
+      // Strict production transport rejects the old ordinary ACK after reset
+      // publishes its new seven-field binding, despite unchanged Page/session.
+      expect(result.status).toBe('stopped');
+      await settleFixtureRetirement(h.input);
+      expect(h.stopGate.stopped).toBe(true);
       expect(h.calls).toEqual([
         { kind: 'keyDown', key: 'Shift' },
         { kind: 'keyUp', key: 'Shift' },
@@ -113,6 +122,7 @@ describe('reset drain target guard (transport doubles only)', () => {
       expect(h.native.cancelComposition).toHaveBeenCalledTimes(1);
     } else {
       expect(result.status).toBe('stopped');
+      await settleFixtureRetirement(h.input);
       expect(h.stopGate.stopped).toBe(true);
       expect(h.calls, 'STALE_RESET_RELEASE_AFTER_DRAIN').toEqual([
         { kind: 'keyDown', key: 'Shift' },
@@ -124,4 +134,20 @@ describe('reset drain target guard (transport doubles only)', () => {
       expect(h.native.dispatch).toHaveBeenCalledTimes(2);
     }
   });
+});
+
+// Decisive strict-current positive: the held key has ALREADY acknowledged under
+// its original binding before reset enters; release captures the new binding.
+it('idle reset still allows acknowledged current cleanup and successor admission', async () => {
+  const h = harness();
+  expect((await h.input.submit(h.command([{ kind: 'keyDown', key: 'Shift' }]))).outcome).toBe(
+    'completed'
+  );
+  expect((await h.input.reset()).status).toBe('ready');
+  expect(h.calls).toEqual([
+    { kind: 'keyDown', key: 'Shift' },
+    { kind: 'keyUp', key: 'Shift' },
+  ]);
+  expect(h.stopGate.stopped).toBe(false);
+  expect((await h.input.submit(h.command())).outcome).toBe('completed');
 });

@@ -494,6 +494,17 @@ export class SessionPump {
   }
 
   /**
+   * Has the current busy spell run past the four-hour ceiling (spec
+   * `warm-process-lifecycle` D1)? The same bound the reaper honours; a
+   * consumer that only reports the long wait reads it here.
+   *
+   * @param now - Server epoch ms
+   */
+  isPastCeiling(now: number): boolean {
+    return this.quiet.isPastCeiling(now);
+  }
+
+  /**
    * Is a helper agent still working on this process, inside the four-hour
    * ceiling (DOR-2681)? What the stall watchdog asks before calling a silent
    * turn stalled.

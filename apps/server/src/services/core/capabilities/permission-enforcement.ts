@@ -63,6 +63,8 @@
  *
  * @module services/core/capabilities/permission-enforcement
  */
+import { isAlwaysAskingExtensionTool } from './extension-contribution.js';
+import type { CapabilitySource } from '@dorkos/shared/capabilities';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -202,6 +204,11 @@ export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier' | 'areasForI
    * such an action is never Allowed, whatever is stored (`alwaysAsks`).
    */
   describeApprovalChange?: unknown;
+  /**
+   * Present on a tool a running extension contributed. A destructive one is
+   * never Allowed either (`isAlwaysAskingExtensionTool`, DOR-2685).
+   */
+  source?: CapabilitySource;
 };
 
 /** How strict a state is: Blocked beats Ask beats Allowed. */
@@ -323,7 +330,9 @@ export async function resolveCallPermission(request: {
       area,
       // The action's own entries belong to its own area only.
       ...(index === 0 ? { actionId: action.id } : {}),
-      ...(index === 0 && action.describeApprovalChange ? { alwaysAsks: true } : {}),
+      ...(index === 0 && (action.describeApprovalChange || isAlwaysAskingExtensionTool(action))
+        ? { alwaysAsks: true }
+        : {}),
       tier: action.tier,
       config,
       ...(agent ? { agent } : {}),

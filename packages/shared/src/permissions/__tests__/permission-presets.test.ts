@@ -23,6 +23,7 @@ describe('shipped preset tables', () => {
         messages: 'allowed',
         connections: 'ask',
         packages: 'ask',
+        extensions: 'ask',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
@@ -42,6 +43,7 @@ describe('shipped preset tables', () => {
         messages: 'allowed',
         connections: 'ask',
         packages: 'ask',
+        extensions: 'allowed',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
@@ -61,6 +63,7 @@ describe('shipped preset tables', () => {
         messages: 'allowed',
         connections: 'allowed',
         packages: 'ask',
+        extensions: 'allowed',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
@@ -83,6 +86,7 @@ describe('shipped preset tables', () => {
         messages: 'allowed',
         connections: 'allowed',
         packages: 'allowed',
+        extensions: 'allowed',
         settings: 'allowed',
         safety: 'blocked',
         permissions: 'blocked',
@@ -112,7 +116,7 @@ describe('shipped preset tables', () => {
 });
 
 describe('area registry', () => {
-  it('lists the ten state areas plus files, with exactly three floors', () => {
+  it('lists the eleven state areas plus files, with exactly three floors', () => {
     expect(PERMISSION_AREAS.map((a) => a.id)).toEqual([...PERMISSION_AREA_IDS, 'files']);
     expect(PERMISSION_AREAS.filter((a) => a.floor).map((a) => a.id)).toEqual([
       'safety',

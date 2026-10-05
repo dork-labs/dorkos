@@ -3,7 +3,9 @@
  * and the flow extension's settings use (spec `flow-multiproject` §8.6).
  *
  * - `GET /api/runtimes/claude-code/account-eligibility?project=<folder>` —
- *   every account as the folder's project sees it. Any caller may read it.
+ *   every account as the folder's project sees it. Any caller may read it,
+ *   so it records nothing: a folder the registry does not know is named the
+ *   way the registry would name it, and no `known_projects` row is written.
  * - `PUT /api/runtimes/claude-code/project-accounts` — set or remove one
  *   project's allow list.
  * - `PUT /api/runtimes/claude-code/accounts/:id/only-projects` — keep one
@@ -52,6 +54,7 @@ import {
   joinNames,
   NOT_USED_IN_ANY_PROJECT,
   onlyProjectsOf,
+  projectRefFor,
   readEligibilityRules,
   judgeEligibility,
 } from '../services/core/usage/account-eligibility.js';
@@ -90,6 +93,22 @@ const ACCOUNT_RULES_BAR: PersonBarCopy = {
 async function projectOfNamedFolder(folder: string): Promise<ProjectRef | null | 'outside'> {
   try {
     return await projectRegistry.resolveWithin(await validateBoundary(folder));
+  } catch (err) {
+    if (err instanceof BoundaryError) return 'outside';
+    throw err;
+  }
+}
+
+/**
+ * The project of a folder an ungated reader named, recording nothing: the
+ * registry's name when it knows the root, else the name it would give. For
+ * `GET` routes any caller may reach, where recording would let an agent hold
+ * names (DOR-2547).
+ */
+async function peekProjectOfNamedFolder(folder: string): Promise<ProjectRef | null | 'outside'> {
+  try {
+    const root = await projectRegistry.rootWithin(await validateBoundary(folder));
+    return root === null || root === 'outside' ? root : projectRefFor(root);
   } catch (err) {
     if (err instanceof BoundaryError) return 'outside';
     throw err;
@@ -203,7 +222,9 @@ export function mountAccountEligibilityRoutes(router: Router): void {
         .json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
     }
     try {
-      const project = parsed.data.project ? await projectOfNamedFolder(parsed.data.project) : null;
+      const project = parsed.data.project
+        ? await peekProjectOfNamedFolder(parsed.data.project)
+        : null;
       if (project === 'outside') {
         return res.status(403).json({
           error: 'That folder is outside the folders DorkOS may open.',

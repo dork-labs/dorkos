@@ -969,6 +969,34 @@ async function buildServer() {
     throw err;
   }
 
+  // The extension child (DOR-2686): the file DorkOS forks for every extension
+  // that runs separately, with Node's permission model on and read access to
+  // nothing but this file and the extension's own. One self-contained
+  // CommonJS file (express and the extension API inlined), emitted beside the
+  // server bundle where `isolation/child-entry.ts` looks for it, and unpacked
+  // from app.asar (electron-builder.yml) because the permission model grants
+  // real files, not archive entries. Same entry and name as the CLI build;
+  // scripts/__tests__/extension-child-build-entry.test.ts pins both.
+  const childOutfile = path.join(OUT, 'server/extension-child.cjs');
+  const childResult = await build({
+    entryPoints: [
+      path.join(ROOT, 'apps/server/src/services/extensions/isolation/child/bootstrap.ts'),
+    ],
+    bundle: true,
+    platform: 'node',
+    target: 'node22.22',
+    format: 'cjs',
+    outfile: childOutfile,
+    plugins: [dorkosSourcePlugin()],
+  });
+  try {
+    await assertNoUnexpectedWarnings(childResult.warnings);
+    execFileSync(process.execPath, ['--check', childOutfile], { stdio: 'inherit' });
+  } catch (err) {
+    rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
+    throw err;
+  }
+
   // Copy Drizzle migration files alongside the bundled server — see the
   // dist/server/ layout note above.
   rmSync(path.join(OUT, 'drizzle'), { recursive: true, force: true });

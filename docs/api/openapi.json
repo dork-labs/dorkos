@@ -3078,6 +3078,7 @@
               "messages",
               "connections",
               "packages",
+              "extensions",
               "settings",
               "safety",
               "permissions",
@@ -3110,6 +3111,28 @@
           },
           "roomId": {
             "type": "string"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ]
           },
           "requestedAt": {
             "type": "string"
@@ -10872,6 +10895,26 @@
           },
           "why": {
             "type": "string"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/ExtensionApprovalPermissions"
+          },
+          "added": {
+            "$ref": "#/components/schemas/ExtensionApprovalAdditions"
+          },
+          "agentTools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentToolSummary"
+            },
+            "default": []
+          },
+          "agentSkills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
+            },
+            "default": []
           }
         },
         "required": [
@@ -10884,6 +10927,139 @@
           "adds",
           "since",
           "why"
+        ]
+      },
+      "ExtensionApprovalPermissions": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "in-process",
+              "subprocess"
+            ]
+          },
+          "net": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "found": {
+                  "type": "boolean"
+                },
+                "refusedReason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "found"
+              ]
+            }
+          },
+          "agents": {
+            "type": "boolean"
+          },
+          "hasPage": {
+            "type": "boolean"
+          }
+        },
+        "default": null,
+        "required": [
+          "runtime",
+          "net",
+          "run",
+          "agents",
+          "hasPage"
+        ]
+      },
+      "ExtensionApprovalAdditions": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "net": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agents": {
+            "type": "boolean"
+          },
+          "runtime": {
+            "type": "boolean"
+          }
+        },
+        "default": null,
+        "required": [
+          "net",
+          "run",
+          "agents",
+          "runtime"
+        ]
+      },
+      "ExtensionAgentToolSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "refusedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "tier"
+        ]
+      },
+      "ExtensionAgentSkillSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "droppedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ]
       },
       "ExtensionTrustOffer": {
@@ -10915,6 +11091,41 @@
               "null"
             ],
             "minLength": 1
+          },
+          "permissions": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "in-process",
+                  "subprocess"
+                ]
+              },
+              "net": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 64
+              },
+              "run": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 16
+              },
+              "agents": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "runtime",
+              "net",
+              "run",
+              "agents"
+            ]
           }
         },
         "required": [
@@ -11344,6 +11555,7 @@
           "messages",
           "connections",
           "packages",
+          "extensions",
           "settings",
           "safety",
           "permissions",
@@ -11378,6 +11590,28 @@
           },
           "lastChange": {
             "$ref": "#/components/schemas/PermissionLastChange"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ]
           }
         },
         "required": [
@@ -11749,7 +11983,8 @@
               "origin": {
                 "type": "string",
                 "enum": [
-                  "arrival-screen"
+                  "arrival-screen",
+                  "extension-removed"
                 ]
               },
               "note": {
@@ -18201,7 +18436,7 @@
           "Projects"
         ],
         "summary": "Name the project a folder belongs to",
-        "description": "The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ \"project\": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused).",
+        "description": "The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ \"project\": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused). Only a person may ask: a caller that names itself an agent, a browser request from another site (a foreign `Origin`, or `Sec-Fetch-Site: cross-site`), or (with login on) a caller without a session cookie is refused. With login off, a local caller that is neither is trusted as the person. The server keeps at most 200 roots that only a lookup named, and forgets the least recently used one past that.",
         "parameters": [
           {
             "schema": {
@@ -18235,7 +18470,7 @@
             }
           },
           "403": {
-            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary",
+            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary; or the caller is not a person",
             "content": {
               "application/json": {
                 "schema": {
@@ -25677,6 +25912,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [
@@ -26701,6 +26970,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [
@@ -27859,6 +28162,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [
@@ -31615,6 +31952,912 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/dev-links": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "List dev links",
+        "description": "Every package running from a folder on this computer, and whether its link is in force. `registryUnreadable` is set when the record of dev links cannot be read; no folder counts as linked then.",
+        "responses": {
+          "200": {
+            "description": "Every dev link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "plugin",
+                              "skill-pack"
+                            ]
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "global",
+                              "project"
+                            ]
+                          },
+                          "projectPath": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string",
+                            "description": "The real path of the folder the package runs from."
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "folder-missing",
+                              "link-missing",
+                              "link-replaced"
+                            ]
+                          },
+                          "parked": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "description": "The installed copy set aside for the link, or null."
+                          },
+                          "linkedAt": {
+                            "type": "string"
+                          },
+                          "lastReloadAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "type",
+                          "scope",
+                          "path",
+                          "state",
+                          "parked",
+                          "linkedAt"
+                        ]
+                      }
+                    },
+                    "registryUnreadable": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "links"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Run a package from a folder",
+        "description": "Gated by the `marketplace.link` capability (destructive, no permission area): the person runs it, and an agent gets an approval card showing the folder in full (202), retried with the `X-DorkOS-Approval` header. No setting can approve it ahead of time. An installed copy of the same package is set aside only with `replaceInstalled: true`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "global",
+                      "project"
+                    ]
+                  },
+                  "projectPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Required for, and only for, scope project."
+                  },
+                  "replaceInstalled": {
+                    "type": "boolean"
+                  },
+                  "via": {
+                    "type": "string",
+                    "enum": [
+                      "app",
+                      "terminal"
+                    ]
+                  },
+                  "expectedChange": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 65536,
+                    "description": "The preview's `change` the person said yes to; a mismatch is refused with `dev_link_changed`. Ignored for an agent, whose yes is the approval card."
+                  }
+                },
+                "required": [
+                  "path",
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "plugin",
+                        "skill-pack"
+                      ]
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "global",
+                        "project"
+                      ]
+                    },
+                    "projectPath": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string",
+                      "description": "The real path of the folder the package runs from."
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "folder-missing",
+                        "link-missing",
+                        "link-replaced"
+                      ]
+                    },
+                    "parked": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "description": "The installed copy set aside for the link, or null."
+                    },
+                    "linkedAt": {
+                      "type": "string"
+                    },
+                    "lastReloadAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "scope",
+                    "path",
+                    "state",
+                    "parked",
+                    "linkedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person has been asked; retry with the approval token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not linkable, or a malformed body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused by the gate, or outside the folders DorkOS may use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The slot or the name is taken, or the folder changed after it was approved (`dev_link_changed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/dev-links/preview": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Preview running a package from a folder",
+        "description": "Read-only. Names the package, the slot the link would take, an installed copy it would set aside, what the folder runs on its own, and the extensions it carries. A folder that cannot be linked answers with the reason.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "global",
+                      "project"
+                    ]
+                  },
+                  "projectPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Required for, and only for, scope project."
+                  },
+                  "replaceInstalled": {
+                    "type": "boolean",
+                    "description": "Describe the link as setting an installed copy aside."
+                  }
+                },
+                "required": [
+                  "path",
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What linking would do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "plugin",
+                        "skill-pack"
+                      ]
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "global",
+                        "project"
+                      ]
+                    },
+                    "slot": {
+                      "type": "string"
+                    },
+                    "replaces": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version"
+                      ]
+                    },
+                    "effects": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "hooks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "event": {
+                                "type": "string"
+                              },
+                              "matcher": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "event",
+                              "matcher",
+                              "command",
+                              "source"
+                            ]
+                          }
+                        },
+                        "schedules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "cron": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "permissionMode": {
+                                "type": "string"
+                              },
+                              "startsEnabled": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "cron",
+                              "permissionMode",
+                              "startsEnabled"
+                            ]
+                          }
+                        },
+                        "mcpServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "transport": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "url": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "transport",
+                              "command",
+                              "args",
+                              "url"
+                            ]
+                          }
+                        },
+                        "lspServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "when": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command",
+                              "args",
+                              "when"
+                            ]
+                          }
+                        },
+                        "monitors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "when": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command",
+                              "args",
+                              "when"
+                            ]
+                          }
+                        },
+                        "executables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "skillTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "tools": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "tools"
+                            ]
+                          }
+                        },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "default": []
+                        }
+                      },
+                      "required": [
+                        "hooks",
+                        "schedules",
+                        "mcpServers",
+                        "lspServers",
+                        "monitors",
+                        "executables",
+                        "skillTools"
+                      ]
+                    },
+                    "extensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "change": {
+                      "type": "string",
+                      "description": "The approval text for this folder as it reads now. Send it back as `expectedChange` when linking, so a folder that changed meanwhile is refused."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "path",
+                    "scope",
+                    "slot",
+                    "replaces",
+                    "effects",
+                    "extensions",
+                    "change"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not linkable (`code` says why)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Outside the folders DorkOS may use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The slot or the name is taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/dev-links/{name}/unlink": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Unlink a dev link",
+        "description": "The person only: the same bar as deciding an approval card. Takes the link out (never the folder) and puts a set-aside installed copy back with its approvals.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "global",
+                      "project"
+                    ]
+                  },
+                  "projectPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Required for, and only for, scope project."
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Unlinked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "restored": {
+                      "type": "string",
+                      "enum": [
+                        "installed",
+                        "removed"
+                      ]
+                    },
+                    "parkedLeftAt": {
+                      "type": "string"
+                    },
+                    "leftInPlace": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ],
+                      "description": "Set when something else had already taken the link's place; it was left as it is."
+                    }
+                  },
+                  "required": [
+                    "restored"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the person (`operator_only`), or not a signed-in session under sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such dev link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }
@@ -74967,6 +76210,28 @@
                               },
                               "summary": {
                                 "type": "string"
+                              },
+                              "source": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "extension"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "id",
+                                  "name"
+                                ]
                               }
                             },
                             "required": [
@@ -75132,6 +76397,28 @@
                                 "type": [
                                   "string",
                                   "null"
+                                ]
+                              },
+                              "source": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "extension"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "id",
+                                  "name"
                                 ]
                               }
                             },

@@ -71,6 +71,12 @@ vi.mock('@/layers/entities/marketplace', () => ({
     .fn()
     .mockReturnValue({ data: undefined, isFetching: false, error: null, refetch: vi.fn() }),
   marketplaceKeys: { updates: () => ['marketplace', 'updates'] },
+  // The sheet's unlink dialog (DOR-2696); this flow never opens it.
+  useUnlinkDevLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDevLinks: () => ({ data: { links: [] } }),
+  useDevLinkReloadStore: (select: (s: { latest: Record<string, unknown> }) => unknown) =>
+    select({ latest: {} }),
+  devLinkKey: () => 'key',
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({

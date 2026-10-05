@@ -12,6 +12,11 @@
  * Hiding is a courtesy to the agent, never the enforcement: the gate resolves on
  * every call. A change takes effect the next time a list is built (the next
  * turn); a call made before then is still refused or asked about correctly.
+ * That holds for a warm Claude Code process too: a hidden or revealed tool
+ * moves the `dorkos` server's tool-surface digest, and the `toolSurface` launch
+ * pin relaunches the process before its next turn (DOR-2685,
+ * `claude-code/sessions/launch-fingerprint.ts`). Codex and OpenCode build their
+ * list per request, so they need nothing extra.
  *
  * @module services/runtimes/shared/permission-tool-filter
  */

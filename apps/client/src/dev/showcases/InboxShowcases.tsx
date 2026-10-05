@@ -20,6 +20,13 @@ import {
   groupActivityRows,
 } from '@/layers/features/inbox';
 import type { AgentVisualSource } from '@/layers/entities/agent';
+import {
+  ExtensionAgentGifts,
+  ExtensionPermissionLines,
+  agentGiftsLine,
+  type AgentGifts,
+  type ExtensionPermissionView,
+} from '@/layers/entities/extension';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { InboxBellPill } from '@/layers/widgets/inbox-bell';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -366,6 +373,26 @@ function InboxRowsShowcase() {
   );
 }
 
+/** What a mail extension would give agents, with one refusal and one skill left out. */
+const MAIL_GIFTS: AgentGifts = {
+  running: false,
+  tools: [
+    { name: 'list_inbox', title: 'List your inbox', tier: 'observe' },
+    { name: 'send_message', title: 'Send an email', tier: 'act' },
+    { name: 'delete_message', title: 'Delete an email', tier: 'destructive' },
+    {
+      name: 'open_ended',
+      title: 'Take anything',
+      tier: 'observe',
+      leftOutReason: 'Its input must list every field.',
+    },
+  ],
+  skills: [
+    { name: 'triage-inbox' },
+    { name: 'old-skill', leftOutReason: 'Its SKILL.md file is missing.' },
+  ],
+};
+
 /**
  * The one short row that asks (DOR-2517): an extension waiting to be turned
  * on, then the same row answered, as the Activity list keeps it.
@@ -393,6 +420,34 @@ function DecisionRowShowcase() {
               onReject: () => {},
             }}
           />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Waiting: one that gives agents tools and skills (DOR-2685)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          <InboxDecisionRow
+            icon={Puzzle}
+            title="Turn on Mail?"
+            why="You installed the mail plugin from dork-labs/marketplace. It runs as you."
+            meta={agentGiftsLine(MAIL_GIFTS) ?? undefined}
+            sourceLine="mail plugin · dork-labs/marketplace"
+            more={<ExtensionAgentGifts gifts={MAIL_GIFTS} variant="list" />}
+            actions={{
+              kind: 'yes-no',
+              approveLabel: 'Turn it on',
+              rejectLabel: 'Not now',
+              onApprove: () => {},
+              onReject: () => {},
+            }}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>The same list as the Settings card draws it, closed until asked</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-[min(30rem,100%)]">
+          <ExtensionAgentGifts gifts={{ ...MAIL_GIFTS, running: true }} />
         </div>
       </ShowcaseDemo>
 
@@ -491,6 +546,124 @@ function DecisionRowShowcase() {
   );
 }
 
+/** An extension that runs separately, reaching two mail hosts and git. */
+const MAIL_PERMISSIONS: ExtensionPermissionView = {
+  runtime: 'subprocess',
+  net: ['imap.fastmail.com', 'smtp.fastmail.com'],
+  run: [{ name: 'git', found: true }],
+  agents: true,
+  hasPage: true,
+};
+
+/** Every state the permission lines draw (DOR-2686). */
+const PERMISSION_STATES: { label: string; permissions: ExtensionPermissionView }[] = [
+  {
+    label: 'A server half that runs inside DorkOS',
+    permissions: {
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasPage: true,
+      hasServer: true,
+    },
+  },
+  {
+    label: 'Screens only, no server half',
+    permissions: {
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      hasPage: true,
+      hasServer: false,
+    },
+  },
+  {
+    label: 'Runs separately, reaches nothing',
+    permissions: { runtime: 'subprocess', net: [], run: [], agents: false, hasPage: false },
+  },
+  {
+    label: 'Runs separately, with hosts, a program, agents and screens',
+    permissions: MAIL_PERMISSIONS,
+  },
+  {
+    label: 'A shell, a missing program, and a refused one',
+    permissions: {
+      runtime: 'subprocess',
+      net: [],
+      run: [
+        { name: 'bash', found: true },
+        { name: 'ffmpeg', found: false },
+        {
+          name: 'helper',
+          found: false,
+          refusedReason: 'It sits in extension files, which could change without asking.',
+        },
+      ],
+      agents: false,
+    },
+  },
+  {
+    label: 'A long host list wraps, never cut short',
+    permissions: {
+      runtime: 'subprocess',
+      net: Array.from({ length: 14 }, (_, i) => `region-${i + 1}.storage.example-cloud.com`),
+      run: [],
+      agents: false,
+    },
+  },
+];
+
+/** What an extension can reach, in each state, and a re-ask leading with what is new. */
+function PermissionLinesShowcase() {
+  return (
+    <PlaygroundSection
+      title="Extension permission lines"
+      description="What an extension can reach, drawn the same on the inbox row, the Settings card and the install preview. A re-ask leads with what is new."
+    >
+      {PERMISSION_STATES.map((state) => (
+        <div key={state.label}>
+          <ShowcaseLabel>{state.label}</ShowcaseLabel>
+          <ShowcaseDemo>
+            <div className="w-[min(30rem,100%)]">
+              <ExtensionPermissionLines permissions={state.permissions} />
+            </div>
+          </ShowcaseDemo>
+        </div>
+      ))}
+
+      <ShowcaseLabel>A re-ask: it now wants a new host</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 bg-background/60 w-[min(30rem,100%)] rounded-lg border p-2">
+          <InboxDecisionRow
+            icon={Puzzle}
+            title="Turn on Mail?"
+            why="Mail changed what it asks for since you turned it on."
+            details={
+              <ExtensionPermissionLines
+                permissions={{
+                  ...MAIL_PERMISSIONS,
+                  net: [...MAIL_PERMISSIONS.net, 'api.example.com'],
+                }}
+                added={{ net: ['api.example.com'], run: [], agents: false, runtime: false }}
+              />
+            }
+            sourceLine="mail plugin · dork-labs/marketplace"
+            actions={{
+              kind: 'yes-no',
+              approveLabel: 'Turn it on',
+              rejectLabel: 'Not now',
+              onApprove: () => {},
+              onReject: () => {},
+            }}
+          />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
 /** Every Inbox showcase, in the order the panel stacks them. */
 export function InboxShowcases() {
   return (
@@ -498,6 +671,7 @@ export function InboxShowcases() {
       <BellStatesShowcase />
       <InboxRowsShowcase />
       <DecisionRowShowcase />
+      <PermissionLinesShowcase />
     </>
   );
 }

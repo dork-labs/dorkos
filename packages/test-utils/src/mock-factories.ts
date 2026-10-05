@@ -497,7 +497,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .fn()
       .mockResolvedValue({ mimeType: 'text/html', text: '', permissions: [] }),
     // Nothing waiting on anybody, by default: a test that is about a prompt
-    // seeds its own, and every other test mounts a cockpit with a quiet tray.
+    // seeds its own, and every other test mounts the app with a quiet tray.
     listPendingInteractions: vi.fn().mockResolvedValue({ interactions: [] }),
     approveTool: vi.fn(),
     denyTool: vi.fn(),
@@ -542,7 +542,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     browseDirectory: vi.fn().mockResolvedValue({ path: '/test', entries: [], parent: null }),
     getDefaultCwd: vi.fn().mockResolvedValue({ path: '/test/cwd' }),
     listFiles: vi.fn().mockResolvedValue({ files: [], truncated: false, total: 0 }),
-    writeFile: vi.fn().mockResolvedValue({ ok: true, hash: 'mock-hash' }),
+    writeFile: vi.fn().mockResolvedValue({ ok: true, hash: 'mock-hash', effect: 'changed' }),
     mediaUrl: vi.fn(
       (cwd: string, filePath: string) => `/api/files/raw?cwd=${cwd}&path=${filePath}`
     ),
@@ -1193,6 +1193,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     checkPackageFiles: vi.fn(),
     keepPackageFiles: vi.fn(),
     listHeldBackPackages: vi.fn().mockResolvedValue([]),
+    listDevLinks: vi.fn().mockResolvedValue({ links: [] }),
+    previewDevLink: vi.fn(),
+    linkDevLink: vi.fn(),
+    unlinkDevLink: vi.fn(),
     listPackageInstallations: vi.fn().mockResolvedValue([]),
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),

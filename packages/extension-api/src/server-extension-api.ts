@@ -12,6 +12,7 @@ import type { AccountUsage as CoreAccountUsage } from '@dorkos/shared/account-us
 import type { DecisionActions, ProjectRef } from './extension-api.js';
 import type { StartWorkInput } from './start-work.js';
 import type { AgentApi } from './agent-messaging.js';
+import type { ToolsApi } from './extension-tools.js';
 
 export type { DecisionActions, ProjectRef } from './extension-api.js';
 export type { StartWorkInput } from './start-work.js';
@@ -26,6 +27,7 @@ export type {
   AgentSendWaitReason,
 } from './agent-messaging.js';
 export { AgentSendError } from './agent-messaging.js';
+export type { ToolsApi, ExtensionToolHandler, ExtensionToolCall } from './extension-tools.js';
 
 /**
  * One account's usage as an extension sees it: identity, resolved color, the
@@ -288,6 +290,12 @@ export interface DataProviderContext {
    * can keep a file other tools also read, such as `<dorkHome>/flow/fleet.json`.
    */
   readonly dorkHome: string;
+  /**
+   * A folder only this extension writes to: `{dorkHome}/extension-data/<id>/files`.
+   * DorkOS creates it before the extension starts. In an isolated extension
+   * (`serverCapabilities.runtime: "subprocess"`) it is the only place it can write.
+   */
+  readonly filesDir: string;
   /** The agent accounts DorkOS knows, their usage, and the account advisor seam. */
   readonly accounts: AccountsApi;
   /**
@@ -326,6 +334,12 @@ export interface DataProviderContext {
    * `ctx.agent !== undefined`.
    */
   readonly agent: AgentApi;
+  /**
+   * Bind the handlers for the tools `extension.json` declares under `tools`,
+   * which DorkOS then offers to the person's agents while this extension runs
+   * (DOR-2685). Probe with `ctx.tools !== undefined`.
+   */
+  readonly tools: ToolsApi;
 }
 
 /** `ctx.sessions`: starting work in a new chat without a person (spec §7.7). */

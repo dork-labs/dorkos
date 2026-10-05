@@ -4,7 +4,7 @@ import { useAppStore } from '../app-store';
 
 /** Read the per-agent layout map from localStorage. */
 function readLayouts(): Record<string, { open: boolean; activeTab: string | null }> {
-  return JSON.parse(localStorage.getItem('dorkos-right-panel-layouts') || '{}');
+  return JSON.parse(localStorage.getItem('dorkos-right-panel-layouts-v2') || '{}');
 }
 
 describe('RightPanelSlice', () => {
@@ -17,6 +17,7 @@ describe('RightPanelSlice', () => {
       rightPanelLayoutKey: null,
       requestedRightPanel: null,
       explicitAgentPath: null,
+      inheritedRightPanelTab: null,
     });
   });
 
@@ -61,6 +62,31 @@ describe('RightPanelSlice', () => {
       expect(useAppStore.getState().activeRightPanelTab).toBe('canvas');
     });
 
+    it('restoreOpen: false brings back the tab but leaves the panel closed', () => {
+      // Below desktop width the panel is a sheet; reopening it on load would
+      // cover the page before you did anything.
+      localStorage.setItem(
+        'dorkos-right-panel-state',
+        JSON.stringify({ open: true, activeTab: 'files' })
+      );
+      useAppStore.getState().loadRightPanelState({ restoreOpen: false });
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('files');
+    });
+
+    it('restoreOpen: false still opens the panel a pending link asked for', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-state',
+        JSON.stringify({ open: false, activeTab: 'files' })
+      );
+      useAppStore.setState({
+        requestedRightPanel: { tabId: 'profile', agentPath: null, shielded: true },
+      });
+      useAppStore.getState().loadRightPanelState({ restoreOpen: false });
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+    });
+
     it('loadRightPanelState defaults gracefully when localStorage is empty', () => {
       useAppStore.getState().loadRightPanelState();
       expect(useAppStore.getState().rightPanelOpen).toBe(false);
@@ -73,6 +99,61 @@ describe('RightPanelSlice', () => {
       expect(useAppStore.getState().rightPanelOpen).toBe(false);
       expect(useAppStore.getState().activeRightPanelTab).toBeNull();
     });
+
+    describe('the pre-DOR-2579 per-agent map', () => {
+      const LEGACY = 'dorkos-right-panel-layouts';
+
+      it('moves open layouts to the new key and drops closed ones', () => {
+        // A closed entry there is usually the old switch bug, not a choice.
+        localStorage.setItem(
+          LEGACY,
+          JSON.stringify({
+            'agent-a': { open: true, activeTab: 'agent-hub', accessedAt: 5 },
+            'agent-b': { open: false, activeTab: 'pulse', accessedAt: 6 },
+          })
+        );
+        useAppStore.getState().loadRightPanelState();
+
+        expect(localStorage.getItem(LEGACY)).toBeNull();
+        // The renamed tab is translated on the way over, recency kept.
+        expect(readLayouts()).toEqual({
+          'agent-a': { open: true, activeTab: 'profile', accessedAt: 5 },
+        });
+      });
+
+      it('never overwrites a layout already saved under the new key', () => {
+        localStorage.setItem(
+          'dorkos-right-panel-layouts-v2',
+          JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 9 } })
+        );
+        localStorage.setItem(
+          LEGACY,
+          JSON.stringify({ 'agent-a': { open: true, activeTab: 'canvas', accessedAt: 1 } })
+        );
+        useAppStore.getState().loadRightPanelState();
+
+        expect(readLayouts()['agent-a']).toMatchObject({ open: false, activeTab: 'files' });
+      });
+
+      it('keeps migrated layouts when the new key holds something other than a map', () => {
+        localStorage.setItem('dorkos-right-panel-layouts-v2', '[1,2]');
+        localStorage.setItem(
+          LEGACY,
+          JSON.stringify({ 'agent-a': { open: true, activeTab: 'files', accessedAt: 3 } })
+        );
+        useAppStore.getState().loadRightPanelState();
+        expect(readLayouts()).toEqual({
+          'agent-a': { open: true, activeTab: 'files', accessedAt: 3 },
+        });
+      });
+
+      it('drops a corrupt old map without touching the new one', () => {
+        localStorage.setItem(LEGACY, 'not-json');
+        useAppStore.getState().loadRightPanelState();
+        expect(localStorage.getItem(LEGACY)).toBeNull();
+        expect(localStorage.getItem('dorkos-right-panel-layouts-v2')).toBeNull();
+      });
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -80,19 +161,22 @@ describe('RightPanelSlice', () => {
   // -------------------------------------------------------------------------
 
   describe('per-agent layout', () => {
-    it('write-through: open/tab persist under the current agent key, not globally', () => {
+    it('write-through: open/tab persist under the agent key, mirrored to global', () => {
       useAppStore.getState().loadRightPanelForAgent('agent-a');
       useAppStore.getState().setRightPanelOpen(true);
       useAppStore.getState().setActiveRightPanelTab('terminal');
 
       expect(readLayouts()['agent-a']).toMatchObject({ open: true, activeTab: 'terminal' });
-      // Global surface is untouched while an agent is in scope.
-      expect(localStorage.getItem('dorkos-right-panel-state')).toBeNull();
+      // Global holds the last layout you looked at, so a reload restores it.
+      expect(JSON.parse(localStorage.getItem('dorkos-right-panel-state')!)).toEqual({
+        open: true,
+        activeTab: 'terminal',
+      });
     });
 
     it('hydrates open + active tab when binding to an agent with a stored layout', () => {
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({ 'agent-a': { open: true, activeTab: 'files', accessedAt: 1 } })
       );
       useAppStore.getState().loadRightPanelForAgent('agent-a');
@@ -100,10 +184,143 @@ describe('RightPanelSlice', () => {
       expect(useAppStore.getState().activeRightPanelTab).toBe('files');
     });
 
-    it('a never-seen agent starts closed with no active tab', () => {
+    it('a never-seen agent starts closed with no active tab when nothing is open', () => {
       useAppStore.getState().loadRightPanelForAgent('brand-new-agent');
       expect(useAppStore.getState().rightPanelOpen).toBe(false);
       expect(useAppStore.getState().activeRightPanelTab).toBeNull();
+    });
+
+    it('a never-seen agent inherits the open panel and its tab (DOR-2579)', () => {
+      // Switching to another project's chat used to hydrate it as closed, so an
+      // extension tab had to be reopened on every switch.
+      useAppStore.getState().loadRightPanelForAgent('agent-a', '/repo/a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('flow');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-b', '/repo/b');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('flow');
+      expect(useAppStore.getState().rightPanelLayoutKey).toBe('agent-b');
+    });
+
+    it('inherits the view, not a stored preference: nothing is written for the new agent', () => {
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('flow');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+
+      expect(readLayouts()['agent-b']).toBeUndefined();
+    });
+
+    it('a never-seen agent inherits a closed panel too', () => {
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setActiveRightPanelTab('files');
+      useAppStore.getState().setRightPanelOpen(false);
+
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('files');
+    });
+
+    it('a reload on a project that only inherited its layout restores it', () => {
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('flow');
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+      expect(readLayouts()['agent-b']).toBeUndefined();
+
+      // Reload: fresh in-memory state, then the same hydrate order as the app.
+      useAppStore.setState({
+        rightPanelOpen: false,
+        activeRightPanelTab: null,
+        rightPanelLayoutKey: null,
+        inheritedRightPanelTab: null,
+      });
+      useAppStore.getState().loadRightPanelState();
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('flow');
+    });
+
+    it('closing the panel saves the carried tab, not the fallback shown in its place', () => {
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('a-only');
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+      // Agent B cannot show `a-only`, so the container falls back on screen.
+      useAppStore.getState().setActiveRightPanelTabView('profile');
+
+      useAppStore.getState().setRightPanelOpen(false);
+
+      expect(readLayouts()['agent-b']).toMatchObject({ open: false, activeTab: 'a-only' });
+    });
+
+    it('keeps the carried tab through a project that cannot show it (A → B → C)', () => {
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('flow');
+      // B cannot show Flow, so the container falls back on screen.
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+      useAppStore.getState().setActiveRightPanelTabView('profile');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-c');
+
+      expect(useAppStore.getState().activeRightPanelTab).toBe('flow');
+      expect(useAppStore.getState().inheritedRightPanelTab).toBe('flow');
+    });
+
+    it('a tab you pick on the inheriting project replaces the carried one', () => {
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('flow');
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+
+      useAppStore.getState().setActiveRightPanelTab('files');
+      useAppStore.getState().setRightPanelOpen(false);
+
+      expect(readLayouts()['agent-b']).toMatchObject({ open: false, activeTab: 'files' });
+    });
+
+    it('with inherit: false, a project with nothing saved starts closed', () => {
+      // Below desktop width the panel is a sheet over the chat you switched to.
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('flow');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-b', null, { inherit: false });
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBeNull();
+      expect(readLayouts()['agent-b']).toBeUndefined();
+    });
+
+    it('with inherit: false, a project with a saved layout still gets it back', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-layouts-v2',
+        JSON.stringify({ 'agent-b': { open: true, activeTab: 'canvas', accessedAt: 1 } })
+      );
+      useAppStore.getState().loadRightPanelForAgent('agent-b', null, { inherit: false });
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('canvas');
+    });
+
+    it('an agent with a stored layout still gets its own back, not the carried one', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-layouts-v2',
+        JSON.stringify({ 'agent-b': { open: false, activeTab: 'canvas', accessedAt: 1 } })
+      );
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+      useAppStore.getState().setRightPanelOpen(true);
+      useAppStore.getState().setActiveRightPanelTab('flow');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-b');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('canvas');
     });
 
     it('restores each agent independently across A → B → A switches', () => {
@@ -112,9 +329,10 @@ describe('RightPanelSlice', () => {
       useAppStore.getState().setRightPanelOpen(true);
       useAppStore.getState().setActiveRightPanelTab('terminal');
 
-      // Agent B: closed, canvas.
+      // Agent B: inherits A's open panel on first visit, then closed, canvas.
       useAppStore.getState().loadRightPanelForAgent('agent-b');
-      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      useAppStore.getState().setRightPanelOpen(false);
       useAppStore.getState().setActiveRightPanelTab('canvas');
 
       // Back to A restores open + terminal.
@@ -258,7 +476,7 @@ describe('RightPanelSlice', () => {
       // opened hydrates as closed. Without the request outranking it, the panel
       // was opened and shut again on the same frame and nobody ever saw it.
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
       );
       useAppStore.getState().requestRightPanel('profile', '/repo/a');
@@ -287,7 +505,7 @@ describe('RightPanelSlice', () => {
 
     it('is answered once you close the panel yourself, and stops outranking', () => {
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
       );
       useAppStore.getState().requestRightPanel('profile', '/repo/a');
@@ -302,7 +520,7 @@ describe('RightPanelSlice', () => {
 
     it('is answered by picking another tab', () => {
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({ 'agent-a': { open: false, activeTab: 'files', accessedAt: 1 } })
       );
       useAppStore.getState().requestRightPanel('profile', '/repo/a');
@@ -320,7 +538,7 @@ describe('RightPanelSlice', () => {
       // agent whose panel you had left closed opened it anyway — somebody
       // else's link undoing DOR-227's per-agent layout, one switch at a time.
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({
           'agent-a': { open: false, activeTab: 'pulse', accessedAt: 1 },
           'agent-b': { open: false, activeTab: 'pulse', accessedAt: 1 },
@@ -346,7 +564,7 @@ describe('RightPanelSlice', () => {
       // — which an earlier shape did — closed the panel the link had just
       // opened and cleared the subject with it, so the link opened nothing.
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({ warden: { open: false, activeTab: 'pulse', accessedAt: 1 } })
       );
       useAppStore.setState({ explicitAgentPath: '/repo/scout' });
@@ -364,13 +582,30 @@ describe('RightPanelSlice', () => {
       expect(useAppStore.getState().rightPanelLayoutKey).toBe('warden');
     });
 
+    it('does not carry another agent’s linked tab into a project with nothing saved', () => {
+      // `?panel=profile&agentPath=<Scout>` read in Warden's session shows
+      // Scout's profile. Switching on to project C keeps the panel open, but C
+      // gets its own default tab rather than Scout's profile following along.
+      useAppStore.setState({ explicitAgentPath: '/repo/scout' });
+      useAppStore.getState().requestRightPanel('profile', '/repo/scout');
+      useAppStore.getState().loadRightPanelForAgent('warden', '/repo/warden');
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+
+      useAppStore.getState().loadRightPanelForAgent('agent-c', '/repo/c');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBeNull();
+      expect(useAppStore.getState().requestedRightPanel).toBeNull();
+      expect(readLayouts()['agent-c']).toBeUndefined();
+    });
+
     it('sits through the ARRIVAL bind only — the next agent gets its layout back', () => {
       // The protection above is for the bind that happens as the link lands.
       // Unscoped, it applied to every bind after it too, so an agent you
       // switched to later had its stored layout ignored — the same DOR-227 leak
       // the mark's agent name was added to close, one level up.
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({
           warden: { open: false, activeTab: 'pulse', accessedAt: 1 },
           ranger: { open: false, activeTab: 'pulse', accessedAt: 1 },
@@ -394,7 +629,7 @@ describe('RightPanelSlice', () => {
       // Expiry is about binds for OTHER agents. The one the link named answers
       // it whenever it comes, and its own stored layout is the thing outranked.
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({
           warden: { open: false, activeTab: 'pulse', accessedAt: 1 },
           scout: { open: false, activeTab: 'pulse', accessedAt: 1 },
@@ -439,7 +674,7 @@ describe('RightPanelSlice', () => {
       // would force every agent you switch to open, discarding the per-agent
       // layout DOR-227 exists to restore.
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({ 'agent-b': { open: false, activeTab: 'files', accessedAt: 1 } })
       );
       useAppStore.getState().setActiveRightPanelTab('profile');
@@ -463,7 +698,7 @@ describe('RightPanelSlice', () => {
       // contribution, the container falls back to whichever tab is first, and a
       // preference somebody set is silently thrown away.
       localStorage.setItem(
-        'dorkos-right-panel-layouts',
+        'dorkos-right-panel-layouts-v2',
         JSON.stringify({ 'agent-a': { open: true, activeTab: 'agent-hub', accessedAt: 1 } })
       );
 

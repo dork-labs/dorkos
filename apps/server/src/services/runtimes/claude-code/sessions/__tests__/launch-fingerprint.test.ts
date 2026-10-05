@@ -15,11 +15,14 @@ import {
   accountsMatch,
   captureLaunchFingerprint,
   compareLaunchFingerprints,
+  withLiveToolSurface,
   type LaunchParams,
 } from '../launch-fingerprint.js';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { applyDirectoryGrants } from '../../messaging/directory-grants.js';
 import { resolveThinkingOptions } from '../../messaging/thinking-config.js';
+import { recordToolSurface, type ToolSurfaceEntry } from '../../mcp-tools/tool-surface.js';
+import { z } from 'zod';
 
 /** The account a paying client's session belongs to. */
 const CLIENT_ROOT = '/staged/claude-client';
@@ -136,6 +139,7 @@ describe('the pin list', () => {
       fastMode: 'relaunch',
       settingsEnv: 'relaunch',
       additionalDirectories: 'relaunch',
+      toolSurface: 'relaunch',
       mcpServers: 'live',
       plugins: 'live',
       permissionMode: 'live',
@@ -689,5 +693,111 @@ describe('the folder-grant pin (spec `agent-home-desk` §4.2)', () => {
     });
     expect(before.pins.additionalDirectories).toBe(after.pins.additionalDirectories);
     expect(before.pins.fastMode).not.toBe(after.pins.fastMode);
+  });
+});
+
+describe('the tool-surface pin (DOR-2685)', () => {
+  /** The tools a fresh build of the `dorkos` server would list. */
+  const core: ToolSurfaceEntry[] = [
+    { name: 'ping', inputSchema: {} },
+    { name: 'relay_send', inputSchema: { subject: z.string(), payload: z.unknown() } },
+  ];
+  const extensionTool: ToolSurfaceEntry = {
+    name: 'ext_mail_app__send',
+    inputSchema: { to: z.string() },
+  };
+
+  /** A launch whose `dorkos` server was built fresh and listed `tools`. */
+  function launchListing(tools: readonly ToolSurfaceEntry[], extra: Partial<Options> = {}) {
+    // A new object per launch, exactly as the factory builds a new McpServer.
+    const instance = {};
+    recordToolSurface(instance, tools);
+    return capture({
+      options: options({
+        mcpServers: { dorkos: { type: 'sdk', name: 'dorkos', instance } as never },
+        ...extra,
+      }),
+    });
+  }
+
+  it('rides the warm process when a rebuilt server lists the same tools', () => {
+    // Purpose: the server is rebuilt for every dispatch. If two builds of the
+    // same list compared unequal, every warm process would relaunch on every
+    // message, so this is the guard against a relaunch storm.
+    const decision = compareLaunchFingerprints(launchListing(core), launchListing([...core]));
+    expect(decision.action).toBe('reuse');
+    expect(decision.action === 'reuse' && decision.liveChanges).toEqual([]);
+  });
+
+  it('rides when the same tools arrive in another order', () => {
+    // Purpose: domain assembly order is not part of what the model sees.
+    const decision = compareLaunchFingerprints(
+      launchListing([...core, extensionTool]),
+      launchListing([extensionTool, ...core.slice().reverse()])
+    );
+    expect(decision.action).toBe('reuse');
+  });
+
+  it('relaunches when a tool joins the list, naming only this pin', () => {
+    // Purpose: an extension started since the process launched; the warm
+    // process would never list its tool without a relaunch.
+    const decision = compareLaunchFingerprints(
+      launchListing(core),
+      launchListing([...core, extensionTool])
+    );
+    expect(decision.action).toBe('relaunch');
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['toolSurface']);
+  });
+
+  it('relaunches when a tool leaves the list (a stopped extension, or a Blocked tool)', () => {
+    // Purpose: a removed tool must not stay listed in a warm process. The gate
+    // refuses the call either way; this keeps the list honest.
+    const decision = compareLaunchFingerprints(
+      launchListing([...core, extensionTool]),
+      launchListing(core)
+    );
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['toolSurface']);
+  });
+
+  it('relaunches when only a tool’s input schema changes', () => {
+    // Purpose: a tool that now takes a different argument is a different tool
+    // to the model, even under the same name.
+    const decision = compareLaunchFingerprints(
+      launchListing([...core, extensionTool]),
+      launchListing([
+        ...core,
+        { ...extensionTool, inputSchema: { to: z.string(), cc: z.string() } },
+      ])
+    );
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['toolSurface']);
+  });
+
+  it('compares as unchanged when the live surface is kept, and nothing else is hidden', () => {
+    // Purpose: the hold a busy process gets. Only the tool surface is taken
+    // from the live process; another pin that moved still relaunches.
+    const live = launchListing(core);
+    const wanted = launchListing([...core, extensionTool]);
+    expect(compareLaunchFingerprints(live, withLiveToolSurface(live, wanted)).action).toBe('reuse');
+    const movedCwd = launchListing([...core, extensionTool], { cwd: '/elsewhere' });
+    const decision = compareLaunchFingerprints(live, withLiveToolSurface(live, movedCwd));
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['cwd']);
+  });
+
+  it('leaves external servers to the mcpServers pin and unrecorded sdk servers equal', () => {
+    // Purpose: only DorkOS-built servers have a digest; an http server is
+    // swapped live by `setMcpServers`, and must not start relaunching.
+    const external = { gh: { type: 'http' as const, url: 'https://x/mcp' } };
+    const a = capture({ options: options({ mcpServers: external }) });
+    const b = capture({
+      options: options({ mcpServers: { gh: { type: 'http', url: 'https://y/mcp' } } }),
+    });
+    expect(a.pins.toolSurface).toBe(b.pins.toolSurface);
+    const unrecorded = (instance: object) =>
+      capture({
+        options: options({
+          mcpServers: { other: { type: 'sdk', name: 'other', instance } as never },
+        }),
+      });
+    expect(compareLaunchFingerprints(unrecorded({}), unrecorded({})).action).toBe('reuse');
   });
 });

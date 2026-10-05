@@ -55,7 +55,11 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import {
+  isExtensionCapabilityId,
+  type CapabilitySource,
+  type CapabilityTier,
+} from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
@@ -85,7 +89,11 @@ export type {
   ApprovalConsumeOptions,
   ApprovalConsumptionSettlement,
 } from './approval-consumption.js';
-import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js';
+import {
+  extensionSourcePhrase,
+  redactSecretsInText,
+  renderRequesterLabel,
+} from './approval-summary.js';
 
 /**
  * How long an operator has to decide before a token stops being honored.
@@ -312,7 +320,7 @@ export interface ApprovalConnectorAuthority {
  */
 type CapabilityDescriptorLookup = (
   capabilityId: string
-) => { title: string; tier: CapabilityTier } | undefined;
+) => { title: string; tier: CapabilityTier; source?: CapabilitySource } | undefined;
 
 /** Construction options for {@link ApprovalService}. */
 export interface ApprovalServiceOptions {
@@ -580,6 +588,10 @@ type ApprovalRow = typeof approvals.$inferSelect;
  * the promise of those cards is that a person sees every such change before it
  * happens, and a standing yes would let the next change through unseen.
  *
+ * Nor does a card for an extension's destructive tool (DOR-2685): every call
+ * asks, because the tool's tier is its author's to change and a standing yes
+ * keyed by its id would outlive the version it was given for.
+ *
  * @param row - The stored approval.
  */
 export function isAlwaysOffered(row: {
@@ -587,13 +599,18 @@ export function isAlwaysOffered(row: {
   area: string | null;
   authorityBindingDigest: string | null;
   detail?: string | null;
+  /** Required: the extension rule reads it, and a caller must not be able to forget it. */
+  capabilityId: string;
+  /** Required for the same reason. */
+  tier: string;
 }): boolean {
   return (
     row.requestedByPath !== null &&
     row.area !== null &&
     !isFloorArea(row.area) &&
     row.authorityBindingDigest === null &&
-    (row.detail ?? null) === null
+    (row.detail ?? null) === null &&
+    !(row.tier === 'destructive' && isExtensionCapabilityId(row.capabilityId))
   );
 }
 
@@ -615,12 +632,15 @@ function recordedArea(area: string | null): PermissionAreaId | null {
  * @param roomId - The room whose turn raised it, when there is one.
  * @param suggestAlways - Whether the card should suggest Always allow; asked
  *   only of a card that offers it.
+ * @param projectForFolder - The project an asking session's folder belongs to.
+ * @param sourceOf - The running extension an `ext_` capability comes from.
  */
 function toPendingApproval(
   row: ApprovalRow,
   roomId?: string,
   suggestAlways?: (row: ApprovalRow) => { allowedThisWeek: number } | null,
-  projectForFolder?: (cwd: string) => ProjectRef | null | undefined
+  projectForFolder?: (cwd: string) => ProjectRef | null | undefined,
+  sourceOf?: (capabilityId: string) => CapabilitySource | undefined
 ): PendingApproval {
   const alwaysOffered = isAlwaysOffered(row);
   const suggestion = alwaysOffered ? (suggestAlways?.(row) ?? null) : null;
@@ -629,6 +649,13 @@ function toPendingApproval(
       ? projectForFolder(row.requestingCwd)
       : null
     : undefined;
+  // Only an extension's tool names a source, and only while it runs: the card
+  // then says which extension it is from. Read live, like the room above, and
+  // shown only while it is the extension the stored summary named, so the
+  // subtitle never contradicts the sentence under it (a rename or a reinstall
+  // under the same id drops it).
+  const live = isExtensionCapabilityId(row.capabilityId) ? sourceOf?.(row.capabilityId) : undefined;
+  const source = live && row.summary.includes(extensionSourcePhrase(live.name)) ? live : undefined;
   return {
     approvalId: row.id,
     capabilityId: row.capabilityId,
@@ -660,6 +687,7 @@ function toPendingApproval(
     ...(row.blockedRequest && row.requestReason ? { requestReason: row.requestReason } : {}),
     ...(roomId ? { roomId } : {}),
     ...(project !== undefined ? { project } : {}),
+    ...(source ? { source: { kind: source.kind, id: source.id, name: source.name } } : {}),
     requestedAt: row.createdAt,
     expiresAt: row.expiresAt,
   };
@@ -1328,7 +1356,8 @@ export class ApprovalService {
       row,
       this.roomFor(row.requestingSessionId),
       (r) => this.suggestsAlways(r),
-      this.options.projectForFolder
+      this.options.projectForFolder,
+      (capabilityId) => this.options.describeCapability?.(capabilityId)?.source
     );
   }
 

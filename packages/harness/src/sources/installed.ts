@@ -23,7 +23,7 @@ import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithinSync } from '@dorkos/shared/bounded-read';
 import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
-import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
+import { isInstallSiblingName, type DevLinkRecord } from '@dorkos/shared/marketplace-schemas';
 import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import {
@@ -34,6 +34,7 @@ import {
 } from '../scan/scanner.js';
 import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookCommand, HookMatcherGroup } from '../generate/hooks.js';
+import { devLinkForSlot, isStillLinked, readDevLinksSync } from './dev-links.js';
 
 /**
  * The repo-relative directory project-scoped marketplace installs live in.
@@ -212,6 +213,14 @@ export interface InstalledPlugin {
   unreadableSkills?: string[];
   /** Declared content layers from the manifest (informational). */
   layers: string[];
+  /**
+   * Set when this package runs from a registered dev link (DOR-2696): its slot
+   * is a link DorkOS made on a person's yes, and `path` is the working folder it
+   * points at. Every projection of it is labelled with this path, so a person
+   * reading a wrapper, a hook group or the status page can tell it apart from
+   * an installed copy. Absent for every installed copy.
+   */
+  devLink?: { path: string };
 }
 
 /**
@@ -700,6 +709,7 @@ function collectCommands(pluginDir: string, sourcePrefix: string): InstalledComm
 function scanPluginsRoot(
   pluginsRoot: string,
   scope: InstalledScope,
+  devLinks: readonly DevLinkRecord[],
   dorkHome?: string
 ): InstalledSourceScan {
   if (!existsSync(pluginsRoot)) return { plugins: [], unreadableManifests: [] };
@@ -708,8 +718,19 @@ function scanPluginsRoot(
   for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
     // The install engine's own siblings (a crash-left backup of the previous
     // install, say) carry a valid manifest and every skill, and are never a
-    // package of their own.
-    if (!entry.isDirectory() || isInstallSiblingName(entry.name)) continue;
+    // package of their own. That includes an installed copy a dev link set
+    // aside (`.dorkos-devlink-parked`).
+    if (isInstallSiblingName(entry.name)) continue;
+    // A link in a plugins root is followed for ONE shape only: a registered dev
+    // link whose slot still resolves to exactly the folder its record names
+    // (`sources/dev-links.ts`). Every other link stays skipped — a link a
+    // repository committed must never project a private folder, which is the
+    // same containment rule `collectPortableSkills` states for links inside a
+    // package. Inside a followed package the scans keep `followSymlinks: false`.
+    const devLink = entry.isSymbolicLink()
+      ? devLinkForSlot(pluginsRoot, entry.name, scope, devLinks)
+      : null;
+    if (!entry.isDirectory() && devLink === null) continue;
     const pluginDir = join(pluginsRoot, entry.name);
     const location: InstalledLocation =
       scope === 'global'
@@ -754,12 +775,17 @@ function scanPluginsRoot(
             }) !== undefined
         : undefined;
     const portable = collectPortableSkills(pluginDir, sourcePrefix, dorkHomeLink);
+    const commands = collectCommands(pluginDir, sourcePrefix);
+    // Read through the link, so asked again: a link pointed somewhere else while
+    // the reads above ran would otherwise leave what they found in another
+    // folder standing as this dev link's.
+    if (devLink !== null && !isStillLinked(pluginDir, devLink)) continue;
     plugins.push({
       name: manifest.name,
       type: manifest.type,
       location,
       skills: portable.skills,
-      commands: collectCommands(pluginDir, sourcePrefix),
+      commands,
       ...(hooks ? { hooks } : {}),
       ...(unreadable ? { unreadableHooks: unreadable } : {}),
       ...(portable.unreadableRoots.length > 0
@@ -769,6 +795,7 @@ function scanPluginsRoot(
         ? { unreadableSkills: portable.unreadableSkills }
         : {}),
       layers: manifest.layers,
+      ...(devLink !== null ? { devLink: { path: devLink.target } } : {}),
     });
   }
   return {
@@ -776,6 +803,22 @@ function scanPluginsRoot(
     unreadableManifests: unreadableManifests.sort((a, b) => a.package.localeCompare(b.package)),
   };
 }
+
+/**
+ * Where to scan, and which dev links may be followed.
+ *
+ * A project root, a dork home, or both. A union rather than two optional
+ * fields, so `{}` (a call that would scan nothing and answer `[]` as if the
+ * machine were empty) is a compile error rather than a silent one.
+ *
+ * `devLinks` defaults to the registry under `dorkHome`
+ * ({@link readDevLinksSync}), so every caller that knows the data directory
+ * follows exactly the links DorkOS recorded, and a caller without one (an
+ * offline sync) follows none. Pass it only to pin the records (tests).
+ */
+export type InstalledScanOptions = (
+  { projectRoot: string; dorkHome?: string } | { projectRoot?: string; dorkHome: string }
+) & { devLinks?: readonly DevLinkRecord[] };
 
 /**
  * Discover all marketplace-installed plugins across the global and project roots.
@@ -796,15 +839,12 @@ function scanPluginsRoot(
  * "an absent root is a root nothing is read from" rule the global plan's own
  * roots follow.
  *
- * @param opts - a project root, a dork home, or both. A union rather than two
- *   optional fields, so `{}` — a call that would scan nothing and answer `[]`
- *   as if the machine were empty — is a compile error rather than a silent one.
+ * @param opts - a project root, a dork home, or both, and optionally the dev
+ *   links to follow ({@link InstalledScanOptions}).
  * @returns global plugins first (only when `dorkHome` is given), then project
  *   plugins (only when `projectRoot` is given); each group sorted by name.
  */
-export function scanInstalledPlugins(
-  opts: { projectRoot: string; dorkHome?: string } | { projectRoot?: string; dorkHome: string }
-): InstalledPlugin[] {
+export function scanInstalledPlugins(opts: InstalledScanOptions): InstalledPlugin[] {
   return scanInstalledSources(opts).plugins;
 }
 
@@ -823,15 +863,14 @@ export function scanInstalledPlugins(
  * @returns the packages that were read, and one record per manifest that would
  *   not parse — global roots first, each group sorted by name.
  */
-export function scanInstalledSources(
-  opts: { projectRoot: string; dorkHome?: string } | { projectRoot?: string; dorkHome: string }
-): InstalledSourceScan {
+export function scanInstalledSources(opts: InstalledScanOptions): InstalledSourceScan {
   const empty: InstalledSourceScan = { plugins: [], unreadableManifests: [] };
+  const devLinks = opts.devLinks ?? readDevLinksSync(opts.dorkHome);
   const global = opts.dorkHome
-    ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global', opts.dorkHome)
+    ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global', devLinks, opts.dorkHome)
     : empty;
   const project = opts.projectRoot
-    ? scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project')
+    ? scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project', devLinks)
     : empty;
   return {
     plugins: [...global.plugins, ...project.plugins],

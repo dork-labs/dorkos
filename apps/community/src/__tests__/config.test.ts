@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseConfig } from '../config.js';
+import { COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE, parseConfig } from '../config.js';
 import { createBlobStore, FileSystemBlobStore, S3BlobStore } from '../storage/index.js';
 
 const valid = {
@@ -690,5 +690,64 @@ describe('community startup config', () => {
       expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
         /COMMUNITY_OWNER_REPLACEMENT/u
       );
+  });
+
+  // Purpose: fails if COMMUNITY_TEST_RUNTIME alone can start a server whose /api/test/ routes
+  // anyone can call without signing in, or if the refusal stops naming both settings (DOR-2655).
+  describe('test runtime', () => {
+    const refusal =
+      /COMMUNITY_TEST_RUNTIME=true .*without signing in.*COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT/u;
+
+    it('is off by default and ignores a stray acknowledgement', () => {
+      expect(parseConfig(valid).testRuntime).toBe(false);
+      expect(parseConfig({ ...valid, COMMUNITY_TEST_RUNTIME: 'false' }).testRuntime).toBe(false);
+      expect(
+        parseConfig({
+          ...valid,
+          COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT: COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE,
+        }).testRuntime
+      ).toBe(false);
+    });
+
+    it('refuses to start when turned on without the acknowledgement', () => {
+      expect(() => parseConfig({ ...valid, COMMUNITY_TEST_RUNTIME: 'true' })).toThrow(refusal);
+      expect(() =>
+        parseConfig({
+          ...valid,
+          COMMUNITY_TEST_RUNTIME: 'true',
+          COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT: '',
+        })
+      ).toThrow(refusal);
+    });
+
+    it('refuses an acknowledgement that is not the exact phrase', () => {
+      for (const acknowledgement of [
+        'true',
+        '1',
+        'yes',
+        COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE.toLowerCase(),
+        `${COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE} `,
+      ]) {
+        expect(
+          () =>
+            parseConfig({
+              ...valid,
+              COMMUNITY_TEST_RUNTIME: 'true',
+              COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT: acknowledgement,
+            }),
+          acknowledgement
+        ).toThrow(refusal);
+      }
+    });
+
+    it('starts with the exact acknowledgement', () => {
+      expect(
+        parseConfig({
+          ...valid,
+          COMMUNITY_TEST_RUNTIME: 'true',
+          COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT: COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE,
+        }).testRuntime
+      ).toBe(true);
+    });
   });
 });

@@ -88,7 +88,7 @@ import {
   extractSessionIdFromSubject,
   parseAgentSubject,
 } from '../../lib/subjects.js';
-import { CapacityHold, type SlotOutcome } from './capacity-hold.js';
+import { CapacityHold, type CapacityLease, type SlotOutcome } from './capacity-hold.js';
 import type {
   AgentRuntimeLike,
   ClaudeCodeAdapterConfig,
@@ -184,7 +184,7 @@ const AGENT_SUBJECT_PREFIX_LEGACY = 'relay.agent.';
  *   the shorter of the adapter's own and what was left of the envelope's TTL.
  */
 function slotRefusal(
-  outcome: Exclude<SlotOutcome, 'acquired'>,
+  outcome: Exclude<SlotOutcome, CapacityLease>,
   config: ResolvedConfig,
   durationMs: number,
   ceilingMs: number
@@ -801,7 +801,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       ceilingMs: remainingMs,
       ...(context?.onHeld ? { onHeld: context.onHeld } : {}),
     });
-    if (slot !== 'acquired') {
+    if (typeof slot === 'string') {
       return slotRefusal(
         slot,
         this.config,
@@ -885,7 +885,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       // The one release seam. A turn that answered, threw, timed out or was
       // stopped all arrive here, which is what makes the waiting line's promise
       // keepable: the next held delivery starts from inside this call.
-      this.capacity.release();
+      this.capacity.release(slot);
     }
   }
 }

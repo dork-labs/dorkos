@@ -75,6 +75,11 @@ export function NavigationShowcases() {
   );
 }
 
+/** A sample tab with nothing behind it yet — the strip shows only `href`. */
+function sampleTab(id: string, href: string): AppTab {
+  return { id, href, history: [href], cursor: 0 };
+}
+
 /**
  * One tab per route the strip can name, plus chat tabs named after projects
  * and a channel tab named after the room (`playground-transport.ts`'s
@@ -82,15 +87,15 @@ export function NavigationShowcases() {
  * rather than falling back to the bare "Channels" route label).
  */
 const TAB_SAMPLES: AppTab[] = [
-  { id: 'tab-home', href: '/' },
-  { id: 'tab-api', href: sessionHref({ session: 's-api', dir: '/Users/kai/code/api' }) },
-  { id: 'tab-web', href: sessionHref({ session: 's-web', dir: '/Users/kai/code/web-app' }) },
-  { id: 'tab-general', href: '/channels?id=room-general' },
-  { id: 'tab-agents', href: '/team?view=topology' },
-  { id: 'tab-activity', href: '/activity' },
-  { id: 'tab-tasks', href: '/tasks' },
-  { id: 'tab-workspaces', href: '/workspaces' },
-  { id: 'tab-marketplace', href: '/marketplace' },
+  sampleTab('tab-home', '/'),
+  sampleTab('tab-api', sessionHref({ session: 's-api', dir: '/Users/kai/code/api' })),
+  sampleTab('tab-web', sessionHref({ session: 's-web', dir: '/Users/kai/code/web-app' })),
+  sampleTab('tab-general', '/channels?id=room-general'),
+  sampleTab('tab-agents', '/team?view=topology'),
+  sampleTab('tab-activity', '/activity'),
+  sampleTab('tab-tasks', '/tasks'),
+  sampleTab('tab-workspaces', '/workspaces'),
+  sampleTab('tab-marketplace', '/marketplace'),
 ];
 
 /** Live strip with local state — the real component, not a lookalike. */
@@ -114,7 +119,7 @@ function AppTabStripDemo({ tabs: initial }: { tabs: AppTab[] }) {
           });
         }}
         onCreate={() => {
-          const tab = { id: `tab-new-${spawned}`, href: '/' };
+          const tab = sampleTab(`tab-new-${spawned}`, '/');
           setSpawned((count) => count + 1);
           setTabs((current) => [...current, tab]);
           setActiveId(tab.id);

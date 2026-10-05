@@ -76,6 +76,12 @@ export interface RunGitOptions {
    * their `post-checkout` hook still runs, as it would for their own `git`.
    */
   config?: readonly GitConfigEntry[];
+  /**
+   * Extra environment for this call, laid over the inherited one (and under
+   * the transport allowlist and prompt setting). A caller that reads git's
+   * error text sets `LC_ALL=C` here so the text is not translated.
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -95,7 +101,7 @@ export const PERSON_REPO_GIT_CONFIG: readonly GitConfigEntry[] = SESSION_GIT_CON
 export async function runGit(
   args: string[],
   cwd: string,
-  { timeoutMs = GIT_TIMEOUT_MS, config = internalGitConfig() }: RunGitOptions = {}
+  { timeoutMs = GIT_TIMEOUT_MS, config = internalGitConfig(), env }: RunGitOptions = {}
 ): Promise<string> {
   const { stdout } = await execFileAsync('git', [...gitConfigArgs(config), ...args], {
     cwd,
@@ -103,6 +109,7 @@ export async function runGit(
     env: {
       // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME/credential vars; only the transport allowlist and prompt are added.
       ...process.env,
+      ...env,
       GIT_ALLOW_PROTOCOL: WORKSPACE_GIT_PROTOCOLS,
       GIT_TERMINAL_PROMPT: '0',
     },

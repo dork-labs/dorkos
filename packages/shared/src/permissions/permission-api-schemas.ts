@@ -65,6 +65,11 @@ export const PermissionActionEntrySchema = z
     resolved: ResolvedPermissionSchema,
     /** The last change to the setting `resolved.source` names. */
     lastChange: PermissionLastChangeSchema.optional(),
+    /**
+     * The running extension this action came from (DOR-2685), so its row can
+     * name the extension. Absent on DorkOS's own actions.
+     */
+    source: z.object({ kind: z.literal('extension'), id: z.string(), name: z.string() }).optional(),
   })
   .openapi('PermissionActionEntry');
 

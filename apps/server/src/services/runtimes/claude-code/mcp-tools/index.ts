@@ -13,6 +13,7 @@ import {
   loadsAgentToAgentTools,
 } from './tool-exposure.js';
 import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
+import { recordToolSurface } from './tool-surface.js';
 import { getCoreTools } from './core-tools.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
@@ -59,6 +60,7 @@ import { logger } from '../../../../lib/logger.js';
 // servers (DOR-499). Production reaches this barrel only for
 // `createDorkOsToolServer`, from `apps/server/src/index.ts`.
 export type { McpToolDeps, McpToolSession } from './types.js';
+export { dorkosToolSurfaceOf } from './tool-surface.js';
 export {
   handlePing,
   handleGetServerInfo,
@@ -350,6 +352,9 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  * @param launchIdentity - Whose identity this session carries, as the launch resolved
  *   it (DOR-2091). Defaults to the anchor of `session.cwd`, which is right for
  *   every caller that is not a turn's launch.
+ * @param connectorTools - Whether to list the five connector tools, decided by
+ *   the launch from session-long facts (DOR-2685). Defaults to whether the
+ *   session holds a turn's connector context, for callers that are not a launch.
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
@@ -359,7 +364,8 @@ export function createDorkOsToolServer(
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry,
   hiddenToolNames: ReadonlySet<string> = new Set(),
-  launchIdentity?: HomeResolution
+  launchIdentity?: HomeResolution,
+  connectorTools: boolean = session?.connectorTurn !== undefined
 ) {
   const identity = launchIdentity ?? resolveAgentHome(session?.cwd);
   // Operator + marketplace + self-description tools, all generated from the
@@ -428,6 +434,10 @@ export function createDorkOsToolServer(
     // agent uninformed (DOR-1930).
     ...(hold ? { hold } : {}),
   });
+  const listed = [
+    ...hand.tools,
+    ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
+  ].filter((tool) => !hiddenToolNames.has(tool.name));
   const server = createSdkMcpServer({
     // Not a label: Claude Code qualifies every tool on this server as
     // `mcp__<name>__<tool>`, so this string is half of what the model must type
@@ -441,20 +451,34 @@ export function createDorkOsToolServer(
     // which derives it from the approval hold and explains why the old
     // environment floor is gone rather than kept beside it.
     timeout: DORKOS_MCP_TOOL_TIMEOUT_MS,
-    tools: [
-      ...hand.tools,
-      ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
-    ].filter((tool) => !hiddenToolNames.has(tool.name)),
+    tools: listed,
   });
 
-  if (session?.connectorTurn) {
-    registerClaudeConnectorCapabilityTools(
-      server.instance,
-      capabilityRegistry,
-      resolveCapabilityContext,
-      hold
-    );
-  }
+  // Listed on a launch's session-long answer, not on whether THIS build sees a
+  // turn's connector context: a process warmed for a staged note is built with
+  // none, and the turn after it with one, and the two must list the same
+  // tools. Each call still resolves the turn's context when it runs.
+  const connectorEntries = connectorTools
+    ? registerClaudeConnectorCapabilityTools(
+        server.instance,
+        capabilityRegistry,
+        resolveCapabilityContext,
+        hold
+      )
+    : [];
+
+  // What a fresh launch of this server would list, recorded against this
+  // instance so the launch fingerprint's `toolSurface` pin can tell a warm
+  // process that lists something else to relaunch before its next turn
+  // (DOR-2685, `tool-surface.ts`). Nothing new reaches the CLI.
+  recordToolSurface(server.instance, [
+    ...listed.map((definition) => ({
+      name: definition.name,
+      description: definition.description,
+      inputSchema: definition.inputSchema,
+    })),
+    ...connectorEntries,
+  ]);
 
   // The read-only `dorkos://` resources: the same registration the external
   // `/mcp` server performs, scoped to THIS session's project rather than the

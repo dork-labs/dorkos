@@ -90,17 +90,107 @@ describe('Files Routes', () => {
       await fs.writeFile(file, original, 'utf8');
     });
     afterEach(async () => {
+      vi.restoreAllMocks();
       await fs.rm(dir, { recursive: true, force: true });
     });
 
     it('writes new content when expectedHash matches and returns the new hash', async () => {
+      const write = vi.spyOn(fs, 'writeFile');
+      const rename = vi.spyOn(fs, 'rename');
       const next = '# Title\n\nbody edited\n';
       const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: next, expectedHash: sha(original) });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ ok: true, hash: sha(next) });
+      expect(res.body).toEqual({ ok: true, hash: sha(next), effect: 'changed' });
+      expect(await fs.readFile(file, 'utf8')).toBe(next);
+      const writes = write.mock.calls.filter(
+        ([target]) =>
+          typeof target === 'string' && target.startsWith(`${file}.`) && target.endsWith('.tmp')
+      );
+      expect(writes).toHaveLength(1);
+      expect(rename.mock.calls.filter(([, target]) => target === file)).toEqual([
+        [writes[0][0], file],
+      ]);
+    });
+
+    it('acknowledges a changed save only after the actual rename completes', async () => {
+      const actualRename = fs.rename;
+      const actualJson = app.response.json;
+      let reachedRename!: () => void;
+      let releaseRename!: () => void;
+      let completedRename!: () => void;
+      const reached = new Promise<void>((resolve) => {
+        reachedRename = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        releaseRename = resolve;
+      });
+      const completed = new Promise<void>((resolve) => {
+        completedRename = resolve;
+      });
+      let replacementComplete = false;
+      let successIssued = false;
+      let successBeforeReplacement = false;
+      let httpSettled = false;
+      vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+        if (to === file) {
+          reachedRename();
+          await released;
+        }
+        try {
+          await actualRename(from, to);
+          if (to === file) replacementComplete = true;
+        } finally {
+          if (to === file) completedRename();
+        }
+      });
+      // Observe the real response seam synchronously, not a race with the client's
+      // network promise. The original JSON method still sends the real HTTP body.
+      vi.spyOn(app.response, 'json').mockImplementation(function (
+        this: typeof app.response,
+        body: unknown
+      ) {
+        if (
+          this.req.method === 'PUT' &&
+          this.req.originalUrl === '/api/files/content' &&
+          typeof body === 'object' &&
+          body !== null &&
+          'ok' in body &&
+          body.ok === true
+        ) {
+          successIssued = true;
+          successBeforeReplacement = !replacementComplete;
+        }
+        return actualJson.call(this, body);
+      });
+      const next = 'acknowledged after replacement';
+      const response = request(testServer)
+        .put('/api/files/content')
+        .send({ cwd: dir, path: 'doc.md', content: next, expectedHash: sha(original) })
+        .then((res) => {
+          httpSettled = true;
+          return res;
+        });
+      try {
+        await reached;
+        expect(replacementComplete).toBe(false);
+        expect(successIssued).toBe(false);
+        expect(httpSettled).toBe(false);
+        expect(await fs.readFile(file, 'utf8')).toBe(original);
+      } finally {
+        // Always finish the owned request before teardown, including assertion RED.
+        releaseRename();
+        await completed;
+        await response;
+      }
+      const res = await response;
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true, hash: sha(next), effect: 'changed' });
+      expect(replacementComplete).toBe(true);
+      expect(successIssued).toBe(true);
+      expect(successBeforeReplacement).toBe(false);
       expect(await fs.readFile(file, 'utf8')).toBe(next);
     });
 
@@ -142,12 +232,73 @@ describe('Files Routes', () => {
     });
 
     it('treats identical content as a successful no-op', async () => {
+      const write = vi.spyOn(fs, 'writeFile');
+      const rename = vi.spyOn(fs, 'rename');
       const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: original, expectedHash: sha(original) });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ ok: true, hash: sha(original) });
+      expect(res.body).toEqual({ ok: true, hash: sha(original), effect: 'no_op' });
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+      expect(
+        write.mock.calls.filter(
+          ([target]) =>
+            typeof target === 'string' && target.startsWith(`${file}.`) && target.endsWith('.tmp')
+        )
+      ).toHaveLength(0);
+      expect(rename.mock.calls.filter(([, target]) => target === file)).toHaveLength(0);
+    });
+
+    it('refuses an identical-content request whose expected version is stale', async () => {
+      const res = await request(testServer)
+        .put('/api/files/content')
+        .send({ cwd: dir, path: 'doc.md', content: original, expectedHash: sha('older') });
+
+      expect(res.status).toBe(409);
+      expect(res.body.currentHash).toBe(sha(original));
+      expect(res.body).not.toHaveProperty('effect');
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+    });
+
+    it('cleans up a partial temporary file when the write fails', async () => {
+      const actualWrite = fs.writeFile;
+      vi.spyOn(fs, 'writeFile').mockImplementation(async (...args) => {
+        if (
+          typeof args[0] === 'string' &&
+          args[0].startsWith(`${file}.`) &&
+          args[0].endsWith('.tmp') &&
+          typeof args[1] === 'string'
+        ) {
+          await actualWrite(args[0], args[1].slice(0, 1), args[2]);
+          throw Object.assign(new Error('temporary write failed'), { code: 'EACCES' });
+        }
+        await actualWrite(...args);
+      });
+      const rename = vi.spyOn(fs, 'rename');
+      const res = await request(testServer)
+        .put('/api/files/content')
+        .send({ cwd: dir, path: 'doc.md', content: 'next', expectedHash: sha(original) });
+      expect(res.status).toBe(403);
+      expect(res.body).not.toHaveProperty('effect');
+      expect(rename.mock.calls.filter(([, target]) => target === file)).toHaveLength(0);
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+      expect(await fs.readdir(dir)).toEqual(['doc.md']);
+    });
+
+    it('cleans up the actual temporary file when rename fails', async () => {
+      const actualRename = fs.rename;
+      vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+        if (to === file) throw new Error('rename failed');
+        await actualRename(from, to);
+      });
+      const res = await request(testServer)
+        .put('/api/files/content')
+        .send({ cwd: dir, path: 'doc.md', content: 'next', expectedHash: sha(original) });
+      expect(res.status).toBe(500);
+      expect(res.body).not.toHaveProperty('effect');
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+      expect(await fs.readdir(dir)).toEqual(['doc.md']);
     });
 
     it('accepts a first save conditioned on baseline content (server hashes it)', async () => {
@@ -157,7 +308,7 @@ describe('Files Routes', () => {
         .send({ cwd: dir, path: 'doc.md', content: next, expectedContent: original });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ ok: true, hash: sha(next) });
+      expect(res.body).toEqual({ ok: true, hash: sha(next), effect: 'changed' });
       expect(await fs.readFile(file, 'utf8')).toBe(next);
     });
 

@@ -52,6 +52,11 @@ export const marketplaceKeys = {
   // installed list refreshes this too.
   heldBack: () => [...marketplaceKeys.all, 'installed', 'held-back'] as const,
 
+  // Every dev link and its state (DOR-2696). Under `installed`, so whatever
+  // refreshes the installed list (install, uninstall, link, unlink, a reload)
+  // refreshes this too.
+  devLinks: () => [...marketplaceKeys.all, 'installed', 'dev-links'] as const,
+
   // The update check for the installations in one view: every scope (no
   // projectPath, what the Installed view lists) or one project's merged view.
   // A sibling of `installed`, not under it, so refreshing the installed list

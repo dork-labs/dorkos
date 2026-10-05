@@ -490,6 +490,31 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   // ---------------------------------------------------------------------------
 
   /**
+   * The registered agent a session's connector tools act for, when this
+   * runtime has the connector boundary at all (DOR-2685).
+   *
+   * One answer for the per-turn connector context in {@link sendMessage} and
+   * for whether the in-session server lists the connector tools, so the two
+   * cannot disagree, and a stage that warms a process builds the same list as
+   * the turn after it.
+   *
+   * @param cwdKey - The folder the turn or stage runs in
+   * @param turnAgent - The agent a turn is dispatched as, when it names one
+   * @returns The agent's home and its registry entry, or `undefined`
+   */
+  private connectorAgentFor(
+    cwdKey: string,
+    turnAgent?: string
+  ):
+    | { agentPath: string; meshAgent: NonNullable<ReturnType<AgentRegistryPort['getByPath']>> }
+    | undefined {
+    if (!this.connectorRuntimeTools) return undefined;
+    const agentPath = homeOf(resolveAgentHome(cwdKey, turnAgent));
+    const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+    return agentPath && meshAgent ? { agentPath, meshAgent } : undefined;
+  }
+
+  /**
    * Assemble the runtime ports one turn (or one staged warm-up) launches with.
    *
    * Extracted from {@link sendMessage} so {@link deliverIntoTurn}'s `stage` path
@@ -500,11 +525,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param sessionId - The id this call was asked with (a hint the store resolves)
    * @param session - The resolved session record
    * @param cwdKey - The working directory the caches and command list key on
+   * @param turnAgent - The agent a turn is dispatched as, when it names one
    */
   private buildSenderOpts(
     sessionId: string,
     session: AgentSession,
-    cwdKey: string
+    cwdKey: string,
+    turnAgent?: string
   ): MessageSenderOpts {
     // Resolve the selected model's capabilities once: thinking config + whether it
     // supports auto permission mode (undefined when the model isn't cached yet).
@@ -521,6 +548,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       bindingStore: this.bindingStore,
       adapterManager: this.adapterManager,
       mcpServerFactory: this.mcpServerFactory,
+      // The same answer for a turn and for a stage that warms the process the
+      // turn will ride, so the two build the same tool list (DOR-2685).
+      connectorTools: this.connectorAgentFor(cwdKey, turnAgent) !== undefined,
       ...cacheCallbacks,
       // Composed over the cache's own handler rather than replacing it: the
       // per-turn status snapshot is one observation with two readers — the
@@ -582,15 +612,15 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // `core/agent-identity/agent-home.ts`). The same answer the launch resolves
     // its token from, so the connections below and the token cannot name two
     // different agents.
-    const agentPath = homeOf(resolveAgentHome(cwdKey, turnAgentOf(opts)));
-    const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+    const connectorAgent = this.connectorAgentFor(cwdKey, turnAgentOf(opts));
+    const meshAgent = connectorAgent?.meshAgent;
 
     const connectorTurn =
-      this.connectorRuntimeTools && meshAgent && agentPath
+      this.connectorRuntimeTools && connectorAgent
         ? new ClaudeConnectorTurnContext({
             tools: this.connectorRuntimeTools,
             canonicalSessionId: () => session.sdkSessionId || sessionId,
-            agentPath,
+            agentPath: connectorAgent.agentPath,
             cwd: cwdKey,
           })
         : undefined;
@@ -623,7 +653,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let observedEvent = false;
     let sawRuntimeError = false;
     try {
-      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
+      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey, turnAgentOf(opts));
       const stream = this.persistent.shouldDispatch(sessionId)
         ? this.persistent.dispatch({
             sessionId,
@@ -738,6 +768,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
     const before = this.activatedPlugins.map((plugin) => plugin.path);
+    // Built into locals and assigned ONCE, after every await: two refreshes can
+    // overlap (boot, plus a change delivered right after it), and one that read
+    // or appended to the shared list between another's awaits loaded a root
+    // twice, or mistook an extension's own root for a same-named plugin.
+    let packages: Array<{ type: 'local'; path: string }>;
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
       const { listConsentedPluginNames } =
@@ -748,21 +783,37 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // Only packages a person approved (or that run nothing on their own):
       // a global package's hooks and servers start in every session (DOR-2306).
       const enabledNames = await listConsentedPluginNames(dorkHome);
-      if (enabledNames.length === 0) {
-        this.activatedPlugins = [];
-      } else {
-        this.activatedPlugins = await buildClaudeAgentSdkPluginsArray({
-          dorkHome,
-          enabledPluginNames: enabledNames,
-          logger,
-        });
-      }
+      packages =
+        enabledNames.length === 0
+          ? []
+          : await buildClaudeAgentSdkPluginsArray({
+              dorkHome,
+              enabledPluginNames: enabledNames,
+              logger,
+            });
     } catch {
       // Fail closed (DOR-2306): a refresh that cannot say which global packages
       // a person approved loads none of them, rather than keeping a list that
       // may hold one nobody approves any more.
-      this.activatedPlugins = [];
+      packages = [];
     }
+    // Running global extensions' skills (DOR-2685), each from its generated
+    // plugin root. Already consented: the extension's approval to run is the
+    // consent, and the root holds skills only. Asked separately, so a ledger
+    // that cannot be read loads no extension skills and leaves the packages
+    // above as they are.
+    let skillRoots: Array<{ type: 'local'; path: string }> = [];
+    try {
+      const { resolveDorkHome } = await import('../../../lib/dork-home.js');
+      const { extensionSkillPluginRoots } =
+        await import('../../extensions/agent-skills/running-skills-ledger.js');
+      const loaded = new Set(packages.map((plugin) => path.basename(plugin.path)));
+      const roots = await extensionSkillPluginRoots(resolveDorkHome(), loaded);
+      skillRoots = roots.map((root) => ({ type: 'local' as const, path: root }));
+    } catch {
+      // Best-effort: no extension skills this time; the next refresh asks again.
+    }
+    this.activatedPlugins = [...packages, ...skillRoots];
 
     // Hot-reload every live session so its cached command list reflects the
     // new plugin set instantly, then tell clients to re-fetch. Isolated from
@@ -778,12 +829,33 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // cooldown) and let the broadcast below trigger a re-warm with the merged
     // per-cwd plugins. Runs AFTER the live-session reload, which would
     // otherwise repopulate the cache from a session still holding the old set.
-    if (changedProjectPath) {
-      this.cache.clearSdkCommands(changedProjectPath);
-      this.warmFailedAt.delete(changedProjectPath);
-    }
+    if (changedProjectPath) this.forgetProjectCommands(changedProjectPath);
 
     this.broadcastCommandsChanged();
+  }
+
+  /**
+   * Tell the command palette a project's commands changed, without touching
+   * any session's plugins: drop that cwd's cached command list (and any
+   * warm-probe cooldown) so the next fetch re-warms it, then broadcast
+   * `commands_changed`.
+   *
+   * For a change that reaches a project as projected files (a project dev
+   * link's edit, DOR-2696). A project package is not an SDK plugin, so live
+   * sessions have nothing to reload; only the cached list is stale, and it
+   * would otherwise stay stale until a restart.
+   *
+   * @param projectPath - The project whose commands changed.
+   */
+  refreshProjectCommands(projectPath: string): void {
+    this.forgetProjectCommands(projectPath);
+    this.broadcastCommandsChanged();
+  }
+
+  /** Drop a cwd's cached command list and its warm-probe cooldown. */
+  private forgetProjectCommands(projectPath: string): void {
+    this.cache.clearSdkCommands(projectPath);
+    this.warmFailedAt.delete(projectPath);
   }
 
   /**

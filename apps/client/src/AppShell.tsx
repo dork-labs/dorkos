@@ -41,11 +41,14 @@ import { useConfig, useConfigSync } from '@/layers/entities/config';
 import { useAgentsSync } from '@/layers/entities/mesh';
 import { useConnectorAgentRequestsSync } from '@/layers/entities/connectors';
 import { useCommandsSync } from '@/layers/entities/command';
+import { useCapabilitiesSync } from '@/layers/entities/permissions';
+import { useDevLinkReloadSync } from '@/layers/entities/marketplace';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useTasksSync } from '@/layers/entities/tasks';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
+import { useInboxDeepLink } from '@/layers/entities/notifications';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'motion/react';
 import { routedPageKey, shouldFadeRoute } from './app/route-fade';
 import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
@@ -88,8 +91,10 @@ import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
+  TabHistoryControls,
   useAppTabsSync,
   useAppTabShortcuts,
+  useTabHistoryShortcuts,
 } from '@/layers/features/app-tabs';
 import { CommandPaletteDialog, MessageSearchDialog } from '@/layers/features/command-palette';
 import { CreateAgentDialog } from '@/layers/features/agent-creation';
@@ -294,9 +299,11 @@ export function AppShell() {
   // In-window tabs (DOR-540). The sync hook is the single reconciliation point
   // between the router's location and the tab set — every navigation, whatever
   // started it, lands here. Both no-op outside the desktop shell, where the
-  // strip does not exist (DOR-568).
+  // strip does not exist (DOR-568). Each tab's own Back/Forward keys and mouse
+  // buttons (DOR-2107) are desktop-only for the same reason.
   useAppTabsSync();
   useAppTabShortcuts();
+  useTabHistoryShortcuts();
   useElectronNavigate();
   // Desktop Cmd+W → close a tab, not the window. No-op without the bridge, and
   // deliberately silent on the last tab so the window still closes.
@@ -316,6 +323,10 @@ export function AppShell() {
   // marketplace install/uninstall, so the command palette stays an honest
   // mirror of what the runtime recognizes (UX-12).
   useCommandsSync();
+  // An edit in a dev-linked folder was acted on: keep what it reported (so
+  // the Installed row says when it reloaded, or that it couldn't) and refresh
+  // the lists it changed (DOR-2696).
+  useDevLinkReloadSync();
   // Keep integration state live across clients/tabs: invalidate bindings and adapter
   // status when the server signals a change, instead of relying on local
   // mutations and slow polling.
@@ -339,6 +350,9 @@ export function AppShell() {
   // Live agent requests for apps (DOR-2415): a request answered in one window,
   // on the Connections page or in a room retires its chat card everywhere.
   useConnectorAgentRequestsSync();
+  // Live extension tools (DOR-2685): when an extension starts or stops, the
+  // permissions pages re-read their actions so its tools appear or go.
+  useCapabilitiesSync();
   // Remote access, live and audible — the two halves that must happen exactly
   // once for the whole app (DOR-1743). `useTunnelSync` refreshes the config
   // read from other tabs and from the server's `tunnel_status` stream, which
@@ -390,6 +404,8 @@ export function AppShell() {
     done: isOnboardingComplete || isOnboardingDismissed,
     overlayVisible: showOnboarding,
   });
+  // `?inbox=` opens the Inbox on any route (DOR-2577), but not over onboarding.
+  useInboxDeepLink({ blocked: showOnboarding });
 
   // **A failed config read is not a slow one, and the gate below cannot tell.**
   // `isLoading` is `isPending && isFetching`, so the moment the read ERRORS it
@@ -790,6 +806,9 @@ export function AppShell() {
                       {!isMobile && (
                         <>
                           <SidebarTrigger className="-ml-0.5" />
+                          {/* Renders nothing outside the desktop app, where the
+                              browser's own Back and History do this job. */}
+                          <TabHistoryControls />
                           <Separator orientation="vertical" className="mr-1 h-4" />
                         </>
                       )}

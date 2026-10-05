@@ -20,6 +20,8 @@ import { describePackageLink, findPackageLinks } from '@dorkos/marketplace/packa
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { declaredSet } from '../../extensions/isolation/permission-coverage.js';
+import { hasServerHalf } from '../../extensions/isolation/server-half.js';
 import { clampSchedulePermissionMode } from '../../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { readNpmDependencies } from '../lib/npm-dependencies.js';
@@ -28,7 +30,12 @@ import { readPackageHooks } from '../lib/declarations/package-hooks.js';
 import { readPackagePrograms } from '../lib/declarations/package-programs.js';
 import { readPackageSkills } from '../lib/declarations/package-skills.js';
 import { packageSchedules, scheduleDisplayName } from '../lib/declarations/package-schedules.js';
-import type { ConflictReport, PermissionPreview, PreviewSchedule } from '../types.js';
+import type {
+  ConflictReport,
+  PermissionPreview,
+  PreviewExtensionIsolation,
+  PreviewSchedule,
+} from '../types.js';
 
 /** Directory names ignored when walking the package contents. */
 const IGNORED_DIRECTORIES = new Set(['node_modules', '.git', 'dist']);
@@ -413,8 +420,9 @@ export class PermissionPreviewBuilder {
    *   destination resolved against `dorkHome` (or the project-local install
    *   root) per package type.
    * - `extensions` — every `.dork/extensions/<id>/extension.json` discovered
-   *   in the package, expanded into `{ id, slots }` where `slots` are the
-   *   extension's enabled `contributions` keys.
+   *   in the package, expanded into `{ id, slots, isolation }` where `slots`
+   *   are the extension's enabled `contributions` keys and `isolation` is where
+   *   it runs and what it may reach (DOR-2686).
    * - `hooks` — every shell command declared in the package's
    *   `hooks/hooks.json` and plugin.json `hooks` (`lib/declarations/package-hooks.ts`),
    *   flattened to `{ event, matcher?, command }` with the command verbatim,
@@ -441,7 +449,8 @@ export class PermissionPreviewBuilder {
    *   chased. `node_modules` stays out of `fileChanges` as it always has —
    *   listing thousands of vendored files would bury the package's own.
    * - `externalHosts` — hosts sourced from each extension manifest's
-   *   `serverCapabilities.externalHosts` array (deduplicated). The
+   *   `serverCapabilities.externalHosts` array, plus the `allow.net` hosts of
+   *   each extension that runs separately (deduplicated). The
    *   marketplace manifest schema does not currently expose a top-level
    *   `externalHosts` field, so package-level hosts are not surfaced here.
    * - `requires` — `manifest.requires` declarations resolved against the
@@ -486,10 +495,15 @@ export class PermissionPreviewBuilder {
     preview.fileChanges = await this.computeFileChanges(packagePath, installRoot);
 
     const extensionManifests = await readExtensionManifests(packagePath);
-    preview.extensions = extensionManifests.map(({ id, manifest: extManifest }) => ({
-      id,
-      slots: extractSlots(extManifest.contributions),
-    }));
+    const extRoot = join(packagePath, ...EFFECT_BEARING_PATHS.extensions.split('/'));
+    preview.extensions = await Promise.all(
+      extensionManifests.map(async ({ id, manifest: extManifest }) => ({
+        id,
+        slots: extractSlots(extManifest.contributions),
+        isolation: isolationOfManifest(extManifest),
+        hasServer: await hasServerHalf(join(extRoot, id), extManifest),
+      }))
+    );
 
     Object.assign(
       preview,
@@ -566,7 +580,19 @@ function collectSecrets(
 }
 
 /**
- * Collapse all extension `externalHosts` into a single deduplicated list,
+ * Where one extension runs and what it may reach (DOR-2686): the same set an
+ * approval of it would record (`declaredSet`), so the install card and the
+ * approval can never describe two different things.
+ */
+function isolationOfManifest(
+  manifest: ReturnType<typeof ExtensionManifestSchema.parse>
+): PreviewExtensionIsolation {
+  return declaredSet(manifest);
+}
+
+/**
+ * Collapse all extension `externalHosts`, and the `allow.net` hosts of each
+ * extension that runs separately (DOR-2686), into a single deduplicated list,
  * preserving first-seen order.
  */
 function collectExternalHosts(
@@ -575,7 +601,11 @@ function collectExternalHosts(
   const seen = new Set<string>();
   const ordered: string[] = [];
   for (const { manifest } of extensions) {
-    const hosts = manifest.serverCapabilities?.externalHosts ?? [];
+    const caps = manifest.serverCapabilities;
+    const hosts = [
+      ...(caps?.externalHosts ?? []),
+      ...(caps?.runtime === 'subprocess' ? (caps.allow?.net ?? []) : []),
+    ];
     for (const host of hosts) {
       if (seen.has(host)) continue;
       seen.add(host);

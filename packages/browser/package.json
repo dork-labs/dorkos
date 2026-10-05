@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./runtime-installation": {
+      "types": "./src/runtime/installation/index.ts",
+      "default": "./dist/runtime/installation/index.js"
     }
   },
   "scripts": {

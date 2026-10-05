@@ -438,7 +438,24 @@ const LocalPermissionPreviewSchema = z.object({
       action: z.enum(['create', 'modify', 'delete']),
     })
   ),
-  extensions: z.array(z.object({ id: z.string(), slots: z.array(z.string()) })),
+  extensions: z.array(
+    z.object({
+      id: z.string(),
+      slots: z.array(z.string()),
+      isolation: z
+        .object({
+          runtime: z.enum(['in-process', 'subprocess']),
+          net: z.array(z.string()),
+          run: z.array(z.string()),
+          agents: z.boolean(),
+        })
+        .optional()
+        .describe(
+          'Where the extension runs and what it may reach: in-process is inside DorkOS ' +
+            'with full access (empty lists); subprocess is limited to the lists.'
+        ),
+    })
+  ),
   hooks: z.array(
     z.object({
       event: z.string(),
@@ -3673,6 +3690,233 @@ registry.registerPath({
     409: {
       description: 'Not held back, unreadable, or changed since it was shown',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Marketplace dev links (DOR-2696) ---
+
+const DevLinkStateSchema = z.enum(['active', 'folder-missing', 'link-missing', 'link-replaced']);
+
+const LocalDevLinkStatusSchema = z.object({
+  name: z.string(),
+  type: z.enum(['plugin', 'skill-pack']),
+  scope: z.enum(['global', 'project']),
+  projectPath: z.string().optional(),
+  path: z.string().describe('The real path of the folder the package runs from.'),
+  state: DevLinkStateSchema,
+  parked: z
+    .object({ version: z.string().optional() })
+    .nullable()
+    .describe('The installed copy set aside for the link, or null.'),
+  linkedAt: z.string(),
+  lastReloadAt: z.string().optional(),
+});
+
+const LocalDevLinkErrorSchema = z.object({
+  error: z.string().describe('One plain sentence: what did not happen and what to do.'),
+  code: z.string(),
+  realPath: z.string().optional(),
+  name: z.string().optional(),
+  installedVersion: z.string().optional(),
+});
+
+const DevLinkScopeBody = {
+  scope: z.enum(['global', 'project']),
+  projectPath: z.string().min(1).optional().describe('Required for, and only for, scope project.'),
+};
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/dev-links',
+  tags: ['Marketplace'],
+  summary: 'List dev links',
+  description:
+    'Every package running from a folder on this computer, and whether its link is in force. ' +
+    '`registryUnreadable` is set when the record of dev links cannot be read; no folder counts ' +
+    'as linked then.',
+  responses: {
+    200: {
+      description: 'Every dev link',
+      content: {
+        'application/json': {
+          schema: z.object({
+            links: z.array(LocalDevLinkStatusSchema),
+            registryUnreadable: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/dev-links/preview',
+  tags: ['Marketplace'],
+  summary: 'Preview running a package from a folder',
+  description:
+    'Read-only. Names the package, the slot the link would take, an installed copy it would ' +
+    'set aside, what the folder runs on its own, and the extensions it carries. A folder that ' +
+    'cannot be linked answers with the reason.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              path: z.string().min(1).max(1024),
+              ...DevLinkScopeBody,
+              replaceInstalled: z
+                .boolean()
+                .optional()
+                .describe('Describe the link as setting an installed copy aside.'),
+            })
+            .strict(),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What linking would do',
+      content: {
+        'application/json': {
+          schema: z.object({
+            name: z.string(),
+            type: z.enum(['plugin', 'skill-pack']),
+            version: z.string().optional(),
+            path: z.string(),
+            scope: z.enum(['global', 'project']),
+            slot: z.string(),
+            replaces: z.object({ version: z.string() }).nullable(),
+            effects: DisclosedEffectsSchema.nullable(),
+            extensions: z.array(z.string()),
+            change: z
+              .string()
+              .describe(
+                'The approval text for this folder as it reads now. Send it back as ' +
+                  '`expectedChange` when linking, so a folder that changed meanwhile is refused.'
+              ),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Not linkable (`code` says why)',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+    403: {
+      description: 'Outside the folders DorkOS may use',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+    409: {
+      description: 'The slot or the name is taken',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/dev-links',
+  tags: ['Marketplace'],
+  summary: 'Run a package from a folder',
+  description:
+    'Gated by the `marketplace.link` capability (destructive, no permission area): the person ' +
+    'runs it, and an agent gets an approval card showing the folder in full (202), retried with ' +
+    'the `X-DorkOS-Approval` header. No setting can approve it ahead of time. An installed copy ' +
+    'of the same package is set aside only with `replaceInstalled: true`.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              path: z.string().min(1).max(1024),
+              ...DevLinkScopeBody,
+              replaceInstalled: z.boolean().optional(),
+              via: z.enum(['app', 'terminal']).optional(),
+              expectedChange: z
+                .string()
+                .min(1)
+                .max(65_536)
+                .optional()
+                .describe(
+                  "The preview's `change` the person said yes to; a mismatch is refused with " +
+                    '`dev_link_changed`. Ignored for an agent, whose yes is the approval card.'
+                ),
+            })
+            .strict(),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Linked',
+      content: { 'application/json': { schema: LocalDevLinkStatusSchema } },
+    },
+    202: {
+      description: 'A person has been asked; retry with the approval token',
+      content: { 'application/json': { schema: z.object({ status: z.string() }).passthrough() } },
+    },
+    400: {
+      description: 'Not linkable, or a malformed body',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+    403: {
+      description: 'Refused by the gate, or outside the folders DorkOS may use',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The slot or the name is taken, or the folder changed after it was approved ' +
+        '(`dev_link_changed`)',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/dev-links/{name}/unlink',
+  tags: ['Marketplace'],
+  summary: 'Unlink a dev link',
+  description:
+    'The person only: the same bar as deciding an approval card. Takes the link out (never the ' +
+    'folder) and puts a set-aside installed copy back with its approvals.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: { 'application/json': { schema: z.object(DevLinkScopeBody).strict() } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Unlinked',
+      content: {
+        'application/json': {
+          schema: z.object({
+            restored: z.enum(['installed', 'removed']),
+            parkedLeftAt: z.string().optional(),
+            leftInPlace: z
+              .literal(true)
+              .optional()
+              .describe(
+                "Set when something else had already taken the link's place; it was left as it is."
+              ),
+          }),
+        },
+      },
+    },
+    403: {
+      description: 'Not the person (`operator_only`), or not a signed-in session under sign-in',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such dev link',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
     },
   },
 });

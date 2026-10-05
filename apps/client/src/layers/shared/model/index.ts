@@ -5,7 +5,12 @@
  */
 export { TransportProvider, useTransport } from './TransportContext';
 export { useAppStore, type RecentCwd } from './app-store';
-export { useAppTabsStore, useAppTabs, type AppTab } from './app-tabs/app-tabs-store';
+export {
+  useAppTabsStore,
+  useAppTabs,
+  useActiveTabHistory,
+  type AppTab,
+} from './app-tabs/app-tabs-store';
 export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';
 export { documentsInView } from './app-store/app-store-canvas';
@@ -163,6 +168,7 @@ export {
   useExtensionRegistry,
   useSlotContributions,
   createInitialSlots,
+  createDialogOpenState,
   isExtensionContributionId,
   SLOT_IDS,
   type SlotId,
@@ -173,6 +179,7 @@ export {
   type DashboardSectionContribution,
   type CommandPaletteContribution,
   type DialogContribution,
+  type DialogOpenState,
   type SettingsTabContribution,
   type RightPanelContribution,
   type SuggestionChipContribution,

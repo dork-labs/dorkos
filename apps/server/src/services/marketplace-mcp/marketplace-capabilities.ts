@@ -44,6 +44,7 @@ import { createInstallHandler, InstallInputSchema } from './tool-install.js';
 import { createUpdateHandler, UpdateInputSchema } from './tool-update.js';
 import { createUninstallHandler, UninstallInputSchema } from './tool-uninstall.js';
 import { createCreatePackageHandler, CreatePackageInputSchema } from './tool-create-package.js';
+import { createLinkHandler, describeLinkApproval, LinkInputSchema } from './tool-link.js';
 
 /**
  * Extend the shared dependency bag with the marketplace domain's service
@@ -356,6 +357,41 @@ export const marketplaceDomain: CapabilityDomain = {
             callerContext(context)
           )
         ),
+    }),
+    // ── Dev links (DOR-2696) ────────────────────────────────────────────────
+    defineCapability({
+      id: 'marketplace.link',
+      title: 'Run a package from a folder',
+      description:
+        'Run a plugin or skill pack from a folder on this computer, so edits take effect without reinstalling. ' +
+        'A person must approve the exact folder. Pass an absolute path. Use projectPath for one project.',
+      // Destructive with no area: the tier gate asks a person on every call,
+      // bound to this exact input, and no setting can pre-approve it. There is
+      // no confirmation of its own inside the handler, so nothing asks twice.
+      tier: 'destructive',
+      area: null,
+      areaNote:
+        'Always asks: a dev link runs a folder’s code unreviewed on every edit, so no setting may pre-approve it.',
+      input: LinkInputSchema,
+      output: z.unknown(),
+      // The sentence names the call; the card's detail is the folder in full
+      // plus the extensions it may run and what it runs, read from the folder
+      // now and BOUND into the approval, so a folder that changes between the
+      // card and the retry is asked about again rather than linked.
+      approvalDisplayFields: ['path', 'projectPath', 'replaceInstalled'],
+      describeApprovalChange: (deps, input) =>
+        describeLinkApproval(requireMarketplaceDeps(deps), input),
+      surfaces: {
+        mcp: {
+          toolName: 'marketplace_link',
+          servers: ['in-session', 'external'],
+        },
+      },
+      invoke: async (deps, input, context) =>
+        createLinkHandler(requireMarketplaceDeps(deps))(input, {
+          trusted: !!context.trusted,
+          ...(context.approvedChange !== undefined && { approvedChange: context.approvedChange }),
+        }),
     }),
   ],
 };

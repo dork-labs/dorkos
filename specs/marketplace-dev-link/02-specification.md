@@ -208,6 +208,15 @@ the id's current approval is still the dev-link one; the global entries verbatim
 the parked copy's recorded content hash, which is unchanged); forget the dev-link approvals; drop
 the record; notify as above. Result: `{ restored: 'installed' | 'removed' }`.
 
+What unlink does and does not take back (as built in Phase 2, `dev-links/consent.ts`): it removes
+the project hook approvals the link itself recorded at link time (`grantedHooks`) and every
+global-activation entry for the name, then puts the installed copy's global entries back verbatim
+only when that copy is back in the slot. Two things are deliberately left as they are, the same as
+for an installed package: a hook approval a person gave through the hook card while the folder was
+linked (for a hook added later) survives unlink, because the hook-decision digest binds the project
+and the hooks, not the copy; and a refusal that the link-time consent cleared (recording a yes
+removes the matching no) is not restored.
+
 **Reconcile** (boot, and before every `list()`): for each record, report one of `active`,
 `folder-missing` (target gone), `link-missing` (slot gone), `link-replaced` (slot is a real folder
 or points elsewhere). Reconcile never repairs on its own; the listing and doctor say what happened,

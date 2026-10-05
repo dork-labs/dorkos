@@ -48,6 +48,8 @@ describe('scanInstalledPlugins', () => {
       writeManifest(join(root, 'flow'), 'flow', ['skills']);
       writeManifest(join(root, `flow.dorkos-bak-${stamp}`), 'flow', ['skills']);
       writeManifest(join(root, `flow.dorkos-bak-${stamp}.committed`), 'flow', ['skills']);
+      // The installed copy a dev link set aside (DOR-2696): no stamp, still hidden.
+      writeManifest(join(root, 'flow.dorkos-devlink-parked'), 'flow', ['skills']);
     }
 
     const plugins = scanInstalledPlugins({ dorkHome, projectRoot });

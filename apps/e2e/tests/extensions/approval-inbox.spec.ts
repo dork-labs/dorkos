@@ -83,6 +83,11 @@ test.describe('An extension waiting to run asks in the inbox', () => {
           'tab that shows a fixture panel for the browser tests. It runs as you.'
       )
     ).toBeVisible();
+    // The row states the access level before the yes (DOR-2686), and the yes
+    // echoes that set, which the server compares before turning it on. The
+    // fixture has screens and no server half, so it never claims full access.
+    await expect(page.getByText('Its screens run in DorkOS with your access.')).toBeVisible();
+    await expect(page.getByText(/full access to this computer/)).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Turn it on' }).click();
     await expect(page.getByText('Turn on Flow?')).toHaveCount(0);

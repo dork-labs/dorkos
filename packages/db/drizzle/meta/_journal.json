@@ -995,6 +995,13 @@
       "when": 1791053550785,
       "tag": "20261003185230_extension_agent_sends",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "6",
+      "when": 1791091550411,
+      "tag": "20261004052550_browser_registry",
+      "breakpoints": true
     }
   ]
 }

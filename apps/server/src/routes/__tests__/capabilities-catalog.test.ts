@@ -10,6 +10,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
+import { z } from 'zod';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -21,11 +22,12 @@ import { createCapabilitiesCatalogRouter } from '../capabilities-catalog.js';
 
 const fixtureTarget = swappableServer();
 
-function buildApp() {
-  const registry = composeDorkOsCapabilityRegistry({
+function buildApp(
+  registry = composeDorkOsCapabilityRegistry({
     logger: noopLogger,
     operatorDeps: {} as McpToolDeps,
-  });
+  })
+) {
   const app = express();
   app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(registry));
   return app;
@@ -100,6 +102,51 @@ describe('GET /api/capabilities/catalog', () => {
     // THIS registry is in the Rooms area. Zero is the discriminating answer: an
     // ignored parameter would have returned every capability there is.
     expect(res.body.total).toBe(0);
+  });
+
+  it("serves a running extension's tools with their source, live (DOR-2685)", async () => {
+    // The catalog route reads the registry per request, so a tool joins the
+    // moment its extension contributes it, names that extension on both the
+    // compact and the full entry, and leaves when it is removed.
+    const registry = composeDorkOsCapabilityRegistry({
+      logger: noopLogger,
+      operatorDeps: {} as McpToolDeps,
+    });
+    const app = fixtureTarget.mount(buildApp(registry));
+    const added = registry.contribute({
+      owner: 'mail-app',
+      displayName: 'Mail',
+      tools: [
+        {
+          name: 'list_inbox',
+          title: 'List the inbox',
+          description: 'Read the newest messages.',
+          tier: 'observe',
+          input: z.object({}),
+          invoke: async () => [],
+        },
+      ],
+    });
+    if (!added.ok) throw new Error(added.reason);
+    const source = { kind: 'extension', id: 'mail-app', name: 'Mail' };
+
+    const compact = await request(app).get(
+      '/api/capabilities/catalog?area=extensions&detail=compact'
+    );
+    expect(compact.body.capabilities).toEqual([
+      expect.objectContaining({ id: 'ext_mail_app.list_inbox', source }),
+    ]);
+    const full = await request(app).get('/api/capabilities/catalog?area=extensions&detail=full');
+    expect(full.body.capabilities).toEqual([
+      expect.objectContaining({ id: 'ext_mail_app.list_inbox', source, area: 'extensions' }),
+    ]);
+    // A core entry carries no source at all.
+    const core = await request(app).get('/api/capabilities/catalog?domain=capabilities');
+    expect(core.body.capabilities[0]).not.toHaveProperty('source');
+
+    added.remove();
+    const after = await request(app).get('/api/capabilities/catalog?area=extensions');
+    expect(after.body.total).toBe(0);
   });
 
   it('rejects an out-of-range limit with 400', async () => {

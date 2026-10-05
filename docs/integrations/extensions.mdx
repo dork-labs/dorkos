@@ -32,6 +32,31 @@ export function activate(api: ExtensionAPI): () => void {
 - **Sending again with the same key does nothing new.** It answers with the first receipt.
 - **The agent reads it as app data.** The words arrive inside a marked block that says which app sent them and that they are data, not instructions. The extension cannot choose the folder, the permission level or which agent the turn acts as.
 
+## Giving your agents tools
+
+An extension with a server half can give your agents tools while it runs. A mail extension, for example, can offer a "Send an email" tool, and your agents can call it the way they call any DorkOS tool.
+
+- **You approve the extension first.** Its tools exist only while the extension is turned on and approved to run. Turn it off, stop it or remove it, and its tools are gone from the next tool list.
+- **You see what it gives before you say yes.** The Activity inbox row that asks you to turn an extension on says what it would give your agents, such as "Would give agents 3 tools and 1 skill". Open it with ⓘ to see each tool and what it can do: **Reads**, **Acts**, or **Asks you first**. Its card in **Settings → Extensions** shows the same list. It says "Gives agents" while the extension runs and "Would give agents" while it is off or waiting for you.
+- **A tool or skill DorkOS turns down says why.** If a tool or skill is set up wrong, it is listed as left out, with the reason under it, and it never reaches your agents. The extension's other tools and skills still work.
+- **Each tool says how much it can do.** A tool that only reads runs when an agent calls it. A tool that changes something sits in the **Extension tools** area of **Settings → Permissions**, where you can set every extension's tools, or one tool, to Allowed, Ask or Blocked. A tool that deletes or removes something asks you every time, even if you set it to Allowed.
+- **Each tool names its extension.** Its row on the permissions page and its approval card say which extension it came from, as "From Mail".
+- **Block them in one place.** In **Settings → Permissions**, set the **Extension tools** area to Blocked to stop every extension's tools at once, or open **Show individual actions** to block one tool.
+- **Removing an extension clears its tool settings.** If you set one of its tools to Allowed, that choice does not carry over to anything installed later under the same name.
+- **When agents see a new tool.** Codex and OpenCode chats get the new list the next time they ask DorkOS for it. A Claude Code chat gets it with your next message. A reply that is already being written finishes with the tools it started with, and a chat whose helper is still working gets the new list once that work ends.
+
+## Skills from extensions
+
+An extension can also bring skills: short guides that teach your agents when and how to use it. A mail extension might bring a "triage inbox" skill that tells an agent how to sort your mail with its tools.
+
+- **They follow the same approval.** An extension's skills reach your agents only while it is turned on and approved to run. Turn it off, stop it or remove it, and its skills go away too.
+- **They land where a plugin's skills land.** A project's own extension adds its skills to that project, as `.claude/skills/<extension>__<skill>` and `.agents/skills/<extension>__<skill>`, so Claude Code, Codex and the other tools DorkOS sets up there all find them. An extension installed for all your projects reaches DorkOS's own Claude Code chats right away, and reaches other tools once you have chosen to share with them and run `dorkos harness sync --global`.
+- **The same answer from the terminal.** `dorkos harness sync` reads the same list DorkOS keeps of running extensions' skills, so it adds the same skills and never removes one that should be there.
+- **A plugin's skill wins a name clash.** If a plugin and an extension bring a skill with the same name, your agents get the plugin's, and `dorkos harness sync --check` says which one was left out.
+- **A chat that is busy finishes first.** When an extension stops, a Claude Code chat drops its skills before your next message, unless a helper in that chat is still working. Then it waits for that work to end.
+
+For the manifest fields, the `ctx.tools.handle` API and how skills are checked, see `contributing/extension-authoring.md`.
+
 ## Testing locally
 
 The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file there, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.

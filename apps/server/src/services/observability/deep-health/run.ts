@@ -15,6 +15,8 @@
  * @module services/observability/deep-health/run
  */
 import type { CheckResult } from '@dorkos/shared/health-schemas';
+import { judgeDevLinks } from '@dorkos/shared/marketplace-schemas';
+import { devLinkStateOf, readDevLinks } from '../../marketplace/dev-links/registry.js';
 import {
   surveyRoomBindingTranscripts,
   type RoomBindingTranscriptDeps,
@@ -115,6 +117,7 @@ export async function runDeepHealthChecks(deps: DeepHealthDeps): Promise<CheckRe
         ? deps.gitProtection()
         : skipped("Git protects your agents' git", 'the git check is not available')
     ),
+    await contain('Dev links', () => devLinksCheck(deps)),
   ];
 }
 
@@ -199,6 +202,26 @@ async function installedPackagesCheck(deps: DeepHealthDeps): Promise<CheckResult
     );
   }
   return checkInstalledPackages({ installs: await deps.installedPackages.listIntegrity() });
+}
+
+/**
+ * Packages running straight from a folder on this computer (DOR-2696): the
+ * same verdict `dorkos doctor` gives, in its content-free form (package names,
+ * never a folder or project path).
+ */
+async function devLinksCheck(deps: DeepHealthDeps): Promise<CheckResult> {
+  if (!deps.dorkHome) return skipped('Dev links', 'the data directory is not known');
+  const reading = await readDevLinks(deps.dorkHome);
+  if ('unreadable' in reading) return judgeDevLinks({ unreadable: true }, { paths: false });
+  const entries = await Promise.all(
+    reading.links.map(async (record) => ({
+      name: record.name,
+      scope: record.scope,
+      target: record.target,
+      state: await devLinkStateOf(record),
+    }))
+  );
+  return judgeDevLinks({ entries }, { paths: false });
 }
 
 /** Saved chat connections whose settings could not be read. */

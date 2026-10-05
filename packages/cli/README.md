@@ -212,6 +212,8 @@ These talk to a running DorkOS server so you (or an agent in any runtime) can dr
 | `dorkos marketplace outdated`                    | List only the packages that have an update                            |
 | `dorkos marketplace installed --verify`          | Also say whether each package's files changed since install           |
 | `dorkos marketplace check-files <name>`          | Check a package an older DorkOS installed, so updates keep your edits |
+| `dorkos marketplace link <path>`                 | Run a package from a folder on your computer (asks first)             |
+| `dorkos marketplace unlink <name>`               | Stop running it from the folder; the installed copy comes back        |
 | `dorkos permissions`                             | Show the preset, every area, and which agents differ                  |
 | `dorkos permissions set <area> <state>`          | Change one area or action for everyone (or `set --preset <name>`)     |
 | `dorkos permissions history`                     | Show recent permission changes, each with its id                      |

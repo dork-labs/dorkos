@@ -1,5 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import {
+  STALE_APPROVAL_CODE,
+  type ApproveExtensionRequest,
+} from '@dorkos/shared/extension-approval-schemas';
 import { extensionQueryKeys, useExtensionList } from '@/layers/entities/extension';
 import { extensionApiUrl } from '../model/extension-api-url';
 
@@ -96,6 +100,25 @@ export interface RunApprovalTarget {
   id: string;
   version: string;
   plugin: string | null;
+  /**
+   * The permission set the card lists (DOR-2686), echoed so a widening since
+   * the card was drawn is refused as stale. Absent when it listed none.
+   */
+  permissions?: ApproveExtensionRequest['permissions'];
+}
+
+/**
+ * A refused approve or revoke: the server's sentence, and whether the card
+ * went out of date while it was on screen (`stale_approval`).
+ */
+export class RunApprovalError extends Error {
+  constructor(
+    message: string,
+    /** True when the extension changed since the card was drawn. */
+    readonly stale: boolean
+  ) {
+    super(message);
+  }
 }
 
 /** Response shape from the approve/revoke endpoints. */
@@ -122,7 +145,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
   const queryClient = useQueryClient();
 
   return useMutation<ExtensionApprovalResponse, Error, RunApprovalTarget>({
-    mutationFn: async ({ id, version, plugin }: RunApprovalTarget) => {
+    mutationFn: async ({ id, version, plugin, permissions }: RunApprovalTarget) => {
       // Approving binds the copy the card shows — its version and carrying
       // plugin — so a copy that took its place since the card was drawn is
       // refused with `stale_approval` instead of approved (DOR-2517). The card
@@ -133,17 +156,22 @@ export function useSetExtensionRunApproval(approve: boolean) {
           ? {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ version, plugin }),
+              body: JSON.stringify({ version, plugin, ...(permissions ? { permissions } : {}) }),
             }
           : { method: 'POST' }
       );
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Couldn’t update ${id}. The server answered ${res.status}.`);
+        const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+        throw new RunApprovalError(
+          body.error ?? `Couldn’t update ${id}. The server answered ${res.status}.`,
+          body.code === STALE_APPROVAL_CODE
+        );
       }
       return res.json() as Promise<ExtensionApprovalResponse>;
     },
-    onSuccess: () => {
+    // Refreshed after a refusal too: a stale card redraws with what the
+    // extension asks for now, so the next yes is given to that.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
     },
   });

@@ -8,7 +8,7 @@
  */
 import type { PermissionAreaId } from './permission-schemas.js';
 
-/** The id of any row on the permissions page: the ten state areas plus `files`. */
+/** The id of any row on the permissions page: the eleven state areas plus `files`. */
 export type PermissionRowAreaId = PermissionAreaId | 'files';
 
 /** One area as a person sees it. */
@@ -66,6 +66,13 @@ export const PERMISSION_AREAS: readonly PermissionArea[] = Object.freeze([
     id: 'packages',
     label: 'Tools & packages',
     description: 'Install or remove packages, add or change MCP servers, build extensions',
+    floor: false,
+    kind: 'state',
+  },
+  {
+    id: 'extensions',
+    label: 'Extension tools',
+    description: 'Use tools that installed extensions add',
     floor: false,
     kind: 'state',
   },
