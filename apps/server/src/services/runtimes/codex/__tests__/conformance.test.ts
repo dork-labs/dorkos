@@ -337,7 +337,7 @@ describe('what codex says it does with media', () => {
     expect(runtime.getCapabilities().mediaOutput).toBe('none');
   });
 
-  it('promises attachments once the composition root hands it a store', () => {
+  it('RT-MEDIA-01: promises attachments once the composition root hands it a store', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-media-decl-'));
     try {
       const runtime = new CodexRuntime({
