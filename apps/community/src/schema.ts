@@ -225,6 +225,104 @@ export const pendingSignInLinks = pgTable(
     index('pending_sign_in_links_expires_idx').on(table.expiresAt),
   ]
 );
+/**
+ * A request for a mailed reset, sign-in or confirmation link (0032), recorded the same way for
+ * every address and resolved later by the mail worker. The address is kept as a keyed hash; its
+ * plain text only until the resolver reads it.
+ */
+export const emailLinkRequests = pgTable(
+  'email_link_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    emailHash: text('email_hash').notNull(),
+    email: text('email'),
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    pendingLinkHash: text('pending_link_hash'),
+    state: text('state').notNull(),
+    outboxId: uuid('outbox_id'),
+    createdAt: time('created_at'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'email_link_requests_kind_check',
+      sql`${table.kind} IN ('password_reset','sign_in','email_confirmation')`
+    ),
+    check('email_link_requests_email_hash_check', sql`${table.emailHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'email_link_requests_email_check',
+      sql`${table.email} IS NULL OR char_length(${table.email}) <= 320`
+    ),
+    check(
+      'email_link_requests_pending_link_hash_check',
+      sql`${table.pendingLinkHash} IS NULL OR ${table.pendingLinkHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'email_link_requests_state_check',
+      sql`${table.state} IN ('pending','throttled','queued','dropped')`
+    ),
+    check(
+      'email_link_requests_shape',
+      sql`(${table.kind} = 'password_reset' AND ${table.userId} IS NULL AND ${table.pendingLinkHash} IS NULL) OR (${table.kind} = 'sign_in' AND ${table.userId} IS NOT NULL AND ${table.pendingLinkHash} IS NOT NULL AND ${table.email} IS NULL) OR (${table.kind} = 'email_confirmation' AND ${table.userId} IS NOT NULL AND ${table.pendingLinkHash} IS NULL AND ${table.email} IS NULL)`
+    ),
+    check(
+      'email_link_requests_resolved',
+      sql`(${table.state} = 'pending' AND ${table.resolvedAt} IS NULL) OR (${table.state} <> 'pending' AND ${table.resolvedAt} IS NOT NULL AND ${table.email} IS NULL)`
+    ),
+    index('email_link_requests_due_idx')
+      .on(table.createdAt)
+      .where(sql`state = 'pending'`),
+    index('email_link_requests_email_idx').on(table.emailHash, table.createdAt),
+    index('email_link_requests_user_idx').on(table.userId, table.createdAt),
+    index('email_link_requests_created_idx').on(table.createdAt),
+  ]
+);
+/**
+ * One mailed link (0032), stored only as the SHA-256 of its 256-bit token: single use,
+ * short-lived, replaced by a newer link of the same kind, deleted when the account is cleared.
+ */
+export const emailLinkTokens = pgTable(
+  'email_link_tokens',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    kind: text('kind').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    requestId: uuid('request_id').notNull(),
+    outboxId: uuid('outbox_id').notNull(),
+    emailHash: text('email_hash').notNull(),
+    passwordFingerprint: text('password_fingerprint'),
+    pendingLinkHash: text('pending_link_hash'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+    createdAt: time('created_at'),
+  },
+  (table) => [
+    check('email_link_tokens_token_hash_check', sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'email_link_tokens_kind_check',
+      sql`${table.kind} IN ('password_reset','sign_in','email_confirmation')`
+    ),
+    check('email_link_tokens_email_hash_check', sql`${table.emailHash} ~ '^[a-f0-9]{64}$'`),
+    check(
+      'email_link_tokens_pending_link_hash_check',
+      sql`${table.pendingLinkHash} IS NULL OR ${table.pendingLinkHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'email_link_tokens_shape',
+      sql`(${table.kind} = 'password_reset') = (${table.passwordFingerprint} IS NOT NULL) AND (${table.kind} = 'sign_in') = (${table.pendingLinkHash} IS NOT NULL)`
+    ),
+    check(
+      'email_link_tokens_one_end',
+      sql`${table.consumedAt} IS NULL OR ${table.supersededAt} IS NULL`
+    ),
+    index('email_link_tokens_user_idx').on(table.userId, table.kind),
+    index('email_link_tokens_expires_idx').on(table.expiresAt),
+  ]
+);
 /** Better Auth verification codes. */
 export const verifications = pgTable('verification', {
   id: text('id').primaryKey(),
@@ -2089,9 +2187,8 @@ export const noticeOutbox = pgTable(
   'notice_outbox',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id')
-      .notNull()
-      .references(() => communities.id),
+    // NULL only for an account-level notice, which belongs to no community (0032).
+    communityId: uuid('community_id').references(() => communities.id),
     kind: text('kind').notNull(),
     subjectId: uuid('subject_id').notNull(),
     recipientUserId: text('recipient_user_id').notNull(),
@@ -2107,7 +2204,11 @@ export const noticeOutbox = pgTable(
   (table) => [
     check(
       'notice_outbox_kind_check',
-      sql`${table.kind} IN ('owner_replacement.notice','owner_replacement.reminder','owner_replacement.claim_reissued','owner_replacement.ended','owner_replacement.completed','account.sign_in_linked')`
+      sql`${table.kind} IN ('owner_replacement.notice','owner_replacement.reminder','owner_replacement.claim_reissued','owner_replacement.ended','owner_replacement.completed','account.sign_in_linked','account.password_reset','account.sign_in_link','account.email_confirmation')`
+    ),
+    check(
+      'notice_outbox_community_shape',
+      sql`${table.communityId} IS NOT NULL OR ${table.kind} IN ('account.password_reset','account.sign_in_link','account.email_confirmation')`
     ),
     check('notice_outbox_state_check', sql`${table.state} IN ('pending','accepted','failed')`),
     check('notice_outbox_attempts_check', sql`${table.attempts} >= 0`),

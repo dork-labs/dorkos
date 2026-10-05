@@ -13,6 +13,10 @@ import { ShortNameRoute } from './components/ShortNameRoute.js';
 import { COMMUNITY_RESERVED_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
 import { parseShortNamePath } from '../short-names/path.js';
 import { SignInLinkedNotice } from './sign-up/SignInLinkedNotice.js';
+import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
+import { ResetPassword } from './email-links/ResetPassword.js';
+import { EmailSignIn } from './email-links/EmailSignIn.js';
+import { ConfirmEmail } from './email-links/ConfirmEmail.js';
 
 const RESERVED_SHORT_NAMES: ReadonlySet<string> = new Set(COMMUNITY_RESERVED_SHORT_NAMES);
 
@@ -43,6 +47,9 @@ function Surface({ pathname, search }: { pathname: string; search: string }) {
   if (pathname === OWNER_CLAIM_PATH) return <OwnerClaim />;
   if (pathname === KEEP_OWNERSHIP_PATH) return <KeepOwnership />;
   if (pathname === OWNER_REPLACEMENT_CLAIM_PATH) return <OwnerReplacementClaim />;
+  if (pathname === COMMUNITY_EMAIL_LINK_PAGES.password_reset) return <ResetPassword />;
+  if (pathname === COMMUNITY_EMAIL_LINK_PAGES.sign_in) return <EmailSignIn />;
+  if (pathname === COMMUNITY_EMAIL_LINK_PAGES.email_confirmation) return <ConfirmEmail />;
   const deletion = /^\/c\/([^/]+)\/deletion$/u.exec(pathname);
   if (deletion) return <DeletionRecovery communityId={deletion[1]} />;
   if (pathname === '/') return <CommunityChooser signedOut={() => <CommunityApp />} />;

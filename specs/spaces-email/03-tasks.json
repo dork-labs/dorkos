@@ -1,0 +1,308 @@
+{
+  "spec": "specs/spaces-email/02-specification.md",
+  "slug": "spaces-email",
+  "generatedAt": "2026-10-05T10:30:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Add the email-link tables, keyed address hash and token clean-up",
+      "description": "Migration apps/community/migrations/0032_email_links.sql exactly as spec §3: email_link_requests and email_link_tokens (both ON DELETE CASCADE to \"user\"), notice_outbox.community_id nullable for the three account.* kinds with the shape check, kind constraint extended; backout note in the header. NOTICE_KINDS and NoticeRequest.communityId (string|null) in mail/outbox.ts. security.ts gains hmacSecret(value, secret) (HMAC-SHA256, 'email-link:' prefix, hex) with TSDoc on why addresses are keyed and tokens are not. clearAccountAccess deletes email_link_tokens for the user behind the same to_regclass guard as pending_sign_in_links. Prune in main.ts: request rows after 24 h, token rows 1 h after expiry/consume/supersede. Config: COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE (default 5, max 100) and COMMUNITY_EMAIL_LINKS_PER_HOUR (default 300, max 10000). Changes to #2555 code: AccountAccessKeep gains sessionId?: string; clearAccountAccess returns { removed, xid } (pg_current_xact_id()::text); request-start.ts markAccessCleared(userId, xid) and writtenBeforeClearing exempts only while access_cleared_xid equals that xid; link-gate.ts passes its xid. Prune nulls email and drops any request pending over 1 h, whether or not mail is on. Add linkCookieName(config) to sign-in/link-gate.ts (__Host-community_pending_link on HTTPS, community_pending_link on HTTP; Path=/, no Domain, Secure on HTTPS) and move every #2555 read and write of the pending-link cookie onto it; add the signInHoldOnly SQL predicate (TRUE until DOR-2711's 0033).",
+      "activeForm": "Adding the email-link schema",
+      "size": "medium",
+      "priority": "high",
+      "files": [
+        "apps/community/migrations/0032_email_links.sql",
+        "apps/community/src/mail/outbox.ts",
+        "apps/community/src/security.ts",
+        "apps/community/src/sign-in/account-access.ts",
+        "apps/community/src/config.ts",
+        "apps/community/src/main.ts",
+        "apps/community/src/__tests__/migrate.integration.test.ts",
+        "apps/community/src/__tests__/config.test.ts",
+        "apps/community/src/sign-in/request-start.ts",
+        "apps/community/src/sign-in/link-gate.ts"
+      ],
+      "acceptanceCriteria": [
+        "Migration applies on a #2555 database and a fresh one; shape and kind checks reject bad rows (tested)",
+        "recover-password still runs against a database without 0032 and deletes tokens with it",
+        "release-unverified-account still deletes an account that has request and token rows",
+        "Config parses both limits and refuses out-of-range values",
+        "A clearing request paused while a second clean-out commits loses its exemption: its session is refused and deleted (T22)",
+        "With mail off, a pending request older than 1 h is dropped with email null after one prune (T24)",
+        "clearAccountAccess with sessionId keeps exactly that session",
+        "On HTTPS the pending-link cookie is __Host- prefixed with Path=/, no Domain, Secure; a cookie under the old name is ignored (T25)",
+        "#2555's sign-in-link tests pass through the helper"
+      ],
+      "dependencies": [],
+      "parallelWith": [
+        "1.2"
+      ],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Close Better Auth's own reset, verify, change-email and verify-password paths; stop it confirming emails",
+      "description": "auth.ts disabledPaths gains /request-password-reset, /reset-password, /send-verification-email, /verify-email, /change-email, /verify-password (/forget-password does not exist in 1.7.6). Hono refuses /api/auth/reset-password/* with 404 before auth.handler (disabledPaths matches exact paths only). Route-census test: enumerate every HTTP route the Better Auth instance registers (core + plugins) and fail on any not in a committed, reviewed allowlist. databaseHooks.user.update.before strips emailVerified from every Better Auth update (link-account.mjs :188/:236 sets it on sign-in with an already-linked verified provider); #2555's settleTrustedLink sets emailVerified by SQL in its own transaction instead. Rewrite the account.update.after comment: resets write the credential row in this server's own transaction.",
+      "activeForm": "Closing Better Auth's built-in email paths",
+      "size": "small",
+      "priority": "high",
+      "files": [
+        "apps/community/src/auth.ts",
+        "apps/community/src/app.ts",
+        "apps/community/src/sign-in/link-gate.ts",
+        "apps/community/src/__tests__/better-auth-routes.integration.test.ts",
+        "apps/community/src/__tests__/better-auth-routes.allowlist.json",
+        "apps/community/src/__tests__/email-links.integration.test.ts"
+      ],
+      "acceptanceCriteria": [
+        "Each disabled path and /api/auth/reset-password/x answer 404 over HTTP (T17)",
+        "Server-side confirmPassword (auth.api.verifyPassword) still works",
+        "The census fails when a route outside the allowlist is registered",
+        "A never-confirmed account with a linked Google identity signing in with a verified Google email stays unconfirmed (T21)",
+        "#2555's trusted link still confirms the email, and its tests stay green"
+      ],
+      "dependencies": [],
+      "parallelWith": [
+        "1.1"
+      ],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Record requests the same way for every address, and resolve them in the mail worker",
+      "description": "src/email-links/requests.ts: POST /api/v1/account/password-reset {email} per spec §6 — mail off 409 NOTICE_DELIVERY_UNAVAILABLE; per-IP minute and hour limits (IPv6 keyed by /64) from a new email-links/limiter.ts with its own bounded store (not app.ts's shared attemptTimes); normalize; one plain INSERT of a pending row, no counts; always 202 {accepted:true}; never reads \"user\". POST /api/v1/sign-in-link/email (live pending cookie required, per-account 3/h honest 429, sets the pending row's expires_at = LEAST(created_at + 25 min, now() + 15 min) and re-issues community_pending_link with maxAge equal to the new remaining lifetime). POST /api/v1/account/email-confirmation (browser session, 409 when confirmed, per-account 3/h 429). user.create.after and bootstrap/complete queue an email_confirmation request when mail is on and the email is unconfirmed. src/email-links/resolver.ts run by the mail worker each tick when mail is on: claim ≤20 pending rows FOR UPDATE SKIP LOCKED, decide per the §5 eligibility table; an eligible request over the per-address (3 queued/h, 10 queued/24h) or host-wide queued cap becomes throttled; otherwise queue the account-level outbox row in the same transaction, set state/outbox_id/resolved_at, null the email; Wire schemas in @dorkos/shared/community-wire. The request route reads and re-issues the pending-link cookie only through linkCookieName and selects the pending row with signInHoldOnly.",
+      "activeForm": "Recording and resolving email-link requests",
+      "size": "large",
+      "priority": "high",
+      "files": [
+        "apps/community/src/email-links/requests.ts",
+        "apps/community/src/email-links/resolver.ts",
+        "apps/community/src/mail/worker.ts",
+        "apps/community/src/app.ts",
+        "apps/community/src/auth.ts",
+        "packages/shared/src/community-wire.ts",
+        "apps/community/src/email-links/__tests__/requests.test.ts",
+        "apps/community/src/__tests__/email-links.integration.test.ts",
+        "apps/community/src/email-links/limiter.ts"
+      ],
+      "acceptanceCriteria": [
+        "Known, unknown, erased and throttled addresses get byte-identical responses (T4)",
+        "A recording pool shows identical SQL for known and unknown addresses and no read of \"user\" (T5)",
+        "No per-address limit in the request path; the resolver throttles over queued rows only (T6)",
+        "Per-IP minute and hour 429s, one /64 counts as one IP, host cap throttles (T7)",
+        "Filling app.ts's attemptTimes leaves the email-link limiter intact, and the reverse (T23)",
+        "The pending row cannot outlive created_at + 25 min and the re-issued cookie matches its lifetime",
+        "After resolve the plaintext email column is null (T15); resolver drops no account, refused account (T14), already confirmed, vanished pending link",
+        "Mail off: all three routes 409 and nothing is queued"
+      ],
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Mint tokens in the composers and mail the three messages",
+      "description": "src/email-links/composers.ts registering account.password_reset, account.sign_in_link, account.email_confirmation in main.ts's noticeComposers. Each composer: read its request; older than 1 h (reset, sign-in) or 24 h (confirmation) → null; re-check eligibility; in one transaction supersede live tokens of that kind for the account and insert the new token (hashSecret, email_hash, password_fingerprint for reset, pending_link_hash for sign-in, expiry 30/15/1440 min, outbox_id); return plainTextMail with the spec §8 copy and a link built only from config.publicUrl (/reset-password#, /email-sign-in#, /confirm-email#). auth-options gains emailLinks (mail on and all three composers registered); sign-in-methods gains emailConfirmed.",
+      "activeForm": "Composing the link mails",
+      "size": "medium",
+      "priority": "high",
+      "files": [
+        "apps/community/src/email-links/composers.ts",
+        "apps/community/src/main.ts",
+        "apps/community/src/app.ts",
+        "apps/community/src/routes/account/account-password.ts",
+        "packages/shared/src/community-wire.ts",
+        "apps/community/src/email-links/__tests__/composers.test.ts"
+      ],
+      "acceptanceCriteria": [
+        "The fake SMTP body holds the only copy of the raw token; the table holds 64-hex hashes (T15)",
+        "Links stay on publicUrl under a forged Host or X-Forwarded-Host (T16)",
+        "A newer mail supersedes the older link (T9)",
+        "SMTP down → request still 202, outbox retrying; past the window → NOTICE_OBSOLETE and no token minted (T19)",
+        "Subjects are one line; copy matches spec §8"
+      ],
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Use reset and sign-in links through a Better Auth plugin",
+      "description": "src/email-links/plugin.ts communityEmailLinks: POST /email-link/reset-password {token,newPassword} and POST /email-link/sign-in {token}, per spec §6 'Use'. One transaction: lock \"user\" then members (community_id,id) then the token FOR UPDATE; §5 checks (kind, live, unexpired, address hash, password fingerprint for reset, signInRefusal); stale facts mark the token superseded and answer 410 LINK_EXPIRED. Reset: write the credential row with Better Auth's hasher, clearAccountAccess({password:true, links: confirmed}) then markAccessCleared(userId, xid), confirm when never confirmed, consume, audit member.password_reset (+cleared) and member.email_confirmed ['reset']. Sign-in: refuse with 410 LINK_EXPIRED ('Open it in the browser where you asked.') unless this browser's community_pending_link hashes to token.pending_link_hash and that row is live and for this account (token untouched); lock and consume it; never confirmed → markAccessCleared + clearAccountAccess({password:false,links:false}) + confirm + audit; insert the held account row (unique violation skips the link) and recordSignInLinked([provider,'email'(,'cleared')]); consume. After commit: internalAdapter.createSession + setSessionCookie; refused → 403 SIGN_IN_REFUSED. Hono middleware spends email-link-use:<peer> on /api/auth/email-link/*. Mail off → 409. Response cleared is 'access' (confirmed: sessions, connections, agent credentials, pairings, invites, host API keys) or 'everything' (also old sign-in links). No linkSkipped. The sign-in use reads the cookie through linkCookieName and the pending row with signInHoldOnly.",
+      "activeForm": "Building the reset and sign-in link uses",
+      "size": "large",
+      "priority": "high",
+      "files": [
+        "apps/community/src/email-links/plugin.ts",
+        "apps/community/src/email-links/tokens.ts",
+        "apps/community/src/auth.ts",
+        "apps/community/src/app.ts",
+        "packages/shared/src/community-wire.ts",
+        "apps/community/src/__tests__/email-links.integration.test.ts"
+      ],
+      "acceptanceCriteria": [
+        "Squatter's session, password, GitHub link, grant and agent credential are all dead after the owner's reset or sign-in link on a never-confirmed account (T1)",
+        "Second use 410; two concurrent uses → exactly one 200 (T3)",
+        "Password change, recovery, trusted takeover, newer link or address change between mint and use → 410 (T9)",
+        "A squatter sign-in that began before the reset commits is refused and its session deleted (T10); concurrent reset + sign-in → one wins (T11)",
+        "Erasure open → 403 SIGN_IN_REFUSED, nothing cleared (T14)",
+        "Confirmed reset keeps provider links and revokes grants, agent credentials, pairings, host keys, invites",
+        "The session cookie is Better Auth's own and the session hooks ran",
+        "A sign-in token used without the matching pending cookie (or with another one) → 410, token live, no clean-out, no account row, no session (T12)",
+        "No use path creates a user (T13)"
+      ],
+      "dependencies": [
+        "1.2",
+        "1.4"
+      ],
+      "parallelWith": [
+        "1.6"
+      ],
+      "issue": null
+    },
+    {
+      "id": "1.6",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Peek and confirm routes",
+      "description": "POST /api/v1/email-links/peek {token} → {kind,email,expiresAt,clears,needsPassword,signedInAs}; consumes nothing; 410 when not usable; per-IP limited in the email-link limiter. clears lists what using the link ends (sessions, connections, agent_credentials, pairings, invites, host_api_keys, plus password and sign_in_links on a never-confirmed reset or sign-in). POST /api/v1/account/email-confirmation/confirm {token,newPassword?}: browser session required (401, token untouched); lock user, members, then token; §5 checks; other account → 403 (token untouched); already confirmed → consume, cleared 'none'. Never confirmed: credential row exists and no newPassword → 400 PASSWORD_REQUIRED (token untouched); write the new password; clearAccountAccess({password:true, links:true, sessionId: this session}) and markAccessCleared(userId, xid); set emailVerified; consume; supersede other confirmation tokens; audit member.email_confirmed ['link'] and member.password_reset ['password','confirm']; cleared 'others'. clears is z.array(z.string()) (open list); signedInAs is { email, method: null } | null.",
+      "activeForm": "Building peek and confirm",
+      "size": "medium",
+      "priority": "high",
+      "files": [
+        "apps/community/src/email-links/confirm.ts",
+        "apps/community/src/app.ts",
+        "packages/shared/src/community-wire.ts",
+        "apps/community/src/__tests__/email-links.integration.test.ts"
+      ],
+      "acceptanceCriteria": [
+        "The victim's browser with no session cannot confirm a squatted account; a later trusted OIDC sign-in still clears it (T2)",
+        "Squatter hands the victim the password; the victim confirms with a new password → squatter's session dead, old password fails, grant and agent credential revoked, victim's session lives (T2b)",
+        "Confirm without newPassword on an account with a password → 400, token live",
+        "Peek never consumes and lists clears correctly per case; cross-origin POST refused (T18)",
+        "GET of the three pages leaves tokens live (T8)"
+      ],
+      "dependencies": [
+        "1.4"
+      ],
+      "parallelWith": [
+        "1.5"
+      ],
+      "issue": null
+    },
+    {
+      "id": "1.7",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Pages, panels, banner and Settings row",
+      "description": "browser/index.html captures the bare token after # on /reset-password, /email-sign-in and /confirm-email and erases it before any network work (as /keep-ownership); no-referrer. main.ts serves the three paths; BrowserRoot routes them; add them to the short-name reserved list. New ResetPassword, EmailSignIn (peek then 'Sign in as <email>?'), ConfirmEmail ('Confirm and choose a new password' when needsPassword) pages; reset and sign-in pages warn when signedInAs is another account; the reset, sign-in and confirm pages list peek's clears before the submit button; ForgotPassword panel on the Admission sign-in form behind auth-options.emailLinks; LinkWithPassword gains 'Email me a sign-in link instead' and the mail-on PASSWORD_REQUIRED copy; ConfirmEmailBanner in CommunityApp.tsx beside the other banners (Not now hides 30 days per account in localStorage); SignInMethods shows the address with Confirmed / Not confirmed and a resend button. All copy from spec §User Experience; pnpm check:copy-length green. Mail off: today's copy, no buttons, no banner. Render clears by key from one copy map. Add AccountBannerSlot in CommunityApp.tsx (ordered list, first applicable banner only) and register ConfirmEmailBanner in it, leaving DOR-2711's SecondWayInBanner to go first.",
+      "activeForm": "Building the email-link screens",
+      "size": "large",
+      "priority": "high",
+      "files": [
+        "apps/community/src/browser/index.html",
+        "apps/community/src/main.ts",
+        "apps/community/src/browser/BrowserRoot.tsx",
+        "apps/community/src/short-names/path.ts",
+        "apps/community/src/browser/components/Admission.tsx",
+        "apps/community/src/browser/sign-up/LinkWithPassword.tsx",
+        "apps/community/src/browser/email-links/",
+        "apps/community/src/browser/CommunityApp.tsx",
+        "apps/community/src/browser/components/SignInMethods.tsx",
+        "apps/community/src/browser/api.ts"
+      ],
+      "acceptanceCriteria": [
+        "Forgot password shows one message for every outcome",
+        "EmailSignIn renders the address before any POST (T18)",
+        "The address bar has no fragment after load on all three pages (T20)",
+        "Banner hidden when mail is off or the email is confirmed; Not now persists",
+        "Copy-length and banned-word gates green",
+        "Short-name reserved-path test covers the three pages",
+        "Reset page shows the full list of what ends before submit; host API keys included",
+        "A different signed-in account is warned about on reset and sign-in pages",
+        "No copy for a sign-in link used in another browser beyond the 410 message",
+        "AccountBannerSlot shows at most one account banner",
+        "An unknown clears key renders through the copy map without a code change elsewhere"
+      ],
+      "dependencies": [
+        "1.5",
+        "1.6"
+      ],
+      "parallelWith": [
+        "1.8"
+      ],
+      "issue": null
+    },
+    {
+      "id": "1.8",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Docs, changelog and the end-to-end browser test",
+      "description": "Update apps/community README, DEPLOYMENT (two limits; what mail now adds), RECOVERY (self-serve with mail; offline command kills outstanding links), OPERATIONS (three new notice kinds in the failed-notice list), API.md (every route in spec §6); docs/guides/communities.mdx (replace 'A space does not send password-reset email', mention the sign-in link on the link screen); docs/self-hosting/space-server.mdx. Changelog fragment changelog/unreleased/<id>-spaces-email.md with covers: DOR-2710, written for humans. One Playwright spec in apps/community/browser-tests: forgot password → fake SMTP → open link → new password → signed in. Move ADR 261005-102035 to accepted at merge. After merge, file the two follow-ups in Linear (DOR): the shared attemptTimes eviction of reauth budgets, and sign-up's 422 USER_ALREADY_EXISTS revealing addresses to invitation holders.",
+      "activeForm": "Documenting Spaces email",
+      "size": "medium",
+      "priority": "medium",
+      "files": [
+        "apps/community/README.md",
+        "apps/community/DEPLOYMENT.md",
+        "apps/community/RECOVERY.md",
+        "apps/community/OPERATIONS.md",
+        "apps/community/API.md",
+        "docs/guides/communities.mdx",
+        "docs/self-hosting/space-server.mdx",
+        "changelog/unreleased/",
+        "apps/community/browser-tests/",
+        "decisions/261005-102035-spaces-email-links-hash-only-outbox-tokens-mailbox-proof.md"
+      ],
+      "acceptanceCriteria": [
+        "Docs say what happens with mail on and with mail off, in plain words",
+        "Vocab and banned-word gates green",
+        "The Playwright spec passes locally",
+        "Changelog fragment passes the changelog gate"
+      ],
+      "dependencies": [
+        "1.7"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.9",
+      "phase": 1,
+      "phaseName": "P1 — Spaces email links (one PR, after #2555)",
+      "subject": "[spaces-email] [P1] Adversarial review before the PR",
+      "description": "An independent reviewer (REVIEW.md rubric) attacks the four invariants in spec §Security and every threat T1–T24 and T2b against the branch, plus: a sign-in link racing a trusted OIDC link, the sign-up confirmation mailed to a victim, a token used after an account erasure finishes, and multi-replica limits. Fix findings, re-review, then open one PR on apps/community.",
+      "activeForm": "Reviewing the email links adversarially",
+      "size": "medium",
+      "priority": "high",
+      "files": [
+        "specs/spaces-email/02-specification.md"
+      ],
+      "acceptanceCriteria": [
+        "Every finding fixed or answered in the spec",
+        "Each threat test shown failing against a naive version, or the reviewer confirms why it would"
+      ],
+      "dependencies": [
+        "1.8"
+      ],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}

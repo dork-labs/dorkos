@@ -162,6 +162,7 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
       github: false,
       oidc: { label: 'Example sign-in', mark: null },
       minimumAge: null,
+      emailLinks: false,
     });
     expect(issuer.requests).toEqual([]);
   });
@@ -238,7 +239,7 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
       undefined,
       signedIn.cookie
     );
-    expect(await methods.json()).toEqual({ password: false, oidc: true });
+    expect(await methods.json()).toEqual({ password: false, oidc: true, emailConfirmed: true });
     const leave = { password: 'anything-at-all', communityName: 'Not this name' };
     const refused = await call('/api/v1/me/leave', 'POST', leave, signedIn.cookie);
     expect(refused.status).toBe(403);
@@ -498,7 +499,7 @@ describe('linking single sign-on from the account page', () => {
     expect((await link(ownerCookie)).pathname).toBe('/linked');
     expect(await providersOf('owner@example.com')).toEqual(['credential', 'oidc']);
     const methods = await call('/api/v1/account/sign-in-methods', 'GET', undefined, ownerCookie);
-    expect(await methods.json()).toEqual({ password: true, oidc: true });
+    expect(await methods.json()).toEqual({ password: true, oidc: true, emailConfirmed: false });
     const signedIn = await oidcSignIn();
     expect(signedIn.location.pathname).toBe('/signed-in');
   });
@@ -630,6 +631,7 @@ describe('OpenID Connect discovery', () => {
       github: false,
       oidc: null,
       minimumAge: null,
+      emailLinks: false,
     });
     const start = await app.request('/api/auth/sign-in/social', {
       method: 'POST',

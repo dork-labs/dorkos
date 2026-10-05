@@ -20,7 +20,7 @@ export async function accountHasPassword(pool: Pool, userId: string): Promise<bo
 }
 
 /** The signed-in person's own browser session; a grant, agent or host key never reaches here. */
-async function requireBrowserSession(c: Context, auth: CommunityAuth) {
+export async function requireBrowserSession(c: Context, auth: CommunityAuth) {
   if (c.req.header('authorization'))
     throw new ApiError(403, 'FORBIDDEN', 'This needs your own signed-in browser session.');
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -46,10 +46,16 @@ export function registerAccountPasswordRoutes(
       'SELECT "providerId",password FROM account WHERE "userId"=$1',
       [session.user.id]
     );
+    // Read from the database, not the session's cached copy, so a confirmation shows at once.
+    const user = await pool.query<{ emailVerified: boolean }>(
+      'SELECT "emailVerified" FROM "user" WHERE id=$1',
+      [session.user.id]
+    );
     c.header('Cache-Control', 'no-store');
     return json(c, CommunityWireAccountSignInMethodsSchema, {
       password: accounts.rows.some((row) => row.providerId === 'credential' && row.password),
       oidc: accounts.rows.some((row) => row.providerId === OIDC_PROVIDER_ID),
+      emailConfirmed: user.rows[0]?.emailVerified === true,
     });
   });
 

@@ -57,10 +57,14 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_TAKEDOWN_REVERSAL_HOURS`            |                      72 hours |   720 hours (at least 24) |
 | `COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY`       |           3 per person or key |                       100 |
 | `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY`           |          10 per person or key |                     1,000 |
+| `COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE`     |                      5 per IP |                100 per IP |
+| `COMMUNITY_EMAIL_LINKS_PER_HOUR`               |    300 emailed links per host |                    10,000 |
 
 `COMMUNITY_AGENTS_PER_OWNER` is the agents-per-person setting: how many active agents each person in a community may have, 20 unless you change it and never more than 100. A program with a `communities:write` host API key can raise or lower it for one member, from 1 to 1,000 (see [community limits](OPERATIONS.md#community-limits)). That override is the only way past 100.
 
 `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE` also counts every use of the links for replacing an owner: keeping ownership, and checking or redeeming a claim.
+
+`COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE` limits how often one address can ask for a password reset, sign-in or confirmation link; one address can also ask at most 20 times an hour. `COMMUNITY_EMAIL_LINKS_PER_HOUR` limits how many such links your whole server emails in an hour, so a flood of requests cannot hurt your sender's reputation. Separately, one email address gets at most 3 links of each kind an hour and 72 a day, so a stranger asking on someone's behalf can delay their link by an hour at most, and their reset requests never use up the address's sign-in or confirmation links. Both settings matter only with [mail](#optional-mail) set up.
 
 Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
 
@@ -130,11 +134,11 @@ https://community.example.com/api/auth/callback/oidc
 
 The service reads `<issuer>/.well-known/openid-configuration` the first time someone uses the button, not at startup, so a provider outage never stops the Community. That document must name exactly the issuer you set, and every address in it must be `https://`. If the provider does not answer within 10 seconds, or the document fails those checks, the button says single sign-on is unavailable, and the service asks again 30 seconds later. Sign-in uses PKCE, and every sign-in needs an ID token signed with the provider's published keys. People sign in only through the provider's own page; the service never accepts an ID token handed to it directly.
 
-Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused.
+Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. The same goes for a new account made through Google or GitHub: one whose email the service has not verified is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused.
 
 ### When the email already has an account here
 
-Someone may sign in with Google, GitHub or single sign-on using an email that already belongs to an account here. Unless you trust your provider (below), the sign-in page then asks for that account's password, once, and links the new sign-in to it. Wrong guesses there share the same count as every other password check for that account (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`), and the waiting sign-in lasts 10 minutes. An account with no password is told to ask the space's owner for help. A provider that did not verify the email never links, whatever you set. Google and GitHub always ask for the password.
+Someone may sign in with Google, GitHub or single sign-on using an email that already belongs to an account here. Unless you trust your provider (below), the sign-in page then asks for that account's password, once, and links the new sign-in to it. Wrong guesses there share the same count as every other password check for that account (`COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`), and the waiting sign-in lasts 10 minutes. An account with no password (or a person who forgot it) can ask for a sign-in link by email instead, when [mail](#optional-mail) is set up; the link works only in that same browser. Without mail, an account with no password is told to ask the space's owner for help. A provider that did not verify the email never links, whatever you set. Google and GitHub always ask for the password.
 
 Set `COMMUNITY_OIDC_LINK_VERIFIED_EMAIL=1` to trust your own single sign-on provider instead. A sign-in through it with a verified email then links to the matching account at once, without the password. This is a real grant: whoever controls an account at that provider with someone's email gets their account here. Only trust a provider that proves people own their email, such as one you run.
 
@@ -154,14 +158,20 @@ To turn single sign-on off, unset the variables. Accounts made through it stay, 
 
 ## Optional mail
 
-The Community sends no email unless you set this up. Mail lets it reach a person who no longer opens the community, and tells a person when a new sign-in was linked to their account. Set both of these, or neither:
+The Community sends no email unless you set this up. Mail lets it reach a person who no longer opens the community, and tells a person when a new sign-in was linked to their account. It also lets people help themselves:
+
+- **Forgot password?** on the sign-in page emails a reset link that works for 30 minutes.
+- New accounts get a link to confirm their email, and a banner reminds those who haven't.
+- The page that asks for an account's password, when a sign-in matched it, can email a sign-in link instead.
+
+Without mail, none of these appear, and people ask you for help as before (see [account recovery](RECOVERY.md)). Set both of these, or neither:
 
 | Setting               | Must be                                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `COMMUNITY_SMTP_URL`  | Your mail server: `smtps://user:password@mail.example.com:465` (encrypted from the start) or `smtp://user:password@mail.example.com:587?starttls=required` (upgraded before sending) |
 | `COMMUNITY_MAIL_FROM` | One sender, such as `notices@example.com` or `Example Community <notices@example.com>`                                                                                               |
 
-The user name and password are optional, and characters such as `@` or `/` in them must be percent-encoded (`%40`, `%2F`). Without a port, `smtps://` uses 465, `smtp://` with `starttls=required` uses 587, and a plain local `smtp://` uses 25. A plain `smtp://` address with no encryption is accepted only for a mail relay on the same machine (`127.0.0.1`, `[::1]`, or `localhost`, which is read as `127.0.0.1`). Such a relay is used as it is, even if it offers STARTTLS. The service refuses to start if only one setting is set, if mail to another machine would travel unencrypted, or if the sender is not exactly one address. Keep `COMMUNITY_SMTP_URL` in your secret store: it holds the password. Before turning mail on, read [mail in the operations guide](OPERATIONS.md#mail), which explains the sender-domain checks that keep notices out of spam folders.
+The user name and password are optional, and characters such as `@` or `/` in them must be percent-encoded (`%40`, `%2F`). Without a port, `smtps://` uses 465, `smtp://` with `starttls=required` uses 587, and a plain local `smtp://` uses 25. A plain `smtp://` address with no encryption is accepted only for a mail relay on the same machine (`127.0.0.1`, `[::1]`, or `localhost`, which is read as `127.0.0.1`). Such a relay is used as it is, even if it offers STARTTLS. The service refuses to start if only one setting is set, if mail to another machine would travel unencrypted, or if the sender is not exactly one address. Keep `COMMUNITY_SMTP_URL` in your secret store: it holds the password. Before turning mail on, read [mail in the operations guide](OPERATIONS.md#mail), which explains the sender-domain checks that keep notices out of spam folders. Those checks matter more once people rely on reset links reaching them.
 
 These settings are for replacing the owner of a community whose owner has left, which needs mail: how long the owner has to answer, and how long before a host can ask again. The service checks them at startup. Most hosts can keep the defaults.
 
@@ -215,6 +225,6 @@ Run one Community process when it uses a persistent disk. If you use S3 storage,
 
 Back up PostgreSQL and attachment storage together. Test a restore on a private host before relying on a backup schedule. When upgrading, take that backup first. Community applies forward migrations at startup. It has no automatic reverse migration.
 
-After the first owner is created, replace the bootstrap secret with a new random value. The service still requires a bootstrap secret at startup, but the claimed database cannot create a second owner with it. Community does not send password-reset email. The person operating the service must verify a member before resetting a password.
+After the first owner is created, replace the bootstrap secret with a new random value. The service still requires a bootstrap secret at startup, but the claimed database cannot create a second owner with it. With [mail](#optional-mail) set up, people reset their own password by email. Without it, or when someone has lost their mailbox, the person operating the service must verify a member before resetting a password with [the recovery command](RECOVERY.md).
 
 Keep the exact backup, restore, upgrade, and password-recovery procedure with the deployment. Do not depend on a personal export as a server backup.

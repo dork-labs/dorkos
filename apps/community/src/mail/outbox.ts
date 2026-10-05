@@ -10,6 +10,9 @@ export const NOTICE_KINDS = [
   'owner_replacement.ended',
   'owner_replacement.completed',
   'account.sign_in_linked',
+  'account.password_reset',
+  'account.sign_in_link',
+  'account.email_confirmation',
 ] as const;
 
 /** One kind of mailed notice. */
@@ -17,7 +20,12 @@ export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
 /** A notice to queue: what it is about and whose account it goes to, never an address. */
 export interface NoticeRequest {
-  communityId: string;
+  /**
+   * The community the notice belongs to, or `null` for an account-level notice (a mailed reset,
+   * sign-in or confirmation link), which belongs to none. The table refuses `null` for any other
+   * kind.
+   */
+  communityId: string | null;
   kind: NoticeKind;
   /**
    * The record the notice is about, such as an owner replacement, or for a linked sign-in the
