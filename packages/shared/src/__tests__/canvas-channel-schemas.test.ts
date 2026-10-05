@@ -251,10 +251,11 @@ describe('state, acknowledgements and future host-only contracts', () => {
       false
     );
   });
-  it('does not allow token minting to grant routes or system event types', () => {
+  it('does not allow ingest token minting to grant routes or reserved event types', () => {
     const request = {
       documentId: 'doc',
       allowedTypes: ['task.done'],
+      directions: ['upstream'],
       permissions: ['ingest'],
       expiresAt: '2026-10-02T00:00:00Z',
     };
