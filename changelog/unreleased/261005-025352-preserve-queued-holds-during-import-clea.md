@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Preserve queued holds during import cleanup
+- Stop import file cleanup after the file already being deleted when a legal hold is placed, preserving the remaining files.
