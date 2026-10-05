@@ -1,14 +1,15 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
+import { eq } from 'drizzle-orm';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, user, type Db } from '@dorkos/db';
+import { createDb, runMigrations, user, session, type Db } from '@dorkos/db';
 import { getAuth, initAuth, sessionGate, toNodeHandler, verifyRequestAuth } from '../index.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
@@ -31,6 +32,9 @@ function buildApp(): express.Express {
   // Gated API route (echoes the attached identity).
   app.get('/api/sessions', (_req, res) => {
     res.json({ ok: true, user: res.locals.user ?? null });
+  });
+  app.post('/api/sessions', (_req, res) => {
+    res.json({ changed: true, user: res.locals.user ?? null });
   });
   // Exempt: health probe.
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
@@ -317,6 +321,139 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       // Today it resolves to nothing at all: `x-api-key` is not the Bearer header
       // this codebase reads, so neither path claims it.
       expect(resolved).toBeNull();
+    });
+
+    it('leaves a renewal-due original row unchanged while the ordinary verifier can renew it', async () => {
+      const signedIn = await request(fixtureServer)
+        .post('/api/auth/sign-in/email')
+        .set('Origin', ORIGIN)
+        .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+      expect(signedIn.status).toBe(200);
+      // Keep the actual signed token, omit its snapshot cookie so the default peer
+      // also reads this SAME real database row instead of a still-fresh cache.
+      const issuedCookies = signedIn.headers['set-cookie'] as unknown as string[];
+      const signedToken = issuedCookies
+        .map((value) => value.split(';', 1)[0]!)
+        .find((value) => value.split('=', 1)[0]!.endsWith('.session_token'));
+      expect(signedToken).toEqual(expect.any(String));
+      const req = { headers: { cookie: signedToken! } } as unknown as express.Request;
+      const auth = getAuth()!;
+      const original = await auth.api.getSession({
+        headers: new Headers({ cookie: signedToken! }),
+        query: { disableCookieCache: true, disableRefresh: true },
+      });
+      expect(original?.session.id).toEqual(expect.any(String));
+      const context = await auth.$context;
+      const { expiresIn, updateAge } = context.sessionConfig;
+      expect(expiresIn).toBeGreaterThan(updateAge);
+      const now = Date.now();
+      const dueExpiry = new Date(now + (expiresIn - updateAge) * 1000 - 1000);
+      const dueUpdate = new Date(now - updateAge * 1000 - 1000);
+      expect(dueExpiry.getTime()).toBeGreaterThan(now);
+      db.update(session)
+        .set({ expiresAt: dueExpiry, updatedAt: dueUpdate })
+        .where(eq(session.id, original!.session.id))
+        .run();
+      const readOriginal = () =>
+        db.select().from(session).where(eq(session.id, original!.session.id)).get()!;
+      const before = readOriginal();
+      // Exact production renewal condition from Better Auth, with the row still live.
+      expect(before.expiresAt.getTime() - expiresIn * 1000 + updateAge * 1000).toBeLessThanOrEqual(
+        now
+      );
+      const observer = vi.spyOn(auth.api, 'getSession');
+      try {
+        expect(
+          await verifyRequestAuth(req, {
+            sessionFreshness: 'server-store',
+            credentialPolicy: 'cookie-only',
+          })
+        ).toEqual({ userId: ownerId, credential: 'cookie' });
+        expect(observer).toHaveBeenLastCalledWith(
+          expect.objectContaining({ query: { disableCookieCache: true, disableRefresh: true } })
+        );
+        const afterFresh = readOriginal();
+        expect(afterFresh.expiresAt).toEqual(before.expiresAt);
+        expect(afterFresh.updatedAt).toEqual(before.updatedAt);
+        // Healthy ordinary peer proves a due original row actually can renew.
+        expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'cookie' });
+        expect(observer).toHaveBeenLastCalledWith({ headers: expect.any(Headers) });
+        const afterOrdinary = readOriginal();
+        expect(afterOrdinary.id).toBe(before.id);
+        expect(afterOrdinary.expiresAt.getTime()).toBeGreaterThan(before.expiresAt.getTime());
+        expect(afterOrdinary.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+      } finally {
+        observer.mockRestore();
+      }
+    });
+
+    it('refuses a real API key for cookie-only observations while the ordinary key still works', async () => {
+      const req = { headers: { authorization: `Bearer ${apiKey}` } } as unknown as express.Request;
+      expect(
+        await verifyRequestAuth(req, {
+          sessionFreshness: 'server-store',
+          credentialPolicy: 'cookie-only',
+        })
+      ).toBeNull();
+      expect(await verifyRequestAuth(req)).toMatchObject({
+        userId: ownerId,
+        credential: 'api-key',
+      });
+    });
+
+    it('refuses a revoked database session even while its signed cookie cache remains usable', async () => {
+      const signIn = await request(fixtureServer)
+        .post('/api/auth/sign-in/email')
+        .set('Origin', ORIGIN)
+        .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+      expect(signIn.status).toBe(200);
+      const freshCookies = signIn.headers['set-cookie'] as unknown as string[];
+      const req = { headers: { cookie: freshCookies.join('; ') } } as unknown as express.Request;
+      const original = await getAuth()!.api.getSession({
+        headers: new Headers({ cookie: req.headers.cookie! }),
+        query: { disableCookieCache: true, disableRefresh: true },
+      });
+      expect(original?.session.id).toEqual(expect.any(String));
+      expect(await verifyRequestAuth(req)).toMatchObject({ userId: ownerId, credential: 'cookie' });
+      db.delete(session).where(eq(session.id, original!.session.id)).run();
+      expect(await verifyRequestAuth(req)).toMatchObject({ userId: ownerId, credential: 'cookie' });
+      expect(
+        await verifyRequestAuth(req, {
+          sessionFreshness: 'server-store',
+          credentialPolicy: 'cookie-only',
+        })
+      ).toBeNull();
+    });
+
+    it('refuses a write with a revoked cached cookie while healthy cookie and API-key writes still work', async () => {
+      setAuthEnabled(true);
+      const signedIn = await request(fixtureServer)
+        .post('/api/auth/sign-in/email')
+        .set('Origin', ORIGIN)
+        .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+      expect(signedIn.status).toBe(200);
+      const cookie = (signedIn.headers['set-cookie'] as unknown as string[]).join('; ');
+      const original = await getAuth()!.api.getSession({
+        headers: new Headers({ cookie }),
+        query: { disableCookieCache: true, disableRefresh: true },
+      });
+      expect(original?.session.id).toEqual(expect.any(String));
+      expect(
+        (await request(fixtureServer).post('/api/sessions').set('Cookie', cookie)).status
+      ).toBe(200);
+      db.delete(session).where(eq(session.id, original!.session.id)).run();
+      // Prove the stale credential remains cache-valid, then reach the real HTTP gate.
+      expect((await request(fixtureServer).get('/api/sessions').set('Cookie', cookie)).status).toBe(
+        200
+      );
+      const refused = await request(fixtureServer).post('/api/sessions').set('Cookie', cookie);
+      expect(refused.status).toBe(401);
+      expect(refused.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
+      const program = await request(fixtureServer)
+        .post('/api/sessions')
+        .set('Authorization', `Bearer ${apiKey}`);
+      expect(program.status).toBe(200);
+      expect(program.body.user.credential).toBe('api-key');
     });
 
     it('returns null with no credentials', async () => {

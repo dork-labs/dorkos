@@ -46,7 +46,7 @@ export interface RequestUser {
    * WHICH credential proved this identity.
    *
    * Required, not optional, and that is the point. A few writes are reserved for
-   * a person sitting in the cockpit rather than for anything holding a valid
+   * a person using the app rather than for anything holding a valid
    * credential — answering an approval, and changing an `operator-only` setting
    * or a permission. A per-user API key
    * satisfies this gate exactly as a browser session does (DOR-474), so those
@@ -146,6 +146,10 @@ export interface VerifyRequestAuthOptions {
    * The session-cookie leg still runs, so identity attribution is unchanged.
    */
   bearerIsNotAnApiKey?: boolean;
+  /** Bypass this deployment's cookie cache for a fresh database observation. */
+  sessionFreshness?: 'server-store';
+  /** A browser owner observation cannot be proved by a program API key. */
+  credentialPolicy?: 'cookie-only';
 }
 
 /**
@@ -190,7 +194,12 @@ export async function verifyRequestAuth(
 
   // 1. Session cookie — verified against the cookie cache / DB.
   try {
-    const result = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+    const result = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+      ...(options.sessionFreshness === 'server-store'
+        ? { query: { disableCookieCache: true, disableRefresh: true } }
+        : {}),
+    });
     if (result?.user?.id) {
       return { userId: result.user.id, credential: 'cookie' };
     }
@@ -203,7 +212,10 @@ export async function verifyRequestAuth(
   // 2. Bearer API key — verified via the apiKey plugin, unless the caller has
   //    already established that this bearer is one of its own non-Better-Auth
   //    secrets (see `bearerIsNotAnApiKey`).
-  const token = options.bearerIsNotAnApiKey ? null : extractBearerToken(req.headers.authorization);
+  const token =
+    options.bearerIsNotAnApiKey || options.credentialPolicy === 'cookie-only'
+      ? null
+      : extractBearerToken(req.headers.authorization);
   if (token) {
     try {
       const result = await auth.api.verifyApiKey({ body: { key: token } });
@@ -267,7 +279,10 @@ export async function sessionGate(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  const user = await verifyRequestAuth(req);
+  // A signed cache may outlive a revoked session. Writes must observe the current
+  // server row; GET/HEAD/OPTIONS keep the existing cache behavior for stream reads.
+  const readOnly = ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
+  const user = await verifyRequestAuth(req, readOnly ? {} : { sessionFreshness: 'server-store' });
   if (user) {
     res.locals.user = user;
     next();
