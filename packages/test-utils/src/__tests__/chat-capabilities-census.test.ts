@@ -76,7 +76,7 @@ const TEST_ROOTS: readonly { dir: string; match: RegExp }[] = [
 const PENDING_TITLES: readonly string[] = [
   'A-01',
   'C-02', 'C-03',
-  'R-03',
+  'R-03', 'R-09',
 ];
 
 /** One parsed capability row. */
