@@ -387,8 +387,7 @@ P1 posture (spec phase P1): `approvalPolicy: 'never'` with exec's sandbox mappin
 request refused (nothing is ever accepted), `supportsPersistentSession: true` the only added
 capability, and `auto` still resolves to exec. Stop on app-server answers `acked` when Codex
 winds the turn down within 3 s and `unconfirmed` when it does not — never a killed process,
-which would end every other Codex chat in that home. The mode table with real approvals arrives
-in P2.
+which would end every other Codex chat in that home. P2 (below) replaced the approval posture.
 
 **A stop Codex never confirms.** When DorkOS gives up waiting (`unconfirmed`), Codex's turn
 is still running: it runs to its own end, and on a credits thread it keeps billing until it
@@ -396,3 +395,40 @@ does. DorkOS asks it to stop again before the next turn on that thread, again be
 the thread for fresh credentials, and once more when it forks away from a thread whose turn
 will not stop. None of those can force it; only the process ending does, and that would end
 every other chat in the home.
+
+### P2 — approvals, questions, elicitations and steer (2026-10-05, codex-cli 0.154.0)
+
+On the app-server transport only (exec is unchanged and keeps Verdict 1):
+
+| id                  | sandbox              | `approvalPolicy` | `asks`       | `reach`      | label           |
+| ------------------- | -------------------- | ---------------- | ------------ | ------------ | --------------- |
+| `default`           | `read-only`          | `on-request`     | `always`     | `workspace`  | Ask first       |
+| `acceptEdits`       | `workspace-write`    | `on-request`     | `when-risky` | `workspace`  | Workspace write |
+| `bypassPermissions` | `danger-full-access` | `never`          | `never`      | `everything` | Full access     |
+
+Any mode id the table does not know asks `on-request`, never `never`. `permissionModes.denyReason`
+is `false` (Codex's decisions carry no reason text). Server requests become cards
+(`app-server/server-requests.ts`); unanswered ones park like the other runtimes' and are declined at
+the park ceiling; a stop cancels them before `turn/interrupt`.
+
+Verified on the vendored binary with a scripted local provider (`app-server.binary.test.ts`,
+free):
+
+- A command the model runs with `sandbox_permissions: "require_escalated"` arrives as
+  `item/commandExecution/requestApproval` AFTER its `item/started`, with the item's id. Approved, it
+  runs; `decline` leaves it `declined` and it never runs.
+- `availableDecisions` on 0.154 lists `accept`, `acceptWithExecpolicyAmendment` and `cancel` — not
+  `acceptForSession` and not `decline`. `decline` is still accepted. DorkOS offers "for this
+  session" only when Codex lists it.
+- The first server request's JSON-RPC id is `0`.
+- `turn/steer` with `expectedTurnId` lands in the running turn: a `userMessage` item carrying the
+  `clientUserMessageId`, the next model request carries the words, and no `turn/started` fires. A
+  stale id answers "expected active turn id …"; no turn answers "no active turn to steer".
+- `thread/fork` of a thread that never ran a turn answers "no rollout found"; the loader starts it
+  again instead.
+
+Not yet seen on the binary: an MCP tool approval (`mcpServer/elicitation/request` with
+`_meta.codex_approval_kind: "mcp_tool_call"`). The card attaches to the running `mcpToolCall` of
+that server when the turn has one, else to its own id; the P3 live check confirms the `_meta` shape.
+Questions' `isSecret` has no masked input in the client yet, so a secret answer is typed in the
+clear.
