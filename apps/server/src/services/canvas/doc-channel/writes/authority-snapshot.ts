@@ -171,14 +171,27 @@ async function rootIdentity(candidate: string) {
   const canonicalPath = await fs.realpath(candidate);
   const info = await fs.stat(canonicalPath, { bigint: true });
   if (!info.isDirectory()) throw new CheckboxAuthorityRefusal('SOURCE_ROOT_CHANGED');
-  const ancestors: string[] = [];
+  const parents: string[] = [];
   let parent = path.dirname(canonicalPath);
   while (parent !== canonicalPath) {
-    const ancestor = await fs.stat(parent, { bigint: true });
-    ancestors.push(`${parent}:${ancestor.dev}:${ancestor.ino}`);
+    parents.push(parent);
     const next = path.dirname(parent);
     if (next === parent) break;
     parent = next;
+  }
+  // Every ancestor is observed anew in this pass. These independent reads can
+  // share the filesystem queue. Settle every read before reporting a failure;
+  // the nearest failed ancestor remains the original first raw cause.
+  const observed = await Promise.allSettled(
+    parents.map(async (ancestorPath) => {
+      const ancestor = await fs.stat(ancestorPath, { bigint: true });
+      return `${ancestorPath}:${ancestor.dev}:${ancestor.ino}`;
+    })
+  );
+  const ancestors: string[] = [];
+  for (const result of observed) {
+    if (result.status === 'rejected') throw result.reason;
+    ancestors.push(result.value);
   }
   return { canonicalPath, device: `${info.dev}`, inode: `${info.ino}`, ancestors };
 }
