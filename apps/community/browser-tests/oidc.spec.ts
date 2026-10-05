@@ -179,10 +179,11 @@ test('an invitation opened with the single sign-on hint leads with it, so joinin
   expect(rows.map((row) => row.providerId)).toEqual(['oidc']);
 });
 
-test('an issuer identity that matches an existing account is refused, in words that say what to do', async ({
+test("an issuer identity that matches an existing account asks for that account's password, and links nothing yet", async ({
   page,
 }) => {
-  // Fails if the refusal is silent, shows a raw code, or the account is linked anyway.
+  // Fails if the page dead-ends, shows a raw code, or the account is linked without its password
+  // (the issuer is not trusted here, so DOR-2709 asks for the old password on the same page).
   issuer.identity = {
     sub: 'operator-lookalike',
     email: 'operator@example.com',
@@ -191,9 +192,10 @@ test('an issuer identity that matches an existing account is refused, in words t
   };
   await page.goto(`${baseUrl}/c/${communityId}`);
   await page.getByRole('button', { name: `Continue with ${LABEL}` }).click();
-  await expect(page.getByRole('alert')).toHaveText(
-    'An account with this email already exists here. Sign in with your password, then link single sign-on from Settings, Account.'
-  );
+  await expect(
+    page.getByRole('heading', { name: 'This email already has an account here.' })
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Link and sign in' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => location.search)).toBe('');
   const { rows } = await pool.query<{ providerId: string }>(
     `SELECT a."providerId" FROM account a JOIN "user" u ON u.id=a."userId" WHERE u.email=$1`,
