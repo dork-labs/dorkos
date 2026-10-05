@@ -163,7 +163,7 @@ test.describe('Community pairing approval @smoke', () => {
     }
     // A failed provider return keeps the same tenant and request, and explains the refusal.
     await page.goto(`${approvalUrl}&error=account_not_linked`);
-    await expect(page.getByRole('alert')).toContainText('already exists here');
+    await expect(page.getByRole('alert')).toContainText('confirm your email');
     await expect(page).toHaveURL(approvalUrl);
     await expect(page.getByRole('button', { name: 'Sign in and review' })).toBeVisible();
     expect(new URL(page.url()).searchParams.get('pairingId')).toBe(pairingId);
