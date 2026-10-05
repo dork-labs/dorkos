@@ -156,6 +156,7 @@ export class SessionPump {
       isTurnOpen: () => this.currentState === 'running',
       hasRuntimeTurnOpen: () => opts.hasRuntimeTurnOpen?.() === true,
       hasPendingInteraction: () => opts.hasPendingInteraction?.() === true,
+      hasPendingTimer: () => opts.hasPendingTimer?.() === true,
       onGateChange: () => opts.onDispatchGateChange?.(),
       // Only while the process is ours to keep. Once it is being ended (`cold`,
       // `reaped`) or is gone (`crashed`), a frame dropping a task describes

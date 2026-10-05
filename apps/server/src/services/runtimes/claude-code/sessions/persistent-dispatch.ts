@@ -1280,6 +1280,11 @@ export class PersistentDispatch {
         // through `this.bundles`: eviction forgets the bundle before it tears
         // the process down.
         if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
+        // Session timers live in the process, so they end with it; the next
+        // process has none until its own first Stop hook says otherwise.
+        if (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed') {
+          session.pendingTimers = undefined;
+        }
         // Work still held when DorkOS ends the process dies with it. Only a
         // shutdown keeps the record, for the next boot to wake the chat; every
         // other ending (the ceiling, an eviction, a replace, a slot reclaim)
@@ -1305,6 +1310,9 @@ export class PersistentDispatch {
       // pump's own state machine never left WARM and would read a process
       // mid-sentence as idle (spec `warm-process-lifecycle` D6).
       hasRuntimeTurnOpen: () => bundle.windows?.openWindow?.origin === 'runtime',
+      // Read off the Stop hook (`launch-resolver.ts`): the only place the CLI
+      // names the timers that will wake this session later (DOR-2717).
+      hasPendingTimer: () => (session.pendingTimers ?? 0) > 0,
       // The owed-delivery clock giving up is the one hold release nothing else
       // observes: the session may be idle, with no turn boundary coming to pump
       // its queue (spec `warm-process-lifecycle` D1).

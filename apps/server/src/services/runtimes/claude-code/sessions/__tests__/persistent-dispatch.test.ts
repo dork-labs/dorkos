@@ -496,7 +496,7 @@ describe('a helper still working is reported on both paths', () => {
     expect(runtime.isHelperWorking(sessionId)).toBe(false);
   });
 
-  it('answers from the held process on the warm path, for helpers and nothing else', async () => {
+  it('answers from the held process on the warm path, for every task type', async () => {
     optIn.persistentSession = true;
     const sessionId = nextSession();
     await turn(sessionId);
@@ -505,9 +505,11 @@ describe('a helper still working is reported on both paths', () => {
     process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
 
-    // A Monitor holds the process, but it is not the turn's own work going
-    // quiet, so it does not excuse a silent turn.
+    // A Monitor is as silent between its steps as a helper (DOR-2717).
     process.reportTasks([{ task_id: 'monitor-1', task_type: 'monitor' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    process.reportTasks([]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
   });
 });
