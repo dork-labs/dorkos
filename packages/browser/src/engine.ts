@@ -1,5 +1,10 @@
 import { createDiagnosticsBudget } from './tabs/diagnostics-budget.js';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import {
+  createDarwinGenerationReturnOwner,
+  type DarwinGenerationReturn,
+  type DarwinGenerationBinding,
+} from './runtime/darwin-generation-return.js';
 import { validateEngineConfiguration } from './configuration.js';
 import {
   parseBrowserBinding,
@@ -9,6 +14,7 @@ import {
   type BrowserResult,
 } from './contracts.js';
 import { parseBrowserId } from './ids.js';
+import { createDarwinEngineProcesses } from './runtime/darwin-engine-processes.js';
 import { hostIdentity } from './runtime/host-identity.js';
 import { acquireBrowser } from './lifecycle/acquisition.js';
 import { closeRecord } from './lifecycle/close.js';
@@ -48,6 +54,8 @@ export interface PrivateBrowserRetirementReceiver {
   disabled(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   authorityRevoked(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   persistenceFailure(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
+  generationReturned(): Promise<DarwinGenerationReturn | null>;
+  consumeGenerationReturn(token: unknown, binding: DarwinGenerationBinding): boolean;
 }
 /** Trusted server constructor owns both synchronous callbacks before any engine birth. */
 export interface PrivateBrowserBirthOwner {
@@ -89,9 +97,17 @@ function constructEngine(
   configuration: unknown,
   construction: EngineConstruction
 ): BrowserLifecycleEngine {
-  const config = validateEngineConfiguration(configuration);
+  const validated = validateEngineConfiguration(configuration);
+  const native = validated.nativeJournal
+    ? createDarwinEngineProcesses(validated.nativeJournal.artifact)
+    : null;
+  const config = native ? { ...validated, processes: native.processes } : validated;
   const diagnosticsBudget = createDiagnosticsBudget();
   const records = new Map<string, BrowserRecord>();
+  const generationReturns = new WeakMap<
+    BrowserRecord,
+    ReturnType<typeof createDarwinGenerationReturnOwner>
+  >();
   const opening = new Set<Promise<OpenedResult>>();
   let stopping = false;
   let shutdownPromise: ReturnType<BrowserLifecycleEngine['shutdown']> | undefined;
@@ -132,6 +148,9 @@ function constructEngine(
       disabled: () => retire('disabled'),
       authorityRevoked: () => retire('authorityRevoked'),
       persistenceFailure: () => retire('persistenceFailure'),
+      generationReturned: () => generationReturns.get(record)?.completion ?? Promise.resolve(null),
+      consumeGenerationReturn: (token: unknown, binding: DarwinGenerationBinding) =>
+        current() && (generationReturns.get(record)?.consume(token, binding) ?? false),
     });
   };
   const result = async (
@@ -157,7 +176,7 @@ function constructEngine(
       )
     )
       throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
-    const manager = hostIdentity(process.pid);
+    const manager = native ? await native.identity(process.pid) : hostIdentity(process.pid);
     if (!manager) throw new BrowserLifecycleError('PROCESS_OBSERVATION_UNAVAILABLE');
     const browserId = parseBrowserId(randomBytes(16).toString('base64url'));
     const record: BrowserRecord = {
@@ -213,6 +232,17 @@ function constructEngine(
           record.lifetime.gate.stopped ||
           record.status !== 'opening'
       );
+      // Generation returns belong to the opt-in native journal composition, not legacy fixtures.
+      if (config.nativeJournal && record.reservation && !generationReturns.has(record)) {
+        generationReturns.set(
+          record,
+          createDarwinGenerationReturnOwner(
+            records,
+            record,
+            createHash('sha256').update(JSON.stringify(config.runtime)).digest('hex')
+          )
+        );
+      }
       if (
         stopping ||
         !ordinaryRecord(record) ||

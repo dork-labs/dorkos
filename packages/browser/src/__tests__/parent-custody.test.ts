@@ -54,6 +54,7 @@ it('throwing sibling cannot suppress exact cooperative closes or release profile
   const release = vi.fn(async () => {});
   h.record.reservation = {
     release,
+    nonce: '00000000-0000-4000-8000-000000000000',
     profileDir: '/fixture/data/profiles/owned',
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
@@ -93,6 +94,7 @@ it('pending exact detach blocks release and late ACK cannot heal its installed c
   const release = vi.fn(async () => {});
   h.record.reservation = {
     release,
+    nonce: '00000000-0000-4000-8000-000000000000',
     profileDir: '/fixture/data/profiles/owned',
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
@@ -146,6 +148,7 @@ it('pending proxy blocks profile release and shares the captured parent deadline
   const release = vi.fn(async () => {});
   r.reservation = {
     release,
+    nonce: '00000000-0000-4000-8000-000000000000',
     profileDir: '/fixture/data/profiles/owned',
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
@@ -244,6 +247,7 @@ it('pending capture tail participates in the one shared wait and blocks release'
   const release = vi.fn(async () => {});
   h.record.reservation = {
     release,
+    nonce: '00000000-0000-4000-8000-000000000000',
     profileDir: '/fixture/data/profiles/owned',
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
