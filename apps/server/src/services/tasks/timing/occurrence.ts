@@ -33,6 +33,13 @@ import type { Cron } from 'croner';
 export const STALE_CEILING_MS = 60 * 60 * 1000;
 
 /**
+ * A fire less than this late is on time, whatever the schedule. Only a sleeping
+ * computer delays a timer this long; a busy server delays it by milliseconds,
+ * and calling that "asleep" on a per-second schedule would be untrue.
+ */
+export const ON_TIME_GRACE_MS = 60 * 1000;
+
+/**
  * The most missed occurrences one run counts. A per-second schedule asleep for
  * a night would otherwise count tens of thousands; the run history shows the
  * cap as "1000+".
@@ -61,8 +68,9 @@ export interface Occurrence {
    */
   missed: number;
   /**
-   * True when the run is too late to be worth running: it is a full hour late,
-   * or it is halfway or more to the next occurrence.
+   * True when the run is too late to be worth running: it is at least
+   * {@link ON_TIME_GRACE_MS} late, and either a full hour late or halfway or
+   * more to the next occurrence.
    */
   stale: boolean;
 }
@@ -95,7 +103,8 @@ export function resolveOccurrence(
   const lateByMs = Math.max(0, firedAt.getTime() - intendedFor.getTime());
   const [next] = job.nextRuns(1, intendedFor);
   const halfInterval = next ? (next.getTime() - intendedFor.getTime()) / 2 : Infinity;
-  const stale = lateByMs >= STALE_CEILING_MS || lateByMs >= halfInterval;
+  const stale =
+    lateByMs >= ON_TIME_GRACE_MS && (lateByMs >= STALE_CEILING_MS || lateByMs >= halfInterval);
   return { intendedFor, lateByMs, missed: countMissed(job, expected, intendedFor), stale };
 }
 

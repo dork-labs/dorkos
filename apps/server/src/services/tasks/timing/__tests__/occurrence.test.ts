@@ -10,7 +10,12 @@
  */
 import { describe, it, expect } from 'vitest';
 import { Cron } from 'croner';
-import { MISSED_TICKS_CAP, STALE_CEILING_MS, resolveOccurrence } from '../occurrence.js';
+import {
+  MISSED_TICKS_CAP,
+  ON_TIME_GRACE_MS,
+  STALE_CEILING_MS,
+  resolveOccurrence,
+} from '../occurrence.js';
 
 /** A croner evaluator that never schedules a timer — the shape the scheduler builds. */
 function evaluator(cron: string, timezone = 'UTC'): Cron {
@@ -139,6 +144,20 @@ describe('resolveOccurrence', () => {
       const job = evaluator('*/5 * * * *');
       const o = resolveOccurrence(job, at('2026-10-05T12:00:00Z'), at('2026-10-05T12:02:30Z'));
       expect(o.stale).toBe(true);
+    });
+
+    it('under a minute late is on time, even past halfway on a frequent schedule', () => {
+      const everySecond = evaluator('* * * * * *');
+      const secondBeat = at('2026-10-05T12:00:00Z');
+      const busy = resolveOccurrence(everySecond, secondBeat, new Date(secondBeat.getTime() + 600));
+      expect(busy.stale).toBe(false);
+      const everyMinute = evaluator('* * * * *');
+      const minuteBeat = at('2026-10-05T12:00:00Z');
+      expect(resolveOccurrence(everyMinute, minuteBeat, at('2026-10-05T12:00:40Z')).stale).toBe(
+        false
+      );
+      const justUnder = new Date(minuteBeat.getTime() + ON_TIME_GRACE_MS - 1);
+      expect(resolveOccurrence(evaluator('*/1 * * * *'), minuteBeat, justUnder).stale).toBe(false);
     });
 
     it('hourly: 12 minutes late runs, 45 minutes late is stale', () => {
