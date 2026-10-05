@@ -6,7 +6,7 @@
       "slug": "isolated-extension-backends",
       "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",
       "created": "2026-10-03",
-      "status": "specified",
+      "status": "implemented",
       "project": "extensibility-platform",
       "linearIssue": "DOR-2686"
     },
@@ -3555,6 +3555,14 @@
       "created": "2026-10-04",
       "status": "specified",
       "linearIssue": "DOR-2107"
+    },
+    {
+      "id": "261004-234001",
+      "slug": "inherited-start-permission",
+      "title": "A chat starts chats at its own permission level or lower",
+      "created": "2026-10-04",
+      "status": "specified",
+      "linearIssue": "DOR-2714"
     },
     {
       "id": "261004-200007",

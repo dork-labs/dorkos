@@ -97,6 +97,9 @@ describeCtxConformance('in-process', () => ({
     });
     const fixture = loadInProcess();
     const cleanupFn = (await fixture.register({}, built.ctx)) as (() => Promise<void>) | undefined;
+    // The lifecycle closes ctx.tools once register() finished; so does the
+    // isolated child (`sealTools`).
+    built.tools.seal();
     let stopped = false;
     const t: CtxUnderTest = {
       runtime: 'in-process',

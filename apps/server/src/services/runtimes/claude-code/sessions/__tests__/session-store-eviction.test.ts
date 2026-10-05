@@ -90,6 +90,20 @@ describe('checkSessionHealth exempts a session waiting on a person', () => {
     expect(isWaitingOnPerson(session, now)).toBe(false);
   });
 
+  // DOR-2717. A night asleep moves the wall clock, not the awake one: a prompt
+  // raised before the laptop slept is still being waited on when it wakes.
+  it('measures the park ceiling in awake time when the prompt has an awake stamp', () => {
+    const store = storeHoldingPrompt(SESSIONS.INTERACTION_PARK_CEILING_MS + 60 * 60_000);
+    const session = store.findSession(SESSION_ID)!;
+    const pending = session.pendingInteractions.get('tool-1')!;
+    pending.startedAwake = performance.now();
+
+    expect(isWaitingOnPerson(session, Date.now())).toBe(true);
+
+    pending.startedAwake = performance.now() - SESSIONS.INTERACTION_PARK_CEILING_MS - 1;
+    expect(isWaitingOnPerson(session, Date.now())).toBe(false);
+  });
+
   it('still evicts an idle session with nothing pending at thirty-one minutes', () => {
     // The exemption did not widen into a general reprieve.
     const store = new SessionStore();

@@ -240,6 +240,7 @@ describe('UserConfigSchema', () => {
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
+          transport: 'auto',
         },
       },
       auth: { enabled: false },
@@ -631,6 +632,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
+          transport: 'auto',
         },
       },
       auth: { enabled: false },
@@ -1066,6 +1068,7 @@ describe('UserConfigSchema runtimes', () => {
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
+        transport: 'auto',
       },
     });
   });
@@ -1105,6 +1108,7 @@ describe('UserConfigSchema runtimes', () => {
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
+        transport: 'auto',
       },
     });
   });

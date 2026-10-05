@@ -148,11 +148,13 @@ describe('a runtime turn that goes dark is interrupted like any other (T12)', ()
 describe('a runtime that cannot start its own turns subscribes to nothing', () => {
   it('answers undefined rather than pretending', () => {
     const runtime = new FakeAgentRuntime();
-    // Two observers are wired here, not one: turns the agent starts, and the
-    // release of a hold its pending-segment gate puts on the queue. A backend
-    // whose output only ever answers a dispatch offers neither.
+    // Three observers are wired here: turns the agent starts, the release of a
+    // hold its pending-segment gate puts on the queue, and dispatched turns that
+    // end a follow of later turns (DOR-2717). A backend whose output only ever
+    // answers a dispatch offers none of them.
     (runtime as { onRuntimeTurn?: unknown }).onRuntimeTurn = undefined;
     (runtime as { onDispatchGateChange?: unknown }).onDispatchGateChange = undefined;
+    (runtime as { onDispatchedTurn?: unknown }).onDispatchedTurn = undefined;
     expect(subscribeRuntimeTurns(runtime)).toBeUndefined();
   });
 

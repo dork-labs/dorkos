@@ -15,7 +15,8 @@ import {
   StartWorkError,
 } from '@dorkos/extension-api/server';
 import { createProxyCtx, rebuildError } from '../child/proxy-ctx.js';
-import { TOOLS_REFUSAL } from '../ctx-protocol.js';
+import { createToolBinding } from '../../agent-tools/tool-binding.js';
+import type { ToolHandleCheck } from '../../agent-tools/tool-handle-rules.js';
 import { PERSON_VERDICT_HEADER, type ChildMessage } from '../ipc-protocol.js';
 
 const PERSON_REFUSAL = {
@@ -31,7 +32,16 @@ const errors = {
   StartWorkError: StartWorkError as never,
 };
 
-function setup(options: { allowAgents?: boolean; failSend?: boolean } = {}) {
+/** The manifest's tools as `init` carries them: two accepted, one refused. */
+const TOOLS: ToolHandleCheck[] = [
+  { name: 'echo', ok: true },
+  { name: 'count', ok: true },
+  { name: 'bad_one', ok: false, reason: 'its input schema has a z.record' },
+];
+
+function setup(
+  options: { allowAgents?: boolean; failSend?: boolean; tools?: ToolHandleCheck[] } = {}
+) {
   const sent: ChildMessage[] = [];
   const logs: string[] = [];
   const proxy = createProxyCtx({
@@ -44,6 +54,7 @@ function setup(options: { allowAgents?: boolean; failSend?: boolean } = {}) {
       displayName: 'Ext A',
       allowAgents: options.allowAgents ?? false,
       personRefusal: PERSON_REFUSAL,
+      tools: options.tools ?? TOOLS,
       ctx: {
         extensionDir: '/ext',
         dorkHome: '/dork',
@@ -145,10 +156,114 @@ describe('proxy ctx members', () => {
     expect(allowed.sent).toEqual([{ type: 'sub', id: 1, path: 'agent.subscribe' }]);
   });
 
-  // Purpose: tools.handle throws the table's reason.
-  it('refuses tools.handle', () => {
+  // Purpose: tools.handle refuses exactly what the in-process binding
+  // refuses, with the same words (one rule module, both runtimes): an
+  // undeclared name, a refused tool, a second handler, a non-function, and a
+  // call after register() finished. A refused binding sends nothing.
+  it('refuses a bad tool binding with the in-process words', () => {
     const t = setup();
-    expect(() => t.ctx.tools.handle('x', async () => 1)).toThrow(TOOLS_REFUSAL);
+    const inProcess = createToolBinding('ext-a', [
+      {
+        ok: true,
+        name: 'echo',
+        title: 'Echo',
+        description: 'Echoes.',
+        tier: 'observe',
+      } as never,
+      { ok: true, name: 'count', title: 'Count', description: 'Counts.', tier: 'act' } as never,
+      {
+        ok: false,
+        name: 'bad_one',
+        title: 'Bad',
+        tier: 'observe',
+        reason: 'its input schema has a z.record',
+      },
+    ]);
+    const words = (fn: () => void): string => {
+      try {
+        fn();
+      } catch (err) {
+        return `${(err as Error).name}: ${(err as Error).message}`;
+      }
+      return 'no error';
+    };
+    const cases: Array<[string, unknown]> = [
+      ['nope', () => 1],
+      ['bad_one', () => 1],
+      ['echo', 'not a function'],
+    ];
+    for (const [name, handler] of cases) {
+      const child = words(() => t.ctx.tools.handle(name, handler as never));
+      expect(child).not.toBe('no error');
+      expect(child).toBe(words(() => inProcess.api.handle(name, handler as never)));
+    }
+    expect(t.sent).toEqual([]);
+
+    t.ctx.tools.handle('echo', () => 1);
+    inProcess.api.handle('echo', () => 1);
+    const twice = words(() => t.ctx.tools.handle('echo', () => 2));
+    expect(twice).toMatch(/twice/);
+    expect(twice).toBe(words(() => inProcess.api.handle('echo', () => 2)));
+
+    expect(t.sealTools()).toEqual(['echo']);
+    inProcess.seal();
+    const late = words(() => t.ctx.tools.handle('count', () => 1));
+    expect(late).toMatch(/after register\(\) finished/);
+    expect(late).toBe(words(() => inProcess.api.handle('count', () => 1)));
+    expect(t.sent).toHaveLength(1);
+  });
+
+  // Purpose: a tool binding is one expose naming the tool, and the host's
+  // rcall reaches the handler with the in-process call shape: the input, an
+  // AbortSignal for this call, and the calling agent's id.
+  it('exposes a tool and runs it with a signal and the agent id', async () => {
+    const t = setup();
+    let seen: { input: unknown; agentId: unknown; signal: unknown } | null = null;
+    t.ctx.tools.handle('echo', (input, call) => {
+      seen = { input, agentId: call.agentId, signal: call.signal };
+      return { got: input };
+    });
+    expect(t.sent).toEqual([{ type: 'expose', id: 1, path: 'tools.handle', name: 'echo' }]);
+    t.receive({
+      type: 'rcall',
+      id: 7,
+      handler: 1,
+      method: 'tool',
+      args: [{ message: 'hi' }, { agentId: 'agent-9' }],
+    });
+    await vi.waitFor(() => expect(t.sent).toHaveLength(2));
+    expect(t.sent[1]).toEqual({ type: 'rret', id: 7, ok: true, value: { got: { message: 'hi' } } });
+    expect(seen!.input).toEqual({ message: 'hi' });
+    expect(seen!.agentId).toBe('agent-9');
+    expect(seen!.signal).toBeInstanceOf(AbortSignal);
+
+    // An agent id that is not a string reads as unknown (null), as in-process.
+    t.receive({ type: 'rcall', id: 8, handler: 1, method: 'tool', args: [{}, { agentId: 5 }] });
+    await vi.waitFor(() => expect(t.sent).toHaveLength(3));
+    expect(seen!.agentId).toBeNull();
+  });
+
+  // Purpose: the host's cancel aborts the handler's call.signal (the
+  // deadline, a cancelled turn or a stop all arrive this way), and the
+  // answer the handler gives afterwards is never sent.
+  it('aborts the tool call signal on cancel and drops its answer', async () => {
+    const t = setup();
+    let signal: AbortSignal | null = null;
+    let finish: (value: unknown) => void = () => {};
+    t.ctx.tools.handle('echo', (_input, call) => {
+      signal = call.signal;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    });
+    t.receive({ type: 'rcall', id: 3, handler: 1, method: 'tool', args: [{}, { agentId: null }] });
+    await vi.waitFor(() => expect(signal).not.toBeNull());
+    expect(signal!.aborted).toBe(false);
+    t.receive({ type: 'cancel', id: 3 });
+    expect(signal!.aborted).toBe(true);
+    finish('late');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(t.sent.filter((m) => m.type === 'rret')).toEqual([]);
   });
 });
 

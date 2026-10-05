@@ -34,7 +34,7 @@ import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
 import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
-import { RunningExtensionTools } from './agent-tools/tool-binding.js';
+import { RunningExtensionTools, type ToolBinding } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
 import { extensionServerErrorCopy } from '@dorkos/shared/extension-server-status';
@@ -47,7 +47,6 @@ import {
 import { resolveChildEntry } from './isolation/child-entry.js';
 import { createIsolatedRouter } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
-import { TOOLS_REFUSAL } from './isolation/ctx-protocol.js';
 import { env } from '../../env.js';
 
 const require = createRequire(import.meta.url);
@@ -483,24 +482,8 @@ export class ExtensionServerLifecycle {
       const cleanup = typeof result === 'function' ? result : null;
 
       // register() finished: no more handlers. Only an instance that started
-      // has tools, and only the declared tools it handled (DOR-2685). A
-      // declared tool with no handler is reported, not offered.
-      const { handled, unhandled } = tools.seal();
-      const agentTools = new RunningExtensionTools(id, record.manifest.name, handled, [
-        ...toolChecks.flatMap((check) =>
-          check.ok ? [] : [{ name: check.name, reason: check.reason }]
-        ),
-        ...unhandled.map((tool) => ({
-          name: tool.name,
-          reason: `${record.manifest.name} declares ${tool.name} but never handles it`,
-        })),
-      ]);
-      if (unhandled.length > 0) {
-        logger.warn(
-          `[Extensions] ${id} declares tools it never handles, so agents won't get them: ` +
-            unhandled.map((tool) => tool.name).join(', ')
-        );
-      }
+      // has tools, and only the declared tools it handled (DOR-2685).
+      const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
 
       // Mount proxy routes alongside custom routes for hybrid extensions
       if (record.hasDataProxy && record.manifest.dataProxy) {
@@ -715,6 +698,13 @@ export class ExtensionServerLifecycle {
         ctx: built.ctx,
         projectRoots: async () => (await built.ctx.projects.list()).map((p) => p.root),
         timings: { loadTimeoutMs: this.registerTimeoutMs, ...this.options.isolatedTimings },
+        tools: toolChecks,
+        // Its tools leave the registry before anything else of the dead
+        // child is released, so a call still running fails as stopped.
+        onGone: () => {
+          const active = this.serverExtensions.get(id);
+          if (active?.isolated === started) active.agentTools?.stop();
+        },
         onExit: (exit) => this.onIsolatedExit(id, started, sourceKey, exit),
       });
       host = started;
@@ -748,17 +738,10 @@ export class ExtensionServerLifecycle {
     // One instance per id, ever.
     await this.stop(id);
 
-    // Tools do not cross the boundary yet (spec §8): every declared tool is
-    // reported, none offered.
-    const agentTools = new RunningExtensionTools(
-      id,
-      name,
-      [],
-      toolChecks.map((check) => ({
-        name: check.name,
-        reason: check.ok ? TOOLS_REFUSAL : (check.reason ?? 'DorkOS refused it'),
-      }))
-    );
+    // register() finished in the child (`registered`), and every tool it
+    // bound was bound through the real ctx.tools.handle on the way: seal the
+    // host's binding exactly as after an in-process register() (spec §8).
+    const agentTools = sealAgentTools(id, name, toolChecks, built.tools);
     const proxyRouter =
       record.hasDataProxy && record.manifest.dataProxy
         ? createProxyRouter(id, record.manifest.dataProxy, this.dorkHome)
@@ -785,6 +768,11 @@ export class ExtensionServerLifecycle {
       });
       return { ok: false, error: `${name} stopped while starting.` };
     }
+
+    // Only now, with the instance active, can agents reach its tools, as
+    // in-process. Every call goes through the registry's gate here, in
+    // DorkOS, before anything reaches the child.
+    if (this.capabilityRegistry) agentTools.contribute(this.capabilityRegistry);
 
     getExtensionInbox()?.markRunning(id, name);
     record.serverError = undefined;
@@ -963,4 +951,41 @@ async function settleWithin<T>(
  */
 function runsSeparately(record: ExtensionRecord): boolean {
   return record.manifest.serverCapabilities?.runtime === 'subprocess' || !!record.isolation;
+}
+
+/**
+ * Close an instance's tool binding once its `register()` finished, and hold
+ * what it handled for contribution: only the declared tools it handled
+ * (DOR-2685). A declared tool with no handler is reported, not offered. The
+ * same for both runtimes: an isolated extension's tools were bound through
+ * the same real `ctx.tools.handle` by the host's dispatcher.
+ *
+ * @param id - The extension id.
+ * @param name - Its manifest name.
+ * @param toolChecks - Discovery's verdict on each declared tool.
+ * @param tools - The instance's binding, from `createDataProviderContext`.
+ */
+function sealAgentTools(
+  id: string,
+  name: string,
+  toolChecks: ReturnType<typeof checkDeclaredTools>,
+  tools: ToolBinding
+): RunningExtensionTools {
+  const { handled, unhandled } = tools.seal();
+  const agentTools = new RunningExtensionTools(id, name, handled, [
+    ...toolChecks.flatMap((check) =>
+      check.ok ? [] : [{ name: check.name, reason: check.reason }]
+    ),
+    ...unhandled.map((tool) => ({
+      name: tool.name,
+      reason: `${name} declares ${tool.name} but never handles it`,
+    })),
+  ]);
+  if (unhandled.length > 0) {
+    logger.warn(
+      `[Extensions] ${id} declares tools it never handles, so agents won't get them: ` +
+        unhandled.map((tool) => tool.name).join(', ')
+    );
+  }
+  return agentTools;
 }

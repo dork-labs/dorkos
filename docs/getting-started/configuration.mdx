@@ -771,6 +771,12 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
       type: '"ask" | "act" | "autonomy" | null',
       default: 'null',
     },
+    'runtimes.codex.transport': {
+      description:
+        'How DorkOS runs Codex. `auto` follows DorkOS’s default; `exec` is the older one-process-per-reply way. Takes effect after a restart.',
+      type: '"auto" | "app-server" | "exec"',
+      default: '"auto"',
+    },
   }}
 />
 

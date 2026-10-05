@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import { checkCodexDependencies } from '../check-dependencies.js';
+import { checkCodexDependencies, codexAppServerVersionNote } from '../check-dependencies.js';
 import { resolveProvisionedCodexPath } from '../provision.js';
 import { configManager } from '../../../core/config-manager.js';
 
@@ -229,5 +229,22 @@ describe('checkCodexDependencies', () => {
 
     expect(cli.status).toBe('missing');
     expect(auth.status).toBe('missing');
+  });
+});
+
+describe('codexAppServerVersionNote', () => {
+  it('says nothing until a process ran, or when it runs the pinned version', () => {
+    expect(codexAppServerVersionNote(null, '0.154.0')).toBeNull();
+    expect(codexAppServerVersionNote('0.154.0', '0.154.0')).toBeNull();
+  });
+
+  it('notes a different version without refusing it', () => {
+    expect(codexAppServerVersionNote('0.160.1', '0.154.0')).toEqual(
+      expect.objectContaining({
+        status: 'satisfied',
+        version: '0.160.1',
+        requiredVersion: '0.154.0',
+      })
+    );
   });
 });

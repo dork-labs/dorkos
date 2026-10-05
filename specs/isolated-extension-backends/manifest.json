@@ -3,7 +3,7 @@
   "slug": "isolated-extension-backends",
   "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",
   "created": "2026-10-03",
-  "status": "specified",
+  "status": "implemented",
   "project": "extensibility-platform",
   "linearIssue": "DOR-2686",
   "artifacts": {

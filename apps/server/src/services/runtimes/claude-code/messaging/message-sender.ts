@@ -124,6 +124,7 @@ export async function* executeSdkQuery(
   retryDepth = 0
 ): AsyncGenerator<StreamEvent> {
   session.lastActivity = Date.now();
+  session.turnStartedAwake = performance.now();
   session.eventQueue = [];
   // Clear last turn's breakdown so a failed fetch this turn never shows stale data.
   session.contextBreakdown = undefined;

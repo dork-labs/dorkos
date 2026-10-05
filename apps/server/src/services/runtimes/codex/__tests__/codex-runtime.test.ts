@@ -5,6 +5,7 @@ import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { CodexRuntime } from '../codex-runtime.js';
+import type { CodexTransport } from '../transport/index.js';
 import { buildCodexOptions } from '../codex-options.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
@@ -1529,5 +1530,157 @@ describe('CodexRuntime', () => {
 
       nowSpy.mockRestore();
     });
+  });
+});
+
+describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
+  /** A transport that records what it was asked and plays a scripted turn. */
+  function recordingTransport(
+    options: { persistent?: boolean; bindAs?: string; replaces?: string } = {}
+  ) {
+    const requests: Array<Parameters<CodexTransport['runTurn']>[0]> = [];
+    const transport: CodexTransport = {
+      kind: 'app-server',
+      capabilities: options.persistent ? { supportsPersistentSession: true } : {},
+      async *runTurn(request) {
+        requests.push(request);
+        request.onThreadBound(options.bindAs ?? 'thread-from-transport', options.replaces);
+        yield { type: 'text_delta', data: { text: 'hi' } };
+        yield {
+          type: 'session_status',
+          data: { sessionId: request.sessionId, terminalReason: 'completed' },
+        };
+        yield { type: 'done', data: { sessionId: request.sessionId } };
+      },
+      interrupt: vi.fn(async () => ({ outcome: 'acked' as const, runtime: 'codex' as const })),
+      ...(options.persistent
+        ? {
+            getSessionWarmth: () => 'warm' as const,
+            reapSession: vi.fn(async () => {}),
+          }
+        : {}),
+      shutdown: vi.fn(async () => {}),
+    };
+    return { transport, requests };
+  }
+
+  async function drain(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
+    const out: StreamEvent[] = [];
+    for await (const event of gen) out.push(event);
+    return out;
+  }
+
+  it('hands the transport one resolved turn and persists the binding it reports', async () => {
+    const db = createTestDb();
+    const threadMap = new CodexThreadMap(db);
+    const { transport, requests } = recordingTransport();
+    const runtime = new CodexRuntime({
+      threadMap,
+      resolveBinary: async () => '/opt/codex',
+      transport,
+    });
+    runtime.ensureSession('s1', { permissionMode: 'acceptEdits', cwd: '/project' });
+    const events = await drain(runtime.sendMessage('s1', 'hello there', { cwd: '/project' }));
+
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      binary: '/opt/codex',
+      sessionId: 's1',
+      boundThreadId: undefined,
+      cwd: '/project',
+      settings: { permissionMode: 'acceptEdits' },
+      writableDirectories: [],
+      launch: { home: 'person' },
+    });
+    // The prompt is buildCodexPrompt's output: the person's words last, untouched.
+    expect(requests[0]!.prompt.endsWith('hello there')).toBe(true);
+    expect(threadMap.get('s1')).toMatchObject({
+      threadId: 'thread-from-transport',
+      cwd: '/project',
+    });
+  });
+
+  it('replaces a binding only when the transport names the thread it replaced', async () => {
+    const db = createTestDb();
+    const threadMap = new CodexThreadMap(db);
+    threadMap.setThreadId('s1', 'old-thread', '/project');
+    const { transport, requests } = recordingTransport({
+      bindAs: 'new-thread',
+      replaces: 'old-thread',
+    });
+    const runtime = new CodexRuntime({
+      threadMap,
+      resolveBinary: async () => '/opt/codex',
+      transport,
+    });
+    await drain(runtime.sendMessage('s1', 'again', { cwd: '/project' }));
+    expect(requests[0]!.boundThreadId).toBe('old-thread');
+    expect(threadMap.getThreadId('s1')).toBe('new-thread');
+  });
+
+  it('merges the transport’s capabilities over the shared base, and exec changes nothing', () => {
+    const db = createTestDb();
+    const exec = new CodexRuntime({
+      threadMap: new CodexThreadMap(db),
+      resolveBinary: async () => '/opt/codex',
+    });
+    expect(exec.getCapabilities().supportsPersistentSession).toBe(false);
+    expect(exec.getSessionWarmth).toBeUndefined();
+    expect(exec.reapSession).toBeUndefined();
+    expect(exec.settleOpenTurn).toBeUndefined();
+
+    const { transport } = recordingTransport({ persistent: true });
+    const onAppServer = new CodexRuntime({
+      threadMap: new CodexThreadMap(createTestDb()),
+      resolveBinary: async () => '/opt/codex',
+      transport,
+    });
+    expect(onAppServer.getCapabilities().supportsPersistentSession).toBe(true);
+    expect(onAppServer.getCapabilities().supportsToolApproval).toBe(false);
+    expect(onAppServer.getSessionWarmth?.('s')).toBe('warm');
+    expect(onAppServer.settleOpenTurn).toBeDefined();
+  });
+
+  it('returns the transport’s interrupt receipt for an open turn, and not-running otherwise', async () => {
+    const db = createTestDb();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const { transport } = recordingTransport();
+    transport.runTurn = async function* (request) {
+      yield { type: 'text_delta', data: { text: 'working' } };
+      await gate;
+      yield { type: 'done', data: { sessionId: request.sessionId } };
+    };
+    const runtime = new CodexRuntime({
+      threadMap: new CodexThreadMap(db),
+      resolveBinary: async () => '/opt/codex',
+      transport,
+    });
+    await expect(runtime.interruptQuery('s1')).resolves.toMatchObject({ outcome: 'not-running' });
+    const gen = runtime.sendMessage('s1', 'go', { cwd: '/project' });
+    await gen.next();
+    await expect(runtime.interruptQuery('s1')).resolves.toEqual({
+      outcome: 'acked',
+      runtime: 'codex',
+    });
+    expect(transport.interrupt).toHaveBeenCalledWith('s1');
+    release();
+    await drain(gen);
+  });
+
+  it('closes a turn whose transport ended without its done, so the session is never left busy', async () => {
+    const { transport } = recordingTransport();
+    transport.runTurn = async function* () {
+      yield { type: 'text_delta', data: { text: 'partial' } };
+    };
+    const runtime = new CodexRuntime({
+      threadMap: new CodexThreadMap(createTestDb()),
+      resolveBinary: async () => '/opt/codex',
+      transport,
+    });
+    const events = await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(events.at(-1)?.type).toBe('done');
   });
 });

@@ -18,6 +18,9 @@ function row(overrides: Partial<typeof sessionStartedBy.$inferInsert> = {}) {
     originExtensionId: 'flow',
     reason: '12 new ideas were waiting to be sorted',
     carried: false,
+    permissionMode: null,
+    starterPermissionMode: null,
+    permissionSameAsStarter: null,
     createdAt: NOW,
     ...overrides,
   };
@@ -40,6 +43,40 @@ describe('session_started_by', () => {
     const { carried: _carried, ...withoutCarried } = row();
     db.insert(sessionStartedBy).values(withoutCarried).run();
     expect(db.select().from(sessionStartedBy).get()?.carried).toBe(false);
+  });
+
+  it('records the level a chat was started at, and leaves it null when it was not given', () => {
+    db.insert(sessionStartedBy)
+      .values(
+        row({
+          sessionId: 'chat-2',
+          kind: 'chat',
+          extensionId: null,
+          startedBySessionId: 'chat-1',
+          permissionMode: 'acceptEdits',
+          starterPermissionMode: 'bypassPermissions',
+          permissionSameAsStarter: false,
+        })
+      )
+      .run();
+    const {
+      permissionMode: _m,
+      starterPermissionMode: _s,
+      permissionSameAsStarter: _p,
+      ...old
+    } = row({ sessionId: 'chat-3' });
+    db.insert(sessionStartedBy).values(old).run();
+
+    expect(
+      db
+        .select()
+        .from(sessionStartedBy)
+        .all()
+        .map((r) => [r.permissionMode, r.starterPermissionMode, r.permissionSameAsStarter])
+    ).toEqual([
+      ['acceptEdits', 'bypassPermissions', false],
+      [null, null, null],
+    ]);
   });
 
   it('keeps one row per chat', () => {

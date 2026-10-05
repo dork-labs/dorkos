@@ -138,6 +138,8 @@ export class FakeAgentRuntime implements AgentRuntime {
     }
     this.holdsOutstanding.delete(sessionId);
     opts?.dispatchHold?.proceed();
+    // A send that goes ahead opens a dispatched turn, as a real runtime's does (DOR-2717).
+    for (const listener of [...this.dispatchedTurnListeners]) listener(sessionId);
     const scenario = this._scenarios[this._scenarioIndex];
     if (scenario) {
       this._scenarioIndex++;
@@ -234,6 +236,30 @@ export class FakeAgentRuntime implements AgentRuntime {
   private readonly holdsOutstanding = new Set<string>();
   /** Sessions whose next send goes ahead, because the person chose Switch now. */
   private readonly switchPending = new Set<string>();
+
+  /**
+   * Whether the agent's process still holds work that can wake it after its
+   * turn ends. Answers `false` — this fake starts no background work — and is
+   * spied so a test can stand in for a helper still running (DOR-2717).
+   */
+  holdsBackgroundWork = vi.fn<(sessionId: string) => boolean>(() => false);
+
+  /** Everything {@link onDispatchedTurn} registered — a set, as a real runtime keeps. */
+  private readonly dispatchedTurnListeners = new Set<(sessionId: string) => void>();
+
+  /**
+   * Listen for a dispatched turn opening. Every {@link sendMessage} reports one,
+   * as a real runtime's dispatch does; spied so a test can assert the server
+   * subscribed.
+   */
+  onDispatchedTurn = vi.fn<(listener: (sessionId: string) => void) => () => void>((listener) => {
+    // Wrapped, so each subscription unsubscribes only itself.
+    const entry = (sessionId: string): void => listener(sessionId);
+    this.dispatchedTurnListeners.add(entry);
+    return () => {
+      this.dispatchedTurnListeners.delete(entry);
+    };
+  });
 
   /** The listener {@link onDispatchGateChange} registered, if anything is listening. */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;

@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/monorepo",
   "private": true,
-  "version": "0.97.0",
+  "version": "0.98.0",
   "type": "module",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
@@ -30,6 +30,7 @@
     "q3:contention": "tsx scripts/q3-contention/run.ts",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json --noEmit",
     "docs:export-api": "tsx scripts/export-openapi.ts",
+    "codex:protocol-snapshot": "tsx scripts/codex-protocol-snapshot.ts",
     "docs:runtime-capabilities": "tsx scripts/generate-runtime-capabilities.ts",
     "check:banned-words": "bash scripts/check-banned-words.sh",
     "check:boundary": "tsx scripts/check-boundary.ts",

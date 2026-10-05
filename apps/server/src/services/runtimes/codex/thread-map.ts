@@ -187,6 +187,31 @@ export class CodexThreadMap {
   }
 
   /**
+   * Re-point a session at a new Codex thread, but only if it is still bound to
+   * the one the caller replaced.
+   *
+   * The one exception to first-write-wins, used only by the app-server
+   * transport (spec `codex-app-server-transport` §6) when a cold resume shows
+   * the bound thread cannot continue: it never got a first turn (no rollout),
+   * or the person deleted it in Codex. The guard on `oldThreadId` makes a race
+   * with a concurrent rebind a no-op rather than a lost conversation.
+   *
+   * @param sessionId - DorkOS session identifier
+   * @param oldThreadId - The thread the caller saw bound
+   * @param newThreadId - The thread to bind instead
+   * @returns Whether the row was changed
+   */
+  replaceThreadId(sessionId: string, oldThreadId: string, newThreadId: string): boolean {
+    return (
+      this.db
+        .update(codexThreads)
+        .set({ threadId: newThreadId })
+        .where(and(eq(codexThreads.sessionId, sessionId), eq(codexThreads.threadId, oldThreadId)))
+        .run().changes === 1
+    );
+  }
+
+  /**
    * Update a persisted row's display metadata (the mutable complement to the
    * immutable binding).
    *

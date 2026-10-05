@@ -24,7 +24,7 @@ Items that still need a **live re-verification with an authenticated login** are
 
 ---
 
-## Verdict 1: Tool approvals — `supportsToolApproval: false`
+## Verdict 1: Tool approvals — `supportsToolApproval: false` (exec transport only)
 
 The SDK provides **no interactive approval channel**. Declare `supportsToolApproval: false`
 and model Codex permission posture as upfront mode selection (sandbox level), not
@@ -143,7 +143,7 @@ SDK `ApprovalMode` values parse fine at 0.142.5 (plus `granular`, absent from th
 The **latest** docs config-reference omits `on-failure`, suggesting deprecation upstream.
 We only ever pass `never`, so this is drift to watch on re-pin, not a problem.
 
-## Verdict 3: Interrupt surface (for 2.5 `interruptQuery`)
+## Verdict 3: Interrupt surface (for 2.5 `interruptQuery`) (exec transport only)
 
 - The only interrupt primitive is **`TurnOptions.signal?: AbortSignal`**
   (`dist/index.d.ts:167-172`), passed straight to
@@ -363,3 +363,29 @@ conformance), not a scope expansion here — the result remains `false` at 0.154
 The SDK’s `turn.completed.usage.input_tokens` accumulates requests across the thread. It is not the current context size, and subtracting the previous turn’s total is also wrong when a turn makes multiple inference requests. Codex’s own rollout record supplies the measurement: `token_count.info.last_token_usage.total_tokens` and `model_context_window`. The [pinned Codex source](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/tui/src/token_usage.rs) defines these semantics. DorkOS retains its standard tokens/window percentage; Codex TUI applies an additional display baseline.
 
 The runtime reads only the exact UUIDv7 thread’s bounded rollout tail, with directory-entry, byte and time limits and current-turn freshness checks. Live files take precedence over the archive. Missing or unfamiliar metadata leaves the last valid context reading alone; cumulative SDK input never fills the gap. Output and cache totals retain their SDK meanings. The measurement is persisted through the ordinary status event, so it survives reload without another filesystem read. Model catalog enrichment is separate: it uses fresh, same-version Codex-owned effective limits and can never invent an available model.
+
+## App-server transport — spike verdicts, 2026-10-05 at codex-cli 0.154.0 (DOR-2719, ADR 261005-113107)
+
+Verdicts 1 and 3 above describe the **exec** transport only. Behind `runtimes.codex.transport`
+DorkOS can now run Codex on one long-lived `codex app-server` per Codex home
+(`transport/app-server-transport.ts`). The spikes that decided its design are in
+`research/20261005_codex-app-server-spikes.md`; the verdicts DorkOS builds on:
+
+| Question                                               | Verdict                                                                                                                  | Where DorkOS relies on it                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Can a loaded thread's config change?                   | **No, silently.** `thread/resume` on a loaded thread succeeds and ignores the new `config`; only a cold load applies it. | `app-server/thread-loader.ts` fingerprints each load and marks the process stale instead of resending.                                                                                                                                                                                                                                                                                           |
+| Does `turn/start` take `config`?                       | **No.** Unknown params are dropped, never rejected.                                                                      | Strict outbound zod schemas + `protocol-schemas.test.ts` against the committed snapshot.                                                                                                                                                                                                                                                                                                         |
+| Per-thread MCP server with a literal header?           | Yes; merges with `config.toml`'s servers.                                                                                | The `dorkos` and connector servers carry a **thread key**, resolved by the listener to the open turn's binding only.                                                                                                                                                                                                                                                                             |
+| Per-thread provider with a literal bearer?             | Yes, fixed for the loaded life.                                                                                          | Credits threads point at the loopback relay with a per-process relay key.                                                                                                                                                                                                                                                                                                                        |
+| Per-thread environment for the agent's commands?       | Yes (`shell_environment_policy.set`).                                                                                    | The identity token rides it. **Recorded** (`app-server.binary.test.ts`): a stdio MCP server Codex launches does NOT see it — on exec it inherited the process environment. Spec `agent-trust` §3.1 only promises it to the agent's own `dorkos` commands.                                                                                                                                        |
+| Does a writable thread write trust into `config.toml`? | **Yes, on both transports**, and then loads the project's `.codex/config.toml`.                                          | An in-memory `projects.<realpath cwd>.trust_level` in every load stops the write. Person's home: their own verdict, else `trusted` for writable modes; credits home: always `untrusted`. **Exec still writes trust** (into the credits home too, so ADR 261002-221210's "reads no project config" is false on exec after the first writable credits turn in a folder); that goes away with exec. |
+| One process, many threads?                             | Yes; MCP servers start per thread.                                                                                       | One process per (binary, `CODEX_HOME`, env fingerprint): in practice the person's home and the credits home.                                                                                                                                                                                                                                                                                     |
+| `initialize` with `experimentalApi`?                   | Works.                                                                                                                   | Always opted in; the snapshot pins that surface.                                                                                                                                                                                                                                                                                                                                                 |
+| `turn/start` on a busy thread?                         | **Steers into it** and answers the existing turn id.                                                                     | The transport keeps its own open-turn map and refuses a second turn locally.                                                                                                                                                                                                                                                                                                                     |
+
+P1 posture (spec phase P1): `approvalPolicy: 'never'` with exec's sandbox mapping, every server
+request refused (nothing is ever accepted), `supportsPersistentSession: true` the only added
+capability, and `auto` still resolves to exec. Stop on app-server answers `acked` when Codex
+winds the turn down within 3 s and `unconfirmed` when it does not — never a killed process,
+which would end every other Codex chat in that home. The mode table with real approvals arrives
+in P2.

@@ -359,6 +359,12 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   private readonly runningTasks = new AbortRegistry();
   /** The agent turns this adapter is executing, so a cancel can reach them. */
   private readonly runningTurns = new AbortRegistry();
+  /**
+   * Who is still listening for an agent's later turns, by conversation scope,
+   * so the next message to that conversation ends the earlier follow, and a
+   * stopping adapter ends them all (DOR-2717).
+   */
+  private readonly lateFollowers = new Map<string, () => void>();
   private status: AdapterStatus = {
     state: 'disconnected',
     messageCount: { inbound: 0, outbound: 0 },
@@ -475,6 +481,10 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // is answered with the truth instead of aborting a stranger's run.
     this.runningTasks.clear();
     this.runningTurns.clear();
+    // A stopped adapter follows nothing more. Each follow ends by telling its
+    // caller, once, that no later report is coming.
+    for (const stopFollowing of [...this.lateFollowers.values()]) stopFollowing();
+    this.lateFollowers.clear();
     // A hold is a promise that a turn will run, and this adapter is about to
     // stop being able to keep it. Every waiter settles now, as a failed
     // delivery, so an ADAPTER restart tells the chats that were waiting. On a
@@ -863,6 +873,9 @@ export class ClaudeCodeAdapter implements RelayAdapter {
               : {}),
             turnController,
             inboundBudgets: this.deps.inboundBudgets,
+            ...(this.deps.lateTurns
+              ? { lateTurns: this.deps.lateTurns, lateFollowers: this.lateFollowers }
+              : {}),
             logger: this.deps.logger,
           },
           this.relay
