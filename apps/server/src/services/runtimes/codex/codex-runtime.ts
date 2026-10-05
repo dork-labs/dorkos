@@ -301,7 +301,25 @@ export class CodexRuntime implements AgentRuntime {
       // terminal), so there is never an open turn left to settle.
       this.settleOpenTurn = async () => false;
     }
+    // Present only where the transport can take a message mid-turn: on exec
+    // it stays absent (C1: "absent or refused as unsupported").
+    if (this.transport.deliverIntoTurn) {
+      const transport = this.transport;
+      this.deliverIntoTurn = (sessionId, content, opts) =>
+        transport.deliverIntoTurn!(sessionId, content, opts);
+    }
   }
+
+  /**
+   * Deliver a message into the session's open turn (a steer); present only on
+   * a transport with mid-turn input. Steering is uniform across its sessions,
+   * so there is no `canSteerSession`.
+   */
+  deliverIntoTurn?: (
+    sessionId: string,
+    content: string,
+    opts: DeliverIntoTurnOpts
+  ) => Promise<RuntimeDeliveryResult>;
 
   /** How warm a session's thread is; present only on a persistent transport. */
   getSessionWarmth?: (sessionId: string) => SessionWarmth;

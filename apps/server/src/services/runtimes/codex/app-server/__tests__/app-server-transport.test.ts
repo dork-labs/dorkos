@@ -17,7 +17,12 @@ import {
   PERSON_HOME,
   CREDITS_ENV_HOME,
 } from '../../__tests__/app-server-harness.js';
-import { hangingTurn, parkedTurn, type FakeTurnScript } from '../../__tests__/fake-app-server.js';
+import {
+  hangingTurn,
+  parkedTurn,
+  steerableTurn,
+  type FakeTurnScript,
+} from '../../__tests__/fake-app-server.js';
 import { APP_SERVER_ARGS } from '../process-pool.js';
 import { CODEX_STOPPED_COPY } from '../notification-mapper.js';
 import { THREAD_STARTS_FRESH_NOTICE } from '../thread-loader.js';
@@ -648,5 +653,58 @@ describe('re-review fixes', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(watching).toBe(0);
     expect(h.transport.getSessionWarmth('s1')).toBe('cold');
+  });
+});
+
+describe('steer (spec §11)', () => {
+  it('delivers into the open turn with its id, and no new turn starts', async () => {
+    const h = harness();
+    h.host.home(PERSON_HOME).nextTurn(steerableTurn);
+    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
+    const seen = await until(gen, 'text_delta');
+    await expect(
+      h.transport.deliverIntoTurn('s1', 'use tabs', {
+        mode: 'steer',
+        messageId: 'steer-1',
+        additionalContext: [{ kind: 'staged', text: 'a note' } as never],
+      })
+    ).resolves.toEqual({ delivered: true });
+    const after = await rest(gen);
+    expect(texts([...seen, ...after])).toContain('steered:');
+    expect(dones(after)).toHaveLength(1);
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    const steer = fake.requestsOf('turn/steer')[0]!;
+    // The fake, like the binary, refuses a steer whose expectedTurnId is not
+    // the running turn's, so `delivered: true` above already proves the match.
+    expect(steer).toMatchObject({
+      clientUserMessageId: 'steer-1',
+      expectedTurnId: expect.any(String),
+    });
+    const text = (steer.input as Array<{ text: string }>)[0]!.text;
+    // The person's words come last, untouched.
+    expect(text.endsWith('use tabs')).toBe(true);
+    expect(fake.requestsOf('turn/start')).toHaveLength(1);
+  });
+
+  it('refuses honestly: no open turn, a stage, or a turn Codex says is gone', async () => {
+    const h = harness();
+    await expect(
+      h.transport.deliverIntoTurn('s1', 'x', { mode: 'steer', messageId: 'm' })
+    ).resolves.toEqual({ delivered: false, reason: 'no-open-turn' });
+    h.host.home(PERSON_HOME).nextTurn(parkedTurn);
+    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
+    await until(gen, 'text_delta');
+    await expect(
+      h.transport.deliverIntoTurn('s1', 'x', { mode: 'stage', messageId: 'm' })
+    ).resolves.toEqual({ delivered: false, reason: 'unsupported' });
+    // The turn ends inside Codex between DorkOS's check and the steer.
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    for (const loaded of fake.loaded.values()) loaded.activeTurn!.done = true;
+    await expect(
+      h.transport.deliverIntoTurn('s1', 'x', { mode: 'steer', messageId: 'm' })
+    ).resolves.toEqual({ delivered: false, reason: 'no-open-turn' });
+    for (const loaded of fake.loaded.values()) loaded.activeTurn!.done = false;
+    await h.transport.interrupt('s1');
+    await rest(gen);
   });
 });

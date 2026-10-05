@@ -233,5 +233,8 @@ export const CODEX_APP_SERVER_CAPABILITIES: Partial<RuntimeCapabilities> = {
   supportsPersistentSession: true,
   supportsToolApproval: true,
   supportsQuestionPrompt: true,
+  // `turn/steer` into the open turn; uniform across sessions, so no
+  // `canSteerSession`. Staging (`thread/inject_items`) is a follow-up.
+  supportsSteer: true,
   permissionModes: CODEX_APP_SERVER_PERMISSION_MODES,
 };

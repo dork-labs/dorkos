@@ -22,7 +22,11 @@
  * @module services/runtimes/codex/transport/app-server-transport
  */
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
-import type { SessionWarmth } from '@dorkos/shared/agent-runtime';
+import type {
+  DeliverIntoTurnOpts,
+  RuntimeDeliveryResult,
+  SessionWarmth,
+} from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../../lib/logger.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
@@ -33,7 +37,7 @@ import {
 } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome, resolveCodexHome } from '../codex-home.js';
 import { codexCreditsAppServerEnv, ensureCreditsCodexHome } from '../credits-launch.js';
-import { EFFORT_TO_REASONING } from '../turn-input.js';
+import { buildSteerText, EFFORT_TO_REASONING } from '../turn-input.js';
 import {
   CodexAppServerPool,
   CodexCrashLoopError,
@@ -471,6 +475,64 @@ export class AppServerCodexTransport implements CodexTransport {
   getSessionWarmth(sessionId: string): SessionWarmth {
     if (this.openBySession.has(sessionId)) return 'running';
     return this.loader.holdsSession(sessionId) ? 'warm' : 'cold';
+  }
+
+  /**
+   * Deliver a message into the session's open turn (spec §11): `turn/steer`
+   * guarded by the open turn's id, so a steer never lands in a turn other
+   * than the one the person saw running. Ordinary refusals are receipts,
+   * never throws: no open turn (or Codex says the turn ended, moved on, or
+   * cannot be steered) is `no-open-turn`; the process gone is
+   * `stream-closed`; a stage is `unsupported` (`thread/inject_items` is a
+   * follow-up). The steered message's events arrive on the open turn's own
+   * stream.
+   *
+   * @param sessionId - The session.
+   * @param content - The person's words, pristine.
+   * @param opts - Mode, correlation id and context bag.
+   */
+  async deliverIntoTurn(
+    sessionId: string,
+    content: string,
+    opts: DeliverIntoTurnOpts
+  ): Promise<RuntimeDeliveryResult> {
+    if (opts.mode !== 'steer') return { delivered: false, reason: 'unsupported' };
+    const turn = this.openBySession.get(sessionId);
+    if (!turn) return { delivered: false, reason: 'no-open-turn' };
+    // A steer right after a send can beat `turn/start`'s answer: wait (bounded)
+    // for the turn to have an id rather than refuse a turn that is opening.
+    const deadline = Date.now() + this.stopAckMs;
+    while (turn.turnId === undefined && Date.now() < deadline) {
+      if (this.openBySession.get(sessionId) !== turn) break;
+      await Promise.race([turn.completed, sleep(10)]);
+    }
+    const turnId = turn.turnId;
+    if (turnId === undefined || turn.abandoned || turn.sawTerminal) {
+      return { delivered: false, reason: 'no-open-turn' };
+    }
+    try {
+      await turn.process.client.request('turn/steer', {
+        threadId: turn.threadId,
+        expectedTurnId: turnId,
+        input: [
+          {
+            type: 'text',
+            text: buildSteerText(content, opts.additionalContext),
+            text_elements: [],
+          },
+        ],
+        clientUserMessageId: opts.messageId,
+      });
+      return { delivered: true };
+    } catch (err) {
+      if (isCodexRpcError(err, 'no-active-turn', 'turn-mismatch', 'not-steerable')) {
+        return { delivered: false, reason: 'no-open-turn' };
+      }
+      if (err instanceof CodexProcessExitedError) {
+        return { delivered: false, reason: 'stream-closed' };
+      }
+      throw err;
+    }
   }
 
   /**

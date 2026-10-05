@@ -161,6 +161,35 @@ export const approvalTurn: FakeTurnScript = async (ctx) => {
   ctx.complete('completed');
 };
 
+/**
+ * A turn that streams, then waits until a steer arrives (or a stop), and
+ * answers what it was steered with: the long turn a steer is proven against.
+ */
+export const steerableTurn: FakeTurnScript = (ctx) => answerSteer(ctx, false);
+
+/**
+ * {@link steerableTurn}, but the turn stays open after answering the steer
+ * until it is stopped: a turn a test can read mid-flight after steering.
+ */
+export const heldSteerableTurn: FakeTurnScript = (ctx) => answerSteer(ctx, true);
+
+async function answerSteer(ctx: FakeTurnContext, holdAfter: boolean): Promise<void> {
+  ctx.emit('item/agentMessage/delta', { itemId: 'msg-steer', delta: 'working' });
+  if (ctx.turn.steered.length === 0) {
+    await Promise.race([
+      new Promise<void>((resolve) => ((ctx.turn as { onSteer?: () => void }).onSteer = resolve)),
+      ctx.turn.interrupted,
+    ]);
+  }
+  if (ctx.turn.steered.length === 0) return ctx.complete('interrupted');
+  ctx.agentMessage(`steered: ${ctx.turn.steered.join(' | ')}`);
+  if (holdAfter) {
+    await ctx.turn.interrupted;
+    return ctx.complete('interrupted');
+  }
+  ctx.complete('completed');
+}
+
 /** A turn that runs and never acknowledges an interrupt (C11's hang). */
 export const hangingTurn: FakeTurnScript = async (ctx) => {
   ctx.emit('item/agentMessage/delta', { itemId: 'msg-hang', delta: 'working' });
@@ -378,6 +407,8 @@ export class FakeAppServer extends EventEmitter {
         return this.turnStart(id, params);
       case 'turn/interrupt':
         return this.turnInterrupt(id, params);
+      case 'turn/steer':
+        return this.turnSteer(id, params);
       case 'config/read':
         return this.reply(id, {
           config: { projects: this.home.projects },
@@ -512,6 +543,35 @@ export class FakeAppServer extends EventEmitter {
     }
     this.reply(id, {});
     (turn as { interrupt?: () => void }).interrupt?.();
+  }
+
+  private turnSteer(id: number | string, params: Record<string, unknown>): void {
+    const turn = this.loaded.get(params.threadId as string)?.activeTurn;
+    // The binary's own words (verified on 0.154).
+    if (!turn || turn.done) return this.fail(id, 'no active turn to steer');
+    if (turn.id !== params.expectedTurnId) {
+      return this.fail(
+        id,
+        `expected active turn id \`${String(params.expectedTurnId)}\` but found \`${turn.id}\``
+      );
+    }
+    const text = ((params.input as Array<{ text?: string }> | undefined) ?? [])
+      .map((input) => input.text ?? '')
+      .join('');
+    turn.steered.push(text);
+    this.reply(id, { turnId: turn.id });
+    // Like the binary: the steered message lands in the open turn as a user
+    // message carrying the client's id, and no new turn starts.
+    const item = {
+      type: 'userMessage',
+      id: `user-${randomUUID().slice(0, 8)}`,
+      clientId: params.clientUserMessageId ?? null,
+      content: [{ type: 'text', text, text_elements: [] }],
+    };
+    for (const method of ['item/started', 'item/completed']) {
+      this.send({ method, params: { threadId: turn.threadId, turnId: turn.id, item } });
+    }
+    (turn as { onSteer?: () => void }).onSteer?.();
   }
 
   private contextFor(turn: FakeTurn, params: Record<string, unknown>): FakeTurnContext {

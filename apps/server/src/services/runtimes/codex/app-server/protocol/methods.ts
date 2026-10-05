@@ -20,7 +20,7 @@
  */
 export const PINNED_CODEX_APP_SERVER_VERSION = '0.154.0';
 
-/** Client → server requests DorkOS sends (P1). */
+/** Client → server requests DorkOS sends. */
 export const CLIENT_REQUEST_METHODS = [
   'initialize',
   'model/list',
@@ -30,6 +30,7 @@ export const CLIENT_REQUEST_METHODS = [
   'thread/resume',
   'turn/start',
   'turn/interrupt',
+  'turn/steer',
   'thread/backgroundTerminals/list',
   'thread/fork',
   'thread/unsubscribe',
@@ -284,6 +285,14 @@ export interface TurnInterruptParams {
   turnId: string;
 }
 
+/** `turn/steer` params: input for the open turn, guarded by its id. */
+export interface TurnSteerParams {
+  threadId: string;
+  expectedTurnId: string;
+  input: TextUserInput[];
+  clientUserMessageId?: string;
+}
+
 /** `model/list` params. */
 export interface ModelListParams {
   cursor: string | null;
@@ -311,6 +320,7 @@ export interface ClientMethodMap {
   'thread/resume': { params: ThreadResumeParams; result: ThreadLoadResult };
   'turn/start': { params: TurnStartParams; result: TurnStartResult };
   'turn/interrupt': { params: TurnInterruptParams; result: Record<string, never> };
+  'turn/steer': { params: TurnSteerParams; result: { turnId: string } };
   'thread/backgroundTerminals/list': {
     params: { threadId: string };
     result: { data: unknown[]; nextCursor?: string | null };
