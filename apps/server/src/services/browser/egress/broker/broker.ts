@@ -25,7 +25,11 @@ export function createPrivateBroker(options: {
   issuer.check(run);
   if (options.policy.revision !== issuer.snapshot(run).policyRevision)
     throw new BrokerError('AUTHORITY_REFUSED');
-  if (transport.scope !== 'fixture-only') throw new BrokerError('UNAVAILABLE');
+  if (
+    transport.scope !== 'fixture-only' ||
+    (transport.intake !== undefined && transport.intake !== 'listener-owned')
+  )
+    throw new BrokerError('UNAVAILABLE');
   const credential = brokerCredential();
   const closeLocal = () => intake.closeLocal();
   let local = brokerLocalGrants(issuer, run, policyPort.policy, closeLocal);
