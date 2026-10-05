@@ -10,6 +10,7 @@
 import type {
   ConnectorRuntime,
   ConnectorRuntimePrincipalPort,
+  ConnectorThreadKeyPort,
 } from '../connectors/runtime-principal-port.js';
 import type { ConnectorTurnLeaseSupervisorFactory } from './connectors/connector-turn-lease-supervisor.js';
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../connectors/runtime-capability-scope.js';
@@ -61,6 +62,12 @@ export interface ConnectorAccessSnapshot {
 export interface ConnectorRuntimeTools {
   /** Server-owned turn binding lifecycle. */
   readonly principals: ConnectorRuntimePrincipalPort;
+  /**
+   * Thread keys for a runtime that keeps a thread loaded across turns (Codex
+   * on app-server, ADR 261005-113107). Absent, such a runtime injects no
+   * listener-backed tools rather than putting a turn bearer in fixed config.
+   */
+  readonly threadKeys?: ConnectorThreadKeyPort;
   /** URL of the independently authenticated loopback MCP listener. */
   readonly listenerUrl: string;
   /** Loopback URL exposing the DorkOS capabilities declared for agent sessions. */

@@ -12,9 +12,19 @@ import path from 'node:path';
 import { Codex } from '@openai/codex-sdk';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
 import { buildCodexOptions } from '../codex-options.js';
+import { APP_SERVER_ARGS } from '../app-server/process-pool.js';
+import { makeAppServerHarness, PERSON_HOME } from './app-server-harness.js';
 
-afterEach(() => {
+const harnesses: Array<ReturnType<typeof makeAppServerHarness>> = [];
+function harness(): ReturnType<typeof makeAppServerHarness> {
+  const h = makeAppServerHarness();
+  harnesses.push(h);
+  return h;
+}
+
+afterEach(async () => {
   vi.restoreAllMocks();
+  await Promise.all(harnesses.splice(0).map((h) => h.pool.shutdown()));
 });
 
 describe('Codex prevent_idle_sleep', () => {
@@ -59,4 +69,40 @@ describe('Codex prevent_idle_sleep', () => {
       }
     }
   );
+});
+
+describe('Codex prevent_idle_sleep on app-server', () => {
+  // The app-server argv is fixed, so the flag rides the thread's load config
+  // (stdin), never the command line.
+  const loadConfig = (h: ReturnType<typeof makeAppServerHarness>) =>
+    h.host.home(PERSON_HOME).processes[0]!.requestsOf('thread/start')[0]!.config as Record<
+      string,
+      unknown
+    >;
+
+  it('loads the thread with features.prevent_idle_sleep while keep-awake applies', async () => {
+    vi.spyOn(keepAwakeService, 'preventsIdleSleep').mockReturnValue(true);
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1' }));
+    expect(loadConfig(h).features).toEqual({ prevent_idle_sleep: true });
+    expect(h.host.spawns[0]!.args).toEqual([...APP_SERVER_ARGS]);
+  });
+
+  it('leaves it out while keep-awake does not apply', async () => {
+    vi.spyOn(keepAwakeService, 'preventsIdleSleep').mockReturnValue(false);
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1' }));
+    expect(loadConfig(h)).not.toHaveProperty('features');
+  });
+
+  it('marks the process stale when the setting changes under a loaded thread', async () => {
+    const applies = vi.spyOn(keepAwakeService, 'preventsIdleSleep').mockReturnValue(false);
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1' }));
+    const threadId = h.bindings[0]!.threadId;
+    expect(h.pool.list()[0]!.stale).toBe(false);
+    applies.mockReturnValue(true);
+    await h.run(h.request({ sessionId: 's1', boundThreadId: threadId }));
+    expect(h.pool.list()[0]!.stale).toBe(true);
+  });
 });

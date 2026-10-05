@@ -10,7 +10,7 @@ import {
   type CommunityWireErasure,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../../auth.js';
-import { requireMember, transaction } from '../../data.js';
+import { refuseIfClearedSinceStart, requireMember, transaction } from '../../data.js';
 import { ERASURE_WINDOW_HOURS } from '../../erasure/erasure.js';
 import { ERASURE_WAITS_ON_TAKEDOWN_SQL } from '../../erasure/guards.js';
 import { ApiError, json, readJson } from '../../http.js';
@@ -215,6 +215,10 @@ export function registerAccountErasureRoutes(
       // Lock the account, then its memberships: an owner claim waits on the account row and an
       // ownership transfer on the member row, so neither can race this request's checks.
       const account = await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR UPDATE', [userId]);
+      // A session read before a clean-out of this account (a trusted takeover, or recovery)
+      // committed must not schedule its erasure. Checked under the account lock just taken,
+      // before any member row is locked: the clean-out's own order.
+      await refuseIfClearedSinceStart(client, userId);
       if (!account.rowCount) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
       const memberships = await client.query<{
         id: string;

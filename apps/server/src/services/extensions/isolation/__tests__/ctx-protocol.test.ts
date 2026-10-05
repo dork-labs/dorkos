@@ -231,7 +231,7 @@ describe('lookup', () => {
     expect(lookup('agent.subscribe')).toEqual({ kind: 'subscribe', gate: 'agents' });
     expect(lookup('accounts.registerAdvisor')).toEqual({ kind: 'reverse', boundMs: 2_000 });
     expect(lookup('emit')).toEqual({ kind: 'emit' });
-    expect(lookup('tools.handle')?.kind).toBe('refused');
+    expect(lookup('tools.handle')).toEqual({ kind: 'reverse', boundMs: 0 });
   });
 
   // Purpose: nothing outside the table's own keys resolves: prototype keys,

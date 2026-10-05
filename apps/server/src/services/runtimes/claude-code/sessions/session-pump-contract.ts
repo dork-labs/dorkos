@@ -102,6 +102,8 @@ export type QuietnessBlocker =
   | 'background-work'
   /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
   | 'delivery-owed'
+  /** A session timer the agent set (CronCreate, ScheduleWakeup, /loop) has not fired yet (DOR-2717). */
+  | 'timer-pending'
   /** Somebody was asked a question and has not answered it. */
   | 'waiting-on-person';
 
@@ -351,6 +353,12 @@ export interface SessionPumpOptions {
    * its subprocess away in the middle of what the agent is saying.
    */
   hasRuntimeTurnOpen?: () => boolean;
+  /**
+   * True while a session timer the agent set has not fired yet (DOR-2717). The
+   * CLI reports pending timers only to its Stop hook, so the dispatch layer that
+   * owns the session answers this; the pump cannot see them on the stream.
+   */
+  hasPendingTimer?: () => boolean;
   /**
    * Claims a slot under the warm ceiling before a process is booted; throws
    * {@link PumpRefusedError} with `warm-ceiling` when there is none. The

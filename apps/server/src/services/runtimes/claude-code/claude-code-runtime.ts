@@ -1419,7 +1419,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     if (session?.liveHelperCount === undefined) return false;
     return (
       session.liveHelperCount() > 0 &&
-      Date.now() - session.lastActivity < SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
+      // Awake time, so a laptop asleep mid-turn does not end the wait on waking (DOR-2717).
+      performance.now() - (session.turnStartedAwake ?? performance.now()) <
+        SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
     );
   }
 

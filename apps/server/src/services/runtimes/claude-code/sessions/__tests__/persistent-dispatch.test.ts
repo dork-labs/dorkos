@@ -462,10 +462,15 @@ describe('warmth is answered honestly', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       runtime.checkSessionHealth();
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
 
     const events = await hanging;
@@ -496,7 +501,7 @@ describe('a helper still working is reported on both paths', () => {
     expect(runtime.isHelperWorking(sessionId)).toBe(false);
   });
 
-  it('answers from the held process on the warm path, for helpers and nothing else', async () => {
+  it('answers from the held process on the warm path, for every task type', async () => {
     optIn.persistentSession = true;
     const sessionId = nextSession();
     await turn(sessionId);
@@ -505,9 +510,11 @@ describe('a helper still working is reported on both paths', () => {
     process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
 
-    // A Monitor holds the process, but it is not the turn's own work going
-    // quiet, so it does not excuse a silent turn.
+    // A Monitor is as silent between its steps as a helper (DOR-2717).
     process.reportTasks([{ task_id: 'monitor-1', task_type: 'monitor' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    process.reportTasks([]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
   });
 });
@@ -1424,6 +1431,10 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     listed = [...listed, 'ext_mail_app__send'];
 
     vi.useFakeTimers({ toFake: ['Date'] });
+    // The ceiling is measured on the awake clock (DOR-2717).
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
     try {
       vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
       vi.mocked(logger.warn).mockClear();
@@ -1442,6 +1453,7 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
       expect(cli.launches).toBe(1);
       expect(staleWarnings()).toHaveLength(1);
     } finally {
+      awake.mockRestore();
       vi.useRealTimers();
     }
   });
@@ -2740,14 +2752,50 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       await runtime.reapSession(sessionId);
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
 
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
     expect(records()).toEqual([]);
+  });
+
+  // DOR-2717: the dispatch layer is what tells the pump a timer is pending.
+  it('holds a process for a pending session timer, and forgets the timer with the process', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const session = (
+      runtime as unknown as {
+        sessionStore: { findSession: (id: string) => { pendingTimers?: number } };
+      }
+    ).sessionStore.findSession(sessionId);
+    // What the Stop hook records when the CLI reports one timer pending.
+    session.pendingTimers = 1;
+
+    await runtime.reapSession(sessionId);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
+    try {
+      await runtime.reapSession(sessionId);
+    } finally {
+      clock.mockRestore();
+      awake.mockRestore();
+    }
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(session.pendingTimers).toBeUndefined();
   });
 
   it('is cleared when the process crashes while holding work', async () => {

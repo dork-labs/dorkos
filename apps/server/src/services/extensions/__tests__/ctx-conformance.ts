@@ -29,7 +29,6 @@ import { AgentSendError } from '@dorkos/extension-api/server';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
-import { TOOLS_REFUSAL } from '../isolation/ctx-protocol.js';
 import { isolatedFilesDir, isolatedRunDir } from '../isolation/grants.js';
 import { AGENTS_REFUSAL } from '../isolation/ctx-dispatcher.js';
 import { setAgentSendService, type AgentSendService } from '../agent-send/agent-send.js';
@@ -471,15 +470,18 @@ export function describeCtxConformance(label: string, runtime: () => CtxRuntime)
       expect(broadcasts(t, 'tick')).toHaveLength(ticks);
     }, 20_000);
 
-    // Purpose: tools.handle is refused for an isolated extension until tools
-    // cross the boundary; in-process it binds against the manifest (this
-    // fixture declares none, so it is refused there for that reason).
-    it('refuses tools.handle (isolated: not yet; in-process: undeclared)', async () => {
+    // Purpose: ctx.tools.handle closes when register() finishes, in both
+    // runtimes, with the same words (the binding rules are one module; the
+    // tools suite, extension-isolated-tools.integration.test.ts, covers a
+    // real binding end to end).
+    it('closes tools.handle once register() finished', async () => {
       const t = await start();
       const result = await t.probe<Attempt>('toolsHandle');
       expect(result.ok).toBe(false);
-      if (t.runtime === 'isolated') expect(result.error?.message).toBe(TOOLS_REFUSAL);
-      else expect(result.error?.message).toMatch(/declares no tool/);
+      expect(result.error?.message).toBe(
+        'ctx.tools.handle("anything") was called after register() finished. ' +
+          'Bind every tool while register() runs.'
+      );
     });
   });
 }

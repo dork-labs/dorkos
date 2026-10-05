@@ -111,6 +111,12 @@ interface PendingApproval {
   suggestions?: PermissionUpdate[];
   /** Server epoch ms when this interaction began (for recovery countdown math). */
   startedAt: number;
+  /**
+   * When this interaction began on the awake clock (`performance.now()`), which
+   * stops while the machine sleeps. What the park ceiling is measured from, so
+   * a night asleep does not count as the person never answering (DOR-2717).
+   */
+  startedAwake?: number;
   /** Serializable re-emit payload for the recovery path. */
   snapshot: ApprovalSnapshot;
 }
@@ -123,6 +129,12 @@ interface PendingQuestion {
   timeout: ReturnType<typeof setTimeout>;
   /** Server epoch ms when this interaction began (for recovery countdown math). */
   startedAt: number;
+  /**
+   * When this interaction began on the awake clock (`performance.now()`), which
+   * stops while the machine sleeps. What the park ceiling is measured from, so
+   * a night asleep does not count as the person never answering (DOR-2717).
+   */
+  startedAwake?: number;
   /** Serializable re-emit payload for the recovery path. */
   snapshot: QuestionSnapshot;
 }
@@ -135,6 +147,12 @@ interface PendingElicitation {
   timeout: ReturnType<typeof setTimeout>;
   /** Server epoch ms when this interaction began (for recovery countdown math). */
   startedAt: number;
+  /**
+   * When this interaction began on the awake clock (`performance.now()`), which
+   * stops while the machine sleeps. What the park ceiling is measured from, so
+   * a night asleep does not count as the person never answering (DOR-2717).
+   */
+  startedAwake?: number;
   /** Serializable re-emit payload for the recovery path. */
   snapshot: ElicitationSnapshot;
 }

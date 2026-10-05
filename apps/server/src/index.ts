@@ -195,6 +195,9 @@ import { ConnectorAccessQueryService } from './services/connectors/execution/acc
 import { ConnectorProgramPrincipalService } from './services/connectors/principal/program-principal-service.js';
 import type { ConnectorOwnerAuthority } from './services/connectors/principal/server-principal.js';
 import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
+import { connectorThreadKeys } from './services/connectors/principal/thread-keys.js';
+import { codexAppServerPool } from './services/runtimes/codex/app-server/process-pool.js';
+import { resolveCodexTransport } from './services/runtimes/codex/transport/index.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
 import {
   ConnectorAgentRequestService,
@@ -1778,6 +1781,18 @@ async function start() {
     // sessionListBroadcaster.start() below — runtimes registered after
     // start() are not fanned into the global session-list stream.
     const codexConfig = configManager.get('runtimes').codex;
+    const openCodeConfig = configManager.get('runtimes').opencode;
+    // The loopback relay a backend's credits provider is pointed at, so the
+    // credits token never enters that backend's process (ADR 261002-221210,
+    // amended by 261005-113107: Codex on app-server goes through it too).
+    // Started where Codex or OpenCode runs; if it cannot start, a credits turn
+    // on either can pay for nothing and refuses, never falls back.
+    if (codexConfig.enabled || openCodeConfig.enabled) {
+      creditsRelay = await startCreditsRelay().catch((err: unknown) => {
+        logger.warn('[Cloud] Could not start the credits relay', logError(err));
+        return null;
+      });
+    }
     if (codexConfig.enabled) {
       // Construction no longer depends on a resolvable `codex` binary: the
       // runtime resolves one lazily, per turn, so a machine with no Codex still
@@ -1798,6 +1813,10 @@ async function start() {
             // the composition root owns the deployment decision, and the adapter
             // reports what it was actually given (ADR 260901-135657).
             attachments: sessionAttachmentStore,
+            // How turns reach Codex (ADR 261005-113107). Read once: a change
+            // takes effect at the next start, because clients cache capabilities.
+            transport: resolveCodexTransport(codexConfig.transport),
+            creditsRelay: () => creditsRelay ?? undefined,
           });
           // Durable per-session settings hydrate/write-through (ADR-0260), same
           // port the Claude adapter uses.
@@ -1823,16 +1842,7 @@ async function start() {
     // Gated on `runtimes.opencode.enabled` config. Must register BEFORE
     // sessionListBroadcaster.start() below, same as Codex. The sidecar spawns
     // lazily on first use; its shutdown is wired into shutdownServices().
-    const openCodeConfig = configManager.get('runtimes').opencode;
     if (openCodeConfig.enabled) {
-      // The loopback relay OpenCode's credits provider is pointed at, so the
-      // credits token never enters OpenCode's process (ADR 261002-221210).
-      // Started only where OpenCode runs; if it cannot start, OpenCode on
-      // credits can pay for nothing and refuses, never falls back.
-      creditsRelay = await startCreditsRelay().catch((err: unknown) => {
-        logger.warn('[Cloud] Could not start the credits relay', logError(err));
-        return null;
-      });
       // Same construct-can-throw exposure as Codex above — the sidecar's
       // binary discovery can throw synchronously if it isn't installed.
       // registerOptionalRuntime isolates the failure so it can't take the
@@ -3742,6 +3752,7 @@ async function start() {
           mesh: meshCore,
           owner: connectorOwner,
         }),
+        threadKeys: connectorThreadKeys,
       })
     : undefined;
   if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
@@ -5817,6 +5828,7 @@ async function start() {
     for (const runtime of runtimeRegistry.listRuntimes()) {
       connectorRuntimeConsumer(runtime)?.setConnectorRuntimeTools({
         principals: agentScopedRuntimePrincipals,
+        threadKeys: connectorThreadKeys,
         listenerUrl: connectorRuntimeMcpListener.url,
         agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
         isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
@@ -6424,6 +6436,9 @@ async function shutdownServices() {
   // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
   // window) so shutdown never leaves an orphan. No-op when it never booted.
   await openCodeServerManager.shutdown();
+  // Same for Codex's app-server processes (ADR 261005-113107): end stdin,
+  // then SIGTERM, then SIGKILL, by the PID the pool spawned. No-op on exec.
+  await codexAppServerPool.shutdown();
   await creditsRelay?.close();
   creditsRelay = null;
   // Same for any warm claude-code process: close stdin so it drains, then close

@@ -19,7 +19,7 @@ describe('resolveThinkingOptions', () => {
       expect(result.effort).toBeUndefined();
     });
 
-    it('maps DorkOS "minimal" effort to the SDK\'s "low"', () => {
+    it('RT-MOD-01: maps DorkOS "minimal" effort to the SDK\'s "low"', () => {
       const result = resolveThinkingOptions({ effort: 'minimal', capability });
       expect(result.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(result.effort).toBe('low');

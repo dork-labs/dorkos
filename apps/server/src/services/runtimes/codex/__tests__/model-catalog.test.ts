@@ -144,7 +144,10 @@ describe('queryCodexModels', () => {
       {
         id: 1,
         method: 'initialize',
-        params: { clientInfo: { name: 'dorkos', version: '0.0.0' } },
+        params: {
+          clientInfo: { name: 'dorkos', title: 'DorkOS', version: expect.any(String) },
+          capabilities: null,
+        },
       },
       { method: 'initialized' },
       {

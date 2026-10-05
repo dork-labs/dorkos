@@ -220,6 +220,7 @@ export const CONFIG_DISCLOSURE = {
   'relay.maxAgentTurnsPerAgentPerHour': 'expose',
   'relay.maxAgentTurnsTotalPerHour': 'expose',
 
+  'browser.enabled': 'expose',
   // Whether outside agents may reach the ones here over A2A. A plain boolean:
   // it names no credential and no host, and an agent that learns the gate is
   // shut is no closer to opening it — the write side is where that is decided.
@@ -456,6 +457,9 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.opencode.baseURL': 'expose',
   'runtimes.codex.enabled': 'expose',
   'runtimes.codex.binaryPath': 'expose',
+  // Which way DorkOS runs Codex. Names no credential; an agent that can see it
+  // can say why a Codex chat can or cannot stop to ask.
+  'runtimes.codex.transport': 'expose',
   // A credential reference: `file:` names a plaintext key file, `env:` names the
   // variable, `keychain:` names the entry. Replaced by a presence flag.
   'runtimes.codex.credentialRef': 'withhold',

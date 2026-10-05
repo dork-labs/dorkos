@@ -114,6 +114,7 @@ import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import { browserSettingRefusal } from './config/browser-setting.js';
 import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
@@ -894,6 +895,38 @@ export function seedExtensionsApprovedPermissions(store: {
   const permissions = (ext as { approvedPermissions?: unknown }).approvedPermissions;
   if (permissions && typeof permissions === 'object' && !Array.isArray(permissions)) return;
   store.set('extensions', { ...(ext as Record<string, unknown>), approvedPermissions: {} });
+}
+
+/**
+ * Migration body: seed `runtimes.codex.transport: 'auto'` for configs persisted
+ * before DorkOS could run Codex on `codex app-server` (ADR 261005-113107).
+ *
+ * `auto` is the only honest seed: it means "whatever DorkOS runs by default",
+ * which is exactly what a config that predates the choice was getting. The
+ * value is resolved by the server (`resolveCodexTransport`), never here, so a
+ * later change of default reaches this config without another migration.
+ * Additive and idempotent: writes only when `transport` is not already one of
+ * the known values, and never touches the other `runtimes.codex` members. A
+ * config with no `runtimes.codex` object is skipped (the schema default
+ * supplies it on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedCodexTransport(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const codex = (runtimes as { codex?: unknown }).codex;
+  if (!codex || typeof codex !== 'object' || Array.isArray(codex)) return;
+  const current = (codex as { transport?: unknown }).transport;
+  if (current === 'auto' || current === 'app-server' || current === 'exec') return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    codex: { ...(codex as Record<string, unknown>), transport: 'auto' },
+  });
 }
 
 /**
@@ -4790,6 +4823,35 @@ export const CONFIG_MIGRATIONS = {
     // approval covers (DOR-2686). See `seedExtensionsApprovedPermissions`.
     seedExtensionsApprovedPermissions(store);
   },
+  // New top-level defaults are persisted by conf before migration selection.
+  // This anchor also heals a stored browser section missing its enabled leaf.
+  '0.99.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    const browser = store.get('browser');
+    if (browser !== null && typeof browser === 'object' && !Array.isArray(browser)) {
+      // Ajv may fill the leaf in the getter's copy; persist that copy explicitly.
+      store.set('browser', {
+        ...browser,
+        enabled: (browser as { enabled?: unknown }).enabled === true,
+      });
+    }
+  },
+  // 0.99.0 has merged (the browser leaf above), so 0.100.0 is the next key.
+  // Frozen from merge, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.101.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `runtimes.codex`, beside the fields it preserves.
+  '0.100.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.codex.transport` — how DorkOS runs Codex (ADR 261005-113107).
+    // See `seedCodexTransport`.
+    seedCodexTransport(store);
+  },
 } as const;
 
 /**
@@ -5554,6 +5616,8 @@ export class ConfigManager {
    * @param value - The value to store.
    */
   private write(keyPath: string, value: unknown): void {
+    const browserRefusal = browserSettingRefusal(keyPath, value);
+    if (browserRefusal) throw new Error(browserRefusal);
     const stored = this.store.get(keyPath as keyof UserConfig);
     const { skewed } = repairWidenedLeaves(keyPath, stored, WIDENED_LEAF_POLICY);
     const kept = preserveWidenedLeaves(skewed, keyPath, value);

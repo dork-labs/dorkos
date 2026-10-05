@@ -173,6 +173,26 @@ describe('reap declines while the process is still working', () => {
   });
 });
 
+// DOR-2717. A session timer lives inside the CLI and is no task, so only the
+// Stop hook's report says one is pending. Reaping before it fires loses it.
+describe('a pending session timer holds the process', () => {
+  it('declines to reap while a timer is pending, and counts it as held work', async () => {
+    const harness = await warmPump({ hasPendingTimer: () => true });
+
+    expect(harness.pump.quietness()).toMatchObject({ quiet: false, because: 'timer-pending' });
+    expect(await reapNow(harness.pump)).toBe(false);
+    expect(harness.pump.isHoldingWork()).toBe(true);
+    // A timer alone is reclaimable as a last resort, like a shell.
+    expect(harness.pump.isHoldingOnlyReclaimable()).toBe(true);
+  });
+
+  it('lets the process go once no timer is pending', async () => {
+    const harness = await warmPump({ hasPendingTimer: () => false });
+
+    expect(await reapNow(harness.pump)).toBe(true);
+  });
+});
+
 // DOR-2681. Record eviction asks this, and it is the only thing that protects a
 // turn the AGENT started: nobody dispatched it, so the session has no
 // `activeQuery` for the store's own in-flight rule to see. It used to answer
@@ -211,6 +231,48 @@ describe('isHelperWorking, the question the stall watchdog asks', () => {
 
     vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
     expect(harness.pump.isHelperWorking()).toBe(false);
+  });
+
+  // DOR-2717. A Monitor, a Workflow or a backgrounded MCP task is just as
+  // silent between its steps as a helper, and the watchdog cut them at ten
+  // minutes. Every live task type now excuses a silent turn.
+  it.each(['monitor', 'local_workflow', 'mcp_task'])(
+    'answers yes while a %s task runs',
+    async (type) => {
+      const harness = await warmPump();
+      await runTask(harness, type as BackgroundTaskType);
+      expect(harness.pump.isHelperWorking()).toBe(true);
+    }
+  );
+
+  it('answers no for a background shell alone, so a dev server cannot hide a hung turn', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_bash');
+    expect(harness.pump.isHelperWorking()).toBe(false);
+  });
+});
+
+// DOR-2717. A laptop asleep for the night is not four hours of work: the
+// ceiling is measured in awake time, so waking up does not reap at once.
+describe('the ceiling counts awake time, not time asleep', () => {
+  it('still holds a working process after the wall clock jumps past the ceiling', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_bash');
+
+    // A sleep moves the wall clock and nothing else: no timer ran meanwhile.
+    vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
+
+    expect(harness.pump.isPastCeiling()).toBe(false);
+    expect(await reapNow(harness.pump)).toBe(false);
+  });
+
+  it('reaches the ceiling after that much awake time', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_bash');
+
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+
+    expect(harness.pump.isPastCeiling()).toBe(true);
   });
 });
 

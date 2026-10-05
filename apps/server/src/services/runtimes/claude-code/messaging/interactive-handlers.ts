@@ -766,6 +766,7 @@ export function handleAskUserQuestion(
       type: 'question',
       toolCallId: toolUseId,
       startedAt,
+      startedAwake: performance.now(),
       snapshot: { questions },
       resolve: (answers) => {
         clearInteractionTimer(session, toolUseId);
@@ -872,6 +873,7 @@ export function handleElicitation(
       type: 'elicitation',
       toolCallId: interactionId,
       startedAt,
+      startedAwake: performance.now(),
       snapshot: {
         serverName: request.serverName,
         message: request.message,
@@ -1199,6 +1201,7 @@ export function handleToolApproval(
       toolCallId: toolUseId,
       suggestions: context.suggestions,
       startedAt,
+      startedAwake: performance.now(),
       snapshot: {
         toolName,
         input: JSON.stringify(input),

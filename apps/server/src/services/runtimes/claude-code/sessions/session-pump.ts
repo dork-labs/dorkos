@@ -156,6 +156,7 @@ export class SessionPump {
       isTurnOpen: () => this.currentState === 'running',
       hasRuntimeTurnOpen: () => opts.hasRuntimeTurnOpen?.() === true,
       hasPendingInteraction: () => opts.hasPendingInteraction?.() === true,
+      hasPendingTimer: () => opts.hasPendingTimer?.() === true,
       onGateChange: () => opts.onDispatchGateChange?.(),
       // Only while the process is ours to keep. Once it is being ended (`cold`,
       // `reaped`) or is gone (`crashed`), a frame dropping a task describes
@@ -517,20 +518,19 @@ export class SessionPump {
   /**
    * Has the current busy spell run past the four-hour ceiling (spec
    * `warm-process-lifecycle` D1)? The same bound the reaper honours; a
-   * consumer that only reports the long wait reads it here.
-   *
-   * @param now - Server epoch ms
+   * consumer that only reports the long wait reads it here. Measured in awake
+   * time (DOR-2717).
    */
-  isPastCeiling(now: number): boolean {
-    return this.quiet.isPastCeiling(now);
+  isPastCeiling(): boolean {
+    return this.quiet.isPastCeiling();
   }
 
   /**
-   * Is a background shell the only thing this process is doing (DOR-2065)?
-   * See `ProcessQuiet.isHoldingOnlyShells`.
+   * Are background shells and session timers the only things this process is
+   * holding for (DOR-2065, DOR-2717)? See `ProcessQuiet.isHoldingOnlyReclaimable`.
    */
-  isHoldingOnlyShells(): boolean {
-    return this.quiet.isHoldingOnlyShells();
+  isHoldingOnlyReclaimable(): boolean {
+    return this.quiet.isHoldingOnlyReclaimable();
   }
 
   /**
@@ -601,7 +601,7 @@ export class SessionPump {
     // through this line before (DOR-2064, DOR-2065).
     const quietness = this.quiet.quietness();
     if (!quietness.quiet) {
-      if (!this.quiet.isPastCeiling(Date.now())) {
+      if (!this.quiet.isPastCeiling()) {
         logger.warn('[SessionPump] declined to reap a session that is still working', {
           sessionId: this.sessionId,
           because: quietness.because,
@@ -626,18 +626,18 @@ export class SessionPump {
   }
 
   /**
-   * Give the process back although a background shell is still running in it:
-   * `WARM → REAPED` (DOR-2065).
+   * Give the process back although a background shell or a session timer is
+   * still pending in it: `WARM → REAPED` (DOR-2065, DOR-2717).
    *
    * The warm ceiling's last resort, for when every slot is held and nothing is
-   * quiet. Only a process whose sole work is shells qualifies (see
-   * {@link isHoldingOnlyShells}); one with a helper, a Monitor, an owed
-   * delivery or a person waited on is refused as {@link reap} refuses it.
+   * quiet. Only a process holding for nothing but shells and timers qualifies
+   * (see {@link isHoldingOnlyReclaimable}); one with a helper, a Monitor, an
+   * owed delivery or a person waited on is refused as {@link reap} refuses it.
    *
    * @returns True when the process was closed, false when the pump declined
    */
-  async reapShellsOnly(): Promise<boolean> {
-    if (this.currentState !== 'warm' || !this.quiet.isHoldingOnlyShells()) return false;
+  async reapReclaimable(): Promise<boolean> {
+    if (this.currentState !== 'warm' || !this.quiet.isHoldingOnlyReclaimable()) return false;
     this.setState('reaped');
     await this.drain();
     return true;

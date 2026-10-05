@@ -790,6 +790,12 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
       type: '"ask" | "act" | "autonomy" | null',
       default: 'null',
     },
+    'runtimes.codex.transport': {
+      description:
+        'How DorkOS runs Codex. `auto` follows DorkOS’s default; `exec` is the older one-process-per-reply way. Takes effect after a restart.',
+      type: '"auto" | "app-server" | "exec"',
+      default: '"auto"',
+    },
   }}
 />
 
@@ -1212,3 +1218,20 @@ Use `dorkos config path` to print the path to your config file, and `dorkos conf
     Get up and running with your first session.
   </Card>
 </Cards>
+
+### Shared browser experiment
+
+<TypeTable
+  type={{
+    'browser.enabled': {
+      description:
+        'Shared browser experiment for everyone using this installation. Profiles stay separate. Unavailable until safety checks are complete.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+Settings → Advanced → Experiments lists **Shared browser**, off by default. People can change this in Settings. Agents can read it but cannot change it.
+
+The choice applies to all users of this installation without sharing their profiles. Enabling is currently refused before any settings are written. It does not download a browser or skip safety checks. Browser use and safe stopping are not yet available through this setting.

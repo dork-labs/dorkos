@@ -22,12 +22,24 @@ apps/server/src/core-extensions/
 docs/api/openapi.json
 docs/api/api/
 
+# The Codex app-server protocol snapshot — written by `pnpm
+# codex:protocol-snapshot` from the vendored binary, sorted and deterministic.
+# Same reasoning: a reformat would make the regenerate-and-compare check read a
+# file nobody's generator wrote.
+apps/server/src/services/runtimes/codex/app-server/protocol/schema-snapshot.json
+
 # Drizzle's migration bookkeeping — written by `drizzle-kit generate`, read by
 # drizzle, never by a person. The lefthook pre-commit hook regenerates and
 # `git add`s these AFTER its format step, so every new migration would land an
 # unformatted snapshot and red-light the formatting gate (DOR-485) on a file
 # nobody wrote. Same reasoning as the generated API reference above.
 packages/db/drizzle/meta/
+
+# The runtime capabilities matrix — written by `pnpm docs:runtime-capabilities`
+# from packages/test-utils/src/runtime-capability-matrix.ts. The census compares
+# the committed file to the renderer byte for byte, so Prettier re-padding its
+# tables would make the census fail on a file nobody edited (DOR-2720).
+contributing/runtime-capabilities.md
 
 # pnpm's own lockfile — written by `pnpm install`, read by pnpm and by nothing
 # else. REVIEW.md already lists it under "Do not report" as a generated file,

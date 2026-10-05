@@ -92,6 +92,15 @@ export interface AgentSession {
    */
   launchedAccountRoot?: string;
   /**
+   * How many session timers (CronCreate, ScheduleWakeup, /loop) the CLI said
+   * were pending at its last turn end, read off the Stop hook's
+   * `session_crons` (DOR-2717). A timer lives inside the CLI and is no
+   * background task, so this is the only place it shows; the warm process is
+   * held while it is non-zero so the timer is not killed before it fires.
+   * Undefined until a turn has ended on this process.
+   */
+  pendingTimers?: number;
+  /**
    * True when the last launch this process resolved billed per token: its
    * final environment carried an API key or gateway token (stored, credits, or
    * inherited), or the binary's session-init `apiKeySource` said so, which
@@ -155,12 +164,19 @@ export interface AgentSession {
   /** Active SDK query object — used for mid-stream control (setPermissionMode, setModel) */
   activeQuery?: Query;
   /**
-   * How many helper agents the running resume-path turn has live, read off that
+   * How many background tasks (helpers, Monitors, Workflows, shells…) the
+   * running resume-path turn has live (DOR-2717), read off that
    * turn's own liveness tracker; undefined between turns and on the warm path,
    * whose pump answers instead. What `isHelperWorking` asks on this path
    * (DOR-2681). A getter, not a count, so the answer is never stale.
    */
   liveHelperCount?: () => number;
+  /**
+   * When the running resume-path turn started, on the awake clock
+   * (`performance.now()`), which stops while the machine sleeps. What that
+   * path's background-work ceiling is measured from (DOR-2717).
+   */
+  turnStartedAwake?: number;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */
   lastQuery?: Query;
   /**
