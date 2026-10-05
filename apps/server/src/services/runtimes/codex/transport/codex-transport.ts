@@ -27,6 +27,7 @@ import type { DorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../../connector-tools.js';
 import type { CodexManagedMcpServers } from '../mcp-server-config.js';
 import type { CodexEventContext } from '../event-mapper.js';
+import type { BackgroundWake } from '../app-server/background-work.js';
 
 /** Which Codex home pays for a turn. */
 export type CodexLaunch = { home: 'person' } | { home: 'credits'; credits: CreditsLaunch };
@@ -137,6 +138,24 @@ export interface CodexTransport {
   getSessionWarmth?(sessionId: string): SessionWarmth;
   /** Give back the session's warm thread (persistent transports only). */
   reapSession?(sessionId: string): Promise<void>;
+  /**
+   * Stop one background task. Absent on a transport whose work ends with its
+   * turn (exec).
+   */
+  stopTask?(sessionId: string, taskId: string): Promise<InterruptReceipt>;
+  /**
+   * Install where wakes go: background work that finished after its turn
+   * (spec §12). Absent on a transport whose work ends with its turn.
+   */
+  onWake?(listener: ((wake: BackgroundWake) => boolean) | undefined): void;
+  /** Whether a wake is on its way for the session (bounded). */
+  isSegmentPending?(sessionId: string): boolean;
+  /** Be told when a pending wake was dropped without opening a turn. */
+  onDispatchGateChange?(listener: (sessionId: string) => void): () => void;
+  /** Whether the session still holds work that can wake it after its turn. */
+  holdsBackgroundWork?(sessionId: string): boolean;
+  /** Whether the open turn has helper agents working (inside the ceiling). */
+  isHelperWorking?(sessionId: string): boolean;
   /** Stop the credits-home process, if this transport keeps one (an unlink). */
   closeCreditsProcess?(): Promise<void>;
   /** Stop everything this transport started. */

@@ -5,6 +5,7 @@ import { CodexAppServerPool } from '../process-pool.js';
 import { approvalPolicyFor } from '../turn-parts.js';
 import {
   CodexThreadLoader,
+  THREAD_ARCHIVED_NOTICE,
   THREAD_STARTS_FRESH_NOTICE,
   buildLoadOverrides,
   trustLevelFor,
@@ -121,22 +122,53 @@ describe('the load table (§6)', () => {
     expect(fake.loaded.get('t1')!.loadParams.sandbox).toBe('read-only');
   });
 
-  it('starts fresh and replaces the binding when the bound thread has no rollout', async () => {
+  // A binding is written at the thread's first `turn/started`, so a bound
+  // thread with no rollout is one Codex lost, never one that had not started:
+  // it starts fresh, and the person is told (spec §6, §13).
+  it('starts fresh, says so, and replaces the binding when the bound thread has no rollout', async () => {
     const { host, loader, input } = await setup();
     host.home(HOME).threads.set('t-empty', { id: 't-empty', hasRollout: false });
     const loaded = await loader.ensureLoaded(input({ boundThreadId: 't-empty' }));
-    expect(loaded).toMatchObject({ needsBinding: true, replaces: 't-empty', notice: undefined });
+    expect(loaded).toMatchObject({
+      needsBinding: true,
+      replaces: 't-empty',
+      notice: { type: 'system_status', data: { message: THREAD_STARTS_FRESH_NOTICE } },
+    });
     expect(loaded.threadId).not.toBe('t-empty');
   });
 
-  it('starts fresh, says so, and replaces the binding when Codex lost the thread', async () => {
-    const { loader, input } = await setup();
+  it('reads a deleted thread first, and starts fresh without trying to resume it', async () => {
+    const { loader, fake, input } = await setup();
     const loaded = await loader.ensureLoaded(input({ boundThreadId: 'deleted-in-codex' }));
     expect(loaded).toMatchObject({
       needsBinding: true,
       replaces: 'deleted-in-codex',
       notice: { type: 'system_status', data: { message: THREAD_STARTS_FRESH_NOTICE } },
     });
+    expect(fake.requestsOf('thread/read')).toEqual([{ threadId: 'deleted-in-codex' }]);
+    expect(fake.requestsOf('thread/resume')).toHaveLength(0);
+  });
+
+  it('starts fresh with its own notice when the person archived the thread in Codex', async () => {
+    const { host, loader, input } = await setup();
+    host.home(HOME).threads.set('t-arch', { id: 't-arch', hasRollout: true, archived: true });
+    const loaded = await loader.ensureLoaded(input({ boundThreadId: 't-arch' }));
+    expect(loaded).toMatchObject({
+      needsBinding: true,
+      replaces: 't-arch',
+      notice: { type: 'system_status', data: { message: THREAD_ARCHIVED_NOTICE } },
+    });
+    // Still archived in Codex: DorkOS never unarchives behind the person's back.
+    expect(host.home(HOME).threads.get('t-arch')!.archived).toBe(true);
+  });
+
+  it('reads a bound thread once per cold load, and not again while it is loaded', async () => {
+    const { host, loader, fake, input } = await setup();
+    host.home(HOME).threads.set('t-live', { id: 't-live', hasRollout: true });
+    await loader.ensureLoaded(input({ boundThreadId: 't-live' }));
+    await loader.ensureLoaded(input({ boundThreadId: 't-live' }));
+    expect(fake.requestsOf('thread/read')).toHaveLength(1);
+    expect(fake.requestsOf('thread/resume')).toHaveLength(1);
   });
 });
 

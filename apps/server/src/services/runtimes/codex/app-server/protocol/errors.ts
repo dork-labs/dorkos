@@ -16,6 +16,7 @@ export type CodexRpcErrorKind =
   | 'unknown-method'
   | 'thread-not-found'
   | 'no-rollout'
+  | 'archived'
   | 'no-active-turn'
   | 'turn-mismatch'
   | 'not-steerable'
@@ -35,7 +36,12 @@ const MESSAGE_PATTERNS: ReadonlyArray<readonly [RegExp, CodexRpcErrorKind]> = [
   [/^Already initialized/i, 'already-initialized'],
   [/unknown variant/i, 'unknown-method'],
   [/^thread not found/i, 'thread-not-found'],
+  // `thread/read`'s wording for a thread Codex has nowhere — deleted, or never
+  // given a turn (verified on 0.154; a loaded or stored thread reads fine).
+  [/^thread not loaded/i, 'thread-not-found'],
   [/no rollout found for thread id/i, 'no-rollout'],
+  // A resume of a thread the person archived in Codex (verified on 0.154).
+  [/^session \S+ is archived/i, 'archived'],
   [/no active turn to (steer|interrupt)/i, 'no-active-turn'],
   [/expected active turn id/i, 'turn-mismatch'],
   [/requires experimentalApi capability/i, 'experimental-required'],

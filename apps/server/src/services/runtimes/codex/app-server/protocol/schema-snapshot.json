@@ -188,6 +188,23 @@
         "type": "object"
       }
     },
+    "thread/backgroundTerminals/terminate": {
+      "params": {
+        "$ref": "#/definitions/ThreadBackgroundTerminalsTerminateParams"
+      },
+      "result": {
+        "properties": {
+          "terminated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "terminated"
+        ],
+        "title": "ThreadBackgroundTerminalsTerminateResponse",
+        "type": "object"
+      }
+    },
     "thread/fork": {
       "params": {
         "$ref": "#/definitions/ThreadForkParams"
@@ -289,6 +306,23 @@
           "thread"
         ],
         "title": "ThreadForkResponse",
+        "type": "object"
+      }
+    },
+    "thread/read": {
+      "params": {
+        "$ref": "#/definitions/ThreadReadParams"
+      },
+      "result": {
+        "properties": {
+          "thread": {
+            "$ref": "#/definitions/Thread"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "title": "ThreadReadResponse",
         "type": "object"
       }
     },
@@ -7252,6 +7286,21 @@
       ],
       "type": "object"
     },
+    "ThreadBackgroundTerminalsTerminateParams": {
+      "properties": {
+        "processId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "processId",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadClosedNotification": {
       "properties": {
         "threadId": {
@@ -8293,6 +8342,21 @@
           "type": "object"
         }
       ]
+    },
+    "ThreadReadParams": {
+      "properties": {
+        "includeTurns": {
+          "description": "When true, include turns and their items from rollout history. Full-history hydration is deprecated for paginated threads; prefer a metadata-only read and page with `thread/turns/list` and `thread/items/list`.",
+          "type": "boolean"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
     },
     "ThreadResumeInitialTurnsPageParams": {
       "properties": {

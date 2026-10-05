@@ -32,6 +32,8 @@ export const CLIENT_REQUEST_METHODS = [
   'turn/interrupt',
   'turn/steer',
   'thread/backgroundTerminals/list',
+  'thread/backgroundTerminals/terminate',
+  'thread/read',
   'thread/fork',
   'thread/unsubscribe',
 ] as const;
@@ -293,6 +295,17 @@ export interface TurnSteerParams {
   clientUserMessageId?: string;
 }
 
+/** `thread/read` params: metadata only unless `includeTurns`. */
+export interface ThreadReadParams {
+  threadId: string;
+  includeTurns?: boolean;
+}
+
+/** `thread/read` result (the part DorkOS reads). */
+export interface ThreadReadResult {
+  thread: { id: string; turns?: Array<{ id: string; status: string }> | null };
+}
+
 /** `model/list` params. */
 export interface ModelListParams {
   cursor: string | null;
@@ -325,6 +338,11 @@ export interface ClientMethodMap {
     params: { threadId: string };
     result: { data: unknown[]; nextCursor?: string | null };
   };
+  'thread/backgroundTerminals/terminate': {
+    params: { threadId: string; processId: string };
+    result: { terminated: boolean };
+  };
+  'thread/read': { params: ThreadReadParams; result: ThreadReadResult };
   'thread/fork': { params: ThreadResumeParams; result: ThreadLoadResult };
   'thread/unsubscribe': { params: { threadId: string }; result: { status: string } };
 }

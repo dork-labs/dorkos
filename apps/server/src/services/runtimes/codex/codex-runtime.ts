@@ -127,6 +127,8 @@ import {
   type CodexTransport,
   type CodexTransportKind,
 } from './transport/index.js';
+import { backgroundDoneEvent } from './transport/app-server-transport.js';
+import { buildBackgroundUpdate, type BackgroundWake } from './app-server/background-work.js';
 import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
 import { CodexModelCatalog } from './model-catalog.js';
 import { dorkosToolsPosture, resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
@@ -257,6 +259,8 @@ export class CodexRuntime implements AgentRuntime {
   private readonly locks = new SessionLockManager();
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
   private readonly activeTurns = new Map<string, AbortController>();
+  /** Told when a dispatched turn opens (DOR-2717), on a transport with background work. */
+  private readonly dispatchedTurnListeners = new Set<(sessionId: string) => void>();
   /** Connector bearer bound to the exact in-flight turn controller. */
   private readonly activeConnectorBindings = new Map<AbortController, string>();
   /**
@@ -308,6 +312,85 @@ export class CodexRuntime implements AgentRuntime {
       this.deliverIntoTurn = (sessionId, content, opts) =>
         transport.deliverIntoTurn!(sessionId, content, opts);
     }
+    // Work that outlives its turn (spec §12): only a transport that keeps the
+    // thread loaded can hear it finish, so only there can the agent start a
+    // turn of its own. On exec every one of these stays absent.
+    if (this.transport.onWake) this.installBackgroundWork(this.transport);
+  }
+
+  /**
+   * Subscribe to turns the agent starts on its own: a wake when its
+   * background work finishes (spec §12). Present only on a transport that
+   * keeps threads loaded.
+   */
+  onRuntimeTurn?: (
+    listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+  ) => () => void;
+  /** Whether a wake is on its way for the session (bounded). */
+  isSegmentPending?: (sessionId: string) => boolean;
+  /** Told when a pending wake was dropped without opening a turn. */
+  onDispatchGateChange?: (listener: (sessionId: string) => void) => () => void;
+  /** Whether the session still holds work that can wake it after its turn. */
+  holdsBackgroundWork?: (sessionId: string) => boolean;
+  /** Told when a turn somebody dispatched opens on a session. */
+  onDispatchedTurn?: (listener: (sessionId: string) => void) => () => void;
+  /** Whether the open turn has helper agents working (inside the ceiling). */
+  isHelperWorking?: (sessionId: string) => boolean;
+  /** Take a session for a turn the agent started (the reserved holder). */
+  acquireRuntimeLock?: (sessionKey: string, res: SseResponse, token?: symbol) => boolean;
+
+  /**
+   * Wire the background-work members over a transport that has them. Each
+   * wake becomes one runtime turn: the finished tasks, then — only when the
+   * work's own turn ended normally — a model turn told what finished.
+   */
+  private installBackgroundWork(transport: CodexTransport): void {
+    const runtimeTurnListeners = new Set<
+      (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+    >();
+    transport.onWake!((wake) => {
+      const listener = [...runtimeTurnListeners].at(-1);
+      if (!listener) return false;
+      listener(wake.sessionId, this.wakeTurn(wake));
+      return true;
+    });
+    this.onRuntimeTurn = (listener) => {
+      runtimeTurnListeners.add(listener);
+      return () => void runtimeTurnListeners.delete(listener);
+    };
+    this.isSegmentPending = (sessionId) => transport.isSegmentPending?.(sessionId) ?? false;
+    this.onDispatchGateChange = (listener) =>
+      transport.onDispatchGateChange?.(listener) ?? (() => {});
+    this.holdsBackgroundWork = (sessionId) => transport.holdsBackgroundWork?.(sessionId) ?? false;
+    this.isHelperWorking = (sessionId) => transport.isHelperWorking?.(sessionId) ?? false;
+    this.onDispatchedTurn = (listener) => {
+      this.dispatchedTurnListeners.add(listener);
+      return () => void this.dispatchedTurnListeners.delete(listener);
+    };
+    this.acquireRuntimeLock = (sessionKey, res, token) =>
+      this.locks.acquireRuntimeLock(sessionKey, res, token);
+  }
+
+  /**
+   * One wake's events: what finished, then either a model turn told about it
+   * or a plain end. The notice is DorkOS's, sent as the turn's input; the
+   * stream never shows it as the person's words (the turn is the agent's).
+   */
+  private async *wakeTurn(wake: BackgroundWake): AsyncGenerator<StreamEvent> {
+    for (const message of wake.notices) {
+      yield { type: 'system_status', data: { message } };
+    }
+    for (const completion of wake.completions) yield backgroundDoneEvent(completion);
+    if (!wake.startTurn) {
+      yield { type: 'done', data: { sessionId: wake.sessionId } };
+      return;
+    }
+    yield* this.runTurn(
+      wake.sessionId,
+      buildBackgroundUpdate(wake.completions.filter((completion) => completion.wakes)),
+      undefined,
+      'runtime'
+    );
   }
 
   /**
@@ -652,6 +735,28 @@ export class CodexRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
+    // A dispatched turn opening ends every follow of this session's later
+    // turns (DOR-2717): from here on a wake may be answering this work.
+    for (const listener of this.dispatchedTurnListeners) {
+      try {
+        listener(sessionId);
+      } catch (err) {
+        logger.warn('[CodexRuntime] a dispatched-turn listener threw', { sessionId, err });
+      }
+    }
+    yield* this.runTurn(sessionId, content, opts, 'dispatched');
+  }
+
+  /**
+   * One turn, dispatched or the agent's own (a wake). A wake's input is
+   * DorkOS's notice, so it never becomes the session's preview or title.
+   */
+  private async *runTurn(
+    sessionId: string,
+    content: string,
+    opts: MessageOpts | undefined,
+    origin: 'dispatched' | 'runtime'
+  ): AsyncGenerator<StreamEvent> {
     // Seed from the durable row before any registry mutation: recordMessage's
     // title-if-blank derivation must see the persisted title, not a fresh
     // blank entry it would fill with an auto-preview (see seedFromDurable).
@@ -678,14 +783,16 @@ export class CodexRuntime implements AgentRuntime {
         logger.warn('[CodexRuntime] failed to backfill binding cwd', { sessionId, err });
       }
     }
-    this.registry.recordMessage(sessionId, content, {
-      cwd,
-      ...(opts?.title !== undefined ? { title: opts.title } : {}),
-    });
-    // Write the refreshed preview/updatedAt (and first-turn title) through to
-    // the durable row. A no-op before the first bind — the setThreadId below
-    // carries the first turn's metadata with the row instead.
-    this.persistSessionMetadata(sessionId);
+    if (origin === 'dispatched') {
+      this.registry.recordMessage(sessionId, content, {
+        cwd,
+        ...(opts?.title !== undefined ? { title: opts.title } : {}),
+      });
+      // Write the refreshed preview/updatedAt (and first-turn title) through to
+      // the durable row. A no-op before the first bind — the setThreadId below
+      // carries the first turn's metadata with the row instead.
+      this.persistSessionMetadata(sessionId);
+    }
 
     // Which registered agent does this turn act as? Everything below that
     // mints, injects or names a tool is gated on the answer, and the agent's
@@ -1152,8 +1259,14 @@ export class CodexRuntime implements AgentRuntime {
     return true;
   }
 
-  /** Codex has no addressable background tasks — nothing to stop. */
-  async stopTask(): Promise<InterruptReceipt> {
+  /**
+   * @inheritdoc
+   *
+   * On app-server a background command or helper agent that outlived its turn
+   * (spec §12). On exec nothing outlives the turn, so there is nothing to stop.
+   */
+  async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
+    if (this.transport.stopTask) return this.transport.stopTask(sessionId, taskId);
     return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
   }
 

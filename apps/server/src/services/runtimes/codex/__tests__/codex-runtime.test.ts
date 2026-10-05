@@ -6,6 +6,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { CodexRuntime } from '../codex-runtime.js';
 import type { CodexTransport } from '../transport/index.js';
+import type { BackgroundWake } from '../app-server/background-work.js';
 import { buildCodexOptions } from '../codex-options.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
@@ -1727,5 +1728,116 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
     const events = await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
     expect(events.at(-1)?.type).toBe('done');
+  });
+  describe('background work (spec §12)', () => {
+    /** A persistent transport with the background-work members, wake under test control. */
+    function backgroundTransport() {
+      const recorded = recordingTransport({ persistent: true });
+      let wakeListener: ((wake: BackgroundWake) => boolean) | undefined;
+      Object.assign(recorded.transport, {
+        onWake: (listener: typeof wakeListener) => {
+          wakeListener = listener;
+        },
+        isSegmentPending: () => false,
+        onDispatchGateChange: () => () => {},
+        holdsBackgroundWork: () => true,
+        isHelperWorking: () => false,
+        stopTask: vi.fn(async () => ({ outcome: 'acked' as const, runtime: 'codex' as const })),
+      });
+      return { ...recorded, wake: (wake: BackgroundWake) => wakeListener?.(wake) ?? false };
+    }
+    const finished = {
+      taskId: 'cmd-1',
+      kind: 'bash' as const,
+      label: 'npm test',
+      status: 'completed' as const,
+      summary: 'Exit code 0.\nall green',
+      wakes: true,
+    };
+
+    it('turns a wake into a runtime turn: the finished task, then a model turn told about it', async () => {
+      const { transport, requests, wake } = backgroundTransport();
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/opt/codex',
+        transport,
+      });
+      await drain(runtime.sendMessage('s1', 'start the tests', { cwd: '/project' }));
+      const turns: Array<{ sessionId: string; events: AsyncIterable<StreamEvent> }> = [];
+      expect(wake({ sessionId: 's1', completions: [finished], startTurn: true, notices: [] })).toBe(
+        false
+      );
+      runtime.onRuntimeTurn!((sessionId, events) => turns.push({ sessionId, events }));
+      expect(wake({ sessionId: 's1', completions: [finished], startTurn: true, notices: [] })).toBe(
+        true
+      );
+      expect(turns).toHaveLength(1);
+      const events: StreamEvent[] = [];
+      for await (const event of turns[0]!.events) events.push(event);
+      expect(events[0]).toEqual({
+        type: 'background_task_done',
+        data: { taskId: 'cmd-1', status: 'completed', summary: 'Exit code 0.\nall green' },
+      });
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+      expect(requests).toHaveLength(2);
+      expect(requests[1]!.prompt).toContain('<background_update>');
+      expect(requests[1]!.prompt).toContain('Command `npm test` (completed)');
+      // The notice is DorkOS's, never the session's preview.
+      expect((await runtime.getSession('/project', 's1'))?.lastMessagePreview).toBe(
+        'start the tests'
+      );
+    });
+
+    it('shows a finish that may not wake the model, and starts no turn', async () => {
+      const { transport, requests, wake } = backgroundTransport();
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/opt/codex',
+        transport,
+      });
+      const turns: Array<AsyncIterable<StreamEvent>> = [];
+      runtime.onRuntimeTurn!((_sessionId, events) => turns.push(events));
+      wake({
+        sessionId: 's1',
+        completions: [{ ...finished, status: 'stopped', wakes: false }],
+        startTurn: false,
+        notices: ['lost it'],
+      });
+      const events: StreamEvent[] = [];
+      for await (const event of turns[0]!) events.push(event);
+      expect(events.map((e) => e.type)).toEqual(['system_status', 'background_task_done', 'done']);
+      expect(requests).toHaveLength(0);
+    });
+
+    it('tells listeners when a dispatched turn opens, and stops tasks through the transport', async () => {
+      const { transport } = backgroundTransport();
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/opt/codex',
+        transport,
+      });
+      const dispatched: string[] = [];
+      const off = runtime.onDispatchedTurn!((sessionId) => dispatched.push(sessionId));
+      await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
+      off();
+      await drain(runtime.sendMessage('s1', 'again', { cwd: '/project' }));
+      expect(dispatched).toEqual(['s1']);
+      expect(runtime.holdsBackgroundWork!('s1')).toBe(true);
+      expect(await runtime.stopTask('s1', 'cmd-1')).toEqual({ outcome: 'acked', runtime: 'codex' });
+      expect(typeof runtime.acquireRuntimeLock).toBe('function');
+    });
+
+    it('declares none of it on exec, where nothing outlives the turn', async () => {
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/opt/codex',
+        transport: 'exec',
+      });
+      expect(runtime.onRuntimeTurn).toBeUndefined();
+      expect(runtime.isSegmentPending).toBeUndefined();
+      expect(runtime.holdsBackgroundWork).toBeUndefined();
+      expect(runtime.acquireRuntimeLock).toBeUndefined();
+      expect((await runtime.stopTask('s1', 'x')).outcome).toBe('not-running');
+    });
   });
 });

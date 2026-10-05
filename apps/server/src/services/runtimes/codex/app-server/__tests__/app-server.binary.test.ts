@@ -17,7 +17,10 @@
  * - the throwaway home's trust list is not written by a writable-mode turn;
  * - a command Codex must ask about raises a card; approved, it runs; denied,
  *   it does not (spec §10);
- * - a steer mid-turn reaches the open turn, and no new turn starts (§11).
+ * - a steer mid-turn reaches the open turn, and no new turn starts (§11);
+ * - a command left running in the background finishes after `turn/completed`
+ *   and wakes the chat exactly once; one that never ends never wakes it, and
+ *   Stop or the ceiling terminates it without waking the model (§12).
  *
  * Skipped by name where no vendored binary is installed for this platform.
  */
@@ -32,11 +35,13 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { resolveCodexVendoredBinary } from '../../check-dependencies.js';
 import { CodexAppServerPool, type SpawnAppServer } from '../process-pool.js';
 import { AppServerCodexTransport } from '../../transport/app-server-transport.js';
+import type { BackgroundWake } from '../background-work.js';
 import { createCodexEventContext } from '../../event-mapper.js';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
 import { ConnectorRuntimePrincipalService } from '../../../../connectors/principal/runtime-principal-service.js';
 import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
+import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
 import { spawn as nodeSpawn } from 'node:child_process';
 
 const BINARY = resolveCodexVendoredBinary();
@@ -266,7 +271,9 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
   res.writeHead(404).end();
 }
 
-function makeTransport(): AppServerCodexTransport {
+function makeTransport(
+  backgroundWork?: AppServerTransportOptions['backgroundWork']
+): AppServerCodexTransport {
   const spawn: SpawnAppServer = (binary, args, options) => {
     spawned.push({ args, env: options.env });
     const child = nodeSpawn(binary, [...args], {
@@ -290,6 +297,7 @@ function makeTransport(): AppServerCodexTransport {
   } satisfies ConnectorRuntimeTools;
   return new AppServerCodexTransport({
     pool,
+    ...(backgroundWork ? { backgroundWork } : {}),
     connectorTools: () => tools,
     environment: {
       person: () => ({
@@ -698,5 +706,101 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       expect(turnStartedSeen - startedBefore, 'one turn, steered').toBe(1);
       expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
     });
+  });
+  describe('background work (spec §12)', () => {
+    /** The turn starts `cmd` with a short yield, so it outlives the turn. */
+    const startInBackground = (cmd: string) => {
+      scripted.push(
+        (res) => res.end(sseCall({ cmd, yield_time_ms: 500 })),
+        (res) => res.end(sse('started it'))
+      );
+    };
+    const fullAccess = { permissionMode: 'bypassPermissions' as const, model: 'fake-model' };
+    const collect = (transport: AppServerCodexTransport): BackgroundWake[] => {
+      const wakes: BackgroundWake[] = [];
+      transport.onWake((wake) => {
+        wakes.push(wake);
+        return true;
+      });
+      return wakes;
+    };
+    const waitFor = async (check: () => boolean, ms: number): Promise<boolean> => {
+      const deadline = Date.now() + ms;
+      while (!check() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+      return check();
+    };
+    const run = async (transport: AppServerCodexTransport, sessionId: string) => {
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(
+        request(sessionId, undefined, { settings: fullAccess })
+      )) {
+        events.push(event);
+      }
+      return events;
+    };
+
+    it('wakes the chat exactly once when a command finishes after its turn completed', async () => {
+      startInBackground('sleep 2; echo done-in-background');
+      const transport = makeTransport();
+      const wakes = collect(transport);
+      const events = await run(transport, 'bg-1');
+      const started = events.find((e) => e.type === 'background_task_started');
+      expect(started, JSON.stringify(events)).toBeDefined();
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+      expect(transport.holdsBackgroundWork('bg-1')).toBe(true);
+      expect(wakes).toHaveLength(0);
+      const responsesAtTurnEnd = seen.responses;
+
+      expect(await waitFor(() => wakes.length > 0, 15_000)).toBe(true);
+      expect(wakes[0]).toMatchObject({ sessionId: 'bg-1', startTurn: true, notices: [] });
+      expect(wakes[0]!.completions).toHaveLength(1);
+      expect(wakes[0]!.completions[0]).toMatchObject({
+        taskId: (started!.data as { taskId: string }).taskId,
+        status: 'completed',
+        wakes: true,
+      });
+      expect(wakes[0]!.completions[0]!.summary).toContain('done-in-background');
+      // Nothing more comes, and Codex starts no turn of its own.
+      await new Promise((r) => setTimeout(r, 2_500));
+      expect(wakes).toHaveLength(1);
+      expect(seen.responses).toBe(responsesAtTurnEnd);
+      expect(transport.holdsBackgroundWork('bg-1')).toBe(false);
+    }, 60_000);
+
+    it('never wakes for a command that never ends, and Stop terminates it without a model turn', async () => {
+      startInBackground('sleep 600');
+      const transport = makeTransport();
+      const wakes = collect(transport);
+      const events = await run(transport, 'bg-2');
+      const taskId = (
+        events.find((e) => e.type === 'background_task_started')!.data as { taskId: string }
+      ).taskId;
+      await new Promise((r) => setTimeout(r, 3_000));
+      expect(wakes).toHaveLength(0);
+      expect(transport.holdsBackgroundWork('bg-2')).toBe(true);
+
+      expect(await transport.stopTask('bg-2', taskId)).toEqual({
+        outcome: 'acked',
+        runtime: 'codex',
+      });
+      expect(await waitFor(() => wakes.length > 0, 10_000)).toBe(true);
+      expect(wakes[0]).toMatchObject({ startTurn: false });
+      expect(wakes[0]!.completions[0]).toMatchObject({ taskId, status: 'stopped', wakes: false });
+      await new Promise((r) => setTimeout(r, 2_000));
+      expect(wakes).toHaveLength(1);
+      expect(transport.holdsBackgroundWork('bg-2')).toBe(false);
+    }, 60_000);
+
+    it('stops a never-ending command once at the ceiling, and still wakes no model turn', async () => {
+      startInBackground('sleep 600');
+      const transport = makeTransport({ ceilingMs: 2_000 });
+      const wakes = collect(transport);
+      await run(transport, 'bg-3');
+      expect(await waitFor(() => wakes.length > 0, 10_000)).toBe(true);
+      expect(wakes[0]).toMatchObject({ startTurn: false });
+      expect(wakes[0]!.completions[0]).toMatchObject({ status: 'stopped', wakes: false });
+      await new Promise((r) => setTimeout(r, 4_500));
+      expect(wakes).toHaveLength(1);
+    }, 60_000);
   });
 });

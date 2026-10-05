@@ -18,6 +18,7 @@ import {
   CREDITS_ENV_HOME,
 } from '../../__tests__/app-server-harness.js';
 import {
+  backgroundCommandTurn,
   hangingTurn,
   parkedTurn,
   steerableTurn,
@@ -25,6 +26,7 @@ import {
 } from '../../__tests__/fake-app-server.js';
 import { APP_SERVER_ARGS } from '../process-pool.js';
 import { CODEX_STOPPED_COPY } from '../notification-mapper.js';
+import { BACKGROUND_WORK_LOST_COPY, type BackgroundWake } from '../background-work.js';
 import { THREAD_STARTS_FRESH_NOTICE } from '../thread-loader.js';
 import { sandboxPolicyFor } from '../turn-parts.js';
 import type { CreditsRelay } from '../../../../core/cloud/credits-relay.js';
@@ -706,5 +708,128 @@ describe('steer (spec §11)', () => {
     for (const loaded of fake.loaded.values()) loaded.activeTurn!.done = false;
     await h.transport.interrupt('s1');
     await rest(gen);
+  });
+});
+
+describe('background work (spec §12)', () => {
+  /** Collect wakes, answering as a runtime with a listener would. */
+  function wakes(h: Harness): BackgroundWake[] {
+    const seen: BackgroundWake[] = [];
+    h.transport.onWake((wake) => {
+      seen.push(wake);
+      return true;
+    });
+    return seen;
+  }
+  async function waitFor(check: () => boolean): Promise<void> {
+    for (let i = 0; i < 200 && !check(); i += 1) await new Promise((r) => setTimeout(r, 5));
+    expect(check()).toBe(true);
+  }
+
+  it('wakes the chat once when a command finishes after a completed turn', async () => {
+    const h = harness();
+    const seen = wakes(h);
+    const bg = backgroundCommandTurn();
+    h.host.home(PERSON_HOME).nextTurn(bg.script);
+    const events = await h.run(h.request({ sessionId: 's1' }));
+    expect(dones(events)).toHaveLength(1);
+    expect(events.find((e) => e.type === 'background_task_started')).toMatchObject({
+      data: { taskId: bg.itemId, taskType: 'bash', command: 'sleep 3; echo done' },
+    });
+    expect(h.transport.holdsBackgroundWork('s1')).toBe(true);
+    expect(h.transport.isSegmentPending('s1')).toBe(false);
+
+    bg.finish(0, 'done\n');
+    await waitFor(() => h.transport.isSegmentPending('s1'));
+    await waitFor(() => seen.length === 1);
+    expect(seen[0]).toMatchObject({ sessionId: 's1', startTurn: true, notices: [] });
+    expect(seen[0]!.completions).toEqual([
+      expect.objectContaining({ taskId: bg.itemId, status: 'completed', wakes: true }),
+    ]);
+    expect(h.transport.isSegmentPending('s1')).toBe(false);
+    expect(h.transport.holdsBackgroundWork('s1')).toBe(false);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(seen).toHaveLength(1);
+  });
+
+  it('shows a completion in the turn that is open instead of waking', async () => {
+    const h = harness();
+    const seen = wakes(h);
+    const bg = backgroundCommandTurn();
+    h.host.home(PERSON_HOME).nextTurn(bg.script);
+    await h.run(h.request({ sessionId: 's1' }));
+    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
+      bg.finish(0, 'ok\n');
+      await ctx.tick();
+      await ctx.tick();
+      ctx.agentMessage('second');
+      ctx.complete('completed');
+    });
+    const second = await h.run(
+      h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
+    );
+    expect(second.find((e) => e.type === 'background_task_done')).toMatchObject({
+      data: { taskId: bg.itemId, status: 'completed' },
+    });
+    await new Promise((r) => setTimeout(r, 60));
+    expect(seen).toHaveLength(0);
+  });
+
+  it('stops a background command on request, and its end wakes no model turn', async () => {
+    const h = harness();
+    const seen = wakes(h);
+    const bg = backgroundCommandTurn('pnpm dev');
+    h.host.home(PERSON_HOME).nextTurn(bg.script);
+    await h.run(h.request({ sessionId: 's1' }));
+    expect(await h.transport.stopTask('s1', 'no-such-task')).toEqual({
+      outcome: 'not-running',
+      reason: 'no-open-turn',
+      runtime: 'codex',
+    });
+    expect(await h.transport.stopTask('s1', bg.itemId)).toEqual({
+      outcome: 'acked',
+      runtime: 'codex',
+    });
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    expect(fake.requestsOf('thread/backgroundTerminals/terminate')).toEqual([
+      { threadId: h.bindings[0]!.threadId, processId: bg.processId },
+    ]);
+    await waitFor(() => seen.length === 1);
+    expect(seen[0]).toMatchObject({ startTurn: false });
+    expect(seen[0]!.completions[0]).toMatchObject({ status: 'stopped', wakes: false });
+    // Already gone: a second stop is honest about it.
+    expect((await h.transport.stopTask('s1', bg.itemId)).outcome).toBe('not-running');
+  });
+
+  it('says it lost track of the work when Codex stops, and wakes no model turn', async () => {
+    const h = harness();
+    const seen = wakes(h);
+    const bg = backgroundCommandTurn();
+    h.host.home(PERSON_HOME).nextTurn(bg.script);
+    await h.run(h.request({ sessionId: 's1' }));
+    h.host.home(PERSON_HOME).processes[0]!.exit(137);
+    await waitFor(() => seen.length === 1);
+    expect(seen[0]).toEqual({
+      sessionId: 's1',
+      completions: [],
+      startTurn: false,
+      notices: [BACKGROUND_WORK_LOST_COPY],
+    });
+    expect(h.transport.holdsBackgroundWork('s1')).toBe(false);
+  });
+
+  it('stops the background work at the ceiling, once, without waking the model', async () => {
+    const h = harness({ backgroundWork: { ceilingMs: 30 } });
+    const seen = wakes(h);
+    const bg = backgroundCommandTurn('pnpm dev');
+    h.host.home(PERSON_HOME).nextTurn(bg.script);
+    await h.run(h.request({ sessionId: 's1' }));
+    await waitFor(() => seen.length === 1);
+    expect(seen[0]).toMatchObject({ startTurn: false });
+    expect(seen[0]!.completions[0]).toMatchObject({ status: 'stopped' });
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    await new Promise((r) => setTimeout(r, 120));
+    expect(fake.requestsOf('thread/backgroundTerminals/terminate')).toHaveLength(1);
+    expect(seen).toHaveLength(1);
   });
 });

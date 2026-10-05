@@ -27,6 +27,8 @@ export interface AppServerHarnessOptions {
   stopAckMs?: number;
   /** When an unanswered request is declined. */
   interactionExpireMs?: number;
+  /** Background-work timings. */
+  backgroundWork?: { coalesceMs?: number; ceilingMs?: number };
 }
 
 /**
@@ -60,6 +62,7 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
     ...(options.interactionExpireMs !== undefined
       ? { interactionExpireMs: options.interactionExpireMs }
       : {}),
+    backgroundWork: { coalesceMs: 20, ...options.backgroundWork },
   });
   const bindings: Array<{ sessionId: string; threadId: string; replaces?: string }> = [];
 
