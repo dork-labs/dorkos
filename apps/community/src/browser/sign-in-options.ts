@@ -11,6 +11,7 @@ const NO_PROVIDERS: CommunityWireAuthOptions = {
   github: false,
   oidc: null,
   minimumAge: null,
+  emailLinks: false,
 };
 
 /** The host's sign-in options, and whether the read has finished (found or failed). */

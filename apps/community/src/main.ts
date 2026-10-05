@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
+import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { createCommunityApp } from './app.js';
 import { parseConfig } from './config.js';
 import { oidcCallbackUrl } from './oidc.js';
@@ -31,6 +32,9 @@ import { signInLinkComposers } from './sign-in/linked.js';
 import { prunePendingSignInLinks } from './sign-in/link-gate.js';
 import { startOwnerReplacementTimeline } from './owner-replacement/worker.js';
 import { pruneNoticeOutbox } from './mail/outbox.js';
+import { emailLinkComposers } from './email-links/composers.js';
+import { resolveEmailLinkRequests } from './email-links/resolver.js';
+import { pruneEmailLinks } from './email-links/tokens.js';
 
 const config = parseConfig(process.env);
 if (config.testRuntime)
@@ -61,6 +65,8 @@ await tidyEvidenceSink(evidenceSink);
 const noticeComposers: NoticeComposers = {
   ...ownerReplacementComposers(config),
   ...signInLinkComposers(config),
+  // Mailed reset, sign-in and confirmation links: on exactly when mail is.
+  ...emailLinkComposers(config),
 };
 const app = createCommunityApp({
   config,
@@ -97,6 +103,13 @@ app.get(
   '/owner-replacement',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
+// The pages a mailed reset, sign-in or confirmation link opens. Each carries its token after
+// `#`, so it never reaches this server's logs, and nothing happens on load: the page asks first.
+for (const page of Object.values(COMMUNITY_EMAIL_LINK_PAGES))
+  app.get(
+    page,
+    serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+  );
 app.get(
   '/c/:communityId',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
@@ -208,6 +221,13 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
+  // Runs with mail on or off, so a typed address never outlives an hour either way.
+  void pruneEmailLinks(pool).catch((error: unknown) => {
+    console.error(
+      'Community email link cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  });
   void pruneNoticeOutbox(pool).catch((error: unknown) => {
     console.error(
       'Community notice cleanup unavailable',
@@ -287,7 +307,13 @@ const takedownEvidence = setInterval(() => {
 takedownEvidence.unref();
 // Off unless the host configured SMTP. Each feature that queues mail adds its composers to
 // `noticeComposers` above.
-const mail = startMailDelivery({ config, pool, composers: noticeComposers });
+// Before each tick the resolver turns mailed-link requests into queued notices.
+const mail = startMailDelivery({
+  config,
+  pool,
+  composers: noticeComposers,
+  beforeEachTick: () => resolveEmailLinkRequests(pool, config),
+});
 // Moves owner replacements through their notice, wait, reminder, claim window, and expiry.
 const ownerReplacements = startOwnerReplacementTimeline({ pool, config });
 const onSignal = createSignalHandler(

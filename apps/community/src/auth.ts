@@ -18,6 +18,8 @@ import { hashSecret, readCookie, verifyValue } from './security.js';
 import type { NoticeKind } from './mail/outbox.js';
 import { gateAccountLink, settleTrustedLink, SIGN_IN_REFUSED_CODE } from './sign-in/link-gate.js';
 import { withRequestStart, writtenBeforeClearing } from './sign-in/request-start.js';
+import { communityEmailLinks } from './email-links/plugin.js';
+import { queueEmailConfirmation } from './email-links/requests.js';
 
 /**
  * What let a new account in: an owner grant or an invitation, or only a live claim to replace
@@ -33,12 +35,19 @@ export function createCommunityAuth(
     now?: () => Date;
     /** Whether mail is set up and the worker can compose this kind of notice. None by default. */
     canSendNotice?: (kind: NoticeKind) => boolean;
+    /**
+     * Whether this server mails reset, sign-in and confirmation links (mail on, and the worker can
+     * compose all three). Off by default: the link endpoints answer `409` and sign-up queues no
+     * confirmation.
+     */
+    emailLinksOn?: boolean;
     /** Test-only: runs in `session.create.before`, after its checks, before the insert. */
     beforeSessionInsert?: (userId: string) => Promise<void>;
   } = {}
 ) {
   const now = options.now ?? (() => new Date());
   const canSendNotice = options.canSendNotice ?? (() => false);
+  const emailLinksOn = options.emailLinksOn ?? false;
   /**
    * With a minimum age set, refuse to create an account unless this browser confirmed it first
    * (`POST /api/v1/age-confirmation`). A provider callback carries the same cookie, so password,
@@ -123,7 +132,24 @@ export function createCommunityAuth(
     // other password check shares (password-confirmation.ts), so a stolen session could keep
     // guessing there; nothing here offers a password change, so it is off. `/delete-user` stays
     // off by Better Auth's own default and answers 404 before it looks at any password.
-    disabledPaths: ['/get-access-token', '/refresh-token', '/account-info', '/change-password'],
+    // Better Auth's own reset, email verification and email change are off too: mailed links are
+    // this server's own (email-links/plugin.ts), because the built-ins store tokens in plain text,
+    // act on a GET, can create accounts, and end no derived credentials (ADR 261005-102035).
+    // `/verify-password` checks a password over HTTP outside the shared guess budget; the server
+    // keeps calling it through `auth.api`, which `disabledPaths` does not touch. These match exact
+    // paths only, so `/reset-password/:token` is refused in app.ts before this handler.
+    disabledPaths: [
+      '/get-access-token',
+      '/refresh-token',
+      '/account-info',
+      '/change-password',
+      '/request-password-reset',
+      '/reset-password',
+      '/send-verification-email',
+      '/verify-email',
+      '/change-email',
+      '/verify-password',
+    ],
     socialProviders: {
       // Sign-in only through the provider's own redirect, never a bare ID token (see hooks).
       ...(config.oauth.google
@@ -145,8 +171,12 @@ export function createCommunityAuth(
         allowDifferentEmails: false,
       },
     },
-    // The host's optional OpenID Connect sign-in. Unset, nothing is registered or fetched.
-    plugins: config.oidc ? [communityOidc(config.oidc, { now: options.now })] : [],
+    // The host's optional OpenID Connect sign-in (unset, nothing is registered or fetched), and
+    // the mailed reset and sign-in links, always registered and off without mail.
+    plugins: [
+      ...(config.oidc ? [communityOidc(config.oidc, { now: options.now })] : []),
+      communityEmailLinks({ pool, config, on: emailLinksOn, canSendNotice }),
+    ],
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
     advanced: {
       useSecureCookies: config.publicUrl.startsWith('https:'),
@@ -213,9 +243,17 @@ export function createCommunityAuth(
             if (ctx) creatingUser.add(ctx);
             return { data: user };
           },
-          // One confirmation makes one account: clear it, so the next person to sign up in this
-          // browser is asked again rather than riding on someone else's tick.
-          after: async (_user, ctx) => {
+          // A new account whose email nobody has proven yet (a password sign-up) is mailed a
+          // confirmation link. A provider sign-up the issuer vouched for is already confirmed.
+          // One age confirmation makes one account: clear it, so the next person to sign up in
+          // this browser is asked again rather than riding on someone else's tick.
+          after: async (user, ctx) => {
+            if (emailLinksOn && !user.emailVerified)
+              await queueEmailConfirmation(pool, {
+                userId: user.id,
+                email: user.email,
+                authSecret: config.authSecret,
+              });
             if (config.minimumAge === null || !ctx) return;
             ctx.setCookie(AGE_CONFIRMATION_COOKIE, '', {
               path: '/',
@@ -224,6 +262,21 @@ export function createCommunityAuth(
               sameSite: 'lax',
               secure: config.publicUrl.startsWith('https:'),
             });
+          },
+        },
+        update: {
+          /**
+           * Only this server's own SQL marks an existing account's email confirmed: a mailed
+           * reset, sign-in or confirmation link (each clearing a never-confirmed account first),
+           * or a trusted single sign-on link (`settleTrustedLink`). Better Auth would otherwise
+           * mark it on any sign-in with an already-linked provider whose email is verified, with
+           * no clean-out, which would confirm a squatted account for its squatter. So the field
+           * is removed from every update Better Auth makes. (A provider sign-up still creates its
+           * user with the issuer's verified flag: that is a create, not an update.)
+           */
+          before: async (user) => {
+            delete (user as { emailVerified?: unknown }).emailVerified;
+            return { data: user };
           },
         },
       },
@@ -277,12 +330,13 @@ export function createCommunityAuth(
         update: {
           /**
            * The same rule for an update. Better Auth's `update.before` sees only the changed
-           * fields, not whose row it is, so the check runs here, after the commit. Updates in
-           * this server only refresh a provider link's tokens (password changes and resets are
-           * off), so a stale one adds no way in; the sign-in it belongs to is refused, and its
-           * session too (`session.create.after`). A stale update to a password row would be one
-           * a clean-out did not write, so that row is deleted: the account then has no password,
-           * which fails closed.
+           * fields, not whose row it is, so the check runs here, after the commit. Better Auth's
+           * own password change and reset are off, and a mailed reset or confirmation writes the
+           * password row in this server's own transaction, never through Better Auth, so updates
+           * here only refresh a provider link's tokens: a stale one adds no way in; the sign-in it
+           * belongs to is refused, and its session too (`session.create.after`). A stale update
+           * to a password row would be one a clean-out did not write, so that row is deleted: the
+           * account then has no password, which fails closed.
            */
           after: async (account) => {
             if (!account || !(await writtenBeforeClearing(pool, account.userId, { lock: true })))
