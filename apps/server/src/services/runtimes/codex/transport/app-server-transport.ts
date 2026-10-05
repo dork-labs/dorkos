@@ -357,7 +357,7 @@ export class AppServerCodexTransport implements CodexTransport {
           );
           // Codex clears what it still asked about when a turn ends; so do the cards.
           this.requests.cancelSession(sessionId);
-          this.trackLeftovers(sessionId, process, loaded.threadId, mapper, notification);
+          this.trackLeftovers(request, process, loaded.threadId, mapper, notification);
         }
         queue.push(mapper.map(notification));
         if (mapper.isFinished) queue.end();
@@ -742,8 +742,12 @@ export class AppServerCodexTransport implements CodexTransport {
         task.kind === 'bash'
           ? await this.terminate(task, this.stopAckMs)
           : await this.interruptHelper(task);
-      if (stopped) return { outcome: 'acked', runtime: 'codex' };
-      this.background.finish(taskId);
+      if (stopped) {
+        this.background.markTerminated(taskId);
+        return { outcome: 'acked', runtime: 'codex' };
+      }
+      // It ended on its own a moment before the stop: its result is on its
+      // way and is still shown (never as a wake: a person asked it to stop).
       return { outcome: 'not-running', reason: 'no-open-turn', runtime: 'codex' };
     } catch (err) {
       if (isCodexRpcError(err, 'thread-not-found') || err instanceof CodexProcessExitedError) {
@@ -792,13 +796,27 @@ export class AppServerCodexTransport implements CodexTransport {
     return true;
   }
 
-  /** The ceiling's stop. A command Codex no longer has is simply forgotten. */
-  private async terminateForCeiling(task: BackgroundTask): Promise<void> {
-    const stopped =
-      task.kind === 'bash'
-        ? await this.terminate(task, this.stopAckMs)
-        : await this.interruptHelper(task);
-    if (!stopped) this.background.finish(task.taskId);
+  /** The ceiling's stop: `true` when Codex stopped it, `false` when it had just ended. */
+  private async terminateForCeiling(task: BackgroundTask): Promise<boolean> {
+    return task.kind === 'bash'
+      ? await this.terminate(task, this.stopAckMs)
+      : await this.interruptHelper(task);
+  }
+
+  /** Terminate every tracked command in some processes, marking those Codex stopped. */
+  private async terminateCommandsIn(
+    processKeys: ReadonlySet<string>,
+    timeoutMs: number
+  ): Promise<void> {
+    const commands = this.background
+      .all()
+      .filter((task) => task.kind === 'bash' && processKeys.has(task.processKey));
+    await Promise.allSettled(
+      commands.map(async (task) => {
+        this.background.markStopping(task.taskId);
+        if (await this.terminate(task, timeoutMs)) this.background.markTerminated(task.taskId);
+      })
+    );
   }
 
   private liveProcess(processKey: string): CodexAppServerProcess | undefined {
@@ -807,7 +825,7 @@ export class AppServerCodexTransport implements CodexTransport {
 
   /** At `turn/completed`: start tracking whatever the turn left running. */
   private trackLeftovers(
-    sessionId: string,
+    request: CodexTurnRequest,
     process: CodexAppServerProcess,
     threadId: string,
     mapper: AppServerTurnMapper,
@@ -816,7 +834,13 @@ export class AppServerCodexTransport implements CodexTransport {
     const turnStatus = String(
       (notification.params as { turn?: { status?: unknown } }).turn?.status
     );
-    const base = { sessionId, threadId, processKey: process.key, turnStatus };
+    const base = {
+      sessionId: request.sessionId,
+      threadId,
+      processKey: process.key,
+      turnStatus,
+      ...(request.wakeContext !== undefined ? { context: request.wakeContext } : {}),
+    };
     this.background.track([
       ...mapper.backgroundCommands().map((command) => ({
         ...base,
@@ -851,9 +875,20 @@ export class AppServerCodexTransport implements CodexTransport {
     this.background.queue(done.task.sessionId, done.completion);
   }
 
-  /** Stop the credits-home process (an unlink), revoking its relay key. */
+  /**
+   * Stop the credits-home process (an unlink), revoking its relay key. Its
+   * background commands are terminated first, as at shutdown: a stopped
+   * `codex app-server` leaves them running, still billed to nobody's view.
+   */
   async closeCreditsProcess(): Promise<void> {
     const home = creditsCodexHome();
+    const keys = new Set(
+      this.pool
+        .list()
+        .filter((process) => process.spec.codexHome === home)
+        .map((process) => process.key)
+    );
+    await this.terminateCommandsIn(keys, 2_000);
     await this.pool.closeWhere((process) => process.spec.codexHome === home);
   }
 
@@ -882,6 +917,9 @@ export class AppServerCodexTransport implements CodexTransport {
     // alive: the reaper asks before closing it (spec §5), and the same answer
     // reconciles what `background-work.ts` tracks.
     process.addLivenessProbe(async () => {
+      // A helper agent has no terminal Codex would list: while one is
+      // tracked (bounded by the ceiling), the process is live.
+      if (this.background.tasksIn(process.key).some((task) => task.kind === 'agent')) return true;
       for (const threadId of this.loader.threadsInProcess(process.key)) {
         try {
           const result = await process.client.request(

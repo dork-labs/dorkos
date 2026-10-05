@@ -4,9 +4,9 @@ import type { Db } from '@dorkos/db';
 import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
-import { CodexRuntime } from '../codex-runtime.js';
+import { CodexRuntime, MAX_CONSECUTIVE_WAKES, WAKE_BUDGET_SPENT_COPY } from '../codex-runtime.js';
 import { resolveCodexTransport, type CodexTransport } from '../transport/index.js';
-import type { BackgroundWake } from '../app-server/background-work.js';
+import type { BackgroundCompletion, BackgroundWake } from '../app-server/background-work.js';
 import { buildCodexOptions } from '../codex-options.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
@@ -124,6 +124,7 @@ function makeRuntime(opts: { binaryPath?: string | null; db?: Db } = {}) {
   const db = opts.db ?? createTestDb();
   const threadMap = new CodexThreadMap(db);
   const runtime = new CodexRuntime({
+    transport: 'exec',
     threadMap,
     // The runtime resolves its binary lazily through this seam (production
     // passes the shared ladder). `/bin/codex` is the ordinary "Codex is
@@ -1677,6 +1678,7 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
   it('merges the transport’s capabilities over the shared base, and exec changes nothing', () => {
     const db = createTestDb();
     const exec = new CodexRuntime({
+      transport: 'exec',
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/opt/codex',
     });
@@ -1755,76 +1757,199 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       });
       return { ...recorded, wake: (wake: BackgroundWake) => wakeListener?.(wake) ?? false };
     }
-    const finished = {
+    function backgroundRuntime() {
+      const recorded = backgroundTransport();
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/opt/codex',
+        transport: recorded.transport,
+      });
+      return { ...recorded, runtime };
+    }
+    /** A finished task carrying the context its turn handed the transport. */
+    const finished = (context: unknown, overrides: Partial<BackgroundCompletion> = {}) => ({
       taskId: 'cmd-1',
       kind: 'bash' as const,
       label: 'npm test',
       status: 'completed' as const,
       summary: 'Exit code 0.\nall green',
       wakes: true,
-    };
-
-    it('turns a wake into a runtime turn: the finished task, then a model turn told about it', async () => {
-      const { transport, requests, wake } = backgroundTransport();
-      const runtime = new CodexRuntime({
-        threadMap: new CodexThreadMap(createTestDb()),
-        resolveBinary: async () => '/opt/codex',
-        transport,
+      context,
+      ...overrides,
+    });
+    /**
+     * Take each wake the way the server does: hold the reserved runtime lock,
+     * then read the turn. `lock: false` reads it without the lock, as a
+     * consumer that gave up waiting does.
+     */
+    function project(runtime: CodexRuntime, lock = true) {
+      const turns: Array<Promise<StreamEvent[]>> = [];
+      runtime.onRuntimeTurn!((sessionId, events) => {
+        turns.push(
+          (async () => {
+            const token = Symbol('wake');
+            if (lock) {
+              expect(runtime.acquireRuntimeLock!(sessionId, { on: () => {} }, token)).toBe(true);
+            }
+            const out: StreamEvent[] = [];
+            try {
+              for await (const event of events) out.push(event);
+            } finally {
+              if (lock) runtime.releaseLock(sessionId, `runtime:${sessionId}`, token);
+            }
+            return out;
+          })()
+        );
       });
-      await drain(runtime.sendMessage('s1', 'start the tests', { cwd: '/project' }));
-      const turns: Array<{ sessionId: string; events: AsyncIterable<StreamEvent> }> = [];
-      expect(wake({ sessionId: 's1', completions: [finished], startTurn: true, notices: [] })).toBe(
-        false
+      return turns;
+    }
+
+    it('wakes as the same agent, in the same folder, with the same grants and settings', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      const identity = vi.spyOn(
+        runtime as unknown as { identityPathFor: (cwd: string, agent?: string) => unknown },
+        'identityPathFor'
       );
-      runtime.onRuntimeTurn!((sessionId, events) => turns.push({ sessionId, events }));
-      expect(wake({ sessionId: 's1', completions: [finished], startTurn: true, notices: [] })).toBe(
-        true
-      );
-      expect(turns).toHaveLength(1);
-      const events: StreamEvent[] = [];
-      for await (const event of turns[0]!.events) events.push(event);
+      const opts = {
+        cwd: '/project',
+        forAgent: '/agents/bea',
+        systemPromptAppend: 'APPENDED-CONTEXT',
+        additionalDirectories: [{ path: '/elsewhere/out', access: 'write' as const }],
+        permissionMode: 'acceptEdits' as const,
+        model: 'gpt-x',
+        messageId: 'm-1',
+        title: 'not carried',
+      };
+      await drain(runtime.sendMessage('s1', 'start the tests', opts));
+      const turns = project(runtime);
+      expect(
+        wake({
+          sessionId: 's1',
+          completions: [finished(requests[0]!.wakeContext)],
+          startTurn: true,
+          notices: [],
+        })
+      ).toBe(true);
+      const events = await turns[0]!;
       expect(events[0]).toEqual({
         type: 'background_task_done',
         data: { taskId: 'cmd-1', status: 'completed', summary: 'Exit code 0.\nall green' },
       });
       expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
       expect(requests).toHaveLength(2);
-      expect(requests[1]!.prompt).toContain('<background_update>');
-      expect(requests[1]!.prompt).toContain('Command `npm test` (completed)');
+      const [first, woken] = requests as [(typeof requests)[0], (typeof requests)[0]];
+      expect(woken).toMatchObject({
+        cwd: first.cwd,
+        settings: first.settings,
+        writableDirectories: ['/elsewhere/out'],
+      });
+      expect(woken.messageId).toBeUndefined();
+      expect(woken.prompt).toContain('<background_update>');
+      expect(woken.prompt).toContain('APPENDED-CONTEXT');
+      // The same agent: identity resolved for the turn's own agent both times.
+      expect(identity.mock.calls.map((call) => call[1])).toEqual(['/agents/bea', '/agents/bea']);
+      // The woken turn passes the same context on, so a chain stays that agent.
+      expect(woken.wakeContext).toEqual(first.wakeContext);
       // The notice is DorkOS's, never the session's preview.
       expect((await runtime.getSession('/project', 's1'))?.lastMessagePreview).toBe(
         'start the tests'
       );
     });
 
-    it('shows a finish that may not wake the model, and starts no turn', async () => {
-      const { transport, requests, wake } = backgroundTransport();
-      const runtime = new CodexRuntime({
-        threadMap: new CodexThreadMap(createTestDb()),
-        resolveBinary: async () => '/opt/codex',
-        transport,
-      });
-      const turns: Array<AsyncIterable<StreamEvent>> = [];
-      runtime.onRuntimeTurn!((_sessionId, events) => turns.push(events));
+    it('shows a room turn’s finished work but starts no model turn (its tools are the room’s)', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      await drain(
+        runtime.sendMessage('s1', 'go', {
+          cwd: '/project',
+          roomTurn: { roomId: 'r', authorId: 'a', turnId: 't' },
+        })
+      );
+      expect(requests[0]!.wakeContext).toBeUndefined();
+      const turns = project(runtime);
       wake({
         sessionId: 's1',
-        completions: [{ ...finished, status: 'stopped', wakes: false }],
+        completions: [finished(requests[0]!.wakeContext)],
+        startTurn: true,
+        notices: [],
+      });
+      expect((await turns[0]!).map((e) => e.type)).toEqual(['background_task_done', 'done']);
+      expect(requests).toHaveLength(1);
+    });
+
+    it('starts no model turn for work from turns run differently', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      await drain(runtime.sendMessage('s1', 'a', { cwd: '/project', forAgent: '/agents/a' }));
+      await drain(runtime.sendMessage('s1', 'b', { cwd: '/project', forAgent: '/agents/b' }));
+      const turns = project(runtime);
+      wake({
+        sessionId: 's1',
+        completions: [
+          finished(requests[0]!.wakeContext),
+          finished(requests[1]!.wakeContext, { taskId: 'cmd-2' }),
+        ],
+        startTurn: true,
+        notices: [],
+      });
+      expect((await turns[0]!).filter((e) => e.type === 'background_task_done')).toHaveLength(2);
+      expect(requests).toHaveLength(2);
+    });
+
+    it('never starts a model turn when read without the session’s runtime lock', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
+      const turns = project(runtime, false);
+      wake({
+        sessionId: 's1',
+        completions: [finished(requests[0]!.wakeContext)],
+        startTurn: true,
+        notices: [],
+      });
+      expect((await turns[0]!).map((e) => e.type)).toEqual(['background_task_done', 'done']);
+      expect(requests).toHaveLength(1);
+    });
+
+    it(`wakes at most ${MAX_CONSECUTIVE_WAKES} times in a row, until somebody sends a message`, async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
+      const context = requests[0]!.wakeContext;
+      const turns = project(runtime);
+      const once = async () => {
+        wake({ sessionId: 's1', completions: [finished(context)], startTurn: true, notices: [] });
+        return turns.at(-1)!;
+      };
+      for (let i = 0; i < MAX_CONSECUTIVE_WAKES; i += 1) await once();
+      expect(requests).toHaveLength(1 + MAX_CONSECUTIVE_WAKES);
+      const spent = await once();
+      expect(spent.find((e) => e.type === 'system_status')).toEqual({
+        type: 'system_status',
+        data: { message: WAKE_BUDGET_SPENT_COPY },
+      });
+      expect(requests).toHaveLength(1 + MAX_CONSECUTIVE_WAKES);
+      // A person's message resets the budget.
+      await drain(runtime.sendMessage('s1', 'carry on', { cwd: '/project' }));
+      await once();
+      expect(requests).toHaveLength(3 + MAX_CONSECUTIVE_WAKES);
+    });
+
+    it('shows a finish that may not wake the model, and starts no turn', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      const turns = project(runtime);
+      wake({
+        sessionId: 's1',
+        completions: [finished(undefined, { status: 'stopped', wakes: false })],
         startTurn: false,
         notices: ['lost it'],
       });
-      const events: StreamEvent[] = [];
-      for await (const event of turns[0]!) events.push(event);
-      expect(events.map((e) => e.type)).toEqual(['system_status', 'background_task_done', 'done']);
+      expect((await turns[0]!).map((e) => e.type)).toEqual([
+        'system_status',
+        'background_task_done',
+        'done',
+      ]);
       expect(requests).toHaveLength(0);
     });
 
     it('tells listeners when a dispatched turn opens, and stops tasks through the transport', async () => {
-      const { transport } = backgroundTransport();
-      const runtime = new CodexRuntime({
-        threadMap: new CodexThreadMap(createTestDb()),
-        resolveBinary: async () => '/opt/codex',
-        transport,
-      });
+      const { runtime } = backgroundRuntime();
       const dispatched: string[] = [];
       const off = runtime.onDispatchedTurn!((sessionId) => dispatched.push(sessionId));
       await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
@@ -1833,7 +1958,6 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       expect(dispatched).toEqual(['s1']);
       expect(runtime.holdsBackgroundWork!('s1')).toBe(true);
       expect(await runtime.stopTask('s1', 'cmd-1')).toEqual({ outcome: 'acked', runtime: 'codex' });
-      expect(typeof runtime.acquireRuntimeLock).toBe('function');
     });
 
     it('declares none of it on exec, where nothing outlives the turn', async () => {

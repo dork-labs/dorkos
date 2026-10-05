@@ -400,6 +400,30 @@ describe('credits', () => {
     expect(relay.revoked).toEqual(['relay-key-1']);
   });
 
+  it('terminates a credits thread’s background command before closing its process (unlink)', async () => {
+    const h = harness({ relay: fakeRelay() });
+    const seen: BackgroundWake[] = [];
+    h.transport.onWake((wake) => {
+      seen.push(wake);
+      return true;
+    });
+    const bg = backgroundCommandTurn('pnpm dev');
+    h.host.home(CREDITS_ENV_HOME).nextTurn(bg.script);
+    await h.run(h.request({ sessionId: 's1', launch: credits as never }));
+    const fake = h.host.home(CREDITS_ENV_HOME).processes[0]!;
+    await h.transport.closeCreditsProcess();
+    expect(fake.requestsOf('thread/backgroundTerminals/terminate')).toEqual([
+      { threadId: expect.any(String), processId: bg.processId },
+    ]);
+    expect(fake.hasExited).toBe(true);
+    for (let i = 0; i < 100 && seen.length === 0; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    // Stopped, as Codex confirmed, never "lost track"; and no model turn.
+    expect(seen[0]).toMatchObject({ startTurn: false, notices: [] });
+    expect(seen[0]!.completions[0]).toMatchObject({ status: 'stopped', wakes: false });
+  });
+
   it('refuses a credits turn with the credits card when no relay is running', async () => {
     const h = harness();
     const events = await h.run(h.request({ sessionId: 's1', launch: credits as never }));
@@ -799,6 +823,46 @@ describe('background work (spec §12)', () => {
     expect(seen[0]!.completions[0]).toMatchObject({ status: 'stopped', wakes: false });
     // Already gone: a second stop is honest about it.
     expect((await h.transport.stopTask('s1', bg.itemId)).outcome).toBe('not-running');
+  });
+
+  it('keeps the result of a command that ended just before its stop, and wakes no model turn', async () => {
+    const h = harness();
+    const seen = wakes(h);
+    const bg = backgroundCommandTurn();
+    h.host.home(PERSON_HOME).nextTurn(bg.script);
+    await h.run(h.request({ sessionId: 's1' }));
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    // It has left the terminal list but its item/completed is still in flight.
+    fake.backgroundTerminals.set(h.bindings[0]!.threadId, []);
+    expect((await h.transport.stopTask('s1', bg.itemId)).outcome).toBe('not-running');
+    bg.finish(0, 'it finished\n');
+    await waitFor(() => seen.length === 1);
+    expect(seen[0]).toMatchObject({ startTurn: false });
+    expect(seen[0]!.completions[0]).toMatchObject({ status: 'completed', wakes: false });
+    expect(seen[0]!.completions[0]!.summary).toContain('it finished');
+  });
+
+  it('keeps a process alive while a helper agent it started is still working', async () => {
+    const h = harness();
+    h.host.home(PERSON_HOME).nextTurn((ctx) => {
+      ctx.emit('item/completed', {
+        item: {
+          type: 'subAgentActivity',
+          id: 'act-1',
+          kind: 'started',
+          agentThreadId: 'helper-thread',
+          agentPath: '/root/helper',
+        },
+      });
+      ctx.agentMessage('asked a helper');
+      ctx.complete('completed');
+    });
+    await h.run(h.request({ sessionId: 's1' }));
+    expect(h.transport.holdsBackgroundWork('s1')).toBe(true);
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    h.pool.list()[0]!.stale = true;
+    await h.pool.reapOnce();
+    expect(fake.hasExited).toBe(false);
   });
 
   it('says it lost track of the work when Codex stops, and wakes no model turn', async () => {

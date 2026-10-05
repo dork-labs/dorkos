@@ -342,6 +342,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     runtimeA = new FakeAgentRuntime('fake-a');
     runtimeB = new FakeAgentRuntime('fake-b');
     codex = new CodexRuntime({
+      transport: 'exec',
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
     });

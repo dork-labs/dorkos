@@ -218,6 +218,7 @@ describe('the dorkos tool server on a Codex turn', () => {
     } = {}
   ): CodexRuntime {
     const runtime = new CodexRuntime({
+      transport: 'exec',
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
       defaultCwd: agentDir,
@@ -501,6 +502,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       const principals = connectorPort();
       const stop = vi.fn();
       const runtime = new CodexRuntime({
+        transport: 'exec',
         threadMap: new CodexThreadMap(db),
         resolveBinary: async () => {
           throw new Error('binary setup failed');
@@ -741,6 +743,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       // composition root, so a runtime built without one has no way to identify
       // anybody and injects nothing.
       const runtime = new CodexRuntime({
+        transport: 'exec',
         threadMap: new CodexThreadMap(db),
         resolveBinary: async () => '/bin/codex',
         defaultCwd: agentDir,

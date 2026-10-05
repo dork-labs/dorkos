@@ -45,6 +45,12 @@ import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
 export const THREAD_STARTS_FRESH_NOTICE =
   'Codex no longer has this conversation, so it starts fresh.';
 
+/**
+ * How long the pre-resume `thread/read` may take. A local metadata read; on a
+ * timeout the resume that follows has the final word.
+ */
+export const THREAD_READ_TIMEOUT_MS = 5_000;
+
 /** The copy a person reads when they archived the conversation in Codex (§6). */
 export const THREAD_ARCHIVED_NOTICE = 'This conversation is archived in Codex, so it starts fresh.';
 
@@ -318,7 +324,11 @@ export class CodexThreadLoader {
       return { ...fresh, notice: { type: 'system_status', data: { message } } };
     };
     try {
-      await input.process.client.request('thread/read', { threadId });
+      await input.process.client.request(
+        'thread/read',
+        { threadId },
+        { timeoutMs: THREAD_READ_TIMEOUT_MS }
+      );
     } catch (err) {
       if (isCodexRpcError(err, 'thread-not-found')) return freshWith(THREAD_STARTS_FRESH_NOTICE);
       // Anything else: the resume below has the final word.

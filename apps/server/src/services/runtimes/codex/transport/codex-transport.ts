@@ -87,6 +87,13 @@ export interface CodexTurnRequest {
    * rather than first-write-wins.
    */
   onThreadBound(threadId: string, replaces?: string): void;
+  /**
+   * The turn's own options, opaque to the transport: kept on any work the turn
+   * leaves running and handed back with its wake, so the turn a wake starts
+   * runs as the same agent with the same settings. Absent means a wake from
+   * this turn's work must not start a model turn.
+   */
+  readonly wakeContext?: unknown;
 }
 
 /** How one transport talks to Codex. */

@@ -75,6 +75,10 @@ export const BACKGROUND_WORK_LOST_COPY =
 /** What the person reads when the ceiling stopped a task. */
 export const BACKGROUND_CEILING_COPY = 'Stopped after running four hours in the background.';
 
+/** What the person reads when the ceiling could not stop a task. */
+export const BACKGROUND_CEILING_FAILED_COPY =
+  'DorkOS could not stop a background command after four hours. It may still run.';
+
 /** One piece of work running past its turn. */
 export interface BackgroundTask {
   /** The item id (a command) or the helper's thread id (a sub-agent). */
@@ -93,6 +97,12 @@ export interface BackgroundTask {
   readonly label: string;
   /** How the turn that started it ended (`completed`, `interrupted`, `failed`). */
   readonly turnStatus: string;
+  /**
+   * The starting turn's own options, opaque here: the runtime hands them to
+   * the turn a wake starts, so it runs as the same agent with the same
+   * settings. Absent means a wake must not start a model turn.
+   */
+  readonly context?: unknown;
 }
 
 /** One finished task, as reported. */
@@ -109,6 +119,8 @@ export interface BackgroundCompletion {
   readonly summary: string;
   /** Whether this completion may start a model turn. */
   readonly wakes: boolean;
+  /** The starting turn's options ({@link BackgroundTask.context}). */
+  readonly context?: unknown;
 }
 
 /** One wake, handed to the runtime. */
@@ -130,8 +142,11 @@ export interface CodexBackgroundWorkOptions {
    * opened), `false` when nobody is listening.
    */
   readonly onWake: (wake: BackgroundWake) => boolean;
-  /** Stop a task that reached the ceiling. */
-  readonly terminate: (task: BackgroundTask) => Promise<void>;
+  /**
+   * Stop a task that reached the ceiling: `true` when it was stopped, `false`
+   * when Codex says it had already ended (its result is on its way).
+   */
+  readonly terminate: (task: BackgroundTask) => Promise<boolean>;
   /** Told when a session's pending wake was dropped without opening. */
   readonly onGateChange?: (sessionId: string) => void;
   /** Coalescing window. */
@@ -148,6 +163,8 @@ interface TrackedTask {
   readonly task: BackgroundTask;
   /** Set when a person or the ceiling asked it to stop: it never wakes. */
   stopping: 'person' | 'ceiling' | undefined;
+  /** Set once Codex confirmed it terminated the task. */
+  terminated: boolean;
   /** Reconciliations it has been missing from in a row. */
   missing: number;
   readonly ceiling: ReturnType<typeof setTimeout>;
@@ -195,7 +212,13 @@ export class CodexBackgroundWork {
       if (this.tasks.has(task.taskId)) continue;
       const ceiling = setTimeout(() => this.reachCeiling(task.taskId), this.ceilingMs);
       ceiling.unref?.();
-      this.tasks.set(task.taskId, { task, stopping: undefined, missing: 0, ceiling });
+      this.tasks.set(task.taskId, {
+        task,
+        stopping: undefined,
+        terminated: false,
+        missing: 0,
+        ceiling,
+      });
     }
   }
 
@@ -231,6 +254,7 @@ export class CodexBackgroundWork {
           summary:
             status === 'completed' ? 'The helper agent finished.' : 'The helper agent was stopped.',
           wakes: wakes(tracked),
+          ...(tracked.task.context !== undefined ? { context: tracked.task.context } : {}),
         },
       };
     }
@@ -308,6 +332,24 @@ export class CodexBackgroundWork {
     if (tracked && tracked.stopping === undefined) tracked.stopping = 'person';
   }
 
+  /**
+   * Note that Codex confirmed it terminated a task, so losing its process
+   * reports it stopped rather than lost.
+   *
+   * @param taskId - The task.
+   */
+  markTerminated(taskId: string): void {
+    const tracked = this.tasks.get(taskId);
+    if (tracked) tracked.terminated = true;
+  }
+
+  /** Every tracked task, for liveness: helpers have no terminal Codex lists. */
+  tasksIn(processKey: string): BackgroundTask[] {
+    return [...this.tasks.values()]
+      .map((tracked) => tracked.task)
+      .filter((task) => task.processKey === processKey);
+  }
+
   /** Every tracked command in a thread, for reconciliation. */
   commandsIn(threadId: string): BackgroundTask[] {
     return [...this.tasks.values()]
@@ -350,8 +392,20 @@ export class CodexBackgroundWork {
     const sessions = new Set<string>();
     for (const tracked of [...this.tasks.values()]) {
       if (tracked.task.processKey !== processKey) continue;
-      sessions.add(tracked.task.sessionId);
       this.finish(tracked.task.taskId);
+      // Codex confirmed it stopped this one: say so, not that it was lost.
+      if (tracked.terminated) {
+        this.queue(tracked.task.sessionId, {
+          taskId: tracked.task.taskId,
+          kind: tracked.task.kind,
+          label: tracked.task.label,
+          status: 'stopped',
+          summary: tracked.stopping === 'ceiling' ? BACKGROUND_CEILING_COPY : 'Stopped.',
+          wakes: false,
+        });
+        continue;
+      }
+      sessions.add(tracked.task.sessionId);
     }
     for (const sessionId of sessions) {
       this.pendingFor(sessionId).notices.push(BACKGROUND_WORK_LOST_COPY);
@@ -411,14 +465,21 @@ export class CodexBackgroundWork {
     logger.info('[CodexAppServer] stopping background work at the four-hour ceiling', {
       sessionId: tracked.task.sessionId,
     });
-    void this.options.terminate(tracked.task).catch((err: unknown) => {
-      // Codex could not stop it: stop tracking it, so it holds nothing.
-      logger.warn('[CodexAppServer] could not stop background work at the ceiling', {
-        sessionId: tracked.task.sessionId,
-        err: String(err),
-      });
-      this.finish(taskId);
-    });
+    void this.options.terminate(tracked.task).then(
+      // `false`: it had just ended, and its result is on its way.
+      (stopped) => {
+        if (stopped) this.markTerminated(taskId);
+      },
+      (err: unknown) => {
+        // Codex could not stop it: say so, and stop tracking it so it holds nothing.
+        logger.warn('[CodexAppServer] could not stop background work at the ceiling', {
+          sessionId: tracked.task.sessionId,
+          err: String(err),
+        });
+        this.finish(taskId);
+        this.pendingFor(tracked.task.sessionId).notices.push(BACKGROUND_CEILING_FAILED_COPY);
+      }
+    );
   }
 }
 
@@ -433,15 +494,16 @@ function commandCompletion(
 ): BackgroundCompletion {
   const exitCode = typeof item.exitCode === 'number' ? item.exitCode : null;
   const output = typeof item.aggregatedOutput === 'string' ? item.aggregatedOutput : '';
-  const status: BackgroundCompletion['status'] =
-    tracked.stopping !== undefined
+  const succeeded = item.status === 'completed' && (exitCode ?? 0) === 0;
+  // A stop that raced the command's own end reports how it really ended.
+  const status: BackgroundCompletion['status'] = succeeded
+    ? 'completed'
+    : tracked.stopping !== undefined
       ? 'stopped'
-      : item.status === 'completed' && (exitCode ?? 0) === 0
-        ? 'completed'
-        : 'failed';
+      : 'failed';
   const tail = output.length > OUTPUT_TAIL_CHARS ? output.slice(-OUTPUT_TAIL_CHARS) : output;
   const head =
-    tracked.stopping === 'ceiling'
+    tracked.stopping === 'ceiling' && status === 'stopped'
       ? BACKGROUND_CEILING_COPY
       : exitCode !== null
         ? `Exit code ${exitCode}.`
@@ -455,7 +517,23 @@ function commandCompletion(
     status,
     summary: tail.trim() ? `${head}\n${tail}` : head,
     wakes: wakes(tracked),
+    ...(tracked.task.context !== undefined ? { context: tracked.task.context } : {}),
   };
+}
+
+/**
+ * Text from a command, made safe to put inside the `<background_update>`
+ * block: fenced with more backticks than it contains, and unable to close the
+ * block early.
+ */
+function fenced(text: string, inline = false): string {
+  const safe = text.replace(/<\/?background_update/gi, (tag) => tag.replace('<', '&lt;'));
+  const longest = Math.max(
+    inline ? 0 : 2,
+    ...[...safe.matchAll(/`+/g)].map((run) => run[0].length)
+  );
+  const fence = '`'.repeat(longest + 1);
+  return inline ? `${fence} ${safe.replace(/\n/g, ' ')} ${fence}` : `${fence}\n${safe}\n${fence}`;
 }
 
 /**
@@ -467,8 +545,9 @@ function commandCompletion(
  */
 export function buildBackgroundUpdate(completions: readonly BackgroundCompletion[]): string {
   const entries = completions.map((completion) => {
-    const what = completion.kind === 'bash' ? `Command \`${completion.label}\`` : 'Helper agent';
-    return `- ${what} (${completion.status}):\n${completion.summary}`;
+    const what =
+      completion.kind === 'bash' ? `Command ${fenced(completion.label, true)}` : 'Helper agent';
+    return `- ${what} (${completion.status}):\n${fenced(completion.summary)}`;
   });
   return [
     '<background_update>',

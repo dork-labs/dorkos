@@ -78,6 +78,7 @@ async function turnWith(servers: Record<string, McpAppServerConnection>): Promis
   mcpServers: Record<string, Record<string, unknown>>;
 }> {
   const runtime = new CodexRuntime({
+    transport: 'exec',
     threadMap: new CodexThreadMap(createTestDb()),
     resolveBinary: async () => '/bin/codex',
     defaultCwd: CWD,
