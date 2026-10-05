@@ -7,7 +7,8 @@ actor: agent
 gates:
   - wf.desktop-release.build-macos
   - wf.desktop-release.build-windows
-prs: []
+prs:
+  - 2602
 hypothesis:
   metric: tracked.desktop-release-wall-clock
   baseline: 19.6
