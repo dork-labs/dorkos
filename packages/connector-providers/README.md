@@ -31,6 +31,14 @@ import { ConnectorAuthenticationSetupSchema } from '@dork-labs/connector-provide
 
 // Key-sorted JSON, the form DorkOS hashes connector material over.
 import { stableStringify } from '@dork-labs/connector-providers/stable-stringify';
+
+// Check an agent's arguments against an operation's JSON Schema, without filling defaults.
+import { checkConnectorArguments } from '@dork-labs/connector-providers/connector-arguments';
+
+// The wire schemas between a linked DorkOS app and DorkOS Cloud for hosted connections.
+import { ManagedConnectorExecutionRequestSchema } from '@dork-labs/connector-providers/connector-managed-schemas';
+import { ManagedConnectorCatalogPageSchema } from '@dork-labs/connector-providers/connector-managed-discovery-schemas';
+import { ManagedConnectorUsageResponseSchema } from '@dork-labs/connector-providers/connector-managed-usage-schemas';
 ```
 
 The root entry (`@dork-labs/connector-providers`) re-exports the Composio adapter and the event
@@ -53,7 +61,9 @@ Pin an exact version and bump it when you take a new DorkOS release.
   against that version's exact shapes.
 - This is a Node.js package. If you use TypeScript, install `@types/node` too: the Composio
   SDK's own type files refer to Node's built-in modules.
-- Nothing else. The package depends on no other package in the DorkOS monorepo.
+- `@dork-labs/cloud-api` is a regular dependency at the **same exact version** as this package.
+  The hosted-connection schemas use its connection grant shape. npm installs it for you.
+- Nothing else. No other package from the DorkOS monorepo is a dependency.
   `src/__tests__/packaging.test.ts` checks this from the manifest, the imports and the lockfile.
 
 ## Development

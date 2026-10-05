@@ -550,7 +550,9 @@ follow-up to file — retry it with the same auth guidance below. It is a small,
 package, so nothing about it can fail slowly. (If the publish itself fails — e.g. an expired token — that is a genuine failure: report it and retry per the auth guidance below; do not silently skip it.)
 
 `@dork-labs/connector-providers` publishes **after** `@dork-labs/cloud-api` and is **not** allowed
-to be skipped either, on any release: hosted services install it from public npm at the same
+to be skipped either, on any release. It depends on `@dork-labs/cloud-api` at the exact same
+version (`pnpm publish` rewrites its `workspace:*` range), so publishing it first would ship a
+package nobody can install until the contract lands. Hosted services install it from public npm at the same
 version as the cloud contract, so a release that publishes one and not the other leaves them
 unable to install a matching pair. If it fails where the others succeeded, that is a broken release
 to finish, not a follow-up to file — retry it with the same auth guidance below.

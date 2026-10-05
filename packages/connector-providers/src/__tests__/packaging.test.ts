@@ -5,11 +5,18 @@
  * this monorepo in it, so every one of these is load-bearing rather than
  * stylistic:
  *
- *   - **Zero workspace dependencies.** Not in `dependencies`, not in
- *     `peerDependencies`, not in `optionalDependencies`, and none reachable
- *     from an import in `src/`. Checked three ways, including against the
- *     workspace lockfile, because a `workspace:*` entry resolves fine here and
- *     fails only for whoever installs the published tarball. The one runtime
+ *   - **One workspace dependency, and only a published one.** The managed
+ *     wire schemas name a connection grant by the cloud contract's own
+ *     subject schema, so `@dork-labs/cloud-api` is a runtime dependency. It is
+ *     itself published, in version lockstep with this package, and
+ *     `pnpm publish` rewrites its `workspace:*` range to that exact version.
+ *     No other workspace package may appear in `dependencies`,
+ *     `peerDependencies` or `optionalDependencies`, or be reachable from an
+ *     import in `src/`. Checked three ways, including against the workspace
+ *     lockfile, because an unpublished `workspace:*` entry resolves fine here
+ *     and fails only for whoever installs the published tarball. The cloud
+ *     contract must never depend back on this package or on `@dorkos/shared`,
+ *     or the two published packages would form a cycle. The other runtime
  *     dependency is the vendor SDK this package exists to confine, at an exact
  *     pin.
  *   - **`zod` is a peer.** A consumer that already has `zod` must get one copy,
@@ -30,6 +37,9 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+/** The one workspace package this one may depend on: published, in version lockstep. */
+const PUBLISHED_WORKSPACE_DEPENDENCY = '@dork-labs/cloud-api';
 
 const packageRoot = path.resolve(import.meta.dirname, '..', '..');
 const repoRoot = path.resolve(packageRoot, '..', '..');
@@ -83,6 +93,10 @@ describe('packaging', () => {
       './connector-provider',
       './connector-authentication-setup',
       './stable-stringify',
+      './connector-arguments',
+      './connector-managed-schemas',
+      './connector-managed-discovery-schemas',
+      './connector-managed-usage-schemas',
     ]);
     for (const [key, target] of subpaths) {
       const stem = key === '.' ? 'index' : key === './composio' ? 'composio/index' : key.slice(2);
@@ -115,18 +129,23 @@ describe('packaging', () => {
     expect(scripts.clean).toMatch(/rmSync\('dist'/);
   });
 
-  it('declares zod as a peer and only the confined vendor SDK as a runtime dependency', () => {
+  it('declares zod as a peer, and only the vendor SDK and the cloud contract at runtime', () => {
     // Exact pin: the adapters are written against this SDK's precise shapes.
-    expect(manifest.dependencies ?? {}).toEqual({ '@composio/core': '0.21.0' });
+    // The cloud contract is published in lockstep; `pnpm publish` pins it exactly.
+    expect(manifest.dependencies ?? {}).toEqual({
+      '@composio/core': '0.21.0',
+      '@dork-labs/cloud-api': 'workspace:*',
+    });
     expect(Object.keys(manifest.peerDependencies ?? {})).toEqual(['zod']);
     // Also a devDependency, so the package builds and tests here without a
     // consumer supplying one.
     expect(manifest.devDependencies?.zod).toBeDefined();
   });
 
-  it('has no workspace dependency of any kind a consumer could see', () => {
+  it('has no workspace dependency a consumer could see, except the published cloud contract', () => {
     for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'] as const) {
       for (const [name, range] of Object.entries(manifest[field] ?? {})) {
+        if (field === 'dependencies' && name === PUBLISHED_WORKSPACE_DEPENDENCY) continue;
         expect(range, `${field}.${name} uses the workspace protocol`).not.toMatch(/^workspace:/);
         expect(name, `${field}.${name} is a workspace package`).not.toMatch(/^@dorkos\//);
       }
@@ -140,6 +159,8 @@ describe('packaging', () => {
       for (const match of text.matchAll(/from\s+'([^']+)'/g)) {
         const specifier = match[1];
         if (specifier.startsWith('@dorkos/'))
+          offenders.push(`${path.basename(file)} -> ${specifier}`);
+        if (specifier.startsWith('@dork-labs/') && specifier !== PUBLISHED_WORKSPACE_DEPENDENCY)
           offenders.push(`${path.basename(file)} -> ${specifier}`);
         if (specifier.startsWith('../../'))
           offenders.push(`${path.basename(file)} -> ${specifier}`);
@@ -175,13 +196,30 @@ describe('packaging', () => {
     const end = rest.search(/\n {2}[^ \n][^\n]*:\n/);
     const section = end === -1 ? rest : rest.slice(0, end);
 
-    // Only `devDependencies` may carry a `link:` — the shared ESLint and
-    // TypeScript configs, which npm strips from the published tarball.
-    const runtimeBlock = section.split(/\n {4}devDependencies:/)[0];
-    expect(runtimeBlock).not.toContain('link:');
-    for (const line of section.split('\n')) {
+    // At runtime the only `link:` is the published cloud contract. Otherwise
+    // only `devDependencies` may carry one — the shared ESLint and TypeScript
+    // configs, which npm strips from the published tarball.
+    const [runtimeBlock, devBlock = ''] = section.split(/\n {4}devDependencies:/);
+    const runtimeLinks = runtimeBlock.split('\n').filter((line) => line.includes('link:'));
+    expect(runtimeLinks.map((line) => line.trim())).toEqual(['version: link:../cloud-api']);
+    for (const line of devBlock.split('\n')) {
       if (!line.includes('link:')) continue;
       expect(line).toMatch(/link:\.\.\/(eslint-config|typescript-config)/);
+    }
+  });
+
+  it('depends on a cloud contract that depends on nothing in this workspace', () => {
+    // Either direction of a workspace edge between the two published packages
+    // would make them a cycle neither could be installed from npm without.
+    const cloudApi = JSON.parse(
+      readFileSync(path.join(repoRoot, 'packages', 'cloud-api', 'package.json'), 'utf8')
+    ) as Pick<typeof manifest, 'name' | 'dependencies' | 'peerDependencies'>;
+    expect(cloudApi.name).toBe(PUBLISHED_WORKSPACE_DEPENDENCY);
+    for (const deps of [cloudApi.dependencies, cloudApi.peerDependencies]) {
+      for (const [name, range] of Object.entries(deps ?? {})) {
+        expect(range, name).not.toMatch(/^workspace:/);
+        expect(name).not.toMatch(/^@dorkos\/|^@dork-labs\//);
+      }
     }
   });
 });

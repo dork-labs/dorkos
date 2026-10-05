@@ -47,6 +47,22 @@
       "types": "./dist/stable-stringify.d.ts",
       "default": "./dist/stable-stringify.js"
     },
+    "./connector-arguments": {
+      "types": "./dist/connector-arguments.d.ts",
+      "default": "./dist/connector-arguments.js"
+    },
+    "./connector-managed-schemas": {
+      "types": "./dist/connector-managed-schemas.d.ts",
+      "default": "./dist/connector-managed-schemas.js"
+    },
+    "./connector-managed-discovery-schemas": {
+      "types": "./dist/connector-managed-discovery-schemas.d.ts",
+      "default": "./dist/connector-managed-discovery-schemas.js"
+    },
+    "./connector-managed-usage-schemas": {
+      "types": "./dist/connector-managed-usage-schemas.d.ts",
+      "default": "./dist/connector-managed-usage-schemas.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -67,7 +83,8 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@composio/core": "0.21.0"
+    "@composio/core": "0.21.0",
+    "@dork-labs/cloud-api": "workspace:*"
   },
   "peerDependencies": {
     "zod": "^4.6.2"
