@@ -542,7 +542,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     it('POST /:id/messages accepts the runtime:"codex" hint (202 + persisted row); an unknown hint still 400s', async () => {
       const accepted = await request(testServer)
         .post(`/api/sessions/${CODEX_SESSION}/messages`)
-        .send({ content: 'ping', runtime: 'codex' });
+        .send({ content: 'ping', runtime: 'codex', create: true });
 
       expect(accepted.status).toBe(202);
       const row = db
@@ -559,7 +559,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
 
       const rejected = await request(testServer)
         .post(`/api/sessions/${UNKNOWN_HINT_SESSION}/messages`)
-        .send({ content: 'ping', runtime: 'nonexistent-runtime' });
+        .send({ content: 'ping', runtime: 'nonexistent-runtime', create: true });
 
       expect(rejected.status).toBe(400);
       expect(rejected.body.code).toBe('UNKNOWN_RUNTIME');
@@ -570,7 +570,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       // detached, feeding the runtime's mapped StreamEvents into the projector.
       const res = await request(testServer)
         .post(`/api/sessions/${CODEX_SESSION}/messages`)
-        .send({ content: 'Hello codex', runtime: 'codex' });
+        .send({ content: 'Hello codex', runtime: 'codex', create: true });
 
       expect(res.status).toBe(202);
       // The whole body: the canonical id plus the queue receipt, and no turn
@@ -692,7 +692,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       // detached, feeding the adapter's mapped StreamEvents into the projector.
       const res = await request(testServer)
         .post(`/api/sessions/${OPENCODE_SESSION}/messages`)
-        .send({ content: 'Hello opencode', runtime: 'opencode' });
+        .send({ content: 'Hello opencode', runtime: 'opencode', create: true });
 
       expect(res.status).toBe(202);
       // The whole body: the canonical id plus the queue receipt, and no turn

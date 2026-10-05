@@ -356,7 +356,7 @@ async function seedSessions(): Promise<SeededSession[]> {
     const res = await fetch(`${API_URL}/api/sessions/${sessionId}/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ content: session.prompt, cwd }),
+      body: JSON.stringify({ content: session.prompt, cwd, create: true }),
     });
     if (res.status !== 202) {
       throw new Error(`seed session ${session.agent} → ${res.status}: ${await res.text()}`);

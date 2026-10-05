@@ -35,7 +35,7 @@
  */
 import { useCallback, useEffect } from 'react';
 import { useAppStore, useInPlaceNavigate } from '@/layers/shared/model';
-import { useSessions } from '@/layers/entities/session';
+import { useSessionDetail, useSessions } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 
 function readRuntimeParam(): string | null {
@@ -100,7 +100,16 @@ export interface RuntimeChipState extends ResolvedSessionRuntime {
 export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRuntime {
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const { sessions: sessionList, isLoading: sessionListLoading } = useSessions();
-  const sessionRow = sessionId ? (sessionList.find((s) => s.id === sessionId) ?? null) : null;
+  // The session's own record when the list does not carry it: a session in
+  // another folder (one an agent started elsewhere) or past the list's cap.
+  // Without it such a session read as unstarted and showed the server's
+  // default runtime, which could pair Codex with an Opus session (DOR-2712).
+  // The read 404s for a session that has not started, and a settings change
+  // on one caches no runtime, so only a record naming its runtime counts.
+  const { data: detail } = useSessionDetail(sessionId || null);
+  const sessionRow = sessionId
+    ? (sessionList.find((s) => s.id === sessionId) ?? (detail?.runtime ? detail : null))
+    : null;
   const hasStarted = sessionRow !== null;
   const startednessKnown = hasStarted || (!sessionListLoading && selectedCwd !== null);
 
