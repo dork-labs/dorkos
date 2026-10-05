@@ -82,6 +82,13 @@ export interface ExperimentEntry {
  * design, and the most useful thing to try goes first.
  */
 export const EXPERIMENTS: readonly ExperimentEntry[] = [
+  {
+    path: 'browser.enabled',
+    title: 'Shared browser',
+    description: 'View your agents’ browser and share control.',
+    costNote: 'Unavailable while safety checks continue.',
+    graduationIssue: 'DOR-2671',
+  },
   // `runtimes.claudeCode.persistentSession` GRADUATED here (DOR-1290, spec
   // `full-power-defaults`): warm agents ship on by default, so the entry went
   // out in the same change that flipped the default, exactly as the contract
