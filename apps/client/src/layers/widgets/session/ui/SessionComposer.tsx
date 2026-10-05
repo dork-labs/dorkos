@@ -520,6 +520,15 @@ export function SessionComposer({
     [sessionId, transport]
   );
 
+  // Switch now on a message held for the agent's background work (DOR-2065).
+  // The queue update that follows clears the row; only a failure needs words.
+  const handleSwitchNow = useCallback(() => {
+    if (!sessionId) return;
+    void transport.switchSessionProcess(sessionId).catch(() => {
+      toast.error('Couldn’t switch. Try again.');
+    });
+  }, [sessionId, transport]);
+
   // Text arriving from outside the composer — "Add to Chat" in the file
   // explorer, or a file dragged onto the box — is appended to whatever is
   // already typed, with the caret left after it. The current text is read
@@ -671,14 +680,16 @@ export function SessionComposer({
               onRemove={chatQueue.handleQueueRemove}
               onSend={chatQueue.handleQueueSend}
               onMoveUp={chatQueue.handleQueueMoveUp}
+              onSwitchNow={handleSwitchNow}
               // The server dispatches the head the moment the session frees up,
-              // so the only thing that genuinely holds the line is the agent
-              // parked on a person — which it will not leave until that question
-              // is answered.
+              // so what genuinely holds the line is the agent parked on a
+              // person, or the head held for the agent's background work.
               statusNote={
                 awaitingDecision
                   ? 'Waiting for your answer above'
-                  : 'Sending one at a time as the agent finishes'
+                  : chatQueue.queue[0]?.waiting !== undefined
+                    ? 'Sending when the agent is free'
+                    : 'Sending one at a time as the agent finishes'
               }
             />
           )}

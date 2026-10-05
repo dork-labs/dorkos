@@ -34,6 +34,7 @@ export type {
   InterruptReason,
   InterruptReceipt,
   QueuedMessage,
+  QueuedWaitingOn,
   StreamEventType,
   StreamEvent,
   CapabilityApprovalRequiredEvent,
