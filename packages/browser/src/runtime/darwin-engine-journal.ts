@@ -17,10 +17,13 @@ import {
 
 /** Private engine custody, not evidence granting profile release. */
 export interface DarwinEngineJournal {
-  attributeRoot(root: ProcessIdentity): Promise<void>;
+  attributeRoot(root: ProcessIdentity, supervisor?: ProcessIdentity): Promise<void>;
   stop(
     launchEntered?: boolean
-  ): Promise<'recorded-gone' | 'campaign-closed' | 'retained' | 'uncertain'>;
+  ): Promise<
+    'recorded-gone' | 'campaign-closed' | 'campaign-closed-gapped' | 'retained' | 'uncertain'
+  >;
+  historyGapped(): boolean;
   custody(): Readonly<{ pending: boolean; uncertain: boolean }>;
 }
 const retained = new Set<DarwinJournalWorker>();
@@ -100,6 +103,7 @@ export async function startDarwinEngineJournal(
     },
   });
   retained.add(worker);
+  let historyGapped = false;
   let pending = true,
     uncertain = false,
     stopped = false,
@@ -107,9 +111,15 @@ export async function startDarwinEngineJournal(
   const completion = worker.completion.then(
     (result) => {
       pending = false;
-      uncertain ||= result !== 'recorded-gone' && result !== 'campaign-closed';
+      historyGapped ||= result === 'campaign-closed-gapped';
+      uncertain ||=
+        result !== 'campaign-closed-gapped' &&
+        result !== 'recorded-gone' &&
+        result !== 'campaign-closed';
       if (!uncertain) retained.delete(worker);
-      return result === 'recorded-gone' || result === 'campaign-closed'
+      return result === 'recorded-gone' ||
+        result === 'campaign-closed' ||
+        result === 'campaign-closed-gapped'
         ? uncertain
           ? ('uncertain' as const)
           : result
@@ -122,11 +132,13 @@ export async function startDarwinEngineJournal(
     }
   );
   return Object.freeze({
-    async attributeRoot(root: ProcessIdentity) {
+    async attributeRoot(root: ProcessIdentity, supervisor?: ProcessIdentity) {
       if (stopped || attributed || !pending) throw new Error('JOURNAL_ROOT_REFUSED');
       attributed = true;
       try {
-        await worker.enrollRoot(ProcessIdentitySchema.parse(root));
+        const identity = ProcessIdentitySchema.parse(root);
+        if (supervisor) await worker.enrollRoot(identity, ProcessIdentitySchema.parse(supervisor));
+        else await worker.enrollRoot(identity);
       } catch (error) {
         uncertain = true;
         throw error;
@@ -141,6 +153,7 @@ export async function startDarwinEngineJournal(
       }
       return completion;
     },
+    historyGapped: () => historyGapped,
     custody: () => Object.freeze({ pending, uncertain }),
   });
 }

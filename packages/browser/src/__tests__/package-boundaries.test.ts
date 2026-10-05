@@ -108,10 +108,13 @@ describe('private browser package boundaries', () => {
       .filter((name) => name.endsWith('.fixture.test.ts'))
       .sort();
     expect(actual).toEqual([
+      'darwin-supervisor-browser.fixture.test.ts',
+      'darwin-supervisor-engine.fixture.test.ts',
       'default-crash-recovery.fixture.test.ts',
       'lifecycle-exclusion.fixture.test.ts',
       'lifecycle-negative.fixture.test.ts',
       'lifecycle.fixture.test.ts',
+      'private-proxy-auth.fixture.test.ts',
     ]);
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
     expect(manifest.scripts['test:fixture']).toBe(
@@ -202,6 +205,8 @@ describe('private browser package boundaries', () => {
         const module = path.relative(path.join(packageRoot, 'src'), file).split(path.sep).join('/');
         const allowed: Record<string, readonly string[]> = {
           zod: [
+            'runtime/darwin-supervisor-protocol.ts',
+            'runtime/darwin-supervisor-worker.ts',
             // Private bounded journal records and native supervisor protocol.
             'lifecycle/process-journal.ts',
             'lifecycle/process-reconciliation.ts',
@@ -224,6 +229,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/filesystem.ts',
           ],
           'node:path': [
+            'runtime/darwin-supervisor-browser.ts',
+
             'lifecycle/process-journal.ts',
             'runtime-descriptor.ts',
             'runtime/host-identity.ts',
@@ -237,6 +244,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/transaction.ts',
           ],
           'node:crypto': [
+            'runtime/darwin-supervisor-client.ts',
+
             'lifecycle/acquisition.ts',
             'lifecycle/process-journal.ts',
             'runtime/darwin-process-observer.ts',
@@ -257,6 +266,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/index.ts',
           ],
           'node:child_process': [
+            'runtime/darwin-supervisor-client.ts',
+
             'runtime/host-identity.ts',
             'runtime/installation/jobs.ts',
             'runtime/darwin-process-observer.ts',
@@ -264,6 +275,8 @@ describe('private browser package boundaries', () => {
             'runtime/darwin-owned-child.ts',
           ],
           'node:fs': [
+            'runtime/darwin-supervisor-browser.ts',
+
             'runtime/darwin-packaged-observer.ts',
             'lifecycle/process-journal.ts',
             'runtime/darwin-process-observer.ts',
@@ -277,6 +290,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/fresh-verifier.ts',
           ],
           'node:fs/promises': [
+            'runtime/darwin-supervisor-browser.ts',
+
             'runtime/darwin-packaged-observer.ts',
             'lifecycle/process-journal.ts',
             'runtime/darwin-process-observer.ts',
@@ -287,7 +302,11 @@ describe('private browser package boundaries', () => {
             'runtime/installation/jobs.ts',
             'runtime/installation/fresh-verifier.ts',
           ],
-          'node:stream': ['runtime/installation/jobs.ts', 'runtime/darwin-owned-child.ts'],
+          'node:stream': [
+            'runtime/darwin-supervisor-client.ts',
+            'runtime/installation/jobs.ts',
+            'runtime/darwin-owned-child.ts',
+          ],
           'node:url': [
             'runtime/installation/fresh-verifier.ts',
             'runtime/darwin-packaged-observer.ts',
@@ -300,6 +319,9 @@ describe('private browser package boundaries', () => {
           // Only pinned public types/library imports in these reviewed internal modules.
           // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [
+            'runtime/darwin-supervisor-worker.ts',
+            'runtime/darwin-supervisor-browser.ts',
+
             'tabs/diagnostics.ts',
             'runtime/public-library.ts',
             'lifecycle/records.ts',

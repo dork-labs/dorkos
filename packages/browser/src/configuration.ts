@@ -80,7 +80,16 @@ const ConfigurationSchema = z
   .object({
     dataDir: AbsolutePathSchema,
     runtime: RuntimeDescriptorSchema,
-    network: FixtureNetworkSchema,
+    network: z.union([
+      FixtureNetworkSchema,
+      z
+        .object({
+          kind: z.literal('owned'),
+          origin: z.literal('about:blank'),
+          policyRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        })
+        .strict(),
+    ]),
     clock: z
       .object({
         monotonicNow: z.custom<EngineClock['monotonicNow']>(callback),
@@ -96,6 +105,7 @@ const ConfigurationSchema = z
     nativeJournal: z
       .object({
         workerPath: AbsolutePathSchema,
+        browserWorkerPath: AbsolutePathSchema.optional(),
         artifact: z
           .object({ path: AbsolutePathSchema, sha256: z.string().regex(/^[a-f0-9]{64}$/) })
           .strict(),

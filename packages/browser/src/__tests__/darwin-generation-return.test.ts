@@ -102,3 +102,24 @@ it('refuses proxy bindings and nested manager accessors without invoking their t
     f.owner.consume(token, { ...f.owner.binding, manager: { ...f.owner.binding.manager } })
   ).toBe(true);
 });
+
+it('refuses generation authority from a gapped journal even after local original cleanup', async () => {
+  const f = fixture();
+  let gapped = true;
+  f.record.journal = {
+    historyGapped: () => gapped,
+    custody: () => ({ pending: false, uncertain: false }),
+    attributeRoot: async () => {},
+    stop: async () => 'campaign-closed-gapped',
+  };
+  f.finish();
+  expect(await f.owner.completion).toBeNull();
+  const later = fixture();
+  gapped = false;
+  later.record.journal = f.record.journal;
+  later.finish();
+  const token = await later.owner.completion;
+  expect(token).not.toBeNull();
+  gapped = true;
+  expect(later.owner.consume(token, later.owner.binding)).toBe(false);
+});

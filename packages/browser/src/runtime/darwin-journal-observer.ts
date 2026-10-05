@@ -23,6 +23,7 @@ export async function observeDarwinJournal(
     location: JournalLocation;
     initial: JournalSnapshot;
     root: ProcessIdentity | Promise<ProcessIdentity | null>;
+    rootSupervisor?: () => ProcessIdentity | undefined;
     onEnrolled?: () => Promise<void>;
     onIncompleteChildren?: (parent: ProcessIdentity, batch: DarwinChildrenBatch) => Promise<void>;
     logicalManager?: ProcessIdentity;
@@ -38,6 +39,7 @@ export async function observeDarwinJournal(
 ): Promise<
   | 'recorded-gone'
   | 'original-child-returned-observer-live'
+  | 'campaign-closed-gapped'
   | 'campaign-closed'
   | 'retained'
   | 'uncertain'
@@ -67,6 +69,7 @@ export async function observeDarwinJournal(
   let result:
     | 'recorded-gone'
     | 'original-child-returned-observer-live'
+    | 'campaign-closed-gapped'
     | 'campaign-closed'
     | 'retained'
     | 'uncertain' = 'uncertain';
@@ -101,6 +104,8 @@ export async function observeDarwinJournal(
     }
     await options.onEnrolled?.();
     const root = await options.root;
+    const supervisor = options.rootSupervisor?.();
+    const selectedRoot = supervisor ?? root;
     if (!root && options.endBrowser?.() && options.launchNotEntered?.()) {
       const ended = copyJournalData(current) as JournalSnapshot;
       ended.sequence++;
@@ -167,6 +172,12 @@ export async function observeDarwinJournal(
             retained.currentParent = null;
           } else if (fact.zombie) {
             gap(next, 'custody-pending', retained.identity);
+            // endBrowser on this route follows original supervisor child/pipe return.
+            // Keep the gap: this terminal fact can close local custody, never history.
+            if (supervisor && options.endBrowser?.() && retained.role === 'descendant') {
+              retained.lifecycle = 'dead';
+              retained.currentParent = null;
+            }
           } else {
             retained.lifecycle = 'alive';
             const parent = facts.get(fact.parentPid);
@@ -205,7 +216,7 @@ export async function observeDarwinJournal(
             // Bind its native parent PID to the independently observed parent lifetime on both sides.
             if (current.root.kind === 'attributed') continue;
             const before = facts.get(parent.identity.pid);
-            const selected = await options.observer.inspect([root.pid]);
+            const selected = await options.observer.inspect([selectedRoot!.pid]);
             const afterBatch = await options.observer.inspect([parent.identity.pid]);
             const fact = selected.processes[0],
               after = afterBatch.processes[0];
@@ -221,7 +232,7 @@ export async function observeDarwinJournal(
               fact?.kind !== 'present' ||
               fact.zombie ||
               fact.parentPid !== parent.identity.pid ||
-              !sameProcess(darwinBirth(fact.identity), root)
+              !sameProcess(darwinBirth(fact.identity), selectedRoot!)
             ) {
               gap(next, 'association-missing', parent.identity);
               continue;
@@ -242,7 +253,7 @@ export async function observeDarwinJournal(
               continue;
             }
             const child = darwinBirth(fact.identity);
-            if (parent.role === 'manager' && !sameProcess(child, root)) continue;
+            if (parent.role === 'manager' && !sameProcess(child, selectedRoot!)) continue;
             if (
               next.retainedIdentities.some(
                 (value) => processKey(value.identity) === processKey(child)
@@ -309,7 +320,18 @@ export async function observeDarwinJournal(
         }
         current = validateJournalSnapshot(next);
         if (current.gaps.length && admittedGone) {
-          result = 'retained';
+          const managerFact = facts.get(current.binding.manager.pid);
+          // Gaps remain recorded. This distinct local-cleanup result requires the
+          // exact controller alive; it grants no history or recovery authority.
+          result =
+            supervisor &&
+            gone &&
+            options.endBrowser?.() &&
+            managerFact?.kind === 'present' &&
+            !managerFact.zombie &&
+            sameProcess(darwinBirth(managerFact.identity), current.binding.manager)
+              ? 'campaign-closed-gapped'
+              : 'retained';
           break;
         }
         if (gone) {
@@ -328,7 +350,8 @@ export async function observeDarwinJournal(
   if (
     result !== 'recorded-gone' &&
     result !== 'original-child-returned-observer-live' &&
-    result !== 'campaign-closed'
+    result !== 'campaign-closed' &&
+    result !== 'campaign-closed-gapped'
   ) {
     const refusal = copyJournalData(current) as JournalSnapshot;
     refusal.sequence++;

@@ -23,8 +23,23 @@ export interface BrowserRecord {
   dataRoot?: OwnedDirectory;
   reservation?: ProfileReservation;
   journal?: import('../runtime/darwin-engine-journal.js').DarwinEngineJournal;
+  supervisor?: Awaited<
+    ReturnType<typeof import('../runtime/darwin-supervisor-client.js').startDarwinSupervisorClient>
+  >;
+  supervisorStopBarrier?: Promise<void>;
+  controllerBrowser?: import('playwright-core').Browser;
   context?: BrowserContext;
   proxy?: FixtureProxy;
+  verifiedRuntime?: Readonly<{ runtimeIdentity: string; policyRevision: number }>;
+  networkPeer?: import('../engine.js').PrivateBrowserNetworkPeer;
+  networkEndpoint?: Readonly<{
+    url: string;
+    credentials: Readonly<{ username: string; password: string }>;
+  }>;
+  networkCustody?: () => boolean;
+  networkClose?: () => Promise<void>;
+  networkClosePromise?: Promise<void>;
+  networkReturned?: boolean;
   manager: ProcessIdentity;
   root?: ProcessIdentity;
   rootAttributed: boolean;

@@ -69,6 +69,23 @@ export function createDarwinEngineProcesses(artifact: Readonly<{ path: string; s
   return Object.freeze({
     identity,
     processes,
+    /** Only for terminal descendants after original root-child/pipe return; never recovery. */
+    async observeTerminated(original: ProcessIdentity, signal: AbortSignal) {
+      if (signal.aborted) return { status: 'unknown' as const };
+      try {
+        const batch = await observer.inspect([original.pid]);
+        checkBoot(batch);
+        if (signal.aborted) return { status: 'unknown' as const };
+        const fact = batch.processes[0];
+        if (fact?.kind === 'absent') return { status: 'dead' as const };
+        if (fact?.kind !== 'present') return { status: 'unknown' as const };
+        if (!sameProcess(darwinBirth(fact.identity), original) || fact.zombie)
+          return { status: 'dead' as const };
+        return { status: 'alive' as const };
+      } catch {
+        return { status: 'unknown' as const };
+      }
+    },
     async attributeRoot(manager: ProcessIdentity, root: ProcessIdentity): Promise<boolean> {
       if (manager.pid === root.pid) return false;
       const before = await observer.inspect([manager.pid, root.pid]);
