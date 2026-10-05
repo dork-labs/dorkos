@@ -1,4 +1,8 @@
-import { readPreparedUnresolvedIntentPage } from '../readers/prepared-readers.js';
+import {
+  readPreparedUnresolvedIntentValues,
+  unresolvedIntentDecoders,
+} from '../readers/prepared-readers.js';
+import { readChecked } from '../store-json.js';
 /** Derived current admission over the sole durable intent ledger; never an effect ledger. */
 import type { Db } from '@dorkos/db';
 import {
@@ -36,6 +40,15 @@ export class CheckboxWriteFence {
   readonly #validated = new Map<
     string,
     { bytes: string; evidence: ReturnType<typeof validateCheckboxEvidence> }
+  >();
+
+  readonly #rawValidated = new Map<
+    string,
+    {
+      values: readonly (string | null)[];
+      row: DocWriteIntentRow;
+      evidence: ReturnType<typeof validateCheckboxEvidence>;
+    }
   >();
 
   constructor(
@@ -92,6 +105,61 @@ export class CheckboxWriteFence {
     }
     return evidence;
   }
+  private validateRaw(values: unknown[]): {
+    row: DocWriteIntentRow;
+    evidence: ReturnType<typeof validateCheckboxEvidence>;
+  } {
+    if (
+      values.length !== unresolvedIntentDecoders.length ||
+      values.some((value) => value !== null && typeof value !== 'string') ||
+      typeof values[0] !== 'string'
+    )
+      throw new Error('Invalid original intent projection');
+    const intentId = values[0];
+    // Cache only the original schema's pure decoders. A replaced decoder uses the normal fresh path.
+    const original = unresolvedIntentDecoders.every(
+      ({ column, decode }) => column.mapFromDriverValue === decode
+    );
+    const previous = original ? this.#rawValidated.get(intentId) : undefined;
+    if (previous && values.every((value, index) => value === previous.values[index]))
+      return previous;
+    this.#rawValidated.delete(intentId);
+    const row = readChecked(
+      'canvas_doc_write_intents',
+      intentId,
+      () =>
+        Object.fromEntries(
+          unresolvedIntentDecoders.map(({ key, column }, index) => {
+            const value = values[index];
+            if (value !== null && typeof value !== 'string')
+              throw new Error('Invalid original intent cell');
+            return [key, value === null ? null : column.mapFromDriverValue(value)];
+          })
+        ) as DocWriteIntentRow
+    );
+    const evidence = freezeCheckboxData(validateCheckboxEvidence(row));
+    if (
+      original &&
+      unresolvedIntentDecoders.every(
+        ({ column, decode }) => column.mapFromDriverValue === decode
+      ) &&
+      values.reduce<number>(
+        (size, value) => size + (typeof value === 'string' ? value.length : 0),
+        0
+      ) <= 65536
+    ) {
+      if (this.#rawValidated.size === 256)
+        this.#rawValidated.delete(this.#rawValidated.keys().next().value!);
+      const retained = {
+        values: Object.freeze(values.map((value) => value as string | null)),
+        row: freezeCheckboxData(row),
+        evidence,
+      };
+      this.#rawValidated.set(intentId, retained);
+      return retained;
+    }
+    return { row, evidence };
+  }
   private scan(
     identity?: CanonicalFileIdentity,
     ownedIntent?: DocWriteIntentRow,
@@ -123,16 +191,16 @@ export class CheckboxWriteFence {
         let cursor: string | undefined;
         let fenced = false;
         for (;;) {
-          const rows = readPreparedUnresolvedIntentPage(this.db, cursor);
+          const rows = readPreparedUnresolvedIntentValues(this.db, cursor);
           for (const selected of rows) {
-            const row = selected;
+            let row: DocWriteIntentRow;
             let evidence: ReturnType<typeof validateCheckboxEvidence>;
             try {
-              evidence = this.validate(row);
+              ({ row, evidence } = this.validateRaw(selected));
             } catch {
               throw new CheckboxFenceUnavailableError('corrupt');
             }
-            if (selected.intentId === ownedIntent?.intentId || evidenceOnly) continue;
+            if (row.intentId === ownedIntent?.intentId || evidenceOnly) continue;
             // A replaced original may have one surviving cross-tree alias: no link-count shortcut.
             if (evidence.v === 1 || !evidence.originalIdentity)
               throw new CheckboxFenceUnavailableError('legacy');
@@ -150,7 +218,9 @@ export class CheckboxWriteFence {
               fenced = true;
           }
           if (rows.length < 100) return fenced;
-          cursor = rows.at(-1)!.intentId;
+          const next = rows.at(-1)![0];
+          if (typeof next !== 'string') throw new CheckboxFenceUnavailableError('corrupt');
+          cursor = next;
         }
       })();
     } catch (error) {

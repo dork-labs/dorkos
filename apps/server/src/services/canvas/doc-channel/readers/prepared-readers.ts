@@ -137,9 +137,31 @@ function prepareIntentPage(executor: Executor, tail: boolean) {
     .limit(100)
     .prepare();
 }
+const unresolvedIntentColumns = {
+  intentId: canvasDocWriteIntents.intentId,
+  documentId: canvasDocWriteIntents.documentId,
+  eventId: canvasDocWriteIntents.eventId,
+  envelopeHash: canvasDocWriteIntents.envelopeHash,
+  grantId: canvasDocWriteIntents.grantId,
+  sourceIdentity: canvasDocWriteIntents.sourceIdentity,
+  resolvedCwd: canvasDocWriteIntents.resolvedCwd,
+  treeKind: canvasDocWriteIntents.treeKind,
+  canonicalPath: canvasDocWriteIntents.canonicalPath,
+  operation: canvasDocWriteIntents.operation,
+  input: canvasDocWriteIntents.input,
+  beforeHash: canvasDocWriteIntents.beforeHash,
+  afterHash: canvasDocWriteIntents.afterHash,
+  expectedVersion: canvasDocWriteIntents.expectedVersion,
+  evidence: canvasDocWriteIntents.evidence,
+  status: canvasDocWriteIntents.status,
+  errorCode: canvasDocWriteIntents.errorCode,
+  createdAt: canvasDocWriteIntents.createdAt,
+  updatedAt: canvasDocWriteIntents.updatedAt,
+};
+
 function prepareUnresolvedIntentPage(executor: Executor, tail: boolean) {
   return executor
-    .select()
+    .select(unresolvedIntentColumns)
     .from(canvasDocWriteIntents)
     .where(
       sql`${canvasDocWriteIntents.status} NOT IN ('committed','no_op','conflict')
@@ -179,3 +201,22 @@ export function readPreparedUnresolvedIntentPage(executor: Executor, cursor?: st
   }
   return query.all(tail ? { cursor } : {});
 }
+
+/** Complete fresh raw rows; original text decoders are retained alongside the fixed selection. */
+export function readPreparedUnresolvedIntentValues(executor: Executor, cursor?: string) {
+  const tail = Boolean(cursor);
+  const plans = tail ? unresolvedTailPages : unresolvedFirstPages;
+  let query = plans.get(executor);
+  if (!query) {
+    query = prepareUnresolvedIntentPage(executor, tail);
+    plans.set(executor, query);
+  }
+  return query.values(tail ? { cursor } : {});
+}
+
+/** Fixed original full projection, for pure decoding reuse only; no row or admission is cached here. */
+export const unresolvedIntentDecoders = Object.freeze(
+  Object.entries(unresolvedIntentColumns).map(([key, column]) =>
+    Object.freeze({ key, column, decode: column.mapFromDriverValue })
+  )
+);

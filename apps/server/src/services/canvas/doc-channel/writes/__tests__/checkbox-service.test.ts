@@ -800,20 +800,39 @@ it('recovery reads retain the fresh global corruption fence after validation reu
   expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
 });
 
-it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
-  const startedAt = performance.now();
-  const phase = (name: string, count?: number) =>
-    process.stderr.write(
-      `checkbox-101-phase ${JSON.stringify({ name, count, elapsedMs: performance.now() - startedAt })}\n`
-    );
-  phase('start');
+it('raw fence reuse still decodes replaced evidence codecs and refuses malformed current JSON', async () => {
   const h = await fixture();
-  phase('fixture');
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  const own = h.store.getWriteIntent(h.row().intentId)!;
+  expect(h.service.writeFence.readiness()).toEqual({ ready: true });
+  expect(h.service.writeFence.readiness()).toEqual({ ready: true });
+  const first: unknown = undefined;
+  const decoder = vi
+    .spyOn(canvasDocWriteIntents.evidence, 'mapFromDriverValue')
+    .mockImplementation(() => {
+      throw first;
+    });
+  try {
+    expect(h.service.writeFence.readiness()).toEqual({ ready: false, reason: 'corrupt' });
+    expect(decoder).toHaveBeenCalled();
+  } finally {
+    decoder.mockRestore();
+  }
+  expect(h.service.writeFence.readiness()).toEqual({ ready: true });
+  h.db.$client
+    .prepare("UPDATE canvas_doc_write_intents SET evidence='{' WHERE intent_id=?")
+    .run(own.intentId);
+  expect(h.service.writeFence.readiness()).toEqual({ ready: false, reason: 'corrupt' });
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
+  const h = await fixture();
   const before = await readFile(h.path);
   h.failCompletion(true);
   await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
   await writeFile(h.path, before);
-  phase('failed-toggle-and-source-restored');
   const base = h.store.getWriteIntent(h.row().intentId)!;
   h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
   for (let i = 0; i < 100; i++) {
@@ -838,69 +857,9 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
     h.service.validate(h.store.getWriteIntent(intentId)!);
   }
-  phase('seeded', 101);
-  // Temporary diagnostics delegate the exact methods used dynamically by recover().
-  // Timings are inclusive: prepareRecovery contains refreshRecoveryCurrent.
-  const totals = {
-    prepare: { calls: 0, ms: 0 },
-    refresh: { calls: 0, ms: 0 },
-    require: { calls: 0, ms: 0 },
-    fence: { calls: 0, ms: 0 },
-  };
-  const prepare = h.authority.prepareRecovery.bind(h.authority);
-  const refresh = h.authority.refreshRecoveryCurrent.bind(h.authority);
-  const requireCurrent = h.authority.requireRecoveryCurrent.bind(h.authority);
-  const fence = h.service.writeFence.assertRecoveryRead.bind(h.service.writeFence);
-  const probes = [
-    vi.spyOn(h.authority, 'prepareRecovery').mockImplementation(async (...args) => {
-      const start = performance.now();
-      totals.prepare.calls++;
-      try {
-        return await prepare(...args);
-      } finally {
-        totals.prepare.ms += performance.now() - start;
-      }
-    }),
-    vi.spyOn(h.authority, 'refreshRecoveryCurrent').mockImplementation(async (...args) => {
-      const start = performance.now();
-      totals.refresh.calls++;
-      try {
-        return await refresh(...args);
-      } finally {
-        totals.refresh.ms += performance.now() - start;
-      }
-    }),
-    vi.spyOn(h.authority, 'requireRecoveryCurrent').mockImplementation((...args) => {
-      const start = performance.now();
-      totals.require.calls++;
-      try {
-        return requireCurrent(...args);
-      } finally {
-        totals.require.ms += performance.now() - start;
-      }
-    }),
-    vi.spyOn(h.service.writeFence, 'assertRecoveryRead').mockImplementation((...args) => {
-      const start = performance.now();
-      totals.fence.calls++;
-      try {
-        return fence(...args);
-      } finally {
-        totals.fence.ms += performance.now() - start;
-      }
-    }),
-  ];
-  cleanups.push(async () => {
-    await h.service.stop();
-    for (const probe of probes) probe.mockRestore();
-  });
-  const reportTotals = () => process.stderr.write(`checkbox-101-cost ${JSON.stringify(totals)}\n`);
   const one = await recoverCheckboxPage(h.service);
-  reportTotals();
-  phase('page-one', one.selected);
   expect(one).toMatchObject({ selected: 100, verified: 0, retryableFailures: 0, hasMore: true });
   const two = await recoverCheckboxPage(h.service, one.cursor);
-  phase('page-two', two.selected);
-  reportTotals();
   expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
   expect(one.cursor).not.toEqual(two.cursor);
   expect(await readFile(h.path)).toEqual(before);
@@ -909,7 +868,6 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
   ).rejects.toThrow('cursor');
   await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
-  phase('assertions-complete');
 });
 
 it('does not remove an unowned exclusive-create collider during failure or recovery', async () => {
