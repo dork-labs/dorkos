@@ -374,7 +374,13 @@ export function registerHeldProcessTests(deps: HeldProcessDeps): void {
       });
 
       const staged = await request.post(`${apiUrl}/api/sessions/${sessionId}/messages`, {
-        data: { content: 'mind the rate limit', cwd: agentDir(), disposition: 'stage' },
+        // No turn has run, so this is the send that starts the session.
+        data: {
+          content: 'mind the rate limit',
+          cwd: agentDir(),
+          disposition: 'stage',
+          create: true,
+        },
       });
       expect(staged.status()).toBe(202);
       const body = (await staged.json()) as {

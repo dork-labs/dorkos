@@ -657,6 +657,13 @@ export function useSessionSubmit({
       const targetSessionId = sessionId;
       const cwd = selectedCwdRef.current;
       setError(null);
+      // Words staged or queued on a chat that has not started yet start it
+      // (Add context before the first message), so they say `create` like a
+      // first send does, or the server answers 404 (DOR-2712).
+      const listed = (queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? []).some(
+        (s) => s.id === targetSessionId
+      );
+      if (!listed) unacceptedCreates.add(targetSessionId);
 
       // Sequence this session's delivery POSTs so the server accepts them in
       // keystroke order (DOR-1165). Each message is its own POST and the server
@@ -700,6 +707,7 @@ export function useSessionSubmit({
           const context = Object.keys(contextEntries).length > 0 ? contextEntries : undefined;
           // A message sent before the session's creating send was accepted
           // may be the one that reaches the server first.
+          const creates = unacceptedCreates.has(targetSessionId);
           const { sessionId: canonicalId } = await transport.postMessage(
             targetSessionId,
             finalContent,
@@ -707,9 +715,10 @@ export function useSessionSubmit({
             {
               context,
               disposition,
-              ...(unacceptedCreates.has(targetSessionId) ? { create: true } : {}),
+              ...(creates ? { create: true } : {}),
             }
           );
+          if (creates) unacceptedCreates.delete(targetSessionId);
           commitUiState(canonicalId);
           return true;
         } catch (err) {
@@ -725,7 +734,7 @@ export function useSessionSubmit({
         }
       });
     },
-    [sessionId, transport, setError]
+    [sessionId, transport, queryClient, setError]
   );
 
   /** Put a message on the session's queue, behind the running turn. */
