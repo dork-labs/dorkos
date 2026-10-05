@@ -67,6 +67,10 @@ Every other way to sign in stays one step away, under **Other ways to sign in**.
 have an account on that site with the same email, sign in with your password and link your DorkOS
 account from the space's **Settings**, **Account**. The site never joins the two on its own.
 
+When a sign-in finds an account with your email, the page asks for that account's password. If
+the account has no password, or you forgot it, and the server sends email, choose **Email me a
+sign-in link**. Open the link in the same browser within 15 minutes.
+
 A space you run on your own server keeps its own accounts. DorkOS opens its pages just as before.
 
 ## Set up a space on your own server
@@ -295,8 +299,29 @@ The person running the server can link their terms, privacy notice and a way to 
 Terms and Privacy show under the sign-in form. All three show under **Manage**, then **Account**, in
 a section called **This server**. If they set none of them, you won't see any of this.
 
-A space does not send password-reset email. If you lose your password for a space, ask the person
-running it for help.
+## Forgot your password
+
+If the space's server sends email, choose **Forgot password?** under the password on its sign-in
+page. Enter your email, and a reset link arrives if the address has an account there. The page says
+the same thing either way. The link works once, for 30 minutes, and only for the newest one you
+asked for.
+
+The page the link opens shows your email and everything a reset ends before you choose a new
+password: you're signed out everywhere, and your DorkOS connections, agent keys, invitation links
+and server API keys stop working. Reconnect DorkOS from **Settings** afterwards. Your Google,
+GitHub and single sign-on sign-ins stay, unless your email was never confirmed. Then they're
+removed too, because the link is the first proof the address is yours.
+
+If the server doesn't send email, or you can't get to your inbox, ask the person running it for
+help.
+
+### Confirm your email
+
+On a server that sends email, a new account gets a link to confirm its email, and a banner asks
+until you do. Open the link in a browser where you're signed in to that account. If the email was
+never confirmed, confirming signs out your other devices and ends your DorkOS connections and agent
+keys. If the account has a password, you choose a new one at the same time. Send a new link from
+**Settings**, **Account**.
 
 ## Manage a connected space
 

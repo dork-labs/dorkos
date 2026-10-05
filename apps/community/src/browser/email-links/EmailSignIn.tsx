@@ -73,7 +73,7 @@ export function EmailSignIn() {
           />
           {state.peek.clears.length > 0 && (
             <p className="muted mb-4">
-              Signing in removes this account&apos;s old password and other sign-ins.
+              Signing in removes this account’s old password and other sign-ins.
             </p>
           )}
           <Button type="button" className="w-full" disabled={busy} onClick={() => void signIn()}>

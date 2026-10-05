@@ -47,7 +47,7 @@ export function ForgotPassword({
         <div role="status">
           <p>Check your email. The link works for 30 minutes.</p>
           <p className="muted">
-            Nothing after a few minutes? Check spam, or ask the space&apos;s owner.
+            Nothing after a few minutes? Check spam, or ask the space’s owner.
           </p>
         </div>
       ) : (

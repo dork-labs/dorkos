@@ -174,7 +174,7 @@ describe('EmailSignIn', () => {
     mockFetch({ [PEEK]: peek({ kind: 'sign_in', clears: [...ACCESS, 'password'] }) });
     render(<EmailSignIn />);
     expect(
-      await screen.findByText("Signing in removes this account's old password and other sign-ins.")
+      await screen.findByText('Signing in removes this account’s old password and other sign-ins.')
     ).toBeTruthy();
     cleanup();
     captureEmailLink();

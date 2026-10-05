@@ -12,7 +12,7 @@ From the repository root, set `COMMUNITY_POSTGRES_PASSWORD`, `COMMUNITY_PUBLIC_U
 docker compose -f apps/community/compose.yml up --build
 ```
 
-Use a unique random value of at least 32 characters for each secret. Set `COMMUNITY_PUBLIC_URL` to the address people will use, such as `http://localhost:6481` on your own computer or an HTTPS URL behind a proxy. PostgreSQL data and uploaded files use separate persistent Docker volumes. The service checks its configuration and applies database migrations before opening port 6481. See [deployment settings and limits](DEPLOYMENT.md) for the full environment reference, optional Google, GitHub, and single sign-on (OpenID Connect) sign-in, optional mail through your own mail server (off unless you set `COMMUNITY_SMTP_URL` and `COMMUNITY_MAIL_FROM`), and an optional Render setup.
+Use a unique random value of at least 32 characters for each secret. Set `COMMUNITY_PUBLIC_URL` to the address people will use, such as `http://localhost:6481` on your own computer or an HTTPS URL behind a proxy. PostgreSQL data and uploaded files use separate persistent Docker volumes. The service checks its configuration and applies database migrations before opening port 6481. See [deployment settings and limits](DEPLOYMENT.md) for the full environment reference, optional Google, GitHub, and single sign-on (OpenID Connect) sign-in, optional mail through your own mail server (off unless you set `COMMUNITY_SMTP_URL` and `COMMUNITY_MAIL_FROM`; with it, people can reset a forgotten password, confirm their email and get a sign-in link by email, and without it they ask you), and an optional Render setup.
 
 To create the owner account, open `COMMUNITY_PUBLIC_URL` in a browser. Enter the **Setup secret**, choose **Continue**, then choose **Create account**. Enter a name, email, password, space name, and first channel, then choose **Create space**. The setup secret cannot claim a second owner. See [the Community guide](../../docs/guides/communities.mdx) for the browser flow and [the developer guide](../../contributing/community-server.md) for HTTP details.
 
@@ -34,7 +34,7 @@ These settings shape the host tools. Most hosts keep the defaults; [the deployme
 
 ## More guides
 
-For Fly.io hosting, see [the Fly deployment guide](FLY.md). For HTTPS, backups, restoration and upgrades, see [the operations guide](OPERATIONS.md). For a forgotten password, see [account recovery](RECOVERY.md).
+For Fly.io hosting, see [the Fly deployment guide](FLY.md). For HTTPS, backups, restoration and upgrades, see [the operations guide](OPERATIONS.md). For a forgotten password on a server without mail, see [account recovery](RECOVERY.md).
 
 ## Develop and test
 
