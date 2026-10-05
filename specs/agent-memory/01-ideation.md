@@ -61,7 +61,7 @@ created: 2026-08-24
 - `research/20260807_room_context_delivery_buzz_and_patterns.md` — prior Buzz
   research; the refresh found its room-context findings unchanged and added the
   engram memory deep-dive.
-- `meta/chat-capabilities.md` §7.1 (added 2026-08-24) — the X-09…X-13
+- `contributing/capabilities/chat.md` §7.1 (added 2026-08-24) — the X-09…X-13
   cross-surface memory probes this work must eventually satisfy.
 
 ## 3) Codebase Map
@@ -95,7 +95,7 @@ created: 2026-08-24
 - **Blast radius:** `agent-context.ts` (new block), `convention-files.ts` +
   scaffolding (new file), MCP tool registry (memory write tool; later the
   search/list tools), `packages/harness` (projection), evals
-  (`rooms-recall.ts` pattern → memory probes), `meta/chat-capabilities.md`
+  (`rooms-recall.ts` pattern → memory probes), `contributing/capabilities/chat.md`
   §7.1. No changes to room-context delivery, session binding, or transcripts.
 
 ## 5) Research

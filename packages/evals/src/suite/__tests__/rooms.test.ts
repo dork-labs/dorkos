@@ -123,7 +123,7 @@ describe('the credentialed tier', () => {
     for (const id of PROMOTED) expect(ids, id).toContain(id);
   });
 
-  it('covers the X-row probes chat-capabilities §7 asks for, minus the two it cannot reach', () => {
+  it('covers the X-row probes capabilities/chat.md §7 asks for, minus the two it cannot reach', () => {
     // Scoped to the cases this list is ABOUT. The judgment tier (DOR-1613 PR3)
     // is credentialed too and belongs in the same array — that is what holds it
     // to the tier's promises — but it answers a different question and has its

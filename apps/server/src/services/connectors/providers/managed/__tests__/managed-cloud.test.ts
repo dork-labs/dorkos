@@ -287,7 +287,7 @@ describe('ManagedCloudConnectorProvider', () => {
     expect(cloud.executeManagedConnectorOperation).not.toHaveBeenCalled();
   });
 
-  it('reports a removed local link before dispatch despite valid execution authority', async () => {
+  it('CN-08: reports a removed local link before dispatch despite valid execution authority', async () => {
     let token: string | null = 'linked-token';
     const fetchImpl = vi.fn<typeof fetch>();
     const manager = new CloudLinkManager({
@@ -315,7 +315,7 @@ describe('ManagedCloudConnectorProvider', () => {
     expect(manager.getSummary().linked).toBe(false);
   });
 
-  it('keeps a lost remote acknowledgement unknown and never replays the request', async () => {
+  it('CN-09: keeps a lost remote acknowledgement unknown and never replays the request', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error('private network detail'));
     const manager = new CloudLinkManager({
       config: {

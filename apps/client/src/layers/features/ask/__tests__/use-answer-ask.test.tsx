@@ -79,7 +79,7 @@ describe('useAnswerAsk', () => {
     expect(transport.approveTool).not.toHaveBeenCalled();
   });
 
-  it('accepts and declines an elicitation through its own method', async () => {
+  it('I-04: accepts and declines an elicitation through its own method', async () => {
     const { result } = mount();
     const elicitation = ask({
       type: 'elicitation',

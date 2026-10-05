@@ -130,7 +130,7 @@ beforeEach(() => {
 });
 
 describe('a message that named somebody else', () => {
-  it('T1 — runs no turn for the agent that only overheard it', async () => {
+  it('A-02: T1 — runs no turn for the agent that only overheard it', async () => {
     const w = open();
     await engageAna(w);
     await say(w, '@nova can you ship the release?');

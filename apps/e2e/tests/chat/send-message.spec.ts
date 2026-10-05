@@ -3,7 +3,7 @@ import { test, expect } from '../../fixtures';
 test.describe('Chat — Send Message @integration', () => {
   test.describe.configure({ timeout: 90_000 });
 
-  test('sends a message and receives a streaming response', async ({ chatPage }) => {
+  test('R-01: sends a message and receives a streaming response', async ({ chatPage }) => {
     await chatPage.sendAndLand('Respond with exactly: hello world');
     await chatPage.waitForTurnToEnd();
 
@@ -36,7 +36,7 @@ test.describe('Chat — Send Message @integration', () => {
     await expect(lastMessage.locator('ul li, strong')).toBeVisible({ timeout: 5_000 });
   });
 
-  test('tool calls display as collapsible cards', async ({ chatPage }) => {
+  test('R-04: tool calls display as collapsible cards', async ({ chatPage }) => {
     // Trigger a tool call by asking Claude to read a file it can access
     await chatPage.sendMessage(
       'Use the Read tool to read the file /etc/hostname, then tell me what it contains.'

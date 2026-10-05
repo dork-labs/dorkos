@@ -76,7 +76,7 @@ describe('useRoomAttachments — holding files until the message goes', () => {
     expect(result.current.hasPendingFiles).toBe(false);
   });
 
-  it('uploads pending files and hands back their ids in render order', async () => {
+  it('C-06: uploads pending files and hands back their ids in render order', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.uploadRoomAttachments).mockResolvedValue([
       attachmentNamed('a.txt', 'att-a'),

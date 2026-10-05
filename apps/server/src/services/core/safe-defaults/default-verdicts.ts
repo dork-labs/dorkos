@@ -160,6 +160,11 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'relay.dataDir',
   'scheduler.enabled',
   'scheduler.retentionCount',
+  // Keeping the computer awake while agents work (spec `keep-awake`). It moves
+  // no data and widens no access: it stops idle sleep through the OS's own
+  // tool, ends with the server's process, and costs battery, which the Sleep
+  // setting says in plain words.
+  'keepAwake.whileAgentsWork',
   // When an idle agent working copy is tidied away, and how long a queued merge
   // waits its turn. Neither enforces a safety bound: the reap sweep removes
   // nothing that is dirty, unmerged, or being worked in right now — a gate that
@@ -463,6 +468,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // No agent allowed onto credits, and no account the choices belong to yet.
   'cloud.credits.agents': [],
   'cloud.credits.linkedTo': null,
+  // Waking the computer for scheduled runs starts off: it powers the machine up
+  // while nobody is there and needs a one-time admin grant (spec `keep-awake`).
+  'keepAwake.wakeForScheduledTasks': false,
 };
 
 /**

@@ -105,7 +105,9 @@ const CLAUDE_ONLY_LABELS = [/^Plan$/, /^Accept edits$/, /^Bypass permissions$/];
  */
 export function registerRuntimeCapabilityParityTests(deps: { agentDir: () => string }): void {
   test.describe('the cockpit adapts to the runtime it is talking to', () => {
-    test('the permission control names a mode only THIS runtime declares', async ({ page }) => {
+    test('L-10: the permission control names a mode only THIS runtime declares', async ({
+      page,
+    }) => {
       const chatPage = new ChatPage(page);
       await chatPage.goto(undefined, { dir: deps.agentDir() });
       // A turn first, and the control says why: until a session has one, the

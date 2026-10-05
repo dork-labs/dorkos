@@ -129,6 +129,25 @@ A scheduled task runs an agent job on a timer (like "every night at 2am"), on it
   }}
 />
 
+### Keep awake
+
+DorkOS keeps your computer from falling asleep while agents work, then lets it sleep as usual. Change it in Settings → Tools → Sleep. See [Sleep and wake](/docs/guides/keep-awake) for what it can and cannot stop.
+
+<TypeTable
+  type={{
+    'keepAwake.whileAgentsWork': {
+      description: 'Keep this computer awake while agents work. Sleeps as usual when they stop.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'keepAwake.wakeForScheduledTasks': {
+      description: 'Not used yet. Saved for waking the computer before scheduled tasks.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
 ### A2A Gateway
 
 The A2A gateway lets agents built by other people, on other systems, send work to the agents here — anything that speaks Google's Agent-to-Agent protocol. Agent messaging (Relay) has to be on for it to do anything.

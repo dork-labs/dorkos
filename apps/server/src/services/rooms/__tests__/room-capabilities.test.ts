@@ -794,7 +794,7 @@ describe('the rooms capability domain', () => {
       );
     }
 
-    it('hands a member the whole room: what it is called, what it is about, and who is in it', async () => {
+    it('M-15: hands a member the whole room: what it is called, what it is about, and who is in it', async () => {
       service.updateRoom(channel.id, human, { topic: 'Ship the migration' });
 
       const room = await describeAs(channel.id);
@@ -969,7 +969,7 @@ describe('the rooms capability domain', () => {
       ).id;
     }
 
-    it('finds a channel by its #name — with the # or without it, in any case', async () => {
+    it('M-14: finds a channel by its #name — with the # or without it, in any case', async () => {
       for (const name of ['#backend', 'backend', 'BACKEND']) {
         expect(
           (await findAs({ name })).map((room) => room.roomId),
@@ -1251,7 +1251,7 @@ describe('the rooms MANAGEMENT verbs', () => {
       expect(opened.members.map((member) => member.authorId)).toEqual([ana]);
     });
 
-    it('returns the existing conversation rather than opening a second one', async () => {
+    it('M-16: returns the existing conversation rather than opening a second one', async () => {
       // The dedupe already lives in the service; the tool describes it and does
       // not reimplement it. Worth a row because the alternative — two DMs with
       // the same person — is unrecoverable from the agent's side.
@@ -1398,7 +1398,7 @@ describe('the rooms MANAGEMENT verbs', () => {
       expect(service.getRoom(channel.id, human)?.members.map((m) => m.authorId)).toContain(bo);
     });
 
-    it('applies what it can and reports what it cannot, in one call', async () => {
+    it('M-17: applies what it can and reports what it cannot, in one call', async () => {
       // Non-atomic BY DESIGN (decision D19). The point of the row is that a
       // partial application is legible rather than inferred from an error.
       const result = (await call('rooms.add_members', {
@@ -1429,7 +1429,7 @@ describe('the rooms MANAGEMENT verbs', () => {
       expect(result.refused[0]?.code).toBe('OWNER_MUST_BE_PRESENT');
     });
 
-    it('never takes the PERSON out, in a room the shape rules would allow', async () => {
+    it('M-21: never takes the PERSON out, in a room the shape rules would allow', async () => {
       // The owner has to be nameable for this to test anything: on a login-off
       // install the local author carries no handle at all, so an agent cannot
       // address the person in these verbs even to be refused. Giving her one is
@@ -1565,7 +1565,7 @@ describe('the rooms MANAGEMENT verbs', () => {
   });
 
   describe('update_room', () => {
-    it('renames a room and sets its topic', async () => {
+    it('M-18: renames a room and sets its topic', async () => {
       const updated = (await call('rooms.update', {
         roomId: channel.id,
         title: 'Backend work',
@@ -1653,7 +1653,7 @@ describe('the rooms MANAGEMENT verbs', () => {
   });
 
   describe('leave_room', () => {
-    it('steps out of a channel', async () => {
+    it('M-19: steps out of a channel', async () => {
       await expect(call('rooms.leave', { roomId: channel.id })).resolves.toMatchObject({
         left: true,
       });
@@ -1785,7 +1785,7 @@ describe('the rooms MANAGEMENT verbs', () => {
   });
 
   describe('the Rooms permission', () => {
-    it('refuses every management verb while Rooms is Blocked', async () => {
+    it('M-20: refuses every management verb while Rooms is Blocked', async () => {
       grantHeld = false;
 
       for (const [id, input] of [

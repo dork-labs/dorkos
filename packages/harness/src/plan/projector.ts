@@ -86,7 +86,7 @@ const CLAUDE_COMMANDS_SOURCE = CLAUDE_COMMANDS_DIR;
  *
  * Claude Code is the ONLY harness that does not read `.agents/skills` — Codex,
  * OpenCode, Cursor, Gemini CLI and Copilot all do, per their own docs fetched
- * 2026-09-07 (`meta/harness-sync-capabilities.md` §1.1). Cursor, Gemini and
+ * 2026-09-07 (`contributing/capabilities/harness-sync.md` §1.1). Cursor, Gemini and
  * Copilot used to be told their skills were dropped ("not auto-projected in v1;
  * see DOR-143"), which was true when written and had been wrong for a while
  * (SK-05).

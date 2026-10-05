@@ -262,6 +262,14 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'control center',
     ],
   },
+  // Keep awake — the top-bar cup and the Sleep card, on one status.
+  {
+    id: 'keep-awake',
+    title: 'Keep Awake',
+    page: 'settings',
+    category: 'Control Center',
+    keywords: ['keep awake', 'sleep', 'caffeinate', 'cup', 'coffee', 'beacon', 'battery'],
+  },
   // Control Center
   {
     id: 'control-center',

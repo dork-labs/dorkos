@@ -39,7 +39,7 @@ packages/db/drizzle/meta/
 # from packages/test-utils/src/runtime-capability-matrix.ts. The census compares
 # the committed file to the renderer byte for byte, so Prettier re-padding its
 # tables would make the census fail on a file nobody edited (DOR-2720).
-contributing/runtime-capabilities.md
+contributing/capabilities/runtimes.md
 
 # pnpm's own lockfile — written by `pnpm install`, read by pnpm and by nothing
 # else. REVIEW.md already lists it under "Do not report" as a generated file,

@@ -51,8 +51,8 @@
  *   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
  *       const j=JSON.parse(s);console.log(j.tasks.find(t=>t.taskId==="@dorkos/harness#test").hash)})'; }
  * h                                                    # baseline
- * echo >> meta/harness-sync-capabilities.md && h       # differs WITH the override
- * sed -i '' -e '$d' meta/harness-sync-capabilities.md  # undo the one appended line
+ * echo >> contributing/capabilities/harness-sync.md && h       # differs WITH the override
+ * sed -i '' -e '$d' contributing/capabilities/harness-sync.md  # undo the one appended line
  * ```
  *
  * The undo is a `sed`, not a pathspec checkout: this repo's git-guard hook
@@ -98,7 +98,7 @@ const TASK = '@dorkos/harness#test';
  */
 const REQUIRED_INPUTS: Readonly<Record<string, string>> = {
   $TURBO_DEFAULT$: "the package's own files, which an explicit `inputs` would otherwise replace",
-  '$TURBO_ROOT$/meta/harness-sync-capabilities.md': 'the contract the census parses',
+  '$TURBO_ROOT$/contributing/capabilities/harness-sync.md': 'the contract the census parses',
   '$TURBO_ROOT$/scripts/lib/code-only.mjs':
     'the shared stripper the census blanks comments with, so a title in a docstring is not coverage',
   '$TURBO_ROOT$/scripts/vocab-gate/banned-terms.json':

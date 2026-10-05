@@ -11,7 +11,7 @@
  * (`POST /api/test/step`), then carries on differently depending on what it was
  * told.
  *
- * They exist for the interactive-session rows of `meta/chat-capabilities.md`
+ * They exist for the interactive-session rows of `contributing/capabilities/chat.md`
  * that had only unit or live-self-test coverage — I-01 to I-04, R-05 to R-07 —
  * and each scenario names the row it backs. Everything here flows through the
  * same normalizer → projector → SSE path a production runtime uses, so a

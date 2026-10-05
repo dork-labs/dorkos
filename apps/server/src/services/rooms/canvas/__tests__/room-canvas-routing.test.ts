@@ -104,7 +104,7 @@ describe('the `ui.control` handler, inside a room turn', () => {
     uiTurnFacts.bindTurn(SESSION, { roomTurn: { roomId, authorId: ana, turnId: 'turn-1' } });
   });
 
-  it('returns the real write — the document, its revision and who is looking', async () => {
+  it('M-22: returns the real write — the document, its revision and who is looking', async () => {
     const result = await control({
       action: 'open_canvas',
       content: { type: 'json', data: { hello: 'room' }, title: 'notes' },

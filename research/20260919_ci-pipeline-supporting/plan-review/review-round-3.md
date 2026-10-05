@@ -1,6 +1,6 @@
 # CI Steward plan v2: final adversarial pass, round 3
 
-Reviewer: Vesper. Read `plans/ci-steward-plan.md` v2 fresh, whole file. Verified this round: `test.yml:331,493-502` (vitest JSON reports are written but only the derived `shard-files-N.txt` is uploaded), every workflow's `push:` trigger (all filtered to `main` or `v*` tags), `meta/harness-sync-capabilities.md:60,82` (rules: "drop — no path-scoped format" for Codex/OpenCode), `typecheck.yml:135` (default-depth checkout, no base fetch), `apps/e2e/playwright.config.ts:301` (`retries: CI ? 1 : 0`).
+Reviewer: Vesper. Read `plans/ci-steward-plan.md` v2 fresh, whole file. Verified this round: `test.yml:331,493-502` (vitest JSON reports are written but only the derived `shard-files-N.txt` is uploaded), every workflow's `push:` trigger (all filtered to `main` or `v*` tags), `contributing/capabilities/harness-sync.md:60,82` (rules: "drop — no path-scoped format" for Codex/OpenCode), `typecheck.yml:135` (default-depth checkout, no base fetch), `apps/e2e/playwright.config.ts:301` (`retries: CI ? 1 : 0`).
 
 ## Verdict
 
@@ -54,7 +54,7 @@ Principle 5: "New required machine time must fit a budget." v1 §4.4 rule 2 had 
 
 ### J. `.claude/rules/ci-pipeline.md` cannot be projected to Codex
 
-§4.8: "It is projected to `.agents/` per `syncing-agent-skills`." `meta/harness-sync-capabilities.md:60,82`: path-scoped rules are Claude Code native and "drop — no path-scoped format" for Codex, OpenCode and Gemini; the engine does not project rules at all yet. Codex sessions will see only the AGENTS.md pointer and the skill. Either accept that (say the protocol's 20 lines also live in the `stewarding-ci-pipeline` skill, which Codex does load) or keep a short protocol block in AGENTS.md rather than shrinking it to a pointer. I would do the former and keep AGENTS.md at a pointer plus the two sentences an agent must never miss (hypothesis required; releases are blocking by default).
+§4.8: "It is projected to `.agents/` per `syncing-agent-skills`." `contributing/capabilities/harness-sync.md:60,82`: path-scoped rules are Claude Code native and "drop — no path-scoped format" for Codex, OpenCode and Gemini; the engine does not project rules at all yet. Codex sessions will see only the AGENTS.md pointer and the skill. Either accept that (say the protocol's 20 lines also live in the `stewarding-ci-pipeline` skill, which Codex does load) or keep a short protocol block in AGENTS.md rather than shrinking it to a pointer. I would do the former and keep AGENTS.md at a pointer plus the two sentences an agent must never miss (hypothesis required; releases are blocking by default).
 
 ## Smaller corrections
 

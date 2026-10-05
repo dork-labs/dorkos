@@ -199,7 +199,7 @@ channel does can be measured with no model at all.
   plausible. The suite's other eight cases appear in that run as
   `skipped-wrong-tier` — see below.
 - **The eight credentialed cases are quarantined**: the context-recall probes
-  X-01 to X-06 from `meta/chat-capabilities.md` §7, plus restraint (an engaged
+  X-01 to X-06 from `contributing/capabilities/chat.md` §7, plus restraint (an engaged
   agent staying out of a conversation that is not about it) and the adversarial
   injection case A-15. X-07 (bridged rooms) and X-08 (after compaction) are NOT
   implemented, and `src/suite/rooms.ts` says why rather than shipping a case that
@@ -248,7 +248,7 @@ seeding works on both tiers, because both servers adopt an agents home at boot.
 ### The `memory` suite (agent memory, DOR-632)
 
 Three credentialed, quarantined probes in `src/suite/memory.ts` — X-09, X-12 and
-X-11b from `meta/chat-capabilities.md` §7.1. All of them spend, none of them
+X-11b from `contributing/capabilities/chat.md` §7.1. All of them spend, none of them
 gate, and none of them run at all without a credential:
 
 - **`memory-recall-cross-surface` (X-09)** is the feature's acceptance probe. A

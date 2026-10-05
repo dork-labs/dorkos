@@ -50,6 +50,7 @@ This is a Turborepo monorepo with six apps and seventeen shared packages:
 | `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry                           |
 | `packages/harness`           | `@dorkos/harness`           | Projects skills, commands & hooks to every agent CLI |
 | `packages/memory`            | `@dorkos/memory`            | Agent memory engine behind the `MemoryProvider` port |
+| `packages/keep-awake`        | `@dorkos/keep-awake`        | Holds the computer awake while agents work           |
 | `packages/skills`            | `@dorkos/skills`            | `SKILL.md` schemas, parser, writer, scanner          |
 | `packages/operating-skills`  | `@dorkos/operating-skills`  | First-party skills that teach agents to run DorkOS   |
 | `packages/marketplace`       | `@dorkos/marketplace`       | Package schemas, parser, validator, scaffolder       |

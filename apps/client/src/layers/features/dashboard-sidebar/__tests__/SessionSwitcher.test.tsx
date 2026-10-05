@@ -348,7 +348,7 @@ describe('SessionSwitcher', () => {
     expect(onSelectSession).not.toHaveBeenCalled();
   });
 
-  it('⇧↵ forks the focused session and lands in the fork', async () => {
+  it('L-05: ⇧↵ forks the focused session and lands in the fork', async () => {
     mockTransport.forkSession = vi.fn().mockResolvedValue(session('forked-1', 'Fork'));
     const { onSelectSession } = renderSwitcher([session('recent-1', 'Review feedback options')]);
 

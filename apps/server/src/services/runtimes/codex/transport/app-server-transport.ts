@@ -31,6 +31,7 @@ import { logger } from '../../../../lib/logger.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
+import { keepAwakeService } from '../../../core/keep-awake/index.js';
 import {
   CreditsUnavailableError,
   creditsRefusalEvent,
@@ -196,6 +197,8 @@ export class AppServerCodexTransport implements CodexTransport {
     let release: (() => void) | undefined;
     let loaded: LoadedThread;
     let relay: { baseUrl: string; key: string } | undefined;
+    // Read once per turn, so the load and any reload agree (spec `keep-awake`).
+    const preventIdleSleep = keepAwakeService.preventsIdleSleep();
     let loadInput: ThreadLoadInput;
     // Whether the thread this turn runs on has no turn of DorkOS's still
     // winding down in Codex.
@@ -213,6 +216,7 @@ export class AppServerCodexTransport implements CodexTransport {
         settings: request.settings,
         tools: request.tools,
         ...(relay ? { creditsRelay: relay } : {}),
+        ...(preventIdleSleep ? { preventIdleSleep } : {}),
       };
       // Stop a turn DorkOS gave up on BEFORE loading: the load may fork this
       // thread away (refreshed credentials), and a turn left running on the

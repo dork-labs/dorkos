@@ -157,7 +157,7 @@ describe('stopping one agent in a room', () => {
     vi.restoreAllMocks();
   });
 
-  it('stops the named agent and leaves the other one working', async () => {
+  it('A-16: stops the named agent and leaves the other one working', async () => {
     // **The whole point of the feature, and the defect it is aimed at.** A
     // `haltAgent` that enumerated the claim map the way the room-wide halt does
     // would take Bo's claim with Ana's, and Bo's answer would never post — which

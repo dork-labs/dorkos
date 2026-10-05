@@ -1,6 +1,6 @@
 /**
  * Compaction, end to end — the boundary a person can see (capability L-04,
- * `meta/chat-capabilities.md`; DOR-1215).
+ * `contributing/capabilities/chat.md`; DOR-1215).
  *
  * The row this file exists for shipped long ago and was reachable by nobody.
  * `/compact` dispatched, the runtime yielded a `compact_boundary`, the server

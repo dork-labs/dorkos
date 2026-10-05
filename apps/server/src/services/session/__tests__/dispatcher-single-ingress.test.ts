@@ -77,6 +77,13 @@ const ALLOWED = new Map<string, string>([
       'the tracing wrap, and re-yields every event untouched (DOR-1654).',
   ],
   [
+    'apps/server/src/services/core/keep-awake/hold-during-turn.ts',
+    'The keep-awake wrap, a decorator on the same terms as the two above: it is ' +
+      'registered at the same seam (`RuntimeRegistry.register`), OUTSIDE the ' +
+      'sign-in watch, wraps the generator a caller already asked for so the ' +
+      'computer stays awake while it is consumed, and starts nothing of its own.',
+  ],
+  [
     'apps/server/src/services/tasks/task-scheduler-service.ts',
     'The scheduler drives its own turn: it consumes the stream in-band for the ' +
       'run row and races it against a cancel signal, which is work no dispatcher ' +

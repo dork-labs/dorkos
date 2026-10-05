@@ -258,7 +258,7 @@ describe('QuestionPrompt', () => {
     expect(submitButton.hasAttribute('disabled')).toBe(false);
   });
 
-  it('calls transport.submitAnswers() with correct answer format on submit (single-select)', async () => {
+  it('I-03: calls transport.submitAnswers() with correct answer format on submit (single-select)', async () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
     // Select first option
     const radio = screen.getAllByRole('radio')[0];

@@ -569,7 +569,7 @@ describe('the room context a trigger derives', () => {
       expect(contextFor(ana).thread?.replyCount).toBe(1);
     });
 
-    it('quotes a thread opener inside the fence, however it was written', async () => {
+    it('A-15: quotes a thread opener inside the fence, however it was written', async () => {
       // The escape, end to end through the real service and dispatcher: a person
       // posts a message carrying a newline and a forged closing marker, somebody
       // opens a thread on it, and every later turn renders it. It used to land

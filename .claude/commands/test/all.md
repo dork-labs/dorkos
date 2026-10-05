@@ -7,7 +7,7 @@ category: testing
 
 Run every **free, deterministic** verification tier in this repo, in one pass, and produce a single report with a pass/fail verdict per tier. Then **stop** and ask before running anything that spends money or needs a live stack.
 
-This is the run-everything entry point described in `meta/chat-capabilities.md` §11. It does not replace the individual commands — it sequences them and reports honestly on what actually ran.
+This is the run-everything entry point described in `contributing/capabilities/chat.md` §11. It does not replace the individual commands — it sequences them and reports honestly on what actually ran.
 
 **The one rule that matters:** a tier that did not execute is never green. See "Honest reporting" below — turbo's cache replay is designed to look exactly like a passing run.
 
@@ -218,4 +218,4 @@ Flip `Status: IN PROGRESS` → `COMPLETE`, append the total duration, and print 
 - A stale `@dorkos/shared` dist produces false-red type errors outside a running dev session — if tier 1 fails with import/type errors in packages you did not touch, run `pnpm --filter @dorkos/shared build` and re-run before reporting a FAIL. A `TS6053` on a `@dorkos/typescript-config` extends means stale `node_modules` — run `pnpm install`.
 - Browser-test execution has its own CI assertion, `scripts/assert-browser-tests-executed.sh`, for the same cache-replay reason as the unit suite.
 - Eval credential order is `ANTHROPIC_API_KEY` → `CLAUDE_CODE_OAUTH_TOKEN` → the local `claude` sign-in, and the run prints which one answered. No credential at all is a **runner error**, never a pass.
-- The capability contract these tiers are measured against is `meta/chat-capabilities.md` (§10 lists the whole test surface; §11 defines this ladder).
+- The capability contract these tiers are measured against is `contributing/capabilities/chat.md` (§10 lists the whole test surface; §11 defines this ladder).
