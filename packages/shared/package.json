@@ -464,6 +464,10 @@
     "./canvas-app-manifest": {
       "types": "./src/canvas-app-manifest.ts",
       "default": "./dist/canvas-app-manifest.js"
+    },
+    "./browser-frame-wire": {
+      "types": "./src/browser-frame-wire.ts",
+      "default": "./dist/browser-frame-wire.js"
     }
   },
   "scripts": {
