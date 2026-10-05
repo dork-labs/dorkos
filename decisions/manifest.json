@@ -6762,7 +6762,7 @@
       "id": "261005-102035",
       "slug": "spaces-email-links-hash-only-outbox-tokens-mailbox-proof",
       "title": "Spaces email links: hash-only tokens through the outbox, and mailbox proof takes over a never-confirmed account",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-10-05",
       "extractedFrom": "spaces-email",
       "specSlug": "spaces-email",

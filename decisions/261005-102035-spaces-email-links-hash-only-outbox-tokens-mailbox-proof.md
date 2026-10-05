@@ -1,7 +1,7 @@
 ---
 id: 261005-102035
 title: 'Spaces email links: hash-only tokens through the outbox, and mailbox proof takes over a never-confirmed account'
-status: draft
+status: accepted
 created: 2026-10-05
 spec: spaces-email
 superseded-by: null
