@@ -150,6 +150,27 @@ By default a package installs **globally**, for every agent. To scope it to one 
   private source, or publish your own package.
 </Callout>
 
+## Extensions that run separately
+
+Some extensions ask to run on their own, apart from DorkOS. Before you let one run, its card lists exactly what it can reach:
+
+- **Runs separately from DorkOS.** Its server part runs as its own program. If it crashes, freezes or runs out of memory, the rest of DorkOS keeps working.
+- **Can connect to:** the sites it may reach. Any other connection is refused. An extension that lists none says "Can't connect to the internet."
+- **Can run:** programs it may start on your computer. A program it starts can do anything you can do, so a shell or a language like Python can run any program. The card says so when that's the case.
+- **Can message your agents and start chats.** Shown only when it asks for this.
+
+If a later version asks for more, DorkOS asks you again before it runs. If it asks for less, it just updates.
+
+What running separately does not cover:
+
+- **Its screens.** The parts of an extension you see in DorkOS run with your access, like any extension's.
+- **The programs it may run.** Each one has your full access, as above.
+- **A firewall.** The list of sites is a check DorkOS puts inside the extension's own program. It is not a firewall on your computer.
+
+If it stops on its own, DorkOS starts it again after 1 second, then 5 seconds, then 30. If it stops 3 times within 10 minutes, it stays off and its card says why. Click **Reload** on its card in Settings > Extensions to try again. If the card says it "can't run with its limits on this computer," DorkOS left it off rather than run it without them.
+
+Running separately has been tested on macOS, including the desktop app, and on Linux. It hasn't been confirmed on Windows yet. These extensions can't give your agents tools yet.
+
 ## How large a package can be
 
 DorkOS won't install a package larger than 250 MB in total, with more than 20,000 files and folders, or with any single file over 50 MB. It checks this before showing you what the package will do, so you never approve something it then refuses. Real packages are far smaller: the largest we've seen is about 12 MB.
