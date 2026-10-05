@@ -5,7 +5,7 @@
 ## Where the ideation actually lives
 
 This work was ideated in the capabilities audit, not here. Its input is **position D3** in
-[`meta/harness-sync-capabilities.md`](../../meta/harness-sync-capabilities.md) §16 — "Adopt is
+[`contributing/capabilities/harness-sync.md`](../../contributing/capabilities/harness-sync.md) §16 — "Adopt is
 reported everywhere and automatic only where DorkOS owns the directory" — which was drafted, argued
 across two rounds of adversarial review, and settled. Every sentence of D3 is a settled input to the
 specification; this file exists so the SPECIFY stage has the artifact it expects and so a reader
@@ -13,7 +13,7 @@ knows where to look, not to re-derive a position that already has one.
 
 Read, in this order:
 
-- `meta/harness-sync-capabilities.md` §16 **D3** in full, and rows **SRC-07**, **SRC-10**, **SRC-11**,
+- `contributing/capabilities/harness-sync.md` §16 **D3** in full, and rows **SRC-07**, **SRC-10**, **SRC-11**,
   **SK-04**, **SK-07**, **SK-13**, **AP-15**, **VC-01**, **J-06**, plus §14 items 3 and 11.
 - `plans/harness-sync-test-plan.md` line 10 of §11 (the PR this is), and the "Adopt tests, once D3
   lands" paragraph in §6.

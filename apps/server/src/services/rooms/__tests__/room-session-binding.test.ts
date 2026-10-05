@@ -113,7 +113,7 @@ describe('the room binding follows the session the turn ran on', () => {
     expect(boundSession(harness, room.id)).toBe(CANONICAL);
   });
 
-  it('resumes the canonical session on the next message, rather than starting over', async () => {
+  it('M-12: resumes the canonical session on the next message, rather than starting over', async () => {
     const runner = renamesItsSession();
     const { harness, room } = open(runner);
 

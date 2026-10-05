@@ -23,7 +23,7 @@ Parse `$ARGUMENTS`:
    - `bypassPermissions` / `acceptEdits` — no blocking gate. Use this to exercise subagents, queued messages, and file ops end-to-end (checks #2–#4).
    - **Run both variants** for full coverage.
 4. **`model:<id>`** — default `claude-haiku-4-5` (fastest, cheapest; this tests UI plumbing, not model capability). Ignored under `mode:sandbox`, where no model answers.
-5. **`mode:sandbox|live`** — which stack the run drives (`meta/chat-capabilities.md` §11).
+5. **`mode:sandbox|live`** — which stack the run drives (`contributing/capabilities/chat.md` §11).
    - `mode:sandbox` — the **test-mode runtime**: throwaway data dir, deterministic, **no model spend**. Verifies UI plumbing: switching, queueing, stream lifecycle.
    - `mode:live` — the dev stack with a real runtime. Verifies streaming feel, real tool loops, timing, and permission gates as they actually behave.
    - **If the invocation does not state a mode, ASK the user before spending anything** (`AskUserQuestion`, offering both, with the cost of each). Never assume `live`.

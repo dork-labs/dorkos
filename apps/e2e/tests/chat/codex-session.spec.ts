@@ -10,7 +10,7 @@ import { ChatPage } from '../../pages/ChatPage';
 test.describe('Codex — account models and session resume @integration', () => {
   test.describe.configure({ timeout: 120_000 });
 
-  test('answers with an available model and remembers the conversation after reload', async ({
+  test('L-03: answers with an available model and remembers the conversation after reload', async ({
     page,
     request,
     roomsApi,

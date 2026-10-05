@@ -104,7 +104,7 @@ function everyNotice(): RoomEntryBody[] {
 const SENDS_TO_SESSION = /\bopen\b[^.]*\bsession\b/i;
 
 describe('notices that send the reader to a session (DOR-2077)', () => {
-  it('builds every notice the module exports, so none can slip past the checks below', () => {
+  it('R-09: builds every notice the module exports, so none can slip past the checks below', () => {
     const exported = Object.keys(copy).filter((name) => /^build\w*Notice$/.test(name));
     expect(Object.keys(NOTICES).sort()).toEqual(exported.sort());
   });

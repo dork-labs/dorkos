@@ -7,7 +7,7 @@
  * about files that need not exist — `AGENTS.md` for Codex/Cursor/OpenCode,
  * `.claude/settings.json` for Claude Code hooks, `.claude/commands` for Claude
  * Code commands, and an installed skill's `.agents/skills` link when no harness
- * planned one (`meta/harness-sync-capabilities.md` §14 item 5, all reproduced
+ * planned one (`contributing/capabilities/harness-sync.md` §14 item 5, all reproduced
  * 2026-09-07).
  *
  * The property is the general form of all four: over generated repositories —

@@ -93,7 +93,7 @@ describe('connector discovery capabilities', () => {
     ]);
   });
 
-  it('pages more than 100 services through the bounded catalog without legacy or private reads', async () => {
+  it('CN-02: pages more than 100 services through the bounded catalog without legacy or private reads', async () => {
     const provider = new FakeConnectorProvider({
       type: 'paged',
       custody: 'managed',

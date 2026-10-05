@@ -1,7 +1,7 @@
 /**
  * The journey fixture kit — `@dorkos/harness/journeys`.
  *
- * A journey is one contract scenario (`meta/harness-sync-capabilities.md` §12)
+ * A journey is one contract scenario (`contributing/capabilities/harness-sync.md` §12)
  * staged as a real repository, run once, and asserted as an EXACT before/after
  * tree diff. Half of them are engine-only and live beside this file; the other
  * half need the server seam (`runAutoProjection`, `projectWithConsent`,

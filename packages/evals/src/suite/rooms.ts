@@ -2,7 +2,7 @@
  * The `rooms` suite — what a channel DOES about a message, and what it costs.
  *
  * Two tiers, doing two different jobs (`specs/engaged-response-gate/01-ideation.md`
- * §13.2 and `meta/chat-capabilities.md` §7):
+ * §13.2 and `contributing/capabilities/chat.md` §7):
  *
  * - **This file is the STRUCTURAL tier**: five mechanism cases on `test-mode`.
  *   No model, no spend, seconds, and they GATE — they are the only cases in the
@@ -34,7 +34,7 @@
  *
  * ## Skipped on purpose
  *
- * `meta/chat-capabilities.md` §7 lists eight context probes. **X-07 (the same
+ * `contributing/capabilities/chat.md` §7 lists eight context probes. **X-07 (the same
  * probes in a bridged room) and X-08 (a probe after the bound session compacted)
  * are not implemented, in either tier**, and are not faked:
  *
@@ -50,7 +50,7 @@
  *   for that agent". Driving `/compact` would need the session id, which is only
  *   knowable after a turn, and a second surface to send it on.
  *
- * Both stay listed as gaps in `meta/chat-capabilities.md` §9 rather than
+ * Both stay listed as gaps in `contributing/capabilities/chat.md` §9 rather than
  * appearing here as green cases that assert nothing.
  *
  * ## The drill (run it after changing any oracle here)

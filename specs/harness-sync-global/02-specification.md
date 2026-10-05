@@ -92,7 +92,7 @@ global package droppable by name.
 - **G4.** A person is told which plugins they turned on in Claude Code, which of their other agent tools
   cannot see them, and how to fix that with one command they already have.
 - **G5.** Every refusal in this work (user-level instructions, hooks, commands, MCP servers; a trigger on
-  `/plugin install`) is recorded in `meta/harness-sync-capabilities.md` with its reason, so it reads as a
+  `/plugin install`) is recorded in `contributing/capabilities/harness-sync.md` with its reason, so it reads as a
   decision rather than a gap.
 - **G6.** Nothing DorkOS writes at user scope can be removed by DorkOS unless DorkOS can prove it wrote it.
 
@@ -534,7 +534,7 @@ like every other number there.
 | `packages/cli/src/harness-sync-command.ts`                                                  | One dynamic import and one print block, after `formatDropList` and before `formatNotEnabled`.                                              |
 | `packages/shared/src/harness-schemas.ts`                                                    | `HarnessClaudeOnlySchema` and the optional field.                                                                                          |
 | `apps/server/src/services/harness/status.ts`                                                | Populate it. If DOR-1891 has not landed, this hunk moves to whichever ticket lands second.                                                 |
-| `meta/harness-sync-capabilities.md`                                                         | SRC-08, J-07, HK-14, TR-10, D4.                                                                                                            |
+| `contributing/capabilities/harness-sync.md`                                                 | SRC-08, J-07, HK-14, TR-10, D4.                                                                                                            |
 
 **Nothing in `packages/harness` changes in slice B1.** That is the claim that matters, and it is narrower
 than "zero engine change": B1 touches no plan, no apply, no sweep and no target.
@@ -1371,7 +1371,7 @@ projection is skills-only and symlinked). The clause: "its **portable subset** (
 **automatically on install** to every enabled harness … scope-matched (project↔project, global↔global)".
 
 At global scope the portable subset is **skills only** (hooks, commands, instructions and MCP servers are
-refused at user scope, each with its reason recorded in `meta/harness-sync-capabilities.md`), and the
+refused at user scope, each with its reason recorded in `contributing/capabilities/harness-sync.md`), and the
 projection is **not automatic on install**: it is asked for once and remembered in `harness.global`. The
 related Negative bullet "the projector must understand … scope mapping" is now understated rather than
 wrong, and reads as history.
@@ -1759,7 +1759,7 @@ operator's own machine has two of.
 
 ## Documentation
 
-- `meta/harness-sync-capabilities.md`: rows SRC-04, SRC-08, SRC-12, SK-03, IN-08, HK-14, TR-10, J-07, §14
+- `contributing/capabilities/harness-sync.md`: rows SRC-04, SRC-08, SRC-12, SK-03, IN-08, HK-14, TR-10, J-07, §14
   gap 11, and position D4, each edited in the slice that changes it (§0's table).
   `capabilities-census.test.ts` fails until each row's coverage cell names a real test.
 - `plans/harness-sync-test-plan.md`: line 64's P8 re-scoped, P8b and P8c added, row 14 of §11 split into the
@@ -1796,7 +1796,7 @@ fixed list of prose files plus `docs/**.mdx` and `blog/**.mdx`; `check:vocab-gat
 gate reads either**. So the bar is a hand check, listed in the PR: grep the frozen block for `mission
 control`, `cockpit`, `integration`, `connector`, `adapter` and `provider` (singular and plural) and paste
 the empty result. The two gates still run, for what they do cover: the contract-row edit in
-`meta/harness-sync-capabilities.md` and any `apps/server/src` string this slice adds.
+`contributing/capabilities/harness-sync.md` and any `apps/server/src` string this slice adds.
 
 ### Slice A1 — the honest drop, the location union, the both-scopes notice (~700 lines)
 
@@ -1992,7 +1992,7 @@ Six, none owned here.
   **DOR-1853**.
 - Ideation: `specs/harness-sync-global/01-ideation.md` — its §5.2 per-tool tables and §5.7 measurements are
   carried forward here rather than repeated in full.
-- Contract: `meta/harness-sync-capabilities.md` — §3 SRC-04/08/12, §4 SK-03, §5 IN-08, §6 HK-14, §10 TR-10,
+- Contract: `contributing/capabilities/harness-sync.md` — §3 SRC-04/08/12, §4 SK-03, §5 IN-08, §6 HK-14, §10 TR-10,
   §12 J-07, §14 gap 11, §16 D1/D3/D4/D5/D6.
 - Plan: `plans/harness-sync-test-plan.md` — §3 line 64 (P8), §11 row 14.
 - Parent spec: `specs/harness-sync/02-specification.md` lines 217-219 ("Scope maps to scope … Never cross

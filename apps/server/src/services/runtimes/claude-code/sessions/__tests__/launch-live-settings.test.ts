@@ -82,7 +82,7 @@ describe('applyLiveChanges', () => {
     expect(calls).toEqual(['setModel:sonnet']);
   });
 
-  it('sets the permission mode without replacing the process', async () => {
+  it('L-12: sets the permission mode without replacing the process', async () => {
     const { query, calls } = controlQuery();
     const decision = prepareDispatch(
       capture(),

@@ -10,7 +10,7 @@
  * what it learns, finds it again on a different surface, tidies up instead of
  * losing a write, and treats a note as data rather than as an order is a
  * question only a real model can answer. Phase 1 brought the three probes
- * `meta/chat-capabilities.md` §7.1 asks for that a memory file alone can reach —
+ * `contributing/capabilities/chat.md` §7.1 asks for that a memory file alone can reach —
  * X-09, X-12 and X-11b — and Phase 2's two cross-room lookups bring X-10 and
  * X-13.
  *

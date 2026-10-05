@@ -49,7 +49,7 @@ The operator's point: "connected, but no agent can use it" is a dead end, and th
 **As built (DOR-2415).** No "Allow once": the server has no one-time grant (DOR-2437). The level starts on the one covering what the agent asked for, the card shows the agent's reason and the actions it named, and says plainly what a level leaves out; an agent given less than it asked for is told so when it resumes. A paused or signed-out account is fixed from the card before any Allow. The record is past tense ("Allowed DorkBot to use Gmail"), because access can change later and the record stays in the transcript. A request that also asks for event updates goes to the full review on Connections. No link is sent to chat apps: every rule for when a link was safe to post (direct message only, owner only, not after a rename or a group message) kept failing open, so agents never receive a DorkOS URL. A safe way back to the card from a chat app is a follow-up.
 
 - The chat card is always about **one** agent. It never offers "every agent".
-- Tracked as **DOR-2415**; `meta/chat-capabilities.md` §13 row CN-12. The server half exists (CN-02, CN-03, CN-04, CN-06); the missing half is the transcript card, and an eval that the model raises the request from an ordinary message.
+- Tracked as **DOR-2415**; `contributing/capabilities/chat.md` §13 row CN-12. The server half exists (CN-02, CN-03, CN-04, CN-06); the missing half is the transcript card, and an eval that the model raises the request from an ordinary message.
 
 **Path 2 — from the page (planning ahead).** Connect → sign in → **Who can use it?** → **Try it**.
 

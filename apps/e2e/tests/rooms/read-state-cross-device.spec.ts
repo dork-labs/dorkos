@@ -40,7 +40,7 @@ test.describe.configure({ mode: 'default', timeout: 120_000 });
  * an agent turn.
  */
 test.describe('Read state — one mark, every device @smoke', () => {
-  test('reading a room on one device takes its badge down on the other', async ({
+  test('M-08: reading a room on one device takes its badge down on the other', async ({
     browser,
     page,
     basePage,

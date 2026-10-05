@@ -1,6 +1,6 @@
 /**
  * Does an agent ask the owner for an app on its own, from an ordinary message?
- * (DOR-2415, `meta/chat-capabilities.md` §13 row CN-12.)
+ * (DOR-2415, `contributing/capabilities/chat.md` §13 row CN-12.)
  *
  * The chat card that lets the owner connect and allow an app in place is only
  * reached if the model, told nothing about connections, recognises that the

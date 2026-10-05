@@ -200,7 +200,7 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
     await vi.waitFor(() => expect(sessionTurnQueue.size).toBe(0));
   }, 10_000);
 
-  it('makes a SECOND CLIENT wait exactly as the first one does (DOR-1131)', async () => {
+  it('L-06: makes a SECOND CLIENT wait exactly as the first one does (DOR-1131)', async () => {
     // Waiting used to be only for the client that owned the turn; a different
     // client got a 409 it could see and act on. Acting on it meant retyping,
     // which is why it is gone: the second window's message now waits in the same

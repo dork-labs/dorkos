@@ -352,7 +352,29 @@
       ]
     },
     {
-      "guide": "runtime-capabilities.md",
+      "guide": "capabilities/README.md",
+      "description": "The capability-list pattern: ids, statuses, evidence tiers, and the census test that keeps each list honest",
+      "patterns": [
+        "contributing/capabilities/"
+      ]
+    },
+    {
+      "guide": "capabilities/chat.md",
+      "description": "Chat capabilities contract: every chat behavior with an id, state and test coverage, checked by a census",
+      "patterns": [
+        "apps/client/src/layers/features/chat/",
+        "chat-capabilities-census"
+      ]
+    },
+    {
+      "guide": "capabilities/harness-sync.md",
+      "description": "Harness Sync capabilities contract: every projection capability across harnesses, checked by a census",
+      "patterns": [
+        "packages/harness/src/__tests__/capabilities-census"
+      ]
+    },
+    {
+      "guide": "capabilities/runtimes.md",
       "description": "Generated capability × runtime matrix: what every runtime should do, parity, gaps (`pnpm docs:runtime-capabilities`)",
       "patterns": [
         "runtime-capability-matrix",

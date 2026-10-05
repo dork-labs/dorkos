@@ -116,7 +116,7 @@ export interface ReadPaths {
 /**
  * One harness's documented behaviour for reading skills.
  *
- * Every field is a transcription of {@link ../../../../meta/harness-sync-capabilities.md | the
+ * Every field is a transcription of {@link ../../../../contributing/capabilities/harness-sync.md | the
  * capabilities contract} §1.1 and the prose beneath it, which in turn is what
  * each vendor page said on the date in {@link FactSource.fetchedAt}.
  */

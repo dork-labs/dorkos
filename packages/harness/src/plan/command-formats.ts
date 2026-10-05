@@ -15,7 +15,7 @@
  * Codex is the honest absence: its custom prompts were deprecated in favour of
  * skills, so there is no repo-local command format to name.
  *
- * Vendor pages, fetched 2026-09-07 (`meta/harness-sync-capabilities.md` §1.2):
+ * Vendor pages, fetched 2026-09-07 (`contributing/capabilities/harness-sync.md` §1.2):
  * Cursor `.cursor/commands/*.md`, Gemini CLI `.gemini/commands/*.toml`, Copilot
  * `.github/prompts/*.prompt.md` (VS Code), OpenCode `.opencode/commands/*.md`
  * (flat, no namespacing).

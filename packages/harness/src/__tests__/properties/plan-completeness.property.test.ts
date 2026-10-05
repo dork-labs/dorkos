@@ -7,7 +7,7 @@
  * Claude Code merges; skill-frontmatter `hooks:` were never parsed. Those
  * artifacts were not dropped with a reason and not warned about — they were
  * absent from the report, which reads exactly like a repository that does not
- * have them (`meta/harness-sync-capabilities.md` §14 item 2).
+ * have them (`contributing/capabilities/harness-sync.md` §14 item 2).
  *
  * The property is the general form: over generated repositories, for every
  * artifact `inventory/` finds and every harness the manifest enables, the plan

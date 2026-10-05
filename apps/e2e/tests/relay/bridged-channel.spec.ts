@@ -48,7 +48,7 @@ async function seedBridgedChannel(
 }
 
 test.describe('Bridged channel — the cockpit surfaces @smoke', () => {
-  test('shows the visibility badge and an external origin mark, and accepts a cockpit post', async ({
+  test('M-11: shows the visibility badge and an external origin mark, and accepts a cockpit post', async ({
     page,
     request,
   }) => {

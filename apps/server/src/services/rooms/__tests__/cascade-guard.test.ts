@@ -100,7 +100,7 @@ describe('cascade guard, wired', () => {
     return service.listEntries(room.id, human, { limit: 200 });
   }
 
-  it('terminates a two-agent ping-pong instead of running forever', async () => {
+  it('A-07: terminates a two-agent ping-pong instead of running forever', async () => {
     await seedAndSettle('what do you two think?');
 
     // Both agents answered once, and then it stopped. Without the guard this

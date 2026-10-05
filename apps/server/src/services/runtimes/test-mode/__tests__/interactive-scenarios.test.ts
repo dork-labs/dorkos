@@ -2,7 +2,7 @@
  * The interactive test-mode turn, driven through the real server path (DOR-1214).
  *
  * These scenarios exist so a browser test can prove the interactive-session rows
- * of `meta/chat-capabilities.md` — I-01 to I-04, R-05 to R-07, C-10 — and the
+ * of `contributing/capabilities/chat.md` — I-01 to I-04, R-05 to R-07, C-10 — and the
  * browser test can only be trusted if the events beneath it are. So this file
  * asserts the thing the e2e cannot see: that the turn genuinely BLOCKS until the
  * runtime's own interactive method is called, and that the two branches of every

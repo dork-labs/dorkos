@@ -241,7 +241,7 @@ describe('ApprovalCard', () => {
       expect(names).toEqual(['Allow', 'Always allow', 'Don’t allow']);
     });
 
-    it('sends each answer as what it is', async () => {
+    it('I-01: sends each answer as what it is', async () => {
       const grantApproval = vi.fn().mockResolvedValue({ ok: true, outcome: 'granted' });
       const denyApproval = vi.fn().mockResolvedValue({ ok: true, outcome: 'denied' });
 

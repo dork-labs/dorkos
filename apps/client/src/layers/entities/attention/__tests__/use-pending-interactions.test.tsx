@@ -84,7 +84,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('usePendingInteractions', () => {
-  it('seeds from the route, so a window that opened late is not blind', async () => {
+  it('I-05: seeds from the route, so a window that opened late is not blind', async () => {
     const { result } = mount([pending('tc-1')]);
 
     await waitFor(() => expect(result.current.interactions).toHaveLength(1));

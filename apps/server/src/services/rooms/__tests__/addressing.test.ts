@@ -146,7 +146,7 @@ describe('selectTriggerTargets', () => {
     expect(names(targets)).toEqual([]);
   });
 
-  it('triggers all three agents when all three were addressed', () => {
+  it('C-05: triggers all three agents when all three were addressed', () => {
     const targets = selectTriggerTargets({
       roomKind: 'channel',
       authorKind: 'human',

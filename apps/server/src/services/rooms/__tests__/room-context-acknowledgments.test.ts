@@ -140,7 +140,7 @@ describe('acknowledgments in the room context', () => {
     expect(multi.maxSeq(shared.id), 'and nothing is written to the log').toBe(seqBefore);
   });
 
-  it('reaches the agent on its NEXT turn, naming who, what, and which message', async () => {
+  it('A-06: reaches the agent on its NEXT turn, naming who, what, and which message', async () => {
     const entryId = await anaSaid('Deployed to staging — the migration ran clean.');
     service.toggleReaction(room.id, entryId, human, '👍');
 

@@ -1,7 +1,7 @@
 /**
  * The vendor-facts table — §1 of the Harness Sync capabilities contract as data.
  *
- * `meta/harness-sync-capabilities.md` §1.1 is the oracle every projection is
+ * `contributing/capabilities/harness-sync.md` §1.1 is the oracle every projection is
  * measured against: what each harness's own documentation says it *reads*, as
  * opposed to what the engine assumes it reads. This module is that table, typed,
  * dated and quoted, so a test can assert against it and so a vendor change has
@@ -67,7 +67,7 @@ export const VENDOR_FACTS_FETCHED_AT = '2026-09-07';
  * What each harness's documentation says about reading skills, keyed by
  * {@link HarnessId}.
  *
- * Source: `meta/harness-sync-capabilities.md` §1.1 and the two paragraphs of
+ * Source: `contributing/capabilities/harness-sync.md` §1.1 and the two paragraphs of
  * prose beneath it, compiled 2026-09-07 from the vendor URLs each row names.
  */
 export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {

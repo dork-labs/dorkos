@@ -25,7 +25,7 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * never triggers one anyway, which is pinned server-side.
  */
 test.describe('Rooms — reacting to a message', () => {
-  test('a reaction from the capsule becomes a pill, and pressing the pill takes it back', async ({
+  test('R-08: a reaction from the capsule becomes a pill, and pressing the pill takes it back', async ({
     page,
     roomsApi,
     roomsPage,

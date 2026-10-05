@@ -46,7 +46,7 @@ Claude Code's own skills directory, and we will plan them from a **separate `bui
 rather than a root discriminator on the existing planner, so a stage added later cannot reach a home
 directory by default. We will generate, scaffold and merge nothing at user scope, and we will refuse
 instructions, hooks, commands and MCP servers there, recording each reason in
-`meta/harness-sync-capabilities.md`. We will require a **three-clause** ownership test before any removal:
+`contributing/capabilities/harness-sync.md`. We will require a **three-clause** ownership test before any removal:
 the candidate is a symlink, its basename carries the `__` namespace, and its own link text resolves inside
 `<dorkHome>/plugins` — read lexically, never through `realpath`, so a link an uninstall left dangling is
 still recognisably ours. We will ask once, in the terminal, before the first write into a person's home,

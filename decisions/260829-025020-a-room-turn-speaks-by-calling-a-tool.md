@@ -41,7 +41,7 @@ session gets posted, automatically, into the room that triggered it (`room-trigg
   a bar; today every triggered turn clears it by construction.
 - **It cannot think privately.** Deliberation lands in front of everybody, which is the
   over-participation E1–E18 exist to damp.
-- **It cannot let a reaction be the answer.** `meta/chat-capabilities.md` A-06 records the
+- **It cannot let a reaction be the answer.** `contributing/capabilities/chat.md` A-06 records the
   measured failure: _"having reacted, the agent still wrote 'Done — release notes acknowledged.',
   and a room turn's text is posted."_ Three rounds of prompt fixes did not close it, and the row
   concluded it was _"model-tuning territory, not a missing instruction."_
