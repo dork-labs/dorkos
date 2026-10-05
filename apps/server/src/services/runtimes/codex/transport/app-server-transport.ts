@@ -34,7 +34,7 @@ import {
 } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome, resolveCodexHome } from '../codex-home.js';
 import { codexCreditsAppServerEnv, ensureCreditsCodexHome } from '../credits-launch.js';
-import { EFFORT_TO_REASONING, MODE_TO_SANDBOX } from '../turn-input.js';
+import { EFFORT_TO_REASONING } from '../turn-input.js';
 import {
   CodexAppServerPool,
   CodexCrashLoopError,
@@ -43,17 +43,11 @@ import {
 } from '../app-server/process-pool.js';
 import { CodexThreadLoader, type LoadedThread } from '../app-server/thread-loader.js';
 import { ThreadChannel, type TurnSink } from '../app-server/thread-channel.js';
-import {
-  AppServerTurnMapper,
-  mergeRateLimits,
-  rateLimitsToRolloutShape,
-} from '../app-server/notification-mapper.js';
+import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
+import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
+import { EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
-import type {
-  SandboxPolicy,
-  ServerNotification,
-  TurnStartParams,
-} from '../app-server/protocol/methods.js';
+import type { ServerNotification, TurnStartParams } from '../app-server/protocol/methods.js';
 import type { CodexTransport, CodexTurnRequest } from './codex-transport.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
@@ -89,38 +83,6 @@ interface OpenTurn {
   /** Ends the generator early (a stop Codex never confirmed). */
   readonly abandon: () => void;
   interrupting: Promise<InterruptReceipt> | undefined;
-}
-
-/** A small single-consumer queue the generator drains. */
-class EventQueue {
-  private items: StreamEvent[] = [];
-  private waiting: (() => void) | undefined;
-  private ended = false;
-
-  push(events: readonly StreamEvent[]): void {
-    if (this.ended || events.length === 0) return;
-    this.items.push(...events);
-    this.wake();
-  }
-
-  end(): void {
-    this.ended = true;
-    this.wake();
-  }
-
-  async *drain(): AsyncGenerator<StreamEvent> {
-    for (;;) {
-      while (this.items.length > 0) yield this.items.shift()!;
-      if (this.ended) return;
-      await new Promise<void>((resolve) => (this.waiting = resolve));
-    }
-  }
-
-  private wake(): void {
-    const waiting = this.waiting;
-    this.waiting = undefined;
-    waiting?.();
-  }
 }
 
 /** Codex turns on `codex app-server`. */
@@ -622,37 +584,14 @@ export class AppServerCodexTransport implements CodexTransport {
   }
 }
 
-/**
- * The tagged `SandboxPolicy` `turn/start` takes (protocol risk 6), from the
- * session's mode and the turn's validated write grants.
- *
- * @param request - The turn.
- */
-export function sandboxPolicyFor(
-  request: Pick<CodexTurnRequest, 'settings' | 'writableDirectories'>
-): SandboxPolicy {
-  switch (MODE_TO_SANDBOX[request.settings.permissionMode ?? 'default'] ?? 'read-only') {
-    case 'danger-full-access':
-      return { type: 'dangerFullAccess' };
-    case 'workspace-write':
-      return {
-        type: 'workspaceWrite',
-        writableRoots: [...request.writableDirectories],
-        networkAccess: false,
-        excludeTmpdirEnvVar: false,
-        excludeSlashTmp: false,
-      };
-    default:
-      return { type: 'readOnly', networkAccess: false };
-  }
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
     timer.unref?.();
   });
 }
+
+export { sandboxPolicyFor };
 
 /**
  * Build the app-server transport for `CodexRuntime`.

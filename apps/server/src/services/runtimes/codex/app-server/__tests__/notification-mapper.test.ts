@@ -6,9 +6,8 @@ import {
   AppServerTurnMapper,
   CODEX_STOPPED_COPY,
   NOTIFICATION_DISPOSITION,
-  mergeRateLimits,
-  rateLimitsToRolloutShape,
 } from '../notification-mapper.js';
+import { mergeRateLimits, rateLimitsToRolloutShape } from '../rate-limits.js';
 import { SERVER_NOTIFICATION_METHODS } from '../protocol/methods.js';
 
 vi.mock('../../account-usage.js', async (importOriginal) => ({
