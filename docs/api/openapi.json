@@ -2112,13 +2112,32 @@
                   "string",
                   "null"
                 ]
+              },
+              "permission": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string"
+                  },
+                  "sameAsStarter": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "mode",
+                  "sameAsStarter"
+                ]
               }
             },
             "required": [
               "kind",
               "sessionId",
               "title",
-              "reason"
+              "reason",
+              "permission"
             ]
           }
         ]

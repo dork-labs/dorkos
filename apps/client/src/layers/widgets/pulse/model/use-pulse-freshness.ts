@@ -74,6 +74,8 @@ const ACTIVITY_KEYS = [DASHBOARD_ACTIVITY_QUERY_KEY, ACTIVITY_QUERY_KEY] as cons
  *  - `task_run_failed` (DOR-403) — a Tasks run was recorded failed. Refreshes the
  *    failed-runs attention cache AND the activity caches (a failed run also writes
  *    an activity row).
+ *  - `task_run_updated` (DOR-2717) — a finished run's output grew because its
+ *    agent reported back after the run's turn ended → refresh the runs cache.
  *  - `relay_dead_letter` (DOR-403) — a message was dead-lettered → refresh the
  *    dead-letters attention cache.
  *  - `mesh_liveness_changed` (DOR-403) — the reconciler flipped an agent
@@ -96,6 +98,7 @@ const EVENT_CACHE_INVALIDATIONS = {
   relay_bindings_changed: ACTIVITY_KEYS,
   extension_reloaded: ACTIVITY_KEYS,
   task_run_failed: [...ACTIVITY_KEYS, TASK_RUNS_KEY],
+  task_run_updated: [TASK_RUNS_KEY],
   relay_dead_letter: [DEAD_LETTERS_KEY],
   mesh_liveness_changed: [MESH_STATUS_KEY],
   tasks_changed: ACTIVITY_KEYS,
@@ -146,6 +149,9 @@ export function usePulseFreshness(coalesceMs: number = COALESCE_MS): void {
   );
   useEventSubscription('task_run_failed', () =>
     schedule(EVENT_CACHE_INVALIDATIONS.task_run_failed)
+  );
+  useEventSubscription('task_run_updated', () =>
+    schedule(EVENT_CACHE_INVALIDATIONS.task_run_updated)
   );
   useEventSubscription('relay_dead_letter', () =>
     schedule(EVENT_CACHE_INVALIDATIONS.relay_dead_letter)

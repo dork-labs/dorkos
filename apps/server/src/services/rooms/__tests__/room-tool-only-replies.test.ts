@@ -809,6 +809,32 @@ describe('a room turn that speaks only through the tool', () => {
     });
   });
 
+  describe('a report the agent posts from a later turn of its own (DOR-2717, existing behaviour)', () => {
+    // Documents why rooms needed no change for DOR-2717, and guards the one
+    // property that conclusion rests on. An agent hands the question to a
+    // background helper and ends its turn; the helper's report wakes it later in
+    // a turn nobody dispatched, which reaches the session and never the room's
+    // late-reply path. That is fine only because a room turn's words are never
+    // posted anyway: the agent speaks by calling the tool, and the tool must
+    // accept a post with no claim held. If a future change ties `post_to_room`
+    // to a live claim, this goes red — and later reports would be lost.
+    it('lands in the room though the turn that delegated it is long over', async () => {
+      open(outcomeRunner(() => ({ text: 'Started a helper on it; I will report back.' })));
+      await seedAndSettle();
+      // The delegating turn said nothing in the room, so the room said so.
+      expect(notices().map((n) => n.body.notice)).toEqual(['agent_declined']);
+
+      // What the runtime turn's `post_to_room` call reaches, with no claim held.
+      const posted = service.postFromTool(room.id, { authorId: ana, text: 'The build is green.' });
+      await service.triggersIdle();
+
+      expect(postsBy(ana).map((entry) => entry.body.text)).toEqual(['The build is green.']);
+      expect(posted.id).toBe(postsBy(ana)[0].id);
+      // It wakes nobody: a post with no turn behind it cannot start a cascade.
+      expect(runner.turns).toHaveLength(1);
+    });
+  });
+
   describe('a halted turn still drops everything, notices included', () => {
     it('writes no `agent_declined` for a turn somebody stopped', async () => {
       open(

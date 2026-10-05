@@ -571,6 +571,22 @@ export const SessionStartedBySchema = z
       title: z.string().nullable(),
       /** Why it was started, or null when the chat gave no reason. */
       reason: z.string().nullable(),
+      /**
+       * The permission level it was started at (spec
+       * `inherited-start-permission`): the mode granted, on this chat's own
+       * runtime, and whether it matched the starting chat's level at that
+       * moment. Never higher: a chat starts chats at its own level or lower.
+       * Null for a chat started before the level was recorded. The record of
+       * the start — the chat's mode now is its own `permissionMode`.
+       */
+      permission: z
+        .object({
+          /** The mode id granted at the start. */
+          mode: z.string(),
+          /** Whether it was the starting chat's own mode (false: lower). */
+          sameAsStarter: z.boolean(),
+        })
+        .nullable(),
     }),
   ])
   .openapi('SessionStartedBy');

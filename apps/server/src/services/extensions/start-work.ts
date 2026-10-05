@@ -48,7 +48,7 @@ import {
 import { listProjectorStatuses } from '../session/session-state-projector.js';
 import type {
   SessionStartedByStore,
-  StartedByRecord,
+  StartedByInsert,
 } from '../session/origin/session-started-by-store.js';
 import { checkStartWorkEligibility, type StartWorkEligibility } from './start-work-eligibility.js';
 
@@ -300,7 +300,7 @@ export class StartWorkService {
    * @param start - The start, without its time.
    */
   reserve(
-    start: Omit<StartedByRecord, 'createdAt' | 'carried'> & { carried?: boolean }
+    start: Omit<StartedByInsert, 'createdAt'>
   ): { ok: true; reservation: StartReservation } | { ok: false; error: StartWorkError } {
     const origin = start.originExtensionId;
     // A move replaces one chat with one successor and adds no work, so it is
@@ -409,19 +409,27 @@ export class StartWorkService {
    *
    * - `session_start` passes its own `reason`, and records the parent whether
    *   or not an extension is at the root of its chain.
+   *   It also records the level the new chat was granted and the calling
+   *   chat's live level at that moment (spec `inherited-start-permission`).
    * - A carry-over to another account (`carry: true`) records only when the
    *   parent was itself started (the chat keeps its first line, its fold and
-   *   its chain), and keeps the parent's reason. It is never refused by the
-   *   limits and never counted in the hour; it counts as running, and its own
-   *   `session_start` calls stay limited.
+   *   its chain), and keeps the parent's reason and recorded levels. It is
+   *   never refused by the limits and never counted in the hour; it counts as
+   *   running, and its own `session_start` calls stay limited.
    *
-   * @param opts - The new chat, its parent, and how it was started.
+   * @param opts - The new chat, its parent, how it was started, and at what level.
    */
   reserveFromChat(opts: {
     sessionId: string;
     parentSessionId: string;
     reason?: string | null;
     carry?: boolean;
+    /** The mode the new chat was granted. */
+    permissionMode?: string | null;
+    /** The calling chat's live mode when it started the new one. */
+    starterPermissionMode?: string | null;
+    /** Whether the grant was the calling chat's level exactly, by declared level. */
+    permissionSameAsStarter?: boolean | null;
   }): { ok: true; reservation: StartReservation | null } | { ok: false; error: StartWorkError } {
     const parent = this.deps.store.get(opts.parentSessionId);
     if (opts.carry && !parent) return { ok: true, reservation: null };
@@ -433,6 +441,13 @@ export class StartWorkService {
       originExtensionId: parent?.originExtensionId ?? null,
       reason: opts.carry ? (parent?.reason ?? null) : (opts.reason ?? null),
       carried: opts.carry === true,
+      permissionMode: opts.carry ? (parent?.permissionMode ?? null) : (opts.permissionMode ?? null),
+      starterPermissionMode: opts.carry
+        ? (parent?.starterPermissionMode ?? null)
+        : (opts.starterPermissionMode ?? null),
+      permissionSameAsStarter: opts.carry
+        ? (parent?.permissionSameAsStarter ?? null)
+        : (opts.permissionSameAsStarter ?? null),
     });
   }
 }

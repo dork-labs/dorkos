@@ -3141,7 +3141,15 @@ async function start() {
   //      broadcasts to the feed live on BOTH paths, where before the relay path
   //      reached the feed only on the next poll.
   if (taskStore) {
-    taskStore.setOnRunTerminal(createRunTerminalListener(activityService));
+    // The fourth consumer (DOR-2717): a run whose agent finishes the work in a
+    // turn it starts after the run's own turn ended has that turn's words added
+    // to the run, rather than left only in its session.
+    taskStore.setOnRunTerminal(
+      createRunTerminalListener(activityService, {
+        store: taskStore,
+        runtimeFor: (type) => (runtimeRegistry.has(type) ? runtimeRegistry.get(type) : undefined),
+      })
+    );
   }
 
   // Catch up the escalation ladder on what was already waiting when this process

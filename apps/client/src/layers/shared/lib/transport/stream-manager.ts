@@ -230,6 +230,9 @@ export const GENERIC_EVENTS = [
   // happened," not silently dropped once past the cap. No UI subscribes yet.
   'relay_chat_unclaimed_burst',
   'task_run_failed',
+  // A finished run's output grew: its agent reported back after the run's own
+  // turn ended (DOR-2717). The run list re-reads on it.
+  'task_run_updated',
   // How much of one account is used changed (spec `claude-account-fleet` D2):
   // payload `AccountUsage`, throttled per account on the server. The session
   // stream binding applies it to every open session on that account (§6 U).

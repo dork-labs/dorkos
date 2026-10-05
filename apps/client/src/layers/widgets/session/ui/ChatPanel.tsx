@@ -725,7 +725,7 @@ export function ChatPanel({
         className="flex h-full w-full flex-col"
       >
         <BirthCertificate sessionId={sessionId} />
-        <StartedByLine startedBy={startedBy} />
+        <StartedByLine startedBy={startedBy} modes={activeCaps?.permissionModes.values} />
 
         <SessionTranscript
           messages={messages}

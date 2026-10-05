@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
 const rules = vi.hoisted(() => ({ claudeCode: {} as Record<string, unknown> }));
@@ -182,6 +183,8 @@ beforeEach(() => {
   claude.getCapabilities.mockReturnValue({
     ...claude.getCapabilities(),
     supportsAccounts: true,
+    // The real declared modes, so the default a start inherits is the real one.
+    permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes,
   });
   claude.checkLaunchAccount = vi.fn((_sid: string, cwd: string, hintId?: string) =>
     checkClaudeLaunchAccount({ cwd, hintId })

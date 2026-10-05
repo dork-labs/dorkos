@@ -16,6 +16,7 @@ import type { RunTerminalListener } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { notifyRunCompleted } from '../notifications/emitters/run-completed.js';
 import { emitTerminalRunActivity } from './run-activity.js';
+import { followLateRunOutput, type LateRunOutputDeps } from './session/late-run-output.js';
 
 /**
  * Broadcast `task_run_failed` on `/api/events` when a terminal run failed.
@@ -54,17 +55,24 @@ export function broadcastRunTerminal(run: TaskRun): void {
  *      completed or failed run. This is the DOR-1573 addition: before it, a
  *      relay-delivered run reached the feed only on the next poll, because the
  *      relay path never called the activity emitter itself.
+ *   4. {@link followLateRunOutput} — when the run's agent still holds
+ *      background work, what it says in the turns it starts later is added to
+ *      the run (DOR-2717). Only when `lateOutput` is given.
  *
  * @param activityService - The activity feed to emit terminal-run events to, or
  *   null when the feed is unavailable (the emit is then a no-op).
- * @returns A listener that runs all three terminal consumers for one run.
+ * @param lateOutput - The store and runtime lookup the fourth consumer needs;
+ *   omitted, a run's later turns reach its session but not its record.
+ * @returns A listener that runs every terminal consumer for one run.
  */
 export function createRunTerminalListener(
-  activityService: ActivityService | null
+  activityService: ActivityService | null,
+  lateOutput?: LateRunOutputDeps
 ): RunTerminalListener {
   return (run, task) => {
     broadcastRunTerminal(run);
     void notifyRunCompleted(run, task);
     emitTerminalRunActivity(activityService, task, run);
+    if (lateOutput) followLateRunOutput(lateOutput, run);
   };
 }
