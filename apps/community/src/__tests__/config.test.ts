@@ -320,7 +320,9 @@ describe('community startup config', () => {
       clientId: 'community',
       clientSecret: 'secret',
       label: 'Single sign-on',
+      mark: null,
       scopes: ['openid', 'email', 'profile'],
+      linkVerifiedEmail: false,
     });
     expect(
       parseConfig({
@@ -339,12 +341,55 @@ describe('community startup config', () => {
         COMMUNITY_OIDC_CLIENT_SECRET: '',
         COMMUNITY_OIDC_LABEL: '',
         COMMUNITY_OIDC_SCOPES: '',
+        COMMUNITY_OIDC_MARK: '',
+        COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: '',
       }).oidc
     ).toBeNull();
     expect(
       parseConfig({ ...valid, ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'http://localhost:9000' }).oidc
         ?.issuer
     ).toBe('http://localhost:9000');
+  });
+
+  it('reads the button mark and the verified-email linking grant only beside an issuer', () => {
+    // Purpose: fails if the DorkOS mark or the linking grant can be set without an issuer, if a
+    // value other than the documented ones starts the server (a typo must not silently grant or
+    // withhold trust), or if linking is on by default.
+    const oidc = {
+      COMMUNITY_OIDC_ISSUER_URL: 'https://id.example.com',
+      COMMUNITY_OIDC_CLIENT_ID: 'community',
+      COMMUNITY_OIDC_CLIENT_SECRET: 'secret',
+    };
+    expect(parseConfig({ ...valid, ...oidc }).oidc).toMatchObject({
+      mark: null,
+      linkVerifiedEmail: false,
+    });
+    expect(
+      parseConfig({
+        ...valid,
+        ...oidc,
+        COMMUNITY_OIDC_MARK: 'dorkos',
+        COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: '1',
+      }).oidc
+    ).toMatchObject({ mark: 'dorkos', linkVerifiedEmail: true });
+    expect(
+      parseConfig({ ...valid, ...oidc, COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: '0' }).oidc
+        ?.linkVerifiedEmail
+    ).toBe(false);
+    // Off needs no issuer; on does.
+    expect(parseConfig({ ...valid, COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: '0' }).oidc).toBeNull();
+    for (const env of [
+      { COMMUNITY_OIDC_MARK: 'dorkos' },
+      { COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: '1' },
+      { ...oidc, COMMUNITY_OIDC_MARK: 'google' },
+      { ...oidc, COMMUNITY_OIDC_MARK: 'DorkOS' },
+      { ...oidc, COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: 'true' },
+      { ...oidc, COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: 'yes' },
+      { ...oidc, COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: '2' },
+    ])
+      expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
+        /COMMUNITY_OIDC/u
+      );
   });
 
   it('refuses an incomplete, non-HTTPS or malformed OpenID Connect setting', () => {

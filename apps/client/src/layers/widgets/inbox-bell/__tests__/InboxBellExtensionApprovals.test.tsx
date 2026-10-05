@@ -330,11 +330,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       renderBell();
       const { user, row } = await openRow();
       const lines = within(row).getByTestId('extension-permissions-flow');
-      // Said before the yes: its server part does not run in this version yet.
-      expect(lines.querySelector('li')).toHaveTextContent(
-        'Its server part can’t run in this version yet.'
-      );
-      expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+      // Said before the yes, first: where it runs.
+      expect(lines.querySelector('li')).toHaveTextContent('Runs separately from DorkOS.');
       expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com, smtp.fastmail.com');
 
       await user.click(within(row).getByRole('button', { name: 'Turn it on' }));

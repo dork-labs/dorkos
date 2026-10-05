@@ -12,25 +12,19 @@
  */
 
 /**
- * Whether this version of DorkOS runs the server half of an extension that
- * runs separately (DOR-2686). `false` until the phase that starts isolated
- * extensions lands: the server refuses that half with `isolation_not_ready`
- * (`waitsForIsolation`), and every card says so before the yes
- * ({@link ISOLATED_SERVER_NOT_YET_COPY}). The one switch: flipping it turns
- * the refusal and the card line off together.
+ * The `serverError` codes that mean an extension's server half is stopped
+ * and nothing of it is serving: it stopped on its own (an extension that runs
+ * separately), it can't run with its limits here, or it never finished
+ * starting. The card shows the sentence with a Reload action. A failed
+ * rebuild while the old version keeps serving is not one of these.
  */
-export const ISOLATED_SERVER_PARTS_RUN: boolean = false;
-
-/** The card line shown before the yes while {@link ISOLATED_SERVER_PARTS_RUN} is `false`. */
-export const ISOLATED_SERVER_NOT_YET_COPY = 'Its server part can’t run in this version yet.';
-
-/** The `serverError` codes an extension that runs separately can carry. */
 export const EXTENSION_SERVER_ERROR_CODES = [
   'server_crashed',
   'server_out_of_memory',
   'server_unresponsive',
   'isolation_unavailable',
-  'isolation_not_ready',
+  'server_start_failed',
+  'server_start_timeout',
 ] as const;
 
 /** One of {@link EXTENSION_SERVER_ERROR_CODES}. */
@@ -42,8 +36,8 @@ const COPY: Record<ExtensionServerErrorCode, (name: string) => string> = {
   server_out_of_memory: (name) => `${name} ran out of memory and stopped. Reload it to try again.`,
   server_unresponsive: (name) => `${name} stopped responding, so DorkOS stopped it.`,
   isolation_unavailable: (name) => `${name} can’t run with its limits on this computer.`,
-  // Its screens can still load; only the part that runs separately waits.
-  isolation_not_ready: (name) => `${name} needs a newer DorkOS to run its server part.`,
+  server_start_failed: (name) => `${name} couldn’t start. Reload it to try again.`,
+  server_start_timeout: (name) => `${name} took too long to start. Reload it to try again.`,
 };
 
 /**

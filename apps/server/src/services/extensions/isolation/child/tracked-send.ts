@@ -14,8 +14,13 @@ export type RawSend = (message: unknown, callback: (err: Error | null) => void) 
 
 /** A counted sender. */
 export interface TrackedSend {
-  /** Send one message. Throws (synchronously) when it cannot be serialized. */
-  send(message: unknown): void;
+  /**
+   * Send one message. Throws (synchronously) when it cannot be serialized.
+   *
+   * @param onWritten - Called once Node has written it (or failed to), so a
+   *   caller can apply backpressure to the channel.
+   */
+  send(message: unknown, onWritten?: () => void): void;
   /** Resolves once every message sent so far has been written or has failed. */
   whenDrained(): Promise<void>;
 }
@@ -33,10 +38,13 @@ export function createTrackedSend(raw: RawSend): TrackedSend {
     if (inFlight === 0) for (const waiter of waiters.splice(0)) waiter();
   };
   return {
-    send(message) {
+    send(message, onWritten) {
       inFlight++;
       try {
-        raw(message, settle);
+        raw(message, () => {
+          settle();
+          onWritten?.();
+        });
       } catch (err) {
         settle();
         throw err;

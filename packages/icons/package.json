@@ -10,7 +10,8 @@
     "./brand": "./src/brand.ts",
     "./logos": "./src/logos.tsx",
     "./adapter-logos": "./src/adapter-logos.tsx",
-    "./app-logos": "./src/app-logos.ts"
+    "./app-logos": "./src/app-logos.ts",
+    "./marks": "./src/marks.tsx"
   },
   "scripts": {
     "lint": "eslint .",

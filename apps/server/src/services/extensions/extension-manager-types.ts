@@ -12,6 +12,7 @@ import type {
 } from '@dorkos/extension-api';
 import type { Router } from 'express';
 import { mayRunExtensionCode, type ExtensionApprovals } from './extension-load-policy.js';
+import type { IsolatedExtensionHost } from './isolation/isolated-host.js';
 import type { RunningExtensionTools } from './agent-tools/tool-binding.js';
 
 /** Tracks an active server-side extension instance. */
@@ -41,6 +42,18 @@ export interface ActiveServerExtension {
    * Absent for a proxy-only extension, which binds no handlers.
    */
   agentTools?: RunningExtensionTools;
+  /** Closes the instance's tool binding (an isolated instance, which offers none yet). */
+  closeTools?: () => void;
+  /**
+   * Makes the instance's real ctx inert, so a call its isolated child left
+   * running does nothing more once the child is gone.
+   */
+  disposeCtx?: () => void;
+  /**
+   * The host of an extension that runs in its own process (DOR-2686): its
+   * child is stopped (and waited for) on shutdown, in place of `cleanup`.
+   */
+  isolated?: IsolatedExtensionHost;
 }
 
 /**

@@ -1095,6 +1095,78 @@ const data = await res.json();
 
 ---
 
+## Running separately
+
+By default an extension's `server.ts` runs **inside** the DorkOS server process, with everything that process can do (ADR 0213). An extension can instead ask to run in **its own process**, limited to what its manifest declares (DOR-2686, spec `specs/isolated-extension-backends/`). The person sees those limits on the approval card before they say yes, and a later version that asks for more waits for them again.
+
+```json
+{
+  "id": "mail-app",
+  "name": "Mail",
+  "version": "1.0.0",
+  "serverCapabilities": {
+    "serverEntry": "./server.ts",
+    "runtime": "subprocess",
+    "allow": {
+      "net": ["imap.fastmail.com:993", "smtp.fastmail.com:465", "*.googleapis.com"],
+      "run": ["git"],
+      "agents": false
+    },
+    "limits": { "memoryMb": 256 }
+  }
+}
+```
+
+| Key            | What it means                                                                                                                                                                                                                           |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime`      | `"subprocess"` runs `server.ts` in its own Node process. Omitted means `"in-process"`. `"worker"` is refused: a worker thread shares DorkOS's process.                                                                                  |
+| `allow.net`    | Hosts it may connect to, each `host[:port]`. `*.example.com` matches names below `example.com`, never `example.com` itself. A local address needs a port. No scheme, path or uppercase (`packages/extension-api/src/net-allowlist.ts`). |
+| `allow.run`    | Programs it may start: a bare name found on `PATH` (`git`) or an absolute path. No arguments. A shell or interpreter (`sh`, `node`, `python`) is shown to the person as able to run any program.                                        |
+| `allow.agents` | Whether it may message agents (`ctx.agent.*`) and start chats (`ctx.sessions.start`).                                                                                                                                                   |
+| `limits`       | `memoryMb`: its JavaScript heap, 64 to 1024 MB, default 256. Buffers and native memory are not counted.                                                                                                                                 |
+
+`allow` and `limits` are refused on an in-process extension, and `externalHosts` is refused on an isolated one (use `allow.net`). An isolated extension needs a `server.ts`; a `dataProxy`-only extension cannot ask for it.
+
+### What is enforced, and by what
+
+Be exact about this when you describe your extension. "Runs separately" is not a sandbox.
+
+| Limit                                                                    | Enforced by                                                                                                                                                                                                   | How strong                                                                                                                                                        |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A crash, out-of-memory or hang stays its own                             | A separate OS process, the heap cap, a watchdog (ping every 5 s, 15 s to answer)                                                                                                                              | Real. DorkOS keeps serving, and restarts it after 1 s, 5 s, then 30 s. The third unexpected stop inside 10 minutes leaves it stopped until a person reloads it.   |
+| No reading DorkOS's data, config or keys; writing only to `ctx.filesDir` | Node's permission model (`--permission`, real-path grants) and an environment built from nothing                                                                                                              | Real for ordinary code. Node itself says its permission model is not a defence against malicious code.                                                            |
+| No starting processes, threads, native addons or WASI on its own         | Node's permission model                                                                                                                                                                                       | Real for ordinary code; the same Node caveat.                                                                                                                     |
+| Programs limited to `allow.run`                                          | DorkOS starts them for it; the extension cannot spawn                                                                                                                                                         | Real on **which** program. A permitted program runs with the person's full access, so `allow.run: ["sh"]` means any program.                                      |
+| Hosts limited to `allow.net`                                             | A network guard DorkOS installs **inside** the extension's process, with Node's permission model closing the ways around it                                                                                   | Real against ordinary code and code tricked by its input. It is **not** an OS firewall: a Node or V8 bug would defeat it.                                         |
+| No calling DorkOS's API as the person                                    | DorkOS strips cookies, `authorization`, `x-api-key` and every `x-dorkos-*` header before a request reaches it, refuses DorkOS's own port, and allows only a short list of reply headers plus a sandboxing CSP | Real for the server half. Its own **screens** run with the person's access and can make those calls, so an extension with screens is only as limited as they are. |
+| Messaging agents needs `allow.agents`                                    | DorkOS refuses the call                                                                                                                                                                                       | Real: DorkOS is the only way to reach an agent.                                                                                                                   |
+| Its screens (`index.ts`)                                                 | Nothing new                                                                                                                                                                                                   | **Not isolated.** The client bundle runs in the page with the person's access, exactly as before.                                                                 |
+
+Where it is proven: the isolation suite (`apps/server/src/services/extensions/isolation/__tests__/`) runs real child processes on macOS and on CI's Linux runners, and the packaged macOS desktop smoke forks a fixture isolated extension on the app's own packaged Node binary and checks its self-check and limits hold (`apps/desktop/scripts/smoke-isolation.ts`). The router, ctx and restart lifecycle have not been run inside the packaged app: that smoke does not reproduce the app's server process around the child. The same suite runs on CI's Windows runner, but no real Windows install has confirmed it yet, so make no claim about Windows. On a computer where Node does not honour the limits, the extension's self-check fails and it does not run at all (`isolation_unavailable`); there is no fallback to running inside DorkOS.
+
+### How it runs
+
+- **ctx.** DorkOS builds your extension's real `ctx` in its own process and gives yours a stand-in that forwards each call, so every check and limit is the in-process one. Arguments and results must be plain data (structured clone): no functions, class instances or symbols. Listeners and the account advisor work; an advisor's methods are fixed when you call `registerAdvisor`.
+- **Routes.** Your router is served from your process as real HTTP: `req.baseUrl`, `req.path`, `req.params` and JSON bodies (`express.json`, 1 MB) match the in-process case, and streamed replies and server-sent events arrive as they are written. Your process never listens on a port. Requests reach you without the person's cookies, tokens or `x-client-id`. Replies keep only content and caching headers (`content-type`, `content-length`, `content-encoding`, `content-disposition`, `cache-control`, `etag`, `last-modified`, `vary`, `retry-after` and a few more), other `x-` headers, and a `location` that stays inside `/api/ext/<id>/`; everything else (`set-cookie`, `clear-site-data`, `refresh`, `www-authenticate`, CORS and CSP headers) is dropped. A request with no bytes either way for 120 seconds gets a 504, or is cut off once the reply has started: send a heartbeat comment on a quiet server-sent-events stream. Writes have real backpressure: when the person reads slowly, `res.write()` returns `false` and `'drain'` waits, so honour it; a process that ignores it is cut off once 4 MB sits unread.
+- **`ctx.requirePerson`** works the same: DorkOS decides on the real request and tells your process, and the refusals are word for word the in-process ones.
+- **Files.** Write under `ctx.filesDir`. Ship read-only files in an `assets/` folder beside `extension.json`; read them from `path.join(ctx.extensionDir, 'assets', …)`. An `assets/` that links outside itself stops the extension from starting.
+- **Code.** Bundle every dependency: an `import` of anything but Node's built-ins, `express` and `@dorkos/extension-api` fails. No native addons. `child_process` works only in its async forms (`spawn`, `execFile`, `exec`), and only for `allow.run` programs.
+- **Tools.** An isolated extension cannot give agents tools yet: `ctx.tools.handle` throws, and every tool it declares shows as refused.
+- **Stopping.** A stop asks your process to run its cleanup, then ends it after 3 seconds.
+
+### When something is refused
+
+| You see                                                                             | Fix                                                                                            |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `ERR_EXTENSION_NET_DENIED`: `<host:port> isn't in this extension's allow.net list.` | Add the host (and port) to `allow.net`. The person is asked again.                             |
+| `ERR_ACCESS_DENIED` with a path                                                     | Write under `ctx.filesDir`, or read from `assets/`.                                            |
+| `<name> isn't in this extension's allow.run list.`                                  | Add the program to `allow.run`. The person is asked again.                                     |
+| `Isolated extensions must bundle their dependencies: <name>`                        | Bundle the package into `server.ts`'s output instead of requiring it at runtime.               |
+| `Isolated extensions can't run programs synchronously; use the async form.`         | Use `spawn`, `execFile` or `exec`.                                                             |
+| The card says it can't run with its limits on this computer                         | This computer's Node did not confirm the limits. It stays off; nothing runs in DorkOS instead. |
+
+---
+
 ## Secrets
 
 Extensions that contact external APIs need credentials. DorkOS provides an encrypted per-extension secret store with automatic settings UI generation.

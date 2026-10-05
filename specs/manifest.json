@@ -3565,6 +3565,14 @@
       "linearIssue": "DOR-2714"
     },
     {
+      "id": "261004-200007",
+      "slug": "community-sign-in-linking",
+      "title": "Spaces sign-in: provider buttons, and linking a matching account instead of refusing",
+      "created": "2026-10-04",
+      "status": "specified",
+      "linearIssue": "DOR-2709"
+    },
+    {
       "id": "261005-112122",
       "slug": "codex-app-server-transport",
       "title": "Run Codex through codex app-server instead of codex exec per turn",

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool, type PoolClient } from 'pg';
@@ -299,6 +299,54 @@ describe('offline member recovery', () => {
     expect(audit.rows.map((row) => row.subject_id)).toContain(ownerId);
     expect((await signIn('owner@example.test', 'unlinked-password-123')).status).toBe(200);
     await recoverPassword(pool, 'owner@example.test', 'new-password-456');
+  });
+
+  it("revokes the server API keys and working invitation links the account issued, and no one else's", async () => {
+    // Purpose: fails if a key or invitation link the account issued before recovery still works
+    // after it, so whoever held the account keeps a way in or a way to admit others.
+    const key = (prefix: string, issuer: string | null) =>
+      pool.query<{ id: string }>(
+        `INSERT INTO host_api_keys(label,prefix,secret_hash,scopes,issued_via,issued_by_user_id)
+         VALUES($1,$2,$3,'{communities:read}',$4,$5) RETURNING id`,
+        [
+          prefix,
+          prefix,
+          createHash('sha256').update(prefix).digest('hex'),
+          issuer ? 'browser' : 'command',
+          issuer,
+        ]
+      );
+    const ownerKey = (await key('dkh_owner1', 'owner')).rows[0].id;
+    const otherKey = (await key('dkh_other1', 'other')).rows[0].id;
+    const commandKey = (await key('dkh_comnd1', null)).rows[0].id;
+    const invite = (issuer: string, token: string) =>
+      pool.query<{ id: string }>(
+        `INSERT INTO invites(community_id,issuer_member_id,token_hash,seat_limit,expires_at)
+         VALUES($1,$2,$3,1,now()+interval '1 day') RETURNING id`,
+        [communityId, issuer, token]
+      );
+    const ownerInvite = (await invite(ownerId, 'owner-invite')).rows[0].id;
+    const otherInvite = (await invite(otherId, 'other-invite')).rows[0].id;
+
+    await recoverPassword(pool, 'owner@example.test', 'new-password-456', { keepLinked: true });
+
+    const revoked = async (table: string, id: string) =>
+      (await pool.query(`SELECT revoked_at FROM ${table} WHERE id=$1`, [id])).rows[0].revoked_at;
+    expect(await revoked('host_api_keys', ownerKey)).not.toBeNull();
+    expect(await revoked('host_api_keys', otherKey)).toBeNull();
+    expect(await revoked('host_api_keys', commandKey)).toBeNull();
+    expect(await revoked('invites', ownerInvite)).not.toBeNull();
+    expect(await revoked('invites', otherInvite)).toBeNull();
+    // The host's own log says the key went, offline, without naming a person.
+    expect(
+      (
+        await pool.query(
+          `SELECT actor_kind,actor_user_id FROM host_audit_events
+           WHERE action='api_key.revoke' AND subject_api_key_id=$1`,
+          [ownerKey]
+        )
+      ).rows
+    ).toEqual([{ actor_kind: 'offline', actor_user_id: null }]);
   });
 
   it('refuses a recovery password shorter than 12 characters', async () => {

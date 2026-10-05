@@ -43,7 +43,12 @@ const noSso: Reply = {
 };
 const sso: Reply = {
   status: 200,
-  body: { google: false, github: false, oidc: { label: 'Example sign-in' }, minimumAge: null },
+  body: {
+    google: false,
+    github: false,
+    oidc: { label: 'Example sign-in', mark: null },
+    minimumAge: null,
+  },
 };
 
 let consoleText: () => string;
@@ -246,7 +251,12 @@ describe('OwnerReplacementClaim, at the date', () => {
       [SESSION]: { status: 200, body: null },
       [OPTIONS]: {
         status: 200,
-        body: { google: false, github: false, oidc: { label: 'Example sign-in' }, minimumAge: 16 },
+        body: {
+          google: false,
+          github: false,
+          oidc: { label: 'Example sign-in', mark: null },
+          minimumAge: 16,
+        },
       },
     });
     render(<OwnerReplacementClaim />);

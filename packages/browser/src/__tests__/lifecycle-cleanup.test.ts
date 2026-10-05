@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { BrowserContext } from 'playwright-core';
 import { closeRecord } from '../lifecycle/close.js';
+import { until } from '../lifecycle/deadline.js';
 import type { BrowserRecord } from '../lifecycle/records.js';
 import { ownDirectory } from '../profiles/owned-directory.js';
 import { realpathSync } from 'node:fs';
@@ -806,4 +807,20 @@ describe('trusted child closure protocol without native subjects', () => {
     expect(TRUSTED_CHILD_SOURCE).not.toMatch(/require|import|fork|spawn|Worker/);
     expect(TRUSTED_CHILD_SOURCE).toContain("process.stdin.on('end',()=>process.exit(0))");
   });
+});
+
+// The original exists before a caller discovers that its absolute wait has expired.
+it('observes an original late rejection when its absolute wait already expired', async () => {
+  const primary = Error('ORIGINAL_OBSERVATION_FAILED');
+  let fail!: (error: unknown) => void;
+  const original = new Promise<never>((_resolve, reject) => {
+    fail = reject;
+  });
+  await expect(
+    until(original, performance.now() - 1, 'PROCESS_OBSERVATION_UNAVAILABLE')
+  ).rejects.toMatchObject({ code: 'PROCESS_OBSERVATION_UNAVAILABLE' });
+  fail(primary);
+  // Give actual Node rejection reporting a complete turn before examining the original.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await expect(original).rejects.toBe(primary);
 });

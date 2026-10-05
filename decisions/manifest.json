@@ -7029,6 +7029,22 @@
         "packages/db/src/schema/session/session-started-by.ts",
         "apps/client/src/layers/features/chat/ui/StartedByLine.tsx"
       ]
+    },
+    {
+      "id": "261004-200411",
+      "slug": "link-matching-account-on-trusted-verified-sign-in",
+      "title": "Link a matching Community account on a trusted, verified sign-in, or with its password",
+      "status": "accepted",
+      "created": "2026-10-04",
+      "extractedFrom": "community-sign-in-linking",
+      "specSlug": "community-sign-in-linking",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/auth.ts",
+        "apps/community/src/sign-in/",
+        "apps/community/src/recover-password.ts",
+        "apps/community/src/browser/sign-up/"
+      ]
     }
   ]
 }
