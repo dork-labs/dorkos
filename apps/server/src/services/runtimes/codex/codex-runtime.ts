@@ -26,11 +26,11 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  * the session's first turn lives in memory only until the binding lands (the
  * bind then carries the renamed title with it).
  *
- * Tool approvals are not offered on either transport yet
- * (`supportsToolApproval: false`): `codex exec` closes stdin after the prompt
- * (NOTES.md Verdict 1), and the app-server transport refuses every approval
- * request until approvals are wired (spec phase P2), so `approveTool` honestly
- * reports `false`.
+ * Approvals, questions, elicitations and steering exist only on the
+ * app-server transport (spec §10, §11): `codex exec` closes stdin after the
+ * prompt (NOTES.md Verdict 1), so on exec `approveTool` honestly reports
+ * `false` and `deliverIntoTurn` is absent. The capabilities a client reads
+ * follow the transport the runtime was built with.
  *
  * @module services/runtimes/codex/codex-runtime
  */
@@ -58,6 +58,10 @@ import type {
   ManagedMcpServerResolver,
   SessionUpdateResult,
   SessionWarmth,
+  ToolDecisionOptions,
+  InteractionAnswerOptions,
+  DeliverIntoTurnOpts,
+  RuntimeDeliveryResult,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -1068,23 +1072,66 @@ export class CodexRuntime implements AgentRuntime {
     }
   }
 
-  // --- Interactive flows (structurally unsupported — NOTES.md Verdict 1) ---
+  // --- Interactive flows (app-server only — spec §10; exec: NOTES.md Verdict 1) ---
 
   /**
-   * Codex exec mode has no approval channel, so no pending approval can ever
-   * exist to act on — `false` is the honest contract answer, and the approval
-   * UI is already gated off via `supportsToolApproval: false`.
+   * @inheritdoc
+   *
+   * On app-server, answers the approval Codex is waiting on and resolves the
+   * projector's card, so every window drops it through the same seq'd stream.
+   * On exec there is no approval channel, so nothing can be pending and the
+   * answer is `false` (the approval UI is gated off by `supportsToolApproval`).
+   * Codex's decisions carry no reason text, so a `denyReason` is not carried
+   * (`permissionModes.denyReason: false` hides the box).
    */
-  approveTool(): boolean {
-    return false;
+  approveTool(
+    sessionId: string,
+    toolCallId: string,
+    approved: boolean,
+    opts?: ToolDecisionOptions
+  ): boolean {
+    if (
+      !this.transport.answerApproval?.(sessionId, toolCallId, approved, opts?.alwaysAllow === true)
+    ) {
+      return false;
+    }
+    peekProjector(sessionId)?.resolveInteraction(toolCallId, approved ? 'approved' : 'denied', {
+      ...(opts?.answeredBy ? { answeredBy: opts.answeredBy } : {}),
+    });
+    return true;
   }
 
-  submitAnswers(): boolean {
-    return false;
+  /** @inheritdoc */
+  submitAnswers(
+    sessionId: string,
+    toolCallId: string,
+    answers: Record<string, string>,
+    opts?: InteractionAnswerOptions
+  ): boolean {
+    if (!this.transport.answerQuestion?.(sessionId, toolCallId, answers)) return false;
+    peekProjector(sessionId)?.resolveInteraction(toolCallId, 'answered', {
+      ...(opts?.answeredBy ? { answeredBy: opts.answeredBy } : {}),
+    });
+    return true;
   }
 
-  submitElicitation(): boolean {
-    return false;
+  /** @inheritdoc */
+  submitElicitation(
+    sessionId: string,
+    interactionId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, unknown>,
+    opts?: InteractionAnswerOptions
+  ): boolean {
+    if (!this.transport.answerElicitation?.(sessionId, interactionId, action, content)) {
+      return false;
+    }
+    peekProjector(sessionId)?.resolveInteraction(
+      interactionId,
+      action === 'accept' ? 'answered' : 'denied',
+      { ...(opts?.answeredBy ? { answeredBy: opts.answeredBy } : {}) }
+    );
+    return true;
   }
 
   /** Codex has no addressable background tasks — nothing to stop. */

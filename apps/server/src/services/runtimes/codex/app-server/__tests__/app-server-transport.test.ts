@@ -144,19 +144,16 @@ describe('a turn', () => {
     });
   });
 
-  it('refuses every approval request; nothing is ever accepted', async () => {
+  it('refuses the requests DorkOS takes no part in, at once, inside an open turn', async () => {
     const h = harness();
     const replies: unknown[] = [];
     const script: FakeTurnScript = async (ctx) => {
+      replies.push(await ctx.serverRequest('item/tool/call', { callId: 'c', tool: 'x' }));
       replies.push(
-        await ctx.serverRequest('item/commandExecution/requestApproval', {
-          itemId: 'c',
-          command: 'rm -rf /',
+        await ctx.serverRequest('mcpServer/elicitation/request', {
+          serverName: 'x',
+          mode: 'openai/userVerification',
         })
-      );
-      replies.push(await ctx.serverRequest('item/fileChange/requestApproval', { itemId: 'f' }));
-      replies.push(
-        await ctx.serverRequest('mcpServer/elicitation/request', { serverName: 'x', mode: 'form' })
       );
       ctx.complete('completed');
     };
@@ -164,8 +161,7 @@ describe('a turn', () => {
     const events = await h.run(h.request({ sessionId: 's1' }));
     expect(dones(events)).toHaveLength(1);
     expect(replies).toEqual([
-      { decision: 'decline' },
-      { decision: 'decline' },
+      { contentItems: [], success: false },
       { action: 'cancel', content: null, _meta: null },
     ]);
   });

@@ -29,6 +29,9 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 
+/** The `method` a client's reply to a server request is recorded under in `received`. */
+export const REPLY = '<reply>';
+
 /** What one spawn was given. */
 export interface FakeSpawnRecord {
   readonly binary: string;
@@ -80,7 +83,10 @@ export interface FakeTurnContext {
   tokenUsage(lastTotal: number, window: number, totalOutput?: number): void;
   /** End the turn. */
   complete(status?: 'completed' | 'failed' | 'interrupted', error?: Record<string, unknown>): void;
-  /** Send a server → client request and wait for the reply. */
+  /**
+   * Send a server → client request and wait for the reply. Like the binary,
+   * `serverRequest/resolved` follows the reply.
+   */
   serverRequest(method: string, params: Record<string, unknown>): Promise<unknown>;
   /** Wait for the next macrotask (lets the client consume what was sent). */
   tick(): Promise<void>;
@@ -101,6 +107,58 @@ export const parkedTurn: FakeTurnScript = async (ctx) => {
   ctx.emit('item/agentMessage/delta', { itemId: 'msg-parked', delta: 'working' });
   await ctx.turn.interrupted;
   ctx.complete('interrupted');
+};
+
+/** The command the approval turn asks to run. */
+export const APPROVAL_COMMAND = 'touch made.txt';
+
+/**
+ * A turn that asks before running a command, the way 0.154 does (verified on
+ * the binary): `item/started` for the command, then the approval request.
+ * Approved, the command runs; declined, it is reported declined; cancelled
+ * (a stop), the turn waits for its interrupt.
+ */
+export const approvalTurn: FakeTurnScript = async (ctx) => {
+  const item = {
+    type: 'commandExecution',
+    id: 'cmd-approval',
+    command: APPROVAL_COMMAND,
+    cwd: String(ctx.params.cwd ?? '/project'),
+    processId: null,
+    source: 'agent',
+    status: 'inProgress',
+    commandActions: [{ type: 'unknown', command: APPROVAL_COMMAND }],
+    aggregatedOutput: null,
+    exitCode: null,
+    durationMs: null,
+  };
+  ctx.emit('item/started', { item, startedAtMs: Date.now() });
+  const reply = (await ctx.serverRequest('item/commandExecution/requestApproval', {
+    kind: 'command',
+    itemId: item.id,
+    startedAtMs: Date.now(),
+    reason: 'Create made.txt?',
+    command: APPROVAL_COMMAND,
+    cwd: item.cwd,
+    availableDecisions: ['accept', 'acceptForSession', 'decline', 'cancel'],
+  })) as { decision?: unknown };
+  if (reply.decision === 'cancel') {
+    await ctx.turn.interrupted;
+    ctx.emit('item/completed', { item: { ...item, status: 'declined' } });
+    ctx.complete('interrupted');
+    return;
+  }
+  const ran = reply.decision === 'accept' || reply.decision === 'acceptForSession';
+  ctx.emit('item/completed', {
+    item: {
+      ...item,
+      status: ran ? 'completed' : 'declined',
+      exitCode: ran ? 0 : null,
+      aggregatedOutput: ran ? 'made' : null,
+    },
+  });
+  ctx.agentMessage(ran ? 'made it' : 'left it alone');
+  ctx.complete('completed');
 };
 
 /** A turn that runs and never acknowledges an interrupt (C11's hang). */
@@ -226,6 +284,11 @@ export class FakeAppServer extends EventEmitter {
     setImmediate(() => this.emit('exit', code, signal));
   }
 
+  /** The id of the last server → client request this process sent. */
+  get lastServerRequestId(): number {
+    return this.serverRequestId - 1;
+  }
+
   /** Whether the process has exited. */
   get hasExited(): boolean {
     return this.exited;
@@ -258,6 +321,8 @@ export class FakeAppServer extends EventEmitter {
         error?: unknown;
       };
       if (message.method === undefined && message.id !== undefined) {
+        // Kept in order with the requests, so a test can tell which came first.
+        this.received.push({ id: message.id, method: REPLY, params: message.result });
         this.replies.set(message.id, message.result ?? { error: message.error });
         this.waitingReplies.get(message.id)?.(message.result ?? { error: message.error });
         this.waitingReplies.delete(message.id);
@@ -519,7 +584,13 @@ export class FakeAppServer extends EventEmitter {
           this.waitingReplies.set(requestId, resolve)
         );
         this.send({ id: requestId, method, params: scoped(extra) });
-        return reply;
+        return reply.then((value) => {
+          this.send({
+            method: 'serverRequest/resolved',
+            params: { threadId: turn.threadId, requestId },
+          });
+          return value;
+        });
       },
       tick: () => new Promise((resolve) => setImmediate(resolve)),
     };

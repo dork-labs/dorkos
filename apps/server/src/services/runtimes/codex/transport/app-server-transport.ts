@@ -51,7 +51,18 @@ import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
 import { EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
-import type { ServerNotification, TurnStartParams } from '../app-server/protocol/methods.js';
+import type {
+  ServerNotification,
+  ServerRequest,
+  TurnStartParams,
+} from '../app-server/protocol/methods.js';
+import {
+  CodexServerRequestBroker,
+  logRefusedServerRequest,
+  mapServerRequest,
+  type PendingCodexInteraction,
+  type ServerRequestTurnView,
+} from '../app-server/server-requests.js';
 import type { CodexTransport, CodexTurnRequest } from './codex-transport.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
@@ -74,6 +85,10 @@ export interface AppServerTransportOptions {
   readonly stopAckMs?: number;
   /** Realpath seam for the loader. */
   readonly realpath?: (path: string) => string;
+  /** The countdown an approval, question or elicitation card shows. */
+  readonly interactionCountdownMs?: number;
+  /** When an unanswered request is declined (default: the park ceiling). */
+  readonly interactionExpireMs?: number;
 }
 
 interface OpenTurn {
@@ -91,6 +106,10 @@ interface OpenTurn {
   /** Set when this turn's own terminal (or the process's end) was seen. */
   sawTerminal: boolean;
   interrupting: Promise<InterruptReceipt> | undefined;
+  /** Push events into the turn (a server request's card). */
+  deliver: (events: StreamEvent[]) => void;
+  /** What the turn has seen, for a card about one of its tools. */
+  view: ServerRequestTurnView;
 }
 
 /** A turn DorkOS stopped waiting on that Codex has not reported finished. */
@@ -137,6 +156,8 @@ export class AppServerCodexTransport implements CodexTransport {
   /** Config warnings to say once, per process, in its next turn. */
   private readonly pendingWarnings = new Map<string, string[]>();
   private readonly watched = new WeakSet<CodexAppServerProcess>();
+  /** Approvals, questions and elicitations waiting on a person (spec §10). */
+  private readonly requests: CodexServerRequestBroker;
 
   /**
    * Construct the transport.
@@ -146,6 +167,14 @@ export class AppServerCodexTransport implements CodexTransport {
   constructor(private readonly options: AppServerTransportOptions) {
     this.pool = options.pool ?? codexAppServerPool;
     this.stopAckMs = options.stopAckMs ?? APP_SERVER_STOP_ACK_MS;
+    this.requests = new CodexServerRequestBroker({
+      ...(options.interactionCountdownMs !== undefined
+        ? { countdownMs: options.interactionCountdownMs }
+        : {}),
+      ...(options.interactionExpireMs !== undefined
+        ? { expireMs: options.interactionExpireMs }
+        : {}),
+    });
     this.loader = new CodexThreadLoader({
       threadKeys: () => options.connectorTools()?.threadKeys,
       ...(options.realpath ? { realpath: options.realpath } : {}),
@@ -254,6 +283,10 @@ export class AppServerCodexTransport implements CodexTransport {
     });
     const channel = this.channelFor(process, loaded.threadId);
     let bound = !loaded.needsBinding;
+    // A server request's card can arrive before `turn/start` answered (the
+    // channel is still buffering the items it is about): hold it until then,
+    // so it never lands ahead of its tool's start.
+    const early: StreamEvent[] = [];
     const sink: TurnSink = {
       turnId: undefined,
       notify: (notification) => {
@@ -267,6 +300,8 @@ export class AppServerCodexTransport implements CodexTransport {
           turn.markCompleted(
             String((notification.params as { turn?: { status?: unknown } }).turn?.status)
           );
+          // Codex clears what it still asked about when a turn ends; so do the cards.
+          this.requests.cancelSession(sessionId);
         }
         queue.push(mapper.map(notification));
         if (mapper.isFinished) queue.end();
@@ -274,12 +309,22 @@ export class AppServerCodexTransport implements CodexTransport {
       closed: (close) => {
         turn.sawTerminal = true;
         turn.markCompleted('crashed');
+        this.requests.cancelSession(sessionId);
         queue.push(mapper.closeOnCrash(close.detail));
         queue.end();
       },
     };
+    turn.deliver = (events) => {
+      if (sink.turnId === undefined) early.push(...events);
+      else queue.push(events);
+    };
+    turn.view = {
+      inputOf: (itemId) => mapper.inputOf(itemId),
+      runningMcpCall: (server) => mapper.runningMcpCall(server),
+    };
     (turn as { abandon: () => void }).abandon = () => {
       turn.abandoned = true;
+      this.requests.cancelSession(sessionId);
       queue.push(mapper.closeQuietly());
       queue.end();
     };
@@ -351,8 +396,11 @@ export class AppServerCodexTransport implements CodexTransport {
           .catch(() => undefined);
       }
       channel.flush();
+      queue.push(early.splice(0));
       yield* queue.drain();
     } finally {
+      // Every request still held gets its one reply; the turn is over.
+      this.requests.dropSession(sessionId);
       request.signal.removeEventListener('abort', onAbort);
       channel.release(sink);
       if (attached) keys?.detach(attached.keyId, attached.bindingId);
@@ -373,12 +421,17 @@ export class AppServerCodexTransport implements CodexTransport {
     const turn = this.openBySession.get(sessionId);
     if (!turn)
       return Promise.resolve({ outcome: 'not-running', reason: 'no-open-turn', runtime: 'codex' });
-    turn.interrupting ??= this.sendInterrupt(turn);
+    // Cancel what the turn is waiting on first, then stop it (spec §10).
+    const cancelled = this.requests.cancelSession(sessionId);
+    turn.interrupting ??= this.sendInterrupt(turn, cancelled > 0);
     return turn.interrupting;
   }
 
-  private async sendInterrupt(turn: OpenTurn): Promise<InterruptReceipt> {
+  private async sendInterrupt(turn: OpenTurn, afterReplies: boolean): Promise<InterruptReceipt> {
     const deadline = Date.now() + this.stopAckMs;
+    // The cancel replies are written once their promises settle (microtasks);
+    // let them go out before the interrupt does.
+    if (afterReplies) await new Promise<void>((resolve) => setImmediate(resolve));
     // The turn id arrives with the `turn/start` answer; a stop before that waits for it.
     while (turn.turnId === undefined && Date.now() < deadline) {
       await Promise.race([turn.completed, sleep(10)]);
@@ -418,6 +471,65 @@ export class AppServerCodexTransport implements CodexTransport {
   getSessionWarmth(sessionId: string): SessionWarmth {
     if (this.openBySession.has(sessionId)) return 'running';
     return this.loader.holdsSession(sessionId) ? 'warm' : 'cold';
+  }
+
+  /**
+   * A person approved or denied a card Codex is waiting on. `false` when
+   * nothing approvable is pending under that id.
+   *
+   * @param sessionId - The session.
+   * @param interactionId - The card's `toolCallId`.
+   * @param approved - The decision.
+   * @param alwaysAllow - Approve for the rest of the session, where offered.
+   */
+  answerApproval(
+    sessionId: string,
+    interactionId: string,
+    approved: boolean,
+    alwaysAllow?: boolean
+  ): boolean {
+    return this.requests.answerApproval(sessionId, interactionId, approved, alwaysAllow);
+  }
+
+  /**
+   * A person answered a question card.
+   *
+   * @param sessionId - The session.
+   * @param interactionId - The card's `toolCallId`.
+   * @param answers - Canonical answers, keyed by question index.
+   */
+  answerQuestion(
+    sessionId: string,
+    interactionId: string,
+    answers: Record<string, string>
+  ): boolean {
+    return this.requests.answerQuestion(sessionId, interactionId, answers);
+  }
+
+  /**
+   * A person answered an elicitation card.
+   *
+   * @param sessionId - The session.
+   * @param interactionId - The card's `interactionId`.
+   * @param action - Accept, decline or cancel.
+   * @param content - The form's content, on accept.
+   */
+  answerElicitation(
+    sessionId: string,
+    interactionId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, unknown>
+  ): boolean {
+    return this.requests.answerElicitation(sessionId, interactionId, action, content);
+  }
+
+  /**
+   * The requests the session's turn is waiting on a person for.
+   *
+   * @param sessionId - The session.
+   */
+  pendingInteractions(sessionId: string): PendingCodexInteraction[] {
+    return this.requests.pendingFor(sessionId);
   }
 
   /**
@@ -497,6 +609,7 @@ export class AppServerCodexTransport implements CodexTransport {
     const unsubscribe = process.client.subscribeProcess((notification) =>
       this.onProcessNotification(process, notification)
     );
+    process.client.setServerRequestHandler((request) => this.onServerRequest(process, request));
     process.onExit(() => {
       unsubscribe();
       const relay = this.relayKeys.get(process.key);
@@ -512,6 +625,41 @@ export class AppServerCodexTransport implements CodexTransport {
       }
     });
     return process;
+  }
+
+  /**
+   * One server → client request: a card in the open turn it belongs to, or
+   * a refusal. `undefined` declines it with the method's own "no".
+   */
+  private onServerRequest(
+    process: CodexAppServerProcess,
+    request: ServerRequest
+  ): Promise<unknown> | unknown {
+    const params = (request.params ?? {}) as { threadId?: unknown; turnId?: unknown };
+    const turn =
+      typeof params.threadId === 'string' ? this.openByThread.get(params.threadId) : undefined;
+    const wrongTurn =
+      turn !== undefined &&
+      typeof params.turnId === 'string' &&
+      turn.turnId !== undefined &&
+      params.turnId !== turn.turnId;
+    if (!turn || turn.process !== process || wrongTurn) {
+      // Nobody is in a turn to ask: never answered yes on their behalf.
+      logRefusedServerRequest(request.method, 'no DorkOS turn is open on that thread');
+      return undefined;
+    }
+    const mapped = mapServerRequest(request, turn.view);
+    if ('refuse' in mapped) {
+      logRefusedServerRequest(request.method, mapped.why);
+      return mapped.refuse;
+    }
+    return this.requests.open({
+      sessionId: turn.sessionId,
+      processKey: process.key,
+      jsonRpcId: request.id,
+      mapped,
+      emit: (events) => turn.deliver(events),
+    });
   }
 
   private relayFor(process: CodexAppServerProcess): { baseUrl: string; key: string } {
@@ -593,6 +741,11 @@ export class AppServerCodexTransport implements CodexTransport {
         process,
         threadId,
         (notification) => {
+          if (notification.method === 'serverRequest/resolved') {
+            const params = notification.params as { requestId?: unknown } | undefined;
+            this.requests.resolvedByServer(process.key, params?.requestId);
+            return;
+          }
           if (notification.method === 'thread/closed') {
             // Codex unloaded it after its idle window: forget it, revoke its key.
             this.loader.dropThread(process, threadId);
@@ -642,6 +795,8 @@ export class AppServerCodexTransport implements CodexTransport {
       abandoned: false,
       sawTerminal: false,
       interrupting: undefined,
+      deliver: () => {},
+      view: { inputOf: () => undefined, runningMcpCall: () => undefined },
     };
     this.openByThread.set(threadId, turn);
     this.openBySession.set(sessionId, turn);
