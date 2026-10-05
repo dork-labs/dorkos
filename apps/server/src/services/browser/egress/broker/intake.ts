@@ -15,7 +15,11 @@ export interface ClientRecord {
   close: () => Promise<boolean>;
   timers: Set<ReturnType<typeof setTimeout>>;
 }
-/** Injected intake reserves before effects. A Node post-accept callback cannot implement this port. */
+/**
+ * Per-client admission reserves before injected socket acquisition. A Node
+ * listener-owned intake separately retains accepted originals before this call;
+ * its aggregate listener charge survives refusal until every original closes.
+ */
 export function createIntake(options: {
   issuer: BrokerIssuer;
   run: RunHandle;

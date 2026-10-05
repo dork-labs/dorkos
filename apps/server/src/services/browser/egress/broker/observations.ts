@@ -65,7 +65,8 @@ export function inventorySnapshot(raw: unknown, now: number): InventoryObservati
   if (
     !parsed.success ||
     parsed.data.validUntil <= now ||
-    parsed.data.declaredInstances.some((id) => !parsed.data.coveredInstances.includes(id))
+    (parsed.data.localCoverageComplete &&
+      parsed.data.declaredInstances.some((id) => !parsed.data.coveredInstances.includes(id)))
   )
     throw new BrokerError('AUTHORITY_REFUSED');
   const i = parsed.data;

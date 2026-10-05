@@ -33,7 +33,13 @@ export function renderResponse(
     (!upgrade && response.status < 200)
   )
     throw new BrokerError('FRAMING_REFUSED');
-  const entries = Object.entries(response.headers);
+  const cookies = response.setCookies ?? [];
+  if (response.headers['set-cookie'] !== undefined && cookies.length)
+    throw new BrokerError('FRAMING_REFUSED');
+  const entries = [
+    ...Object.entries(response.headers),
+    ...cookies.map((value): [string, string] => ['set-cookie', value]),
+  ];
   if (entries.length > limits.headerFields) throw new BrokerError('FRAMING_REFUSED');
   let bytes = 32;
   const names = new Set<string>();
@@ -42,7 +48,7 @@ export function renderResponse(
     if (
       bytes > limits.headerBytes ||
       !/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name) ||
-      names.has(name.toLowerCase()) ||
+      (names.has(name.toLowerCase()) && name !== 'set-cookie') ||
       /[^\t\x20-\x7e]/.test(value)
     )
       throw new BrokerError('FRAMING_REFUSED');
@@ -61,7 +67,7 @@ export function renderResponse(
   const nominated = (response.headers.connection ?? '')
     .split(',')
     .map((v) => v.trim().toLowerCase());
-  const headers = Object.entries(response.headers).filter(
+  const headers = entries.filter(
     ([k, v]) => !hop.has(k) && !nominated.includes(k) && !/[^\t\x20-\x7e]/.test(v)
   );
   if (upgrade) headers.push(['connection', 'Upgrade'], ['upgrade', 'websocket']);
