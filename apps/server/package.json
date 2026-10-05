@@ -33,6 +33,7 @@
     "@better-auth/api-key": "1.7.6",
     "@dork-labs/cloud-api": "workspace:*",
     "@dorkos/a2a-gateway": "workspace:*",
+    "@dorkos/browser": "workspace:*",
     "@dorkos/connector-providers": "workspace:*",
     "@dorkos/db": "workspace:*",
     "@dorkos/extension-api": "workspace:*",

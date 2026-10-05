@@ -166,9 +166,10 @@ describe('private browser package boundaries', () => {
         types: './src/runtime/installation/index.ts',
         default: './dist/runtime/installation/index.js',
       },
+      './server-owner': { types: './src/server-owner.ts', default: './dist/server-owner.js' },
     });
     for (const [subpath, target] of exports) {
-      expect(['.', './runtime-installation']).toContain(subpath);
+      expect(['.', './runtime-installation', './server-owner']).toContain(subpath);
       expect(existsSync(path.resolve(packageRoot, target.types))).toBe(true);
     }
     expect(Object.keys(installationApi)).toEqual(['createRuntimeInstallation']);
