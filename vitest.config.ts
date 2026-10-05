@@ -123,6 +123,7 @@ export default defineConfig({
       'packages/evals',
       'packages/extension-api',
       'packages/harness',
+      'packages/keep-awake',
       'packages/marketplace',
       'packages/memory',
       'packages/mesh',

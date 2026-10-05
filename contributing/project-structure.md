@@ -24,6 +24,7 @@ dorkos/
 │   ├── mesh/             # @dorkos/mesh — Agent discovery & registry
 │   ├── harness/          # @dorkos/harness — Projects .agents/ + plugins to every agent harness
 │   ├── memory/           # @dorkos/memory — MEMORY.md store behind the MemoryProvider port
+│   ├── keep-awake/       # @dorkos/keep-awake — Holds the computer awake while work runs
 │   ├── a2a-gateway/      # @dorkos/a2a-gateway — A2A protocol gateway
 │   ├── connector-providers/ # @dork-labs/connector-providers — Confined external connector SDK adapters
 │   ├── extension-api/    # @dorkos/extension-api — Extension author API
