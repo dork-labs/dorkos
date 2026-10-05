@@ -218,12 +218,14 @@ export async function teardownImport(
 
   for (const key of queued.keys) {
     try {
-      // Each file is deleted while the community row is held FOR SHARE, after checking for a
-      // legal hold, as the tenant deletion worker does: placing a hold takes that row FOR
-      // UPDATE, so once it commits no further file is removed here. Both halves are bounded so
-      // one slow file never holds the row for long.
+      // Queue a hold ahead of the next file using the same per-community gate as
+      // the tenant deletion worker, then retain the original bounded row lock.
       const held = await transaction(pool, async (client) => {
         await client.query(`SET LOCAL statement_timeout = '${BLOB_LOCK_TIMEOUT_MS}'`);
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('dorkos:legal-hold:' || $1::text,0))",
+          [queued.communityId]
+        );
         const current = await client.query<{ legal_hold_at: Date | null }>(
           'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
           [queued.communityId]
