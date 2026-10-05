@@ -42,14 +42,8 @@ Composio SDK.
 This package carries the same version as each DorkOS release and is published with it, together
 with `@dork-labs/cloud-api`. The two always share a version number.
 
-While the version starts with `0.`, npm reads `^0.97.0` as `>=0.97.0 <0.98.0`, so a caret range
-would hold you on one release. Depend on it as:
-
-```json
-{ "dependencies": { "@dork-labs/connector-providers": ">=0.97.0 <1" } }
-```
-
-or as an exact pin your own release process bumps.
+While the version starts with `0.`, a caret range such as `^0.97.0` holds you on one release.
+Pin an exact version and bump it when you take a new DorkOS release.
 
 ## Dependencies
 
