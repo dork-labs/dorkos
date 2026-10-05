@@ -73,6 +73,39 @@ describe('SessionStore.accountRoot', () => {
     expect(session.hasStarted).toBe(true);
   });
 
+  // DOR-2065, the 2026-10-05 overnight builders. A chat started on a chosen
+  // account had no transcript when its record was made, so the record never
+  // learned its account. A message queued behind the first turn then ran the
+  // launch ladder, landed on the default account, relaunched the warm process
+  // there (killing its background shells) and the CLI answered "No
+  // conversation found". The transcript the first turn wrote settles it.
+  it('learns the account from the transcript its own first turn wrote', async () => {
+    const before = fakeTranscript({ exists: false });
+    const session = await store.ensureForMessage('s-fresh', before.reader, '/work');
+    expect(session.accountRoot).toBeUndefined();
+
+    // The first turn ran (its `system/init` marks the session started) and the
+    // CLI wrote the transcript under the account the launch picked.
+    session.hasStarted = true;
+    const after = fakeTranscript({ exists: true, root: ACCOUNT_B });
+    const next = await store.ensureForMessage('s-fresh', after.reader, '/work');
+
+    expect(after.hasTranscript).toHaveBeenCalledWith('/work', 's-fresh');
+    expect(next.accountRoot).toBe(ACCOUNT_B);
+  });
+
+  it('does not probe again for a session that has not started yet', async () => {
+    // Pinning a session before any transcript exists would keep a launch that
+    // died early from being retried on the account a person then picks.
+    await store.ensureForMessage('s-unstarted', fakeTranscript({ exists: false }).reader, '/work');
+    const again = fakeTranscript({ exists: true, root: ACCOUNT_B });
+
+    const session = await store.ensureForMessage('s-unstarted', again.reader, '/work');
+
+    expect(again.hasTranscript).not.toHaveBeenCalled();
+    expect(session.accountRoot).toBeUndefined();
+  });
+
   it('survives a mid-turn SDK id rekey', async () => {
     // `rebindSdkSession` moves INDEX ENTRIES, not the session object, so the field
     // rides along. Asserted rather than assumed: a rekey that copied state instead

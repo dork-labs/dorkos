@@ -62,9 +62,9 @@ export type Quietness =
   | {
       quiet: true;
       /**
-       * Background shells alive right now. Reported because ending the process
-       * ends them, and the operator is told so (D4) — never because they hold
-       * it open, which they deliberately do not.
+       * Background shells alive right now: always 0 here, because a live shell
+       * holds the process (DOR-2065). Kept so both arms answer the same
+       * question the same way.
        */
       shells: number;
       /** When this process last produced any frame at all, as epoch ms. */
@@ -74,9 +74,9 @@ export type Quietness =
       quiet: false;
       /** The first reason found, in the order {@link SessionPump.quietness} checks them. */
       because: QuietnessBlocker;
-      /** Live tasks that HOLD the process, split by kind. Shells are excluded by design. */
+      /** Live helper agents and other non-shell tasks holding the process, by kind. */
       holding: { agents: number; other: number };
-      /** Background shells alive right now, which hold nothing. */
+      /** Background shells alive right now. They hold the process too (DOR-2065). */
       shells: number;
       /**
        * When this busy spell began, as epoch ms — what the four-hour ceiling is

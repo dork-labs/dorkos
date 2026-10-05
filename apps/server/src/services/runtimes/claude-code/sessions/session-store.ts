@@ -449,6 +449,18 @@ export class SessionStore {
         });
         existing.hasStarted = true;
       }
+    } else if (existing.accountRoot === undefined && existing.hasStarted) {
+      // A session made before its transcript existed — a new chat started on a
+      // chosen account — learns that account once its first turn has written
+      // one. Without this the record never learns it, and a later message runs
+      // the launch ladder instead: on any other default account it relaunched
+      // the warm process somewhere the conversation does not exist, killing its
+      // background shells and losing the chat to "No conversation found"
+      // (DOR-2065). Only once started, for the reason `launchedAccountRoot`
+      // is a separate field.
+      const effectiveCwd = opts?.cwd || existing.cwd || defaultCwd;
+      const transcript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);
+      if (transcript.root) existing.accountRoot = transcript.root;
     }
     return this.findSession(sessionId)!;
   }

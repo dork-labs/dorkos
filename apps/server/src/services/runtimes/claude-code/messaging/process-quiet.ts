@@ -295,10 +295,13 @@ export class ProcessQuiet {
   private blockingReason(counts: LiveTaskCounts): QuietnessBlocker | undefined {
     if (this.opts.isTurnOpen()) return 'turn-open';
     if (this.opts.hasRuntimeTurnOpen()) return 'runtime-turn-open';
-    // Shells are deliberately absent: the CLI kills them shortly after stdin
-    // ends and always has, so holding a whole process open for one would be a
-    // new promise this spec explicitly declines to make (Non-Goals).
-    if (counts.agents + counts.other > 0) return 'background-work';
+    // Shells count too (DOR-2065). A warm process never closes stdin, so its
+    // shells live on, and when one finishes the CLI wakes the model with the
+    // result, exactly as the bare CLI does. Taking the process back kills the
+    // shell and that wake with it: a chat that ended its turn to wait on a PR
+    // watcher was never heard from again. The spec's Non-Goal reasoned from the
+    // resume path, where stdin does close and the CLI ends its shells itself.
+    if (counts.agents + counts.other + counts.shells > 0) return 'background-work';
     if (this.opts.liveness().owedCount() > 0) return 'delivery-owed';
     if (this.opts.hasPendingInteraction()) return 'waiting-on-person';
     return undefined;
