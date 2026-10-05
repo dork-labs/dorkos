@@ -92,6 +92,31 @@ const CanaryRunSchema = z
 export type CanaryRun = z.infer<typeof CanaryRunSchema>;
 
 /**
+ * One run of the Desktop Release workflow, with the GitHub Release its ref
+ * names (`tracked.desktop-release-wall-clock`).
+ *
+ * Every run of the workflow is kept, whatever its event, and the metric's
+ * population rules (tag pushes only, the earliest run per tag, nothing slower
+ * than 24 hours) are applied by the reader, `desktopReleaseWallClock` in
+ * verdicts.ts. Keeping the raw runs is what lets the earliest-run rule look
+ * across a day boundary, and lets a rule change without re-collecting.
+ */
+const DesktopReleaseRunSchema = z
+  .object({
+    /** The run's head branch: the tag, for a tag push. */
+    ref: z.string(),
+    /** `push` for a tag push; `workflow_dispatch` runs are kept and never counted. */
+    event: z.string(),
+    /** The run's `created_at`. */
+    started: z.string(),
+    /** The ref's published GitHub Release when the day was collected; null when none was (draft, missing, or not yet). */
+    published_at: z.string().nullable(),
+  })
+  .strict();
+/** One run of the Desktop Release workflow. */
+export type DesktopReleaseRun = z.infer<typeof DesktopReleaseRunSchema>;
+
+/**
  * One commit on the default branch and whether its push checks went red.
  *
  * `workflows` says which push workflows ran on it and whether each went red,
@@ -269,6 +294,12 @@ export const SnapshotSchema = z
      * every snapshot written before the canary existed has no such key.
      */
     canary: z.array(CanaryRunSchema).default([]),
+    /**
+     * The day's Desktop Release workflow runs (`tracked.desktop-release-wall-clock`).
+     * Absent, not empty, on a day collected before it was recorded: a day that
+     * was never measured must not read as a day with no releases.
+     */
+    desktop_release_runs: z.array(DesktopReleaseRunSchema).optional(),
     releases: z.array(z.object({ tag: z.string(), published_at: z.string() }).strict()),
     cache: z.object({ bytes: z.number(), count: z.number() }).strict().nullable(),
     /**
