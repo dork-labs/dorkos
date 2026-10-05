@@ -37,6 +37,7 @@ import { withLiteralHeaders } from '../mcp-server-config.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
+import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
 import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
 
@@ -545,9 +546,9 @@ function sandboxFor(settings: SessionSettings): SandboxMode {
 }
 
 /**
- * Build one load's params (pure). P1 sends `approvalPolicy: 'never'` with the
- * exec sandbox mapping, so a Codex chat behaves as it does on exec; the
- * reviewer is always the person.
+ * Build one load's params (pure): exec's sandbox mapping, the mode's approval
+ * policy (`approvalPolicyFor`), and the reviewer always the person — never a
+ * model (spec §18).
  *
  * @param input - The load inputs.
  * @param secrets - The thread key, the trust verdict and the cwd's realpath.
@@ -593,7 +594,7 @@ export function buildLoadOverrides(
   return {
     cwd: input.cwd,
     ...(input.settings.model !== undefined ? { model: input.settings.model } : {}),
-    approvalPolicy: 'never',
+    approvalPolicy: approvalPolicyFor(input.settings),
     approvalsReviewer: 'user',
     sandbox: sandboxFor(input.settings),
     config,

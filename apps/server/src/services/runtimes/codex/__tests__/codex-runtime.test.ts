@@ -400,6 +400,44 @@ describe('CodexRuntime', () => {
       ]);
     });
 
+    it('declares what the app-server transport adds, and exec keeps its own (spec §14)', () => {
+      const appServer = new CodexRuntime({
+        threadMap: new CodexThreadMap(createTestDb()),
+        resolveBinary: async () => '/opt/codex',
+        transport: 'app-server',
+      });
+      const caps = appServer.getCapabilities();
+      expect(caps).toMatchObject({
+        supportsToolApproval: true,
+        supportsQuestionPrompt: true,
+        supportsPersistentSession: true,
+      });
+      expect(caps.permissionModes.denyReason).toBe(false);
+      expect(
+        caps.permissionModes.values.map(({ id, label, asks, reach }) => ({
+          id,
+          label,
+          asks,
+          reach,
+        }))
+      ).toEqual([
+        { id: 'default', label: 'Ask first', asks: 'always', reach: 'workspace' },
+        { id: 'acceptEdits', label: 'Workspace write', asks: 'when-risky', reach: 'workspace' },
+        { id: 'bypassPermissions', label: 'Full access', asks: 'never', reach: 'everything' },
+      ]);
+      // App copy: no block over 15 words (writing-app-copy).
+      for (const mode of caps.permissionModes.values) {
+        for (const block of [mode.label, mode.description ?? '', mode.promise]) {
+          expect(block.split(/\s+/).filter(Boolean).length, block).toBeLessThanOrEqual(15);
+        }
+      }
+
+      const exec = makeRuntime().runtime.getCapabilities();
+      expect(exec).toMatchObject({ supportsToolApproval: false, supportsQuestionPrompt: false });
+      expect(exec.permissionModes.denyReason).toBeUndefined();
+      expect(exec.permissionModes.values[0]!.label).toBe('Read only');
+    });
+
     it('exposes the current account catalog and its CLI-reported default', async () => {
       const { runtime } = makeRuntime();
       const models = await runtime.getSupportedModels();

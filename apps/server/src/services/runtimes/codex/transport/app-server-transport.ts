@@ -15,10 +15,9 @@
  * nothing sent); if a response nevertheless names a turn already open, that is
  * an invariant breach, logged, and the generator ends with an error.
  *
- * **P1 posture.** `approvalPolicy: 'never'` with exec's sandbox mapping, so a
- * chat behaves as it does on exec; every server request is refused by the
- * client (nothing is ever accepted); `supportsPersistentSession` is the only
- * capability it adds.
+ * **Approvals (spec §10).** `on-request` for every mode but full access, so
+ * Codex stops and asks; each server request becomes a card in the open turn
+ * (`app-server/server-requests.ts`), answered only by a person.
  *
  * @module services/runtimes/codex/transport/app-server-transport
  */
@@ -49,7 +48,8 @@ import {
 import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
-import { EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
+import { approvalPolicyFor, EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
+import { CODEX_APP_SERVER_CAPABILITIES } from '../runtime-constants.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
 import type {
   ServerNotification,
@@ -131,8 +131,8 @@ const LINGERING_REFUSAL_LIMIT = 3;
 /** Codex turns on `codex app-server`. */
 export class AppServerCodexTransport implements CodexTransport {
   readonly kind = 'app-server' as const;
-  /** A thread stays loaded between turns, so a session can be warm. */
-  readonly capabilities = { supportsPersistentSession: true } as const;
+  /** What this transport adds over exec (spec §14): warmth, approvals, questions. */
+  readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
 
   private readonly pool: CodexAppServerPool;
   private readonly loader: CodexThreadLoader;
@@ -903,7 +903,7 @@ export class AppServerCodexTransport implements CodexTransport {
       ...(request.messageId !== undefined ? { clientUserMessageId: request.messageId } : {}),
       // Sent every turn (they are sticky): a mode or model change between turns lands.
       cwd: request.cwd,
-      approvalPolicy: 'never',
+      approvalPolicy: approvalPolicyFor(request.settings),
       sandboxPolicy: sandboxPolicyFor(request),
       ...(request.settings.model !== undefined ? { model: request.settings.model } : {}),
       ...(effort !== undefined ? { effort } : {}),

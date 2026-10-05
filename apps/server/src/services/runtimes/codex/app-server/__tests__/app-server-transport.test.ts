@@ -87,7 +87,7 @@ describe('a turn', () => {
       input: [{ type: 'text', text: 'hello', text_elements: [] }],
       clientUserMessageId: 'm1',
       cwd: '/project',
-      approvalPolicy: 'never',
+      approvalPolicy: 'on-request',
       sandboxPolicy: { type: 'readOnly', networkAccess: false },
       model: 'gpt-x',
       effort: 'xhigh',

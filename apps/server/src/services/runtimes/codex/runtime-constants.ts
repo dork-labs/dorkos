@@ -164,3 +164,74 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   },
   features: {},
 };
+
+/**
+ * The permission modes on the app-server transport (spec
+ * `codex-app-server-transport` §10). Same ids as exec, so stored sessions and
+ * the descriptor-based ceiling comparisons keep working; what changes is that
+ * Codex can now stop and ask, so the first two modes say so.
+ *
+ * - `default` — read-only sandbox, `on-request`: every change escalates to a
+ *   card, so it asks `always`.
+ * - `acceptEdits` — Codex's own "Auto" preset: edits and commands inside the
+ *   project and temp folders run; reaching outside them or the network asks.
+ * - `bypassPermissions` — no sandbox and `never`: nothing is asked.
+ *
+ * `denyReason: false`: Codex's decisions carry no reason text, so the box is
+ * hidden rather than typed into a void. Copy follows `writing-app-copy`
+ * (15 words a block at most).
+ */
+export const CODEX_APP_SERVER_PERMISSION_MODES: RuntimeCapabilities['permissionModes'] = {
+  supported: true,
+  default: 'default',
+  denyReason: false,
+  values: [
+    {
+      id: 'default',
+      label: 'Ask first',
+      description: 'Codex reads files freely. It asks before it changes anything.',
+      stop: 'ask',
+      asks: 'always',
+      reach: 'workspace',
+      promise: 'Codex can read files and run read-only commands. It asks before anything else.',
+      native: 'read-only, asks first',
+    },
+    {
+      id: 'acceptEdits',
+      label: 'Workspace write',
+      description:
+        'Codex can read anything on this machine and change this project without asking.',
+      stop: 'act',
+      asks: 'when-risky',
+      reach: 'workspace',
+      promise:
+        'Codex changes this project and temporary folders freely. It asks before going further or online.',
+      native: 'workspace-write, asks for more',
+    },
+    {
+      id: 'bypassPermissions',
+      label: 'Full access',
+      description: 'No sandbox. Codex can change anything on this machine and go online.',
+      stop: 'autonomy',
+      asks: 'never',
+      reach: 'everything',
+      // No softening clause (DOR-1754): the consent dialog reads this out.
+      promise:
+        'Codex can change anything on this machine, network included. It never stops to ask.',
+      native: 'danger-full-access',
+    },
+  ],
+};
+
+/**
+ * Capability overrides for the app-server transport, merged over
+ * {@link CODEX_CAPABILITIES} (spec §14, phase P2). A thread stays loaded
+ * between turns; Codex can stop to ask, put a question to the person, and take
+ * a message into a running turn.
+ */
+export const CODEX_APP_SERVER_CAPABILITIES: Partial<RuntimeCapabilities> = {
+  supportsPersistentSession: true,
+  supportsToolApproval: true,
+  supportsQuestionPrompt: true,
+  permissionModes: CODEX_APP_SERVER_PERMISSION_MODES,
+};

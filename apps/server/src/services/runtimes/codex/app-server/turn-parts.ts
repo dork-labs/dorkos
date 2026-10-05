@@ -7,7 +7,7 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnRequest } from '../transport/codex-transport.js';
-import type { SandboxPolicy } from './protocol/methods.js';
+import type { AskForApproval, SandboxPolicy } from './protocol/methods.js';
 
 /** A small single-consumer queue the generator drains. */
 export class EventQueue {
@@ -64,4 +64,17 @@ export function sandboxPolicyFor(
     default:
       return { type: 'readOnly', networkAccess: false };
   }
+}
+
+/**
+ * When Codex stops to ask, by mode (spec §10): `never` only for full access;
+ * every other mode, and any mode id this table does not know, asks
+ * `on-request`, so an unknown mode can never run without a person.
+ *
+ * @param settings - The session's mode.
+ */
+export function approvalPolicyFor(
+  settings: Pick<CodexTurnRequest['settings'], 'permissionMode'>
+): AskForApproval {
+  return settings.permissionMode === 'bypassPermissions' ? 'never' : 'on-request';
 }
