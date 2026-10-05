@@ -194,6 +194,7 @@ import { ConnectorAccessQueryService } from './services/connectors/execution/acc
 import { ConnectorProgramPrincipalService } from './services/connectors/principal/program-principal-service.js';
 import type { ConnectorOwnerAuthority } from './services/connectors/principal/server-principal.js';
 import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
+import { connectorThreadKeys } from './services/connectors/principal/thread-keys.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
 import {
   ConnectorAgentRequestService,
@@ -3720,6 +3721,7 @@ async function start() {
           mesh: meshCore,
           owner: connectorOwner,
         }),
+        threadKeys: connectorThreadKeys,
       })
     : undefined;
   if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
@@ -5793,6 +5795,7 @@ async function start() {
     for (const runtime of runtimeRegistry.listRuntimes()) {
       connectorRuntimeConsumer(runtime)?.setConnectorRuntimeTools({
         principals: agentScopedRuntimePrincipals,
+        threadKeys: connectorThreadKeys,
         listenerUrl: connectorRuntimeMcpListener.url,
         agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
         isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
