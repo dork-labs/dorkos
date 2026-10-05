@@ -704,8 +704,6 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-export { sandboxPolicyFor };
-
 /**
  * Build the app-server transport for `CodexRuntime`.
  *

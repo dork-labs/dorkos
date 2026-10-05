@@ -6,7 +6,7 @@
  * This is the code `CodexRuntime.sendMessage` ran before the transport seam,
  * moved here unchanged: the client choice (`clientForTurn`), the options
  * (`buildCodexOptions`, `withCodexCredits`), the thread options
- * (`projectThreadOptionsFor`), `runStreamed` and `mapCodexThread`. Secrets ride
+ * (`projectThreadOptions`), `runStreamed` and `mapCodexThread`. Secrets ride
  * the subprocess environment, never argv (`codex-options.ts`).
  *
  * @module services/runtimes/codex/transport/exec-transport
@@ -17,7 +17,7 @@ import { runtimeInheritedNames } from '../../shared/runtime-environment-config.j
 import { buildCodexOptions } from '../codex-options.js';
 import { withCodexCredits } from '../credits-launch.js';
 import { mapCodexThread } from '../event-mapper.js';
-import { projectThreadOptionsFor } from '../turn-input.js';
+import { projectThreadOptions } from '../turn-input.js';
 import type { CodexManagedMcpServers } from '../mcp-server-config.js';
 import type { DorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../../connector-tools.js';
@@ -50,7 +50,7 @@ export class ExecCodexTransport implements CodexTransport {
    * @param request - The resolved turn.
    */
   async *runTurn(request: CodexTurnRequest): AsyncGenerator<StreamEvent> {
-    const threadOptions = projectThreadOptionsFor(
+    const threadOptions = projectThreadOptions(
       request.settings,
       request.cwd,
       request.writableDirectories

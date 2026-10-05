@@ -21,7 +21,7 @@ import { hangingTurn, parkedTurn, type FakeTurnScript } from '../../__tests__/fa
 import { APP_SERVER_ARGS } from '../process-pool.js';
 import { CODEX_STOPPED_COPY } from '../notification-mapper.js';
 import { THREAD_STARTS_FRESH_NOTICE } from '../thread-loader.js';
-import { sandboxPolicyFor } from '../../transport/app-server-transport.js';
+import { sandboxPolicyFor } from '../turn-parts.js';
 import type { CreditsRelay } from '../../../../core/cloud/credits-relay.js';
 
 type Harness = ReturnType<typeof makeAppServerHarness>;

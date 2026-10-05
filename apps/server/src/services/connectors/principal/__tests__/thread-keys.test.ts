@@ -179,4 +179,35 @@ describe('the listener resolving a thread key', () => {
     expect(opened.bearer.startsWith(THREAD_KEY_PREFIX)).toBe(false);
     await expect(resolve(opened.bearer)).resolves.toMatchObject({ status: 'resolved' });
   });
+
+  it('refuses a key presented for another runtime', async () => {
+    const { keyId, key } = registry.mint(SCOPE);
+    const opened = await service.openTurn(turn, { isCurrent: () => ownerCurrent });
+    registry.attach(keyId, { bindingId: opened.bindingId, canonicalSessionId: 'session-a' });
+    await expect(
+      service.resolve({
+        bearer: key,
+        expectedRuntime: 'opencode',
+        expectedCanonicalCwd: '/project',
+      })
+    ).resolves.toEqual({ status: 'refused', reason: 'wrong_runtime' });
+  });
+
+  it('refuses when the turn ends while its authority check is still awaiting', async () => {
+    const { keyId, key } = registry.mint(SCOPE);
+    const opened = await service.openTurn(turn, { isCurrent: () => ownerCurrent });
+    registry.attach(keyId, { bindingId: opened.bindingId, canonicalSessionId: 'session-a' });
+    // The detach lands in the middle of the binding's revalidation.
+    vi.mocked(resolver.revalidateTurn).mockImplementationOnce(async () => {
+      registry.detach(keyId, opened.bindingId);
+      return true;
+    });
+    await expect(resolve(key)).resolves.toEqual({ status: 'refused', reason: 'expired' });
+  });
+
+  it('never reads a prefixed bearer of the wrong shape as a thread key', () => {
+    expect(registry.isThreadKey(`${THREAD_KEY_PREFIX}short`)).toBe(false);
+    expect(registry.isThreadKey(`${THREAD_KEY_PREFIX}${'a'.repeat(43)}x`)).toBe(false);
+    expect(registry.isThreadKey(registry.mint(SCOPE).key)).toBe(true);
+  });
 });

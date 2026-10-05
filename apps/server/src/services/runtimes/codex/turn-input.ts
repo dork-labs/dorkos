@@ -87,27 +87,11 @@ export const EFFORT_TO_REASONING: Record<EffortLevel, ModelReasoningEffort> = {
  *
  * @param settings - Effective settings (per-send override → tracked → persisted → default)
  * @param cwd - Working directory for the turn, when known
- * @param grants - This turn's folder grants; absent means none
- * @throws DirectoryGrantError when the grant set is invalid — before any thread starts
+ * @param writable - This turn's writable folders, already validated by
+ *   {@link grantedWritableDirectories} (which throws DirectoryGrantError for an
+ *   invalid grant set before any thread starts)
  */
 export function projectThreadOptions(
-  settings: SessionSettings,
-  cwd?: string,
-  grants?: readonly DirectoryGrant[]
-): ThreadOptions {
-  return projectThreadOptionsFor(settings, cwd, grantedWritableDirectories(grants, cwd));
-}
-
-/**
- * {@link projectThreadOptions} for grants already validated into the folders
- * Codex may write — the half the exec transport runs once the runtime has
- * checked the grants (`transport/exec-transport.ts`).
- *
- * @param settings - Effective settings for the turn
- * @param cwd - Working directory for the turn, when known
- * @param writable - Validated writable folders (`grantedWritableDirectories`)
- */
-export function projectThreadOptionsFor(
   settings: SessionSettings,
   cwd: string | undefined,
   writable: readonly string[]

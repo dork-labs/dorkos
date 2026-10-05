@@ -306,6 +306,17 @@ describe('closing', () => {
     expect(peer.client.closedBecause?.kind).toBe('pipe');
   });
 
+  it('redacts thread keys and bare-hex identity tokens from stderr', async () => {
+    const peer = makePeer();
+    const key = `dtk_${'A'.repeat(43)}`;
+    const identity = 'ab'.repeat(32);
+    peer.stderr.write(`mcp header ${key}; agent ${identity}\n`);
+    await peer.flush();
+    const tail = peer.client.stderrTail();
+    expect(tail).not.toContain(key);
+    expect(tail).not.toContain(identity);
+  });
+
   it('keeps a stderr tail with tokens redacted', async () => {
     const peer = makePeer();
     peer.stderr.write(

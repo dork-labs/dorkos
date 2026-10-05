@@ -178,7 +178,7 @@ export class CodexJsonRpcClient {
 
   /** The last 64 KiB of stderr, tokens redacted. */
   stderrTail(): string {
-    return redactTokens(redactUrlQueries(this.stderrRing));
+    return redactCodexSecrets(this.stderrRing);
   }
 
   /**
@@ -497,10 +497,23 @@ export class CodexJsonRpcClient {
     this.stderrRing = (this.stderrRing + text).slice(-STDERR_RING_BYTES);
     for (const line of text.split('\n')) {
       if (line.trim() !== '') {
-        logger.debug(`[CodexAppServer] ${redactTokens(redactUrlQueries(line))}`);
+        logger.debug(`[CodexAppServer] ${redactCodexSecrets(line)}`);
       }
     }
   }
+}
+
+/**
+ * Redact what Codex's stderr could echo back: the shared token patterns and
+ * URL queries, plus the two DorkOS secrets those miss — a thread key
+ * (`dtk_…`) and the agent identity token (a bare 64-hex string).
+ *
+ * @param text - A stderr line or tail.
+ */
+export function redactCodexSecrets(text: string): string {
+  return redactTokens(redactUrlQueries(text))
+    .replace(/dtk_[A-Za-z0-9_-]{16,}/g, '[redacted]')
+    .replace(/[0-9a-f]{32,}/gi, '[redacted]');
 }
 
 /** The last non-empty line of a text, for a one-line crash note. */

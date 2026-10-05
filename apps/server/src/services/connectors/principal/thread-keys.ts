@@ -16,10 +16,21 @@
  * carries is exactly the open turn's, and a call outside a turn (a background
  * command poking the URL, a late call) is refused.
  *
+ * ## What a key can reach between turns
+ *
+ * Authority is resolved per REQUEST, not per caller. So a background command
+ * a turn N left running, or a sub-agent it spawned, that calls the `dorkos`
+ * server while a LATER turn N+1 of the same session is open acts with turn
+ * N+1's binding. That is accepted, and bounded: it is the same session, the
+ * same working directory and the same agent, and every check a turn bearer
+ * gets (runtime, cwd, expiry, revocation, live authority) still runs against
+ * N+1's binding. Between turns the same call is refused.
+ *
  * ## Custody
  *
- * - 256 random bits, `dtk_`-prefixed so the listener can tell it from a turn
- *   bearer without a lookup.
+ * - 256 random bits, `dtk_`-prefixed and exactly 43 base64url characters
+ *   after it, so the listener can tell it from a turn bearer (un-prefixed)
+ *   without a lookup and no turn bearer can be mistaken for one.
  * - Held in memory only, by its SHA-256, never persisted.
  * - Never logged: the log carries the non-secret `keyId`.
  * - Revoked when its thread unloads, when its process exits or is reaped, and
@@ -41,6 +52,9 @@ export const THREAD_KEY_PREFIX = 'dtk_';
 
 /** Random bytes in one key: 256 bits. */
 const THREAD_KEY_BYTES = 32;
+
+/** The exact shape of a thread key: the prefix and 43 base64url characters. */
+const THREAD_KEY_SHAPE = /^dtk_[A-Za-z0-9_-]{43}$/;
 
 interface ThreadKeyEntry {
   readonly keyId: string;
@@ -146,7 +160,7 @@ export class ConnectorThreadKeyRegistry
 
   /** Whether a bearer is shaped like a thread key (no lookup). */
   isThreadKey(bearer: string): boolean {
-    return bearer.startsWith(THREAD_KEY_PREFIX);
+    return THREAD_KEY_SHAPE.test(bearer);
   }
 
   /** Look a live key up, or `undefined` when unknown or revoked. */
