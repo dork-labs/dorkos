@@ -6879,3 +6879,67 @@ export const DevtoolsRecordingUploadSchema = z
   .openapi('DevtoolsRecordingUpload');
 
 export type DevtoolsRecordingUpload = z.infer<typeof DevtoolsRecordingUploadSchema>;
+
+// === Keep awake (spec `keep-awake`, DOR-2718) ===
+
+/** Why this computer cannot be held awake. Mirrors `@dorkos/keep-awake`. */
+export const KeepAwakeUnsupportedReasonSchema = z
+  .enum(['container', 'tool-missing', 'denied', 'platform'])
+  .openapi('KeepAwakeUnsupportedReason');
+
+/** Why this computer cannot be held awake. */
+export type KeepAwakeUnsupportedReason = z.infer<typeof KeepAwakeUnsupportedReasonSchema>;
+
+/**
+ * Whether DorkOS is keeping this computer awake right now, and for what.
+ *
+ * Read by `GET /api/keep-awake` and pushed as `keep_awake_status` on the global
+ * event stream whenever it changes. Counts and flags only: nothing here names a
+ * session or says what an agent is doing.
+ */
+export const KeepAwakeStatusSchema = z
+  .object({
+    enabled: z.boolean().openapi({
+      description: 'The `keepAwake.whileAgentsWork` setting.',
+    }),
+    supported: z.boolean().openapi({
+      description: 'Whether this computer can be held awake at all.',
+    }),
+    reason: KeepAwakeUnsupportedReasonSchema.nullable().openapi({
+      description: 'Why not, when `supported` is false; null otherwise.',
+    }),
+    asserted: z.boolean().openapi({
+      description: 'Whether the operating system is being told to stay awake right now.',
+    }),
+    working: z
+      .object({
+        chats: z.number().int().min(0).openapi({
+          description: 'Agent turns in flight that are not room replies or task runs.',
+        }),
+        rooms: z.number().int().min(0).openapi({ description: 'Room replies in flight.' }),
+        tasks: z.number().int().min(0).openapi({
+          description: 'Task runs in flight. A run counts once, including its turn.',
+        }),
+        waking: z.boolean().openapi({
+          description: 'Awake for a scheduled run that is about to start.',
+        }),
+      })
+      .openapi({
+        description: 'What is keeping the computer awake. Each piece of work counts once.',
+      }),
+    wake: z
+      .object({
+        enabled: z.boolean(),
+        setup: z.enum(['ready', 'needed', 'unsupported']),
+        nextWakeAt: z.string().nullable(),
+        setupCommand: z.string().nullable(),
+      })
+      .openapi({
+        description:
+          'Waking the computer for scheduled runs. Not built yet: always disabled, `unsupported`, with no next wake and no setup command.',
+      }),
+  })
+  .openapi('KeepAwakeStatus');
+
+/** Whether DorkOS is keeping this computer awake right now, and for what. */
+export type KeepAwakeStatus = z.infer<typeof KeepAwakeStatusSchema>;

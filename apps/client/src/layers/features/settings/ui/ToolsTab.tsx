@@ -7,12 +7,14 @@ import { useDeepLinkScroll, useSettingsDeepLink, useTransport } from '@/layers/s
 import { configKeys } from '@/layers/entities/config';
 import { SchedulerSettings } from './tools/SchedulerSettings';
 import { BackgroundSystemsCard } from './tools/BackgroundSystemsCard';
+import { SleepSettings } from './tools/SleepSettings';
 import { ExternalMcpCard } from './external-mcp/ExternalMcpCard';
 
 /**
  * Tools tab for the Settings dialog: the background systems agents work
  * through (scheduled runs, messaging), how many scheduled runs may go at once,
- * and whether other apps may use DorkOS as an MCP server.
+ * whether this computer stays awake while agents work, and whether other apps
+ * may use DorkOS as an MCP server.
  *
  * What agents may DO with their tools is not here: it is Settings → Permissions
  * (spec `agent-permissions`), which replaced the tool-group switches this tab
@@ -87,6 +89,7 @@ export function ToolsTab() {
           </FieldCardContent>
         </FieldCard>
       )}
+      <SleepSettings />
       {serverConfig?.mcp && (
         <div data-section="external-mcp">
           <ExternalMcpCard

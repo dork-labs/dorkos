@@ -2448,6 +2448,27 @@ export const UserConfigSchema = z.object({
       maxConcurrentRuns: 4,
       retentionCount: 100,
     })),
+  /**
+   * Whether this computer may idle-sleep while agents work (spec `keep-awake`,
+   * DOR-2718). A whole top-level section on purpose: conf writes a new section
+   * into every stored config on its own, so neither field needs a migration.
+   * Both defaults are declared twice, here and in the section literal below,
+   * and the two must agree.
+   */
+  keepAwake: z
+    .object({
+      /** Hold the computer awake while any agent works; release when idle. */
+      whileAgentsWork: z.boolean().default(true),
+      /**
+       * Wake the computer shortly before each approved scheduled run (needs
+       * one-time admin setup on macOS and Linux). Read by nothing yet: the wake
+       * half of the spec ships later, and Settings offers no switch for it
+       * until then. It ships in this section now so adding it later is not a
+       * nested-leaf migration.
+       */
+      wakeForScheduledTasks: z.boolean().default(false),
+    })
+    .default(() => ({ whileAgentsWork: true, wakeForScheduledTasks: false })),
   mesh: z
     .object({
       scanRoots: z.array(z.string()).default(() => []),

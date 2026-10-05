@@ -62,6 +62,7 @@ import {
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { AgentExecutionDefaults } from '../session/resolve-session-defaults.js';
 import type { AccountNotAllowedError } from '../core/usage/account-eligibility.js';
+import type { TaskAwakeHold, TaskAwakeHolds } from '../core/keep-awake/index.js';
 import { scheduleAccountRefusal } from './lifecycle/schedule-account-eligibility.js';
 
 /**
@@ -386,6 +387,12 @@ export interface SchedulerDeps {
    * that do not care.
    */
   beforeScheduledFire?: (task: Task) => Promise<AgentExecutionDefaults | undefined>;
+  /**
+   * Keeps the computer awake for each run, from placement to its last event
+   * (spec `keep-awake`). Absent in tests that do not care, and then no run
+   * holds anything.
+   */
+  keepAwake?: TaskAwakeHolds;
 }
 
 /**
@@ -437,6 +444,8 @@ export class TaskSchedulerService {
   /** See {@link SchedulerDeps.beforeScheduledFire}. */
   private beforeScheduledFire:
     ((task: Task) => Promise<AgentExecutionDefaults | undefined>) | null = null;
+  /** See {@link SchedulerDeps.keepAwake}. */
+  private keepAwake: TaskAwakeHolds | null = null;
 
   constructor(
     store: TaskStore,
@@ -463,6 +472,7 @@ export class TaskSchedulerService {
       this.meshCore = storeOrDeps.meshCore ?? null;
       this.activityService = storeOrDeps.activityService ?? null;
       this.beforeScheduledFire = storeOrDeps.beforeScheduledFire ?? null;
+      this.keepAwake = storeOrDeps.keepAwake ?? null;
       this.leaderLock =
         storeOrDeps.leaderLock ??
         (storeOrDeps.dorkHome ? new SchedulerLock({ dorkHome: storeOrDeps.dorkHome }) : null);
@@ -1096,19 +1106,52 @@ export class TaskSchedulerService {
   }
 
   /**
-   * Execute a run — branches between Relay dispatch and direct AgentManager
-   * execution, inside this run's own dispatch scope.
+   * Execute a run, holding the computer awake for all of it (spec
+   * `keep-awake`). The work is {@link executeRunHeld}.
    *
-   * The scope is the OUTERMOST thing here, so the span it wraps carries the id
-   * too: a task that dispatches through the relay is one dispatch that crosses
-   * the bus, and the envelope's `dispatchId` is what keeps it one on the far
-   * side.
+   * @param task - The task being run.
+   * @param run - Its run row, already opened.
+   * @param checkedAgent - The agent's values as the fire's check read them.
    */
   private async executeRun(
     task: Task,
     run: TaskRun,
     checkedAgent?: AgentExecutionDefaults
   ): Promise<void> {
+    // One hold for the whole run, opened before anything else so placement and
+    // provisioning are covered, and released however the run ends. The run
+    // tells it which session its turn runs under once a dispatch path picks
+    // one, so that turn counts as this task and not also as a chat.
+    const awake = this.keepAwake?.holdTask(run.id);
+    try {
+      await this.executeRunHeld(task, run, checkedAgent, awake);
+    } finally {
+      awake?.release();
+    }
+  }
+
+  /**
+   * The body of {@link executeRun}, inside its keep-awake hold: branches
+   * between Relay dispatch and direct AgentManager execution, inside this run's
+   * own dispatch scope.
+   *
+   * The scope is the OUTERMOST thing here, so the span it wraps carries the id
+   * too: a task that dispatches through the relay is one dispatch that crosses
+   * the bus, and the envelope's `dispatchId` is what keeps it one on the far
+   * side.
+   *
+   * @param task - The task being run.
+   * @param run - Its run row, already opened.
+   * @param checkedAgent - The agent's values as the fire's check read them.
+   * @param awake - The run's keep-awake hold, when keep-awake is wired.
+   */
+  private async executeRunHeld(
+    task: Task,
+    run: TaskRun,
+    checkedAgent: AgentExecutionDefaults | undefined,
+    awake: TaskAwakeHold | undefined
+  ): Promise<void> {
+    const onSession = (sessionId: string): void => awake?.attachSession(sessionId);
     const dispatchId = newDispatchId();
     recordDispatchStart({ dispatchId, origin: 'task' });
     return runInDispatch({ dispatchId, origin: 'task' }, () =>
@@ -1182,12 +1225,20 @@ export class TaskSchedulerService {
                   // Already resolved, once, above — see `resolveRunPlacement`.
                   resolveCwd: () => Promise.resolve(placement.cwd),
                   ...(placement.agentPath !== undefined ? { forAgent: placement.agentPath } : {}),
+                  onSession,
                 },
                 task,
                 run,
                 execution
               )
-            : await this.executeRunDirect(task, run, execution, placement.cwd, placement.agentPath);
+            : await this.executeRunDirect(
+                task,
+                run,
+                execution,
+                placement.cwd,
+                placement.agentPath,
+                onSession
+              );
           recordDispatchEnd(dispatchId, 'answered');
           return result;
         } catch (err) {
@@ -1356,13 +1407,16 @@ export class TaskSchedulerService {
    *   the turn so the runtime reads identity from that home and refuses a
    *   folder that resolves to another agent's (spec `agent-home-desk` §3.2
    *   row 12).
+   * @param onSession - Told which session the run's turn runs under, so
+   *   keep-awake counts that turn as this run.
    */
   private async executeRunDirect(
     task: Task,
     run: TaskRun,
     execution: RunExecution,
     effectiveCwd: string,
-    forAgent: string | undefined
+    forAgent: string | undefined,
+    onSession: (sessionId: string) => void
   ): Promise<void> {
     // The manager for the runtime this run RESOLVED to, not one bound at boot.
     // Safe to `get` unconditionally: `resolveRunExecution` has already refused an
@@ -1405,6 +1459,7 @@ export class TaskSchedulerService {
     const { sessionId, hasStarted } = resolveRunSession(this.store, task, {
       runtimeType: execution.runtimeType,
     });
+    onSession(sessionId);
 
     // Is somebody waiting in front of the app for this? A scheduled fire is the
     // one trigger that has nobody: its asks are refused the moment they are

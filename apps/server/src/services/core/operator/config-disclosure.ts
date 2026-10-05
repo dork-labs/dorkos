@@ -230,6 +230,12 @@ export const CONFIG_DISCLOSURE = {
   'scheduler.maxConcurrentRuns': 'expose',
   'scheduler.retentionCount': 'expose',
 
+  // Whether this computer stays awake while agents work, and whether it may be
+  // woken for scheduled runs. Plain booleans: an agent may know the computer
+  // stays awake (spec `keep-awake`).
+  'keepAwake.whileAgentsWork': 'expose',
+  'keepAwake.wakeForScheduledTasks': 'expose',
+
   'mesh.scanRoots': 'expose',
 
   // Which backend holds an agent's memory. A provider id, not a credential and

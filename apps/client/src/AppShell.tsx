@@ -46,6 +46,7 @@ import { useDevLinkReloadSync } from '@/layers/entities/marketplace';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
+import { useKeepAwakeSync } from '@/layers/entities/keep-awake';
 import { useTasksSync } from '@/layers/entities/tasks';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
 import { useInboxDeepLink } from '@/layers/entities/notifications';
@@ -88,6 +89,7 @@ import {
 import { MobileTabsLayout, useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
 import { ControlCenter, useControlCenterShortcut } from '@/layers/widgets/control-center';
 import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
+import { KeepAwakeBeacon } from '@/layers/widgets/keep-awake';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
@@ -336,6 +338,7 @@ export function AppShell() {
   // a task changes: dialling one up to Full autonomy has to raise the banner as
   // the form closes, not on the next reload.
   useUnattendedAutonomySync();
+  useKeepAwakeSync();
   // Live task list (DOR-1380): a schedule an agent proposes via MCP parks at
   // pending_approval and otherwise sits invisible until the next reload.
   useTasksSync();
@@ -860,6 +863,10 @@ export function AppShell() {
                             starting, up, or re-establishing itself. With remote
                             access off it draws nothing at all (DOR-1743). */}
                       <RemoteAccessBeacon />
+                      {/* The keep-awake cup, on the same terms: machine-wide,
+                            outside the cross-fade, and drawn only while DorkOS
+                            is keeping this computer awake for work. */}
+                      <KeepAwakeBeacon />
                       {/* ── Search · inbox · right-panel toggle. Outside the
                             cross-fade and after it, which is both halves of
                             I1: they stay mounted so the corner never blinks on

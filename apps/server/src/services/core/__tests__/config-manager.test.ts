@@ -281,6 +281,34 @@ describe('ConfigManager', () => {
     });
   });
 
+  it('lands keepAwake on disk for a config written before it existed, with no migration', () => {
+    // Spec `keep-awake`: a whole new TOP-LEVEL section, so there is no
+    // CONFIG_MIGRATIONS entry at all — conf merges `defaults` under the stored
+    // file and writes the result before any migration key runs. This pins that
+    // measured behaviour against the real store, so the "no migration needed"
+    // decision breaks loudly if conf ever stops doing it. Both defaults are the
+    // ones the schema declares twice (field and section literal).
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.97.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      keepAwake?: unknown;
+      ui?: { theme?: string };
+    };
+    expect(onDisk.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
+    expect(onDisk.ui?.theme).toBe('dark');
+    expect(configManager.get('keepAwake')).toEqual(USER_CONFIG_DEFAULTS.keepAwake);
+  });
+
   it('lands memory.provider on disk for a config written before memory existed', () => {
     // The upgrade path over a real file and the real conf/Ajv seam (spec
     // `agent-memory`, D7; migration key 0.69.0).

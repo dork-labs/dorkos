@@ -10,6 +10,8 @@ export { SettingsDialog } from './ui/SettingsDialog';
 export { PreferencesTab } from './ui/tabs/PreferencesTab';
 export { TunnelDialog } from './ui/TunnelDialog';
 export { ServerRestartOverlay } from './ui/ServerRestartOverlay';
+// Shown on its own in the Dev Playground's Keep Awake showcase.
+export { SleepSettings } from './ui/tools/SleepSettings';
 
 // The Runtimes tab, in the pieces the dev playground renders. Every one of them
 // is props-only or owns its own read, which is what the redesign bought: the

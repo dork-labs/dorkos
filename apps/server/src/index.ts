@@ -577,6 +577,7 @@ import {
   formatFirstRunTelemetryNotice,
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
+import { keepAwakeService } from './services/core/keep-awake/index.js';
 import { operatorAudience } from './services/notifications/notification-entitlement.js';
 import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
@@ -1061,6 +1062,16 @@ async function start() {
   // edits never reach onChange, which is why the store's 60 s scan reconciles too.
   configManager.onChange((change) => {
     if (change.sections.includes('runtimes')) void accountUsageStore?.reconcileAccounts();
+  });
+
+  // Keep this computer awake while agents work (spec `keep-awake`). Started
+  // right after config, before any runtime is registered, so the holder exists
+  // for the first turn; the registry wrapper counts turns from there. The
+  // setting is read live, so a toggle needs no restart.
+  keepAwakeService.start({
+    readSettings: () => configManager.get('keepAwake'),
+    onSettingsChange: (listener) => configManager.onChange((change) => listener(change.sections)),
+    broadcast: (status) => eventFanOut.broadcast('keep_awake_status', status),
   });
 
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
@@ -4265,6 +4276,8 @@ async function start() {
       activityService,
       dorkHome,
       beforeScheduledFire: (task) => agentExecutionWatch.beforeScheduledFire(task),
+      // Each run holds the computer awake from placement to its last event.
+      keepAwake: keepAwakeService,
     });
     // The ONE registration seam, shared by every writer that can change what a
     // task's schedule is: these routes, the file watcher, and the reconciler.
@@ -6441,6 +6454,8 @@ async function shutdownServices() {
   // which is every server until the persistent path is opted into.
   await shutdownSessionPumps();
   await tunnelManager.stop();
+  // After every runtime and the scheduler: nothing is left to hold awake.
+  await keepAwakeService.stop();
   getCloudLinkManager().stop();
   stopCreditsLifecycle();
   // Flush and tear down debug tracing last so late spans are written. No-op

@@ -32,6 +32,7 @@ import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
 import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
 import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
+import { registerKeepAwakeOpenApi } from './keep-awake/keep-awake-openapi.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -643,6 +644,7 @@ registerConnectorEventOpenApi(registry);
 registerSessionContinueOpenApi(registry);
 registerProjectsOpenApi(registry);
 registerAccountEligibilityOpenApi(registry);
+registerKeepAwakeOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has

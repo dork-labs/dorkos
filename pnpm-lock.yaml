@@ -810,6 +810,9 @@ importers:
       '@dorkos/marketplace':
         specifier: workspace:*
         version: link:../../packages/marketplace
+      '@dorkos/keep-awake':
+        specifier: workspace:*
+        version: link:../../packages/keep-awake
       '@dorkos/memory':
         specifier: workspace:*
         version: link:../../packages/memory
@@ -1614,6 +1617,21 @@ importers:
       react:
         specifier: ^19.3.0
         version: 19.3.0
+
+  packages/keep-awake:
+    devDependencies:
+      '@dorkos/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@dorkos/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^24
+        version: 24.13.5
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.5)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@7.3.6(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/marketplace:
     dependencies:

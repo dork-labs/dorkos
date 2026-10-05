@@ -264,6 +264,13 @@ vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => {
   };
 });
 
+// The keep-awake status sync (spec `keep-awake`) subscribes to the event stream
+// too; no-op it like the other syncs.
+vi.mock('@/layers/entities/keep-awake', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/keep-awake')>()),
+  useKeepAwakeSync: () => {},
+}));
+
 vi.mock('@/layers/entities/tasks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/tasks')>();
   return {

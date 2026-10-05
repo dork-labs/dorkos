@@ -391,6 +391,14 @@ export const CONFIG_WRITE_POLICY = {
   'scheduler.maxConcurrentRuns': 'operator-only',
   'scheduler.retentionCount': 'agent-writable',
 
+  // Whether this computer may idle-sleep, and whether it may be woken to run a
+  // schedule (spec `keep-awake`). Whether a machine sleeps or powers itself up
+  // is the person's call: it spends their battery and, with the lid open on a
+  // desk, decides whether the computer is on while they are away. An agent
+  // asked to keep it awake can say where the switch is.
+  'keepAwake.whileAgentsWork': 'operator-only',
+  'keepAwake.wakeForScheduledTasks': 'operator-only',
+
   // Directories DorkOS would scan for agents. Nothing resolves this today (the
   // unified scanner does not read it), so it grants nothing right now. It is
   // operator-only pre-emptively: it is a directory-scope field, and classifying it
@@ -1128,6 +1136,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'uploads.allowedTypes',
       'runtimes.claudeCode.persistentSession',
       'scheduler.maxConcurrentRuns',
+      // Whether the computer stays awake for the work, and whether it is woken
+      // for it: battery, and whether the machine is on while nobody is there.
+      'keepAwake.whileAgentsWork',
+      'keepAwake.wakeForScheduledTasks',
       // How large a room's files may get, how much of its conventions file
       // rides every turn, and when an idle working copy is tidied away. Disk
       // and the bill, bounded by the person rather than by the agents filling

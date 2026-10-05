@@ -17,7 +17,9 @@
  *   the agent runs;
  * - `projects.<realpath cwd>.trust_level`: so Codex never writes the person's
  *   trust list (spike 2c);
- * - on credits, the provider pointing at the credits relay.
+ * - on credits, the provider pointing at the credits relay;
+ * - `features.prevent_idle_sleep` while keep-awake applies (spec `keep-awake`),
+ *   Codex's own sleep inhibitor as a second layer under DorkOS's hold.
  *
  * @module services/runtimes/codex/app-server/thread-loader
  */
@@ -66,6 +68,12 @@ export interface ThreadLoadInput {
   readonly tools: CodexTurnTools;
   /** The credits relay this process's provider points at (credits home only). */
   readonly creditsRelay?: { baseUrl: string; key: string };
+  /**
+   * Whether Codex's own sleep inhibitor rides the load config. Part of the
+   * fingerprint, so a toggle marks a process with loaded threads stale and it
+   * recycles once idle, exactly like any other config change.
+   */
+  readonly preventIdleSleep?: boolean;
 }
 
 /** A thread ready for a turn. */
@@ -554,7 +562,7 @@ function sandboxFor(settings: SessionSettings): SandboxMode {
  * @param secrets - The thread key, the trust verdict and the cwd's realpath.
  */
 export function buildLoadOverrides(
-  input: Pick<ThreadLoadInput, 'cwd' | 'settings' | 'tools' | 'creditsRelay'>,
+  input: Pick<ThreadLoadInput, 'cwd' | 'settings' | 'tools' | 'creditsRelay' | 'preventIdleSleep'>,
   secrets: {
     threadKey: string | undefined;
     trust: 'trusted' | 'untrusted' | undefined;
@@ -591,6 +599,7 @@ export function buildLoadOverrides(
   if (input.creditsRelay) {
     Object.assign(config, codexCreditsThreadConfig(input.creditsRelay));
   }
+  if (input.preventIdleSleep) config.features = { prevent_idle_sleep: true };
   return {
     cwd: input.cwd,
     ...(input.settings.model !== undefined ? { model: input.settings.model } : {}),

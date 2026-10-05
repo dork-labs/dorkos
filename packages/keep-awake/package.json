@@ -1,0 +1,25 @@
+{
+  "name": "@dorkos/keep-awake",
+  "version": "0.0.0",
+  "description": "Keeps the computer from idle-sleeping while work is in flight: a reference-counted hold over one OS tool per platform (caffeinate, systemd-inhibit, SetThreadExecutionState), tied to the owning process so it can never outlive it.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/node": "^24",
+    "vitest": "^4.1.10"
+  }
+}

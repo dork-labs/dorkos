@@ -336,6 +336,12 @@ export const GENERIC_EVENTS = [
   // the installed, dev link and extension lists. ADDRESSED like
   // `config_changed`: it names folders, so no agent receives it.
   'marketplace_dev_link_reloaded',
+  // Whether DorkOS is keeping this computer awake, and for what (spec
+  // `keep-awake`): the whole status, pushed on every change, coalesced to at
+  // most two a second. `useKeepAwakeSync` (entities/keep-awake) writes it
+  // straight into the query cache the top-bar cup and Settings read. Counts
+  // only; nothing in it names a session.
+  'keep_awake_status',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

@@ -498,6 +498,13 @@ vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => {
   };
 });
 
+// The keep-awake status sync (spec `keep-awake`) subscribes to the event stream
+// too; no-op it like the other syncs.
+vi.mock('@/layers/entities/keep-awake', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/keep-awake')>()),
+  useKeepAwakeSync: () => {},
+}));
+
 // The Tasks list is kept live off the same stream (DOR-1380) via useTasksSync,
 // mounted alongside the other *Sync hooks above.
 vi.mock('@/layers/entities/tasks', async (importOriginal) => {

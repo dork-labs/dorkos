@@ -387,6 +387,15 @@ export default defineConfig({
         find: /^@dorkos\/memory$/,
         replacement: fileURLToPath(new URL('../../packages/memory/src/index.ts', import.meta.url)),
       },
+      {
+        // The keep-awake engine, at SOURCE for the same reason: the server's
+        // tests drive the real reference count through the registry wrapper,
+        // and a stale dist would test yesterday's count. Exact, like memory.
+        find: /^@dorkos\/keep-awake$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/keep-awake/src/index.ts', import.meta.url)
+        ),
+      },
     ],
   },
   test: {
