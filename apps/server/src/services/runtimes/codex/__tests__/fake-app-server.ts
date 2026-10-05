@@ -14,7 +14,7 @@
  * - **Loaded config is immutable.** `thread/resume` on a thread already loaded
  *   in this process answers success and IGNORES the new `config` (spike 1b);
  *   only a cold load in a new process applies it. And a thread with no turn yet
- *   has no rollout, so a cold resume of it answers `no rollout found`.
+ *   has no rollout, so a cold resume or a fork of it answers `no rollout found`.
  *
  * A {@link FakeCodexHome} is the disk: threads and rollouts outlive one
  * process, the way `$CODEX_HOME/sessions` does. Each spawned
@@ -368,6 +368,10 @@ export class FakeAppServer extends EventEmitter {
   private threadFork(id: number | string, params: Record<string, unknown>): void {
     const source = this.home.threads.get(params.threadId as string);
     if (!source) return this.fail(id, `thread not found: ${String(params.threadId)}`);
+    // Like the binary: a thread that never ran a turn has no rollout to fork.
+    if (!source.hasRollout) {
+      return this.fail(id, `no rollout found for thread id ${String(params.threadId)}`);
+    }
     // A fork is a new thread, loaded with the config it was given, carrying
     // the source's history (so it is resumable at once).
     const threadId = randomUUID();

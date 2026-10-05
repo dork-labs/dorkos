@@ -558,6 +558,76 @@ describe('re-review fixes', () => {
     expect(h.bindings.at(-1)).toMatchObject({ replaces: bound });
   });
 
+  it('starts a fresh thread when the thread to reload never ran a turn (no rollout to fork)', async () => {
+    const h = harness();
+    // A thread loads, then the turn is stopped before `turn/start`: loaded, unbound, no rollout.
+    const stopped = new AbortController();
+    stopped.abort();
+    await h.run(
+      h.request({ sessionId: 's1', tools: withManaged('Bearer old'), signal: stopped.signal })
+    );
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    const first = fake.requestsOf('thread/start').length;
+    const events = await h.run(h.request({ sessionId: 's1', tools: withManaged('Bearer fresh') }));
+    expect(texts(events)).toBe('pong');
+    expect(fake.requestsOf('thread/start')).toHaveLength(first + 1);
+    expect(JSON.stringify(fake.requestsOf('thread/start').at(-1)!.config)).toContain(
+      'Bearer fresh'
+    );
+    // One stuck first turn must not recycle every chat in the home.
+    expect(h.pool.list()[0]!.stale).toBe(false);
+    expect(h.bindings.at(-1)).toEqual({ sessionId: 's1', threadId: expect.any(String) });
+  });
+
+  it('tries to stop a lingering turn before reloading its thread for fresh credentials', async () => {
+    const h = harness({ stopAckMs: 60 });
+    h.host.home(PERSON_HOME).nextTurn(hangingTurn);
+    const gen = h.transport.runTurn(
+      h.request({ sessionId: 's1', tools: withManaged('Bearer old') })
+    );
+    await until(gen, 'text_delta');
+    await h.transport.interrupt('s1');
+    await rest(gen);
+    const bound = h.bindings[0]!.threadId;
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    const before = fake.received.length;
+    const next = await h.run(
+      h.request({ sessionId: 's1', boundThreadId: bound, tools: withManaged('Bearer fresh') })
+    );
+    expect(texts(next)).toBe('pong');
+    const methods = fake.received.slice(before).map((message) => message.method);
+    expect(methods.indexOf('turn/interrupt')).toBeGreaterThanOrEqual(0);
+    expect(methods.indexOf('turn/interrupt')).toBeLessThan(methods.indexOf('thread/fork'));
+  });
+
+  it('resumes the old thread cold after a restart in the window before a fork binds', async () => {
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1', tools: withManaged('Bearer old') }));
+    const bound = h.bindings[0]!.threadId;
+    // The fork's first turn never starts: the database still names the old thread.
+    h.host.home(PERSON_HOME).processes[0]!.exitOnTurnStart = true;
+    await h.run(
+      h.request({ sessionId: 's1', boundThreadId: bound, tools: withManaged('Bearer fresh') })
+    );
+    expect(h.bindings).toHaveLength(1);
+    // A restart: a new transport and pool on the same home.
+    const restarted = harness();
+    (restarted.host as unknown as { homes: unknown }).homes = (
+      h.host as unknown as { homes: unknown }
+    ).homes;
+    const events = await restarted.run(
+      restarted.request({
+        sessionId: 's1',
+        boundThreadId: bound,
+        tools: withManaged('Bearer fresh'),
+      })
+    );
+    expect(texts(events)).toBe('pong');
+    const resumed = restarted.host.home(PERSON_HOME).processes.at(-1)!.requestsOf('thread/resume');
+    expect(resumed[0]).toMatchObject({ threadId: bound });
+    expect(JSON.stringify(resumed[0]!.config)).toContain('Bearer fresh');
+  });
+
   it('forgets a lingering turn when Codex unloads its thread, and stops watching its process (N3, N4)', async () => {
     const h = harness({ stopAckMs: 60 });
     h.host.home(PERSON_HOME).nextTurn(hangingTurn);

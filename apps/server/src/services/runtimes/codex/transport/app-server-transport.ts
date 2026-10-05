@@ -41,7 +41,11 @@ import {
   codexAppServerPool,
   type CodexAppServerProcess,
 } from '../app-server/process-pool.js';
-import { CodexThreadLoader, type LoadedThread } from '../app-server/thread-loader.js';
+import {
+  CodexThreadLoader,
+  type LoadedThread,
+  type ThreadLoadInput,
+} from '../app-server/thread-loader.js';
 import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
@@ -160,11 +164,15 @@ export class AppServerCodexTransport implements CodexTransport {
     let release: (() => void) | undefined;
     let loaded: LoadedThread;
     let relay: { baseUrl: string; key: string } | undefined;
+    let loadInput: ThreadLoadInput;
+    // Whether the thread this turn runs on has no turn of DorkOS's still
+    // winding down in Codex.
+    let clear: boolean;
     try {
       process = await this.acquire(request.binary, onCredits);
       release = process.hold();
       relay = onCredits ? this.relayFor(process) : undefined;
-      loaded = await this.loader.ensureLoaded({
+      loadInput = {
         process,
         home: onCredits ? 'credits' : 'person',
         sessionId,
@@ -173,32 +181,29 @@ export class AppServerCodexTransport implements CodexTransport {
         settings: request.settings,
         tools: request.tools,
         ...(relay ? { creditsRelay: relay } : {}),
-      });
+      };
+      // Stop a turn DorkOS gave up on BEFORE loading: the load may fork this
+      // thread away (refreshed credentials), and a turn left running on the
+      // old one would keep going, and keep billing on credits, unseen.
+      const current = this.loader.loadedThreadFor(loadInput);
+      clear = current === undefined || (await this.settleLingering(process, current));
+      loaded = await this.loader.ensureLoaded(loadInput);
+      if (loaded.threadId !== current) clear = await this.settleLingering(process, loaded.threadId);
     } catch (err) {
       release?.();
       yield* this.failedSetup(sessionId, err);
       return;
     }
+    if (loaded.retired !== undefined) this.retire(process, loaded.retired);
 
-    if (!(await this.settleLingering(process, loaded.threadId))) {
+    if (!clear) {
       const lingering = this.lingering.get(loaded.threadId);
       if (lingering && ++lingering.refusals >= LINGERING_REFUSAL_LIMIT) {
         // Codex will not stop that turn. Reload just this thread (a fork,
         // with the conversation) rather than block the session indefinitely.
         try {
-          loaded = await this.loader.reload(
-            {
-              process,
-              home: onCredits ? 'credits' : 'person',
-              sessionId,
-              boundThreadId: request.boundThreadId,
-              cwd: request.cwd,
-              settings: request.settings,
-              tools: request.tools,
-              ...(relay ? { creditsRelay: relay } : {}),
-            },
-            loaded.threadId
-          );
+          loaded = await this.loader.reload(loadInput, loaded.threadId);
+          if (loaded.retired !== undefined) this.retire(process, loaded.retired);
         } catch (err) {
           logger.warn('[CodexAppServer] could not reload a thread stuck stopping', {
             sessionId,
@@ -207,7 +212,6 @@ export class AppServerCodexTransport implements CodexTransport {
         }
       }
     }
-    if (loaded.retired !== undefined) this.retire(process, loaded.retired);
     if (this.lingering.has(loaded.threadId)) {
       release();
       yield {
@@ -681,8 +685,19 @@ export class AppServerCodexTransport implements CodexTransport {
     this.lingering.delete(threadId);
   }
 
-  /** Stop routing a thread the loader reloaded as a fork. */
+  /**
+   * Stop routing a thread the loader reloaded as a fork. A turn DorkOS gave
+   * up on there is asked to stop once more on the way out: nothing will watch
+   * that thread again, and Codex otherwise runs the turn to its end (on a
+   * credits thread, billed until it does).
+   */
   private retire(process: CodexAppServerProcess, threadId: string): void {
+    const lingering = this.lingering.get(threadId);
+    if (lingering && lingering.process === process && process.isOpen) {
+      void process.client
+        .request('turn/interrupt', { threadId, turnId: lingering.turnId })
+        .catch(() => undefined);
+    }
     this.disposeChannel(process, threadId);
     this.clearLingering(threadId);
   }

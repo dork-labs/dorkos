@@ -389,3 +389,10 @@ capability, and `auto` still resolves to exec. Stop on app-server answers `acked
 winds the turn down within 3 s and `unconfirmed` when it does not — never a killed process,
 which would end every other Codex chat in that home. The mode table with real approvals arrives
 in P2.
+
+**A stop Codex never confirms.** When DorkOS gives up waiting (`unconfirmed`), Codex's turn
+is still running: it runs to its own end, and on a credits thread it keeps billing until it
+does. DorkOS asks it to stop again before the next turn on that thread, again before reloading
+the thread for fresh credentials, and once more when it forks away from a thread whose turn
+will not stop. None of those can force it; only the process ending does, and that would end
+every other chat in the home.
