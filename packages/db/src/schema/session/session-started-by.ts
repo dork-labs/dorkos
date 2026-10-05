@@ -41,6 +41,28 @@ export const sessionStartedBy = sqliteTable(
      * the hourly limit.
      */
     carried: integer('carried', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * The permission mode a `kind = 'chat'` start was granted, on its own
+     * runtime (spec `inherited-start-permission`). NULL for an extension's start
+     * and for rows written before the level was recorded. The record of the
+     * start, not the chat's mode now: the chat's own mode can change later, and
+     * lowering the starter later changes nothing here.
+     */
+    permissionMode: text('permission_mode'),
+    /**
+     * The starting chat's live mode at the moment of the start — the ceiling the
+     * grant was checked against. NULL with no starting chat, for an extension's
+     * start, and for rows written before the level was recorded.
+     */
+    starterPermissionMode: text('starter_permission_mode'),
+    /**
+     * Whether the grant sat at the starting chat's level exactly, as the two
+     * runtimes' declared levels compare — not as their ids do: `acceptEdits`
+     * and `auto` are one level, and Claude's and Codex's `default` are not.
+     * Decided when the start is checked, because that is the one moment both
+     * runtimes' declarations are in hand. NULL where the levels are.
+     */
+    permissionSameAsStarter: integer('permission_same_as_starter', { mode: 'boolean' }),
     /** When it was started (ISO 8601). */
     createdAt: text('created_at').notNull(),
   },

@@ -45,6 +45,22 @@ export interface McpToolSession {
    * never strands a call on the stale request UUID.
    */
   sdkSessionId?: string;
+  /**
+   * The mode the session's turn runs under RIGHT NOW: the live object's field,
+   * which a scheduled run, a room turn, a person lowering it and a live PATCH
+   * all write. `session_start` reads it as the ceiling of the chats this one may
+   * start, so it must be read at CALL time, never copied when the tools are
+   * built — a copy would let a chat lowered mid-turn start chats at its old level.
+   */
+  permissionMode?: string;
+  /** The session's model, read at call time beside {@link permissionMode}. */
+  model?: string;
+  /**
+   * The model Auto was confirmed for at the last launch (`AgentSession`'s field
+   * of the same name). `permissionMode` can say `'auto'` while the turn runs at
+   * `'default'`; this is how a reader tells the two apart. Read at call time.
+   */
+  autoModeConfirmedFor?: string;
 }
 
 /**
