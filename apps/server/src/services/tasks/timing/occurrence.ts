@@ -118,8 +118,20 @@ function latestBoundaryAtOrBefore(
   firedAt: Date
 ): Date {
   const ref = new Date(Math.floor(firedAt.getTime() / 1000) * 1000 + 1000);
-  const [previous] = job.previousRuns(1, ref);
   const due = expected && expected.getTime() <= firedAt.getTime() ? expected : null;
+  let previous: Date | undefined;
+  try {
+    [previous] = job.previousRuns(1, ref);
+  } catch {
+    // croner 10.0.1's backward walk throws a TypeError from inside
+    // `recurseBackward` for a reference outside the months a day-of-month
+    // pattern can match: `0 0 29 2 *` or `0 0 L 2 *` asked from March, or any
+    // pattern that never comes round (`0 0 31 2 *`). A leap-day task on a
+    // computer asleep past March 1 fires exactly there. Losing the run's record
+    // to a croner quirk is worse than keying it on the occurrence croner was
+    // waiting for, which is what the guards below fall back to anyway.
+    previous = undefined;
+  }
   if (!previous || previous.getTime() > firedAt.getTime()) return due ?? firedAt;
   return due && due.getTime() > previous.getTime() ? due : previous;
 }

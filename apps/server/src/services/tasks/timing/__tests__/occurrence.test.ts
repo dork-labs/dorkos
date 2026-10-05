@@ -149,6 +149,22 @@ describe('resolveOccurrence', () => {
     });
   });
 
+  it('falls back to the awaited occurrence where croner cannot walk backwards', () => {
+    // croner 10.0.1's `previousRuns` throws from inside its backward walk for a
+    // reference outside the months a day-of-month pattern can match. A leap-day
+    // task on a computer asleep from Feb 29 to Mar 1 fires exactly there; the
+    // fire must still resolve (to a skipped record), never throw out of dispatch.
+    const job = evaluator('0 0 29 2 *');
+    const boundary = at('2028-02-29T00:00:00Z');
+    const firedAt = at('2028-03-01T00:00:00.005Z');
+    expect(() => job.previousRuns(1, at('2028-03-01T00:00:01Z'))).toThrow(TypeError);
+
+    const occurrence = resolveOccurrence(job, boundary, firedAt);
+    expect(occurrence.intendedFor.getTime()).toBe(boundary.getTime());
+    expect(occurrence.stale).toBe(true);
+    expect(occurrence.missed).toBe(0);
+  });
+
   describe('missed ticks', () => {
     it('counts the occurrences between the one croner waited for and the one that fired', () => {
       // Asleep from before 09:00 until 12:12: 09:00, 10:00 and 11:00 never

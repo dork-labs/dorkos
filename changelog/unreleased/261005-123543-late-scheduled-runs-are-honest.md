@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(tasks): late scheduled runs say so, and very late ones are skipped (DOR-2718)'
+  - 'fix(tasks): a late fire croner cannot walk back from still resolves (DOR-2718)'
 ---
 
 ### Changed
