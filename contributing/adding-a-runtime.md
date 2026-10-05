@@ -8,27 +8,28 @@ Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-co
 
 ## Key Files
 
-| Concept                             | Location                                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
-| The contract                        | `packages/shared/src/agent-runtime.ts` (`AgentRuntime`, `RuntimeCapabilities`, `DependencyCheck`) |
-| StreamEvent vocabulary              | `packages/shared/src/schemas.ts` (`StreamEventSchema`, `StreamEventTypeSchema`)                   |
-| Conformance suite                   | `packages/test-utils/src/runtime-conformance.ts` (`runtimeConformance`, `RuntimeConformanceOpts`) |
-| Worked example: per-turn subprocess | `apps/server/src/services/runtimes/codex/`                                                        |
-| Worked example: managed sidecar     | `apps/server/src/services/runtimes/opencode/`                                                     |
-| Reference stateless implementation  | `apps/server/src/services/runtimes/test-mode/`                                                    |
-| Runtime registry (composition)      | `apps/server/src/services/core/runtime-registry.ts` (`runtimeRegistry`)                           |
-| Composition root registration       | `apps/server/src/index.ts` (registration blocks + `shutdownServices()`)                           |
-| SDK confinement (ESLint)            | `apps/server/eslint.config.js`                                                                    |
-| Config schema                       | `packages/shared/src/config-schema.ts` (`runtimes` block)                                         |
-| Config migrations                   | `apps/server/src/services/core/config-manager.ts` (`CONFIG_MIGRATIONS`)                           |
-| Shared session infrastructure       | `apps/server/src/services/session/` (lock manager, EventLog, projector, aggregation)              |
-| Status-line label bound             | `packages/shared/src/constants.ts` (`STATUS_VALUE_MAX_CHARS`)                                     |
-| Status-line compaction              | `apps/client/src/layers/features/status/lib/status-labels.ts`                                     |
-| Client visual identity              | `apps/client/src/layers/entities/runtime/config/runtime-descriptors.ts`                           |
-| Adapter icons                       | `packages/icons/src/adapter-logos.tsx`                                                            |
-| Needs-setup UX                      | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                               |
-| Runtime enum (mesh/discovery)       | `packages/shared/src/mesh-schemas.ts` (`AgentRuntimeSchema`)                                      |
-| Connections turn lease              | `apps/server/src/services/runtimes/connectors/connector-turn-lease-supervisor.ts`                 |
+| Concept                             | Location                                                                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| The contract                        | `packages/shared/src/agent-runtime.ts` (`AgentRuntime`, `RuntimeCapabilities`, `DependencyCheck`)                      |
+| StreamEvent vocabulary              | `packages/shared/src/schemas.ts` (`StreamEventSchema`, `StreamEventTypeSchema`)                                        |
+| Conformance suite                   | `packages/test-utils/src/runtime-conformance.ts` (`runtimeConformance`, `RuntimeConformanceOpts`)                      |
+| Capabilities matrix                 | `packages/test-utils/src/runtime-capability-matrix.ts`, rendered to [runtime-capabilities.md](runtime-capabilities.md) |
+| Worked example: per-turn subprocess | `apps/server/src/services/runtimes/codex/`                                                                             |
+| Worked example: managed sidecar     | `apps/server/src/services/runtimes/opencode/`                                                                          |
+| Reference stateless implementation  | `apps/server/src/services/runtimes/test-mode/`                                                                         |
+| Runtime registry (composition)      | `apps/server/src/services/core/runtime-registry.ts` (`runtimeRegistry`)                                                |
+| Composition root registration       | `apps/server/src/index.ts` (registration blocks + `shutdownServices()`)                                                |
+| SDK confinement (ESLint)            | `apps/server/eslint.config.js`                                                                                         |
+| Config schema                       | `packages/shared/src/config-schema.ts` (`runtimes` block)                                                              |
+| Config migrations                   | `apps/server/src/services/core/config-manager.ts` (`CONFIG_MIGRATIONS`)                                                |
+| Shared session infrastructure       | `apps/server/src/services/session/` (lock manager, EventLog, projector, aggregation)                                   |
+| Status-line label bound             | `packages/shared/src/constants.ts` (`STATUS_VALUE_MAX_CHARS`)                                                          |
+| Status-line compaction              | `apps/client/src/layers/features/status/lib/status-labels.ts`                                                          |
+| Client visual identity              | `apps/client/src/layers/entities/runtime/config/runtime-descriptors.ts`                                                |
+| Adapter icons                       | `packages/icons/src/adapter-logos.tsx`                                                                                 |
+| Needs-setup UX                      | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                                                    |
+| Runtime enum (mesh/discovery)       | `packages/shared/src/mesh-schemas.ts` (`AgentRuntimeSchema`)                                                           |
+| Connections turn lease              | `apps/server/src/services/runtimes/connectors/connector-turn-lease-supervisor.ts`                                      |
 
 ## When to Use What
 
@@ -333,6 +334,7 @@ A pinned SDK version is a verified claim, so a bump re-verifies it. Checklist fo
 3. Diff the `.d.ts` of the `ThreadEvent` union and the 8 item types the event mapper imports against the pinned version.
 4. Recompile — the event mapper's exhaustiveness `never` checks must still compile, so a new union member fails the build instead of silently dropping events.
 5. Run the runtime conformance suites: `pnpm vitest run apps/server/src/services/runtimes/codex`.
+   Add the runtime as a column of the capabilities matrix (`packages/test-utils/src/runtime-capability-matrix.ts`): one cell per row saying what it does, why, and what proves it. Start every cell you have not proven as `unverified`, run `pnpm docs:runtime-capabilities`, and let `runtime-capability-census.test.ts` say what is left.
 6. Run one live smoke turn against a real `codex` binary: `DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/conformance.test.ts` (from `apps/server`).
 
 **The family, in full.** A runtime SDK is never one entry in one manifest. Every version below has to land on the same number in the same commit, or the packaged desktop app ships a bundled binary that does not match the SDK talking to it:

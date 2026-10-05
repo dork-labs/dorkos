@@ -915,7 +915,7 @@ describe('CodexRuntime', () => {
       );
     });
 
-    it('projects session model and effort into ThreadOptions', async () => {
+    it('RT-MOD-01: projects session model and effort into ThreadOptions', async () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();
       runtime.ensureSession(sessionId, {
