@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const SHARED_PROVIDER_CONTRACT = 'packages/shared/src/connector-provider.ts';
+const SHARED_PROVIDER_CONTRACT = 'packages/connector-providers/src/connector-provider.ts';
 const ORDINARY_CONNECTOR_ROOT = 'apps/server/src/services/connectors/';
 const PUBLIC_CONNECTION_ID_FILES = [
   'apps/server/src/services/connectors/attachment-store.ts',

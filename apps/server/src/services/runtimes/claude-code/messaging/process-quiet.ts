@@ -78,6 +78,13 @@ export interface ProcessQuietOptions {
    * owed-delivery clock expiring. Throws are logged and swallowed.
    */
   onGateChange: () => void;
+  /**
+   * This process started or stopped holding background work: a live helper,
+   * shell, Monitor or other task, or a delivery still owed (DOR-2065). Fired
+   * only on the flip, never per frame, so its consumer can afford a file write.
+   * Throws are logged and swallowed.
+   */
+  onHoldingWorkChange?: (holding: boolean) => void;
   /** Override the owed-delivery wait. Tests only. */
   owedDeliveryTimeoutMs?: number;
 }
@@ -116,6 +123,11 @@ export class ProcessQuiet {
    * reality instead of being assumed.
    */
   private owedExpiredAt: number | undefined;
+  /**
+   * Whether this process was holding background work at the last look — the
+   * state {@link ProcessQuietOptions.onHoldingWorkChange} reports flips of.
+   */
+  private holdingWork = false;
 
   /**
    * Build a tracker for one process.
@@ -155,6 +167,7 @@ export class ProcessQuiet {
     // Every frame is also a chance to notice the busy spell has ended, so the
     // sixty seconds of quiet do not wait on a consumer happening to ask.
     this.noteBusySpell(this.blockingReason(this.opts.liveness().liveTaskCounts()) === undefined);
+    this.noteHoldingWork();
     return change;
   }
 
@@ -206,6 +219,23 @@ export class ProcessQuiet {
   }
 
   /**
+   * Is a background shell the ONLY thing this process is doing (DOR-2065)?
+   *
+   * No turn open, no helper or other task, nothing owed, nobody waited on —
+   * just one or more shells. Such a process may be given up where a working
+   * one may not: a shell can run for ever (a dev server, a `tail -f`), and
+   * when its process goes the CLI's own "stopped" notice tells the agent on
+   * its next turn. Helpers and Monitors are never given up this way.
+   */
+  isHoldingOnlyShells(): boolean {
+    if (this.opts.isTurnOpen() || this.opts.hasRuntimeTurnOpen()) return false;
+    if (this.opts.hasPendingInteraction()) return false;
+    if (this.opts.liveness().owedCount() > 0) return false;
+    const counts = this.opts.liveness().liveTaskCounts();
+    return counts.shells > 0 && counts.agents === 0 && counts.other === 0;
+  }
+
+  /**
    * Is a helper agent still working on this process (DOR-2681)?
    *
    * What the stall watchdog asks before it calls a silent turn stalled: a
@@ -247,6 +277,9 @@ export class ProcessQuiet {
     this.segmentRunning = false;
     this.owedExpiredAt = undefined;
     this.lastFrame = now;
+    // The tracker this reads was replaced with the process, so a hold the old
+    // one reported is released here rather than left standing.
+    this.noteHoldingWork();
   }
 
   /** Stop the owed-delivery clock, because the process it belonged to is going. */
@@ -274,6 +307,7 @@ export class ProcessQuiet {
     if (count <= 0) return;
     const cleared = this.opts.liveness().clearOldestOwed(count);
     if (cleared.length === 0) return;
+    this.noteHoldingWork();
     logger.info('[SessionPump] a delivery was folded into a turn the CLI answered', {
       sessionId: this.opts.sessionId,
       tasks: cleared,
@@ -295,13 +329,40 @@ export class ProcessQuiet {
   private blockingReason(counts: LiveTaskCounts): QuietnessBlocker | undefined {
     if (this.opts.isTurnOpen()) return 'turn-open';
     if (this.opts.hasRuntimeTurnOpen()) return 'runtime-turn-open';
-    // Shells are deliberately absent: the CLI kills them shortly after stdin
-    // ends and always has, so holding a whole process open for one would be a
-    // new promise this spec explicitly declines to make (Non-Goals).
-    if (counts.agents + counts.other > 0) return 'background-work';
+    // Shells count too (DOR-2065). A warm process never closes stdin, so its
+    // shells live on, and when one finishes the CLI wakes the model with the
+    // result, exactly as the bare CLI does. Taking the process back kills the
+    // shell and that wake with it: a chat that ended its turn to wait on a PR
+    // watcher was never heard from again. The spec's Non-Goal reasoned from the
+    // resume path, where stdin does close and the CLI ends its shells itself.
+    if (counts.agents + counts.other + counts.shells > 0) return 'background-work';
     if (this.opts.liveness().owedCount() > 0) return 'delivery-owed';
     if (this.opts.hasPendingInteraction()) return 'waiting-on-person';
     return undefined;
+  }
+
+  /**
+   * Report a flip in whether this process holds background work (DOR-2065).
+   *
+   * Narrower than {@link blockingReason} on purpose: an open turn or a person
+   * being waited on is not work that dies unheard with the process. A turn
+   * being open does not hide work either — a shell started mid-turn is held
+   * from the moment it starts.
+   */
+  private noteHoldingWork(): void {
+    const counts = this.opts.liveness().liveTaskCounts();
+    const holding =
+      counts.agents + counts.other + counts.shells > 0 || this.opts.liveness().owedCount() > 0;
+    if (holding === this.holdingWork) return;
+    this.holdingWork = holding;
+    try {
+      this.opts.onHoldingWorkChange?.(holding);
+    } catch (err) {
+      logger.warn('[SessionPump] a background-work observer threw', {
+        sessionId: this.opts.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -386,6 +447,7 @@ export class ProcessQuiet {
     this.owedTimer = undefined;
     const abandoned = this.opts.liveness().expireOwed();
     if (abandoned.length === 0) return;
+    this.noteHoldingWork();
     this.owedExpiredAt = Date.now();
     logger.info('[SessionPump] an owed delivery never arrived; releasing the queue', {
       sessionId: this.opts.sessionId,

@@ -582,6 +582,7 @@ export async function* executeSdkQuery(
       // conversation onto whichever account happens to be active. The account is
       // a fact about the conversation, not about whether it has started.
       session.hasStarted = false;
+      session.mintsFreshSdkSessionId = true;
       retriedViaRecursion = true;
       yield* executeSdkQuery(sessionId, content, session, opts, messageOpts, retryDepth + 1);
       return;

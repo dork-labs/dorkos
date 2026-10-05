@@ -8,7 +8,7 @@ import {
   ComposioManagedAccountError,
   ComposioAuthenticationSetupError,
   type ComposioManagedAccountClient,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 import {
   ManagedConnectorAuthenticationCreateRequestSchema,
   ManagedConnectorAuthenticationStateSchema,

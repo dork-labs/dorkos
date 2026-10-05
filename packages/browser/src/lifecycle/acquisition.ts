@@ -308,7 +308,7 @@ export async function acquireBrowser(
           viewport: { width: 1280, height: 720 },
           timeout: 10_000,
           proxy: { server: record.proxy!.url, bypass: '<-loopback>' },
-          args: ['--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],
+          args: ['--disable-quic', '--webrtc-ip-handling-policy=disable_non_proxied_udp'],
         },
       ]) as ReturnType<typeof launch>;
     },
@@ -334,7 +334,7 @@ export async function acquireBrowser(
       record.lifetime.uncertain = true;
       return;
     }
-    const tab = trackPage(record, page, config.network.origin, diagnosticNow);
+    const tab = trackPage(record, page, config.network.origin, diagnosticNow, context);
     if (ordinaryRecord(record) && record.status === 'running' && !record.lifetime.gate.stopped) {
       try {
         composeInput(config, record, tab);

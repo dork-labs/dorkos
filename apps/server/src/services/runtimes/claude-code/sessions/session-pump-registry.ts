@@ -268,7 +268,9 @@ export class SessionPumpRegistry {
     // timer with it; and a pump torn down while its entry was still here would
     // report the state change into an entry about to be discarded anyway.
     for (const entry of entries) this.drop(entry.pump.sessionId);
-    const results = await Promise.allSettled(entries.map((entry) => entry.pump.teardown()));
+    const results = await Promise.allSettled(
+      entries.map((entry) => entry.pump.teardown('shutdown'))
+    );
     for (const result of results) {
       if (result.status === 'rejected') {
         logger.warn('[SessionPumpRegistry] a pump failed to tear down', {
@@ -471,6 +473,21 @@ export class SessionPumpRegistry {
         logger.info('[SessionPumpRegistry] reclaimed a warm slot', { reaped: sessionId, asking });
         return true;
       }
+    }
+    // The last resort (DOR-2065): a process whose only work is a background
+    // shell. A shell can run for ever (a dev server, a `tail -f`), so twelve of
+    // them must not lock every other chat out. Never a helper, a Monitor or an
+    // owed delivery — those still refuse. No wake follows: the CLI's own
+    // "stopped" notice reaches the agent on its next turn.
+    for (const sessionId of this.slots.leastRecentFirst(candidates)) {
+      const entry = this.entries.get(sessionId);
+      if (entry === undefined || !(await entry.pump.reapShellsOnly())) continue;
+      this.drop(sessionId);
+      logger.info('[SessionPumpRegistry] reclaimed a warm slot from a background shell', {
+        reaped: sessionId,
+        asking,
+      });
+      return true;
     }
     return false;
   }

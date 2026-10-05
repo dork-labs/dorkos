@@ -49,7 +49,7 @@ import {
   ComposioSdkClient,
   ComposioEventClient,
   type ComposioOperationClient,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 import type { CredentialProvider } from '../../core/credential-provider.js';
 import {
   ComposioApiError,

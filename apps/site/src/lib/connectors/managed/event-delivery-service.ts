@@ -1,7 +1,7 @@
 /** Authenticated exact-instance event handoff and bounded hosted content maintenance. */
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
-import { ConnectorEventPayloadProtector } from '@dorkos/connector-providers';
+import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import { MANAGED_CONNECTOR_EVENTS_PERMISSIONS } from '@dorkos/shared/connector-managed-schemas';
 import {
   CONNECTOR_EVENT_BATCH_LIMIT,

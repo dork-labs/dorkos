@@ -115,6 +115,7 @@ describe('private browser package boundaries', () => {
       'lifecycle-negative.fixture.test.ts',
       'lifecycle.fixture.test.ts',
       'private-proxy-auth.fixture.test.ts',
+      'retained-stores.fixture.test.ts',
       'supervisor-crash-recovery.fixture.test.ts',
     ]);
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
@@ -333,6 +334,8 @@ describe('private browser package boundaries', () => {
             'lifecycle/ownership.ts',
             'lifecycle/acquisition.ts',
             'tabs/registry.ts',
+            // Public Page/context types pin original popup viewport and navigation ownership.
+            'tabs/popup-navigation.ts',
             'input/page-transport.ts',
             'input/engine-input.ts',
           ],

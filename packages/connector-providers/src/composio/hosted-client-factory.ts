@@ -8,7 +8,7 @@
  * @module connector-providers/composio/hosted-client-factory
  */
 import { createHash } from 'node:crypto';
-import { stableStringify } from '@dorkos/shared/capabilities';
+import { stableStringify } from '../stable-stringify.js';
 
 import { ComposioManagedAccountClient } from './managed-account-client.js';
 import { ComposioSdkClient } from './sdk-client.js';

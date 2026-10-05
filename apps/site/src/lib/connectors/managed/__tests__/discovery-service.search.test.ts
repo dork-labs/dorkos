@@ -1,7 +1,7 @@
 /** @vitest-environment node */
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { ComposioSdkClient } from '@dorkos/connector-providers/composio';
+import { ComposioSdkClient } from '@dork-labs/connector-providers/composio';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ManagedConnectorConfig } from '../config';

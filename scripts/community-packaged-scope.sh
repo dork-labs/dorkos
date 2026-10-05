@@ -46,6 +46,8 @@
 #                                        (community-mirrors.ts backs the
 #                                        proof's offline step)
 #   packages/cloud-api/                  built inside the image before shared
+#   packages/connector-providers/        built inside the image before shared,
+#                                        which re-exports its connector schemas
 #   packages/cli/scripts/build.ts        how the packaged `dorkos` is bundled
 #   pnpm-lock.yaml, pnpm-workspace.yaml  the image's install and the
 #                                        `deploy --prod` of the Community
@@ -95,6 +97,7 @@ SCOPE_PATTERNS=(
   "^packages/shared/src/.*${communit}"
   '^packages/db/src/schema/communities/'
   '^packages/cloud-api/'
+  '^packages/connector-providers/'
   '^packages/cli/scripts/build\.ts$'
   '^pnpm-lock\.yaml$'
   '^pnpm-workspace\.yaml$'

@@ -116,6 +116,13 @@ export interface AgentSession {
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
   /**
+   * True when a failed resume restarts this session as new. Its id already
+   * names a transcript the resume could not load, so the SDK mints a fresh id
+   * rather than writing the new conversation into that file. Every other new
+   * session launches under the id DorkOS handed out (DOR-2712).
+   */
+  mintsFreshSdkSessionId?: boolean;
+  /**
    * True when nobody is watching this session — a run the SCHEDULER started on
    * its own timer.
    *
@@ -140,6 +147,12 @@ export interface AgentSession {
   unattendedTurn?: boolean;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
+  /**
+   * How many times a started session with no known account looked for its
+   * transcript and did not find it (DOR-2065). Bounds the retry, so a
+   * transcript that is never found is not looked for on every message.
+   */
+  accountRootProbeMisses?: number;
   /**
    * Wire `uuid` of the last MAIN-THREAD assistant message this session produced
    * (SDK `SDKAssistantMessage.uuid`; subagent messages are excluded). Used to

@@ -3,7 +3,7 @@
  *
  * @module lib/connectors/managed/discovery-service
  */
-import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
+import type { ComposioOperationClient } from '@dork-labs/connector-providers/composio';
 import {
   projectConnectorAuthentication,
   type ConnectorToolkit,

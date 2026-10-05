@@ -10,10 +10,11 @@ const packages = fileURLToPath(new URL('../../packages/', import.meta.url));
  * redaction mirror test runs the server's own room and search code against a real Community
  * server; CI's community job builds only the packages the Community itself needs, so these
  * resolve to their `types` entry, which in each is the TypeScript source.
+ * `@dork-labs/connector-providers` is not here: it is published with built types, and the
+ * job builds it before `@dorkos/shared`, which re-exports it.
  */
 const SERVER_SOURCE_PACKAGES = new Set([
   'a2a-gateway',
-  'connector-providers',
   'extension-api',
   'harness',
   'marketplace',

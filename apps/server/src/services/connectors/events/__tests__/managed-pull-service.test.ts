@@ -9,7 +9,7 @@ import {
   connections,
   connectorEventInbox,
 } from '@dorkos/db';
-import { ConnectorEventPayloadProtector } from '@dorkos/connector-providers';
+import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import type { ManagedConnectorEventPullResponse } from '@dorkos/shared/connector-event-schemas';
 import { ConnectorSubscriptionStore } from '../subscription-store.js';
 import { ConnectorEventIngressService } from '../ingress-service.js';

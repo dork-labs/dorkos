@@ -73,6 +73,7 @@ const LITERAL_NAME_ALLOWED = [
   'apps/desktop/electron-builder.yml',
   'apps/desktop/package.json',
   'apps/desktop/src/main/__tests__/about.test.ts',
+  'packages/connector-providers/LICENSE',
   'packages/shared/src/company.ts',
   'packages/ui/LICENSE',
 ];

@@ -1063,11 +1063,14 @@ registry.registerPath({
     'folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the ' +
     "room's files), or because the account the new session would run on may not work in " +
     "its folder's project (`account_not_allowed_here`, with `project` and `accountId`), " +
-    'and nothing was started. The `202` also carries the CANONICAL session id: for a ' +
-    'brand-new session this is the real id assigned during the turn (it differs from ' +
-    'the client-supplied id), so the client re-keys its URL and `/events` subscription ' +
-    'to it. To avoid missing the turn, a client should be subscribed to `/events` ' +
-    'before (or concurrently with) this POST.',
+    'and nothing was started. An id this server does not know is a `404 ' +
+    'SESSION_NOT_FOUND` and starts nothing, unless the body sends `create: true`, which ' +
+    'starts a new session under that id (and is harmless on one that exists). The `202` ' +
+    'also carries the CANONICAL session id. A new Claude Code session keeps the id it ' +
+    'was started under; a runtime that names its own sessions may answer with another, ' +
+    'and the client re-keys its URL and `/events` subscription to it. To avoid missing ' +
+    'the turn, a client should be subscribed to `/events` before (or concurrently with) ' +
+    'this POST.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -1089,6 +1092,12 @@ registry.registerPath({
       description:
         'The message names DorkOS credits (`account: "dorkos-credits"`) and the caller is not ' +
         'the owner of this DorkOS (`person_only`, `owner_only`); nothing started',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description:
+        'No session has this id and the body did not send `create: true` ' +
+        '(`SESSION_NOT_FOUND`); nothing started',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
