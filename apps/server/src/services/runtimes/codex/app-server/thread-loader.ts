@@ -348,11 +348,20 @@ export class CodexThreadLoader {
   ): Promise<ThreadLoadOverrides> {
     const sandbox = sandboxFor(input.settings);
     const recorded = input.home === 'person' ? await this.recordedTrust(input) : undefined;
-    return buildLoadOverrides(input, {
-      threadKey,
-      trust: trustLevelFor(input.home, sandbox, recorded),
-      realCwd: this.realpath(input.cwd),
-    });
+    // The identity token is minted here, when a thread actually loads, not on
+    // every turn: a loaded thread keeps the one it loaded with (spec §9).
+    const agentTokenEnv =
+      Object.keys(input.tools.agentTokenEnv).length === 0 && input.tools.mintAgentToken
+        ? await input.tools.mintAgentToken()
+        : input.tools.agentTokenEnv;
+    return buildLoadOverrides(
+      { ...input, tools: { ...input.tools, agentTokenEnv } },
+      {
+        threadKey,
+        trust: trustLevelFor(input.home, sandbox, recorded),
+        realCwd: this.realpath(input.cwd),
+      }
+    );
   }
 
   private async recordedTrust(input: ThreadLoadInput): Promise<string | undefined> {
@@ -368,20 +377,47 @@ export class CodexThreadLoader {
   }
 
   /**
-   * The load fingerprint: everything in the load params except secret
-   * VALUES. The thread key and identity token are replaced by placeholders
-   * (both are re-minted per load), and the trust verdict by the mode (it is
-   * derived from it), so a turn asking for the same thread compares equal.
+   * The load fingerprint: the shape of the load params with every secret and
+   * every header VALUE replaced by a placeholder, so it compares what a
+   * thread was loaded WITH rather than which credentials happened to be live.
+   *
+   * - The thread key, relay key and identity token are re-minted per load, so
+   *   their values would make every turn look different.
+   * - Managed MCP header values and stdio `env` values are left out on
+   *   purpose: a managed server's OAuth bearer is refreshed while a thread
+   *   stays loaded, and a refresh must not recycle every chat in the home. A
+   *   loaded thread keeps the headers it loaded with until its next cold load
+   *   (its process recycled when idle, or Codex's 30-minute unload), which is
+   *   when an edit to managed servers reaches it anyway (spec §9). A changed
+   *   server, URL, command or header NAME still marks the process stale.
+   * - The trust verdict is derived from the mode, which is already in it.
    */
   private fingerprintOf(input: ThreadLoadInput): string {
+    const placeholder = (record: Record<string, unknown>, value: string) =>
+      Object.fromEntries(Object.keys(record).map((name) => [name, value]));
+    const managedServers = Object.fromEntries(
+      Object.entries(input.tools.managed.servers).map(([name, entry]) => {
+        const server = entry as Record<string, unknown>;
+        return [
+          name,
+          server.env && typeof server.env === 'object'
+            ? { ...server, env: placeholder(server.env as Record<string, unknown>, '<env>') }
+            : server,
+        ];
+      })
+    );
+    const identity =
+      Object.keys(input.tools.agentTokenEnv).length > 0 || input.tools.mintAgentToken !== undefined;
     const shape = buildLoadOverrides(
       {
         ...input,
         tools: {
           ...input.tools,
-          agentTokenEnv: Object.fromEntries(
-            Object.keys(input.tools.agentTokenEnv).map((name) => [name, '<token>'])
-          ),
+          agentTokenEnv: identity ? { '<identity>': '<token>' } : {},
+          managed: {
+            servers: managedServers as CodexTurnTools['managed']['servers'],
+            env: placeholder(input.tools.managed.env, '<header>') as Record<string, string>,
+          },
         },
         ...(input.creditsRelay
           ? { creditsRelay: { ...input.creditsRelay, key: '<relay-key>' } }

@@ -252,3 +252,45 @@ describe('thread key lifecycle', () => {
     expect(loader.holdsSession('s1')).toBe(false);
   });
 });
+
+describe('review fixes: fingerprint and identity', () => {
+  const managedWith = (header: string, value: string): CodexTurnTools['managed'] => ({
+    servers: {
+      notion: { url: 'https://n.example/mcp', env_http_headers: { [header]: 'DORKOS_MCP_HDR_N' } },
+    },
+    env: { DORKOS_MCP_HDR_N: value },
+  });
+
+  it('does not recycle the home when only a managed header VALUE changed (an OAuth refresh)', async () => {
+    const { loader, input, process } = await setup();
+    const tools = (managed: CodexTurnTools['managed']) => ({ ...NO_TOOLS, managed });
+    const first = await loader.ensureLoaded(
+      input({ tools: tools(managedWith('Authorization', 'Bearer old')) })
+    );
+    await loader.ensureLoaded(
+      input({ tools: tools(managedWith('Authorization', 'Bearer refreshed')) })
+    );
+    expect(process.stale).toBe(false);
+    await loader.ensureLoaded(input({ tools: tools(managedWith('X-Other', 'Bearer refreshed')) }));
+    expect(process.stale).toBe(true);
+    expect(first.needsBinding).toBe(true);
+  });
+
+  it('mints the identity token only when a thread loads, never per turn', async () => {
+    const { loader, fake, input } = await setup();
+    let mints = 0;
+    const tools: CodexTurnTools = {
+      ...NO_TOOLS,
+      mintAgentToken: async () => ({ DORKOS_AGENT_TOKEN: `token-${++mints}` }),
+    };
+    await loader.ensureLoaded(input({ tools }));
+    await loader.ensureLoaded(input({ tools }));
+    await loader.ensureLoaded(input({ tools }));
+    expect(mints).toBe(1);
+    expect(
+      (fake.requestsOf('thread/start')[0]!.config as LoadConfig).shell_environment_policy
+    ).toEqual({
+      set: { DORKOS_AGENT_TOKEN: 'token-1' },
+    });
+  });
+});

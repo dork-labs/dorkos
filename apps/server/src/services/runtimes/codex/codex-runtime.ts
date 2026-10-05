@@ -768,10 +768,16 @@ export class CodexRuntime implements AgentRuntime {
       // Minted under the name a PERSON reads, never the slug: the token's label
       // is replayed onto the agent's author row by every room tool it calls, so
       // the slug there renames a live agent mid-conversation (DOR-1264).
-      const agentTokenEnv = await resolveAgentTokenEnv(
-        meshAgent ? agentPath : undefined,
-        meshAgent?.displayName ?? meshAgent?.name
-      );
+      //
+      // On app-server a loaded thread keeps the token it loaded with, so the
+      // transport mints only when a thread actually loads (`mintAgentToken`).
+      const mintAgentToken = () =>
+        resolveAgentTokenEnv(
+          meshAgent ? agentPath : undefined,
+          meshAgent?.displayName ?? meshAgent?.name
+        );
+      const mintsOnLoad = this.transport.kind === 'app-server' && meshAgent !== undefined;
+      const agentTokenEnv = mintsOnLoad ? {} : await mintAgentToken();
 
       // The `dorkos` tool server, when the experiment is on and this cwd hosts a
       // registered agent (spec `tool-only-room-replies` §D4). It reuses the
@@ -894,6 +900,7 @@ export class CodexRuntime implements AgentRuntime {
         launch: credits ? { home: 'credits', credits } : { home: 'person' },
         tools: {
           agentTokenEnv,
+          ...(mintsOnLoad ? { mintAgentToken } : {}),
           managed: managedMcpServers,
           dorkosTools,
           connectorTools,

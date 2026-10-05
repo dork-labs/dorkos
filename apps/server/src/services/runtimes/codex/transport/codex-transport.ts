@@ -30,6 +30,12 @@ export type CodexLaunch = { home: 'person' } | { home: 'credits'; credits: Credi
 export interface CodexTurnTools {
   /** The agent identity token's environment fragment; `{}` when unattributed. */
   readonly agentTokenEnv: Record<string, string>;
+  /**
+   * Mint the identity token on demand instead (app-server): called only when a
+   * thread actually loads, since a loaded thread keeps the token it loaded
+   * with. Absent when the turn is unattributed.
+   */
+  readonly mintAgentToken?: () => Promise<Record<string, string>>;
   /** The agent's enabled managed MCP servers, in Codex config shape. */
   readonly managed: CodexManagedMcpServers;
   /** The `dorkos` tool server carrying this turn's bearer, or `null`. */
