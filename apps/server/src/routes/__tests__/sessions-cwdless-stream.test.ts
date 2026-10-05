@@ -70,6 +70,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getAllCapabilities: vi.fn(() => ({})),
     getDefaultType: vi.fn(() => 'fake'),
     resolveForSession: vi.fn(async () => fakeRuntime),
+    resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
     getSessionRuntimeType: vi.fn(async () => 'fake'),
     persistSessionRuntime: vi.fn(async () => {}),
     getSessionSettings: vi.fn(async () => null),

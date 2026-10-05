@@ -190,7 +190,9 @@ export async function collectTriggeredTurn(
 ): Promise<SseFrame[]> {
   const stream = attachEventStream(server, sessionId);
   await stream.ready;
-  const post = await request(server).post(`/api/sessions/${sessionId}/messages`).send({ content });
+  const post = await request(server)
+    .post(`/api/sessions/${sessionId}/messages`)
+    .send({ content, create: true });
   if (post.status !== 202) {
     stream.close();
     throw new Error(`expected 202 from trigger POST, got ${post.status}`);

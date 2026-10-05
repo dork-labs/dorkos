@@ -416,6 +416,10 @@ export function useSessionSubmit({
           clientMessageId: optimisticId,
           context,
         };
+        // A send to an id the server does not know starts a chat only when it
+        // says so; anything else is a 404 (DOR-2712). Harmless on a session the
+        // list simply has not loaded yet: the message feeds it.
+        if (isNewSession) postOptions.create = true;
         // First-turn runtime hint: only the session-creating send carries the
         // explicit launch selection. No selection → omit entirely, so the
         // server's own resolution (agent manifest, then default) stays in

@@ -93,6 +93,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getAllCapabilities: vi.fn(() => ({})),
     getDefaultType: vi.fn(() => 'claude-code'),
     resolveForSession: vi.fn(async () => fakeRuntime),
+    resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
     getSessionRuntimeType: vi.fn(async () => 'claude-code'),
     persistSessionRuntime: vi.fn(async () => true),
     getSessionAgentPath: vi.fn(async () => sessionAgentPath),

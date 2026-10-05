@@ -16,7 +16,7 @@ import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';
 
@@ -161,6 +161,65 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
   // Unmount each test's hook so a leaked useChatSession instance can't react to
   // the next test's store writes (e.g. steal an auto-kickoff fire).
   afterEach(cleanup);
+
+  it('says create: true only when the send starts a new session (DOR-2712)', async () => {
+    // The server answers 404 to an id it does not know unless the send says it
+    // is starting a chat, so a stale id never opens a stranger session.
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(postMessage).toHaveBeenCalledWith(
+      's1',
+      'Hello',
+      '/test/cwd',
+      expect.objectContaining({ create: true })
+    );
+  });
+
+  it('does not say create on a session the list already has (DOR-2712)', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const existing = createMockSession({ id: 's1' });
+    const transport = createMockTransport({
+      postMessage,
+      listSessions: vi.fn().mockResolvedValue({ sessions: [existing], warnings: [] }),
+    });
+    // Kept past gcTime: nothing observes the list in this harness.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+    queryClient.setQueryData(sessionKeys.list('/test/cwd'), [existing]);
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    act(() => {
+      result.current.setInput('Again');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Again'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage.mock.calls[0]![3]).not.toHaveProperty('create');
+  });
 
   it('DOR-74 dual-id elimination + restore send: calls postMessage and renders the optimistic user message immediately', async () => {
     const postMessage = vi
