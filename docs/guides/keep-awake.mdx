@@ -1,0 +1,65 @@
+---
+title: Sleep and wake
+description: DorkOS keeps your computer awake while agents work, then lets it sleep as usual. What it can stop, what it can't, and how to turn it off
+---
+
+# Sleep and wake
+
+Agents keep working after you walk away. Your computer might not. Left alone, most computers fall asleep after a while, and a sleeping computer stops every agent on it until you come back.
+
+So DorkOS keeps your computer awake while agents are working. When they finish, it lets go, and your computer sleeps on its normal timer.
+
+This is on from the start. You don't need to set anything up.
+
+## What keeps it awake
+
+Any agent at work on this computer counts:
+
+- a chat you started
+- an agent replying in a room
+- a scheduled task while it runs
+- a message an agent is answering from another agent or a chat app
+
+Background helpers an agent starts inside a reply count too, because the reply isn't finished until they are.
+
+About 30 seconds after the last one ends, DorkOS lets go. The short wait means a quick run of replies doesn't switch it on and off over and over.
+
+## How to tell
+
+While DorkOS is keeping your computer awake, a small cup shows in the top bar. Click it to see why, for example "Keeping awake: 2 chats running". The Control Center says the same thing.
+
+When nothing is running, the cup goes away.
+
+## What it can't stop
+
+Keeping your computer awake only stops it from falling asleep on its own. Some things still put it to sleep:
+
+- **Closing the lid on battery.** A laptop always sleeps when you close it while it's running on battery.
+- **A low battery.** When the battery runs low, the computer sleeps to protect itself. Nothing can stop that.
+- **Choosing Sleep yourself.** If you put it to sleep, it sleeps.
+
+The screen still turns off on its usual timer. Only the computer stays on.
+
+Keeping a computer awake uses more battery. If that matters more to you than finishing the work, turn it off.
+
+## Turn it off
+
+Open **Settings → Tools → Sleep** and switch off **Keep this computer awake while agents work**. You can also get there from the cup in the top bar.
+
+The change takes effect at once. If agents are working when you switch it back on, DorkOS keeps the computer awake right away.
+
+## Where it works
+
+DorkOS uses the sleep tool your computer already has:
+
+- **Mac:** the built-in `caffeinate` tool. This is the one that has been checked on real computers.
+- **Linux:** `systemd-inhibit`. Best effort, not yet confirmed on real installs. On a computer you reach over SSH, the system may refuse the request.
+- **Windows:** a built-in Windows setting, through PowerShell. Best effort, not yet confirmed on real installs.
+
+If DorkOS can't keep your computer awake, the Sleep setting says why and the switch is greyed out. Your agents still run as usual.
+
+In a container, such as Docker, there's nothing to keep awake: the computer running the container decides when it sleeps. The setting says so.
+
+## If DorkOS stops
+
+DorkOS ties its hold to its own process. If DorkOS quits or crashes, the hold ends with it, and your computer goes back to its normal sleep timer. It is never left awake by a DorkOS that isn't running.

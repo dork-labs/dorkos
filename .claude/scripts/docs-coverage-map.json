@@ -837,6 +837,16 @@
       ]
     },
     {
+      "doc": "docs/guides/keep-awake.mdx",
+      "description": "Sleep and wake: what keeps the computer awake, what can't be stopped, turning it off",
+      "patterns": [
+        "packages/keep-awake/",
+        "services/core/keep-awake/",
+        "entities/keep-awake/",
+        "widgets/keep-awake/"
+      ]
+    },
+    {
       "doc": "docs/guides/agent-memory.mdx",
       "description": "Agent memory: the notes file, the cap, provenance, the visibility rule",
       "patterns": [
