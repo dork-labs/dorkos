@@ -850,13 +850,14 @@ export interface Transport
    * @param sessionId - Target session id (a client UUID for a brand-new session)
    * @param content - User message text
    * @param cwd - Optional working directory override
-   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255, agentPath as exact registered-agent provenance on that first turn, account as the first-turn Claude Code billing hint — a `runtimes.claudeCode.accounts[].id`, resolved hint > agent manifest > server default and honored only on the session-creating send, seedContext for background the agent reads and the person never sees — see `SeedContextData`, disposition for what to do when the session is already working — absent means `queue`)
+   * @param options - Optional additional parameters (create to start a new session under this id when none exists — without it an unknown id is a `404 SESSION_NOT_FOUND`, clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255, agentPath as exact registered-agent provenance on that first turn, account as the first-turn Claude Code billing hint — a `runtimes.claudeCode.accounts[].id`, resolved hint > agent manifest > server default and honored only on the session-creating send, seedContext for background the agent reads and the person never sees — see `SeedContextData`, disposition for what to do when the session is already working — absent means `queue`)
    */
   postMessage(
     sessionId: string,
     content: string,
     cwd?: string,
     options?: {
+      create?: boolean;
       clientMessageId?: string;
       context?: ClientContext;
       runtime?: string;

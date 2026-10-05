@@ -619,6 +619,8 @@ export async function driveTurn(opts: DriveTurnOptions): Promise<DriveTurnResult
       body: JSON.stringify({
         content: opts.content,
         cwd: opts.cwd,
+        // A first turn starts the session; a later one feeds it (DOR-2712).
+        create: true,
         ...(opts.runtime ? { runtime: opts.runtime } : {}),
       }),
     })

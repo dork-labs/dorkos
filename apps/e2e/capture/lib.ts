@@ -291,7 +291,7 @@ export async function openLiveTurn(
   await post('/api/test/scenario', { name: scenario, sessionId });
   await page.goto(url(`/session?session=${sessionId}&dir=${encodeURIComponent(cwd)}`));
   await page.waitForSelector('[data-testid="chat-panel"]', { timeout: WAIT_MS });
-  await post(`/api/sessions/${sessionId}/messages`, { content: prompt, cwd });
+  await post(`/api/sessions/${sessionId}/messages`, { content: prompt, cwd, create: true });
 }
 
 /**

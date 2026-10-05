@@ -139,6 +139,15 @@ function isAdoptableMode(mode: PermissionMode): boolean {
 }
 
 /**
+ * How many times a started session with no known account looks for its
+ * transcript before giving up on learning the account that way (DOR-2065).
+ * More than one, because a message queued behind the first turn can land
+ * before the CLI has written it; bounded, so a transcript that never appears
+ * does not cost a disk scan on every message.
+ */
+export const ACCOUNT_ROOT_PROBE_LIMIT = 3;
+
+/**
  * Manages in-memory session state for the Claude Code runtime.
  *
  * Tracks active sessions, handles the SDK session ID reverse index,
@@ -449,6 +458,26 @@ export class SessionStore {
         });
         existing.hasStarted = true;
       }
+    } else if (
+      existing.accountRoot === undefined &&
+      existing.hasStarted &&
+      (existing.accountRootProbeMisses ?? 0) < ACCOUNT_ROOT_PROBE_LIMIT
+    ) {
+      // A session made before its transcript existed — a new chat started on a
+      // chosen account — learns that account once its first turn has written
+      // one. Without this the record never learns it, and a later message runs
+      // the launch ladder instead: on any other default account it relaunched
+      // the warm process somewhere the conversation does not exist, killing its
+      // background shells and losing the chat to "No conversation found"
+      // (DOR-2065). Only once started, for the reason `launchedAccountRoot`
+      // is a separate field. A miss is retried, because a message queued
+      // behind the first turn can land before the CLI writes the transcript;
+      // but only {@link ACCOUNT_ROOT_PROBE_LIMIT} times, so a transcript that
+      // is never found does not cost a disk scan on every message.
+      const effectiveCwd = opts?.cwd || existing.cwd || defaultCwd;
+      const transcript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);
+      if (transcript.root) existing.accountRoot = transcript.root;
+      else existing.accountRootProbeMisses = (existing.accountRootProbeMisses ?? 0) + 1;
     }
     return this.findSession(sessionId)!;
   }

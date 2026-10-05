@@ -7311,6 +7311,9 @@
           "cwd": {
             "type": "string"
           },
+          "create": {
+            "type": "boolean"
+          },
           "correlationId": {
             "type": "string",
             "format": "uuid"
@@ -19206,7 +19209,7 @@
           "Sessions"
         ],
         "summary": "Send message (accept-only)",
-        "description": "ACCEPTS a message and returns immediately — it does NOT stream tokens (ADR-0264) and does NOT wait for the session to be free. If the session is idle the turn starts now; if a turn is already running the message joins the session queue and runs when that turn ends. Either way the events are delivered solely on the durable `GET /api/sessions/{id}/events` stream (the single delivery path) — `turn_start` there is the only signal that THIS message actually started running. The `202` body cannot say which of the two happened: `queuePosition` reads `1` both when the turn started immediately and when the message became the sole entry in a queue behind a still-running turn, and `outcome` carries the requested and applied disposition (queue/steer/stage), not whether a turn began. A busy session is never a `409` here — read and edit what is waiting through `/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the room's files), or because the account the new session would run on may not work in its folder's project (`account_not_allowed_here`, with `project` and `accountId`), and nothing was started. The `202` also carries the CANONICAL session id: for a brand-new session this is the real id assigned during the turn (it differs from the client-supplied id), so the client re-keys its URL and `/events` subscription to it. To avoid missing the turn, a client should be subscribed to `/events` before (or concurrently with) this POST.",
+        "description": "ACCEPTS a message and returns immediately — it does NOT stream tokens (ADR-0264) and does NOT wait for the session to be free. If the session is idle the turn starts now; if a turn is already running the message joins the session queue and runs when that turn ends. Either way the events are delivered solely on the durable `GET /api/sessions/{id}/events` stream (the single delivery path) — `turn_start` there is the only signal that THIS message actually started running. The `202` body cannot say which of the two happened: `queuePosition` reads `1` both when the turn started immediately and when the message became the sole entry in a queue behind a still-running turn, and `outcome` carries the requested and applied disposition (queue/steer/stage), not whether a turn began. A busy session is never a `409` here — read and edit what is waiting through `/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the room's files), or because the account the new session would run on may not work in its folder's project (`account_not_allowed_here`, with `project` and `accountId`), and nothing was started. An id this server does not know is a `404 SESSION_NOT_FOUND` and starts nothing, unless the body sends `create: true`, which starts a new session under that id (and is harmless on one that exists). The `202` also carries the CANONICAL session id. A new Claude Code session keeps the id it was started under; a runtime that names its own sessions may answer with another, and the client re-keys its URL and `/events` subscription to it. To avoid missing the turn, a client should be subscribed to `/events` before (or concurrently with) this POST.",
         "parameters": [
           {
             "schema": {
@@ -19250,6 +19253,16 @@
           },
           "403": {
             "description": "The message names DorkOS credits (`account: \"dorkos-credits\"`) and the caller is not the owner of this DorkOS (`person_only`, `owner_only`); nothing started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No session has this id and the body did not send `create: true` (`SESSION_NOT_FOUND`); nothing started",
             "content": {
               "application/json": {
                 "schema": {

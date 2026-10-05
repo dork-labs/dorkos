@@ -45,6 +45,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
+import { parseSessionId } from '../../../../lib/route-utils.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
 import {
   homeOf,
@@ -67,6 +68,7 @@ import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
+import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants } from './directory-grants.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
@@ -530,6 +532,19 @@ export async function resolveLaunch(args: {
         }
       );
     }
+  } else if (
+    !session.mintsFreshSdkSessionId &&
+    parseSessionId(session.sdkSessionId) &&
+    !(await transcriptIdTaken(session.sdkSessionId))
+  ) {
+    // **One id per conversation** (DOR-2712). A new session launches under the
+    // id DorkOS handed out, so the SDK stores, lists and resumes it under that
+    // same id. Left to mint its own, the SDK's id differed from the one every
+    // caller held, and only this process's memory linked the two: after a
+    // restart the handed-out id addressed nothing. A non-UUID id is one the CLI
+    // refuses, and an id a transcript already has would name two conversations,
+    // so both keep the old rename.
+    sdkOptions.sessionId = session.sdkSessionId;
   }
 
   // CWD resolution chain: opts.cwd (from caller) -> session.cwd (from creation) -> this.cwd (default)

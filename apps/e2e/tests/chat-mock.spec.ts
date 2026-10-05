@@ -257,7 +257,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
 
     // Turn 1 under the id (202 = trigger accepted; turn runs detached).
     const post1 = await request.post(messagesUrl, {
-      data: { content: 'before reset', cwd: agentDir },
+      data: { content: 'before reset', cwd: agentDir, create: true },
     });
     expect(post1.status()).toBe(202);
     await expect
@@ -276,7 +276,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
 
     // And a new turn under the reused id contains ONLY post-reset content.
     const post2 = await request.post(messagesUrl, {
-      data: { content: 'after reset', cwd: agentDir },
+      data: { content: 'after reset', cwd: agentDir, create: true },
     });
     expect(post2.status()).toBe(202);
     await expect
