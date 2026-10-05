@@ -8,7 +8,11 @@ import {
   type DocWriteIntentRow,
 } from '../store.js';
 import type { CanonicalFileIdentity } from './canonical-writer.js';
-import { CheckboxPhysicalIdentitySchema, validateCheckboxEvidence } from './checkbox-evidence.js';
+import {
+  CheckboxPhysicalIdentitySchema,
+  freezeCheckboxData,
+  validateCheckboxEvidence,
+} from './checkbox-evidence.js';
 
 /** Missing or untrustworthy current ledger evidence closes write readiness. */
 export class CheckboxFenceUnavailableError extends Error {
@@ -27,6 +31,13 @@ export class CheckboxWriteFencedError extends Error {
 
 /** Caller resolves/rechecks identity under shared tree/file admission before every effect. */
 export class CheckboxWriteFence {
+  // Reuse only pure validation of identical complete rows, never ledger or authority decisions.
+  // Every scan still reads every unresolved row from the current transaction.
+  readonly #validated = new Map<
+    string,
+    { bytes: string; evidence: ReturnType<typeof validateCheckboxEvidence> }
+  >();
+
   constructor(
     private readonly db: Db,
     private readonly store: DocChannelStore
@@ -67,6 +78,20 @@ export class CheckboxWriteFence {
       throw error;
     }
   }
+  private validate(row: DocWriteIntentRow): ReturnType<typeof validateCheckboxEvidence> {
+    const bytes = JSON.stringify(row);
+    const previous = this.#validated.get(row.intentId);
+    if (previous?.bytes === bytes) return previous.evidence;
+    this.#validated.delete(row.intentId);
+    const evidence = freezeCheckboxData(validateCheckboxEvidence(row));
+    // Large rows are checked normally without retaining an additional large string.
+    if (bytes.length <= 65536) {
+      if (this.#validated.size === 256)
+        this.#validated.delete(this.#validated.keys().next().value!);
+      this.#validated.set(row.intentId, { bytes, evidence });
+    }
+    return evidence;
+  }
   private scan(
     identity?: CanonicalFileIdentity,
     ownedIntent?: DocWriteIntentRow,
@@ -88,7 +113,7 @@ export class CheckboxWriteFence {
           const current = this.store.getWriteIntent(ownedIntent.intentId);
           if (!current) throw new CheckboxFenceUnavailableError('missing');
           try {
-            validateCheckboxEvidence(current);
+            this.validate(current);
           } catch {
             throw new CheckboxFenceUnavailableError('corrupt');
           }
@@ -103,7 +128,7 @@ export class CheckboxWriteFence {
             const row = selected;
             let evidence: ReturnType<typeof validateCheckboxEvidence>;
             try {
-              evidence = validateCheckboxEvidence(row);
+              evidence = this.validate(row);
             } catch {
               throw new CheckboxFenceUnavailableError('corrupt');
             }

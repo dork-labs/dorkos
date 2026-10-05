@@ -14,7 +14,7 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { canvasDocChannels, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
 import { fixture as makeFixture, AuthorityRefused } from './checkbox-fixture.js';
 import { DocCheckboxWriteService } from '../checkbox-service.js';
@@ -39,8 +39,15 @@ function crashTestOwnership() {
   let active = true;
   let child: ReturnType<typeof fork> | undefined;
   let closed: Promise<void> | undefined;
+  let exited: Promise<void> | undefined;
+  let pipes: Promise<void>[] = [];
+  let pipeFailed = false,
+    firstPipeCause: unknown;
+  const outputLimit = 65536;
+  const output = { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   let task: Promise<void> | undefined;
   let cancelCheckpoint: (() => void) | undefined;
+  let ready: Promise<void> | undefined;
   const assertActive = () => {
     if (!active) throw new Error('Crash test ended.');
   };
@@ -51,10 +58,48 @@ function crashTestOwnership() {
       void task.catch(() => {});
       return task;
     },
-    capture(value: ReturnType<typeof fork>) {
+    capture(value: ReturnType<typeof fork>, preload = false) {
       assertActive();
       child = value;
+      // Attach lifecycle custody before the first checkpoint wait or any kill.
+      exited = new Promise<void>((resolve) => {
+        value.once('exit', () => resolve());
+        // A failed spawn can close without emitting exit; close/pipe waits still own cleanup.
+        value.once('error', () => resolve());
+      });
       closed = new Promise<void>((resolve) => value.once('close', () => resolve()));
+      pipes = (['stdout', 'stderr'] as const).map((name) => {
+        const stream = value[name];
+        if (!stream) throw new Error(`Missing original crash worker ${name} pipe.`);
+        const drained = new Promise<void>((resolve, reject) => {
+          stream.on('data', (chunk: Buffer | string) => {
+            // Keep reading after the bounded diagnostic buffer fills.
+            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            const remaining = outputLimit - output[name].length;
+            if (remaining > 0)
+              output[name] = Buffer.concat([output[name], bytes.subarray(0, remaining)]);
+          });
+          stream.once('end', resolve);
+          stream.once('close', resolve);
+          stream.once('error', (cause: unknown) => {
+            if (!pipeFailed) {
+              pipeFailed = true;
+              firstPipeCause = cause;
+            }
+            reject(cause);
+          });
+        });
+        void drained.catch(() => {});
+        return drained;
+      });
+      let startupReceived = !preload;
+      let resolveReady!: () => void, rejectReady!: (cause: unknown) => void;
+      ready = new Promise<void>((resolve, reject) => {
+        resolveReady = resolve;
+        rejectReady = reject;
+      });
+      void ready.catch(() => {});
+      if (!preload) resolveReady();
       const checkpoint = new Promise<{
         dir: string;
         documentId: string;
@@ -62,22 +107,55 @@ function crashTestOwnership() {
         eventId: string;
       }>((resolve, reject) => {
         const onMessage = (data: unknown) => {
-          if (active)
-            resolve(data as { dir: string; documentId: string; grantId: string; eventId: string });
+          if (!active) return;
+          if (!startupReceived) {
+            if (
+              !data ||
+              typeof data !== 'object' ||
+              Object.keys(data).length !== 1 ||
+              !('kind' in data) ||
+              data.kind !== 'ready'
+            ) {
+              const cause = new Error('Original worker startup handshake changed.');
+              rejectReady(cause);
+              reject(cause);
+              return;
+            }
+            startupReceived = true;
+            resolveReady();
+            return;
+          }
+          value.off('message', onMessage);
+          resolve(data as { dir: string; documentId: string; grantId: string; eventId: string });
         };
-        const onExit = (code: number | null, signal: string | null) =>
-          reject(new Error(`Worker exited ${code} (${signal}) before checkpoint.`));
-        const onError = (error: Error) => reject(error);
-        value.once('message', onMessage);
+        const onExit = (code: number | null, signal: string | null) => {
+          const cause = new Error(
+            `Worker exited ${code} (${signal}) before checkpoint. ${output.stderr.toString('utf8')}`
+          );
+          rejectReady(cause);
+          reject(cause);
+        };
+        const onError = (error: Error) => {
+          rejectReady(error);
+          reject(error);
+        };
+        value.on('message', onMessage);
         value.once('exit', onExit);
         value.once('error', onError);
         cancelCheckpoint = () => {
           value.off('message', onMessage);
-          reject(new Error('Crash test ended before checkpoint.'));
+          const cause = new Error('Crash test ended before checkpoint.');
+          rejectReady(cause);
+          reject(cause);
         };
       });
       void checkpoint.catch(() => {});
       return checkpoint;
+    },
+    async awaitReady() {
+      if (!ready) throw new Error('Original startup is not captured.');
+      await ready;
+      assertActive();
     },
     async drain() {
       active = false;
@@ -87,8 +165,11 @@ function crashTestOwnership() {
       try {
         await Promise.race([
           (async () => {
+            await exited;
             await closed;
+            await Promise.allSettled(pipes);
             if (task) await Promise.allSettled([task]);
+            if (pipeFailed) throw firstPipeCause;
           })(),
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new Error('Owned crash worker did not drain.')), 2000);
@@ -98,8 +179,16 @@ function crashTestOwnership() {
         if (timer) clearTimeout(timer);
       }
     },
+    async awaitExited() {
+      if (!exited) throw new Error('No original crash worker captured.');
+      await exited;
+      assertActive();
+    },
     async awaitClosed() {
+      if (!closed) throw new Error('No original crash worker captured.');
       await closed;
+      await Promise.allSettled(pipes);
+      if (pipeFailed) throw firstPipeCause;
       assertActive();
     },
   };
@@ -107,16 +196,96 @@ function crashTestOwnership() {
   return owner;
 }
 
+// Load the original worker's modules as fixture setup, under Vitest's unchanged
+// native hook budget (10 seconds). No Db, approval, checkpoint or effect runs yet.
+let preloaded:
+  | {
+      owner: ReturnType<typeof crashTestOwnership>;
+      child: ReturnType<typeof fork>;
+      checkpoint: ReturnType<ReturnType<typeof crashTestOwnership>['capture']>;
+    }
+  | undefined;
+beforeEach(async (context) => {
+  const name = context.task.name;
+  if (
+    !['prepared', 'staged', 'replaced'].some(
+      (point) => name === `recovers genuine process loss at ${point} without reapplying a marker`
+    ) &&
+    name !== 'drains its own crash worker when the genuine checkpoint fails before IPC'
+  )
+    return;
+  const owner = crashTestOwnership();
+  const child = fork(
+    fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
+    ['--await-original-case'],
+    {
+      execArgv: ['--import', 'tsx'],
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    }
+  );
+  const checkpoint = owner.capture(child, true);
+  preloaded = { owner, child, checkpoint };
+  await owner.awaitReady();
+});
+function takeOriginalPreloadedWorker() {
+  if (!preloaded) throw new Error('Original worker fixture was not prepared.');
+  const original = preloaded;
+  preloaded = undefined;
+  original.owner.assertActive();
+  return original;
+}
+async function startOriginalCase(child: ReturnType<typeof fork>, point: string, seed: object) {
+  await new Promise<void>((resolve, reject) =>
+    child.send({ kind: 'start', point, seed: JSON.stringify(seed) }, (error) =>
+      error ? reject(error) : resolve()
+    )
+  );
+}
+
 const cleanups: (() => Promise<void>)[] = [];
+// Failed ownership stays UNKNOWN; later tests must not close/delete these resources.
+const retainedCrashResources: {
+  owners: { drain(): Promise<void> }[];
+  cleanups: (() => Promise<void>)[];
+}[] = [];
 afterEach(async () => {
-  const drains = await Promise.allSettled(crashTests.splice(0).map((owner) => owner.drain()));
-  for (const cleanup of cleanups.splice(0)) await cleanup();
-  const failures = drains.filter((result) => result.status === 'rejected');
-  if (failures.length)
-    throw new AggregateError(
-      failures.map((result) => result.reason),
-      'Owned crash workers did not drain.'
-    );
+  preloaded = undefined;
+  const owners = crashTests.splice(0);
+  let drainFailed = false,
+    firstDrainCause: unknown;
+  await Promise.allSettled(
+    owners.map(async (owner) => {
+      try {
+        await owner.drain();
+      } catch (cause) {
+        if (!drainFailed) {
+          drainFailed = true;
+          firstDrainCause = cause;
+        }
+        throw cause;
+      }
+    })
+  );
+  if (drainFailed) {
+    retainedCrashResources.push({ owners, cleanups: cleanups.splice(0) });
+    throw firstDrainCause;
+  }
+  let cleanupFailed = false,
+    firstCleanupCause: unknown;
+  await Promise.allSettled(
+    cleanups.splice(0).map(async (cleanup) => {
+      try {
+        await cleanup();
+      } catch (cause) {
+        if (!cleanupFailed) {
+          cleanupFailed = true;
+          firstCleanupCause = cause;
+        }
+        throw cause;
+      }
+    })
+  );
+  if (cleanupFailed) throw firstCleanupCause;
 });
 async function fixture(options: CheckboxServiceOptions = {}) {
   const h = await makeFixture(options);
@@ -357,7 +526,7 @@ it('does not invoke a replaced async public authority method or expose its actua
 it.each(['prepared', 'staged', 'replaced'] as const)(
   'recovers genuine process loss at %s without reapplying a marker',
   async (point) => {
-    const owner = crashTestOwnership();
+    const { owner, child, checkpoint } = takeOriginalPreloadedWorker();
     await owner.run(async () => {
       const seed = await fixture();
       owner.assertActive();
@@ -366,27 +535,18 @@ it.each(['prepared', 'staged', 'replaced'] as const)(
       await seed.service.stop();
       seed.db.$client.close();
       owner.assertActive();
-      const child = fork(
-        fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
-        [
-          point,
-          JSON.stringify({
-            dir: seed.dir,
-            documentId: seed.documentId,
-            grantId: seed.grantId,
-            approved: seed.approved,
-            request,
-          }),
-        ],
-        { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
-      );
-      const checkpoint = owner.capture(child);
+      await startOriginalCase(child, point, {
+        dir: seed.dir,
+        documentId: seed.documentId,
+        grantId: seed.grantId,
+        approved: seed.approved,
+        request,
+      });
       void checkpoint.catch(() => {});
-      child.stderr!.resume();
       const message = await checkpoint;
       owner.assertActive();
       child.kill('SIGKILL');
-      await once(child, 'exit');
+      await owner.awaitExited();
       await owner.awaitClosed();
       owner.assertActive();
       const h = await makeFixture({}, message);
@@ -422,7 +582,7 @@ it.each(['prepared', 'staged', 'replaced'] as const)(
 );
 
 it('drains its own crash worker when the genuine checkpoint fails before IPC', async () => {
-  const owner = crashTestOwnership();
+  const { owner, child, checkpoint } = takeOriginalPreloadedWorker();
   await owner.run(async () => {
     const seed = await fixture();
     owner.assertActive();
@@ -431,22 +591,13 @@ it('drains its own crash worker when the genuine checkpoint fails before IPC', a
     await seed.service.stop();
     seed.db.$client.close();
     owner.assertActive();
-    const child = fork(
-      fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
-      [
-        'prepared',
-        JSON.stringify({
-          dir: seed.dir,
-          documentId: seed.documentId,
-          grantId: seed.grantId,
-          approved: seed.approved,
-          request,
-        }),
-      ],
-      { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
-    );
-    const checkpoint = owner.capture(child);
-    child.stderr!.resume();
+    await startOriginalCase(child, 'prepared', {
+      dir: seed.dir,
+      documentId: seed.documentId,
+      grantId: seed.grantId,
+      approved: seed.approved,
+      request,
+    });
     await expect(checkpoint).rejects.toThrow('before checkpoint');
     await owner.awaitClosed();
     expect(child.exitCode).toBe(1);
@@ -484,7 +635,6 @@ it('drains a held pre-checkpoint child and retires its late fixture continuation
   );
   const checkpoint = owner.capture(child);
   const closed = once(child, 'close');
-  child.stderr!.resume();
   let fixtureContinuations = 0;
   const continuation = owner.run(async () => {
     await checkpoint;
@@ -535,6 +685,7 @@ it('drains a held pre-checkpoint child and retires its late fixture continuation
       { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
     );
     lateClosed = once(lateChild, 'close');
+    lateChild.stdout!.resume();
     lateChild.stderr!.resume();
     await lateOwner.capture(lateChild);
   });
@@ -598,6 +749,51 @@ it('recovery rejects internally inconsistent marker evidence even when the after
   );
   expect(h.row().status).toBe('in_doubt');
   expect(h.service.fenced(h.path)).toBe(true);
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+it('rechecks changed same-ID evidence after a successful fence scan', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  expect(h.service.writeFence.readiness()).toEqual({ ready: true });
+  h.db.$client.prepare("UPDATE canvas_doc_write_intents SET before_hash='invalid'").run();
+  expect(h.service.writeFence.readiness()).toEqual({ ready: false, reason: 'corrupt' });
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+it('recovery reads retain the fresh global corruption fence after validation reuse', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  const own = h.store.getWriteIntent(h.row().intentId)!;
+  const intentId = randomUUID(),
+    eventId = randomUUID();
+  const input = { ...(own.input as CheckboxRequest), eventId };
+  const other = {
+    ...own,
+    intentId,
+    eventId,
+    input,
+    envelopeHash: rawByteHash(Buffer.from(JSON.stringify(input))),
+    evidence: {
+      ...h.service.validate(own),
+      tempPath: join(h.dir, `.dork-checkbox-${intentId}.tmp`),
+    },
+  };
+  h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(other).run());
+  const info = await stat(h.path, { bigint: true });
+  const identity = {
+    canonicalPath: await realpath(h.path),
+    device: String(info.dev),
+    inode: String(info.ino),
+  };
+  h.service.writeFence.assertRecoveryRead(identity, own);
+  h.service.writeFence.assertRecoveryRead(identity, own);
+  h.db.$client
+    .prepare("UPDATE canvas_doc_write_intents SET evidence='{}' WHERE intent_id=?")
+    .run(intentId);
+  expect(() => h.service.writeFence.assertRecoveryRead(identity, own)).toThrow('unavailable');
   expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
 });
 
