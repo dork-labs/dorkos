@@ -154,7 +154,7 @@ export class FakeAppServerHost {
   spawn = (
     binary: string,
     args: readonly string[],
-    options: { env?: Record<string, string | undefined>; cwd?: string }
+    options: { env?: Record<string, string | undefined>; cwd?: string | undefined }
   ): FakeAppServer => {
     const env = options.env ?? {};
     this.spawns.push({ binary, args: [...args], env: { ...env }, cwd: options.cwd });
@@ -202,9 +202,9 @@ export class FakeAppServer extends EventEmitter {
   }
 
   /** Kill the process (records the signal and exits). */
-  kill(signal: string = 'SIGTERM'): boolean {
-    this.killSignals.push(signal);
-    this.exit(null, signal);
+  kill(signal: NodeJS.Signals | number = 'SIGTERM'): boolean {
+    this.killSignals.push(String(signal));
+    this.exit(null, String(signal));
     return true;
   }
 

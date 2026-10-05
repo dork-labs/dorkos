@@ -16,6 +16,7 @@ import {
   CLIENT_REQUEST_METHODS,
   SERVER_NOTIFICATION_METHODS,
   SERVER_REQUEST_METHODS,
+  PINNED_CODEX_APP_SERVER_VERSION,
   THREAD_ITEM_TYPES,
   refusalFor,
 } from '../protocol/methods.js';
@@ -183,6 +184,10 @@ describe('outbound params against the binary’s schema', () => {
 });
 
 describe('inbound shapes and unions', () => {
+  it('pins the version the snapshot was taken from', () => {
+    expect(PINNED_CODEX_APP_SERVER_VERSION).toBe(snapshot.binaryVersion);
+  });
+
   it('the method and item unions in methods.ts equal the binary’s', () => {
     expect([...SERVER_NOTIFICATION_METHODS]).toEqual(snapshot.unions.serverNotificationMethods);
     expect([...SERVER_REQUEST_METHODS]).toEqual(snapshot.unions.serverRequestMethods);

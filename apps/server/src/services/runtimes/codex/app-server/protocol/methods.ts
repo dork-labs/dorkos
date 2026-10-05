@@ -14,6 +14,12 @@
  * @module services/runtimes/codex/app-server/protocol/methods
  */
 
+/**
+ * The Codex version this protocol subset was taken from. Held equal to the
+ * committed snapshot's `binaryVersion` by `protocol-schemas.test.ts`.
+ */
+export const PINNED_CODEX_APP_SERVER_VERSION = '0.154.0';
+
 /** Client → server requests DorkOS sends (P1). */
 export const CLIENT_REQUEST_METHODS = [
   'initialize',

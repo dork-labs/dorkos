@@ -107,6 +107,11 @@ export interface CodexJsonRpcClientOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Log label. */
   label?: string;
+  /**
+   * Close when stdout ends (default). An owner that watches the process's own
+   * exit turns this off, so the close carries the exit code and signal.
+   */
+  closeOnStdoutEnd?: boolean;
 }
 
 interface PendingRequest {
@@ -153,7 +158,9 @@ export class CodexJsonRpcClient {
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.label = options.label ?? 'codex app-server';
     streams.stdout.on('data', (chunk: Buffer | string) => this.onData(chunk));
-    streams.stdout.once('end', () => this.close({ kind: 'exited', detail: 'stdout closed' }));
+    if (options.closeOnStdoutEnd !== false) {
+      streams.stdout.once('end', () => this.close({ kind: 'exited', detail: 'stdout closed' }));
+    }
     streams.stdout.once('error', (err: Error) => this.close({ kind: 'pipe', detail: err.message }));
     streams.stdin.on('error', (err: Error) => this.close({ kind: 'pipe', detail: err.message }));
     streams.stderr?.on('data', (chunk: Buffer | string) => this.onStderr(chunk));
