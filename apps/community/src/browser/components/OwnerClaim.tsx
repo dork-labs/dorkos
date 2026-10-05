@@ -21,7 +21,13 @@ import {
 import { HostPolicyLinks } from './HostLinks.js';
 import { ConnectDorkOS } from '../connect/ConnectDorkOS.js';
 import { communityLink } from '../connect/community-link.js';
-import { singleSignOnLead, takeSignInError, useSignInOptionsState } from '../sign-in-options.js';
+import {
+  returnedSignIn,
+  singleSignOnLead,
+  takeSignInFailure,
+  useSignInOptionsState,
+} from '../sign-in-options.js';
+import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
 import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 
@@ -74,7 +80,10 @@ export function OwnerClaim() {
   const [busy, setBusy] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   // A provider round trip that failed returns here with `?error=`; say why once.
-  const [error, setError] = useState(() => takeSignInError() ?? '');
+  const [returned] = useState(() => returnedSignIn(takeSignInFailure()));
+  const [error, setError] = useState(returned.error);
+  // A provider sign-in waiting for the matched account's password asks for it here.
+  const [linking, setLinking] = useState(returned.linking);
   const signInOptions = useSignInOptionsState();
   const providers = signInOptions.options;
   // Opened from the DorkOS app where the person's DorkOS account is this host's single sign-on:
@@ -324,6 +333,7 @@ export function OwnerClaim() {
           {title}
         </h1>
         <p className="muted mb-7">{intro}</p>
+        {linking && <LinkWithPassword onCancel={() => setLinking(false)} />}
         {error && (
           <Notice role="alert" tone="error" className="mb-4">
             {error}

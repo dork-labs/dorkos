@@ -352,6 +352,14 @@
       ]
     },
     {
+      "guide": "runtime-capabilities.md",
+      "description": "Generated capability × runtime matrix: what every runtime should do, parity, gaps (`pnpm docs:runtime-capabilities`)",
+      "patterns": [
+        "runtime-capability-matrix",
+        "runtime-capability-census"
+      ]
+    },
+    {
       "guide": "adding-a-connector.md",
       "description": "Connector backend authoring: stable instance and account identities, capability declarations, SDK confinement, operation classification, event metadata, and conformance",
       "patterns": [

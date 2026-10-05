@@ -20,6 +20,7 @@ import {
 } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
+import { browserSettingRefusal } from '../config/browser-setting.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
@@ -413,6 +414,8 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   const taken = takeAccountsSeen(patch as Record<string, unknown>);
   if (!taken.ok) return { ok: false, error: 'Validation failed', details: taken.details };
   const patchObj = taken.patch;
+  const browserRefusal = browserSettingRefusal('browser', patchObj.browser);
+  if (browserRefusal) return { ok: false, error: browserRefusal };
   const colorRefusal = defaultAccountColorRefusal(patchObj);
   if (colorRefusal) return { ok: false, error: 'Validation failed', details: colorRefusal };
   const rulesRefusal = accountRulesRefusal(patchObj);

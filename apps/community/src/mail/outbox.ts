@@ -9,6 +9,7 @@ export const NOTICE_KINDS = [
   'owner_replacement.claim_reissued',
   'owner_replacement.ended',
   'owner_replacement.completed',
+  'account.sign_in_linked',
 ] as const;
 
 /** One kind of mailed notice. */
@@ -18,7 +19,10 @@ export type NoticeKind = (typeof NOTICE_KINDS)[number];
 export interface NoticeRequest {
   communityId: string;
   kind: NoticeKind;
-  /** The record the notice is about, such as an owner replacement. */
+  /**
+   * The record the notice is about, such as an owner replacement, or for a linked sign-in the
+   * audit event that recorded it.
+   */
   subjectId: string;
   /** The recipient's account. The worker reads its email only when it sends. */
   recipientUserId: string;

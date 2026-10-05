@@ -24,8 +24,22 @@ export async function ownPrivateProxyAuthentication(
   >();
   const tasks = new Set<Promise<void>>();
   const sessions = new Set<string>();
+  const fetchFrames = new Set<string>();
+  const workerParents = new Map<string, string>();
+  const coveredWorker = (sessionId: string): boolean => {
+    const visited = new Set<string>();
+    let current = sessionId;
+    while (sessions.has(current) && visited.size < 128 && !visited.has(current)) {
+      if (fetchFrames.has(current)) return true;
+      visited.add(current);
+      const parent = workerParents.get(current);
+      if (!parent) return false;
+      current = parent;
+    }
+    return false;
+  };
   const attempts = new Set<string>();
-  const originalOwner = { socket, pending, tasks, sessions };
+  const originalOwner = { socket, pending, tasks, sessions, fetchFrames, workerParents };
   retained.add(originalOwner);
   let sequence = 0,
     stopping = false,
@@ -46,6 +60,20 @@ export async function ownPrivateProxyAuthentication(
       { once: true }
     )
   );
+  const targetTypes = new Set([
+    'page',
+    'iframe',
+    'worker',
+    'shared_worker',
+    'service_worker',
+    'worklet',
+    'auction_worklet',
+    'background_page',
+    'webview',
+    'browser',
+    'tab',
+    'other',
+  ]);
   function fault() {
     if (uncertain) return;
     uncertain = true;
@@ -79,20 +107,32 @@ export async function ownPrivateProxyAuthentication(
     });
   }
   const filters = [{ type: 'browser', exclude: true }, { type: 'tab', exclude: true }, {}];
-  async function attach(sessionId: string) {
+  async function attach(sessionId: string, targetType: string, parentSessionId?: string) {
     if (sessions.has(sessionId) || sessions.size >= 128)
       throw new Error('PROXY_AUTH_TARGET_UNAVAILABLE');
     sessions.add(sessionId);
-    await send(
-      'Fetch.enable',
-      { handleAuthRequests: true, patterns: [{ urlPattern: '*' }] },
-      sessionId
-    );
+    if (targetType === 'worker') {
+      // Chromium153 has no dedicated-worker FetchHandler. Its subresource factory
+      // uses the ancestor frame's handler; only an ACKed exact live parent chain
+      // can cover this paused original worker. No unsupported-error fallback.
+      if (!parentSessionId || !coveredWorker(parentSessionId))
+        throw new Error('PROXY_AUTH_WORKER_PARENT_UNAVAILABLE');
+      workerParents.set(sessionId, parentSessionId);
+    } else {
+      await send(
+        'Fetch.enable',
+        { handleAuthRequests: true, patterns: [{ urlPattern: '*' }] },
+        sessionId
+      );
+      if (targetType === 'page' || targetType === 'iframe') fetchFrames.add(sessionId);
+    }
     await send(
       'Target.setAutoAttach',
       { autoAttach: true, waitForDebuggerOnStart: true, flatten: true, filter: filters },
       sessionId
     );
+    if (targetType === 'worker' && !coveredWorker(sessionId))
+      throw new Error('PROXY_AUTH_WORKER_PARENT_UNAVAILABLE');
     await send('Runtime.runIfWaitingForDebugger', {}, sessionId);
   }
   function own(task: Promise<void>) {
@@ -155,9 +195,21 @@ export async function ownPrivateProxyAuthentication(
         fault();
         return;
       }
-      own(attach(params.sessionId));
+      const info = params.targetInfo;
+      const type = info && typeof info === 'object' ? (info as { type?: unknown }).type : undefined;
+      own(
+        attach(
+          params.sessionId,
+          typeof type === 'string' && targetTypes.has(type) ? type : 'unknown',
+          value.sessionId
+        )
+      );
     } else if (value.method === 'Target.detachedFromTarget') {
-      if (params && typeof params.sessionId === 'string') sessions.delete(params.sessionId);
+      if (params && typeof params.sessionId === 'string') {
+        sessions.delete(params.sessionId);
+        fetchFrames.delete(params.sessionId);
+        workerParents.delete(params.sessionId);
+      }
     } else if (value.method === 'Fetch.requestPaused') {
       if (
         !params ||

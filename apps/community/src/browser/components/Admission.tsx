@@ -20,9 +20,11 @@ import { HostPolicyLinks } from './HostLinks.js';
 import {
   returnHere,
   singleSignOnLead,
-  takeSignInError,
+  returnedSignIn,
+  takeSignInFailure,
   useSignInOptionsState,
 } from '../sign-in-options.js';
+import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
 import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 
@@ -90,8 +92,11 @@ export function Admission({
   const [channelName, setChannelName] = useState('general');
   const [busy, setBusy] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
-  // A provider round trip that failed returns here with `?error=`; say why once.
-  const [error, setError] = useState(() => takeSignInError() ?? '');
+  // A provider round trip that failed returns here with `?error=`; say why once, or ask for the
+  // matched account's password when the sign-in is waiting to be linked.
+  const [returned] = useState(() => returnedSignIn(takeSignInFailure()));
+  const [error, setError] = useState(returned.error);
+  const [linking, setLinking] = useState(returned.linking);
   const signInOptions = useSignInOptionsState();
   const providers = signInOptions.options;
   // Read as the page loaded: the hint the DorkOS app adds where the person's DorkOS account is
@@ -338,6 +343,7 @@ export function Admission({
           {title}
         </h1>
         {intro && <p className="muted mb-7">{intro}</p>}
+        {linking && <LinkWithPassword onCancel={() => setLinking(false)} />}
         {error && (
           <Notice tone="error" className="mb-4">
             {error}

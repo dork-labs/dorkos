@@ -28,7 +28,8 @@ These settings shape the host tools. Most hosts keep the defaults; [the deployme
 - `COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`, `COMMUNITY_NAME_LOOKUPS_PER_MINUTE`: how many failed host API keys and web-address lookups one caller may make each minute.
 - `COMMUNITY_HOST_DELETION_NOTICE_DAYS`: the shortest notice before you may delete a held community, 14 days by default and never under 7.
 - `COMMUNITY_RESERVED_SHORT_NAMES`, `COMMUNITY_SHORT_NAME_COOLOFF_DAYS`: web addresses you keep for yourself, and how long a released one stays unavailable.
-- `COMMUNITY_OIDC_ISSUER_URL`, `COMMUNITY_OIDC_CLIENT_ID`, `COMMUNITY_OIDC_CLIENT_SECRET`, `COMMUNITY_OIDC_LABEL`, `COMMUNITY_OIDC_SCOPES`: sign-in through your own OpenID Connect service. Register `https://<your address>/api/auth/callback/oidc` as its redirect address.
+- `COMMUNITY_OIDC_ISSUER_URL`, `COMMUNITY_OIDC_CLIENT_ID`, `COMMUNITY_OIDC_CLIENT_SECRET`, `COMMUNITY_OIDC_LABEL`, `COMMUNITY_OIDC_SCOPES`: sign-in through your own OpenID Connect service. Register `https://<your address>/api/auth/callback/oidc` as its redirect address. `COMMUNITY_OIDC_MARK=dorkos` puts the DorkOS mark on its button.
+- `COMMUNITY_OIDC_LINK_VERIFIED_EMAIL`: set `1` to let a sign-in through that service link to the existing account with the same verified email, without its password. Off by default, when the sign-in page asks for the account's password instead. Read [what trusting a provider grants](DEPLOYMENT.md#when-the-email-already-has-an-account-here) first.
 - `COMMUNITY_TERMS_URL`, `COMMUNITY_PRIVACY_URL`, `COMMUNITY_REPORT_ABUSE_URL`: your own terms, privacy notice, and a way to report abuse.
 
 ## More guides

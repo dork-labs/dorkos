@@ -58,7 +58,15 @@ export type CommunityOidcConfig = {
   clientSecret: string;
   /** Sign-in button text. */
   label: string;
+  /** The mark the sign-in button shows: `dorkos` for the DorkOS mark, `null` for a neutral key. */
+  mark: 'dorkos' | null;
   scopes: string[];
+  /**
+   * Whether a sign-in through this issuer with a verified email may link to an existing account
+   * with that email without its password (`COMMUNITY_OIDC_LINK_VERIFIED_EMAIL=1`). A real grant:
+   * set it only for an issuer that proves people own their email.
+   */
+  linkVerifiedEmail: boolean;
 };
 
 // RFC 6749 section 3.3 scope-token characters.
@@ -74,6 +82,8 @@ function parseOidc(value: {
   COMMUNITY_OIDC_CLIENT_SECRET?: string;
   COMMUNITY_OIDC_LABEL?: string;
   COMMUNITY_OIDC_SCOPES?: string;
+  COMMUNITY_OIDC_MARK?: string;
+  COMMUNITY_OIDC_LINK_VERIFIED_EMAIL?: string;
 }): CommunityOidcConfig | null {
   const {
     COMMUNITY_OIDC_ISSUER_URL: issuerUrl,
@@ -81,11 +91,17 @@ function parseOidc(value: {
     COMMUNITY_OIDC_CLIENT_SECRET: clientSecret,
     COMMUNITY_OIDC_LABEL: label,
     COMMUNITY_OIDC_SCOPES: scopes,
+    COMMUNITY_OIDC_MARK: mark,
+    COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: linkVerifiedEmail,
   } = value;
+  if (mark !== undefined && mark !== 'dorkos')
+    throw new Error('COMMUNITY_OIDC_MARK must be dorkos, or unset');
+  if (linkVerifiedEmail !== undefined && linkVerifiedEmail !== '1' && linkVerifiedEmail !== '0')
+    throw new Error('COMMUNITY_OIDC_LINK_VERIFIED_EMAIL must be 1 or 0, or unset');
   if (!issuerUrl && !clientId && !clientSecret) {
-    if (label || scopes)
+    if (label || scopes || mark || linkVerifiedEmail === '1')
       throw new Error(
-        'COMMUNITY_OIDC_LABEL and COMMUNITY_OIDC_SCOPES need COMMUNITY_OIDC_ISSUER_URL, COMMUNITY_OIDC_CLIENT_ID and COMMUNITY_OIDC_CLIENT_SECRET'
+        'COMMUNITY_OIDC_LABEL, COMMUNITY_OIDC_SCOPES, COMMUNITY_OIDC_MARK and COMMUNITY_OIDC_LINK_VERIFIED_EMAIL need COMMUNITY_OIDC_ISSUER_URL, COMMUNITY_OIDC_CLIENT_ID and COMMUNITY_OIDC_CLIENT_SECRET'
       );
     return null;
   }
@@ -123,7 +139,9 @@ function parseOidc(value: {
     clientId,
     clientSecret,
     label: buttonLabel,
+    mark: mark === 'dorkos' ? 'dorkos' : null,
     scopes: [...new Set(scopeList)],
+    linkVerifiedEmail: linkVerifiedEmail === '1',
   };
 }
 
@@ -432,6 +450,8 @@ const schema = z.object({
   COMMUNITY_OIDC_CLIENT_SECRET: optionalText,
   COMMUNITY_OIDC_LABEL: optionalText,
   COMMUNITY_OIDC_SCOPES: optionalText,
+  COMMUNITY_OIDC_MARK: optionalText,
+  COMMUNITY_OIDC_LINK_VERIFIED_EMAIL: optionalText,
   COMMUNITY_SMTP_URL: optionalText,
   COMMUNITY_MAIL_FROM: optionalText,
   // Owner replacement: the wait after a notice reaches the owner, the longer wait when it may
