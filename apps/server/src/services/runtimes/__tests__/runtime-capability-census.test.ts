@@ -277,6 +277,22 @@ describe('the runtime capabilities census', () => {
     expect(missing).toEqual([]);
   });
 
+  it('is rerun when only the generated doc or the title reader changes', () => {
+    // Neither file is in the server's default turbo inputs. Without this
+    // override, an edit to either alone replays a cached green (ci/ledger
+    // 261005-151421).
+    const turbo = JSON.parse(readFileSync(join(ROOT, 'turbo.json'), 'utf8')) as {
+      tasks: Record<string, { inputs?: string[] }>;
+    };
+    expect(turbo.tasks['@dorkos/server#test']?.inputs).toEqual(
+      expect.arrayContaining([
+        '$TURBO_DEFAULT$',
+        `$TURBO_ROOT$/${DOC}`,
+        '$TURBO_ROOT$/scripts/lib/code-only.mjs',
+      ])
+    );
+  });
+
   it(`keeps ${DOC} exactly what the registry renders`, () => {
     expect(
       readFileSync(join(ROOT, DOC), 'utf8'),
