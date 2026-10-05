@@ -141,6 +141,15 @@ export function createNodeBrokerTransport(): BrokerTransport {
           return address && typeof address !== 'string' ? address.port : 0;
         },
         identity: owner.server,
+        isCustodyKnown() {
+          return (
+            retainedIntakes.has(owner) &&
+            !owner.stopped &&
+            !owner.nativeClosed &&
+            !owner.closed &&
+            [...owner.sockets].every((socket) => wrappers.get(socket)?.isCustodyKnown?.() === true)
+          );
+        },
         onClose(callback: () => void) {
           if (owner.closed)
             queueMicrotask(() => {
