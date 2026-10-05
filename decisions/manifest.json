@@ -6757,6 +6757,24 @@
         "apps/community/src/recover-password.ts",
         "apps/community/src/browser/sign-up/"
       ]
+    },
+    {
+      "id": "261005-102035",
+      "slug": "spaces-email-links-hash-only-outbox-tokens-mailbox-proof",
+      "title": "Spaces email links: hash-only tokens through the outbox, and mailbox proof takes over a never-confirmed account",
+      "status": "draft",
+      "created": "2026-10-05",
+      "extractedFrom": "spaces-email",
+      "specSlug": "spaces-email",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/email-links/",
+        "apps/community/src/auth.ts",
+        "apps/community/src/sign-in/account-access.ts",
+        "apps/community/src/mail/",
+        "apps/community/migrations/0032_email_links.sql",
+        "packages/shared/src/community-wire.ts"
+      ]
     }
   ]
 }
