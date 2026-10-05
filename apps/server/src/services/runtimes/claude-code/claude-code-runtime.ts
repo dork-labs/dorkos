@@ -687,7 +687,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         if (event.type === 'error') sawRuntimeError = true;
         yield event;
       }
-      if (!sawRuntimeError) accessContext?.commit(session.sdkSessionId || sessionId);
+      // Only a turn that ran delivered the context: an attempt held for
+      // background work yields nothing and must not record it as seen.
+      if (observedEvent && !sawRuntimeError) {
+        accessContext?.commit(session.sdkSessionId || sessionId);
+      }
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } catch (error) {
       connectorRevokeReason = observedEvent ? 'runtime_failed' : 'setup_failed';

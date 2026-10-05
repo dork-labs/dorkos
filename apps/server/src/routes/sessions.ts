@@ -1357,6 +1357,12 @@ router.post('/:id/tasks/:taskId/stop', async (req, res) => {
   }
 });
 
+/** What Switch now says to a caller that is not the owner. */
+const SWITCH_NOW = {
+  personOnly: 'Only you can switch now, from the DorkOS app.',
+  action: 'switch a chat now',
+};
+
 // POST /api/sessions/:id/process/switch - Switch now: run a message held for the
 // agent's background work, ending that work (spec `warm-process-lifecycle` D2a,
 // DOR-2065). Takes no body. `switched: false` means there was no running agent
@@ -1364,6 +1370,9 @@ router.post('/:id/tasks/:taskId/stop', async (req, res) => {
 router.post('/:id/process/switch', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+  // It ends an agent's running work on a person's say-so: the owner's call,
+  // never an agent's (spec `warm-process-lifecycle`, "Switch now is owner-only").
+  if (refuseErrorUnlessOwner(req, res, SWITCH_NOW)) return;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   res.json({ switched: runtime.switchWhenReady?.(sessionId) === true });
 });

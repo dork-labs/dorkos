@@ -1412,6 +1412,27 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     expect(process.ended).toBe(false);
   });
 
+  it('relaunches for a new tool list once a shell alone has run past the ceiling (DOR-2065)', async () => {
+    // Purpose: a dev server never ends, and an in-use chat is never idle-reaped,
+    // so without this the chat would never get its new tools.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      await turn(sessionId, 'hours later');
+    } finally {
+      clock.mockRestore();
+    }
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
   it('keeps holding past the four-hour ceiling, and warns once that the list is stale', async () => {
     // Purpose: a dispatch never tears down working background (DOR-2705), so
     // the hold has no ceiling. Past the reaper's ceiling it only says, once,
@@ -2845,7 +2866,8 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
   /** Send with the caller's handshake, and record which answer came back. */
   async function heldTurn(
     sessionId: string,
-    content = 'after the change'
+    content = 'after the change',
+    accepts = true
   ): Promise<{
     events: StreamEvent[];
     answers: string[];
@@ -2859,8 +2881,9 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
       dispatchHold: {
         proceed: () => answers.push('proceed'),
         hold: (w) => {
-          answers.push('hold');
+          answers.push(accepts ? 'hold' : 'hold refused');
           waitingOn = w;
+          return accepts;
         },
       },
     })) {
@@ -2912,6 +2935,7 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
         hold: (w) => {
           answers.push('hold');
           waitingOn = w;
+          return true;
         },
       },
     })) {
@@ -3004,6 +3028,101 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
 
   it('has nothing to switch on a session with no running agent', () => {
     expect(runtime.switchWhenReady(nextSession())).toBe(false);
+  });
+
+  it('has nothing to switch while no message is held, so a stray switch ends nothing later', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+    expect(runtime.switchWhenReady(sessionId)).toBe(false);
+
+    changeInstructions();
+    expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
+    expect(process.ended).toBe(false);
+  });
+
+  it('counts a Switch now pressed during the settle wait', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+    changeInstructions();
+    expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
+
+    // The helper finishes, so the next attempt is quiet but fresh and waits
+    // out the settle interval. Inside it a helper starts again and the person
+    // presses Switch now: the switch is read after the wait, and wins.
+    process.reportTasks([]);
+    await settle();
+    const pending = heldTurn(sessionId);
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    process.reportTasks([{ task_id: 'helper-2', task_type: 'local_agent' }]);
+    await settle();
+    expect(runtime.switchWhenReady(sessionId)).toBe(true);
+
+    expect((await pending).answers).toEqual(['proceed']);
+    expect(process.ended).toBe(true);
+  });
+
+  it('leaves the turn state and the accounts revision alone on a held attempt', async () => {
+    registerTestHomes([CWD]);
+    let revision = 'r1';
+    try {
+      runtime.setMeshCore({
+        getByPath: () => ({ id: 'agent-1', name: 'agent' }),
+        listWithPaths: () => [],
+        updateLastSeen: () => undefined,
+      } as never);
+      runtime.setConnectorRuntimeTools({
+        principals: {
+          openTurn: vi.fn(),
+          renew: vi.fn(),
+          resolve: vi.fn(),
+          revoke: vi.fn().mockResolvedValue(undefined),
+        },
+        listenerUrl: 'http://127.0.0.1:1/mcp',
+        isConnectorCapabilityId: () => false,
+        accessSnapshot: vi.fn(async () => ({ accountCount: 0, revision })),
+      } as never);
+      const sessionId = nextSession();
+      await turn(sessionId);
+      cli.processes[0]!.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+      await settle();
+      const session = (
+        runtime as unknown as {
+          sessionStore: { findSession: (id: string) => { interruptRequestedAt?: number } };
+        }
+      ).sessionStore.findSession(sessionId);
+      session.interruptRequestedAt = 1234;
+      const seen = (runtime as unknown as { accountsAccess: { seen: Map<string, string> } })
+        .accountsAccess.seen;
+      const recorded = [...seen.values()];
+
+      revision = 'r2';
+      changeInstructions();
+      expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
+
+      // Nothing ran, so nothing the next real turn reads may have moved.
+      expect([...seen.values()]).toEqual(recorded);
+      expect(session.interruptRequestedAt).toBe(1234);
+    } finally {
+      clearTestHomes();
+    }
+  });
+
+  it('goes on with the turn when the caller can no longer take a hold', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    cli.processes[0]!.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+    changeInstructions();
+
+    const { answers, events } = await heldTurn(sessionId, 'too late', false);
+    expect(answers).toEqual(['hold refused', 'proceed']);
+    expect(events.some((event) => event.type === 'done')).toBe(true);
   });
 
   it('restarts anyway past the four-hour ceiling', async () => {

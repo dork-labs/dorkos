@@ -70,6 +70,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import request from '@dorkos/test-utils/supertest';
+import { subscribeRuntimeTurns } from '../../services/session/runtime-turns/runtime-turn.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
@@ -589,6 +590,13 @@ describe('POST /api/sessions/:id/tasks/:taskId/stop — the same receipt vocabul
 
 // DOR-2065, spec `warm-process-lifecycle` slice 4a (T23, T24, T33).
 describe('a message held for the agent’s background work', () => {
+  // The composition root subscribes every runtime's gate releases; this app
+  // under test does not, so the cases that need one subscribe here.
+  let unsubscribe: (() => void) | undefined;
+  afterEach(() => {
+    unsubscribe?.();
+    unsubscribe = undefined;
+  });
   const waitingOn = {
     reason: 'background-work' as const,
     holding: { agents: 2, shells: 1, other: 0 },
@@ -612,30 +620,58 @@ describe('a message held for the agent’s background work', () => {
     expect(queue).toEqual([expect.objectContaining({ content: 'move over', waitingOn })]);
   });
 
-  it('Switch now asks the runtime to switch (T24)', async () => {
-    const res = await request(server).post(`/api/sessions/${SESSION_ID}/process/switch`);
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ switched: true });
-    expect(fakeRuntime.switchWhenReady).toHaveBeenCalledWith(SESSION_ID);
+  it('refuses Switch now from an agent, and switches nothing', async () => {
+    const res = await request(server)
+      .post(`/api/sessions/${SESSION_ID}/process/switch`)
+      .set('x-dorkos-agent', 'agent-token-abc');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+    expect(fakeRuntime.switchWhenReady).not.toHaveBeenCalled();
   });
 
-  it('Stop hands the held message back and stops no task (T23)', async () => {
+  it('Switch now runs the held message (T24)', async () => {
     fakeRuntime.holdDispatch.mockReturnValue(waitingOn);
-    fakeRuntime.interruptQuery.mockResolvedValue(mockInterruptReceipt('not-running'));
     await post('move over', 'client-a');
-    // The turn it queued behind ends; trying it now meets the hold.
     releaseTurn();
     await vi.waitFor(() =>
       expect(fakeRuntime.holdDispatch.mock.calls.length).toBeGreaterThanOrEqual(2)
     );
-    await new Promise((resolve) => setTimeout(resolve, 20));
 
+    unsubscribe = subscribeRuntimeTurns(fakeRuntime);
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/process/switch`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ switched: true });
+    await vi.waitFor(async () => expect(await readQueue()).toEqual([]));
+    expect(fakeRuntime.sendMessage.mock.calls.map((call) => call[1])).toContain('move over');
+  });
+
+  it('answers switched: false when nothing is held', async () => {
+    const res = await request(server).post(`/api/sessions/${OTHER_SESSION_ID}/process/switch`);
+    expect(res.body).toEqual({ switched: false });
+  });
+
+  it('Stop hands the held message back, and it never runs (T23)', async () => {
+    fakeRuntime.holdDispatch.mockReturnValue(waitingOn);
+    fakeRuntime.interruptQuery.mockResolvedValue(mockInterruptReceipt('not-running'));
+    await post('move over', 'client-a');
+    releaseTurn();
+    await vi.waitFor(() =>
+      expect(fakeRuntime.holdDispatch.mock.calls.length).toBeGreaterThanOrEqual(2)
+    );
+
+    expect(await readQueue()).toEqual([expect.objectContaining({ waitingOn })]);
+    unsubscribe = subscribeRuntimeTurns(fakeRuntime);
     const res = await request(server).post(`/api/sessions/${SESSION_ID}/interrupt`);
-
-    expect(res.body.cancelledQueued.map((m: { content: string }) => m.content)).toEqual([
-      'move over',
-    ]);
-    expect(fakeRuntime.stopTask).not.toHaveBeenCalled();
+    expect(res.body.cancelledQueued).toEqual([expect.objectContaining({ content: 'move over' })]);
     expect(await readQueue()).toEqual([]);
+
+    // The work ends and the runtime releases the queue: nothing is left to run.
+    const attempts = (): number =>
+      fakeRuntime.sendMessage.mock.calls.filter((call) => call[1] === 'move over').length;
+    const before = attempts();
+    fakeRuntime.holdDispatch.mockReturnValue(undefined);
+    fakeRuntime.emitDispatchGateChange(SESSION_ID);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(attempts()).toBe(before);
   });
 });

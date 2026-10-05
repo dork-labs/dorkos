@@ -1211,6 +1211,13 @@ export const QueuedWaitingOnSchema = z
     pins: z.array(z.string()),
     /** The folder the agent is moving to, by its last path segment, when `cwd` is a pin. */
     targetFolderName: z.string().optional(),
+    /**
+     * What the agent is doing, when the counts above are all zero: a helper's
+     * report still owed (`delivery-owed`), a question waiting on the person
+     * (`waiting-on-person`), or a turn still open. A string rather than an
+     * enum, so a reason added later reads as "busy" on an older client.
+     */
+    because: z.string().optional(),
     /** When the work began, as epoch ms. */
     since: z.number(),
     /** When the message runs anyway, ending the work, as epoch ms. */

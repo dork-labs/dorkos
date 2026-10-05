@@ -31,8 +31,10 @@ vi.mock('../context-assembler.js', () => ({
 import {
   dispatchMessage,
   listQueuedMessages,
+  onDispatchLifecycle,
   resetMessageDispatcher,
 } from '../message-dispatcher.js';
+import { cancelQueuedMessage } from '../queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { disposeProjector, getOrCreateProjector } from '../session-state-projector.js';
 import { subscribeRuntimeTurns } from '../runtime-turns/runtime-turn.js';
@@ -386,9 +388,43 @@ describe('a message held for the agent’s background work (DOR-2065)', () => {
     expect(personTurn).not.toContain('helper one finished');
   });
 
+  it('stays removed when it is taken off the queue while a retry is under way', async () => {
+    runtime.withScenarios([quickTurn()]);
+    runtime.holdDispatch.mockReturnValue(waitingOn());
+    const dropped: string[] = [];
+    const stop = onDispatchLifecycle((event) => {
+      if (event.phase === 'dropped') dropped.push(event.messageId);
+    });
+    const { outcome } = await send('move to the cloud repo');
+    await settle();
+
+    // The retry pauses before the runtime is asked, so the row is removed while
+    // the launch is under way and nothing is armed to cancel.
+    let resume!: () => void;
+    runtime.settleOpenTurn.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => (resume = () => resolve(false)))
+    );
+    runtime.emitDispatchGateChange(session);
+    await settle();
+    expect(cancelQueuedMessage(session, outcome.messageId)).toBeDefined();
+    resume();
+    await settle();
+
+    // The work ends; nothing may run.
+    runtime.holdDispatch.mockReturnValue(undefined);
+    runtime.emitDispatchGateChange(session);
+    await settle();
+    stop();
+
+    expect(turnStarts()).toEqual([]);
+    expect(dropped).toContain(outcome.messageId);
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+
   it('runs on Switch now (T24)', async () => {
     runtime.withScenarios([quickTurn()]);
-    runtime.holdDispatch.mockReturnValueOnce(waitingOn());
+    // The work never ends: only the switch can run it.
+    runtime.holdDispatch.mockReturnValue(waitingOn());
     await send('move to the cloud repo');
     await settle();
     expect(turnStarts()).toEqual([]);
@@ -398,6 +434,32 @@ describe('a message held for the agent’s background work (DOR-2065)', () => {
     await settle();
 
     expect(turnStarts()).toHaveLength(1);
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+
+  it('has nothing to switch when no message is held', () => {
+    expect(runtime.switchWhenReady(session)).toBe(false);
+  });
+
+  it('runs on a Switch now that lands while a held attempt is still returning', async () => {
+    runtime.withScenarios([quickTurn()]);
+    await send('first, to have something held');
+    await settle();
+    // Held, and on the way back the person presses Switch now: the release
+    // fires before the dispatcher has parked the message again.
+    runtime.holdDispatch.mockReturnValueOnce(waitingOn());
+    runtime.withScenarios([quickTurn()]);
+    await send('move to the cloud repo');
+    await settle();
+    runtime.holdDispatch.mockImplementationOnce(() => {
+      runtime.switchWhenReady(session);
+      return waitingOn();
+    });
+    runtime.holdDispatch.mockReturnValue(waitingOn());
+    runtime.emitDispatchGateChange(session);
+    await settle();
+    await settle();
+
     expect(listQueuedMessages(session)).toEqual([]);
   });
 

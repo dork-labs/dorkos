@@ -268,6 +268,11 @@ interface SessionBundle {
    * the next dispatch, whatever it decides.
    */
   switchRequested?: boolean;
+  /**
+   * A message on this session was held for this process's background work
+   * and has not run since — what makes Switch now mean anything (DOR-2065).
+   */
+  holdOutstanding?: boolean;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -301,6 +306,45 @@ function* terminalFailure(
 }
 
 /**
+ * Clear what one turn leaves on the session, so the next starts clean. Run when
+ * a turn really starts, never for an attempt held for background work.
+ *
+ * @param session - The session about to run a turn
+ */
+function resetPerTurnState(session: AgentSession): void {
+  session.eventQueue = [];
+  // Clear last turn's breakdown so a failed fetch this turn never shows stale
+  // data, and a stop stamped in a PREVIOUS turn must not blind this turn's
+  // phantom detector (DOR-1087).
+  session.contextBreakdown = undefined;
+  session.interruptRequestedAt = undefined;
+  // A usage limit is reported once per turn (spec claude-account-fleet D4).
+  session.limitReportedThisTurn = false;
+  session.rejectedLimitThisTurn = undefined;
+  // And a Stop belongs to the turn it was pressed during, which the stop
+  // RECORD only gets right if this path says so (DOR-1320). On the resume
+  // path one query is one turn, so `stoppedQueries` is per-turn by
+  // construction; a pump runs many turns on ONE query object, so a single
+  // Stop would otherwise mark every later turn on that warm process as
+  // stopped — and the error-frame suppression it gates would swallow a
+  // genuine failure three turns later. Both slots, because the pump's
+  // `running` edge moves the live query between them (see below).
+  //
+  // The blast radius of getting this wrong GREW with DOR-1681. The record no
+  // longer only suppresses an error frame: it now rides the wire as
+  // `stopWasRequested` and settles the turn's LIFECYCLE, so a stale `true`
+  // three turns later would report a genuinely failed turn as one the operator
+  // stopped, which is the exact confusion that work removed. This loop is what
+  // keeps it per-turn, and the session write-lock is what makes the clearing
+  // safe to do here: one dispatch drives a session at a time and holds the
+  // lock for the whole of its stream, so no other turn's `result` can be
+  // reading the record while this clears it.
+  for (const spent of [session.activeQuery, session.lastQuery]) {
+    if (spent !== undefined) session.stoppedQueries?.delete(spent);
+  }
+}
+
+/**
  * What a held message shows the person: what is running, and what the restart
  * is for (spec `warm-process-lifecycle` D2a, DOR-2065).
  *
@@ -316,6 +360,7 @@ function waitingOnFor(
   return {
     reason: 'background-work',
     holding: { agents: busy.holding.agents, shells: busy.shells, other: busy.holding.other },
+    because: busy.because,
     pins: [...changed],
     ...(changed.includes('cwd') ? { targetFolderName: nodePath.basename(effectiveCwd) } : {}),
     since: busy.busySince,
@@ -477,13 +522,14 @@ export class PersistentDispatch {
    * once through the gate listener.
    *
    * @param sessionId - The session, in any id it answers to
-   * @returns False when the session holds no running process to switch
+   * @returns False when no message on this session is held for its process's
+   *   work, so there is nothing to switch for
    */
   switchWhenReady(sessionId: string): boolean {
     const key = this.sessionKeyOf(sessionId);
     const bundle = this.bundles.get(key);
     if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
-    if (bundle.live === undefined) return false;
+    if (bundle.live === undefined || bundle.holdOutstanding !== true) return false;
     bundle.switchRequested = true;
     logger.info('[persistent-dispatch] switch now: the next restart ends background work', {
       session: sessionId,
@@ -579,36 +625,14 @@ export class PersistentDispatch {
     const { sessionId, content, session, opts, messageOpts } = args;
     const key = this.sessionKeyOf(sessionId);
     session.lastActivity = Date.now();
-    session.eventQueue = [];
-    // Clear last turn's breakdown so a failed fetch this turn never shows stale
-    // data, and a stop stamped in a PREVIOUS turn must not blind this turn's
-    // phantom detector (DOR-1087).
-    session.contextBreakdown = undefined;
-    session.interruptRequestedAt = undefined;
-    // A usage limit is reported once per turn (spec claude-account-fleet D4).
-    session.limitReportedThisTurn = false;
-    session.rejectedLimitThisTurn = undefined;
-    // And a Stop belongs to the turn it was pressed during, which the stop
-    // RECORD only gets right if this path says so (DOR-1320). On the resume
-    // path one query is one turn, so `stoppedQueries` is per-turn by
-    // construction; a pump runs many turns on ONE query object, so a single
-    // Stop would otherwise mark every later turn on that warm process as
-    // stopped — and the error-frame suppression it gates would swallow a
-    // genuine failure three turns later. Both slots, because the pump's
-    // `running` edge moves the live query between them (see below).
-    //
-    // The blast radius of getting this wrong GREW with DOR-1681. The record no
-    // longer only suppresses an error frame: it now rides the wire as
-    // `stopWasRequested` and settles the turn's LIFECYCLE, so a stale `true`
-    // three turns later would report a genuinely failed turn as one the operator
-    // stopped, which is the exact confusion that work removed. This loop is what
-    // keeps it per-turn, and the session write-lock is what makes the clearing
-    // safe to do here: one dispatch drives a session at a time and holds the
-    // lock for the whole of its stream, so no other turn's `result` can be
-    // reading the record while this clears it.
-    for (const spent of [session.activeQuery, session.lastQuery]) {
-      if (spent !== undefined) session.stoppedQueries?.delete(spent);
-    }
+    // The per-turn resets wait for the handshake's answer: an attempt held for
+    // background work is no turn, and must not wipe the state of the one that
+    // ran before it (`beginTurn`).
+    const handshake = messageOpts?.dispatchHold;
+    const beginTurn = (): void => {
+      resetPerTurnState(session);
+      handshake?.proceed();
+    };
 
     // The ONE cwd resolution, handed to the gate below AND to the launcher
     // through the plan — the identity `dispatch-boundary.ts` requires, and the
@@ -635,7 +659,7 @@ export class PersistentDispatch {
       // moved cwd is a relaunch pin, so without it the pin comparison below
       // would tear the process down and only then be refused.
       logger.warn('[persistent-dispatch] boundary violation', { session: sessionId, effectiveCwd });
-      messageOpts?.dispatchHold?.proceed();
+      beginTurn();
       yield boundaryViolationEvent(effectiveCwd);
       return;
     }
@@ -655,7 +679,7 @@ export class PersistentDispatch {
       // token keeps its warm process (if any) and bills nothing.
       const refusal = creditsRefusalEvent(err);
       if (!refusal) throw err;
-      messageOpts?.dispatchHold?.proceed();
+      beginTurn();
       yield refusal;
       return;
     }
@@ -670,10 +694,6 @@ export class PersistentDispatch {
     };
 
     let bundle = this.acquire(key, session, opts);
-    // Read once and cleared, so a Switch now covers the next decision and no
-    // later one.
-    const switchNow = bundle.switchRequested === true;
-    bundle.switchRequested = false;
     // Nothing pinned to the live process may be stale by the time the turn
     // opens. A pin the SDK cannot set live replaces the process outright; the
     // four it can are awaited, never fired blind (`launch-live-settings.ts`).
@@ -706,11 +726,17 @@ export class PersistentDispatch {
       live !== undefined && (toolSurfaceMoved || skillWithdrawal)
         ? bundle.pump.quietness()
         : undefined;
-    // A background shell holds it too (DOR-2065). The list moved from outside
+    // A background shell holds it too (DOR-2065): the list moved from outside
     // this session, so the person's message rides the old one rather than
-    // either ending the shell or waiting on it — and the stale list ends with
-    // the process, at the latest at the busy-spell ceiling's idle reap.
-    const holding = live !== undefined && busy !== undefined && !busy.quiet;
+    // either ending the shell or waiting on it. Until the four-hour ceiling: a
+    // dev server never ends and a chat in use is never idle-reaped, so past
+    // the ceiling a process whose ONLY work is shells relaunches for the new
+    // list. Helpers and Monitors keep it (see below).
+    const holding =
+      live !== undefined &&
+      busy !== undefined &&
+      !busy.quiet &&
+      !(bundle.pump.isHoldingOnlyShells() && bundle.pump.isPastCeiling(Date.now()));
     let compared = plan.fingerprint;
     if (holding && toolSurfaceMoved) compared = withLiveToolSurface(live, compared);
     if (holding && skillWithdrawal) {
@@ -723,12 +749,13 @@ export class PersistentDispatch {
         }
       );
     }
-    // Deliberately NO ceiling on this hold. The reaper takes a process back at
-    // the four-hour ceiling, but a dispatch is not the reaper: tearing down a
-    // process whose helper or Monitor is still working is exactly the DOR-2705
-    // bug, and a stale tool list costs far less than lost work (the gate still
-    // refuses any call a person blocked). So past the ceiling the hold goes on,
-    // and the only change is one warning per busy spell saying the list is stale.
+    // Deliberately NO ceiling on this hold while a helper, Monitor or delivery
+    // is in it: tearing down a process whose helper is still working is
+    // exactly the DOR-2705 bug, and a stale tool list costs far less than lost
+    // work (the gate still refuses any call a person blocked). So past the
+    // ceiling the hold goes on, with one warning per busy spell saying the list
+    // is stale. The stale list ends when that work does, when the process does,
+    // or — for shells alone — at the ceiling (above).
     if (holding && busy !== undefined && !busy.quiet && toolSurfaceMoved) {
       const busyForMs = Date.now() - busy.busySince;
       logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
@@ -753,24 +780,38 @@ export class PersistentDispatch {
       ...(contextTokens !== undefined ? { contextTokens } : {}),
       onPluginReloadHeld: (impact) => this.onPluginReloadHeld?.(sessionId, impact, contextTokens),
     });
-    const handshake = messageOpts?.dispatchHold;
-    if (reuse.action === 'replace' && !switchNow) {
+    if (reuse.action === 'replace') {
       // Only a caller that can wait pays for the settle interval.
-      const busyNow =
+      let busyNow =
         handshake !== undefined
           ? await this.workARestartWouldEnd(bundle, key)
           : this.workARestartWouldEndNow(bundle, key);
-      if (busyNow !== undefined && handshake !== undefined) {
-        const waitingOn = waitingOnFor(busyNow, reuse.changed, plan.effectiveCwd);
-        logger.info('[persistent-dispatch] holding a restart while background work runs', {
+      // Read AFTER the settle wait, so a Switch now pressed during it counts.
+      if (busyNow !== undefined && bundle.switchRequested === true) {
+        logger.info('[persistent-dispatch] switching now, ending background work', {
           session: sessionId,
-          reason: reuse.reason,
           because: busyNow.because,
         });
-        handshake.hold(waitingOn);
-        return;
+        busyNow = undefined;
       }
-      if (busyNow !== undefined) {
+      if (busyNow !== undefined && handshake !== undefined) {
+        const waitingOn = waitingOnFor(busyNow, reuse.changed, plan.effectiveCwd);
+        if (handshake.hold(waitingOn)) {
+          logger.info('[persistent-dispatch] holding a restart while background work runs', {
+            session: sessionId,
+            reason: reuse.reason,
+            because: busyNow.because,
+          });
+          bundle.holdOutstanding = true;
+          return;
+        }
+        // The caller stopped waiting for an answer and the turn is already on
+        // screen: going on is the only way it ends with an answer.
+        logger.warn('[persistent-dispatch] a hold came too late; restarting a working process', {
+          session: sessionId,
+          because: busyNow.because,
+        });
+      } else if (busyNow !== undefined) {
         // A caller that cannot wait: today's behaviour, said out loud.
         logger.warn('[persistent-dispatch] restarting a process that is still working', {
           session: sessionId,
@@ -778,8 +819,11 @@ export class PersistentDispatch {
           because: busyNow.because,
         });
       }
+      // The restart goes ahead, so nothing is held for it any more.
+      bundle.holdOutstanding = false;
+      bundle.switchRequested = false;
     }
-    handshake?.proceed();
+    beginTurn();
     if (reuse.action === 'replace') {
       logger.info('[persistent-dispatch] replacing a warm process', {
         session: sessionId,

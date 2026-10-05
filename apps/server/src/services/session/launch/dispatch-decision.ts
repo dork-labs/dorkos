@@ -21,7 +21,8 @@ export const DISPATCH_DECISION_TIMEOUT_MS = 30_000;
  *
  * The runtime answers `proceed()` or `hold(waitingOn)` before its stream yields
  * anything. The first event, an end or a throw also count as "go ahead", so a
- * runtime that never answers costs nothing but the timeout. On `go`, the
+ * runtime that never answers costs nothing but the timeout; a `hold` that
+ * arrives after that answers `false`, and the runtime goes on with the turn. On `go`, the
  * returned stream replays the event already pulled and continues the same
  * generator; a throw surfaces from it exactly as from the runtime's own stream.
  *
@@ -33,15 +34,24 @@ export async function awaitDispatchDecision(
   timeoutMs = DISPATCH_DECISION_TIMEOUT_MS
 ): Promise<{ held: QueuedWaitingOn } | { stream: AsyncIterable<StreamEvent> }> {
   let held: QueuedWaitingOn | undefined;
+  // Once the turn is under way — the runtime proceeded, yielded, ended, or the
+  // timeout gave up waiting — a hold can no longer be honoured: there is no
+  // queue row to put back, so the runtime is told to go on instead.
+  let settled = false;
   let decide!: () => void;
   const decided = new Promise<void>((resolve) => {
-    decide = resolve;
+    decide = () => {
+      settled = true;
+      resolve();
+    };
   });
   const generator = start({
     proceed: () => decide(),
     hold: (waitingOn) => {
-      held ??= waitingOn;
+      if (settled) return false;
+      held = waitingOn;
       decide();
+      return true;
     },
   });
   const first = generator.next();
@@ -60,6 +70,7 @@ export async function awaitDispatchDecision(
     }),
   ]);
   clearTimeout(timer);
+  settled = true;
   if (held !== undefined) {
     // The runtime ends its stream after holding; let it finish.
     await firstSettled;

@@ -168,14 +168,20 @@ export function QueuePanel({
                 {/* Held for background work: the one way to run it anyway. A
                     text button, not an icon — it ends work, so it says so. */}
                 {item.waiting !== undefined && onSwitchNow !== undefined && (
-                  <button
-                    type="button"
-                    onClick={onSwitchNow}
-                    title={item.waiting.switchHint}
-                    className="focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-sm px-1.5 py-1 text-xs font-medium transition-colors"
-                  >
-                    Switch now
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={onSwitchNow}
+                      title={item.waiting.switchHint}
+                      aria-describedby={`switch-now-${item.id}`}
+                      className="focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-sm px-1.5 py-1 text-xs font-medium transition-colors"
+                    >
+                      Switch now
+                    </button>
+                    <span id={`switch-now-${item.id}`} className="sr-only">
+                      {item.waiting.switchHint}
+                    </span>
+                  </>
                 )}
                 {/* Nothing to reorder on the head — it is already as far forward
                     as a message gets, and offering a control that cannot do

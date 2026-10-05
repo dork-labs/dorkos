@@ -15,8 +15,12 @@
  * That holds for a warm Claude Code process too: a hidden or revealed tool
  * moves the `dorkos` server's tool-surface digest, and the `toolSurface` launch
  * pin relaunches the process before its next turn (DOR-2685,
- * `claude-code/sessions/launch-fingerprint.ts`). Codex and OpenCode build their
- * list per request, so they need nothing extra.
+ * `claude-code/sessions/launch-fingerprint.ts`) — unless the process is still
+ * running background work. Then the turn keeps the old list until that work
+ * ends, the process ends, or, when the only work is background shells, the
+ * four-hour ceiling passes (`persistent-dispatch.ts`, DOR-2065). Blocked calls
+ * are refused by the gate meanwhile. Codex and OpenCode build their list per
+ * request, so they need nothing extra.
  *
  * @module services/runtimes/shared/permission-tool-filter
  */

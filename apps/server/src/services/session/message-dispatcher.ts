@@ -255,6 +255,13 @@ interface PendingDispatch {
   held?: QueuedWaitingOn;
 }
 
+/**
+ * How many times each session's queue has been released — a turn boundary or
+ * the runtime's gate release (DOR-2065). A held attempt compares it before and
+ * after: a release that landed while the attempt was out (Switch now, the work
+ * ending) found nothing parked to release, so the attempt retries at once.
+ */
+const releases = new Map<string, number>();
 /** Turns open right now, keyed by resolved session id. */
 const inFlight = new Map<string, InFlightTurn>();
 /**
@@ -1312,6 +1319,20 @@ function returnToQueue(plan: DispatchPlan): void {
  * @param waitingOn - What it waits on, as the runtime reported it
  */
 function holdInQueue(plan: DispatchPlan, waitingOn: QueuedWaitingOn): void {
+  // Taken off the queue while this attempt was under way (a Remove or a Stop
+  // finds nothing armed to cancel then): it is dropped, exactly as
+  // {@link returnToQueue} drops a refused launch whose row is gone.
+  const store = getMessageQueueStore();
+  if (store && !store.get(plan.messageId)) {
+    setQueuedWaitingOn(plan.messageId, undefined);
+    emitLifecycle({
+      phase: 'dropped',
+      messageId: plan.messageId,
+      reason: sweptWhileLaunching.delete(plan.messageId) ? 'session_gone' : 'removed',
+    });
+    plan.turn.onSettled?.('failed');
+    return;
+  }
   if (setQueuedWaitingOn(plan.messageId, waitingOn)) emitQueueUpdate(plan.sessionKey);
   parkDispatch(plan, unwatchedSettle(plan), { held: waitingOn });
 }
@@ -1411,6 +1432,7 @@ function launchDispatchInner(
     ? 0
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
   const token = Symbol('dispatcher-turn');
+  const releasesAtStart = releases.get(sessionKey) ?? 0;
   if (!opts.budgetExhausted)
     inFlight.set(sessionKey, { clientId, token, startedAt: Date.now(), sawTurnStart: false });
   // Held from here until this launch is done with the message, whichever way it
@@ -1516,6 +1538,12 @@ function launchDispatchInner(
         // straight back into the same answer.
         if (plan.whenBusy === 'queue') holdInQueue(plan, result.held);
         else returnToQueue(plan);
+        // Released while this attempt was out: the release found nothing
+        // parked, so it is applied now rather than lost until the next one.
+        if ((releases.get(sessionKey) ?? 0) !== releasesAtStart) {
+          const parked = pending.get(messageId);
+          if (parked) parked.held = undefined;
+        }
         clearIfOurs();
         return result;
       }
@@ -2714,6 +2742,7 @@ export function noteTurnBoundary(sessionId: string): void {
   // A boundary is the only thing that can change the write-lock's answer, so it
   // is also what re-arms a message the lock refused earlier.
   const sessionKey = primaryOf(sessionId);
+  releases.set(sessionKey, (releases.get(sessionKey) ?? 0) + 1);
   for (const entry of pending.values()) {
     if (entry.sessionKey !== sessionKey) continue;
     entry.waitingOnLock = false;
@@ -2858,6 +2887,7 @@ export function cancelPendingDispatch(messageId: string): boolean {
 export function resetMessageDispatcher(): void {
   for (const entry of pending.values()) clearTimeout(entry.timer);
   inFlight.clear();
+  releases.clear();
   runtimeTurns.clear();
   pending.clear();
   launching.clear();

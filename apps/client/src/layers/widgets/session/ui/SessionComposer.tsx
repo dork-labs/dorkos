@@ -688,7 +688,7 @@ export function SessionComposer({
                 awaitingDecision
                   ? 'Waiting for your answer above'
                   : chatQueue.queue[0]?.waiting !== undefined
-                    ? 'Waiting for background work to finish'
+                    ? 'Sending when the agent is free'
                     : 'Sending one at a time as the agent finishes'
               }
             />

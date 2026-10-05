@@ -67,10 +67,17 @@ function counted(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+/** What holds a message when nothing is running in the background. */
+const HELD_FOR: Record<string, string> = {
+  'delivery-owed': 'a helper’s report',
+  'waiting-on-person': 'your answer',
+};
+
 /**
- * Say why a queued message is waiting on the agent's background work, and
- * what Switch now would stop (DOR-2065). Never names the machinery: no
- * process, no restart, no pin.
+ * Say why a queued message is held, and what Switch now would stop
+ * (DOR-2065). Never names the machinery: no process, no restart, no pin. A
+ * Monitor or unknown task is a "background job", never a "task", which is the
+ * Tasks product's word.
  *
  * @param waitingOn - What the server says the message waits on.
  */
@@ -79,24 +86,36 @@ export function describeWaitingOn(waitingOn: QueuedWaitingOn): QueueWaiting {
   const parts = [
     agents > 0 ? counted(agents, 'helper', 'helpers') : undefined,
     shells > 0 ? counted(shells, 'command', 'commands') : undefined,
-    other > 0 ? counted(other, 'task', 'tasks') : undefined,
+    other > 0 ? counted(other, 'background job', 'background jobs') : undefined,
   ].filter((part): part is string => part !== undefined);
   const work =
     parts.length === 0
-      ? 'background work'
+      ? undefined
       : parts.length === 1
         ? parts[0]!
         : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)!}`;
   const pins = waitingOn.pins;
   const change =
     pins.includes('cwd') && waitingOn.targetFolderName
-      ? `moving to ${waitingOn.targetFolderName}`
+      ? `moves to ${waitingOn.targetFolderName}`
       : pins.includes('agentIdentity')
-        ? 'switching agents'
+        ? 'switches agents'
         : pins.includes('systemPromptAppend')
-          ? 'loading new instructions'
-          : 'applying new settings';
-  return { line: `Waiting on ${work} before ${change}.`, switchHint: `Stops ${work}.` };
+          ? 'loads new instructions'
+          : 'applies new settings';
+  const reason =
+    work !== undefined
+      ? `Held for ${work}.`
+      : waitingOn.because !== undefined && HELD_FOR[waitingOn.because] !== undefined
+        ? `Held for ${HELD_FOR[waitingOn.because]}.`
+        : 'Held until the agent is free.';
+  return {
+    line: `${reason} Sending it ${change}.`,
+    switchHint:
+      work !== undefined
+        ? `Switching now stops ${work}.`
+        : 'Switching now stops what the agent is doing.',
+  };
 }
 
 /** What each downgrade reason means, in words a chip can say. */

@@ -1087,8 +1087,11 @@ export interface DispatchHoldHandshake {
    * Starting the turn now would end background work: keep the message queued.
    *
    * @param waitingOn - What it waits on, for the person to see
+   * @returns False when the caller has stopped waiting for an answer and the
+   *   turn is already under way; the runtime must then go on with the turn
+   *   (or yield an error), never end its stream silently
    */
-  hold(waitingOn: QueuedWaitingOn): void;
+  hold(waitingOn: QueuedWaitingOn): boolean;
 }
 
 /**
@@ -1684,7 +1687,8 @@ export interface AgentRuntime {
    * {@link onDispatchGateChange} so the held message is tried again at once.
    *
    * @param sessionId - The session, in any id it answers to
-   * @returns False when the session holds no running agent to switch
+   * @returns False when no message on this session is being held, so there
+   *   is nothing to switch for
    */
   switchWhenReady?(sessionId: string): boolean;
 

@@ -127,11 +127,16 @@ export class FakeAgentRuntime implements AgentRuntime {
   ): AsyncGenerator<StreamEvent> {
     // The dispatch handshake, answered before anything is yielded, as a real
     // runtime that implements `switchWhenReady` must.
-    const waitingOn = opts?.dispatchHold !== undefined ? this.holdDispatch(sessionId) : undefined;
-    if (waitingOn !== undefined) {
-      opts!.dispatchHold!.hold(waitingOn);
+    // A pending Switch now goes ahead whatever is running, once.
+    const waitingOn =
+      opts?.dispatchHold !== undefined && !this.switchPending.delete(sessionId)
+        ? this.holdDispatch(sessionId)
+        : undefined;
+    if (waitingOn !== undefined && opts!.dispatchHold!.hold(waitingOn)) {
+      this.holdsOutstanding.add(sessionId);
       return;
     }
+    this.holdsOutstanding.delete(sessionId);
     opts?.dispatchHold?.proceed();
     const scenario = this._scenarios[this._scenarioIndex];
     if (scenario) {
@@ -214,13 +219,21 @@ export class FakeAgentRuntime implements AgentRuntime {
   holdDispatch = vi.fn<(sessionId: string) => QueuedWaitingOn | undefined>(() => undefined);
 
   /**
-   * The person chose Switch now. Answers `true` and releases the hold through
-   * {@link emitDispatchGateChange}; spied so a route test can assert it was asked.
+   * The person chose Switch now. Answers `false` unless a send on this session
+   * was held; otherwise the next send goes ahead and the hold is released
+   * through the gate listener. Spied so a route test can assert it was asked.
    */
   switchWhenReady = vi.fn<(sessionId: string) => boolean>((sessionId) => {
+    if (!this.holdsOutstanding.has(sessionId)) return false;
+    this.switchPending.add(sessionId);
     this.dispatchGateListener?.(sessionId);
     return true;
   });
+
+  /** Sessions whose last send was held, so Switch now has something to switch. */
+  private readonly holdsOutstanding = new Set<string>();
+  /** Sessions whose next send goes ahead, because the person chose Switch now. */
+  private readonly switchPending = new Set<string>();
 
   /** The listener {@link onDispatchGateChange} registered, if anything is listening. */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;

@@ -111,29 +111,51 @@ describe('a message held for background work (DOR-2065)', () => {
     ...(waitingOn ? { waitingOn } : {}),
   });
 
-  it('says what it waits on and what the switch is for', () => {
+  it('says what it waits on and what sending it changes', () => {
     expect(describeWaitingOn(held())).toEqual({
-      line: 'Waiting on 2 helpers before moving to dorkos-cloud.',
-      switchHint: 'Stops 2 helpers.',
+      line: 'Held for 2 helpers. Sending it moves to dorkos-cloud.',
+      switchHint: 'Switching now stops 2 helpers.',
     });
     expect(
       describeWaitingOn(
-        held({ holding: { agents: 1, shells: 1, other: 1 }, pins: ['systemPromptAppend'] })
+        held({ holding: { agents: 1, shells: 2, other: 1 }, pins: ['systemPromptAppend'] })
       ).line
-    ).toBe('Waiting on 1 helper, 1 command and 1 task before loading new instructions.');
+    ).toBe(
+      'Held for 1 helper, 2 commands and 1 background job. Sending it loads new instructions.'
+    );
     expect(describeWaitingOn(held({ pins: ['agentIdentity'] })).line).toBe(
-      'Waiting on 2 helpers before switching agents.'
+      'Held for 2 helpers. Sending it switches agents.'
     );
     expect(describeWaitingOn(held({ pins: ['effort'] })).line).toBe(
-      'Waiting on 2 helpers before applying new settings.'
+      'Held for 2 helpers. Sending it applies new settings.'
     );
   });
 
-  it('keeps every line within the app’s word limit', () => {
-    const worst = describeWaitingOn(
-      held({ holding: { agents: 12, shells: 3, other: 2 }, pins: ['systemPromptAppend'] })
+  it('never calls a Monitor a task, the name of the Tasks product', () => {
+    const { line } = describeWaitingOn(held({ holding: { agents: 0, shells: 0, other: 2 } }));
+    expect(line).toBe('Held for 2 background jobs. Sending it moves to dorkos-cloud.');
+    expect(line).not.toMatch(/task/i);
+  });
+
+  it('says what it is when nothing is running in the background', () => {
+    const none = { agents: 0, shells: 0, other: 0 };
+    expect(describeWaitingOn(held({ holding: none, because: 'delivery-owed' })).line).toBe(
+      'Held for a helper’s report. Sending it moves to dorkos-cloud.'
     );
-    expect(worst.line.split(/\s+/).length).toBeLessThanOrEqual(15);
+    expect(describeWaitingOn(held({ holding: none, because: 'waiting-on-person' })).line).toBe(
+      'Held for your answer. Sending it moves to dorkos-cloud.'
+    );
+    const busy = describeWaitingOn(held({ holding: none, because: 'turn-open' }));
+    expect(busy.line).toBe('Held until the agent is free. Sending it moves to dorkos-cloud.');
+    expect(busy.line).not.toMatch(/background/);
+    expect(busy.switchHint).toBe('Switching now stops what the agent is doing.');
+  });
+
+  it('keeps every line within the app’s word limit', () => {
+    for (const pins of [['cwd'], ['agentIdentity'], ['systemPromptAppend'], ['effort']]) {
+      const worst = describeWaitingOn(held({ holding: { agents: 12, shells: 3, other: 2 }, pins }));
+      expect(worst.line.split(/\s+/).length, pins[0]).toBeLessThanOrEqual(15);
+    }
   });
 
   it('shows a held head even with no turn running', () => {

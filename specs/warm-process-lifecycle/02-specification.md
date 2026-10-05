@@ -264,6 +264,14 @@ synchronous and decides. A config write bumps the generation. Runtimes without w
 > `releaseAt`, never at the 5-minute queue bound. `AgentRuntime.switchWhenReady?` is both Switch now and the marker
 > that a runtime answers the handshake.
 >
+> `hold()` answers whether it was taken: after the 30 s fallback the turn is already under way, so a late hold is
+> refused and the runtime goes on with the turn. Switch now is armed only while a hold is outstanding (Switch now on a
+> session with nothing held answers `switched: false`), it is read after the settle wait, and a release that lands
+> while a held attempt is still on its way back is applied as soon as the dispatcher parks it. A held attempt runs no
+> per-turn reset and records no accounts revision; it does re-run the launch resolution (agent `last_seen`, a fresh
+> identity token), because that resolution is what produces the fingerprint the decision compares, and attempts are
+> bounded to one per turn boundary or release.
+>
 > Consequences: there is no stale handle, so `reprepare` (T21c) does not exist; a send with no handshake (a direct
 > `sendMessage` caller) restarts as before, logged at `warn`; a protected (document-channel) message is not offered the
 > hold, because its claim is final before the runtime call. **Trimmed, with reasons:**
