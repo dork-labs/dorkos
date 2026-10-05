@@ -126,7 +126,7 @@ describe('/api/rooms', () => {
   });
 
   describe('POST /', () => {
-    it('creates a channel and returns it with its roster', async () => {
+    it('M-01: creates a channel and returns it with its roster', async () => {
       const res = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'channel', title: 'Backend', topic: 'the API' });

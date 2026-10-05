@@ -249,7 +249,7 @@ describe('SessionCrashRecovery', () => {
   // the first turn crashes, and the two behind it are STILL THERE, in order,
   // with the ids they were accepted under — then they run on the resumed
   // process.
-  it('preserves the queue across a crash and runs the survivors in order on the resumed process', async () => {
+  it('L-13: preserves the queue across a crash and runs the survivors in order on the resumed process', async () => {
     const store = new MessageQueueStore(createTestDb());
     const h = harness({ store });
     const rows = ['first', 'second', 'third'].map((content) =>

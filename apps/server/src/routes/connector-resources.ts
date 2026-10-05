@@ -40,6 +40,8 @@ import {
   type ConnectorSessionAccessService,
 } from '../services/connectors/resources/session-access-service.js';
 import type { SignInRefresher } from '../services/connectors/resources/sign-in-refresh.js';
+import { resolveConnectReturnTo } from '../services/connectors/resources/connect-return-to.js';
+import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { logError, logger } from '../lib/logger.js';
 import { sendManagedCloudError } from './managed-cloud-error.js';
 
@@ -81,6 +83,12 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
   readonly signIns: Pick<SignInRefresher, 'refreshOnDemand'>;
   /** The owner's per-chat app switch. */
   readonly sessionAccess: Pick<ConnectorSessionAccessService, 'setAccess'>;
+  /**
+   * The origins this server serves right now, which a connection's way back
+   * into the app must be on. Defaults to the live trusted origins (loopback
+   * plus the tunnel); tests pass their own.
+   */
+  readonly servedOrigins?: () => readonly string[];
 }
 
 function owner(req: Request, res: Response, deps: ConnectorResourcesRouterDeps) {
@@ -153,6 +161,9 @@ async function withSignal<T>(req: Request, run: (signal: AbortSignal) => Promise
 /** Create the provider-neutral owner Connections resource router. */
 export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDeps): Router {
   const router = Router();
+  const servedOrigins = deps.servedOrigins ?? resolveTrustedOrigins;
+  /** The client's way back into the app, kept only when it leads here (never refused). */
+  const returnTo = (raw: string | undefined) => resolveConnectReturnTo(raw, servedOrigins());
 
   router.get('/catalog', async (req, res) => {
     try {
@@ -239,8 +250,14 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     if (!operator) return;
     const body = parseBody(ConnectorAuthenticationFlowCreateRequestSchema, req.body ?? {}, res);
     if (!body) return;
+    const { returnTo: requestedReturnTo, ...request } = body;
+    const kept = returnTo(requestedReturnTo);
     try {
-      res.status(201).json(await deps.authentication.start(operator, body));
+      res
+        .status(201)
+        .json(
+          await deps.authentication.start(operator, { ...request, ...(kept && { returnTo: kept }) })
+        );
     } catch (error) {
       sendResourceError(res, error);
     }
@@ -273,9 +290,12 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     if (!body) return;
     try {
       const connectionId = ConnectionIdSchema.parse(req.params.connectionId);
-      res
-        .status(201)
-        .json(await deps.authentication.reconnect(operator, connectionId, body.idempotencyKey));
+      const kept = returnTo(body.returnTo);
+      res.status(201).json(
+        await deps.authentication.reconnect(operator, connectionId, body.idempotencyKey, {
+          ...(kept && { returnTo: kept }),
+        })
+      );
     } catch (error) {
       sendResourceError(res, error);
     }

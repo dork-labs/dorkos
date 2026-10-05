@@ -384,7 +384,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
     expect(second.length).toBeGreaterThan(first.length);
   });
 
-  it('still answers a normal message once the budget is generous', async () => {
+  it('M-03: still answers a normal message once the budget is generous', async () => {
     // The bound must not be a way to make rooms useless.
     const roomId = await loudRoom();
     await post(roomId, 'what do you two think?');

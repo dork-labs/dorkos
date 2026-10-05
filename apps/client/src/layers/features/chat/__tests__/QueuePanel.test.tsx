@@ -269,3 +269,34 @@ describe('QueuePanel — send next and reorder', () => {
     }
   });
 });
+
+describe('QueuePanel — a message held for background work (DOR-2065)', () => {
+  it('shows why it waits and offers Switch now, saying what it stops', () => {
+    const onSwitchNow = vi.fn();
+    renderPanel({
+      queue: [
+        makeItem('move over', 0, {
+          waiting: {
+            line: 'Held for 2 helpers. Sending it moves to dorkos-cloud.',
+            switchHint: 'Switching now stops 2 helpers.',
+          },
+        }),
+        makeItem('after that', 1),
+      ],
+      onSwitchNow,
+    });
+
+    expect(screen.getByText('Held for 2 helpers. Sending it moves to dorkos-cloud.')).toBeTruthy();
+    const button = screen.getByRole('button', { name: 'Switch now' });
+    // What it stops is described by text on the page, not only a hover
+    // tooltip a touch screen never shows.
+    const describedBy = button.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      'Switching now stops 2 helpers.'
+    );
+    fireEvent.click(button);
+    expect(onSwitchNow).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('button', { name: 'Switch now' })).toHaveLength(1);
+  });
+});

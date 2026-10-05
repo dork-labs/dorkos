@@ -271,7 +271,7 @@ function compactingTurn(options: { hold: boolean }): ScenarioFn {
  * the `q3-*` entries come from {@link Q3_SCENARIOS} and exist for the DOR-500
  * resource-contention measurement; the interactive entries come from
  * {@link INTERACTIVE_SCENARIOS} and back the interactive-session rows of
- * `meta/chat-capabilities.md` (DOR-1214) by PARKING until a person — or a test —
+ * `contributing/capabilities/chat.md` (DOR-1214) by PARKING until a person — or a test —
  * answers; the held-path entry comes from {@link HELD_PROCESS_SCENARIOS} and
  * names in its own answer which path served the turn (DOR-1326). All four
  * families are inert unless selected via `POST /api/test/scenario`.

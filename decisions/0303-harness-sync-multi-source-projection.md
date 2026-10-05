@@ -19,7 +19,7 @@ projection is skills-only and symlinked). The clause: "its **portable subset** (
 **automatically on install** to every enabled harness … scope-matched (project↔project, global↔global)".
 
 At global scope the portable subset is **skills only** (hooks, commands, instructions and MCP servers are
-refused at user scope, each with its reason recorded in `meta/harness-sync-capabilities.md`), and the
+refused at user scope, each with its reason recorded in `contributing/capabilities/harness-sync.md`), and the
 projection is **not automatic on install**: it is asked for once and remembered in `harness.global`. The
 related Negative bullet "the projector must understand … scope mapping" is now understated rather than
 wrong, and reads as history.

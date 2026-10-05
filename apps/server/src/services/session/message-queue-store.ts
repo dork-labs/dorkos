@@ -38,7 +38,7 @@ import {
 } from '@dorkos/db';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { ClientContextSchema } from '@dorkos/shared/additional-context';
-import type { MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
+import type { MessageDisposition, QueuedMessage, QueuedWaitingOn } from '@dorkos/shared/schemas';
 import type { SessionMessageQueueRow } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 
@@ -108,7 +108,34 @@ export interface QueuedMessageRecord extends QueuedMessage {
  */
 export function toQueuedMessage(record: QueuedMessageRecord): QueuedMessage {
   const { id, content, disposition, enqueuedAt, enqueuedBy } = record;
-  return { id, content, disposition, enqueuedAt, enqueuedBy };
+  const waitingOn = heldFor.get(id);
+  return { id, content, disposition, enqueuedAt, enqueuedBy, ...(waitingOn ? { waitingOn } : {}) };
+}
+
+/**
+ * What each held message is waiting on (DOR-2065), by message id.
+ *
+ * In memory, beside the durable row rather than in it: a hold describes a
+ * running process, and no process outlives a restart, so after one the row is
+ * simply tried again and held afresh if it still has to be.
+ */
+const heldFor = new Map<string, QueuedWaitingOn>();
+
+/**
+ * Record what a queued message is waiting on, or clear it with `undefined`.
+ *
+ * @param messageId - The queued message
+ * @param waitingOn - What it waits on, or `undefined` when it no longer waits
+ * @returns True when this changed what the queue shows
+ */
+export function setQueuedWaitingOn(
+  messageId: string,
+  waitingOn: QueuedWaitingOn | undefined
+): boolean {
+  const before = heldFor.get(messageId);
+  if (waitingOn === undefined) return heldFor.delete(messageId);
+  heldFor.set(messageId, waitingOn);
+  return JSON.stringify(before) !== JSON.stringify(waitingOn);
 }
 
 /** What {@link MessageQueueStore.enqueue} needs to accept a message. */
@@ -234,6 +261,7 @@ export class MessageQueueStore {
     const row = this.row(messageId, executor);
     if (!row) return undefined;
     executor.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, messageId)).run();
+    heldFor.delete(messageId);
     return toRecord(row);
   }
 
@@ -326,6 +354,7 @@ export class MessageQueueStore {
         .all();
       if (rows.length === 0) return [];
       tx.delete(sessionMessageQueue).where(eq(sessionMessageQueue.sessionId, sessionId)).run();
+      for (const row of rows) heldFor.delete(row.id);
       return rows.map(toRecord);
     });
   }

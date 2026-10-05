@@ -31,8 +31,10 @@ vi.mock('../context-assembler.js', () => ({
 import {
   dispatchMessage,
   listQueuedMessages,
+  onDispatchLifecycle,
   resetMessageDispatcher,
 } from '../message-dispatcher.js';
+import { cancelQueuedMessage } from '../queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { disposeProjector, getOrCreateProjector } from '../session-state-projector.js';
 import { subscribeRuntimeTurns } from '../runtime-turns/runtime-turn.js';
@@ -297,5 +299,198 @@ describe('a report that never arrives cannot wedge the queue (T38)', () => {
 
     expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
     expect(listQueuedMessages(session)).toEqual([]);
+  });
+});
+
+// DOR-2065, spec `warm-process-lifecycle` slice 4a (T20, T22, T24, T25-ceiling).
+// A message whose turn would restart the agent while its background work runs
+// waits in the queue, visibly, holding nothing: no lock, no turn, no clock.
+describe('a message held for the agent’s background work (DOR-2065)', () => {
+  const waitingOn = (releaseAt = Date.now() + 60 * 60_000) => ({
+    reason: 'background-work' as const,
+    holding: { agents: 2, shells: 0, other: 0 },
+    pins: ['cwd'],
+    targetFolderName: 'dorkos-cloud',
+    since: Date.now(),
+    releaseAt,
+  });
+
+  it('stays queued showing why, starts no turn and holds no lock (T20)', async () => {
+    runtime.withScenarios([quickTurn()]);
+    runtime.holdDispatch.mockReturnValue(waitingOn());
+
+    const result = await send('move to the cloud repo');
+    await settle();
+
+    expect(result.queued).toBe(true);
+    expect(turnStarts()).toEqual([]);
+    expect(listQueuedMessages(session)).toEqual([
+      expect.objectContaining({
+        content: 'move to the cloud repo',
+        waitingOn: expect.objectContaining({ holding: { agents: 2, shells: 0, other: 0 } }),
+      }),
+    ]);
+    // The lock was given back: nothing is holding the session.
+    const releases = runtime.releaseLock.mock.calls.length;
+    expect(releases).toBeGreaterThan(0);
+    expect(runtime.acquireLock.mock.calls.length).toBe(releases);
+  });
+
+  it('keeps the messages behind it waiting in order, then runs them when the hold drops', async () => {
+    runtime.withScenarios([quickTurn(), quickTurn()]);
+    runtime.holdDispatch.mockReturnValue(waitingOn());
+
+    await send('first');
+    await settle();
+    await send('second');
+    await settle();
+    expect(runtime.holdDispatch).toHaveBeenCalledTimes(1);
+    expect(listQueuedMessages(session).map((row) => row.content)).toEqual(['first', 'second']);
+
+    // The work ends; the runtime says so.
+    runtime.holdDispatch.mockReturnValue(undefined);
+    runtime.emitDispatchGateChange(session);
+    await settle();
+    await settle();
+
+    const sent = runtime.sendMessage.mock.calls.map((call) => call[1]);
+    expect(sent.filter((content) => content === 'first')).toHaveLength(2);
+    expect(sent.at(-1)).toBe('second');
+    expect(listQueuedMessages(session)).toEqual([]);
+    expect(turnStarts()).toHaveLength(2);
+  });
+
+  it('lets a helper’s own turn run during the wait, and keeps it out of the message (T22)', async () => {
+    runtime.withScenarios([quickTurn()]);
+    runtime.holdDispatch.mockReturnValue(waitingOn());
+    await send('move to the cloud repo');
+    await settle();
+
+    const report = pushable();
+    runtime.emitRuntimeTurn(session, report.stream);
+    await settle();
+    report.push({ type: 'text_delta', data: { text: 'helper one finished' } } as StreamEvent);
+    report.push({ type: 'done', data: { sessionId: session } } as StreamEvent);
+    report.end();
+    runtime.holdDispatch.mockReturnValue(undefined);
+    await settle();
+    await settle();
+
+    const starts = turnStarts();
+    expect(starts).toHaveLength(2);
+    expect((starts[0] as { origin?: string }).origin).toBe('runtime');
+    expect((starts[1] as { origin?: string }).origin).toBeUndefined();
+    const personTurn = JSON.stringify(
+      getOrCreateProjector(session)
+        .replayFrom(0)
+        .filter((event) => event.seq >= starts[1]!.seq)
+    );
+    expect(personTurn).not.toContain('helper one finished');
+  });
+
+  it('stays removed when it is taken off the queue while a retry is under way', async () => {
+    runtime.withScenarios([quickTurn()]);
+    runtime.holdDispatch.mockReturnValue(waitingOn());
+    const dropped: string[] = [];
+    const stop = onDispatchLifecycle((event) => {
+      if (event.phase === 'dropped') dropped.push(event.messageId);
+    });
+    const { outcome } = await send('move to the cloud repo');
+    await settle();
+
+    // The retry pauses before the runtime is asked, so the row is removed while
+    // the launch is under way and nothing is armed to cancel.
+    let resume!: () => void;
+    runtime.settleOpenTurn.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => (resume = () => resolve(false)))
+    );
+    runtime.emitDispatchGateChange(session);
+    await settle();
+    expect(cancelQueuedMessage(session, outcome.messageId)).toBeDefined();
+    resume();
+    await settle();
+
+    // The work ends; nothing may run.
+    runtime.holdDispatch.mockReturnValue(undefined);
+    runtime.emitDispatchGateChange(session);
+    await settle();
+    stop();
+
+    expect(turnStarts()).toEqual([]);
+    expect(dropped).toContain(outcome.messageId);
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+
+  it('runs on Switch now (T24)', async () => {
+    runtime.withScenarios([quickTurn()]);
+    // The work never ends: only the switch can run it.
+    runtime.holdDispatch.mockReturnValue(waitingOn());
+    await send('move to the cloud repo');
+    await settle();
+    expect(turnStarts()).toEqual([]);
+
+    expect(runtime.switchWhenReady(session)).toBe(true);
+    await settle();
+    await settle();
+
+    expect(turnStarts()).toHaveLength(1);
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+
+  it('has nothing to switch when no message is held', () => {
+    expect(runtime.switchWhenReady(session)).toBe(false);
+  });
+
+  it('runs on a Switch now that lands while a held attempt is still returning', async () => {
+    runtime.withScenarios([quickTurn()]);
+    await send('first, to have something held');
+    await settle();
+    // Held, and on the way back the person presses Switch now: the release
+    // fires before the dispatcher has parked the message again.
+    runtime.holdDispatch.mockReturnValueOnce(waitingOn());
+    runtime.withScenarios([quickTurn()]);
+    await send('move to the cloud repo');
+    await settle();
+    runtime.holdDispatch.mockImplementationOnce(() => {
+      runtime.switchWhenReady(session);
+      return waitingOn();
+    });
+    runtime.holdDispatch.mockReturnValue(waitingOn());
+    runtime.emitDispatchGateChange(session);
+    await settle();
+    await settle();
+
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+
+  it('is tried again at the ceiling even if nothing else happens', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      runtime.withScenarios([quickTurn()]);
+      runtime.holdDispatch.mockReturnValueOnce(waitingOn(Date.now() + 60_000));
+      void send('move to the cloud repo');
+      await vi.advanceTimersByTimeAsync(20);
+      expect(turnStarts()).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(62_000);
+      expect(turnStarts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is not launched by the queue’s ordinary five-minute wait', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      runtime.withScenarios([quickTurn()]);
+      runtime.holdDispatch.mockReturnValue(waitingOn());
+      void send('move to the cloud repo');
+      await vi.advanceTimersByTimeAsync(20);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(turnStarts()).toEqual([]);
+      expect(runtime.holdDispatch).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

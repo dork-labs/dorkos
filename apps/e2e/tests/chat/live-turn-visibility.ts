@@ -2,7 +2,7 @@
  * What a live turn shows while it runs, and how it settles when it stops
  * (DOR-1214).
  *
- * Backs four rows of `meta/chat-capabilities.md`:
+ * Backs four rows of `contributing/capabilities/chat.md`:
  *
  * - **C-10** — Stop stops a running turn, and the UI settles honestly.
  * - **R-05** — subagent blocks appear while running and clear when done.
@@ -201,7 +201,7 @@ export function registerLiveTurnVisibilityTests(deps: LiveTurnVisibilityDeps): v
   });
 
   test.describe('subagents and the background task bar (R-05, R-07)', () => {
-    test('blocks and the task bar are visible while the sub-agents run, and settle when done', async ({
+    test('R-05, R-07: blocks and the task bar are visible while the sub-agents run, and settle when done', async ({
       page,
       request,
     }) => {
@@ -291,7 +291,7 @@ export function registerLiveTurnVisibilityTests(deps: LiveTurnVisibilityDeps): v
       });
     });
 
-    test('counts and statuses move as the agent works through the list', async ({
+    test('R-06: counts and statuses move as the agent works through the list', async ({
       page,
       request,
     }) => {

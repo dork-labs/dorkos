@@ -138,7 +138,7 @@ describe('SessionPumpRegistry', () => {
   // warmth is a cache, so the least recently USED process makes room. Insertion
   // order is deliberately the wrong answer here: s1 is the oldest pump but the
   // freshest use, so a registry reclaiming by age reaps the wrong session.
-  it('reclaims the least recently used warm session, not the oldest one', async () => {
+  it('L-15: reclaims the least recently used warm session, not the oldest one', async () => {
     const queries: FakeQuery[] = [];
     const registry = new SessionPumpRegistry(identity);
     const opts = launchOpts(queries, { maxWarmSessions: 3 });

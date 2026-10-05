@@ -570,7 +570,7 @@ describe('ConnectorAccessQueryService', () => {
     });
   });
 
-  it('pages immutable usage without exposing actor ids, provider logs, arguments, or results', async () => {
+  it('CN-11: pages immutable usage without exposing actor ids, provider logs, arguments, or results', async () => {
     for (const [index, attemptId] of ['attempt-c', 'attempt-b', 'attempt-a'].entries()) {
       db.insert(connectorUsageAttempts)
         .values({

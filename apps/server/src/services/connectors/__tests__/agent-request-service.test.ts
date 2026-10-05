@@ -2038,7 +2038,7 @@ describe('ConnectorAgentRequestService', () => {
     ).toMatchObject({ outcome: null, resumeState: 'pending' });
   });
 
-  it('keeps a connected authentication flow awaiting explicit owner grants', async () => {
+  it('CN-03: keeps a connected authentication flow awaiting explicit owner grants', async () => {
     const starting = {
       flowId: 'flow-1',
       providerInstanceId: 'provider-1' as never,

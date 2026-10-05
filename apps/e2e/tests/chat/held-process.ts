@@ -1,7 +1,7 @@
 /**
  * The persistent path, driven through a browser for free (DOR-1326).
  *
- * Backs five rows of `meta/chat-capabilities.md`:
+ * Backs five rows of `contributing/capabilities/chat.md`:
  *
  * - **L-11** — an agent that stays running, so the second reply comes from the
  *   same process.

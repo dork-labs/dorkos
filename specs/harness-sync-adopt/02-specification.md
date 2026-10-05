@@ -10,7 +10,7 @@ status: specified
 **Status:** Approved
 **Author:** Claude (delegated; the operator is not available and has settled D3 already)
 **Date:** 2026-09-09
-**Tracker:** DOR-1853 · **Contract:** `meta/harness-sync-capabilities.md` (D3, SRC-07, SRC-10, J-06)
+**Tracker:** DOR-1853 · **Contract:** `contributing/capabilities/harness-sync.md` (D3, SRC-07, SRC-10, J-06)
 · **Plan:** `plans/harness-sync-test-plan.md` §11 line 10
 
 ## Overview
@@ -1411,7 +1411,7 @@ plan, one rename, one symlink, one status recompute, inside one lock turn.
 | `contributing/configuration.md`              | One row in the Settings Reference table for `harness.autoAdopt`, plus a short narrative section beside `harness.autoSync`'s                                                                                                                                                                                                                                      |
 | `docs/getting-started/configuration.mdx`     | The same row, mirrored — the pairing `check-docs-changed.sh` already watches                                                                                                                                                                                                                                                                                     |
 | `docs/guides/action-approvals.mdx`           | The list of settings with no screen gains `dorkos config set harness.autoAdopt`, beside `harness.autoSync`                                                                                                                                                                                                                                                       |
-| `meta/harness-sync-capabilities.md`          | SRC-07, SRC-10, J-06 and §14 item 3 rewritten; two new rows, SK-16 and AP-17 (§Contract)                                                                                                                                                                                                                                                                         |
+| `contributing/capabilities/harness-sync.md`  | SRC-07, SRC-10, J-06 and §14 item 3 rewritten; two new rows, SK-16 and AP-17 (§Contract)                                                                                                                                                                                                                                                                         |
 | `plans/harness-sync-test-plan.md`            | §11 line 10 marked done with its slices, and its stale seeded defect corrected                                                                                                                                                                                                                                                                                   |
 | `docs/api/openapi.json`                      | Regenerated for the new route (`docs-openapi-check`)                                                                                                                                                                                                                                                                                                             |
 | `changelog/unreleased/<id>-harness-adopt.md` | One fragment, user-facing and plain: a skill your agent wrote in one tool's folder can be moved where every agent reads it, with one command or one button, and DorkOS tells you when it will not and why                                                                                                                                                        |
@@ -1659,7 +1659,7 @@ None. Every question this stage raised is resolved above with its reason.
 
 ## References
 
-- `meta/harness-sync-capabilities.md` — §16 D3, rows SRC-06/07/10/11, SK-04/07/13, AP-15, VC-01,
+- `contributing/capabilities/harness-sync.md` — §16 D3, rows SRC-06/07/10/11, SK-04/07/13, AP-15, VC-01,
   J-06, §14 items 3 and 11.
 - `plans/harness-sync-test-plan.md` — §0 (the bar), §6 ("Adopt tests, once D3 lands"), §11 line 10.
 - `specs/harness-sync-status/02-specification.md` — §1.5 (`unmanaged`, exactly), the row layout, the

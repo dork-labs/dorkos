@@ -65,7 +65,7 @@ function sync(urlThreadId: string | undefined, over: Partial<ThreadUrlSync> = {}
 }
 
 describe('useThreadUrlSync', () => {
-  it('opens the thread named in the URL, and leaves the URL alone doing it', async () => {
+  it('M-06: opens the thread named in the URL, and leaves the URL alone doing it', async () => {
     // The regression this exists for: seeding used to run during render, so the
     // write effect read a store that had not been updated yet, decided the URL
     // disagreed, and stripped the very `?thread=` it had just read — a deep

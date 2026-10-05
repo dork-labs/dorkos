@@ -299,6 +299,15 @@ export function createSessionMethods(
       return SessionQueueResponseSchema.parse(data) satisfies SessionQueueResponse;
     },
 
+    async switchSessionProcess(sessionId: string): Promise<{ switched: boolean }> {
+      const data = await fetchJSON<{ switched?: unknown }>(
+        baseUrl,
+        `/sessions/${sessionId}/process/switch`,
+        { method: 'POST', headers: { 'X-Client-Id': getClientId() } }
+      );
+      return { switched: data.switched === true };
+    },
+
     // ── Command-Intent Trigger (202, out-of-band delivery via /events) ─────
 
     /**

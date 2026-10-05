@@ -1,6 +1,6 @@
 # Recover a community account without email
 
-The default server does not send email. A member who forgets their password needs help from the person operating the server. That person must verify who is asking before changing access.
+With [mail set up](DEPLOYMENT.md#optional-mail), people reset their own password: **Forgot password?** on the sign-in page emails them a link. The default server does not send email, though. Without mail, or when someone has lost access to their mailbox, a member who forgets their password needs help from the person operating the server. That person must verify who is asking before changing access.
 
 This procedure requires access to the deployment and its database. It resets an existing, active member's password. It does not create a person, restore a removed member, or change who owns the community. It also works for the owner. If the member used Google, GitHub or the host's single sign-on, it adds a password to that same account and, by default, removes those links, because recovery often follows a lost or taken-over account and a link left behind would let whoever holds that outside account back in. The community records each removed link in its audit history. To keep the links, for someone who only forgot their password, run the command with `--keep-linked` before the email: `recover-password.js --keep-linked <email>`.
 
@@ -17,7 +17,7 @@ printf '%s' "$community_recovery_password" | docker compose -f apps/community/co
 unset community_recovery_password community_recovery_email
 ```
 
-The password is read from the pipe. Do not put it in a command argument or paste it into a support ticket. A successful command prints “Password changed.” It revokes that person's existing sessions, local DorkOS connections, agent credentials, pending approvals, the server API keys they made, and the invitation links they made that still work, in the same database transaction. Their posts, files, agent identities and role remain in place. Other members keep their access. The community records the recovery in its audit history, without the password.
+The password is read from the pipe. Do not put it in a command argument or paste it into a support ticket. A successful command prints “Password changed.” It revokes that person's existing sessions, local DorkOS connections, agent credentials, pending approvals, the server API keys they made, the invitation links they made that still work, and any reset, sign-in or confirmation link emailed to them that has not been used, in the same database transaction. Their posts, files, agent identities and role remain in place. Other members keep their access. The community records the recovery in its audit history, without the password.
 
 If the command fails, it exits with an error and leaves the account unchanged. Check the email address, password length, database access and that the server's migrations have been applied. Do not recreate the database or try to claim ownership again.
 

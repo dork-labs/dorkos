@@ -901,6 +901,16 @@ export interface Transport
    */
   removeQueuedMessage(sessionId: string, messageId: string): Promise<{ queue: QueuedMessage[] }>;
   /**
+   * Switch now: run a message held for the agent's background work, ending
+   * that work (DOR-2065).
+   *
+   * `POST /sessions/:id/process/switch`. `switched: false` means there was no
+   * running agent to switch; the held message is already on its way.
+   *
+   * @param sessionId - The session whose queue holds the message.
+   */
+  switchSessionProcess(sessionId: string): Promise<{ switched: boolean }>;
+  /**
    * Trigger a RUNTIME-fulfilled command intent (currently `compact`) for a
    * session and resolve to the canonical session id.
    *

@@ -101,6 +101,7 @@ export {
   type LinkNavigator,
   type LinkTarget,
   type OpenLinkOptions,
+  type OpenExternalLinkOptions,
   type TabOpener,
 } from './link-navigation';
 export { initialOf } from './initial-of';

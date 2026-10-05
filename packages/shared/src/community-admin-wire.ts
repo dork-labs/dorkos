@@ -66,6 +66,10 @@ export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
   // The owner's link to keep ownership, and the new owner's claim, when a host replaces an owner.
   'keep-ownership',
   'owner-replacement',
+  // The pages a mailed reset, sign-in or confirmation link opens.
+  'reset-password',
+  'email-sign-in',
+  'confirm-email',
   // First-host setup is reached through the browser app, and a host would expect the word kept.
   'setup',
   // Pages a host is likely to publish, and words that would let a community pose as the host.

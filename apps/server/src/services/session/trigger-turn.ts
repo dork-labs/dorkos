@@ -82,10 +82,16 @@
  *
  * @module services/session/trigger-turn
  */
-import type { MessageOpts, SseResponse, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type {
+  DispatchHoldHandshake,
+  MessageOpts,
+  SseResponse,
+  RuntimeCapabilities,
+} from '@dorkos/shared/agent-runtime';
 import type {
   InterruptReceipt,
   PermissionModeId,
+  QueuedWaitingOn,
   SessionSettings,
   StreamEvent,
 } from '@dorkos/shared/types';
@@ -102,9 +108,10 @@ import { feedProjector } from './session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
 import { assembleAdditionalContext, appendDocEventsContext } from './context-assembler.js';
-import { takeStagedContext } from './staged-context-store.js';
+import { holdStagedContext, takeStagedContext } from './staged-context-store.js';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import { withStallGuard } from './stall-guard.js';
+import { awaitDispatchDecision } from './launch/dispatch-decision.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
@@ -394,6 +401,12 @@ export interface TriggerTurnDeps {
    * which reads as "no".
    */
   isHelperWorking?(sessionId: string): boolean;
+  /**
+   * The runtime answers {@link MessageOpts.dispatchHold} on every send
+   * (`AgentRuntime.switchWhenReady` is its marker). Absent reads as "no": the
+   * turn starts without asking.
+   */
+  answersDispatchHold?: boolean;
   /** Resolve the backend-internal (canonical) id once the adapter assigns it. */
   getInternalSessionId(sessionId: string): string | undefined;
   /**
@@ -634,6 +647,12 @@ export interface TriggerTurnResult {
   suspended?: true;
   /** A durable protected-source budget wait; no runtime effect has been claimed. */
   deferred?: { reason: string; nextEligibleAt: string };
+  /**
+   * Starting the turn would have ended the agent's background work, so no turn
+   * was started and the lock is free again (DOR-2065). The message stays
+   * queued, showing this.
+   */
+  held?: QueuedWaitingOn;
 }
 
 /**
@@ -861,7 +880,8 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // peeked — so each note rides exactly this one dispatch; the ordinary case
     // holds nothing and pays a single map lookup. A native-staging runtime never
     // fills this hold, so its dispatches are untouched.
-    additionalContext.push(...takeStagedContext(sessionId));
+    const staged = takeStagedContext(sessionId);
+    additionalContext.push(...staged);
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about
     // the ROOM when a room triggered the turn and about the session otherwise,
@@ -877,7 +897,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       ...(roomTurn !== undefined ? { roomTurn } : {}),
     });
 
-    const tapped = tapEachEvent(
+    // A runtime that can tell, before the turn is shown, that starting it would
+    // end the agent's background work answers the handshake first (spec
+    // `warm-process-lifecycle` D2, DOR-2065). Not offered to a protected
+    // message: its claim above is final, and nothing here could undo it.
+    const offerHold = deps.answersDispatchHold === true && opts.privateReceiptId === undefined;
+    const send = (dispatchHold?: DispatchHoldHandshake): AsyncGenerator<StreamEvent> =>
       deps.sendMessage(sessionId, dispatchContent, {
         // Conditional, on the same idiom as the three below it. A turn with no
         // opinion about its directory must hand the runtime NO cwd, not a `cwd`
@@ -914,16 +939,33 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         ...(opts.newSessionPermissionMode !== undefined
           ? { permissionMode: opts.newSessionPermissionMode }
           : {}),
-      }),
-      () => {
-        signalFirstEvent();
-        tryRekey();
-        // Proof of life for the write-lock: a turn that is visibly producing
-        // events must never be declared abandoned and stolen mid-flight (DOR-782).
-        lifecycle.touch();
-        eventCount++;
+        ...(dispatchHold !== undefined ? { dispatchHold } : {}),
+      });
+    let source: AsyncIterable<StreamEvent>;
+    if (!offerHold) {
+      source = send();
+    } else {
+      const decision = await awaitDispatchDecision(send);
+      if ('held' in decision) {
+        // No turn was shown and none will be: hand back everything this
+        // attempt took, so the next attempt finds it where it was.
+        for (const entry of staged)
+          holdStagedContext(sessionId, entry.data.text, crypto.randomUUID());
+        uiTurnFacts.endTurn(turnKey);
+        releaseOnce();
+        turnSpan.end();
+        return { accepted: false, held: decision.held };
       }
-    );
+      source = decision.stream;
+    }
+    const tapped = tapEachEvent(source, () => {
+      signalFirstEvent();
+      tryRekey();
+      // Proof of life for the write-lock: a turn that is visibly producing
+      // events must never be declared abandoned and stolen mid-flight (DOR-782).
+      lifecycle.touch();
+      eventCount++;
+    });
 
     // Run the turn detached, double-wrapped. Inner: the stall watchdog abandons a
     // source that goes silent past the threshold, interrupts the runtime, and

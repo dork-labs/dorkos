@@ -23,7 +23,7 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * why, and what that does and does not prove).
  */
 test.describe('Rooms — the room says who is working on it', () => {
-  test('the line names the agent, counts up, goes late, and clears when the work is released', async ({
+  test('M-09: the line names the agent, counts up, goes late, and clears when the work is released', async ({
     page,
     roomsApi,
     roomsPage,

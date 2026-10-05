@@ -1059,21 +1059,22 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       });
 
       if (!result.accepted) {
-        // Defensive, and most likely unreachable: the dispatcher answers
-        // `accepted: false` only when the session's lock is held by somebody
-        // else, which is decided BEFORE the launch step runs — so no row was
-        // written for this dispatch. Kept so that if that ordering ever
-        // changes, a refused launch still leaves nothing behind.
+        // Two ways to get here. The session's lock is held by somebody else,
+        // decided BEFORE the launch step runs, so no row was written. Or the
+        // agent's runtime HELD the launch (DOR-2065): answering would restart
+        // the agent and end background work it is still running, and that is
+        // decided AFTER the launch step, so a row may have been written. Both
+        // take the row back here, so a refused launch leaves nothing behind.
         await forgetLaunchRow();
-        // Somebody else is writing to this session — the operator, most likely,
-        // typing into the very agent the room just addressed. It is the ONLY way
-        // to reach here now that the room waits out its own tail above, which is
-        // what makes the notice this returns honest. Skipping the turn
-        // is right: queueing a second one behind theirs would answer a room
-        // message with whatever context their turn leaves behind. Skipping it
-        // SILENTLY was not — the room reports it and the dispatcher writes the
-        // notice, because a dropped trigger nobody mentions looks exactly like a
-        // broken agent (DOR-621).
+        // Either way the agent is busy with something that is not this room:
+        // the operator typing into the very agent the room just addressed, or
+        // that agent's own background work. Skipping the turn is right:
+        // queueing a second one behind it would answer a room message with
+        // whatever context it leaves behind. Skipping it SILENTLY was not — the
+        // room reports it and the dispatcher writes the notice, because a
+        // dropped trigger nobody mentions looks exactly like a broken agent
+        // (DOR-621). Slice 3b's room slot, which would wait instead, has not
+        // shipped.
         collecting.cancel();
         logger.info('[rooms] skipped a trigger: the session is busy', {
           sessionId,

@@ -731,7 +731,7 @@ It goes on the summary, on the agent's `unavailable[]`, in refusal payloads, and
 - `docs/concepts/relay.mdx:30`: "Add a Telegram adapter in DorkOS" is a stale UI path and a banned noun.
 - `specs/connection-app-details/04-implementation.md`, DOR-2465 row: says "Composio apps offer 'Read and write'". ADR `260928-121730` limits that to audited toolkits (Gmail, Calendar).
 - Root `AGENTS.md` vocab paragraph still says "Messaging and Accounts as its two regions", which ADR `260927-033250` retired.
-- `meta/chat-capabilities.md:312` ("removing disconnected accounts from Accounts") and CN-12 `:329` ("not on a managed account", stale since DOR-2439).
+- `contributing/capabilities/chat.md:312` ("removing disconnected accounts from Accounts") and CN-12 `:329` ("not on a managed account", stale since DOR-2439).
 
 **Journeys the docs never cover:**
 

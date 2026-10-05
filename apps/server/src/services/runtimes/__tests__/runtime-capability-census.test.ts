@@ -18,7 +18,7 @@
  *    that does not;
  * 6. every cell but `supported` says why, and every `planned` cell names its
  *    ticket;
- * 7. `contributing/runtime-capabilities.md` is exactly what the registry
+ * 7. `contributing/capabilities/runtimes.md` is exactly what the registry
  *    renders.
  *
  * ## Which tests count for which runtime
@@ -73,7 +73,7 @@ const ROOT = resolve(import.meta.dirname, '../../../../../..');
 const CONFORMANCE = 'packages/test-utils/src/runtime-conformance.ts';
 
 /** The generated document. */
-const DOC = 'contributing/runtime-capabilities.md';
+const DOC = 'contributing/capabilities/runtimes.md';
 
 /**
  * Each runtime's declared capabilities, which flag-backed rows must agree with.

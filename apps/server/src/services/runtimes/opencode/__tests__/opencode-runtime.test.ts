@@ -1015,7 +1015,7 @@ describe('OpenCodeRuntime', () => {
       await finished;
     });
 
-    it('an approval answered outside DorkOS earns the SAME receipt as one answered inside (DOR-1148)', async () => {
+    it('I-06: an approval answered outside DorkOS earns the SAME receipt as one answered inside (DOR-1148)', async () => {
       // Before DOR-1148, `mapPermissionReplied` ignored the echo's `reply`
       // field entirely, so a TUI-answered ask always landed as a bare
       // `interaction_cancelled` — no `reason` — which the normalizer turned

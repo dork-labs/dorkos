@@ -135,8 +135,11 @@ export type ProcessReuse =
    * wanted would leave DorkOS believing a stale process is current.
    */
   | { action: 'adjust'; apply: (query: PumpControlQuery) => Promise<LaunchFingerprint> }
-  /** Replace the process: a pin the SDK cannot set live has moved. */
-  | { action: 'replace'; reason: string };
+  /**
+   * Replace the process: a pin the SDK cannot set live has moved. `changed`
+   * names the pins, so a held message can say what the switch is for.
+   */
+  | { action: 'replace'; reason: string; changed: readonly string[] };
 
 /**
  * May this dispatch ride the process already running, and what has to change
@@ -161,7 +164,9 @@ export function decideProcessReuse(
   // pinning event, and its fingerprint becomes the baseline.
   if (live === undefined) return { action: 'ride' };
   const decision: DispatchDecision = prepareDispatch(live, wanted);
-  if (decision.action === 'relaunch') return { action: 'replace', reason: decision.reason };
+  if (decision.action === 'relaunch') {
+    return { action: 'replace', reason: decision.reason, changed: decision.changed };
+  }
   if (decision.liveChanges.length === 0) return { action: 'ride' };
   return {
     action: 'adjust',

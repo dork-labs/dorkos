@@ -218,7 +218,7 @@ describe('dispatchMessage — an idle session runs the message now', () => {
 });
 
 describe('dispatchMessage — a busy session queues the message', () => {
-  it('accepts it, keeps it durable, and dispatches on the running turn’s turn_end', async () => {
+  it('C-07: accepts it, keeps it durable, and dispatches on the running turn’s turn_end', async () => {
     const first = gate();
     const order: string[] = [];
     runtime.withScenarios([
@@ -809,7 +809,7 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
 });
 
 describe('editing and removing what is waiting', () => {
-  it('runs the words as EDITED, not as first typed', async () => {
+  it('C-08: runs the words as EDITED, not as first typed', async () => {
     const first = gate();
     runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
 
@@ -1599,7 +1599,7 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     expect(logged).toHaveBeenCalledWith(ADAPTER_BUG_LOG, expect.anything());
   });
 
-  it('records what was REQUESTED on the row, never what was applied', async () => {
+  it('C-12: records what was REQUESTED on the row, never what was applied', async () => {
     const first = gate();
     runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
 
@@ -2160,7 +2160,7 @@ describe('the orphan sweep', () => {
 });
 
 describe('a row recovered after a restart', () => {
-  it('runs under a dispatch of its own, marked as queue recovery', async () => {
+  it('C-13: runs under a dispatch of its own, marked as queue recovery', async () => {
     // An adopted row has no accepting request behind it — the process that took
     // it is gone — so before DOR-1159 its turn ran under whatever context the
     // pump happened to be called from, or under none at all. A turn nobody can

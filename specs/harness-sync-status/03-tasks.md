@@ -528,7 +528,7 @@ Verification: `pnpm vitest run packages/harness/src/__tests__/reason-vocabulary.
 
 Edit the capability census in the same PR that builds the surface, which is §17's own rule: a harness feature adds its rows there in the same PR.
 
-`meta/harness-sync-capabilities.md`: VC-01 goes `partial -> built`, citing the derivation test; VC-02 gains its app half; TR-08 goes `not built -> built`; §11's opening "None of it exists" and §12 J-06's "Today" cell are both updated; §16 D6 gains a "shipped as" line. VC-05 stays `partial` — its app half is out of scope here, and saying otherwise would be exactly the kind of false row the census exists to catch. No row may claim a surface this PR did not build.
+`contributing/capabilities/harness-sync.md`: VC-01 goes `partial -> built`, citing the derivation test; VC-02 gains its app half; TR-08 goes `not built -> built`; §11's opening "None of it exists" and §12 J-06's "Today" cell are both updated; §16 D6 gains a "shipped as" line. VC-05 stays `partial` — its app half is out of scope here, and saying otherwise would be exactly the kind of false row the census exists to catch. No row may claim a surface this PR did not build.
 
 Docs:
 

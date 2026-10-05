@@ -196,7 +196,7 @@ function renderWith(transport: Transport, ui: React.ReactElement) {
 }
 
 describe('AgentRequestCard — no account yet', () => {
-  it('asks to connect the app, names whose sign-in page comes next, and signs in for this request', async () => {
+  it('CN-12: asks to connect the app, names whose sign-in page comes next, and signs in for this request', async () => {
     const user = userEvent.setup();
     const transport = transportWith([]);
     vi.mocked(transport.startConnectorAgentRequestAuthentication).mockResolvedValue({

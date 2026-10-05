@@ -56,7 +56,7 @@ function setup(mesh: NotifyDmDeps['mesh'] = meshWithAna()): {
 }
 
 describe('deliverNotifyDm', () => {
-  it('opens the DM with the operator and posts as the agent', () => {
+  it('A-05: opens the DM with the operator and posts as the agent', () => {
     const { harness, deps } = setup();
 
     const outcome = deliverNotifyDm({ agentId: ANA_ID, message: 'Deploy finished.' }, deps);

@@ -64,6 +64,16 @@ If a token can't do what setup needs, setup stops and tells you which token and 
 
 Setup has not yet been tested end to end with a limited Fly token. Signing in with `fly auth login` is the tested path.
 
+## Email
+
+Your space server sends no email until you give it your own mail server, with `COMMUNITY_SMTP_URL` and `COMMUNITY_MAIL_FROM`. Turning mail on lets people help themselves:
+
+- **Forgot password?** on the sign-in page emails them a reset link.
+- New accounts get a link to confirm their email.
+- Someone whose account has no password can get a sign-in link by email.
+
+Without mail, people who lose their password ask you, and you reset it with the recovery command in [`apps/community/RECOVERY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/RECOVERY.md). The settings, and the sender checks that keep these emails out of spam, are in [`apps/community/DEPLOYMENT.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/DEPLOYMENT.md#optional-mail).
+
 ## The full recipe
 
 The step-by-step guide, including how to do every step by hand, is [`apps/community/FLY.md`](https://github.com/dork-labs/dorkos/blob/main/apps/community/FLY.md).

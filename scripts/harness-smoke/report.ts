@@ -3,8 +3,8 @@
  *
  * Written in the shape `/chat:self-test` reports use (`test-results/chat-self-test/*.md`):
  * a dated title, a run block, then one section per phase, then a verdict. The
- * shape is copied on purpose — `meta/chat-capabilities.md`'s `S` cells cite those
- * reports the way `meta/harness-sync-capabilities.md`'s `H` cells will cite these,
+ * shape is copied on purpose — `contributing/capabilities/chat.md`'s `S` cells cite those
+ * reports the way `contributing/capabilities/harness-sync.md`'s `H` cells will cite these,
  * and a reader who knows one should not have to learn the other.
  *
  * Two rules the renderers keep:

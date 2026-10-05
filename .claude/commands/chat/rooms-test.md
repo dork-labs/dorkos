@@ -9,7 +9,7 @@ Self-test the parts of DorkOS that only exist when **more than one participant s
 
 It is the rooms sibling of `/chat:self-test` (one session, in depth) and `/chat:session-switch-test` (two sessions, switching). Use it whenever you touch `RoomService`, the trigger dispatcher, the collector, room notices, reactions, threads, the room canvas, or the room event stream.
 
-Every check below cites the capability row it verifies in `meta/chat-capabilities.md` — a run of this command is a report against that contract, not a vibe check.
+Every check below cites the capability row it verifies in `contributing/capabilities/chat.md` — a run of this command is a report against that contract, not a vibe check.
 
 ---
 
@@ -18,7 +18,7 @@ Every check below cites the capability row it verifies in `meta/chat-capabilitie
 Parse `$ARGUMENTS`:
 
 1. **URL** — any arg starting with `http`. Default `http://localhost:6241/channels` (live) or `http://localhost:4248/channels` (sandbox — see Phase 1).
-2. **`mode:sandbox|live`** — which stack the run drives (`meta/chat-capabilities.md` §11).
+2. **`mode:sandbox|live`** — which stack the run drives (`contributing/capabilities/chat.md` §11).
    - `mode:sandbox` — the **test-mode runtime**: throwaway data dir, deterministic, **no model spend**. Room turns really happen (the `chromium-team-room` e2e project proves an agent answers under this runtime), so every **mechanical** check below is reachable. What is **not** reachable is every check whose verdict is a judgment about what the agent chose to say — those are marked `N/A (sandbox)`, never PASS.
    - `mode:live` — the dev stack with a real runtime. Two agents answer per burst, so budget accordingly.
    - **If the invocation does not state a mode, ASK the user before spending anything** (`AskUserQuestion`, offering both with their costs). Never assume `live`.
@@ -387,7 +387,7 @@ Then verify **your own** reactions render, which is the mechanical half and alwa
 Split the verdict honestly:
 
 - **Mechanical** (reaction round-trips, renders, is scoped to the right entry, survives reload) — PASS/FAIL in both modes.
-- **Judgment** (did the agent _choose_ a reaction over a message) — PASS/FAIL in `live` only, `N/A (sandbox)` otherwise. `meta/chat-capabilities.md` A-06 says the mechanism is built and the judgment is untested; a single observation here is evidence, not proof — say which one you have.
+- **Judgment** (did the agent _choose_ a reaction over a message) — PASS/FAIL in `live` only, `N/A (sandbox)` otherwise. `contributing/capabilities/chat.md` A-06 says the mechanism is built and the judgment is untested; a single observation here is evidence, not proof — say which one you have.
 
 Reactions never cascade: a reaction must not trigger a turn, write a notice, or reorder the room. Check that too.
 
@@ -624,4 +624,4 @@ This report is the durable record. On a re-run after a fix:
 - **Same-room busy parks; different-room busy refuses.** A busy notice inside the room you are testing is a finding.
 - **The halt ordering is deliberate:** notice first, then drop parked batches, then interrupt live claims — dropping after releasing would let held messages run one macrotask past the halt, because the room-wide halt awaits an interrupt per claim in between. The per-agent stop is held to the same three constraints (everything before the claim release) but drops before it speaks, since it has to know what it dropped to say whether the agent was working, waiting, or idle. It touches no other key, so the agents nobody stopped keep their claims and their gathered messages.
 - **Reaction budget:** 20 additions per agent per room per rolling hour, rebuilt from `room_entry_reactions.created_at` so it survives a restart. The refusal reads: "You have used up your reactions in this room for now — say something instead, or wait."
-- **Conduct rules for this surface** live in `.claude/rules/room-conduct.md` and `meta/agent-etiquette.md`; the capability contract this matrix cites is `meta/chat-capabilities.md` §5 and §6.
+- **Conduct rules for this surface** live in `.claude/rules/room-conduct.md` and `meta/agent-etiquette.md`; the capability contract this matrix cites is `contributing/capabilities/chat.md` §5 and §6.

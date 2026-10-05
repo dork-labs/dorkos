@@ -152,7 +152,7 @@ describe('useRenameSession — account honesty', () => {
     );
   });
 
-  it('stays quiet when the session is on the active account, and shows the name at once', async () => {
+  it('L-02: stays quiet when the session is on the active account, and shows the name at once', async () => {
     const { result, transport, titleInList } = setup({
       sessionAccount: HOME,
       defaultAccount: HOME,

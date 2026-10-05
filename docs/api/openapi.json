@@ -7039,6 +7039,9 @@
           },
           "enqueuedBy": {
             "type": "string"
+          },
+          "waitingOn": {
+            "$ref": "#/components/schemas/QueuedWaitingOn"
           }
         },
         "required": [
@@ -7055,6 +7058,64 @@
           "queue",
           "steer",
           "stage"
+        ]
+      },
+      "QueuedWaitingOn": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "background-work"
+            ]
+          },
+          "holding": {
+            "type": "object",
+            "properties": {
+              "agents": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "shells": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "other": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "agents",
+              "shells",
+              "other"
+            ]
+          },
+          "pins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetFolderName": {
+            "type": "string"
+          },
+          "because": {
+            "type": "string"
+          },
+          "since": {
+            "type": "number"
+          },
+          "releaseAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "reason",
+          "holding",
+          "pins",
+          "since",
+          "releaseAt"
         ]
       },
       "MessageDeliveryOutcome": {
@@ -35299,6 +35360,9 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
+                  },
+                  "returnTo": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -35493,6 +35557,14 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 1000
+                        },
+                        "failureCode": {
+                          "type": "string",
+                          "enum": [
+                            "service_not_ready",
+                            "account_link_required",
+                            "service_unavailable"
+                          ]
                         },
                         "completedAt": {
                           "type": "string",
@@ -35849,6 +35921,14 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 1000
+                        },
+                        "failureCode": {
+                          "type": "string",
+                          "enum": [
+                            "service_not_ready",
+                            "account_link_required",
+                            "service_unavailable"
+                          ]
                         },
                         "completedAt": {
                           "type": "string",
@@ -37532,6 +37612,9 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
+                  },
+                  "returnTo": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -37724,6 +37807,14 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 1000
+                        },
+                        "failureCode": {
+                          "type": "string",
+                          "enum": [
+                            "service_not_ready",
+                            "account_link_required",
+                            "service_unavailable"
+                          ]
                         },
                         "completedAt": {
                           "type": "string",

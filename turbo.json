@@ -78,7 +78,7 @@
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/meta/harness-sync-capabilities.md",
+        "$TURBO_ROOT$/contributing/capabilities/harness-sync.md",
         "$TURBO_ROOT$/scripts/lib/code-only.mjs",
         "$TURBO_ROOT$/scripts/vocab-gate/banned-terms.json",
         "$TURBO_ROOT$/scripts/check-vocab-gate.ts",
@@ -95,8 +95,23 @@
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/contributing/runtime-capabilities.md",
+        "$TURBO_ROOT$/contributing/capabilities/runtimes.md",
         "$TURBO_ROOT$/scripts/lib/code-only.mjs"
+      ]
+    },
+    "@dorkos/test-utils#test": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/contributing/capabilities/chat.md",
+        "$TURBO_ROOT$/scripts/lib/code-only.mjs",
+        "$TURBO_ROOT$/apps/client/src/**/*.test.ts",
+        "$TURBO_ROOT$/apps/client/src/**/*.test.tsx",
+        "$TURBO_ROOT$/apps/server/src/**/*.test.ts",
+        "$TURBO_ROOT$/apps/e2e/tests/**",
+        "$TURBO_ROOT$/packages/*/src/**/*.test.ts",
+        "$TURBO_ROOT$/packages/*/src/**/*.test.tsx"
       ]
     },
     "@dorkos/site#test": {

@@ -738,7 +738,7 @@ describe('a room gathers a burst into one turn', () => {
   });
 
   describe('a message that lands mid-turn steers rather than restarting', () => {
-    it('does not cancel the running turn, and runs the held message when the claim goes', async () => {
+    it('A-03: does not cancel the running turn, and runs the held message when the claim goes', async () => {
       const held = heldRunner();
       open(held, { debounceMs: DEBOUNCE_MS, maxEntries: 20 });
 

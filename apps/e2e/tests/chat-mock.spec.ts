@@ -91,7 +91,10 @@ test.beforeEach(async ({ request }) => {
 });
 
 test.describe('TestModeRuntime — mock browser tests', () => {
-  test('renders streamed text response from simple-text scenario', async ({ page, request }) => {
+  test('R-12: renders streamed text response from simple-text scenario', async ({
+    page,
+    request,
+  }) => {
     await request.post(`${API_URL}/api/test/scenario`, {
       data: { name: 'simple-text' },
     });
@@ -296,7 +299,7 @@ test.describe('TestModeRuntime — mock browser tests', () => {
 // client's runtime-descriptor registry ('Test Mode' for test-mode; unknown
 // types like test-mode-b fall back to the raw type string).
 test.describe('Runtime UX — multi-runtime test server', () => {
-  test('picker renders both runtimes pre-launch, applies a selection, and opens runtime setup', async ({
+  test('L-01: picker renders both runtimes pre-launch, applies a selection, and opens runtime setup', async ({
     page,
   }) => {
     const chatPage = new ChatPage(page);
@@ -434,7 +437,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     ).toHaveCount(1);
   });
 
-  test('a turn that ends in error shows an inline error block with a working Retry', async ({
+  test('R-10: a turn that ends in error shows an inline error block with a working Retry', async ({
     page,
     request,
   }) => {
@@ -516,7 +519,9 @@ test.describe('Command Intents — inline palette dedupe + alias hints', () => {
     await expect(chatPage.commandPalette.getByText('matched /compress')).toBeVisible();
   });
 
-  test('the compact row is ENABLED on a runtime that supports it (test-mode)', async ({ page }) => {
+  test('C-04: the compact row is ENABLED on a runtime that supports it (test-mode)', async ({
+    page,
+  }) => {
     const chatPage = new ChatPage(page);
     await chatPage.goto(undefined, { dir: agentDir });
 

@@ -34,6 +34,7 @@ import type {
   EffortLevel,
   SessionListWarning,
   InterruptReceipt,
+  QueuedWaitingOn,
 } from '@dorkos/shared/types';
 
 type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
@@ -120,11 +121,25 @@ export class FakeAgentRuntime implements AgentRuntime {
 
   sendMessage = vi.fn(async function* (
     this: FakeAgentRuntime,
-    _sessionId: string,
+    sessionId: string,
     content: string,
-    _opts?: MessageOpts
+    opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
-    for (const listener of [...this.dispatchedTurnListeners]) listener(_sessionId);
+    // The dispatch handshake, answered before anything is yielded, as a real
+    // runtime that implements `switchWhenReady` must.
+    // A pending Switch now goes ahead whatever is running, once.
+    const waitingOn =
+      opts?.dispatchHold !== undefined && !this.switchPending.delete(sessionId)
+        ? this.holdDispatch(sessionId)
+        : undefined;
+    if (waitingOn !== undefined && opts!.dispatchHold!.hold(waitingOn)) {
+      this.holdsOutstanding.add(sessionId);
+      return;
+    }
+    this.holdsOutstanding.delete(sessionId);
+    opts?.dispatchHold?.proceed();
+    // A send that goes ahead opens a dispatched turn, as a real runtime's does (DOR-2717).
+    for (const listener of [...this.dispatchedTurnListeners]) listener(sessionId);
     const scenario = this._scenarios[this._scenarioIndex];
     if (scenario) {
       this._scenarioIndex++;
@@ -197,6 +212,30 @@ export class FakeAgentRuntime implements AgentRuntime {
    * quiet legitimate by making it answer `true`.
    */
   isHelperWorking = vi.fn<(sessionId: string) => boolean>(() => false);
+
+  /**
+   * What a send on this session waits on instead of starting, or `undefined`
+   * to start it. Answers `undefined` — this fake has no background work — and
+   * is spied so a dispatcher test can hold a message (DOR-2065).
+   */
+  holdDispatch = vi.fn<(sessionId: string) => QueuedWaitingOn | undefined>(() => undefined);
+
+  /**
+   * The person chose Switch now. Answers `false` unless a send on this session
+   * was held; otherwise the next send goes ahead and the hold is released
+   * through the gate listener. Spied so a route test can assert it was asked.
+   */
+  switchWhenReady = vi.fn<(sessionId: string) => boolean>((sessionId) => {
+    if (!this.holdsOutstanding.has(sessionId)) return false;
+    this.switchPending.add(sessionId);
+    this.dispatchGateListener?.(sessionId);
+    return true;
+  });
+
+  /** Sessions whose last send was held, so Switch now has something to switch. */
+  private readonly holdsOutstanding = new Set<string>();
+  /** Sessions whose next send goes ahead, because the person chose Switch now. */
+  private readonly switchPending = new Set<string>();
 
   /**
    * Whether the agent's process still holds work that can wake it after its

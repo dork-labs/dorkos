@@ -115,7 +115,9 @@ test.describe('the queue every window can see', () => {
     await request.post(`${API_URL}/api/test/reset`);
   });
 
-  test('one queue: two windows agree, edits cross, and a refresh keeps it', async ({ browser }) => {
+  test('L-07: one queue: two windows agree, edits cross, and a refresh keeps it', async ({
+    browser,
+  }) => {
     // ONE context, so both pages share a profile the way two real windows do
     // (trap 2).
     const context = await browser.newContext();

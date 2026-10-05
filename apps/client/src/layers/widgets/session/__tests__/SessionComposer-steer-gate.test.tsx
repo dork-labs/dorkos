@@ -212,7 +212,7 @@ function addContextRow() {
 }
 
 describe('the Steer row is in the DOM only when this chat could really cut in', () => {
-  it('is absent on a steer-capable runtime whose session cannot cut in (DOR-1268)', () => {
+  it('C-09a: is absent on a steer-capable runtime whose session cannot cut in (DOR-1268)', () => {
     seedSteerable(false);
     render(<SessionComposerBench {...baseProps} />);
 

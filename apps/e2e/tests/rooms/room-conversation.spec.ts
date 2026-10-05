@@ -41,7 +41,7 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
   // page was up made the test depend on catching a live `room_created` signal, a
   // race it does not exist to exercise.
 
-  test('create a channel from the sidebar, post to it, and read the post back', async ({
+  test('M-02: create a channel from the sidebar, post to it, and read the post back', async ({
     page,
     basePage,
     roomsApi,

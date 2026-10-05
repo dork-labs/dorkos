@@ -171,7 +171,7 @@ Files:
 
 - `packages/shared/src/harness-schemas.ts` — `HarnessClaudeOnlySchema` with `root`, `readAt`, optional `unreadable`, `mayBeOverridden`, `plugins[]` (`name`, `marketplace`, optional `repo`, `settingsScope: 'user' | 'project'`, `offer: 'install' | 'add-source-then-install' | 'unknown-source' | 'no-package'`, optional `sourceUrl`) and `personalHookCommands`; added to `HarnessStatusResponseSchema` as `claudeOnly: HarnessClaudeOnlySchema.optional()`. Optional because the Obsidian transport answers `state: 'unavailable'` and has no home directory to read.
 - `apps/server/src/services/harness/status.ts` — populate it. That file does not exist on this base: it lands with DOR-1891. If DOR-1891 has not landed when this task runs, this hunk moves to whichever of the two tickets lands second, and the task ships the schema half alone.
-- `meta/harness-sync-capabilities.md` — SRC-08 flips to read and reported; J-07's terminal half flips; HK-14's user half flips from unread to read and reported; TR-10 stays `not built` with decision 12's reason recorded (a watcher on a file in a home directory that another program rewrites is not worth what it buys); position D4 gains two sentences and the position itself stands.
+- `contributing/capabilities/harness-sync.md` — SRC-08 flips to read and reported; J-07's terminal half flips; HK-14's user half flips from unread to read and reported; TR-10 stays `not built` with decision 12's reason recorded (a watcher on a file in a home directory that another program rewrites is not worth what it buys); position D4 gains two sentences and the position itself stands.
 - `changelog/unreleased/<id>-<slug>.md` — one fragment, id minted by `.claude/scripts/id.ts`, written to the `writing-for-humans` bar. Never edit `CHANGELOG.md`.
 
 The root is always present in the payload, because `$CLAUDE_CONFIG_DIR` is inherited and the answer is only checkable if you can see which file it came from. `unreadable`, when set, means `plugins` is empty and means nothing. `mayBeOverridden` is always true today, because a managed settings file may exist and DorkOS cannot read it.
@@ -301,7 +301,7 @@ Slice A1 makes the drop honest and enumerates a global package. It must still wr
 Files:
 
 - `packages/harness/src/sources/__tests__/` and `packages/harness/src/plan/__tests__/` — a tree-diff snapshot of a staged HOME taken across the WHOLE test file, before and after, asserting the two trees are identical. It is the slice-wide guard, not a per-case assertion, because the failure it catches is a write nobody expected from a case nobody suspected.
-- `meta/harness-sync-capabilities.md` — SRC-12 flips to built, citing the notice's test. SRC-04 stays `not built` for projection and its row records that the drop is now honest and names slice A2 as the one that projects the dork-home tier and slice A3 as the one that reaches the user tier. Saying otherwise would be exactly the kind of false row the census exists to catch.
+- `contributing/capabilities/harness-sync.md` — SRC-12 flips to built, citing the notice's test. SRC-04 stays `not built` for projection and its row records that the drop is now honest and names slice A2 as the one that projects the dork-home tier and slice A3 as the one that reaches the user tier. Saying otherwise would be exactly the kind of false row the census exists to catch.
 - `changelog/unreleased/<id>-<slug>.md` — one fragment, id minted by `.claude/scripts/id.ts`, plain enough for a smart 9th grader who doesn't code, per `writing-for-humans`. Never edit `CHANGELOG.md`.
 
 Seeded defect that must red first: make the global enumeration branch write a marker file into the staged HOME and the tree-diff assertion reds naming the path. That proves the snapshot compares what it claims to compare, which a snapshot taken only after the run would not.
@@ -458,7 +458,7 @@ Files:
 
 - `packages/cli/src/harness-sync-command.ts` — `--global`. It builds the global plan through `projectGlobal`, prints every path it will remove BEFORE removing it, then prints what it did. `--check` narrows it to a report, as it does today. The flag list it joins is `--check`, `--fix`, `--harness`, `--strict`, `--allow-hooks`, `--enable` and `--write-gitignore` (`:134-147`).
 - `packages/harness/src/plan/projector.ts` — the A2 append to the global-install drop, added to the first form only when the package has a skill that declares a schedule, and never rewriting the sentence slice A1 froze: `Its skills that run on a timer now work.`
-- `meta/harness-sync-capabilities.md` — SK-03's global half flips to built, citing the integration test. SRC-04 stays `not built` for projection to a harness, because slice A2 reaches only `<dorkHome>/skills` and no agent tool reads that directory.
+- `contributing/capabilities/harness-sync.md` — SK-03's global half flips to built, citing the integration test. SRC-04 stays `not built` for projection to a harness, because slice A2 reaches only `<dorkHome>/skills` and no agent tool reads that directory.
 - `changelog/unreleased/<id>-<slug>.md` — one fragment, id minted by `.claude/scripts/id.ts`, plain enough for a smart 9th grader who doesn't code, per `writing-for-humans`. Never edit `CHANGELOG.md`.
 - `packages/cli/src/__tests__/harness-sync.test.ts` — one case for the flag.
 
@@ -666,7 +666,7 @@ Files:
 - The A3 test files — case 10, the no-loss case.
 - `decisions/260908-191538-global-scope-projection-is-skills-only-and-symlinked.md` — flip `status: proposed` to `accepted`, in the file and in `decisions/manifest.json`.
 - `decisions/0303-harness-sync-multi-source-projection.md` — replace the one-line proposed-amendment note in its Status section with the full retirement block, which speaks in the past tense. ADR-0303 keeps `status: accepted` and `superseded-by: null`, in the file and in the manifest, because at PROJECT scope the clause is unchanged and so is everything else it decides.
-- `meta/harness-sync-capabilities.md` — SRC-04 flips to built; §14 gap 11 is struck through; IN-08 is recorded as REFUSED with its reason (ADR-0302's mechanism needs a canonical source and user scope has none; there is no `~/.agents/AGENTS.md` convention, `@` is a relative import inside one repo, Codex documents no import syntax, and Cursor's user rules have an account-synced half that is not a file at all); the hooks, commands and MCP refusals are recorded per kind, each with its own reason; HK-14's refusal half joins the read half slice B1 flipped.
+- `contributing/capabilities/harness-sync.md` — SRC-04 flips to built; §14 gap 11 is struck through; IN-08 is recorded as REFUSED with its reason (ADR-0302's mechanism needs a canonical source and user scope has none; there is no `~/.agents/AGENTS.md` convention, `@` is a relative import inside one repo, Codex documents no import syntax, and Cursor's user rules have an account-synced half that is not a file at all); the hooks, commands and MCP refusals are recorded per kind, each with its own reason; HK-14's refusal half joins the read half slice B1 flipped.
 - `contributing/harness-sync.md` — a new section on global scope: the two tiers, the three-clause predicate, and the one sentence that says what a `DORKOS_BOUNDARY` deployment does instead.
 - `docs/` — one user-facing page paragraph explaining, in plain words, that installing a package for all your projects shares it with your other agent tools once you say yes, and what `dorkos harness global` does.
 - `changelog/unreleased/<id>-<slug>.md` — one fragment, id minted by `.claude/scripts/id.ts`, plain enough for a smart 9th grader who doesn't code, per `writing-for-humans`. Never edit `CHANGELOG.md`.
@@ -680,7 +680,7 @@ projection is skills-only and symlinked). The clause: "its **portable subset** (
 **automatically on install** to every enabled harness … scope-matched (project↔project, global↔global)".
 
 At global scope the portable subset is **skills only** (hooks, commands, instructions and MCP servers are
-refused at user scope, each with its reason recorded in `meta/harness-sync-capabilities.md`), and the
+refused at user scope, each with its reason recorded in `contributing/capabilities/harness-sync.md`), and the
 projection is **not automatic on install**: it is asked for once and remembered in `harness.global`. The
 related Negative bullet "the projector must understand … scope mapping" is now understated rather than
 wrong, and reads as history.

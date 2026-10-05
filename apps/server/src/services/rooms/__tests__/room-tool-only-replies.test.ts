@@ -122,7 +122,7 @@ describe('a room turn that speaks only through the tool', () => {
   }
 
   describe('AC 2 — it posted through the tool AND narrated', () => {
-    it('lands exactly one entry, and it is the tool’s text', async () => {
+    it('M-04: lands exactly one entry, and it is the tool’s text', async () => {
       open(toolPosting('I posted the answer.'));
       await seedAndSettle();
 

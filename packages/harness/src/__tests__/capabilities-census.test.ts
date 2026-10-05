@@ -1,5 +1,5 @@
 /**
- * The capabilities census — the pin between `meta/harness-sync-capabilities.md`
+ * The capabilities census — the pin between `contributing/capabilities/harness-sync.md`
  * and the suite that is supposed to be checking it.
  *
  * The contract lists every capability this engine has, with a State and a
@@ -72,7 +72,7 @@ import { TEST_ROOTS } from './census-test-roots.js';
 const ROOT = resolve(import.meta.dirname, '../../../..');
 
 /** The contract this census pins the suite against. */
-const CONTRACT = 'meta/harness-sync-capabilities.md';
+const CONTRACT = 'contributing/capabilities/harness-sync.md';
 
 /**
  * A capability ID as the document's tables spell it: two or three letters, a

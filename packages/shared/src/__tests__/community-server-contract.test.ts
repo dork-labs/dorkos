@@ -114,7 +114,17 @@ describe('community server port additions', () => {
         oidc: null,
         minimumAge: null,
       })
-    ).toEqual({ google: false, github: true, oidc: null, minimumAge: null });
+    ).toEqual({ google: false, github: true, oidc: null, minimumAge: null, emailLinks: false });
+    // A Community from before mailed links reads as having none; a newer one says so.
+    expect(
+      CommunityWireAuthOptionsSchema.parse({
+        google: false,
+        github: false,
+        oidc: null,
+        minimumAge: null,
+        emailLinks: true,
+      }).emailLinks
+    ).toBe(true);
     // A minimum age crosses as a whole number inside the host's allowed range, never outside it.
     for (const [minimumAge, ok] of [
       [18, true],

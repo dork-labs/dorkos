@@ -378,7 +378,7 @@ measures the assembled prompt (OpenClaw #66060).
 
 ## Part 5 — Testing (chat-capabilities + evals)
 
-`meta/chat-capabilities.md` §7 probes recall of the current room only
+`contributing/capabilities/chat.md` §7 probes recall of the current room only
 (X-01…X-08). Cross-surface memory has no capability row and no probe — added
 as §7.1 (named gaps) alongside this report. Proposed probes, built on the
 `rooms-recall` eval pattern:

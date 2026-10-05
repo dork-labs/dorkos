@@ -95,7 +95,7 @@
         "apps/server/src/routes/session-command-intent-handler.ts"
       ],
       "explorationNotes": [
-        "Capability L-04 (meta/chat-capabilities.md). Registered from chat-mock.spec.ts, never its own spec: the test-mode server is shared mutable state and POST /api/test/reset runs before each of that file's tests.",
+        "Capability L-04 (contributing/capabilities/chat.md). Registered from chat-mock.spec.ts, never its own spec: the test-mode server is shared mutable state and POST /api/test/reset runs before each of that file's tests.",
         "A successful compaction draws TWO rows in sequence, from different sources: the live [data-testid=compact-boundary-row] projected from the turn event, then the durable [data-testid=compaction-row] rebuilt from history, which REPLACES it at turn_end. Never assert twice on the live row - the second assertion races the handover and reports the trigger badge as 'element(s) not found', which looks like missing metadata and is not.",
         "The live row is only observable deterministically on the 'compacting-hold' scenario, which holds the turn open until POST /api/test/finish-turn. /compact (the command intent) cannot be held, so that path pins the durable row only.",
         "Driving /compact takes TWO Enters: the first selects the palette row and fills the composer, the second submits. The suite asserts the resulting POST /command-intents/compact returns 202 rather than inferring dispatch from a row appearing later.",
@@ -231,7 +231,7 @@
         "apps/client/src/layers/features/entry-actions/ui/EntryActionBar.tsx"
       ],
       "explorationNotes": [
-        "Capabilities M-05 and M-06 (meta/chat-capabilities.md) live here - threads have been covered since 2026-07-30/31, which the 2026-08-14 capability audit missed.",
+        "Capabilities M-05 and M-06 (contributing/capabilities/chat.md) live here - threads have been covered since 2026-07-30/31, which the 2026-08-14 capability audit missed.",
         "Thread state lives in a zustand store (use-room-open-thread), not the URL; use-thread-url-sync mirrors it to ?thread= with replace:true, so Back leaves the room rather than walking every thread glanced at.",
         "A deep link opens the thread to READ: the panel section (tabIndex -1) takes focus and the composer does not. That is load-bearing, not manners - Escape only reaches the panel's handler from inside it, so a linked-to panel that took no focus could be opened from the address bar and never closed by keyboard.",
         "Replies are kept out of the main timeline by one choke point, groupByThread in room-timeline.ts; assert the timeline's room-entry count is unchanged plus a single room-thread-replies row, which is what the panel costs the room.",
