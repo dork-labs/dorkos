@@ -41,13 +41,17 @@ import type { RelayPublisher, PublishOptions } from '../../types.js';
  * @param fromId - The session ID to use as the sender
  * @param relay - The relay publisher
  * @param error - The failure message when the turn failed; omit on success
+ * @param marks - `continuing` when the agent still works in the background and
+ *   may report again; `late` on a result from a turn it started on its own
+ *   after this message's turn ended (DOR-2717). Each is written only when true.
  */
 export async function publishAgentResult(
   originalEnvelope: RelayEnvelope,
   text: string,
   fromId: string,
   relay: RelayPublisher,
-  error?: string
+  error?: string,
+  marks: { continuing?: boolean; late?: boolean } = {}
 ): Promise<void> {
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
@@ -59,7 +63,14 @@ export async function publishAgentResult(
   };
   await relay.publish(
     originalEnvelope.replyTo,
-    { type: 'agent_result', text, done: true, ...(error ? { error } : {}) },
+    {
+      type: 'agent_result',
+      text,
+      done: true,
+      ...(marks.late ? { late: true } : {}),
+      ...(error ? { error } : {}),
+      ...(marks.continuing ? { continuing: true } : {}),
+    },
     opts
   );
 }

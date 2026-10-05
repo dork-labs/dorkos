@@ -1644,6 +1644,25 @@ export interface AgentRuntime {
    */
   isHelperWorking?(sessionId: string): boolean;
 
+  /**
+   * Whether the agent's process still holds work that can wake it after its
+   * turn has ended: a helper, a background shell, a Monitor or another task, or
+   * a report still owed (DOR-2717).
+   *
+   * Broader than {@link isHelperWorking} on purpose. That one asks whether a
+   * silence is legitimate; this asks whether more is coming — whether a turn the
+   * agent starts on its own ({@link onRuntimeTurn}) may follow the one that just
+   * ended. A caller that started the ended turn reads it to decide whether to
+   * keep listening for that later turn, so a `true` must mean such a turn is
+   * genuinely possible, not merely that a process is alive.
+   *
+   * Optional: a runtime whose output only ever answers a dispatch omits it,
+   * which reads as "no".
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  holdsBackgroundWork?(sessionId: string): boolean;
+
   // --- Session queries (storage) ---
 
   /** List all sessions for a project directory. */

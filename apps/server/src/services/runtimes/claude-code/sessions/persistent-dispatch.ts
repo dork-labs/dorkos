@@ -450,6 +450,22 @@ export class PersistentDispatch {
   }
 
   /**
+   * Does this session's held process still hold work that can wake the agent
+   * after its turn — a helper, shell, Monitor or other task, or a delivery owed
+   * (DOR-2717)? The same flag the durable background-work record mirrors, so
+   * the answer and the record cannot disagree. False for a session holding no
+   * process: a process that is gone can wake nobody.
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  holdsBackgroundWork(sessionId: string): boolean {
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
+    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
+    return bundle.heldWork === true;
+  }
+
+  /**
    * Should this message run on a held process?
    *
    * The flag is read HERE, immediately before the pump is acquired, which is

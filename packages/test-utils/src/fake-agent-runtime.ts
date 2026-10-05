@@ -197,6 +197,13 @@ export class FakeAgentRuntime implements AgentRuntime {
    */
   isHelperWorking = vi.fn<(sessionId: string) => boolean>(() => false);
 
+  /**
+   * Whether the agent's process still holds work that can wake it after its
+   * turn ends. Answers `false` — this fake starts no background work — and is
+   * spied so a test can stand in for a helper still running (DOR-2717).
+   */
+  holdsBackgroundWork = vi.fn<(sessionId: string) => boolean>(() => false);
+
   /** The listener {@link onDispatchGateChange} registered, if anything is listening. */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;
 

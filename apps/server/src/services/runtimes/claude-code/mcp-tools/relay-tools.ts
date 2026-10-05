@@ -422,6 +422,14 @@ export function createRelayQueryHandler(
         from: reply.from,
         replyMessageId: reply.id,
         sentMessageId,
+        // The agent's turn ended but its work did not (DOR-2717). This call's
+        // inbox closes when it returns, so the later report cannot land here —
+        // say so rather than let the reply pass for the whole answer.
+        ...(replyPayload?.type === 'agent_result' && replyPayload.continuing === true
+          ? {
+              note: 'The agent is still working in the background and will report again. That report cannot reach this call; use relay_send_async when you need it.',
+            }
+          : {}),
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Query failed';
@@ -520,7 +528,7 @@ export function createRelayDispatchHandler(
       return jsonContent({
         messageId: result.messageId,
         inboxSubject,
-        note: `Poll relay_inbox(endpoint_subject="${inboxSubject}", ack=true) for progress (defaults to pending/unread messages). Call relay_unregister_endpoint("${inboxSubject}") when a payload with done:true is received.`,
+        note: `Poll relay_inbox(endpoint_subject="${inboxSubject}", ack=true) for progress (defaults to pending/unread messages). Call relay_unregister_endpoint("${inboxSubject}") when a payload with done:true is received, unless it also carries continuing:true — then a later agent_result marked late:true is still coming.`,
       });
     } catch (e) {
       // Clean up inbox on publish error
@@ -652,7 +660,9 @@ export function getRelayTools(
         'a progress event { type: "progress", step, step_type, text, done: false } or the final ' +
         '{ type: "agent_result", text, done: true }. A final payload may also carry error: the ' +
         'agent turn FAILED, and text is only what it produced before failing — check for error ' +
-        'before treating text as an answer. Defaults to status="pending" (deliverable, unread ' +
+        'before treating text as an answer. A final payload with continuing:true means the agent ' +
+        'is still working in the background and will report again: a later agent_result with ' +
+        'late:true follows on the same inbox. Defaults to status="pending" (deliverable, unread ' +
         'messages) so budget-rejected failures never surface silently next to real deliverables. Pass ' +
         'ack=true when polling so each message is returned once — note that ack PERMANENTLY DELETES the ' +
         'message content, so read what you need out of the response before your next call.',
@@ -708,7 +718,9 @@ export function getRelayTools(
         'Each progress step: { type: "progress", step: number, step_type: "message"|"tool_result", text: string, done: false }. ' +
         'Callers that only use { reply, from, replyMessageId } are unaffected — progress is additive. ' +
         'A target whose turn FAILED comes back as an error with code AGENT_ERROR and partialText ' +
-        'instead of a reply, so a crash is never returned as an empty answer.',
+        'instead of a reply, so a crash is never returned as an empty answer. A reply carrying ' +
+        'continuing:true means the agent is still working in the background; its later report ' +
+        'cannot reach this call, so use the async send when you need it.',
       {
         to_subject: z
           .string()
@@ -756,7 +768,9 @@ export function getRelayTools(
         'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
         'to the inbox. Poll the inbox tool with that subject and ack=true for updates (defaults ' +
         'to pending/unread messages). When you receive a payload with done:true, call ' +
-        'the unregister-endpoint tool on that subject to clean up. A done:true payload carrying ' +
+        'the unregister-endpoint tool on that subject to clean up — unless it also carries ' +
+        'continuing:true: the agent is still working in the background, so keep polling for the ' +
+        'agent_result marked late:true that follows. A done:true payload carrying ' +
         'error means their turn failed — its text is partial work, not an answer.',
       {
         to_subject: z

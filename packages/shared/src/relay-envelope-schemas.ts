@@ -792,6 +792,23 @@ export const RelayAgentResultPayloadSchema = z
           'streamed before the failure, so a reader must check this field before ' +
           'treating the result as an answer (DOR-1337).'
       ),
+    continuing: z
+      .literal(true)
+      .optional()
+      .describe(
+        'Present when the agent is still working in the background after this turn — ' +
+          'a helper, a shell, a timer — so it may report again. On an inbox that stays ' +
+          'open, that later report arrives as another agent_result marked `late`; keep ' +
+          'polling for it rather than closing the inbox (DOR-2717).'
+      ),
+    late: z
+      .literal(true)
+      .optional()
+      .describe(
+        'Present on a result the agent produced in a turn it started on its own, after ' +
+          'the turn this message started had already ended — typically a helper it ' +
+          'launched reporting back. It answers the same request (DOR-2717).'
+      ),
   })
   .openapi('RelayAgentResultPayload');
 

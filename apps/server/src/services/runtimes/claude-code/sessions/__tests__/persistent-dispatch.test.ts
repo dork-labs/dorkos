@@ -2735,6 +2735,21 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     await vi.waitFor(() => expect(records()).toEqual([]));
   });
 
+  it('is what the runtime answers when asked whether more may follow a turn (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    expect(runtime.holdsBackgroundWork(sessionId)).toBe(false);
+
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
+    // Under the transcript id too: a caller may know the session by either.
+    expect(runtime.holdsBackgroundWork(runtime.getInternalSessionId(sessionId)!)).toBe(true);
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(false));
+  });
+
   it('is cleared when the ceiling reap takes a process still holding work', async () => {
     const { sessionId } = await warmWithShell();
     await new Promise<void>((resolve) => setImmediate(resolve));

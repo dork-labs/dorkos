@@ -59,6 +59,7 @@
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
 import { SESSIONS } from '../../../config/constants.js';
 import { logError, logger } from '../../../lib/logger.js';
 import {
@@ -72,6 +73,7 @@ import { feedProjector } from '../session-event-normalizer.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { withStallGuard } from '../stall-guard.js';
 import { DetachedTurnLifecycle, guardTurnErrors, tapEachEvent } from '../trigger-turn.js';
+import { noteRuntimeTurnSettled } from './late-turns.js';
 
 /**
  * How long a runtime turn waits for the session's write-lock before giving up
@@ -147,8 +149,13 @@ export function subscribeRuntimeTurns(runtime: AgentRuntime): (() => void) | und
 async function projectRuntimeTurn(
   runtime: AgentRuntime,
   sessionId: string,
-  events: AsyncIterable<StreamEvent>
+  turnEvents: AsyncIterable<StreamEvent>
 ): Promise<void> {
+  // What the agent said, kept as it streams past, so whoever started the work
+  // this turn finishes can be told once it ends (`late-turns.ts`, DOR-2717).
+  // Read on every path, the drained one included: the turn happened either way.
+  const said = { text: '', error: undefined as string | undefined };
+  const events = recordWhatWasSaid(turnEvents, said);
   // **Everything that can throw belongs INSIDE the try below.** The subscriber
   // already claimed this session's in-flight slot, synchronously, before this
   // function was called — so a throw out here would skip the `finally`,
@@ -242,12 +249,50 @@ async function projectRuntimeTurn(
     // or blanking the reply before it.
     await feedProjector(projector, guarded, { origin: 'runtime' });
   } catch (err) {
+    said.error ??= err instanceof Error ? err.message : String(err);
     logger.warn('[runtime-turn] failed to project a turn the agent started', {
       sessionId,
       ...logError(err),
     });
   } finally {
     releaseOnce();
+    // After the session is handed back, so a follower that dispatches more
+    // work in answer finds it free.
+    noteRuntimeTurnSettled({
+      runtime,
+      sessionId,
+      text: said.text,
+      ...(said.error !== undefined ? { error: said.error } : {}),
+    });
+  }
+}
+
+/**
+ * Pass a turn's events through unchanged, noting its text and its first error.
+ *
+ * @param source - The turn's events
+ * @param said - Where the text and the first error are written
+ */
+async function* recordWhatWasSaid(
+  source: AsyncIterable<StreamEvent>,
+  said: { text: string; error: string | undefined }
+): AsyncIterable<StreamEvent> {
+  try {
+    for await (const event of source) {
+      if (event.type === 'text_delta') {
+        said.text += (event.data as { text?: string } | undefined)?.text ?? '';
+      } else if (event.type === 'error') {
+        const data = event.data as { message?: string; code?: string } | undefined;
+        // A warning the turn carried on from is not the turn failing.
+        if (!isNonFatalErrorCode(data?.code)) {
+          said.error ??= data?.message ?? 'The turn reported an error';
+        }
+      }
+      yield event;
+    }
+  } catch (err) {
+    said.error ??= err instanceof Error ? err.message : String(err);
+    throw err;
   }
 }
 
