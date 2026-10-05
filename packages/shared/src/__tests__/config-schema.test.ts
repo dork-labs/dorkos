@@ -110,6 +110,7 @@ describe('UserConfigSchema', () => {
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
+      keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -500,6 +501,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       // until a person opens that door (DOR-1304).
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
+      keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -804,6 +806,7 @@ describe('per-field and section-literal defaults agree', () => {
     version: 1,
     ui: {},
     scheduler: {},
+    keepAwake: {},
     runtimes: { claudeCode: {} },
   });
 
@@ -820,6 +823,11 @@ describe('per-field and section-literal defaults agree', () => {
   it('scheduler.maxConcurrentRuns is 4 either way', () => {
     expect(fromFactory.scheduler.maxConcurrentRuns).toBe(4);
     expect(fromFields.scheduler.maxConcurrentRuns).toBe(4);
+  });
+
+  it('keepAwake is on while agents work, and wake is off, either way', () => {
+    expect(fromFactory.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
+    expect(fromFields.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
   });
 
   it('runtimes.claudeCode.persistentSession is true either way', () => {
