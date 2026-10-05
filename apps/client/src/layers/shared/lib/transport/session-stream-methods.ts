@@ -12,6 +12,9 @@ import {
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import { buildQueryString } from './http-client';
+import { isDocChannelNotificationType } from './doc-channel-notifications';
+import type { Transport } from '@dorkos/shared/transport';
+import { ownDocChannelConnection } from './doc-channel-ownership';
 import { streamSocketFrames } from './stream-socket-iterator';
 import {
   createUnreadablePromptReporter,
@@ -45,7 +48,7 @@ export const SESSION_LIST_EVENT_TYPES = new Set([
  *
  * @param baseUrl - Server base URL (e.g. `/api` or `http://localhost:4242/api`)
  */
-export function createSessionStreamMethods(baseUrl: string) {
+export function createSessionStreamMethods(baseUrl: string, owner: Transport) {
   const reportUnreadableSnapshot = createUnreadableSnapshotReporter('Transport');
   const reportUnreadablePrompt = createUnreadablePromptReporter('Transport');
   return {
@@ -92,28 +95,57 @@ export function createSessionStreamMethods(baseUrl: string) {
       cwd?: string,
       signal?: AbortSignal
     ): AsyncIterable<SessionEvent> {
+      const controller = new AbortController();
+      const producer = ownDocChannelConnection(owner, controller.signal);
+      const abort = () => {
+        try {
+          producer.retire();
+        } finally {
+          controller.abort();
+        }
+      };
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) abort();
       const qs = buildQueryString({ cwd, after: sinceCursor });
-      for await (const frame of streamSocketFrames(`${baseUrl}/sessions/${sessionId}/events${qs}`, {
-        signal,
-      })) {
-        if (frame.event === 'snapshot') {
-          if (sinceCursor !== undefined) {
-            throw new StaleResumeCursorError(sessionId, sinceCursor);
+      try {
+        for await (const frame of streamSocketFrames(
+          `${baseUrl}/sessions/${sessionId}/events${qs}`,
+          {
+            signal: controller.signal,
           }
-          continue;
+        )) {
+          if (!producer.current()) return;
+          if (frame.event === 'snapshot') {
+            if (sinceCursor !== undefined) {
+              throw new StaleResumeCursorError(sessionId, sinceCursor);
+            }
+            continue;
+          }
+          if (isDocChannelNotificationType(frame.event)) {
+            producer.publish(frame.data);
+            continue;
+          }
+          const result = parseSessionEvent(frame.data);
+          if (!result.ok) {
+            console.warn('[Transport] dropping malformed session-event frame', {
+              sessionId,
+              issues: result.error.issues,
+            });
+            continue;
+          }
+          if (result.unreadable) {
+            reportUnreadablePrompt(sessionId, result.event.seq, result.unreadable);
+          }
+          if (!producer.current()) return;
+          yield result.event;
         }
-        const result = parseSessionEvent(frame.data);
-        if (!result.ok) {
-          console.warn('[Transport] dropping malformed session-event frame', {
-            sessionId,
-            issues: result.error.issues,
-          });
-          continue;
+      } finally {
+        try {
+          producer.retire();
+        } finally {
+          signal?.removeEventListener('abort', abort);
+          controller.abort();
         }
-        if (result.unreadable) {
-          reportUnreadablePrompt(sessionId, result.event.seq, result.unreadable);
-        }
-        yield result.event;
       }
     },
 

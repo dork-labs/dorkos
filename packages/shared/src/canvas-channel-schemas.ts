@@ -1,5 +1,11 @@
 /** Strict, transport-independent document channel contracts. No transport is enabled here. */
 import { z } from 'zod';
+import { CanvasDocIncarnationSchema } from './canvas-doc-incarnation.js';
+export {
+  CanvasDocIncarnationSchema,
+  sameCanvasDocIncarnation,
+  type CanvasDocIncarnation,
+} from './canvas-doc-incarnation.js';
 import {
   CANVAS_CHANNEL_ENVELOPE_BYTES,
   CanvasChannelJsonValueSchema,
@@ -100,9 +106,14 @@ export const CanvasChannelFrameSchema = z
     scope: IdentifierSchema,
     documentId: IdentifierSchema,
     docSeq: CanvasChannelSequenceSchema,
+    incarnation: CanvasDocIncarnationSchema.optional(),
     event: CanvasChannelEventSchema,
   })
-  .strict();
+  .strict()
+  .refine((value) => !Object.hasOwn(value, 'incarnation') || value.incarnation !== undefined, {
+    message: 'A supplied document incarnation must be complete',
+    path: ['incarnation'],
+  });
 /** One channel frame. */
 export type CanvasChannelFrame = z.infer<typeof CanvasChannelFrameSchema>;
 
@@ -341,9 +352,25 @@ export const CanvasChannelHealthSchema = z
   })
   .strict();
 /** Replay and reset projection; state is not document content. */
-export const CanvasChannelReplayResponseSchema = z
+/** Current server-verified route readiness, never inferred from declarations or page data. */
+export const CanvasChannelRoutingSchema = z
   .object({
+    enabled: z.boolean(),
+    approvedEventTypes: z.array(CanvasChannelEventPatternSchema).max(2048),
+    destinationLabel: z.string().max(500),
+  })
+  .strict();
+export type CanvasChannelRouting = z.infer<typeof CanvasChannelRoutingSchema>;
+/** Own undefined is a malformed supplied birth, not genuine legacy absence. */
+function hasCompleteSuppliedIncarnation(value: { incarnation?: unknown }): boolean {
+  return !Object.hasOwn(value, 'incarnation') || value.incarnation !== undefined;
+}
+/** Unrefined base allows snapshot projection before applying the identical birth check. */
+const canvasChannelReplayBaseSchema = z
+  .object({
+    routing: CanvasChannelRoutingSchema.optional(),
     events: z.array(CanvasChannelFrameSchema).max(200),
+    incarnation: CanvasDocIncarnationSchema.optional(),
     state: CanvasChannelStateSchema,
     stateRev: CanvasChannelSequenceSchema,
     highWatermark: CanvasChannelSequenceSchema,
@@ -354,6 +381,13 @@ export const CanvasChannelReplayResponseSchema = z
     receipts: z.array(CanvasChannelEventReceiptSchema).max(200),
   })
   .strict();
+export const CanvasChannelReplayResponseSchema = canvasChannelReplayBaseSchema.refine(
+  hasCompleteSuppliedIncarnation,
+  {
+    message: 'A supplied document incarnation must be complete',
+    path: ['incarnation'],
+  }
+);
 /** Replay projection. */
 export type CanvasChannelReplayResponse = z.infer<typeof CanvasChannelReplayResponseSchema>;
 
@@ -418,23 +452,87 @@ export const CanvasChannelBridgeStatusSchema = z.enum([
 ]);
 
 /** Explicit restricted bearer issuance, independent of route grants. */
+const TokenEventTypeSchema = z.union([
+  CanvasChannelPublicEventTypeSchema,
+  z.enum([
+    'md.task.toggled',
+    'app.ack',
+    'state.changed',
+    'event.status',
+    'doc.opened',
+    'doc.closed',
+    'doc.focused',
+    'doc.blurred',
+    'doc.viewers',
+  ]),
+]);
+const tokenReservedDirections = {
+  'md.task.toggled': 'upstream',
+  'app.ack': 'downstream',
+  'state.changed': 'system',
+  'event.status': 'system',
+  'doc.opened': 'system',
+  'doc.closed': 'system',
+  'doc.focused': 'system',
+  'doc.blurred': 'system',
+  'doc.viewers': 'system',
+} as const;
+function refineTokenReadTypes(
+  value: {
+    allowedTypes: string[];
+    directions: ('upstream' | 'downstream' | 'system')[];
+    permissions: ('ingest' | 'replay' | 'stream')[];
+  },
+  context: z.RefinementCtx
+): void {
+  for (const type of value.allowedTypes) {
+    const direction = Object.hasOwn(tokenReservedDirections, type)
+      ? tokenReservedDirections[type as keyof typeof tokenReservedDirections]
+      : undefined;
+    if (
+      direction &&
+      (!value.directions.includes(direction) ||
+        !value.permissions.some((permission) => permission === 'replay' || permission === 'stream'))
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['allowedTypes'],
+        message: 'Reserved token types require their native direction and read permission',
+      });
+  }
+}
+/** Explicit token scope syntax; reserved read selections never authorize public ingestion. */
 export const CanvasChannelTokenRequestSchema = z
   .object({
     documentId: IdentifierSchema,
-    allowedTypes: z.array(CanvasChannelPublicEventTypeSchema).min(1).max(128),
+    allowedTypes: z.array(TokenEventTypeSchema).min(1).max(128),
+    directions: z
+      .array(z.enum(['upstream', 'downstream', 'system']))
+      .min(1)
+      .max(3),
     permissions: z
       .array(z.enum(['ingest', 'replay', 'stream']))
       .min(1)
       .max(3),
-    expiresAt: z.string().datetime({ offset: true }),
+    expiresAt: z.string().max(64).datetime({ offset: true }),
   })
   .strict()
   .superRefine((value, context) => {
+    refineTokenReadTypes(value, context);
     if (
       new Set(value.permissions).size !== value.permissions.length ||
-      new Set(value.allowedTypes).size !== value.allowedTypes.length
+      new Set(value.allowedTypes).size !== value.allowedTypes.length ||
+      new Set(value.directions).size !== value.directions.length
     )
-      context.addIssue({ code: 'custom', message: 'Token permissions and types must be unique' });
+      context.addIssue({
+        code: 'custom',
+        message: 'Token permissions, types and directions must be unique',
+      });
+    if (value.permissions.includes('ingest') && !value.directions.includes('upstream'))
+      context.addIssue({
+        code: 'custom',
+        message: 'Token ingest permission requires upstream direction',
+      });
   });
 /** Persisted bearer authority contains a hash, never the recoverable bearer secret. */
 export const CanvasChannelTokenRecordSchema = z
@@ -442,17 +540,38 @@ export const CanvasChannelTokenRecordSchema = z
     tokenId: IdentifierSchema,
     tokenHash: HashSchema,
     documentId: IdentifierSchema,
-    allowedTypes: z.array(CanvasChannelPublicEventTypeSchema).min(1).max(128),
+    allowedTypes: z.array(TokenEventTypeSchema).min(1).max(128),
+    directions: z
+      .array(z.enum(['upstream', 'downstream', 'system']))
+      .min(1)
+      .max(3),
     permissions: z
       .array(z.enum(['ingest', 'replay', 'stream']))
       .min(1)
       .max(3),
     creatorId: IdentifierSchema,
-    createdAt: z.string().datetime({ offset: true }),
-    expiresAt: z.string().datetime({ offset: true }),
-    revokedAt: z.string().datetime({ offset: true }).nullable(),
+    createdAt: z.string().max(64).datetime({ offset: true }),
+    expiresAt: z.string().max(64).datetime({ offset: true }),
+    revokedAt: z.string().max(64).datetime({ offset: true }).nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    refineTokenReadTypes(value, context);
+    if (
+      new Set(value.allowedTypes).size !== value.allowedTypes.length ||
+      new Set(value.permissions).size !== value.permissions.length ||
+      new Set(value.directions).size !== value.directions.length
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'Token permissions, types and directions must be unique',
+      });
+    if (value.permissions.includes('ingest') && !value.directions.includes('upstream'))
+      context.addIssue({
+        code: 'custom',
+        message: 'Token ingest permission requires upstream direction',
+      });
+  });
 /** Hash-only persisted token evidence. */
 export type CanvasChannelTokenRecord = z.infer<typeof CanvasChannelTokenRecordSchema>;
 
@@ -460,13 +579,42 @@ export type CanvasChannelTokenRecord = z.infer<typeof CanvasChannelTokenRecordSc
 export const CanvasChannelTokenResponseSchema = z
   .object({
     tokenId: IdentifierSchema,
+    documentId: IdentifierSchema,
+    allowedTypes: z.array(TokenEventTypeSchema).min(1).max(128),
+    directions: z
+      .array(z.enum(['upstream', 'downstream', 'system']))
+      .min(1)
+      .max(3),
+    permissions: z
+      .array(z.enum(['ingest', 'replay', 'stream']))
+      .min(1)
+      .max(3),
+    creatorId: IdentifierSchema,
+    createdAt: z.string().max(64).datetime({ offset: true }),
     token: z
       .string()
-      .regex(/^dct_[A-Za-z0-9_-]{32,}$/u)
-      .max(512),
-    expiresAt: z.string().datetime({ offset: true }),
+      .length(47)
+      .regex(/^dct_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u),
+    expiresAt: z.string().max(64).datetime({ offset: true }),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    refineTokenReadTypes(value, context);
+    if (
+      new Set(value.allowedTypes).size !== value.allowedTypes.length ||
+      new Set(value.permissions).size !== value.permissions.length ||
+      new Set(value.directions).size !== value.directions.length
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'Token permissions, types and directions must be unique',
+      });
+    if (value.permissions.includes('ingest') && !value.directions.includes('upstream'))
+      context.addIssue({
+        code: 'custom',
+        message: 'Token ingest permission requires upstream direction',
+      });
+  });
 /** Host-only checkbox request. A page envelope never becomes this operation. */
 export const CanvasChannelCheckboxRequestSchema = z
   .object({
@@ -522,3 +670,24 @@ export const CanvasChannelCheckboxReceiptSchema = z.discriminatedUnion('status',
     })
     .strict(),
 ]);
+
+/** Current document state on a scope stream; it carries no transcript or room-entry cursor. */
+export const CanvasChannelSnapshotFrameSchema = z
+  .object({
+    type: z.literal('canvas_channel_snapshot'),
+    scope: IdentifierSchema,
+    documentId: IdentifierSchema,
+    snapshot: canvasChannelReplayBaseSchema
+      .omit({ events: true })
+      .refine(hasCompleteSuppliedIncarnation, {
+        message: 'A supplied document incarnation must be complete',
+        path: ['incarnation'],
+      }),
+  })
+  .strict();
+/** Document notification union shared by both scope protocols. */
+export const CanvasChannelNotificationSchema = z.union([
+  CanvasChannelFrameSchema,
+  CanvasChannelSnapshotFrameSchema,
+]);
+export type CanvasChannelNotification = z.infer<typeof CanvasChannelNotificationSchema>;

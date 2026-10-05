@@ -24,6 +24,11 @@ Subcommands:
                       browser closes are not kept)
     --chrome <path>   Use this Chrome or Chromium instead of the usual one
   status [--json]     Which sites have a saved sign-in, and how long each lasts
+  install            Download and verify the managed browser files
+    --repair          Replace browser files that failed verification
+    --json            Print the installation result as JSON
+  status --runtime   Check managed browser files; does not test readiness
+    --json            Print the file check as JSON
   forget <site>       Take one site away from your agents
   forget --all        Take every site away (asks first; --yes to skip)
 
@@ -53,6 +58,18 @@ export async function runBrowserDispatcher(
     return 0;
   }
   try {
+    if (subcommand === 'install' || (subcommand === 'status' && subArgs.includes('--runtime'))) {
+      const runtimeCommands = await import('./browser-runtime-commands.js');
+      return await runtimeCommands.runBrowserRuntimeCommand(subcommand, subArgs, {
+        getRuntimeInstallation: async () => {
+          const { resolveBrowserRuntimeInstallation } =
+            await import('../lib/agent-browser/browser-runtime-deps.js');
+          return resolveBrowserRuntimeInstallation();
+        },
+        log: (message) => console.log(message),
+        error: (message) => console.error(message),
+      });
+    }
     const commands = await import('./browser-commands.js');
     const { defaultBrowserDeps } = await import('../lib/agent-browser/browser-deps.js');
     const deps = defaultBrowserDeps();

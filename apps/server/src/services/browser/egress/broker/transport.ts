@@ -9,6 +9,8 @@ export interface OwnedSocket {
   readonly peer?: PinnedEndpoint;
   readonly observedClosed: boolean;
   readonly writableBytes: number;
+  /** Optional only for injected fixtures; native ownership is observed by its original owner. */
+  isCustodyKnown?(): boolean;
   onClose(callback: () => void): () => void;
   onError(callback: () => void): () => void;
   onData(callback: (bytes: Uint8Array) => void): () => void;
@@ -32,11 +34,14 @@ export interface AcceptedRequest {
   readonly raw: RawRequest;
   readonly body: RequestBody;
 }
-/** Listener custody must report actual close, including every upgraded socket held elsewhere. */
+/** Listener custody must report actual close, including every upgraded socket held elsewhere.
+ * A listener-owned intake also holds refused accepted sockets until their original close events.
+ */
 export interface OwnedListener {
   readonly address: '127.0.0.1';
   readonly port: number;
   readonly identity: object;
+  isCustodyKnown?(): boolean;
   onClose(callback: () => void): () => void;
   close(): void;
 }
@@ -44,6 +49,8 @@ export interface OwnedListener {
 export interface OriginResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
+  /** Distinct cookie fields cannot be comma-folded, including Expires attributes. */
+  readonly setCookies?: readonly string[];
   readonly websocketAccept?: string;
   readonly body: RequestBody;
   readonly head: Uint8Array;
@@ -56,6 +63,14 @@ export interface DialObservation {
 }
 export interface BrokerTransport {
   readonly scope: 'fixture-only';
+  /**
+   * Default injected intake reserves each socket before acquisition. Public Node
+   * acceptance instead requires an aggregate owner registered before listen:
+   * it captures each delivered original before callbacks, closes intake on quota
+   * refusal, and reports listener closure only after all originals close.
+   * This does not establish an OS-wide incoming-socket capacity bound.
+   */
+  readonly intake?: 'listener-owned';
   listen(options: {
     maxConnections: number;
     headerBytes: number;

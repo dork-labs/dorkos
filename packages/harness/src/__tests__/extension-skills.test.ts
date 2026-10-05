@@ -485,7 +485,8 @@ describe('a global extension skill', () => {
     const plan = projectGlobal({ roots: { dorkHome: home }, harnesses: [] });
     const links = plan.actions.filter((a) => a.name === 'notes__daily');
     expect(links).toHaveLength(1);
-    expect(links[0]?.source).toBe(join(plugin, 'skills', 'daily'));
+    // Installed source records use slash tails at both scopes, including Windows.
+    expect(links[0]?.source).toBe(`${plugin}/skills/daily`);
     expect(plan.warnings.some((w) => w.name === 'notes__daily' && /plugin/.test(w.reason))).toBe(
       true
     );

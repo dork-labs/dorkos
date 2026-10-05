@@ -9,6 +9,7 @@ export function circuitCustody(issuer: BrokerIssuer, charge: Charge) {
   const released = new Set<() => void>();
   let stopped = false;
   let chargeReleased = false;
+  let cleanupUncertain = false;
   let closing: Promise<boolean> | undefined;
   const settled = () => {
     if (chargeReleased) return true;
@@ -53,6 +54,7 @@ export function circuitCustody(issuer: BrokerIssuer, charge: Charge) {
         try {
           socket.destroy();
         } catch {
+          cleanupUncertain = true;
           /* Retain exact socket custody. */
         }
       }
@@ -77,6 +79,7 @@ export function circuitCustody(issuer: BrokerIssuer, charge: Charge) {
           try {
             socket.destroy();
           } catch {
+            cleanupUncertain = true;
             /* Continue every owned cleanup, retaining its charge. */
           }
         }
@@ -87,12 +90,23 @@ export function circuitCustody(issuer: BrokerIssuer, charge: Charge) {
       const task = new Promise<void>((done) => waiting.add(done));
       bounded(task, issuer.limits.cleanupMs).then(
         () => resolve(true),
-        () => resolve(false)
+        () => {
+          cleanupUncertain = true;
+          resolve(false);
+        }
       );
       return closing;
     },
     observed() {
       return stopped && sockets.size > 0 && [...sockets.values()].every((r) => r.closed);
+    },
+    isCustodyKnown() {
+      return (
+        !cleanupUncertain &&
+        [...sockets.values()].every(
+          (record) => record.closed || record.socket.isCustodyKnown?.() === true
+        )
+      );
     },
   };
   return api;

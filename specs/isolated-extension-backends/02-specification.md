@@ -551,7 +551,10 @@ abort composition, 256 KB result cap, error copy. Only "look up the live handler
 `shutdown(id)` keeps its order (inbox `markStopped`, agent-send `extensionStopped`, scheduled
 cancels, cleanup, `releaseListeners`) and for an isolated extension: sends `stop`; the child runs its
 cleanup and schedule cancels and exits; after 3 s the host sends `SIGKILL`; every program the broker
-started is killed; open virtual connections get 503; pending `call`s and `rcall`s are rejected.
+started is killed; open virtual connections get 503; pending `call`s and `rcall`s are rejected. An
+UNEXPECTED exit runs the same bookkeeping, `markStopped` and `extensionStopped` included: closing
+the ctx dispatcher removes only what the child registered, not calls already running in the real
+ctx.
 
 **Watchdog.** The host sends `ping` every 5 s; no `pong` within 15 s kills the child as
 `server_unresponsive` — which also closes DOR-2685's leftover ("a synchronous hang is DOR-2686's to
@@ -567,7 +570,11 @@ stays loadable (the DOR-1336 rule).
 
 **Limits.** Heap: `limits.memoryMb` via `--max-old-space-size` (heap only; Buffers and native memory
 are not counted, stated in the docs). IPC: 4 MB per message, 256 outstanding calls, 64 KB HTTP
-frames, and a host-to-child backlog over 1,000 undelivered messages is treated as unresponsive.
+frames, and a host-to-child backlog over 1,000 undelivered messages is treated as unresponsive. (Known
+gap, found in the Phase 3 review: Node's IPC channel reads a whole message before the host sees it,
+so the 4 MB limit bounds what the host acts on, not what it reads. A child that sends one huge frame
+still costs the host that much memory, once. Closing it needs a framed pipe of DorkOS's own in place
+of `fork`'s channel, which checks the length before reading.)
 Programs: 8 concurrent. CPU: no cap; the watchdog bounds a stuck event loop only.
 
 ### 10. Dev link (DOR-2696)

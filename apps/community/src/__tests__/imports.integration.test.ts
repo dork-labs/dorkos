@@ -570,8 +570,8 @@ it('waits behind a worker holding the community instead of deadlocking on cancel
 });
 
 // Purpose: teardown deletes files outside any long transaction, so a legal hold placed while it
-// is deleting one must stop it before the next: each delete holds the community row FOR SHARE
-// after checking for a hold, as the tenant deletion worker does.
+// is deleting one must stop it before the next: the hold queues at the same per-community
+// advisory gate as the tenant deletion worker, before the existing row lock.
 it('stops an import teardown before its next file when a legal hold is placed', async () => {
   const legalHold = (method: 'PUT' | 'DELETE', communityId: string) =>
     h.call(`/api/v1/host/communities/${communityId}/legal-hold`, {
@@ -624,8 +624,8 @@ it('stops an import teardown before its next file when a legal hold is placed', 
   const tearing = teardownImport(h.pool, store, target.importId);
   await inside;
   const placing = legalHold('PUT', target.communityId);
-  // The hold waits for the file deletion in progress, which holds the row FOR SHARE.
-  await waitForLockWaiters(h, 1, 'legal_hold_at');
+  // Observe the actual queued hold before releasing the first storage operation.
+  await waitForLockWaiters(h, 1, 'pg_advisory_xact_lock');
   release();
   const [outcome, placed] = await Promise.all([tearing, placing]);
   expect(placed.status).toBe(200);

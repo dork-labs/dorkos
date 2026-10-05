@@ -20,3 +20,5 @@ export {
   type LatestWidgetFence,
 } from './lib/find-latest-widget-fence';
 export { READ_ONLY_WIDGET_FENCE_RENDERERS } from './ui/widget-fence-renderers';
+
+export type { WidgetChannelPort, WidgetChannelSubmission } from './model/widget-channel';

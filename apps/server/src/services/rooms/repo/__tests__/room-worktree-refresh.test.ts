@@ -414,9 +414,11 @@ describe('the turn-start refresh', () => {
       await git(repo, 'commit', '-q', '-m', 'Bulk');
       const before = await headOf(copy);
 
-      const { outcome } = await refreshRoomWorktree(target, deps({ writeTimeoutMs: 1 }));
-
-      expect(outcome).toMatchObject({ kind: 'held', reason: 'unreadable' });
+      // Hold the actual write child instead of assuming this checkout takes longer than 1ms.
+      await withWrappedGit('hang', async () => {
+        const { outcome } = await refreshRoomWorktree(target, deps({ writeTimeoutMs: 1 }));
+        expect(outcome).toMatchObject({ kind: 'held', reason: 'unreadable' });
+      });
       expect(await headOf(copy)).toBe(before);
       // Whatever it left, no lock of its own stops the next git command.
       expect(existsSync(lockOf())).toBe(false);

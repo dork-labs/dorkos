@@ -1,9 +1,10 @@
+import { docScopeNotifications } from '../services/canvas/doc-channel/streams/registry.js';
 /**
  * `GET /api/sessions/:id/events` over Server-Sent Events.
  *
  * This is the PUBLIC integration contract (`docs/integrations/sse-protocol.mdx`)
  * — third-party clients are built against it, and the Electron main process
- * reads its sibling `/api/events` for the tray count. The cockpit itself moved
+ * reads its sibling `/api/events` for the tray count. The app itself moved
  * to the WebSocket at the same path (`session-events-socket.ts`) because an SSE
  * stream holds one of a browser's ~6 sockets per origin and three windows spent
  * all six (ADR 260805-041016). Both are first-class; neither is a fallback.
@@ -119,5 +120,6 @@ export const sessionEventsHandler = async (
     // The Express chain has already run `sessionGate` and `resolveAgentIdentity`,
     // so this is the same read the fleet-wide surfaces make.
     principal: readCallerPrincipal(req, res),
+    documentNotifications: docScopeNotifications(`session:${sessionId}`, req, res),
   });
 };

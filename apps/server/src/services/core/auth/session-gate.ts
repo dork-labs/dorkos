@@ -46,7 +46,7 @@ export interface RequestUser {
    * WHICH credential proved this identity.
    *
    * Required, not optional, and that is the point. A few writes are reserved for
-   * a person sitting in the cockpit rather than for anything holding a valid
+   * a person using the app rather than for anything holding a valid
    * credential — answering an approval, and changing an `operator-only` setting
    * or a permission. A per-user API key
    * satisfies this gate exactly as a browser session does (DOR-474), so those
@@ -146,6 +146,8 @@ export interface VerifyRequestAuthOptions {
    * The session-cookie leg still runs, so identity attribution is unchanged.
    */
   bearerIsNotAnApiKey?: boolean;
+  /** Bypass this deployment's cookie cache for a fresh database observation. */
+  sessionFreshness?: 'server-store';
 }
 
 /**
@@ -190,7 +192,12 @@ export async function verifyRequestAuth(
 
   // 1. Session cookie — verified against the cookie cache / DB.
   try {
-    const result = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+    const result = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+      ...(options.sessionFreshness === 'server-store'
+        ? { query: { disableCookieCache: true, disableRefresh: true } }
+        : {}),
+    });
     if (result?.user?.id) {
       return { userId: result.user.id, credential: 'cookie' };
     }
@@ -229,6 +236,8 @@ export async function verifyRequestAuth(
 /**
  * Express middleware that gates `/api/*` and `/mcp` behind a Better Auth session
  * cookie or a per-user API key when `config.auth.enabled` is `true`.
+ * Writes bypass the signed cookie cache and check the current server session
+ * without renewing it; GET/HEAD/OPTIONS retain cached session reads.
  *
  * Registered app-wide (before the API routes) so it also covers the `/mcp` mount
  * added later on the same app. When login is disabled it is a pass-through with
@@ -267,7 +276,10 @@ export async function sessionGate(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  const user = await verifyRequestAuth(req);
+  // A signed cache may outlive a revoked session. Writes must observe the current
+  // server row; GET/HEAD/OPTIONS keep the existing cache behavior for stream reads.
+  const readOnly = ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
+  const user = await verifyRequestAuth(req, readOnly ? {} : { sessionFreshness: 'server-store' });
   if (user) {
     res.locals.user = user;
     next();

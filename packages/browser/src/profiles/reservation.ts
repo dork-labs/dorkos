@@ -7,8 +7,18 @@ import type { ProfileId } from '../ids.js';
 import { BrowserLifecycleError } from '../lifecycle/errors.js';
 import { deadline } from '../lifecycle/deadline.js';
 import { nativeHolder } from '../runtime/host-identity.js';
+import { createDarwinEngineProcesses } from '../runtime/darwin-engine-processes.js';
 import { ownDirectory, assertDirectory } from './owned-directory.js';
 import { privateDirectory } from './paths.js';
+import {
+  JournalBindingSchema,
+  sameProcess,
+  observeJournalDirectory,
+  type JournalBinding,
+} from '../lifecycle/process-journal.js';
+import { createDarwinRecordedRecovery } from '../runtime/darwin-recovery.js';
+import { createDarwinProcessObserver } from '../runtime/darwin-process-observer.js';
+import { darwinMonotonicNow } from '../runtime/darwin-journal-worker.js';
 
 const identity = z
   .object({ pid: z.number().int().positive(), birth: z.string().min(1).max(128) })
@@ -19,10 +29,15 @@ const OwnerSchema = z
     manager: identity,
     phase: z.enum(['reserved', 'launching', 'running']),
     browser: identity.optional(),
+    journal: JournalBindingSchema.optional(),
+    failure: z.enum(['renderer', 'browser']).optional(),
   })
   .strict()
-  .refine((owner) => (owner.phase === 'running' ? !!owner.browser : !owner.browser));
+  .refine((owner) => (owner.phase === 'running' ? !!owner.browser : !owner.browser))
+  .refine((owner) => !owner.failure || owner.phase === 'running');
 type Owner = z.infer<typeof OwnerSchema>;
+const retainedRecoveries = new Set<Promise<unknown>>();
+const recoveryCapacity = 8;
 
 async function assertDead(config: EngineConfiguration, holder: ProcessIdentity): Promise<void> {
   const abort = new AbortController();
@@ -45,7 +60,7 @@ function readOwner(file: string): Owner {
     if (
       !entry.isFile() ||
       entry.isSymbolicLink() ||
-      entry.size > 2048 ||
+      entry.size > 8192 ||
       (entry.mode & 0o077) !== 0
     )
       throw new Error();
@@ -58,6 +73,9 @@ function readOwner(file: string): Owner {
 /** An acquired atomic reservation, never a public filesystem capability. */
 export interface ProfileReservation {
   readonly profileDir: string;
+  readonly nonce: string;
+  recordJournal(binding: JournalBinding): void;
+  recordFailure(cause: 'renderer' | 'browser'): void;
   beginLaunch(): void;
   recordBrowser(browser: ProcessIdentity): void;
   release(): Promise<void>;
@@ -83,9 +101,50 @@ export async function reserveProfile(
   if (!acquired) {
     privateDirectory(directory);
     const prior = readOwner(ownerFile);
+    const recovery =
+      config.recordedRecovery ??
+      (config.nativeJournal && prior.journal
+        ? createDarwinRecordedRecovery({
+            locate: async () => ({
+              parentDirectory: join(root, 'journals'),
+              parentIdentity: await observeJournalDirectory(join(root, 'journals')),
+              binding: prior.journal!,
+            }),
+            observer: createDarwinProcessObserver(config.nativeJournal.artifact),
+            sourceDigest: config.nativeJournal.artifact.sha256,
+            monotonicNow: darwinMonotonicNow,
+          })
+        : undefined);
+    if (recovery) {
+      if (retainedRecoveries.size >= recoveryCapacity)
+        throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
+      let disposition: string;
+      try {
+        const original = Promise.resolve().then(() =>
+          recovery({
+            profileId,
+            reservationNonce: prior.nonce,
+            manager: prior.manager,
+            ...(prior.browser ? { browser: prior.browser } : {}),
+          })
+        );
+        retainedRecoveries.add(original);
+        void original.then(
+          () => retainedRecoveries.delete(original),
+          () => retainedRecoveries.delete(original)
+        );
+        disposition = await deadline(original, 1000, 'PROCESS_OBSERVATION_UNAVAILABLE');
+      } catch {
+        disposition = 'unknown';
+      }
+      // Even matching recorded disappearance does not cover unrecorded descendants or external duties.
+      throw new BrowserLifecycleError(
+        disposition === 'live-recorded' ? 'PROFILE_IN_USE' : 'PROFILE_UNCERTAIN'
+      );
+    }
     await assertDead(config, prior.manager);
     if (prior.browser) await assertDead(config, prior.browser);
-    // Reconciliation/recovery belongs to the next slice. A dead owner is not a repair instruction.
+    // A dead owner without complete recovery evidence is not a repair instruction.
     throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
   }
   let reservationDirectory: ReturnType<typeof ownDirectory> | undefined;
@@ -101,7 +160,7 @@ export async function reserveProfile(
       throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
     assertDirectory(reservationDirectory);
     assertDirectory(profileDirectory);
-    if (JSON.stringify(readOwner(ownerFile)) !== JSON.stringify(owner))
+    if (JSON.stringify(readOwner(ownerFile)) !== JSON.stringify(OwnerSchema.parse(owner)))
       throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
   };
   try {
@@ -109,7 +168,9 @@ export async function reserveProfile(
     persist();
     privateDirectory(profileDir);
     profileDirectory = ownDirectory(profileDir);
-    const native = nativeHolder(profileDir);
+    const native = config.nativeJournal
+      ? await createDarwinEngineProcesses(config.nativeJournal.artifact).holder(profileDir)
+      : nativeHolder(profileDir);
     if (native) await assertDead(config, native);
   } catch (error) {
     try {
@@ -125,6 +186,31 @@ export async function reserveProfile(
   }
   return {
     profileDir,
+    nonce: owner.nonce,
+    recordJournal(value) {
+      assertOwned();
+      const binding = JournalBindingSchema.parse(value);
+      if (
+        owner.phase !== 'reserved' ||
+        owner.journal ||
+        binding.reservationNonce !== owner.nonce ||
+        binding.profile.kind !== 'persistent' ||
+        binding.profile.profileId !== profileId ||
+        !sameProcess(binding.manager, manager)
+      )
+        throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
+      owner.journal = binding;
+      persist();
+    },
+    recordFailure(cause) {
+      assertOwned();
+      if (owner.phase !== 'running' || !['renderer', 'browser'].includes(cause))
+        throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
+      if (!owner.failure) {
+        owner.failure = cause;
+        persist();
+      }
+    },
     beginLaunch() {
       assertOwned();
       owner.phase = 'launching';
@@ -140,7 +226,9 @@ export async function reserveProfile(
       assertOwned();
       if (owner.phase === 'launching') throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
       if (owner.browser) await assertDead(config, owner.browser);
-      const native = nativeHolder(profileDir);
+      const native = config.nativeJournal
+        ? await createDarwinEngineProcesses(config.nativeJournal.artifact).holder(profileDir)
+        : nativeHolder(profileDir);
       if (native) await assertDead(config, native);
       assertOwned();
       rmSync(directory, { recursive: true });

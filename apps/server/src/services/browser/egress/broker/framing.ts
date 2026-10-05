@@ -74,13 +74,20 @@ export function frameRequest(
   }
   const host = fields.get('host'),
     auth = fields.get('proxy-authorization');
-  if (
-    !host ||
-    !auth ||
-    Buffer.byteLength(auth) > limits.credentialBytes ||
-    !/^Bearer [A-Za-z0-9_-]+$/.test(auth)
-  )
+  if (!host || !auth || Buffer.byteLength(auth) > limits.credentialBytes)
     throw new BrokerError('CREDENTIAL_REFUSED');
+  let credential: string;
+  if (/^Bearer [A-Za-z0-9_-]+$/.test(auth)) credential = auth.slice(7);
+  else {
+    const basic = /^Basic ([A-Za-z0-9+/]+={0,2})$/.exec(auth);
+    if (!basic) throw new BrokerError('CREDENTIAL_REFUSED');
+    const decoded = Buffer.from(basic[1]!, 'base64');
+    const plain = decoded.toString('utf8');
+    const secret = /^dorkos:([A-Za-z0-9_-]{43})$/.exec(plain);
+    if (decoded.toString('base64') !== basic[1] || !Buffer.from(plain).equals(decoded) || !secret)
+      throw new BrokerError('CREDENTIAL_REFUSED');
+    credential = secret[1]!;
+  }
   if (fields.has('expect')) refused();
   const te = fields.get('transfer-encoding');
   if (te && (te.toLowerCase() !== 'chunked' || fields.has('content-length'))) refused();
@@ -146,9 +153,29 @@ export function frameRequest(
     url,
     path,
     method,
-    credential: auth.slice(7),
+    credential,
     headers: Object.freeze(headers),
     ...(contentLength === undefined ? {} : { contentLength }),
     ...(kind === 'websocket' ? { websocketKey: fields.get('sec-websocket-key')! } : {}),
   });
+}
+
+/** Validate an unauthenticated proxy challenge without creating a forwarding credential. */
+export function validateProxyChallenge(
+  raw: RawRequest,
+  limits: Readonly<Record<keyof BrokerLimits, number>>
+): void {
+  if (
+    raw.rawHeaders.some(
+      (name, index) => index % 2 === 0 && name.toLowerCase() === 'proxy-authorization'
+    )
+  )
+    throw new BrokerError('CREDENTIAL_REFUSED');
+  frameRequest(
+    {
+      ...raw,
+      rawHeaders: [...raw.rawHeaders, 'Proxy-Authorization', 'Bearer challengevalidationonly'],
+    },
+    limits
+  );
 }

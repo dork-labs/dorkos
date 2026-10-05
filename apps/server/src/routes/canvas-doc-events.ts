@@ -43,7 +43,7 @@ function refusalClass(status: number): DocChannelRejectionClass {
 export interface DocChannelHttp {
   service: DocChannelService;
   metrics?: DocChannelMetrics;
-  actor(req: Request, res: Response): DocChannelActor;
+  actor(req: Pick<Request, 'headers'>, res: Pick<Response, 'locals'>): DocChannelActor;
 }
 const router = Router();
 const parseEnvelope = json({ limit: '16kb' });

@@ -8,6 +8,12 @@ import {
   CanvasChannelDeclarationSchema,
   CanvasChannelDocEventsContextSchema,
   CanvasChannelEventIdSchema,
+  CanvasChannelFrameSchema,
+  CanvasChannelReplayResponseSchema,
+  CanvasChannelSnapshotFrameSchema,
+  CanvasChannelNotificationSchema,
+  CanvasChannelRoutingSchema,
+  CanvasDocIncarnationSchema,
   CanvasChannelEventPatternSchema,
   CanvasChannelEventTypeSchema,
   CanvasChannelGrantSchema,
@@ -251,10 +257,11 @@ describe('state, acknowledgements and future host-only contracts', () => {
       false
     );
   });
-  it('does not allow token minting to grant routes or system event types', () => {
+  it('does not allow ingest token minting to grant routes or reserved event types', () => {
     const request = {
       documentId: 'doc',
       allowedTypes: ['task.done'],
+      directions: ['upstream'],
       permissions: ['ingest'],
       expiresAt: '2026-10-02T00:00:00Z',
     };
@@ -307,11 +314,153 @@ describe('leaf and tool-schema compatibility', () => {
       /from ['"]\.\/(?:canvas-schemas|room-schemas|session-stream|schemas)\.js/u
     );
     const helper = await readFile(new URL('../canvas-channel-json.ts', import.meta.url), 'utf8');
-    expect(helper.match(/^import .*$/gmu)).toEqual(["import { z } from 'zod';"]);
+    expect(helper.match(/^import .*$/gmu)).toEqual([
+      "import { z } from 'zod';",
+      "import { extendZodWithOpenApiOnce } from './zod-openapi.js';",
+    ]);
+    const openApiHelper = await readFile(new URL('../zod-openapi.ts', import.meta.url), 'utf8');
+    expect(openApiHelper.match(/^import .*$/gmu)).toEqual([
+      "import { z } from 'zod';",
+      "import { extendZodWithOpenApi, zodToOpenAPIRegistry } from '@asteasolutions/zod-to-openapi';",
+    ]);
     const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     expect(pkg.exports['./canvas-channel-schemas']).toEqual({
       types: './src/canvas-channel-schemas.ts',
       default: './dist/canvas-channel-schemas.js',
     });
+  });
+});
+
+describe('authorized document birth projections', () => {
+  const incarnation = {
+    v: 1 as const,
+    documentId: 'doc',
+    physicalOpenedAt: '2026-10-02T00:00:00Z',
+    channelCreatedAt: '2026-10-02T00:00:01Z',
+    generation: 'a'.repeat(64),
+  };
+  const frame = {
+    type: 'canvas_event',
+    scope: 'session',
+    documentId: 'doc',
+    docSeq: 1,
+    event: {
+      id,
+      type: base.type,
+      payload: base.payload,
+      direction: 'upstream',
+      receivedAt: '2026-10-02T00:00:02Z',
+    },
+  };
+  const replay = {
+    events: [frame],
+    state: {},
+    stateRev: 0,
+    highWatermark: 1,
+    retentionFloor: 0,
+    receiptRetentionFloor: 0,
+    resetRequired: false,
+    health: { status: 'ready', reasons: [] },
+    receipts: [],
+  };
+  it('preserves genuine legacy absence while retaining every supplied authorized birth field', () => {
+    expect(CanvasChannelFrameSchema.parse(frame)).toEqual(frame);
+    expect(CanvasChannelReplayResponseSchema.parse(replay)).toEqual(replay);
+    const currentFrame = { ...frame, incarnation };
+    const currentReplay = { ...replay, incarnation, events: [currentFrame] };
+    expect(CanvasChannelFrameSchema.parse(currentFrame)).toEqual(currentFrame);
+    expect(CanvasChannelReplayResponseSchema.parse(currentReplay)).toEqual(currentReplay);
+  });
+  it('refuses malformed supplied birth instead of treating it as legacy absence', () => {
+    const malformed: unknown[] = [
+      undefined,
+      null,
+      {},
+      { ...incarnation, generation: 'A'.repeat(64) },
+      { ...incarnation, scope: 'room' },
+    ];
+    for (const field of Object.keys(incarnation)) {
+      const incomplete: Record<string, unknown> = { ...incarnation };
+      delete incomplete[field];
+      malformed.push(incomplete);
+    }
+    for (const birth of malformed) {
+      expect(CanvasChannelFrameSchema.safeParse({ ...frame, incarnation: birth }).success).toBe(
+        false
+      );
+      expect(
+        CanvasChannelReplayResponseSchema.safeParse({ ...replay, incarnation: birth }).success
+      ).toBe(false);
+      expect(
+        CanvasChannelReplayResponseSchema.safeParse({
+          ...replay,
+          events: [{ ...frame, incarnation: birth }],
+        }).success
+      ).toBe(false);
+    }
+  });
+  it('keeps host correlation out of the public PageEvent envelope', () => {
+    expect(CanvasDocIncarnationSchema.safeParse(incarnation).success).toBe(true);
+    expect(PageEventSchema.safeParse({ ...base, incarnation }).success).toBe(false);
+    expect(
+      PageEventSchema.safeParse({ ...base, expectedGeneration: incarnation.generation }).success
+    ).toBe(false);
+  });
+  it('projects a strict snapshot from the unrefined base and retains the SAME supplied-birth refusal', () => {
+    const { events: omittedEvents, ...legacySnapshot } = replay;
+    expect(omittedEvents).toEqual([frame]);
+    const notification = {
+      type: 'canvas_channel_snapshot',
+      scope: 'session',
+      documentId: 'doc',
+      snapshot: legacySnapshot,
+    };
+    expect(CanvasChannelSnapshotFrameSchema.parse(notification)).toEqual(notification);
+    expect(CanvasChannelNotificationSchema.parse(notification)).toEqual(notification);
+    const routing = { enabled: true, approvedEventTypes: ['task.*'], destinationLabel: 'Owner' };
+    const current = { ...notification, snapshot: { ...legacySnapshot, incarnation, routing } };
+    expect(CanvasChannelSnapshotFrameSchema.parse(current)).toEqual(current);
+    expect(CanvasChannelNotificationSchema.parse(current)).toEqual(current);
+    expect(
+      CanvasChannelReplayResponseSchema.parse({ ...replay, incarnation, routing }).routing
+    ).toEqual(routing);
+    expect(CanvasChannelNotificationSchema.parse({ ...frame, incarnation })).toEqual({
+      ...frame,
+      incarnation,
+    });
+    const invalidBirths: unknown[] = [
+      undefined,
+      null,
+      {},
+      { ...incarnation, generation: 'bad' },
+      { ...incarnation, extra: true },
+    ];
+    for (const field of Object.keys(incarnation)) {
+      const incomplete: Record<string, unknown> = { ...incarnation };
+      delete incomplete[field];
+      invalidBirths.push(incomplete);
+    }
+    for (const birth of invalidBirths) {
+      const malformed = { ...notification, snapshot: { ...legacySnapshot, incarnation: birth } };
+      expect(CanvasChannelSnapshotFrameSchema.safeParse(malformed).success).toBe(false);
+      expect(CanvasChannelNotificationSchema.safeParse(malformed).success).toBe(false);
+    }
+    expect(
+      CanvasChannelSnapshotFrameSchema.safeParse({
+        ...current,
+        snapshot: { ...current.snapshot, events: [] },
+      }).success
+    ).toBe(false);
+    expect(CanvasChannelRoutingSchema.safeParse({ ...routing, extra: true }).success).toBe(false);
+    expect(
+      CanvasChannelRoutingSchema.safeParse({
+        ...routing,
+        approvedEventTypes: Array(2049).fill('task.*'),
+      }).success
+    ).toBe(false);
+    expect(
+      CanvasChannelRoutingSchema.safeParse({ ...routing, destinationLabel: 'x'.repeat(501) })
+        .success
+    ).toBe(false);
   });
 });

@@ -1,8 +1,9 @@
 /** SQL accounting counts original inputs once even when multiple routes reference them. */
 import { sql, type DbTransaction } from '@dorkos/db';
 import type { CanvasChannelJsonValue } from '@dorkos/shared/canvas-channel-schemas';
-import { envelopeIdentity } from './envelope.js';
-import { DocIngestRefusal } from './ingest-types.js';
+import { envelopeIdentity } from '../envelope.js';
+import { scanCheckboxReservationPolicies } from '../writes/reservation-policy-census.js';
+import { DocIngestRefusal } from '../ingest-types.js';
 
 /** Platform caps may be lowered by tests or installation policy, never raised. */
 export interface DocIngestLimits {
@@ -62,25 +63,26 @@ export function checkIngestCapacity(
   limits: DocIngestLimits,
   createsPending = true
 ): void {
+  const reservations = scanCheckboxReservationPolicies(tx, { documentId });
   const since = new Date(Date.parse(now) - 60_000).toISOString();
   const rate = tx.get<{ count: number }>(sql`SELECT count(*) AS count FROM canvas_doc_events
     WHERE document_id=${documentId} AND direction='upstream' AND received_at>${since}`)!.count;
-  if (rate >= Math.min(appRate ?? 60, limits.eventsPerMinute))
+  if (rate + reservations.document.rateUnits >= Math.min(appRate ?? 60, limits.eventsPerMinute))
     throw new DocIngestRefusal('DOC_EVENT_RATE_LIMIT', 429, 60);
   if (!createsPending) return;
   const usage = tx.get<{ count: number; bytes: number }>(protectedCapacityQuery(documentId))!;
   const installation = tx.get<{ bytes: number }>(protectedCapacityQuery())!.bytes;
   if (
-    usage.count >= limits.pendingEvents ||
-    usage.bytes + bytes > limits.pendingBytes ||
-    installation + bytes > limits.installationPendingBytes
+    usage.count + reservations.document.originals >= limits.pendingEvents ||
+    usage.bytes + reservations.document.bytes + bytes > limits.pendingBytes ||
+    installation + reservations.installation.bytes + bytes > limits.installationPendingBytes
   )
     throw new DocIngestRefusal('DOC_EVENT_BACKLOG_FULL', 429, 60);
 }
 
 /** Backfill foundation rows in bounded pages before installation accounting can undercount them. */
 export function backfillEnvelopeAccounting(
-  store: import('./store.js').DocChannelStore,
+  store: import('../store.js').DocChannelStore,
   tx: DbTransaction
 ): void {
   for (;;) {

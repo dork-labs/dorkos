@@ -49,6 +49,12 @@ export function registerHostLegalHoldRoutes(
     const body = await readJson(c, CommunityAdminHostLegalHoldRequestSchema);
     const communityId = parseHostCommunityId(c.req.param('id'));
     const community = await transaction(pool, async (client) => {
+      // Join the same per-file queue before taking the row lock, so the next purge file
+      // cannot acquire a compatible shared lock ahead of this pending hold.
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('dorkos:legal-hold:' || $1::text,0))",
+        [communityId]
+      );
       const locked = await client.query<{ legal_hold_at: Date | null; lifecycle: string }>(
         'SELECT legal_hold_at,lifecycle FROM communities WHERE id=$1 FOR UPDATE',
         [communityId]

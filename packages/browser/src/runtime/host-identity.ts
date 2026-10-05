@@ -29,6 +29,15 @@ export function hostIdentity(pid: number): ProcessIdentity | null {
 
 /** Read Chromium's native holder without deleting or repairing its lock. */
 export function nativeHolder(profileDir: string): ProcessIdentity | null {
+  const pid = nativeHolderPid(profileDir);
+  if (pid === null) return null;
+  const identity = hostIdentity(pid);
+  if (!identity) throw new BrowserLifecycleError('UNKNOWN_NATIVE_HOLDER');
+  return identity;
+}
+
+/** Read only the native lock PID; a separate lifetime observation must bind it. */
+export function nativeHolderPid(profileDir: string): number | null {
   let target: string;
   try {
     target = readlinkSync(join(profileDir, 'SingletonLock'));
@@ -38,8 +47,8 @@ export function nativeHolder(profileDir: string): ProcessIdentity | null {
   }
   const match = /^(.*)-(\d+)$/.exec(target);
   if (!match || match[1] !== hostname()) throw new BrowserLifecycleError('UNKNOWN_NATIVE_HOLDER');
-  const identity = hostIdentity(Number(match[2]));
-  // A stale native lock carries no birth/descendant ledger; repair is outside this slice.
-  if (!identity) throw new BrowserLifecycleError('UNKNOWN_NATIVE_HOLDER');
-  return identity;
+  const pid = Number(match[2]);
+  if (!Number.isSafeInteger(pid) || pid < 1 || pid > 2147483647)
+    throw new BrowserLifecycleError('UNKNOWN_NATIVE_HOLDER');
+  return pid;
 }

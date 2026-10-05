@@ -1,3 +1,4 @@
+import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 // @vitest-environment jsdom
 /**
  * The room Transport methods that can only be tested here.
@@ -65,6 +66,7 @@ describe('postToRoom', () => {
         ok: false,
         status: 409,
         statusText: 'Conflict',
+        headers: new Headers(),
         json: () => Promise.resolve({ error: 'This room is archived', code: 'ROOM_ARCHIVED' }),
       })
     );
@@ -164,6 +166,7 @@ describe('room settings and roster writes', () => {
         ok: false,
         status: 403,
         statusText: 'Forbidden',
+        headers: new Headers(),
         json: () => Promise.resolve({ error: 'Only you can change who is in a room' }),
       })
     );
@@ -224,6 +227,21 @@ describe('subscribeRoom over a stream socket', () => {
 
     socket.finish();
     await pending;
+  });
+
+  it('forwards both document notification variants independently of room entries', async () => {
+    const iterator = setup().subscribeRoom('room-1', 12)[Symbol.asyncIterator]();
+    const first = iterator.next();
+    const socket = await nthSocket();
+    socket.push('canvas_event', DOC_EVENT);
+    expect((await first).value).toEqual(DOC_EVENT);
+    const second = iterator.next();
+    socket.push('canvas_channel_snapshot', DOC_SNAPSHOT);
+    expect((await second).value).toEqual(DOC_SNAPSHOT);
+    const third = iterator.next();
+    socket.push('entry', ENTRY_EVENT);
+    expect((await third).value).toEqual(ENTRY_EVENT);
+    socket.finish();
   });
 
   it('delivers a validated entry', async () => {
@@ -407,6 +425,7 @@ describe('saveRoomFile', () => {
     vi.mocked(globalThis.fetch).mockResolvedValue({
       ok: false,
       status: 409,
+      headers: new Headers(),
       json: () => Promise.resolve(conflict),
     } as unknown as Response);
 

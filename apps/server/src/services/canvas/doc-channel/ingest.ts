@@ -12,18 +12,39 @@ import { envelopeIdentity } from './envelope.js';
 import { DOC_EVENTS_PROMPT_BYTES, docEventsPromptBytes } from './prompt.js';
 import { queueInput } from './coalescer.js';
 import { appendInitialDocStatuses } from './initial-status.js';
-import { DocIngestRefusal, type DocIngestAuthority } from './ingest-types.js';
+import { DocIngestRefusal, type DocIngestAuthority, type DocIngestAccess } from './ingest-types.js';
+import {
+  readCheckboxConversionInput,
+  failCheckboxCompletion,
+} from './writes/reservation-bridge.js';
 import {
   checkIngestCapacity,
   backfillEnvelopeAccounting,
   DOC_INGEST_LIMITS,
   type DocIngestLimits,
-} from './accounting.js';
+} from './current/accounting.js';
 
 /** Durable accepted input with route receipts; publication can occur only after this returns. */
 export interface DocIngestResult {
   receipt: IngestReceipt;
   deliveries: ReturnType<DocChannelStore['listDeliveries']>;
+}
+
+const originalCompletions = new WeakMap<
+  DocChannelIngest,
+  { store: DocChannelStore; complete: (tx: DbTransaction) => IngestReceipt }
+>();
+
+/** Fixed genuine constructor path; no caller-provided event, route authority or delegate. */
+export function completeOriginalCheckboxOutbox(
+  ingest: DocChannelIngest,
+  store: DocChannelStore,
+  tx: DbTransaction
+): IngestReceipt {
+  const own = originalCompletions.get(ingest);
+  if (!own || own.store !== store)
+    throw new Error('Checkbox completion requires its genuine ingest store.');
+  return own.complete(tx);
 }
 
 /** Synchronous ingest/coalescer entry point, with no HTTP, grant creation or runtime side effects. */
@@ -35,6 +56,7 @@ export class DocChannelIngest {
     private readonly clock: () => Date = () => new Date(),
     limits: Partial<DocIngestLimits> = {}
   ) {
+    originalCompletions.set(this, { store, complete: (tx) => this.#completeOriginal(tx) });
     this.limits = { ...DOC_INGEST_LIMITS };
     for (const key of Object.keys(this.limits) as (keyof DocIngestLimits)[]) {
       const value = limits[key] ?? this.limits[key];
@@ -146,6 +168,27 @@ export class DocChannelIngest {
       },
       tx
     );
+    return this.#routeAccepted(saved, access, now, tx);
+  }
+
+  #completeOriginal(tx: DbTransaction): IngestReceipt {
+    try {
+      const { event, access } = readCheckboxConversionInput(this.store, tx);
+      return this.#routeAccepted(event, access, event.receivedAt, tx).receipt;
+    } catch (cause) {
+      return failCheckboxCompletion(this.store, tx, cause);
+    }
+  }
+
+  #routeAccepted(
+    saved: import('./store.js').DocEventRow,
+    access: DocIngestAccess,
+    now: string,
+    tx: DbTransaction
+  ): DocIngestResult {
+    const matching = access.routes.filter(({ route }) =>
+      matchesCanvasChannelEvent(route.on, saved.type)
+    );
     for (const decision of matching) {
       const { route } = decision;
       if (
@@ -170,10 +213,10 @@ export class DocChannelIngest {
         );
       else queueInput(this.store, tx, access, decision, saved, now);
     }
-    const deliveries = this.store.listDeliveries(access.documentId, event.id, tx);
+    const deliveries = this.store.listDeliveries(access.documentId, saved.eventId, tx);
     appendInitialDocStatuses(this.store, tx, saved, deliveries, now);
     return {
-      receipt: { id: event.id, status: 'recorded', docSeq: saved.docSeq },
+      receipt: { id: saved.eventId, status: 'recorded', docSeq: saved.docSeq },
       deliveries,
     };
   }
