@@ -402,7 +402,7 @@ On the app-server transport only (exec is unchanged and keeps Verdict 1):
 
 | id                  | sandbox              | `approvalPolicy` | `asks`       | `reach`      | label           |
 | ------------------- | -------------------- | ---------------- | ------------ | ------------ | --------------- |
-| `default`           | `read-only`          | `on-request`     | `always`     | `workspace`  | Ask first       |
+| `default`           | `read-only`          | `on-request`     | `always`     | `edit`       | Ask first       |
 | `acceptEdits`       | `workspace-write`    | `on-request`     | `when-risky` | `workspace`  | Workspace write |
 | `bypassPermissions` | `danger-full-access` | `never`          | `never`      | `everything` | Full access     |
 
@@ -441,8 +441,51 @@ own.
 A question with an `isSecret` field is not drawn until the client has masked input (DOR-2726):
 Codex gets no answer and the turn gets a status line saying why.
 
-**Starting a Codex chat from another chat (DOR-2714's ceiling).** Every app-server mode reaches
-the workspace, and every Claude Code level below Full access reaches only what it edits, so on
-app-server only a Claude chat at Full access may start a Codex chat (at any of the three levels).
-Default, Plan, Accept edits and Auto are refused: fail-closed, never a climb. On exec, Default
-and Plan could start Codex in Read only. Pinned by `__tests__/start-permission-ceiling.test.ts`.
+**Starting a Codex chat from another chat (DOR-2714's ceiling).** Ask first declares exactly
+what Claude Code's `default` declares (`asks: 'always'`, `reach: 'edit'`, decided 2026-10-05 in
+P3): both ask before any change, and an approved step can go further. So a Claude chat in
+Default, Accept edits or Auto may start a Codex chat in Ask first; only Full access may start
+Workspace write or Full access; Plan (reach `read`) starts none on app-server. Never a climb.
+Pinned by `__tests__/start-permission-ceiling.test.ts`.
+
+### P3 — work that outlives the turn, reconciliation, and the default (2026-10-05, codex-cli 0.154.0)
+
+`runtimes.codex.transport: auto` resolves to **app-server** from P3 (`resolveCodexTransport`
+only; no migration; an explicit `exec` is honoured). ADR 261005-113107 is accepted; ADR-0309 is
+superseded. Verdicts 1 and 3 above now describe the `exec` fallback only.
+
+Verified on the vendored binary with a throwaway `CODEX_HOME` and a scripted local provider
+(`app-server/__tests__/app-server.binary.test.ts`, free; the probes behind them are recorded
+here):
+
+- **A background command.** `exec_command` with a short `yield_time_ms` leaves the command
+  running: its `commandExecution` item (`source: unifiedExecStartup`, with a `processId`) is
+  still `inProgress` at `turn/completed`, and `thread/backgroundTerminals/list` names it. When it
+  ends, `item/commandExecution/outputDelta` and `item/completed` (with `exitCode` and
+  `aggregatedOutput`) arrive under the OLD turn id. **Codex starts no turn of its own**: the
+  provider sees no further request. DorkOS wakes the chat itself (`app-server/background-work.ts`).
+- **`thread/backgroundTerminals/terminate`** answers `{terminated: true}` and the terminal then
+  reports a late `item/completed`; an unknown process id answers `{terminated: false}`.
+- **A killed `codex app-server` leaves its background commands running** (SIGKILL; the shell and
+  its `sleep` survived as orphans). So a crash is reported as "DorkOS lost track of it", never
+  "stopped", and DorkOS shutdown terminates tracked commands before it stops the process.
+- **Wake rules** (DOR-2065's lesson): a wake follows a completion and nothing else; completions
+  within 1.5 s coalesce into one; a model turn starts only after the work's own turn
+  `completed` and nobody stopped the task; the four-hour ceiling terminates once and never wakes
+  the model. A never-ending command (`sleep 600` in the binary test) never wakes the chat.
+- **Thread reconciliation** (`thread/read`, metadata only, before a cold resume): a stored thread
+  reads fine even unloaded; a deleted one (`thread/delete`) reads `thread not loaded: <id>` and
+  resumes as `no rollout found …` — the same words a never-run thread gets, so `thread/read` is
+  what tells them apart. A bound thread always ran a turn, so either answer starts it fresh with
+  the notice. An archived one (`thread/archive`) reads fine and refuses resume with
+  `session <id> is archived. Run codex unarchive …` (inner backticks dropped); it starts fresh with its own notice and
+  stays archived. The loader's old `^thread not found` resume branch never fired at 0.154.
+- `thread/backgroundTerminals/list|terminate` and `turn/start` on an unknown thread answer
+  `thread not found: <id>`; `thread/read` says `thread not loaded: <id>`. Both classify as
+  `thread-not-found`.
+
+**Open (live, T21):** whether the parent connection receives a spawned helper agent's own item
+events (protocol risk 11), and whether interrupting a helper's running turn through
+`thread/read {includeTurns}` + `turn/interrupt` stops it. Helper agents are tracked and woken on
+their parent's `subAgentActivity`, unproven against a real model, so the matrix cell
+`RT-LIFE-03` is `partial` for Codex.

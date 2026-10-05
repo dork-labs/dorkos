@@ -1,7 +1,7 @@
 ---
 id: 261005-113107
 title: Codex runs on one supervised app-server process per home, not one exec process per turn
-status: proposed
+status: accepted
 created: 2026-10-05
 spec: codex-app-server-transport
 superseded-by: null
@@ -13,7 +13,7 @@ amends: 261002-221210
 
 ## Status
 
-Proposed (spec `codex-app-server-transport`, DOR-2719). Supersedes ADR-0309 (Codex SDK threads, one `codex exec` per turn). Amends ADR `261002-221210` in two clauses only: "Codex does not use the relay" and "the token rides only the environment, under a variable named fresh for every turn" are replaced by the credits clause below. Everything else in that ADR stands, including the separate credits home and "a conversation stays on whatever paid for it".
+Accepted (spec `codex-app-server-transport`, DOR-2719; app-server became Codex's default transport in phase 3, 2026-10-05, with `exec` still available through `runtimes.codex.transport`). Supersedes ADR-0309 (Codex SDK threads, one `codex exec` per turn). Amends ADR `261002-221210` in two clauses only: "Codex does not use the relay" and "the token rides only the environment, under a variable named fresh for every turn" are replaced by the credits clause below. Everything else in that ADR stands, including the separate credits home and "a conversation stays on whatever paid for it".
 
 ## Context
 

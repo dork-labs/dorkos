@@ -163,6 +163,7 @@ describe('what a Codex turn carries', () => {
   /** A runtime whose mesh knows about `agentDir`, unless `mesh: null`. */
   function makeRuntime(opts: { mesh?: AgentRegistryPort | null } = {}): CodexRuntime {
     const runtime = new CodexRuntime({
+      transport: 'exec',
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
       defaultCwd: agentDir,

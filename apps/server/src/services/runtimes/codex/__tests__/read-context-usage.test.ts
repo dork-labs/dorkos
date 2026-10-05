@@ -35,7 +35,11 @@ describe('CodexRuntime.readContextUsage', () => {
     readCodexTurnContextUsage.mockReset();
     onCredits.value = false;
     threadMap = new CodexThreadMap(createTestDb());
-    runtime = new CodexRuntime({ threadMap, resolveBinary: async () => '/bin/codex' });
+    runtime = new CodexRuntime({
+      transport: 'exec',
+      threadMap,
+      resolveBinary: async () => '/bin/codex',
+    });
   });
 
   it("reads the bound thread's rollout at rest (no live-turn bound)", async () => {

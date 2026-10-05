@@ -67,6 +67,8 @@ An action that deletes or removes something asks even when its area is Allowed. 
 - **Act**: it gets on with the work and stops for the risky parts.
 - **Full autonomy**: it edits files and runs commands on its own. It will not stop to ask you.
 
+For Codex, the three positions are Codex's own levels. **Ask first** asks before any change. **Workspace write** changes the project freely and asks before going further or online. **Full access** never asks. A conversation can start another one only at its own level or a safer one, so a Claude Code conversation in Ask first can start a Codex conversation in Ask first, but not in Workspace write or Full access.
+
 The first time you move something to Full autonomy, DorkOS asks you to confirm what that means, and remembers that you did. DorkOS's own risky actions, like deleting a schedule or removing an agent, still stop for you whatever this is set to. The areas above decide those.
 
 An agent's own Files & commands setting beats everything else for that agent: its conversations, its scheduled runs, and its turns in rooms. Without one, the agent follows the setting for its runtime in **Settings → Runtimes**, if you set one, and otherwise the setting everyone has.

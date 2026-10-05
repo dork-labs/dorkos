@@ -87,6 +87,8 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
   },
   'turn/interrupt': { threadId: 't', turnId: 'u' },
   'thread/backgroundTerminals/list': { threadId: 't' },
+  'thread/backgroundTerminals/terminate': { threadId: 't', processId: '4242' },
+  'thread/read': { threadId: 't', includeTurns: true },
   'thread/fork': {
     threadId: 't',
     cwd: '/project',

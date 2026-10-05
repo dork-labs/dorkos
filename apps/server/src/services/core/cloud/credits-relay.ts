@@ -31,9 +31,10 @@
  * - It streams the answer straight through, caps a request body's size and a
  *   request's total time, and logs neither bodies, keys nor tokens.
  *
- * Codex on app-server goes through it too (ADR 261005-113107): its credits
- * home is one long-lived process, so its threads' provider points here with a
- * key issued per process and revoked when that process stops. Codex on the
+ * Codex on app-server, its default transport, goes through it too (ADR
+ * 261005-113107): its credits home is one long-lived process, so its threads'
+ * provider points here with a key issued per process and revoked when that
+ * process stops. Codex on the
  * exec fallback does not: each exec turn is its own short-lived process that
  * carries the token in its environment, as ADR 261002-221210 describes.
  *

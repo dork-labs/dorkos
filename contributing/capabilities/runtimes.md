@@ -19,7 +19,7 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 | Runtime | yes | partial | unverified | planned | no | n/a |
 | --- | --- | --- | --- | --- | --- | --- |
 | claude-code | 38 | 1 | 2 | 0 | 1 | 1 |
-| codex | 24 | 0 | 3 | 4 | 10 | 2 |
+| codex | 29 | 1 | 3 | 0 | 9 | 1 |
 | opencode | 26 | 0 | 4 | 1 | 10 | 2 |
 | test-mode | 24 | 0 | 6 | 0 | 0 | 13 |
 
@@ -69,7 +69,7 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | ID | Capability | claude-code | codex | opencode | test-mode |
 | --- | --- | --- | --- | --- | --- |
-| RT-TOOL-01 | Ask before a tool runs | yes (U) | planned DOR-2722 | yes (U) | unverified |
+| RT-TOOL-01 | Ask before a tool runs | yes (U) | yes (U) | yes (U) | unverified |
 
 - **RT-TOOL-01** When the permission mode says so, a tool call stops on an approval card and runs only on yes. _(flag `supportsToolApproval`)_
 
@@ -77,7 +77,7 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | ID | Capability | claude-code | codex | opencode | test-mode |
 | --- | --- | --- | --- | --- | --- |
-| RT-ASK-01 | Ask the person a question | yes (U) | planned DOR-2722 | no | yes (U) |
+| RT-ASK-01 | Ask the person a question | yes (U) | yes (U) | no | yes (U) |
 
 - **RT-ASK-01** The agent can stop and ask the person a question, and an unanswered question says so in history. _(flag `supportsQuestionPrompt`)_
 
@@ -141,7 +141,7 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | ID | Capability | claude-code | codex | opencode | test-mode |
 | --- | --- | --- | --- | --- | --- |
-| RT-DISP-01 | Steer a running turn | yes (U) | planned DOR-2722 | no | yes (U) |
+| RT-DISP-01 | Steer a running turn | yes (U) | yes (U) | no | yes (U) |
 | RT-DISP-02 | Add context without a reply | yes (U) | no | no | yes (U) |
 | RT-DISP-03 | The queue keeps order | yes (U) | yes (U) | yes (U) | yes (U) |
 | RT-DISP-04 | An unsupported way of sending is refused cleanly | yes (U) | yes (U) | yes (U) | yes (U) |
@@ -165,9 +165,9 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | ID | Capability | claude-code | codex | opencode | test-mode |
 | --- | --- | --- | --- | --- | --- |
-| RT-LIFE-01 | Keep the agent warm between turns | yes (U) | no | no | yes (U) |
-| RT-LIFE-02 | Settle an open turn | yes (U) | n/a | n/a | yes (U) |
-| RT-LIFE-03 | Work that outlives the turn wakes the chat | partial DOR-2717 | planned DOR-2717 | planned DOR-2717 | n/a |
+| RT-LIFE-01 | Keep the agent warm between turns | yes (U) | yes (U) | no | yes (U) |
+| RT-LIFE-02 | Settle an open turn | yes (U) | yes (U) | n/a | yes (U) |
+| RT-LIFE-03 | Work that outlives the turn wakes the chat | partial DOR-2717 | partial (U) DOR-2717 | planned DOR-2717 | n/a |
 
 - **RT-LIFE-01** The agent’s process stays open between turns, reports idle while it waits, and a reaped process is invisible to the next turn. _(flag `supportsPersistentSession`; conformance C4, C5)_
 - **RT-LIFE-02** Asking a warm session to settle answers honestly when nothing is open, and never throws. _(flag `supportsPersistentSession`; conformance C8)_
@@ -205,12 +205,9 @@ Every cell that is not `yes`, `no` or `n/a`, planned work first.
 
 | ID | Runtime | Status | Ticket | Why |
 | --- | --- | --- | --- | --- |
-| RT-TOOL-01 | codex | planned | DOR-2722 | Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default. |
-| RT-ASK-01 | codex | planned | DOR-2722 | Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default. |
-| RT-DISP-01 | codex | planned | DOR-2722 | Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default. |
-| RT-LIFE-03 | codex | planned | DOR-2717 | Nothing delivers work that finishes after a Codex turn. |
 | RT-LIFE-03 | opencode | planned | DOR-2717 | Nothing delivers work that finishes after an OpenCode turn. |
 | RT-LIFE-03 | claude-code | partial | DOR-2717 | Helpers report back on a warm session; background shells, timers and hooks do not yet. |
+| RT-LIFE-03 | codex | partial | DOR-2717 | Background commands wake the chat; a helper agent that outlives its turn is tracked but not yet proven against Codex. |
 | RT-SES-03 | codex | unverified |  | Resumes its thread by id; no test pins a resumed turn seeing earlier history. |
 | RT-SES-03 | opencode | unverified |  | Resumes its session by id; no test pins a resumed turn seeing earlier history. |
 | RT-SES-03 | test-mode | unverified |  | test-mode is a scripted fixture with no backend behind it. |

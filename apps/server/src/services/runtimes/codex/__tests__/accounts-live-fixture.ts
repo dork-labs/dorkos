@@ -261,6 +261,7 @@ try {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as any).port;
   const runtime = new CodexRuntime({
+    transport: 'exec',
     threadMap: new CodexThreadMap(db),
     resolveBinary: async () => process.env.DORKOS_CODEX_ACCOUNTS_BINARY!,
     defaultCwd: cwd,

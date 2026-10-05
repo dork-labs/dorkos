@@ -19,6 +19,11 @@
  * Codex stops and asks; each server request becomes a card in the open turn
  * (`app-server/server-requests.ts`), answered only by a person.
  *
+ * **Work that outlives the turn (spec §12).** A background command or helper
+ * agent still running at `turn/completed` is tracked
+ * (`app-server/background-work.ts`); its late completion is shown in the open
+ * turn, or handed to the runtime as one coalesced wake.
+ *
  * @module services/runtimes/codex/transport/app-server-transport
  */
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
@@ -55,6 +60,13 @@ import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
 import { approvalPolicyFor, EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
 import { CODEX_APP_SERVER_CAPABILITIES } from '../runtime-constants.js';
+import {
+  BACKGROUND_CEILING_MS,
+  CodexBackgroundWork,
+  type BackgroundCompletion,
+  type BackgroundTask,
+  type BackgroundWake,
+} from '../app-server/background-work.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
 import type {
   ServerNotification,
@@ -93,6 +105,11 @@ export interface AppServerTransportOptions {
   readonly interactionCountdownMs?: number;
   /** When an unanswered request is declined (default: the park ceiling). */
   readonly interactionExpireMs?: number;
+  /** Background-work timings (tests). */
+  readonly backgroundWork?: {
+    readonly coalesceMs?: number;
+    readonly ceilingMs?: number;
+  };
 }
 
 interface OpenTurn {
@@ -114,6 +131,10 @@ interface OpenTurn {
   deliver: (events: StreamEvent[]) => void;
   /** What the turn has seen, for a card about one of its tools. */
   view: ServerRequestTurnView;
+  /** How many helper agents the turn has running. */
+  helpers: () => number;
+  /** When the turn opened, in awake time. */
+  readonly openedAt: number;
 }
 
 /** A turn DorkOS stopped waiting on that Codex has not reported finished. */
@@ -162,6 +183,12 @@ export class AppServerCodexTransport implements CodexTransport {
   private readonly watched = new WeakSet<CodexAppServerProcess>();
   /** Approvals, questions and elicitations waiting on a person (spec §10). */
   private readonly requests: CodexServerRequestBroker;
+  /** Background terminals and helper agents that outlive their turn (spec §12). */
+  private readonly background: CodexBackgroundWork;
+  /** Where a wake goes; the runtime installs it with {@link onWake}. */
+  private wakeListener: ((wake: BackgroundWake) => boolean) | undefined;
+  /** Told when a pending wake was dropped without opening a turn. */
+  private readonly gateListeners = new Set<(sessionId: string) => void>();
 
   /**
    * Construct the transport.
@@ -177,6 +204,25 @@ export class AppServerCodexTransport implements CodexTransport {
         : {}),
       ...(options.interactionExpireMs !== undefined
         ? { expireMs: options.interactionExpireMs }
+        : {}),
+    });
+    this.background = new CodexBackgroundWork({
+      onWake: (wake) => this.wakeListener?.(wake) ?? false,
+      terminate: (task) => this.terminateForCeiling(task),
+      onGateChange: (sessionId) => {
+        for (const listener of this.gateListeners) {
+          try {
+            listener(sessionId);
+          } catch (err) {
+            logger.warn('[CodexAppServer] a gate listener threw', { err: String(err) });
+          }
+        }
+      },
+      ...(options.backgroundWork?.coalesceMs !== undefined
+        ? { coalesceMs: options.backgroundWork.coalesceMs }
+        : {}),
+      ...(options.backgroundWork?.ceilingMs !== undefined
+        ? { ceilingMs: options.backgroundWork.ceilingMs }
         : {}),
     });
     this.loader = new CodexThreadLoader({
@@ -297,6 +343,12 @@ export class AppServerCodexTransport implements CodexTransport {
     const sink: TurnSink = {
       turnId: undefined,
       notify: (notification) => {
+        // The turn already ended: anything still arriving under its id (a
+        // background command finishing a moment later) is late, not lost.
+        if (mapper.isFinished) {
+          this.onLate(notification);
+          return;
+        }
         if (notification.method === 'turn/started' && !bound) {
           bound = true;
           request.onThreadBound(loaded.threadId, loaded.replaces);
@@ -309,6 +361,7 @@ export class AppServerCodexTransport implements CodexTransport {
           );
           // Codex clears what it still asked about when a turn ends; so do the cards.
           this.requests.cancelSession(sessionId);
+          this.trackLeftovers(request, process, loaded.threadId, mapper, notification);
         }
         queue.push(mapper.map(notification));
         if (mapper.isFinished) queue.end();
@@ -329,6 +382,7 @@ export class AppServerCodexTransport implements CodexTransport {
       inputOf: (itemId) => mapper.inputOf(itemId),
       runningMcpCalls: (server) => mapper.runningMcpCalls(server),
     };
+    turn.helpers = () => mapper.runningAgentCount;
     (turn as { abandon: () => void }).abandon = () => {
       turn.abandoned = true;
       this.requests.cancelSession(sessionId);
@@ -608,14 +662,237 @@ export class AppServerCodexTransport implements CodexTransport {
     await this.pool.reapOnce();
   }
 
-  /** Stop every app-server process (server shutdown). */
+  /**
+   * Stop every app-server process (server shutdown). Background commands are
+   * terminated first: a killed `codex app-server` leaves them running
+   * (measured on 0.154), and nothing would ever report on them again.
+   */
   async shutdown(): Promise<void> {
+    const tasks = this.background.all().filter((task) => task.kind === 'bash');
+    this.background.dispose();
+    await Promise.allSettled(tasks.map((task) => this.terminate(task, 2_000)));
     await this.pool.shutdown();
   }
 
-  /** Stop the credits-home process (an unlink), revoking its relay key. */
+  /**
+   * Install where wakes go (the runtime turns each into a turn of its own).
+   * One listener; a second replaces the first.
+   *
+   * @param listener - Takes a wake; `true` when a turn opened for it.
+   */
+  onWake(listener: ((wake: BackgroundWake) => boolean) | undefined): void {
+    this.wakeListener = listener;
+  }
+
+  /**
+   * Whether a wake is on its way for the session (bounded at
+   * `SEGMENT_PENDING_BOUND_MS`).
+   *
+   * @param sessionId - The session.
+   */
+  isSegmentPending(sessionId: string): boolean {
+    return this.background.isPending(sessionId);
+  }
+
+  /**
+   * Be told when a pending wake was dropped without opening a turn.
+   *
+   * @param listener - Told which session.
+   */
+  onDispatchGateChange(listener: (sessionId: string) => void): () => void {
+    this.gateListeners.add(listener);
+    return () => this.gateListeners.delete(listener);
+  }
+
+  /**
+   * Whether the session still has work that can wake it after its turn.
+   *
+   * @param sessionId - The session.
+   */
+  holdsBackgroundWork(sessionId: string): boolean {
+    return this.background.holds(sessionId);
+  }
+
+  /**
+   * Whether the open turn has helper agents running, inside the four-hour
+   * ceiling: their silence is not the turn stalling.
+   *
+   * @param sessionId - The session.
+   */
+  isHelperWorking(sessionId: string): boolean {
+    const turn = this.openBySession.get(sessionId);
+    return (
+      turn !== undefined &&
+      turn.helpers() > 0 &&
+      performance.now() - turn.openedAt < BACKGROUND_CEILING_MS
+    );
+  }
+
+  /**
+   * Stop one background task (spec §12): a command through
+   * `thread/backgroundTerminals/terminate`, a helper agent by interrupting
+   * its running turn. A stopped task is reported `stopped` and never wakes
+   * the chat. Unknown or already finished: `not-running`.
+   *
+   * @param sessionId - The session.
+   * @param taskId - The task (an item id, or a helper's thread id).
+   */
+  async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
+    const task = this.background.taskOf(sessionId, taskId);
+    if (!task) return { outcome: 'not-running', reason: 'no-open-turn', runtime: 'codex' };
+    this.background.markStopping(taskId);
+    try {
+      const stopped =
+        task.kind === 'bash'
+          ? await this.terminate(task, this.stopAckMs)
+          : await this.interruptHelper(task);
+      if (stopped) {
+        this.background.markTerminated(taskId);
+        return { outcome: 'acked', runtime: 'codex' };
+      }
+      // It ended on its own a moment before the stop: its result is on its
+      // way and is still shown (never as a wake: a person asked it to stop).
+      return { outcome: 'not-running', reason: 'no-open-turn', runtime: 'codex' };
+    } catch (err) {
+      if (isCodexRpcError(err, 'thread-not-found') || err instanceof CodexProcessExitedError) {
+        this.background.finish(taskId);
+        return { outcome: 'not-running', reason: 'no-open-turn', runtime: 'codex' };
+      }
+      logger.warn('[CodexAppServer] could not stop a background task', {
+        sessionId,
+        err: String(err),
+      });
+      return { outcome: 'failed', reason: 'delivery-failed', runtime: 'codex' };
+    }
+  }
+
+  /** `terminate` one background command; `true` when Codex stopped it. */
+  private async terminate(task: BackgroundTask, timeoutMs: number): Promise<boolean> {
+    const process = this.liveProcess(task.processKey);
+    if (!process || task.processId === undefined) return false;
+    const result = await process.client.request(
+      'thread/backgroundTerminals/terminate',
+      { threadId: task.threadId, processId: task.processId },
+      { timeoutMs }
+    );
+    return result.terminated;
+  }
+
+  /**
+   * Interrupt a helper agent's running turn: read its thread for the turn in
+   * progress, then `turn/interrupt` it (allowed for a parent-owned helper).
+   */
+  private async interruptHelper(task: BackgroundTask): Promise<boolean> {
+    const process = this.liveProcess(task.processKey);
+    if (!process) return false;
+    const read = await process.client.request(
+      'thread/read',
+      { threadId: task.taskId, includeTurns: true },
+      { timeoutMs: this.stopAckMs }
+    );
+    const running = (read.thread.turns ?? []).find((turn) => turn.status === 'inProgress');
+    if (!running) return false;
+    await process.client.request(
+      'turn/interrupt',
+      { threadId: task.taskId, turnId: running.id },
+      { timeoutMs: this.stopAckMs }
+    );
+    return true;
+  }
+
+  /** The ceiling's stop: `true` when Codex stopped it, `false` when it had just ended. */
+  private async terminateForCeiling(task: BackgroundTask): Promise<boolean> {
+    return task.kind === 'bash'
+      ? await this.terminate(task, this.stopAckMs)
+      : await this.interruptHelper(task);
+  }
+
+  /** Terminate every tracked command in some processes, marking those Codex stopped. */
+  private async terminateCommandsIn(
+    processKeys: ReadonlySet<string>,
+    timeoutMs: number
+  ): Promise<void> {
+    const commands = this.background
+      .all()
+      .filter((task) => task.kind === 'bash' && processKeys.has(task.processKey));
+    await Promise.allSettled(
+      commands.map(async (task) => {
+        this.background.markStopping(task.taskId);
+        if (await this.terminate(task, timeoutMs)) this.background.markTerminated(task.taskId);
+      })
+    );
+  }
+
+  private liveProcess(processKey: string): CodexAppServerProcess | undefined {
+    return this.pool.list().find((candidate) => candidate.key === processKey && candidate.isOpen);
+  }
+
+  /** At `turn/completed`: start tracking whatever the turn left running. */
+  private trackLeftovers(
+    request: CodexTurnRequest,
+    process: CodexAppServerProcess,
+    threadId: string,
+    mapper: AppServerTurnMapper,
+    notification: ServerNotification
+  ): void {
+    const turnStatus = String(
+      (notification.params as { turn?: { status?: unknown } }).turn?.status
+    );
+    const base = {
+      sessionId: request.sessionId,
+      threadId,
+      processKey: process.key,
+      turnStatus,
+      ...(request.wakeContext !== undefined ? { context: request.wakeContext } : {}),
+    };
+    this.background.track([
+      ...mapper.backgroundCommands().map((command) => ({
+        ...base,
+        taskId: command.itemId,
+        kind: 'bash' as const,
+        processId: command.processId,
+        label: command.command,
+      })),
+      ...mapper.backgroundAgents().map((agent) => ({
+        ...base,
+        taskId: agent.agentThreadId,
+        kind: 'agent' as const,
+        label: agent.agentPath,
+      })),
+    ]);
+  }
+
+  /**
+   * A notification that belonged to no open turn. A tracked task finishing is
+   * shown in the session's open turn when there is one (the model is running
+   * and needs no wake), and otherwise collected for the next wake.
+   */
+  private onLate(notification: ServerNotification): void {
+    const done = this.background.completionOf(notification);
+    if (!done) return;
+    this.background.finish(done.task.taskId);
+    const open = this.openBySession.get(done.task.sessionId);
+    if (open && !open.sawTerminal && !open.abandoned) {
+      open.deliver([backgroundDoneEvent(done.completion)]);
+      return;
+    }
+    this.background.queue(done.task.sessionId, done.completion);
+  }
+
+  /**
+   * Stop the credits-home process (an unlink), revoking its relay key. Its
+   * background commands are terminated first, as at shutdown: a stopped
+   * `codex app-server` leaves them running, still billed to nobody's view.
+   */
   async closeCreditsProcess(): Promise<void> {
     const home = creditsCodexHome();
+    const keys = new Set(
+      this.pool
+        .list()
+        .filter((process) => process.spec.codexHome === home)
+        .map((process) => process.key)
+    );
+    await this.terminateCommandsIn(keys, 2_000);
     await this.pool.closeWhere((process) => process.spec.codexHome === home);
   }
 
@@ -641,15 +918,24 @@ export class AppServerCodexTransport implements CodexTransport {
     if (this.watched.has(process)) return process;
     this.watched.add(process);
     // Work Codex runs past a turn (a background terminal) keeps the process
-    // alive: the reaper asks before closing it (spec §5). Full tracking and
-    // the chat wake are spec phase P3.
+    // alive: the reaper asks before closing it (spec §5), and the same answer
+    // reconciles what `background-work.ts` tracks.
     process.addLivenessProbe(async () => {
+      // A helper agent has no terminal Codex would list: while one is
+      // tracked (bounded by the ceiling), the process is live.
+      if (this.background.tasksIn(process.key).some((task) => task.kind === 'agent')) return true;
       for (const threadId of this.loader.threadsInProcess(process.key)) {
         try {
           const result = await process.client.request(
             'thread/backgroundTerminals/list',
             { threadId },
             { timeoutMs: 5_000 }
+          );
+          this.background.reconcile(
+            threadId,
+            new Set(
+              result.data.map((terminal) => String((terminal as { processId?: unknown }).processId))
+            )
           );
           if (result.data.length > 0) return true;
         } catch (err) {
@@ -668,6 +954,9 @@ export class AppServerCodexTransport implements CodexTransport {
     process.client.setServerRequestHandler((request) => this.onServerRequest(process, request));
     process.onExit(() => {
       unsubscribe();
+      // Its background commands outlive it (measured on 0.154): say DorkOS
+      // lost track of them, never that they stopped.
+      this.background.processGone(process.key);
       const relay = this.relayKeys.get(process.key);
       if (relay) this.options.creditsRelay?.()?.revoke(relay.key);
       this.relayKeys.delete(process.key);
@@ -813,6 +1102,7 @@ export class AppServerCodexTransport implements CodexTransport {
           }
         },
         (notification) => {
+          this.onLate(notification);
           // An abandoned turn finally ending clears the way for the next one.
           const lingering = this.lingering.get(threadId);
           if (
@@ -856,6 +1146,8 @@ export class AppServerCodexTransport implements CodexTransport {
       interrupting: undefined,
       deliver: () => {},
       view: { inputOf: () => undefined, runningMcpCalls: () => [] },
+      helpers: () => 0,
+      openedAt: performance.now(),
     };
     this.openByThread.set(threadId, turn);
     this.openBySession.set(sessionId, turn);
@@ -998,6 +1290,18 @@ export class AppServerCodexTransport implements CodexTransport {
       code: 'codex_unavailable',
     });
   }
+}
+
+/**
+ * The `background_task_done` event for one completion.
+ *
+ * @param completion - What finished.
+ */
+export function backgroundDoneEvent(completion: BackgroundCompletion): StreamEvent {
+  return {
+    type: 'background_task_done',
+    data: { taskId: completion.taskId, status: completion.status, summary: completion.summary },
+  };
 }
 
 function sleep(ms: number): Promise<void> {

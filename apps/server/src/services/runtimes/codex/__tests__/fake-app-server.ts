@@ -45,6 +45,8 @@ export interface FakeThreadRecord {
   readonly id: string;
   /** Whether a turn has run, so a rollout exists and the thread can be resumed. */
   hasRollout: boolean;
+  /** Archived by the person in Codex: it reads, but will not resume. */
+  archived?: boolean;
 }
 
 /** One thread as a process has it loaded. */
@@ -196,6 +198,77 @@ export const hangingTurn: FakeTurnScript = async (ctx) => {
   await new Promise(() => {});
 };
 
+/** A command left running in the background by its turn, and how to end it. */
+export interface FakeBackgroundCommand {
+  /** The turn script: starts the command, answers, completes the turn. */
+  readonly script: FakeTurnScript;
+  /** The command item's id (the background task's id in DorkOS). */
+  readonly itemId: string;
+  /** The background terminal's process id. */
+  readonly processId: string;
+  /**
+   * End it the way the binary does (verified on 0.154): the late
+   * `item/completed` under the OLD turn's id, with exit code and output.
+   */
+  finish(exitCode?: number, output?: string): void;
+}
+
+/**
+ * A turn that leaves a command running in the background: `item/started`
+ * with a process id, a reply, `turn/completed` while the command is still
+ * `inProgress`, and the terminal listed until {@link FakeBackgroundCommand.finish}.
+ * Terminating it ends it with exit code 143.
+ *
+ * @param command - The command line.
+ */
+export function backgroundCommandTurn(command = 'sleep 3; echo done'): FakeBackgroundCommand {
+  const itemId = `call_${randomUUID().slice(0, 8)}`;
+  const processId = String(50_000 + Math.floor(Math.random() * 10_000));
+  let finish: (exitCode?: number, output?: string) => void = () => {
+    throw new Error('the background turn has not run yet');
+  };
+  const script: FakeTurnScript = (ctx) => {
+    const item = { type: 'commandExecution', id: itemId, command, cwd: '/project', processId };
+    ctx.emit('item/started', { item: { ...item, status: 'inProgress' } });
+    const terminals = ctx.server.backgroundTerminals;
+    terminals.set(ctx.turn.threadId, [
+      ...(terminals.get(ctx.turn.threadId) ?? []),
+      { itemId, processId, command, cwd: '/project' },
+    ]);
+    let ended = false;
+    finish = (exitCode = 0, output = 'done\n') => {
+      if (ended) return;
+      ended = true;
+      const left = (terminals.get(ctx.turn.threadId) ?? []) as Array<{ processId?: string }>;
+      terminals.set(
+        ctx.turn.threadId,
+        left.filter((terminal) => terminal.processId !== processId)
+      );
+      ctx.emit('item/completed', {
+        item: {
+          ...item,
+          status: exitCode === 0 ? 'completed' : 'failed',
+          exitCode,
+          aggregatedOutput: output,
+        },
+      });
+    };
+    const previous = ctx.server.onTerminate;
+    ctx.server.onTerminate = (threadId, terminated) => {
+      if (terminated === processId) finish(143, '');
+      else previous?.(threadId, terminated);
+    };
+    ctx.agentMessage('started it');
+    ctx.complete('completed');
+  };
+  return {
+    script,
+    itemId,
+    processId,
+    finish: (exitCode, output) => finish(exitCode, output),
+  };
+}
+
 /** The disk under one `CODEX_HOME`, shared by every process spawned on it. */
 export class FakeCodexHome {
   readonly threads = new Map<string, FakeThreadRecord>();
@@ -270,6 +343,8 @@ export class FakeAppServer extends EventEmitter {
   readonly unsubscribed = new Set<string>();
   /** Background terminals each thread reports as still running. */
   readonly backgroundTerminals = new Map<string, unknown[]>();
+  /** Called when a background terminal is terminated (a script ends its item). */
+  onTerminate: ((threadId: string, processId: string) => void) | undefined;
   /** Exit (as a crash) instead of answering the next `turn/start`. */
   exitOnTurnStart = false;
   /** Hold every `turn/start` answer until this settles. */
@@ -436,6 +511,31 @@ export class FakeAppServer extends EventEmitter {
           data: this.backgroundTerminals.get(params.threadId as string) ?? [],
           nextCursor: null,
         });
+      case 'thread/backgroundTerminals/terminate': {
+        // Like the binary: an unknown thread is not found, an unknown process
+        // answers `terminated: false`.
+        const threadId = params.threadId as string;
+        if (!this.loaded.has(threadId)) return this.fail(id, `thread not found: ${threadId}`);
+        const terminals = (this.backgroundTerminals.get(threadId) ?? []) as Array<{
+          processId?: string;
+        }>;
+        const index = terminals.findIndex((terminal) => terminal.processId === params.processId);
+        if (index < 0) return this.reply(id, { terminated: false });
+        terminals.splice(index, 1);
+        this.reply(id, { terminated: true });
+        this.onTerminate?.(threadId, params.processId as string);
+        return;
+      }
+      case 'thread/read': {
+        // Like the binary (verified on 0.154): a loaded thread, or one with a
+        // rollout, reads; anything else is "not loaded".
+        const threadId = params.threadId as string;
+        const record = this.home.threads.get(threadId);
+        if (!this.loaded.has(threadId) && !record?.hasRollout) {
+          return this.fail(id, `thread not loaded: ${threadId}`);
+        }
+        return this.reply(id, { thread: { id: threadId, turns: [] } });
+      }
       case 'thread/fork':
         return this.threadFork(id, params);
       case 'thread/unsubscribe':
@@ -484,7 +584,14 @@ export class FakeAppServer extends EventEmitter {
   private threadResume(id: number | string, params: Record<string, unknown>): void {
     const threadId = params.threadId as string;
     const record = this.home.threads.get(threadId);
-    if (!record) return this.fail(id, `thread not found: ${threadId}`);
+    // The binary's words for a thread it has no rollout for, deleted included.
+    if (!record) return this.fail(id, `no rollout found for thread id ${threadId}`);
+    if (record.archived) {
+      return this.fail(
+        id,
+        `session ${threadId} is archived. Run \`codex unarchive ${threadId}\` to unarchive it.`
+      );
+    }
     const loaded = this.loaded.get(threadId);
     if (loaded) {
       // Loaded-config immutability: success, and the new config is ignored.

@@ -162,6 +162,8 @@ export class AppServerTurnMapper {
     string,
     { processId: string | null; command: string }
   >();
+  /** Helper agents started in this turn and not yet finished, by their thread id. */
+  private readonly runningAgents = new Map<string, string>();
   private readonly streamedText = new Map<string, string>();
   private lastUsage:
     | { last: { totalTokens: number }; total: Record<string, number>; window: number | null }
@@ -294,7 +296,7 @@ export class AppServerTurnMapper {
 
   /**
    * Command items still running when the turn completed: background commands
-   * (P3 tracks them; P1 records them so the wake can find them).
+   * (`background-work.ts` tracks them until their late `item/completed`).
    */
   backgroundCommands(): Array<{ itemId: string; processId: string; command: string }> {
     return [...this.runningCommands.entries()]
@@ -304,6 +306,19 @@ export class AppServerTurnMapper {
         processId: command.processId!,
         command: command.command,
       }));
+  }
+
+  /** Helper agents started in this turn that had not finished when it completed. */
+  backgroundAgents(): Array<{ agentThreadId: string; agentPath: string }> {
+    return [...this.runningAgents.entries()].map(([agentThreadId, agentPath]) => ({
+      agentThreadId,
+      agentPath,
+    }));
+  }
+
+  /** How many helper agents this turn has running. */
+  get runningAgentCount(): number {
+    return this.runningAgents.size;
   }
 
   private complete(turn: {
@@ -554,6 +569,8 @@ export class AppServerTurnMapper {
   subAgentActivity(item: Item, phase: Phase): StreamEvent[] {
     if (phase !== 'completed') return [];
     const taskId = String(item.agentThreadId);
+    if (item.kind === 'started') this.runningAgents.set(taskId, String(item.agentPath ?? ''));
+    if (item.kind === 'completed' || item.kind === 'interrupted') this.runningAgents.delete(taskId);
     switch (item.kind) {
       case 'started':
         return [

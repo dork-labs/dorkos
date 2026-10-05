@@ -3,10 +3,12 @@
  * item 9): which Codex level a Claude Code chat at each of its own levels may
  * start, compared by declared asking and reach (`isNoLooserThan`), never by id.
  *
- * The app-server modes all reach the workspace, and every Claude level below
- * Full access reaches only what it edits, so those chats cannot start a Codex
- * chat on app-server at all. That is fail-closed and deliberate (NOTES.md): on
- * exec, a Claude chat in Default could start Codex in Read only.
+ * Codex's Ask first is declared exactly as Claude Code's Default (asks always,
+ * reaches what it edits): both ask before any change, and an approved step
+ * can go further. So a chat in Default, Accept edits or Auto may start a Codex
+ * chat in Ask first, and only Full access may start Workspace write or Full
+ * access. Plan reaches only what it reads, so it starts none of them on
+ * app-server. Nothing ever climbs above its starter.
  */
 import { describe, expect, it } from 'vitest';
 import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
@@ -20,19 +22,35 @@ const startable = (
 
 describe('a Claude Code chat starting a Codex chat (DOR-2714 ceiling)', () => {
   const claude = CLAUDE_CODE_CAPABILITIES.permissionModes.values;
+  const claudeMode = (id: string) => claude.find((mode) => mode.id === id)!;
 
-  it('on app-server: only Full access may start one, and never above itself', () => {
+  it('Ask first is declared exactly as Claude Code’s Default', () => {
+    const ask = CODEX_APP_SERVER_PERMISSION_MODES.values.find((mode) => mode.id === 'default')!;
+    const claudeDefault = claudeMode('default');
+    expect({ asks: ask.asks, reach: ask.reach }).toEqual({
+      asks: claudeDefault.asks,
+      reach: claudeDefault.reach,
+    });
+  });
+
+  it('on app-server: Default may start Ask first, only Full access may start the rest', () => {
     expect(
       Object.fromEntries(
         claude.map((mode) => [mode.id, startable(mode, CODEX_APP_SERVER_PERMISSION_MODES)])
       )
     ).toEqual({
-      default: [],
-      acceptEdits: [],
+      default: ['default'],
+      acceptEdits: ['default'],
       plan: [],
       bypassPermissions: ['default', 'acceptEdits', 'bypassPermissions'],
-      auto: [],
+      auto: ['default'],
     });
+  });
+
+  it('Default is still refused Workspace write and Full access (no climb)', () => {
+    const fromDefault = startable(claudeMode('default'), CODEX_APP_SERVER_PERMISSION_MODES);
+    expect(fromDefault).not.toContain('acceptEdits');
+    expect(fromDefault).not.toContain('bypassPermissions');
   });
 
   it('no Codex level it may start asks less or reaches further than the starter', () => {
@@ -49,17 +67,7 @@ describe('a Claude Code chat starting a Codex chat (DOR-2714 ceiling)', () => {
 
   it('on exec (unchanged): Default and Plan may still start Codex in Read only', () => {
     const exec = CODEX_CAPABILITIES.permissionModes;
-    expect(
-      startable(
-        claude.find((m) => m.id === 'default')!,
-        exec
-      )
-    ).toEqual(['default']);
-    expect(
-      startable(
-        claude.find((m) => m.id === 'plan')!,
-        exec
-      )
-    ).toEqual(['default']);
+    expect(startable(claudeMode('default'), exec)).toEqual(['default']);
+    expect(startable(claudeMode('plan'), exec)).toEqual(['default']);
   });
 });

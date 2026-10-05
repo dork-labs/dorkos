@@ -332,12 +332,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     flag: flag('supportsToolApproval'),
     cells: {
       'claude-code': yes,
-      codex: {
-        status: 'planned',
-        reason:
-          'Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default.',
-        ticket: 'DOR-2722',
-      },
+      codex: yes,
       opencode: yes,
       'test-mode': { status: 'unverified', reason: TEST_FIXTURE },
     },
@@ -353,12 +348,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     flag: flag('supportsQuestionPrompt'),
     cells: {
       'claude-code': yes,
-      codex: {
-        status: 'planned',
-        reason:
-          'Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default.',
-        ticket: 'DOR-2722',
-      },
+      codex: yes,
       opencode: {
         status: 'not-supported',
         reason: 'The OpenCode sidecar has no question tool DorkOS can answer.',
@@ -576,12 +566,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     conformance: ['C7'],
     cells: {
       'claude-code': yes,
-      codex: {
-        status: 'planned',
-        reason:
-          'Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default.',
-        ticket: 'DOR-2722',
-      },
+      codex: yes,
       opencode: {
         status: 'not-supported',
         reason: 'The sidecar takes no input mid-turn; the message waits in the queue.',
@@ -659,10 +644,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     conformance: ['C4', 'C5'],
     cells: {
       'claude-code': yes,
-      codex: {
-        status: 'not-supported',
-        reason: 'DorkOS does not hold a Codex turn open between messages.',
-      },
+      codex: yes,
       opencode: {
         status: 'not-supported',
         reason: 'The sidecar is shared; DorkOS holds no per-session process.',
@@ -680,7 +662,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     conformance: ['C8'],
     cells: {
       'claude-code': yes,
-      codex: { status: 'n/a', reason: 'It keeps no warm process to settle.' },
+      codex: yes,
       opencode: { status: 'n/a', reason: 'It keeps no warm process to settle.' },
       'test-mode': yes,
     },
@@ -699,8 +681,10 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         ticket: 'DOR-2717',
       },
       codex: {
-        status: 'planned',
-        reason: 'Nothing delivers work that finishes after a Codex turn.',
+        status: 'partial',
+        reason:
+          'Background commands wake the chat; a helper agent that outlives its turn is tracked but not yet proven against Codex.',
+        evidence: U,
         ticket: 'DOR-2717',
       },
       opencode: {

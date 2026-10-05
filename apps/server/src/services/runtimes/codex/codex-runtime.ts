@@ -77,7 +77,7 @@ import {
 } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
-import { SessionLockManager } from '../../session/session-lock.js';
+import { SessionLockManager, runtimeLockHolder } from '../../session/session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
@@ -127,6 +127,12 @@ import {
   type CodexTransport,
   type CodexTransportKind,
 } from './transport/index.js';
+import { backgroundDoneEvent } from './transport/app-server-transport.js';
+import {
+  buildBackgroundUpdate,
+  type BackgroundCompletion,
+  type BackgroundWake,
+} from './app-server/background-work.js';
 import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
 import { CodexModelCatalog } from './model-catalog.js';
 import { dorkosToolsPosture, resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
@@ -210,9 +216,10 @@ export interface CodexRuntimeOptions {
    * How this runtime talks to Codex (`runtimes.codex.transport`, already
    * resolved — `resolveCodexTransport`), or a ready transport (tests). Fixed
    * for the runtime's life: capabilities are cached by clients, so a change
-   * takes effect at the next server start. Defaults to `exec`.
+   * takes effect at the next server start. Required, so no caller can fall
+   * back to a transport the product does not default to.
    */
-  transport?: CodexTransportKind | CodexTransport;
+  transport: CodexTransportKind | CodexTransport;
   /**
    * The loopback credits relay, when boot started one. Only the app-server
    * transport uses it: a credits thread's provider points at the relay, so the
@@ -257,6 +264,19 @@ export class CodexRuntime implements AgentRuntime {
   private readonly locks = new SessionLockManager();
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
   private readonly activeTurns = new Map<string, AbortController>();
+  /** Told when a dispatched turn opens (DOR-2717), on a transport with background work. */
+  private readonly dispatchedTurnListeners = new Set<(sessionId: string) => void>();
+  /**
+   * Model turns each session's background work started in a row with no
+   * dispatched turn between them; see {@link MAX_CONSECUTIVE_WAKES}.
+   */
+  private readonly consecutiveWakes = new Map<string, number>();
+  /**
+   * The one wake per session that is being read right now. Only it may start
+   * a model turn: a second wake read meanwhile (drained by a consumer that
+   * gave up on the lock the first one holds) shows its finishes and stops.
+   */
+  private readonly openWakes = new Map<string, symbol>();
   /** Connector bearer bound to the exact in-flight turn controller. */
   private readonly activeConnectorBindings = new Map<AbortController, string>();
   /**
@@ -290,7 +310,7 @@ export class CodexRuntime implements AgentRuntime {
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
     this.modelCatalog =
       options.modelCatalog ?? new CodexModelCatalog({ resolveBinary: this.resolveBinary });
-    this.transport = this.buildTransport(options.transport ?? 'exec', options.creditsRelay);
+    this.transport = this.buildTransport(options.transport, options.creditsRelay);
     // Capability-gated members exist only where the transport backs them, so a
     // runtime on exec keeps the shape it always had.
     if (this.transport.getSessionWarmth) {
@@ -308,6 +328,113 @@ export class CodexRuntime implements AgentRuntime {
       this.deliverIntoTurn = (sessionId, content, opts) =>
         transport.deliverIntoTurn!(sessionId, content, opts);
     }
+    // Work that outlives its turn (spec §12): only a transport that keeps the
+    // thread loaded can hear it finish, so only there can the agent start a
+    // turn of its own. On exec every one of these stays absent.
+    if (this.transport.onWake) this.installBackgroundWork(this.transport);
+  }
+
+  /**
+   * Subscribe to turns the agent starts on its own: a wake when its
+   * background work finishes (spec §12). Present only on a transport that
+   * keeps threads loaded.
+   */
+  onRuntimeTurn?: (
+    listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+  ) => () => void;
+  /** Whether a wake is on its way for the session (bounded). */
+  isSegmentPending?: (sessionId: string) => boolean;
+  /** Told when a pending wake was dropped without opening a turn. */
+  onDispatchGateChange?: (listener: (sessionId: string) => void) => () => void;
+  /** Whether the session still holds work that can wake it after its turn. */
+  holdsBackgroundWork?: (sessionId: string) => boolean;
+  /** Told when a turn somebody dispatched opens on a session. */
+  onDispatchedTurn?: (listener: (sessionId: string) => void) => () => void;
+  /** Whether the open turn has helper agents working (inside the ceiling). */
+  isHelperWorking?: (sessionId: string) => boolean;
+  /** Take a session for a turn the agent started (the reserved holder). */
+  acquireRuntimeLock?: (sessionKey: string, res: SseResponse, token?: symbol) => boolean;
+
+  /**
+   * Wire the background-work members over a transport that has them. Each
+   * wake becomes one runtime turn: the finished tasks, then — only when the
+   * work's own turn ended normally — a model turn told what finished.
+   */
+  private installBackgroundWork(transport: CodexTransport): void {
+    const runtimeTurnListeners = new Set<
+      (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+    >();
+    transport.onWake!((wake) => {
+      const listener = [...runtimeTurnListeners].at(-1);
+      if (!listener) return false;
+      listener(wake.sessionId, this.wakeTurn(wake));
+      return true;
+    });
+    this.onRuntimeTurn = (listener) => {
+      runtimeTurnListeners.add(listener);
+      return () => void runtimeTurnListeners.delete(listener);
+    };
+    this.isSegmentPending = (sessionId) => transport.isSegmentPending?.(sessionId) ?? false;
+    this.onDispatchGateChange = (listener) =>
+      transport.onDispatchGateChange?.(listener) ?? (() => {});
+    this.holdsBackgroundWork = (sessionId) => transport.holdsBackgroundWork?.(sessionId) ?? false;
+    this.isHelperWorking = (sessionId) => transport.isHelperWorking?.(sessionId) ?? false;
+    this.onDispatchedTurn = (listener) => {
+      this.dispatchedTurnListeners.add(listener);
+      return () => void this.dispatchedTurnListeners.delete(listener);
+    };
+    this.acquireRuntimeLock = (sessionKey, res, token) =>
+      this.locks.acquireRuntimeLock(sessionKey, res, token);
+  }
+
+  /**
+   * One wake's events: what finished, then either a model turn told about it
+   * or a plain end. The notice is DorkOS's, sent as the turn's input; the
+   * stream never shows it as the person's words (the turn is the agent's).
+   */
+  private async *wakeTurn(wake: BackgroundWake): AsyncGenerator<StreamEvent> {
+    const { sessionId } = wake;
+    const self = Symbol('wake');
+    const owner = !this.openWakes.has(sessionId);
+    if (owner) this.openWakes.set(sessionId, self);
+    try {
+      yield* this.wakeEvents(wake, owner);
+    } finally {
+      if (this.openWakes.get(sessionId) === self) this.openWakes.delete(sessionId);
+    }
+  }
+
+  private async *wakeEvents(wake: BackgroundWake, owner: boolean): AsyncGenerator<StreamEvent> {
+    const { sessionId } = wake;
+    for (const message of wake.notices) {
+      yield { type: 'system_status', data: { message } };
+    }
+    for (const completion of wake.completions) yield backgroundDoneEvent(completion);
+    const waking = wake.completions.filter((completion) => completion.wakes);
+    const context = wake.startTurn ? sharedWakeContext(waking) : undefined;
+    // Only under the reserved runtime lock, and only the wake being read first:
+    // a consumer that never took the lock (one that gave up waiting while
+    // another wake held it, and is merely draining) must not start a hidden turn.
+    const locked =
+      owner && this.locks.getLockInfo(sessionId)?.clientId === runtimeLockHolder(sessionId);
+    const spent = this.consecutiveWakes.get(sessionId) ?? 0;
+    if (context === undefined || !locked || spent >= MAX_CONSECUTIVE_WAKES) {
+      if (context !== undefined && !locked) {
+        logger.warn('[CodexRuntime] a wake ran without the session lock; no model turn', {
+          sessionId,
+        });
+      }
+      if (context !== undefined && locked) {
+        yield { type: 'system_status', data: { message: WAKE_BUDGET_SPENT_COPY } };
+      }
+      yield { type: 'done', data: { sessionId } };
+      return;
+    }
+    this.consecutiveWakes.set(sessionId, spent + 1);
+    // The session's CURRENT mode, model and effort apply (`resolveTurnSettings`
+    // reads them): the context carries none, so a mode the person lowered
+    // since the starting turn is never climbed back over.
+    yield* this.runTurn(sessionId, buildBackgroundUpdate(waking), context.opts, 'runtime', context);
   }
 
   /**
@@ -652,6 +779,31 @@ export class CodexRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
+    // A dispatched turn opening ends every follow of this session's later
+    // turns (DOR-2717): from here on a wake may be answering this work.
+    for (const listener of this.dispatchedTurnListeners) {
+      try {
+        listener(sessionId);
+      } catch (err) {
+        logger.warn('[CodexRuntime] a dispatched-turn listener threw', { sessionId, err });
+      }
+    }
+    // A dispatched turn is somebody's word: the agent may wake again.
+    this.consecutiveWakes.delete(sessionId);
+    yield* this.runTurn(sessionId, content, opts, 'dispatched');
+  }
+
+  /**
+   * One turn, dispatched or the agent's own (a wake). A wake's input is
+   * DorkOS's notice, so it never becomes the session's preview or title.
+   */
+  private async *runTurn(
+    sessionId: string,
+    content: string,
+    opts: MessageOpts | undefined,
+    origin: 'dispatched' | 'runtime',
+    inherited?: CodexWakeContext
+  ): AsyncGenerator<StreamEvent> {
     // Seed from the durable row before any registry mutation: recordMessage's
     // title-if-blank derivation must see the persisted title, not a fresh
     // blank entry it would fill with an auto-preview (see seedFromDurable).
@@ -678,14 +830,16 @@ export class CodexRuntime implements AgentRuntime {
         logger.warn('[CodexRuntime] failed to backfill binding cwd', { sessionId, err });
       }
     }
-    this.registry.recordMessage(sessionId, content, {
-      cwd,
-      ...(opts?.title !== undefined ? { title: opts.title } : {}),
-    });
-    // Write the refreshed preview/updatedAt (and first-turn title) through to
-    // the durable row. A no-op before the first bind — the setThreadId below
-    // carries the first turn's metadata with the row instead.
-    this.persistSessionMetadata(sessionId);
+    if (origin === 'dispatched') {
+      this.registry.recordMessage(sessionId, content, {
+        cwd,
+        ...(opts?.title !== undefined ? { title: opts.title } : {}),
+      });
+      // Write the refreshed preview/updatedAt (and first-turn title) through to
+      // the durable row. A no-op before the first bind — the setThreadId below
+      // carries the first turn's metadata with the row instead.
+      this.persistSessionMetadata(sessionId);
+    }
 
     // Which registered agent does this turn act as? Everything below that
     // mints, injects or names a tool is gated on the answer, and the agent's
@@ -918,6 +1072,13 @@ export class CodexRuntime implements AgentRuntime {
         settings,
         writableDirectories,
         prompt: buildCodexPrompt(content, turnOpts, agentContext),
+        // What a wake from this turn's leftover work runs with: the same
+        // agent, folder, grants and settings. A wake's own turn passes its
+        // context on, so a chain of wakes stays the same agent.
+        ...(() => {
+          const wakeContext = inherited ?? wakeContextOf(opts, cwd);
+          return wakeContext ? { wakeContext } : {};
+        })(),
         ...(opts?.messageId !== undefined ? { messageId: opts.messageId } : {}),
         launch: credits ? { home: 'credits', credits } : { home: 'person' },
         tools: {
@@ -1152,8 +1313,14 @@ export class CodexRuntime implements AgentRuntime {
     return true;
   }
 
-  /** Codex has no addressable background tasks — nothing to stop. */
-  async stopTask(): Promise<InterruptReceipt> {
+  /**
+   * @inheritdoc
+   *
+   * On app-server a background command or helper agent that outlived its turn
+   * (spec §12). On exec nothing outlives the turn, so there is nothing to stop.
+   */
+  async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
+    if (this.transport.stopTask) return this.transport.stopTask(sessionId, taskId);
     return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
   }
 
@@ -1528,4 +1695,75 @@ export class CodexRuntime implements AgentRuntime {
   setSessionSettings(port: SessionSettingsPort): void {
     this.settingsPort = port;
   }
+}
+
+/**
+ * Model turns background work may start in a row with no dispatched turn
+ * between them. Each wake is the agent answering its own work; three in a row
+ * with nobody's word in between is a loop, not progress, so the fourth
+ * finish is shown and the chat waits for a person (spec §12).
+ */
+export const MAX_CONSECUTIVE_WAKES = 3;
+
+/** What the person reads when the wake budget is spent. */
+export const WAKE_BUDGET_SPENT_COPY =
+  'Codex woke this chat three times in a row, so it waits for you now.';
+
+/** The options a wake's turn inherits from the turn that left the work running. */
+interface CodexWakeContext {
+  readonly opts: MessageOpts;
+}
+
+/**
+ * The part of a dispatched turn's options a wake's turn may carry: who it runs
+ * as, where, with which folders and account. Never the message's own id,
+ * title, disposition or attached context, which belong to that message.
+ *
+ * **Never the permission mode, model, effort or fast mode.** Those are the
+ * session's, and the person may change them after the starting turn: a
+ * scheduled run at Full access must not make a wake run at Full access after
+ * the person set Ask first. The wake reads the session's current values.
+ *
+ * A room turn returns `undefined`: its tools and identity are bound to the
+ * room's dispatch (its turn id and author), which a wake cannot reproduce, so
+ * its leftover work is shown and the room carries on on its own next turn —
+ * which also keeps every wake inside the room's own turn limits.
+ */
+function wakeContextOf(opts: MessageOpts | undefined, cwd: string): CodexWakeContext | undefined {
+  if (opts?.roomTurn !== undefined) return undefined;
+  const carried = {
+    cwd,
+    ...(opts?.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
+    ...(opts?.systemPromptAppend !== undefined
+      ? { systemPromptAppend: opts.systemPromptAppend }
+      : {}),
+    ...(opts?.additionalDirectories !== undefined
+      ? { additionalDirectories: opts.additionalDirectories }
+      : {}),
+    ...(opts?.accountHint !== undefined ? { accountHint: opts.accountHint } : {}),
+    ...(opts?.unattended !== undefined ? { unattended: opts.unattended } : {}),
+    ...(opts?.unattendedApprovals !== undefined
+      ? { unattendedApprovals: opts.unattendedApprovals }
+      : {}),
+  } as MessageOpts;
+  return { opts: carried };
+}
+
+/**
+ * The one context every waking completion shares, or `undefined` when any
+ * lacks one or they came from turns run differently: then the finishes are
+ * shown and no model turn starts, rather than one running as the wrong agent.
+ */
+function sharedWakeContext(
+  completions: readonly BackgroundCompletion[]
+): CodexWakeContext | undefined {
+  const contexts = completions.map(
+    (completion) => completion.context as CodexWakeContext | undefined
+  );
+  const first = contexts[0];
+  if (first === undefined) return undefined;
+  const key = JSON.stringify(first.opts);
+  return contexts.every((context) => context !== undefined && JSON.stringify(context.opts) === key)
+    ? first
+    : undefined;
 }

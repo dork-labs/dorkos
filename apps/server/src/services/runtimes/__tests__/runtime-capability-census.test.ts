@@ -61,7 +61,8 @@ import {
 } from '@dorkos/test-utils/runtime-capability-matrix';
 import { lexWithoutComments } from '../../../../../../scripts/lib/code-only.mjs';
 import { CLAUDE_CODE_CAPABILITIES } from '../claude-code/runtime-constants.js';
-import { CODEX_CAPABILITIES } from '../codex/runtime-constants.js';
+import { CODEX_APP_SERVER_CAPABILITIES, CODEX_CAPABILITIES } from '../codex/runtime-constants.js';
+import { resolveCodexTransport } from '../codex/transport/index.js';
 import { OPENCODE_CAPABILITIES } from '../opencode/runtime-constants.js';
 import { TEST_MODE_CAPABILITIES } from '../test-mode/runtime-constants.js';
 
@@ -74,10 +75,17 @@ const CONFORMANCE = 'packages/test-utils/src/runtime-conformance.ts';
 /** The generated document. */
 const DOC = 'contributing/capabilities/runtimes.md';
 
-/** Each runtime's declared capabilities, which flag-backed rows must agree with. */
+/**
+ * Each runtime's declared capabilities, which flag-backed rows must agree with.
+ * Codex declares per transport, so its column is what the DEFAULT transport
+ * (`runtimes.codex.transport: auto`) declares.
+ */
 const DECLARED: Readonly<Record<MatrixRuntime, RuntimeCapabilities>> = {
   'claude-code': CLAUDE_CODE_CAPABILITIES,
-  codex: CODEX_CAPABILITIES,
+  codex:
+    resolveCodexTransport('auto') === 'app-server'
+      ? { ...CODEX_CAPABILITIES, ...CODEX_APP_SERVER_CAPABILITIES }
+      : CODEX_CAPABILITIES,
   opencode: OPENCODE_CAPABILITIES,
   'test-mode': TEST_MODE_CAPABILITIES,
 };

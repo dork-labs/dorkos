@@ -47,6 +47,15 @@ import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
 export const THREAD_STARTS_FRESH_NOTICE =
   'Codex no longer has this conversation, so it starts fresh.';
 
+/**
+ * How long the pre-resume `thread/read` may take. A local metadata read; on a
+ * timeout the resume that follows has the final word.
+ */
+export const THREAD_READ_TIMEOUT_MS = 5_000;
+
+/** The copy a person reads when they archived the conversation in Codex (§6). */
+export const THREAD_ARCHIVED_NOTICE = 'This conversation is archived in Codex, so it starts fresh.';
+
 /** Which home a thread loads in, and what that home's trust rule is. */
 export type CodexHomeKind = 'person' | 'credits';
 
@@ -298,7 +307,19 @@ export class CodexThreadLoader {
     };
   }
 
-  /** Cold resume, falling back to a fresh thread when Codex cannot continue it. */
+  /**
+   * Cold resume of a bound thread, falling back to a fresh one when Codex
+   * cannot continue it (§6, §13).
+   *
+   * Reconciled first with `thread/read` (metadata only, nothing loaded): a
+   * thread the person deleted in Codex reads "not loaded" and a resume of it
+   * answers "no rollout" — the same words a never-run thread gets, so the
+   * read is what tells DorkOS the conversation is gone rather than unstarted.
+   * A bound thread always ran a turn (the binding is written at its first
+   * `turn/started`), so either answer means Codex lost it, and the person is
+   * told. An archived one reads fine and refuses the resume; it starts fresh
+   * too, with its own notice, and stays archived in Codex.
+   */
   private async resume(
     input: ThreadLoadInput,
     records: Map<string, LoadedRecord>,
@@ -306,24 +327,31 @@ export class CodexThreadLoader {
     credentials: string,
     threadId: string
   ): Promise<LoadedThread> {
+    const freshWith = async (message: string): Promise<LoadedThread> => {
+      const fresh = await this.start(input, records, fingerprint, credentials, threadId);
+      return { ...fresh, notice: { type: 'system_status', data: { message } } };
+    };
+    try {
+      await input.process.client.request(
+        'thread/read',
+        { threadId },
+        { timeoutMs: THREAD_READ_TIMEOUT_MS }
+      );
+    } catch (err) {
+      if (isCodexRpcError(err, 'thread-not-found')) return freshWith(THREAD_STARTS_FRESH_NOTICE);
+      // Anything else: the resume below has the final word.
+    }
     const key = this.mintKey(input);
     try {
       const overrides = await this.overrides(input, key?.key);
       await input.process.client.request('thread/resume', { threadId, ...overrides });
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
-      // The thread never got a first turn: nothing was lost, start it again.
-      if (isCodexRpcError(err, 'no-rollout')) {
-        return this.start(input, records, fingerprint, credentials, threadId);
+      // Deleted (or its rollout removed) in Codex. DorkOS's own history stays visible.
+      if (isCodexRpcError(err, 'no-rollout', 'thread-not-found')) {
+        return freshWith(THREAD_STARTS_FRESH_NOTICE);
       }
-      // The person deleted it in Codex. DorkOS's own history stays visible.
-      if (isCodexRpcError(err, 'thread-not-found')) {
-        const fresh = await this.start(input, records, fingerprint, credentials, threadId);
-        return {
-          ...fresh,
-          notice: { type: 'system_status', data: { message: THREAD_STARTS_FRESH_NOTICE } },
-        };
-      }
+      if (isCodexRpcError(err, 'archived')) return freshWith(THREAD_ARCHIVED_NOTICE);
       throw err;
     }
     records.set(threadId, {

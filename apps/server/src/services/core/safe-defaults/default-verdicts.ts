@@ -280,8 +280,8 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.opencode.port',
   'runtimes.codex.enabled',
   'runtimes.codex.binaryPath',
-  // `auto` follows DorkOS's own default, which is the long-shipped exec
-  // transport until app-server has passed its proof (ADR 261005-113107).
+  // `auto` follows DorkOS's own default, which is app-server since
+  // DOR-2719 phase 3; `exec` stays available (ADR 261005-113107).
   'runtimes.codex.transport',
 ];
 
