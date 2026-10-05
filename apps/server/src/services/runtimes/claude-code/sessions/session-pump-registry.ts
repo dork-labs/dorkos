@@ -474,16 +474,16 @@ export class SessionPumpRegistry {
         return true;
       }
     }
-    // The last resort (DOR-2065): a process whose only work is a background
-    // shell. A shell can run for ever (a dev server, a `tail -f`), so twelve of
-    // them must not lock every other chat out. Never a helper, a Monitor or an
+    // The last resort (DOR-2065, DOR-2717): a process holding for nothing but
+    // background shells and session timers. Either can run for ever (a dev
+    // server, a `/loop`), so twelve of them must not lock every other chat out. Never a helper, a Monitor or an
     // owed delivery — those still refuse. No wake follows: the CLI's own
     // "stopped" notice reaches the agent on its next turn.
     for (const sessionId of this.slots.leastRecentFirst(candidates)) {
       const entry = this.entries.get(sessionId);
-      if (entry === undefined || !(await entry.pump.reapShellsOnly())) continue;
+      if (entry === undefined || !(await entry.pump.reapReclaimable())) continue;
       this.drop(sessionId);
-      logger.info('[SessionPumpRegistry] reclaimed a warm slot from a background shell', {
+      logger.info('[SessionPumpRegistry] reclaimed a warm slot from a background shell or timer', {
         reaped: sessionId,
         asking,
       });

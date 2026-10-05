@@ -182,7 +182,8 @@ describe('a pending session timer holds the process', () => {
     expect(harness.pump.quietness()).toMatchObject({ quiet: false, because: 'timer-pending' });
     expect(await reapNow(harness.pump)).toBe(false);
     expect(harness.pump.isHoldingWork()).toBe(true);
-    expect(harness.pump.isHoldingOnlyShells()).toBe(false);
+    // A timer alone is reclaimable as a last resort, like a shell.
+    expect(harness.pump.isHoldingOnlyReclaimable()).toBe(true);
   });
 
   it('lets the process go once no timer is pending', async () => {
@@ -235,7 +236,7 @@ describe('isHelperWorking, the question the stall watchdog asks', () => {
   // DOR-2717. A Monitor, a Workflow or a backgrounded MCP task is just as
   // silent between its steps as a helper, and the watchdog cut them at ten
   // minutes. Every live task type now excuses a silent turn.
-  it.each(['monitor', 'local_workflow', 'mcp_task', 'local_bash'])(
+  it.each(['monitor', 'local_workflow', 'mcp_task'])(
     'answers yes while a %s task runs',
     async (type) => {
       const harness = await warmPump();
@@ -243,6 +244,12 @@ describe('isHelperWorking, the question the stall watchdog asks', () => {
       expect(harness.pump.isHelperWorking()).toBe(true);
     }
   );
+
+  it('answers no for a background shell alone, so a dev server cannot hide a hung turn', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_bash');
+    expect(harness.pump.isHelperWorking()).toBe(false);
+  });
 });
 
 // T6. The ceiling is what stops "declines while working" from becoming

@@ -263,10 +263,11 @@ export async function* executeSdkQuery(
   // background helper sends nothing for the length of one step (DOR-2681).
   // Cleared in the `finally` only if still ours, for the reason `activeQuery` is.
   const liveHelperCount = (): number => {
-    // Every task type, not only helpers: a Monitor or Workflow is as silent
-    // between its steps as a helper is (DOR-2717).
+    // Every task type but shells: a Monitor or Workflow is as silent between
+    // its steps as a helper is, while a background shell can run for hours and
+    // would hide a hung turn (DOR-2717; see `ProcessQuiet.isHelperWorking`).
     const counts = liveness.liveTaskCounts();
-    return counts.agents + counts.other + counts.shells;
+    return counts.agents + counts.other;
   };
   session.liveHelperCount = liveHelperCount;
   // The bound on the ONE hold nothing else bounds — an owed delivery that never

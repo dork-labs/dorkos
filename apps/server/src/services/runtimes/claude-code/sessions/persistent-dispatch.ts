@@ -651,7 +651,10 @@ export class PersistentDispatch {
     // ever (a dev server, a `tail -f`), so it would pin a stale list for good.
     // It dies with the relaunch, and the CLI's own notice tells the agent.
     const holding =
-      live !== undefined && busy !== undefined && !busy.quiet && !bundle.pump.isHoldingOnlyShells();
+      live !== undefined &&
+      busy !== undefined &&
+      !busy.quiet &&
+      !bundle.pump.isHoldingOnlyReclaimable();
     let compared = plan.fingerprint;
     if (holding && toolSurfaceMoved) compared = withLiveToolSurface(live, compared);
     if (holding && skillWithdrawal) {

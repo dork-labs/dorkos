@@ -798,7 +798,10 @@ export async function resolveLaunch(args: {
         hooks: [
           async (hookInput) => {
             if (hookInput.hook_event_name === 'Stop') {
-              const crons = (hookInput as { session_crons?: unknown }).session_crons;
+              // A Stop hook does not run after an interrupt, so a fired timer
+              // can stay counted until the next turn ends; the four-hour
+              // ceiling bounds that, as it bounds every hold.
+              const crons = hookInput.session_crons;
               session.pendingTimers = Array.isArray(crons) ? crons.length : 0;
             }
             return {};
