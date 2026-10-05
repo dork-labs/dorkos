@@ -96,7 +96,7 @@ import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
 import type { McpServerFactory, MessageSenderOpts } from './messaging/message-sender-shared.js';
-import { PersistentDispatch } from './sessions/persistent-dispatch.js';
+import { PersistentDispatch, type CutShortWork } from './sessions/persistent-dispatch.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
 import {
   homeOf,
@@ -1398,6 +1398,20 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   onDispatchGateChange(listener: (sessionId: string) => void): () => void {
     return this.persistent.onDispatchGateChange(listener);
+  }
+
+  /**
+   * Listen for chats whose warm process was ended while it still held
+   * background work — the four-hour ceiling, an eviction, a crash — so the
+   * chat can be given the turn that work would have brought (DOR-2065).
+   *
+   * Claude-code only: no other runtime holds a process between turns.
+   *
+   * @param listener - Told about each chat owed a turn, once
+   * @returns Unsubscribes the listener
+   */
+  onBackgroundWorkCutShort(listener: (work: CutShortWork) => void): () => void {
+    return this.persistent.onBackgroundWorkCutShort(listener);
   }
 
   /** @inheritdoc */

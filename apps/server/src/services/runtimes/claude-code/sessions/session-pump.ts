@@ -52,6 +52,7 @@ import {
   type PumpDispatch,
   type PumpQuery,
   type PumpState,
+  type PumpTeardownReason,
   type Quietness,
   type SessionPumpOptions,
 } from './session-pump-contract.js';
@@ -136,6 +137,8 @@ export class SessionPump {
    * own state back through accessors.
    */
   private readonly quiet: ProcessQuiet;
+  /** Why {@link teardown} ended this pump, or undefined while it has not. */
+  private endedBy: PumpTeardownReason | undefined;
 
   /**
    * Build a pump for one session. Nothing is booted until it is warmed or
@@ -154,6 +157,15 @@ export class SessionPump {
       hasRuntimeTurnOpen: () => opts.hasRuntimeTurnOpen?.() === true,
       hasPendingInteraction: () => opts.hasPendingInteraction?.() === true,
       onGateChange: () => opts.onDispatchGateChange?.(),
+      // Only while the process is ours to keep. Once it is being ended (`cold`,
+      // `reaped`) or is gone (`crashed`), a frame dropping a task describes
+      // work dying with it — the SIGTERM'd CLI reports its shells settled on
+      // the way out — and reporting that as "finished" would erase the very
+      // record that says the chat is owed a wake.
+      onHoldingWorkChange: (holding) => {
+        if (this.disposed || !this.holdsProcess) return;
+        opts.onBackgroundWorkChange?.(holding);
+      },
       ...(opts.owedDeliveryTimeoutMs !== undefined
         ? { owedDeliveryTimeoutMs: opts.owedDeliveryTimeoutMs }
         : {}),
@@ -173,6 +185,15 @@ export class SessionPump {
   /** What `getSessionWarmth` reports for this session. */
   get warmth(): SessionWarmth {
     return WARMTH_OF[this.currentState];
+  }
+
+  /**
+   * Why {@link teardown} ended this pump, or undefined when it was not torn
+   * down. Set before the state change to `cold` is reported, so an observer of
+   * that change can read it.
+   */
+  get teardownReason(): PumpTeardownReason | undefined {
+    return this.endedBy;
   }
 
   /** True while a subprocess exists or is being booted — what the ceiling counts. */
@@ -604,13 +625,17 @@ export class SessionPump {
    * Idempotent, and safe while a launch is in flight: the launch sees the
    * teardown when it returns and closes whatever it got, so a process cannot
    * outlive the shutdown that raced it.
+   *
+   * @param reason - Why the pump is ending, read back through
+   *   {@link teardownReason}; defaults to `evict`
    */
-  async teardown(): Promise<void> {
+  async teardown(reason: PumpTeardownReason = 'evict'): Promise<void> {
     if (this.disposed) {
       await this.consumed?.catch(() => {});
       return;
     }
     this.disposed = true;
+    this.endedBy = reason;
     if (this.currentState !== 'cold') this.setState('cold');
     this.initReady?.reject(
       new PumpRefusedError('process-gone', `session ${this.sessionId} was torn down`)

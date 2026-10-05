@@ -7,6 +7,7 @@
  * the thing under test IS the wiring. A test that drove the pump directly would
  * pass with `sendMessage` still hard-wired to `executeSdkQuery`.
  */
+import fs from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent, SessionStatus } from '@dorkos/shared/session-stream';
@@ -173,6 +174,8 @@ import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
 import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
 import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
+import { BackgroundWorkLedger } from '../../messaging/background-work-ledger.js';
+import { shutdownSessionPumps } from '../session-pump-registry.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -2643,5 +2646,146 @@ describe('an empty turn waits for its answer (DOR-2064)', () => {
       expect.objectContaining({ session: sessionId, taskType: 'monitor' }),
       expect.objectContaining({ session: sessionId, taskType: 'local_agent' }),
     ]);
+  });
+});
+
+// DOR-2065. A background shell, Monitor or helper that outlives its turn wakes
+// the chat when it finishes — but only while the process holding it lives. When
+// DorkOS ends that process anyway, the chat has to get its turn some other way.
+describe('background work cut short wakes the chat (DOR-2065)', () => {
+  const records = (): ReturnType<BackgroundWorkLedger['read']> =>
+    new BackgroundWorkLedger('/tmp/dorkos-pump').read();
+  const ledgerPath = new BackgroundWorkLedger('/tmp/dorkos-pump').path;
+  let wakes: Array<{ sessionId: string; cwd: string }>;
+
+  beforeEach(() => {
+    optIn.persistentSession = true;
+    fs.rmSync(ledgerPath, { force: true });
+    // A list per case, captured by this case's listener only: an earlier
+    // case's runtime can still wake as its processes are closed in `afterEach`.
+    const mine: Array<{ sessionId: string; cwd: string }> = [];
+    wakes = mine;
+    runtime.onBackgroundWorkCutShort((work) => mine.push(work));
+  });
+
+  afterEach(() => {
+    fs.rmSync(ledgerPath, { force: true });
+  });
+
+  /** The id a restarted server finds the chat's transcript under. */
+  function transcriptId(sessionId: string): string | undefined {
+    return runtime.getInternalSessionId(sessionId);
+  }
+
+  /** Let any wake scheduled for the next macrotask fire. */
+  async function settle(): Promise<void> {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+
+  /** Warm a session and give its process a background shell that is still running. */
+  async function warmWithShell(): Promise<{ sessionId: string; process: FakeCliProcess }> {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes.at(-1)!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await vi.waitFor(() => expect(records()).toHaveLength(1));
+    return { sessionId, process };
+  }
+
+  it('writes the record while the work runs, and removes it once the process is quiet', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    expect(records()).toEqual([]);
+
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await vi.waitFor(() =>
+      expect(records()).toEqual([
+        expect.objectContaining({ key: sessionId, sessionId: transcriptId(sessionId), cwd: CWD }),
+      ])
+    );
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(records()).toEqual([]));
+    expect(wakes).toEqual([]);
+  });
+
+  it('wakes the chat once when the ceiling reap takes a process still holding work', async () => {
+    const { sessionId } = await warmWithShell();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      await runtime.reapSession(sessionId);
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    await vi.waitFor(() =>
+      expect(wakes).toEqual([{ sessionId: transcriptId(sessionId), cwd: CWD }])
+    );
+    expect(records()).toEqual([]);
+
+    // A second reap finds nothing left to wake.
+    await runtime.reapSession(sessionId);
+    await settle();
+    expect(wakes).toHaveLength(1);
+  });
+
+  it('wakes the chat once when the process crashes while holding work', async () => {
+    const { sessionId, process } = await warmWithShell();
+    process.crash(new Error('the CLI went away'));
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+    await vi.waitFor(() =>
+      expect(wakes).toEqual([{ sessionId: transcriptId(sessionId), cwd: CWD }])
+    );
+    expect(records()).toEqual([]);
+  });
+
+  it('does not wake a chat whose process a person stopped', async () => {
+    const { sessionId, process } = await warmWithShell();
+    process.goSilent();
+    const stopped = turn(sessionId, 'stop this one');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.interruptRejectsWith = new Error('control write failed: the process is gone');
+    await runtime.interruptQuery(sessionId);
+    await stopped;
+
+    expect(process.closed).toBe(1);
+    await settle();
+    expect(wakes).toEqual([]);
+    expect(records()).toEqual([]);
+  });
+
+  it('does not wake a chat whose process a dispatch replaced', async () => {
+    const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
+    const { sessionId } = await warmWithShell();
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>REPLACED</env>',
+      stable: '<env>REPLACED</env>',
+    });
+    try {
+      await turn(sessionId, 'after the change');
+    } finally {
+      vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+        text: '<env>test</env>',
+        stable: '<env>test</env>',
+      });
+    }
+
+    expect(cli.processes[0]!.ended).toBe(true);
+    await settle();
+    expect(wakes).toEqual([]);
+    expect(records()).toEqual([]);
+  });
+
+  it('keeps the record without waking when the server shuts down, so the next boot wakes it', async () => {
+    const { sessionId } = await warmWithShell();
+    await shutdownSessionPumps();
+
+    await settle();
+    expect(wakes).toEqual([]);
+    expect(records()).toEqual([expect.objectContaining({ key: sessionId, cwd: CWD })]);
   });
 });

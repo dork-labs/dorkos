@@ -284,6 +284,18 @@ export interface PumpCrash {
   stopRequested?: boolean;
 }
 
+/**
+ * Why a pump was torn down (`SessionPump.teardown`), for whoever has to decide
+ * what the person is owed afterwards (DOR-2065).
+ *
+ * - `evict` — the session record went away, or a caller ended the process for
+ *   good. Work the process held was cut short.
+ * - `replace` — a dispatch is relaunching the process under new settings; that
+ *   dispatch is itself the session's next turn.
+ * - `shutdown` — the server is stopping; the next boot picks up what is owed.
+ */
+export type PumpTeardownReason = 'evict' | 'replace' | 'shutdown';
+
 /** One message being dispatched into the pump. */
 export interface PumpDispatch {
   /** The person's words, exactly as they will reach the model. */
@@ -359,6 +371,14 @@ export interface SessionPumpOptions {
    * from it is logged and swallowed, like every other observer here.
    */
   onDispatchGateChange?: () => void;
+  /**
+   * The live process started or stopped holding background work — a helper,
+   * shell, Monitor or other task, or a delivery owed (DOR-2065). Fired only on
+   * the flip, and never once the process is being ended: the frames a dying CLI
+   * sends on its way out describe work that is about to die, not work that
+   * finished. A throw is logged and swallowed.
+   */
+  onBackgroundWorkChange?: (holding: boolean) => void;
   /** Override the grace window between the polite close and the forceful one. */
   drainGraceMs?: number;
   /** Override how long an owed delivery is waited for. Tests only. */

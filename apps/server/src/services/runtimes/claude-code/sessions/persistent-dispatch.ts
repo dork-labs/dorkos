@@ -190,6 +190,21 @@ import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
 import { recordSessionUsage } from '../accounts/account-usage-feed.js';
+import { sharedBackgroundWorkLedger } from '../messaging/background-work-ledger.js';
+
+/**
+ * A chat whose agent process was ended while it still held background work,
+ * and so is owed a turn to pick that work back up (DOR-2065).
+ */
+export interface CutShortWork {
+  /** The chat to wake, under its transcript id. */
+  sessionId: string;
+  /** The directory it runs in. */
+  cwd: string;
+}
+
+/** How a process holding background work came to an end. */
+type WorkEnding = 'cut-short' | 'released' | 'kept';
 
 /** One session's pump, its windower, and its crash policy, wired together. */
 interface SessionBundle {
@@ -250,6 +265,19 @@ interface SessionBundle {
    * gets a fresh bundle.
    */
   staleToolListWarnedFor?: number;
+  /**
+   * The chat and directory this process's background work belongs to, while
+   * the process holds any (DOR-2065). Mirrors the durable record in
+   * `background-work.json`, kept here so ending the process can decide what
+   * the chat is owed without reading the file back.
+   */
+  heldWork?: CutShortWork;
+  /**
+   * A wake this bundle owes, held until the spent pump has left the registry —
+   * a wake dispatched sooner could find the reaped pump still filed under the
+   * session and be refused by it.
+   */
+  wakeOwed?: CutShortWork;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -305,6 +333,11 @@ export class PersistentDispatch {
    * `undefined` when nothing is listening (spec `warm-process-lifecycle` D1).
    */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;
+  /**
+   * Whoever wakes a chat whose process ended with its background work inside
+   * it, or `undefined` when nothing is listening (DOR-2065).
+   */
+  private cutShortListener: ((work: CutShortWork) => void) | undefined;
 
   /**
    * Build the dispatcher over a runtime's pump registry.
@@ -378,6 +411,24 @@ export class PersistentDispatch {
     this.dispatchGateListener = listener;
     return () => {
       if (this.dispatchGateListener === listener) this.dispatchGateListener = undefined;
+    };
+  }
+
+  /**
+   * Listen for chats whose agent process was ended while it still held
+   * background work — the four-hour ceiling, an eviction, a crash (DOR-2065).
+   *
+   * Not told about a person's Stop, nor about a process a dispatch replaced
+   * (that dispatch is itself the next turn), nor about a server shutdown, which
+   * leaves the durable record for the next boot to wake instead.
+   *
+   * @param listener - Told about each chat that is owed a turn, once
+   * @returns Unsubscribes the listener
+   */
+  onBackgroundWorkCutShort(listener: (work: CutShortWork) => void): () => void {
+    this.cutShortListener = listener;
+    return () => {
+      if (this.cutShortListener === listener) this.cutShortListener = undefined;
     };
   }
 
@@ -1158,6 +1209,24 @@ export class PersistentDispatch {
     bundle.pump = this.registry.acquire(key, {
       maxWarmSessions: SESSIONS.MAX_WARM_SESSIONS,
       warmIdleMs: SESSIONS.WARM_IDLE_MS,
+      // The spent pump is out of the registry, so a wake dispatched now builds
+      // a fresh process instead of being refused by the old one.
+      onRetired: () => this.fireOwedWake(bundle),
+      onBackgroundWorkChange: (holding) => {
+        if (!holding) {
+          bundle.heldWork = undefined;
+          sharedBackgroundWorkLedger().release(key);
+          return;
+        }
+        // The transcript id, not the key: a restarted server can still find
+        // the chat by it, while the key may be a first turn's request id.
+        const work: CutShortWork = {
+          sessionId: session.sdkSessionId || key,
+          cwd: bundle.plan?.effectiveCwd ?? session.cwd ?? opts.cwd,
+        };
+        bundle.heldWork = work;
+        sharedBackgroundWorkLedger().hold({ key, ...work, since: Date.now() });
+      },
       launch: createPumpLauncher(
         session,
         opts,
@@ -1210,6 +1279,11 @@ export class PersistentDispatch {
         // The relaunch is a new process, and "once per process" starts over.
         bundle.seenTaskTypes.clear();
         bundle.recovery.handleCrash(stopRequested ? { ...crash, stopRequested } : crash);
+        // A crashed pump stays in the registry and relaunches on the next
+        // dispatch, so the wake can go at once. A person's Stop is not a reason
+        // to start the agent again.
+        this.endBackgroundWork(key, bundle, stopRequested ? 'released' : 'cut-short');
+        this.fireOwedWake(bundle);
       },
       onStateChange: (change) => {
         // `session.activeQuery` means "a turn is in flight", and on the resume
@@ -1239,6 +1313,19 @@ export class PersistentDispatch {
         // through `this.bundles`: eviction forgets the bundle before it tears
         // the process down.
         if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
+        // Work still held when DorkOS ends the process dies with it. A reap
+        // here is the four-hour ceiling (a quiet process holds nothing) and an
+        // eviction is the same; a replace is followed by its own dispatch; a
+        // shutdown keeps the durable record for the next boot.
+        if (change.to === 'reaped') this.endBackgroundWork(key, bundle, 'cut-short');
+        if (change.to === 'cold') {
+          const reason = bundle.pump.teardownReason;
+          this.endBackgroundWork(
+            key,
+            bundle,
+            reason === 'shutdown' ? 'kept' : reason === 'replace' ? 'released' : 'cut-short'
+          );
+        }
         bundle.recovery.noteStateChange(change);
       },
       // The map's raw SIZE was the wrong answer, for the same reason it is
@@ -1336,8 +1423,59 @@ export class PersistentDispatch {
    * @param key - The resolved map key, exactly as {@link acquire} takes
    */
   private async replaceProcess(key: string): Promise<void> {
-    await this.registry.evict(key);
+    await this.registry.evict(key, 'replace');
     this.forget(key);
+  }
+
+  /**
+   * Settle the background work a process held as that process ends (DOR-2065).
+   *
+   * - `cut-short` — the work died unheard: the record goes, and a wake is owed.
+   * - `released` — a Stop or a replace: the record goes, and nothing is owed.
+   * - `kept` — a shutdown: the record stays for the next boot to act on.
+   *
+   * @param key - The resolved key the record is held under
+   * @param bundle - The session's wiring
+   * @param ending - How the process ended
+   */
+  private endBackgroundWork(key: string, bundle: SessionBundle, ending: WorkEnding): void {
+    const work = bundle.heldWork;
+    if (work === undefined) return;
+    bundle.heldWork = undefined;
+    if (ending === 'kept') return;
+    sharedBackgroundWorkLedger().release(key);
+    if (ending !== 'cut-short') return;
+    logger.info('[persistent-dispatch] background work was cut short; waking the chat', {
+      session: key,
+    });
+    bundle.wakeOwed = work;
+  }
+
+  /**
+   * Hand a wake this bundle owes to its listener, once.
+   *
+   * On the next macrotask rather than inline, so whatever ended the process —
+   * a reap, an eviction — has finished forgetting the old wiring before the
+   * wake's dispatch can look for it.
+   *
+   * @param bundle - The session's wiring
+   */
+  private fireOwedWake(bundle: SessionBundle): void {
+    const work = bundle.wakeOwed;
+    if (work === undefined) return;
+    bundle.wakeOwed = undefined;
+    const listener = this.cutShortListener;
+    if (listener === undefined) return;
+    setImmediate(() => {
+      try {
+        listener(work);
+      } catch (err) {
+        logger.warn('[persistent-dispatch] a background-work wake listener threw', {
+          session: work.sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
   }
 }
 

@@ -21,6 +21,7 @@ import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-clie
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
+import { sharedBackgroundWorkLedger } from './services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
 import { previewListeners } from './services/workbench-serve/index.js';
 import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
@@ -377,6 +378,10 @@ import {
   onProjectorInteractionChange,
 } from './services/session/session-state-projector.js';
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
+import {
+  wakeChatsCutShort,
+  wakeCutShortChat,
+} from './services/session/runtime-turns/wake-cut-short-work.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { globalConsentRecorder } from './services/marketplace/consent/global-plugin-consent.js';
@@ -980,6 +985,14 @@ async function start() {
       error: error instanceof Error ? error.message : String(error),
     });
   });
+
+  // The chats whose agent process was still holding background work when the
+  // previous run ended — a graceful restart or a hard kill — each owed a turn
+  // (DOR-2065). Taken and cleared HERE, beside the sweep that just ended those
+  // processes and before anything can warm a new one, so each record wakes its
+  // chat at most once and a record this run writes is never mistaken for one.
+  // The wakes themselves go out once the server is listening.
+  const backgroundWorkCutShort = sharedBackgroundWorkLedger().takeAll();
 
   // Empty the hosted-community move staging directory. A copy a previous run
   // left behind can never be sent: its upload token died with that process.
@@ -4652,6 +4665,13 @@ async function start() {
   // this point, and a runtime that cannot produce such a turn omits the hook and
   // subscribes to nothing.
   for (const runtime of runtimeRegistry.listRuntimes()) subscribeRuntimeTurns(runtime);
+  // A warm process taken back while it still held background work — the
+  // four-hour ceiling, an eviction, a crash — wakes its chat with a turn, as the
+  // work finishing would have (DOR-2065). Detached: the runtime's bookkeeping
+  // must not wait on a model, and the wake never rejects.
+  claudeRuntime?.onBackgroundWorkCutShort((work) => {
+    void wakeCutShortChat(work);
+  });
 
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
   // taskStore/relayCore power topology enrichment (relay badges, task counts);
@@ -6071,6 +6091,15 @@ async function start() {
   if (schedulerService) {
     await schedulerService.start();
     logger.info('[Tasks] Scheduler started');
+  }
+
+  // Wake the chats the boot found owed a turn (DOR-2065), now that every
+  // runtime and session service is up. Detached, and it never rejects.
+  if (backgroundWorkCutShort.length > 0) {
+    logger.info('[DorkOS] waking chats whose background work a restart cut short', {
+      sessions: backgroundWorkCutShort.map((record) => record.sessionId),
+    });
+    void wakeChatsCutShort(backgroundWorkCutShort);
   }
 
   // Run session health check periodically. Only ClaudeCodeRuntime needs the
