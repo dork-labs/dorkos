@@ -135,6 +135,12 @@ export interface AgentSession {
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**
+   * How many times a started session with no known account looked for its
+   * transcript and did not find it (DOR-2065). Bounds the retry, so a
+   * transcript that is never found is not looked for on every message.
+   */
+  accountRootProbeMisses?: number;
+  /**
    * Wire `uuid` of the last MAIN-THREAD assistant message this session produced
    * (SDK `SDKAssistantMessage.uuid`; subagent messages are excluded). Used to
    * anchor the NEXT turn's resume via `options.resumeSessionAt` so the CLI's

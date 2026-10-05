@@ -7,6 +7,9 @@
  * the thing under test IS the wiring. A test that drove the pump directly would
  * pass with `sendMessage` still hard-wired to `executeSdkQuery`.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import nodePath from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent, SessionStatus } from '@dorkos/shared/session-stream';
@@ -173,6 +176,8 @@ import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
 import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
 import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
+import { BackgroundWorkLedger } from '../../messaging/background-work-ledger.js';
+import { shutdownSessionPumps } from '../session-pump-registry.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -182,6 +187,7 @@ const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
 let cli: FakeCli;
 let runtime: ClaudeCodeRuntime;
+let dorkHome: string;
 let sessionSeq = 0;
 
 /** A fresh session id per case, so no two cases share a pump. */
@@ -230,13 +236,17 @@ beforeEach(() => {
   mockedQuery.mockReset();
   mockedQuery.mockImplementation(cli.query as unknown as typeof query);
   vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue(CWD);
-  runtime = new ClaudeCodeRuntime('/tmp/dorkos-pump', CWD);
+  // A data directory of its own per case: the runtime writes its background
+  // work record there (DOR-2065), and no case may write into a shared one.
+  dorkHome = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'persistent-dispatch-'));
+  runtime = new ClaudeCodeRuntime(dorkHome, CWD);
 });
 
 afterEach(() => {
   // Every process this case booted, closed — a leaked one would keep reading a
   // prompt stream for the rest of the file.
   for (const process of cli.processes) process.endStream();
+  fs.rmSync(dorkHome, { recursive: true, force: true });
 });
 
 describe('the opt-in decides which path a message takes', () => {
@@ -1211,6 +1221,24 @@ describe("a running extension's skills root on a warm process (DOR-2685)", () =>
     expect(cli.processes[1]!.options.plugins ?? []).toEqual([]);
   });
 
+  it("does not hold a stopped extension's relaunch for a background shell alone (DOR-2065)", async () => {
+    // Purpose: a shell can run forever, so it must not pin a stale skill set.
+    // It dies with the relaunch, and the CLI's own notice tells the agent.
+    extensionRoots.paths = [`${ROOT}/mail`];
+    await runtime.refreshActivatedPlugins();
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    extensionRoots.paths = [];
+    await runtime.refreshActivatedPlugins();
+    await turn(sessionId, 'while the shell runs');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
   it('still relaunches a working process when a package is withdrawn with the extension', async () => {
     // Purpose: the hold is for skills only. A withdrawn package may run code
     // nobody approves any more (DOR-2306), so it never waits.
@@ -1363,6 +1391,22 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     process.reportTasks([]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
     await turn(sessionId, 'after the helper finished');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
+  it('does not hold the relaunch for a background shell alone (DOR-2065)', async () => {
+    // Purpose: a shell can run forever (a dev server), so it must not pin a
+    // stale tool list. It dies with the relaunch, and the CLI's own notice
+    // tells the agent on the turn that follows.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    await turn(sessionId, 'while the shell runs');
     expect(cli.launches).toBe(2);
     expect(process.ended).toBe(true);
   });
@@ -2643,5 +2687,132 @@ describe('an empty turn waits for its answer (DOR-2064)', () => {
       expect.objectContaining({ session: sessionId, taskType: 'monitor' }),
       expect.objectContaining({ session: sessionId, taskType: 'local_agent' }),
     ]);
+  });
+});
+
+// DOR-2065. A background shell, Monitor or helper that outlives its turn wakes
+// the chat when it finishes — but only while the process holding it lives. The
+// record written here is what lets the NEXT boot wake a chat whose process the
+// server took down with it; every ending the running server sees for itself
+// clears the record and wakes nothing.
+describe('the record of background work a process holds (DOR-2065)', () => {
+  const records = (): ReturnType<BackgroundWorkLedger['read']> =>
+    new BackgroundWorkLedger(dorkHome).read();
+
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  /** Warm a session and give its process a background shell that is still running. */
+  async function warmWithShell(): Promise<{ sessionId: string; process: FakeCliProcess }> {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes.at(-1)!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await vi.waitFor(() => expect(records()).toHaveLength(1));
+    return { sessionId, process };
+  }
+
+  it('is written while the work runs, and removed once the process is quiet', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    expect(records()).toEqual([]);
+
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await vi.waitFor(() =>
+      expect(records()).toEqual([
+        expect.objectContaining({
+          key: sessionId,
+          // The transcript id, which a restarted server can still find.
+          sessionId: runtime.getInternalSessionId(sessionId),
+          cwd: CWD,
+        }),
+      ])
+    );
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(records()).toEqual([]));
+  });
+
+  it('is cleared when the ceiling reap takes a process still holding work', async () => {
+    const { sessionId } = await warmWithShell();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      await runtime.reapSession(sessionId);
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(records()).toEqual([]);
+  });
+
+  it('is cleared when the process crashes while holding work', async () => {
+    const { sessionId, process } = await warmWithShell();
+    process.crash(new Error('the CLI went away'));
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+    expect(records()).toEqual([]);
+  });
+
+  it('is cleared when a person stops the process', async () => {
+    const { sessionId, process } = await warmWithShell();
+    process.goSilent();
+    const stopped = turn(sessionId, 'stop this one');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.interruptRejectsWith = new Error('control write failed: the process is gone');
+    await runtime.interruptQuery(sessionId);
+    await stopped;
+
+    expect(process.closed).toBe(1);
+    expect(records()).toEqual([]);
+  });
+
+  it('is cleared when a dispatch replaces the process', async () => {
+    const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
+    const { sessionId } = await warmWithShell();
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>REPLACED</env>',
+      stable: '<env>REPLACED</env>',
+    });
+    try {
+      await turn(sessionId, 'after the change');
+    } finally {
+      vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+        text: '<env>test</env>',
+        stable: '<env>test</env>',
+      });
+    }
+
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(records()).toEqual([]);
+  });
+
+  it('is kept when the server shuts down, so the next boot can wake the chat', async () => {
+    const { sessionId } = await warmWithShell();
+    await shutdownSessionPumps();
+
+    expect(records()).toEqual([expect.objectContaining({ key: sessionId, cwd: CWD })]);
+  });
+
+  it('does not let a running shell keep a credits session alive after credits stop', async () => {
+    // A revoked token must not stay live for hours behind a shell: stopping
+    // credits ends the process even though a polite reap would decline it.
+    const { creditsClaudeRoot } = await import('../../credits-root.js');
+    const { sessionId, process } = await warmWithShell();
+    // The account the session runs on, set the way a credits launch sets it.
+    (
+      runtime as unknown as {
+        sessionStore: { findSession: (id: string) => { launchedAccountRoot?: string } };
+      }
+    ).sessionStore.findSession(sessionId).launchedAccountRoot = creditsClaudeRoot();
+
+    await runtime.stopCreditsSessions();
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(process.ended).toBe(true);
+    expect(records()).toEqual([]);
   });
 });
