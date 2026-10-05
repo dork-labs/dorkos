@@ -31,6 +31,7 @@
     "typecheck:scripts": "tsc -p scripts/tsconfig.json --noEmit",
     "docs:export-api": "tsx scripts/export-openapi.ts",
     "codex:protocol-snapshot": "tsx scripts/codex-protocol-snapshot.ts",
+    "docs:runtime-capabilities": "tsx scripts/generate-runtime-capabilities.ts",
     "check:banned-words": "bash scripts/check-banned-words.sh",
     "check:boundary": "tsx scripts/check-boundary.ts",
     "check:dead-doc-paths": "bash scripts/check-dead-doc-paths.sh",

@@ -462,10 +462,15 @@ describe('warmth is answered honestly', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       runtime.checkSessionHealth();
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
 
     const events = await hanging;
@@ -1426,6 +1431,10 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     listed = [...listed, 'ext_mail_app__send'];
 
     vi.useFakeTimers({ toFake: ['Date'] });
+    // The ceiling is measured on the awake clock (DOR-2717).
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
     try {
       vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
       vi.mocked(logger.warn).mockClear();
@@ -1444,6 +1453,7 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
       expect(cli.launches).toBe(1);
       expect(staleWarnings()).toHaveLength(1);
     } finally {
+      awake.mockRestore();
       vi.useRealTimers();
     }
   });
@@ -2742,10 +2752,15 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       await runtime.reapSession(sessionId);
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
 
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
@@ -2769,10 +2784,15 @@ describe('the record of background work a process holds (DOR-2065)', () => {
 
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       await runtime.reapSession(sessionId);
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
     expect(session.pendingTimers).toBeUndefined();

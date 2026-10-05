@@ -878,7 +878,7 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       });
     });
 
-    it('tool approval in default mode pushes approval_required and approveTool resolves it', async () => {
+    it('RT-TOOL-01: tool approval in default mode pushes approval_required and approveTool resolves it', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'default' });
 
       let canUseToolFn: (

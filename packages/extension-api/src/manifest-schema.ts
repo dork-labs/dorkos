@@ -115,7 +115,8 @@ export const ISOLATION_MEMORY_MB = { min: 64, max: 1024, default: 256 } as const
  * - `subprocess`: in its own Node process, limited to what `allow` declares.
  *   Files, processes and threads are limited by Node's permission model;
  *   hosts by a guard inside that process (not an OS firewall). Its client
- *   bundle is not isolated, and it can't offer agents tools yet. See
+ *   bundle is not isolated. Its agent tools work as in-process ones do, with
+ *   the permission check, deadline and result limits applied by DorkOS. See
  *   "Running separately" in `contributing/extension-authoring.md`.
  *
  * `"worker"` is reserved and refused: a worker thread shares DorkOS's process

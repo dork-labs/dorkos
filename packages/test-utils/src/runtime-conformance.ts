@@ -1614,7 +1614,7 @@ export function runtimeConformance(
 
   describe(name, () => {
     describe('session lifecycle', () => {
-      it('tracks a session after ensureSession and leaves unknown ids untracked', () => {
+      it('RT-SES-01: tracks a session after ensureSession and leaves unknown ids untracked', () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
 
@@ -1636,7 +1636,7 @@ export function runtimeConformance(
         expect(sessions.map((s) => s.id)).not.toContain(sessionId);
       });
 
-      it('lists a session started INSIDE the project, and never a lookalike sibling (DOR-1550)', async () => {
+      it('RT-SES-02: lists a session started INSIDE the project, and never a lookalike sibling (DOR-1550)', async () => {
         // The other half of the membership rule. A person opens a project and
         // starts an agent in `packages/api`; that session is the project's
         // session, and every runtime used to decide otherwise by comparing the
@@ -1665,7 +1665,7 @@ export function runtimeConformance(
         expect(listed.find((s) => s.id === inside)?.cwd).toBe(subfolder);
       });
 
-      it('getSession resolves session metadata or null — and null for an unknown id', async () => {
+      it('RT-SES-01: getSession resolves session metadata or null — and null for an unknown id', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -1944,7 +1944,7 @@ export function runtimeConformance(
         }
       });
 
-      it('a session that gains a canonical id takes its stored settings with it', async () => {
+      it('RT-SES-05: a session that gains a canonical id takes its stored settings with it', async () => {
         // The other half of the alias contract above (DOR-493). An alias splits
         // the id a session's settings were written under from the id every later
         // read and turn will ask by, so a runtime that mints one MUST move the
@@ -1984,7 +1984,7 @@ export function runtimeConformance(
         }
       });
 
-      it('updateSession answers with an outcome, and says pending only when it means it', async () => {
+      it('RT-PERM-03: updateSession answers with an outcome, and says pending only when it means it', async () => {
         // ## The shape (DOR-1435)
         //
         // `updateSession` used to answer a bare boolean, so "saved" and "in
@@ -2035,7 +2035,7 @@ export function runtimeConformance(
         ).toBeUndefined();
       });
 
-      it('honors a per-send permissionMode on a session it has never seen (DOR-1917)', async () => {
+      it('RT-PERM-02: honors a per-send permissionMode on a session it has never seen (DOR-1917)', async () => {
         // **The seam a room turn's first reply depends on.** A room binds its
         // `session_metadata` row AFTER the turn starts, so the first turn cannot
         // inherit a stored posture — the runner passes the operator's resolved
@@ -2106,7 +2106,7 @@ export function runtimeConformance(
         };
       }
 
-      it('names the counter subscribeSession just bound, never the unowned one', async () => {
+      it('RT-STR-07: names the counter subscribeSession just bound, never the unowned one', async () => {
         // Purpose: a `seq` is a position in ONE counter, and the counter behind a
         // session id can be REPLACED while a reader is away — at which point the
         // reader's number is still in range, still monotonic, and points at
@@ -2171,7 +2171,7 @@ export function runtimeConformance(
     });
 
     describe('messaging', () => {
-      it(`sendMessage yields well-formed StreamEvents and terminates with '${TERMINAL_EVENT_TYPE}'`, async () => {
+      it(`RT-STR-01: sendMessage yields well-formed StreamEvents and terminates with '${TERMINAL_EVENT_TYPE}'`, async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -2222,7 +2222,7 @@ export function runtimeConformance(
         }
       });
 
-      it('accepts structured document context without exposing it as the visible trigger or output', async () => {
+      it('RT-STR-08: accepts structured document context without exposing it as the visible trigger or output', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -2278,7 +2278,7 @@ export function runtimeConformance(
         }
       });
 
-      it('never speaks the trigger back, nor any context DorkOS wrapped around it', async () => {
+      it('RT-STR-03: never speaks the trigger back, nor any context DorkOS wrapped around it', async () => {
         // A turn's output is the model's answer. The prompt DorkOS wrote — the
         // person's words plus whatever identity, environment and room context
         // the adapter injected around them — is INPUT, and a runtime that
@@ -2730,7 +2730,7 @@ export function runtimeConformance(
     });
 
     describe('presence truthfulness (the strip omits rather than lies)', () => {
-      it('a session that has never run a turn reports idle, and shows no turn', async () => {
+      it('RT-STR-06: a session that has never run a turn reports idle, and shows no turn', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -2740,7 +2740,7 @@ export function runtimeConformance(
       });
 
       if (presenceTurn) {
-        it('reports a running turn while it runs, and stops the moment it ends', async () => {
+        it('RT-STR-06: reports a running turn while it runs, and stops the moment it ends', async () => {
           // Both live readings come from ONE turn driven through the real
           // trigger path, so the lifecycle genuinely transitions
           // idle → streaming → idle underneath them. Read off `sendMessage`
@@ -2812,7 +2812,7 @@ export function runtimeConformance(
 
     if (makeCompactingRuntime) {
       describe('operation progress (compaction, DOR-110)', () => {
-        it('reports compaction via the standardized operation_progress contract', async () => {
+        it('RT-CMP-01: reports compaction via the standardized operation_progress contract', async () => {
           const runtime = makeCompactingRuntime();
           const sessionId = nextSessionId();
           runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -2851,7 +2851,7 @@ export function runtimeConformance(
 
     if (makeFailingRuntime) {
       describe('turn failure', () => {
-        it(`yields a typed 'error' event before the terminal '${TERMINAL_EVENT_TYPE}'`, async () => {
+        it(`RT-STR-02: yields a typed 'error' event before the terminal '${TERMINAL_EVENT_TYPE}'`, async () => {
           const runtime = makeFailingRuntime();
           const sessionId = nextSessionId();
           runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -2887,7 +2887,7 @@ export function runtimeConformance(
     }
 
     describe('credential failure', () => {
-      it('answers in DorkOS words that name this runtime, and keeps the backend text in details (DOR-1656)', async (ctx) => {
+      it('RT-ACCT-03: answers in DorkOS words that name this runtime, and keeps the backend text in details (DOR-1656)', async (ctx) => {
         if (!authFailure) {
           // A SKIP, not a pass: an `it` that returns early is
           // indistinguishable from one that asserted something.
@@ -2947,7 +2947,7 @@ export function runtimeConformance(
         expect(events[events.length - 1]!.type).toBe(TERMINAL_EVENT_TYPE);
       });
 
-      it('survives a reload as that same typed error part, never as agent speech (DOR-1678)', async (ctx) => {
+      it('RT-ACCT-03: survives a reload as that same typed error part, never as agent speech (DOR-1678)', async (ctx) => {
         if (!authFailure) {
           // Same SKIP, same reason as the live half above.
           ctx.skip(
@@ -3259,7 +3259,7 @@ export function runtimeConformance(
     });
 
     describe('history', () => {
-      it('getMessageHistory returns an array after a completed turn — never throws', async () => {
+      it('RT-STR-04: getMessageHistory returns an array after a completed turn — never throws', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -3276,7 +3276,7 @@ export function runtimeConformance(
         }
       });
 
-      it('a question NOBODY answered says so in history, and claims no answer (DOR-1293)', async ({
+      it('RT-ASK-01: a question NOBODY answered says so in history, and claims no answer (DOR-1293)', async ({
         skip,
       }) => {
         const runtime = makeRuntime();
@@ -3368,7 +3368,7 @@ export function runtimeConformance(
 
     if (durableHistory) {
       describe('durable history (log-backed, DOR-189)', () => {
-        it('a completed turn survives a server restart — reconstructable from the durable store', async () => {
+        it('RT-STR-05: a completed turn survives a server restart — reconstructable from the durable store', async () => {
           const runtime = makeRuntime();
           const sessionId = nextSessionId();
           runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -3397,7 +3397,7 @@ export function runtimeConformance(
     }
 
     describe('capabilities', () => {
-      it('getCapabilities returns a structurally valid RuntimeCapabilities', () => {
+      it('RT-PERM-01: getCapabilities returns a structurally valid RuntimeCapabilities', () => {
         const runtime = makeRuntime();
         const capabilities = runtime.getCapabilities();
 
@@ -4001,7 +4001,7 @@ export function runtimeConformance(
       });
 
       if (systemPromptAppendTurns) {
-        it('a CHANGED append reaches the next turn of a session already running', async () => {
+        it('RT-PLG-02: a CHANGED append reaches the next turn of a session already running', async () => {
           // Distinct, unguessable markers rather than prose: the second turn's
           // input has to be checked for the ABSENCE of the first append too, and
           // two English sentences can share enough substrings to make that check
@@ -4054,7 +4054,7 @@ export function runtimeConformance(
       });
 
       if (directoryGrantTurns) {
-        it('hands each turn exactly its own grants, on one live session', async () => {
+        it('RT-PLG-03: hands each turn exactly its own grants, on one live session', async () => {
           const runtime = makeRuntime();
           const sessionId = nextSessionId();
           runtime.ensureSession(sessionId, sessionOpts(runtime));
@@ -4107,7 +4107,7 @@ export function runtimeConformance(
           ).toBe(false);
         });
 
-        it('refuses a turn set to credits with no live token, and starts nothing (fail closed)', async () => {
+        it('RT-ACCT-02: refuses a turn set to credits with no live token, and starts nothing (fail closed)', async () => {
           const runtime = makeRuntime();
           if (runtime.getCapabilities().credits === undefined) return;
           const seen = await creditsTurn(runtime, { runsOn: 'credits', heldToken: null });
@@ -4119,7 +4119,7 @@ export function runtimeConformance(
           expect((refusal?.data as { code?: string }).code).toBe('credits_unavailable');
         });
 
-        it('runs a turn set to credits on the credits token', async () => {
+        it('RT-ACCT-02: runs a turn set to credits on the credits token', async () => {
           const runtime = makeRuntime();
           if (runtime.getCapabilities().credits === undefined) return;
           const seen = await creditsTurn(runtime, {

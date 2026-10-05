@@ -252,6 +252,30 @@ describe('isHelperWorking, the question the stall watchdog asks', () => {
   });
 });
 
+// DOR-2717. A laptop asleep for the night is not four hours of work: the
+// ceiling is measured in awake time, so waking up does not reap at once.
+describe('the ceiling counts awake time, not time asleep', () => {
+  it('still holds a working process after the wall clock jumps past the ceiling', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_bash');
+
+    // A sleep moves the wall clock and nothing else: no timer ran meanwhile.
+    vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
+
+    expect(harness.pump.isPastCeiling()).toBe(false);
+    expect(await reapNow(harness.pump)).toBe(false);
+  });
+
+  it('reaches the ceiling after that much awake time', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_bash');
+
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+
+    expect(harness.pump.isPastCeiling()).toBe(true);
+  });
+});
+
 // T6. The ceiling is what stops "declines while working" from becoming
 // "declines forever", and the reset is what stops two helpers running back to
 // back from being read as two separate spells.

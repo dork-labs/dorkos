@@ -104,10 +104,19 @@ export class ProcessQuiet {
    * to itself between turns is not read as unused.
    */
   private lastFrame = 0;
-  /** When the current busy spell began, or undefined while this process is quiet. */
+  /**
+   * When the current busy spell began, as epoch ms, or undefined while this
+   * process is quiet. Reported only (`Quietness.busySince`); the ceiling is
+   * measured on {@link busySinceAwake}.
+   */
   private busySince: number | undefined;
-  /** When the current run of continuous quiet began, or undefined while busy. */
-  private quietSince: number | undefined;
+  /**
+   * When the current busy spell began, on the awake clock, or undefined while
+   * this process is quiet. What the four-hour ceiling is measured from.
+   */
+  private busySinceAwake: number | undefined;
+  /** When the current run of continuous quiet began, on the awake clock, or undefined while busy. */
+  private quietSinceAwake: number | undefined;
   /**
    * True between a frame that proves a segment is running and the `result` that
    * ends it. The owed-delivery clock arms only when nothing is running to
@@ -216,7 +225,7 @@ export class ProcessQuiet {
   isHoldingWork(): boolean {
     const quietness = this.quietness();
     if (quietness.quiet) return false;
-    if (this.isPastCeiling(Date.now())) return false;
+    if (this.isPastCeiling()) return false;
     return quietness.because !== 'waiting-on-person';
   }
 
@@ -254,19 +263,29 @@ export class ProcessQuiet {
    */
   isHelperWorking(): boolean {
     const counts = this.opts.liveness().liveTaskCounts();
-    return counts.agents + counts.other > 0 && !this.isPastCeiling(Date.now());
+    return counts.agents + counts.other > 0 && !this.isPastCeiling();
   }
 
   /**
    * Has the current busy spell run past the four-hour ceiling?
    *
-   * @param now - Server epoch ms
+   * Measured in awake time (DOR-2717). A laptop asleep overnight moves the wall
+   * clock by hours while the process does nothing, and measuring that would
+   * reap the agent's waiting work the moment the machine woke up.
    */
-  isPastCeiling(now: number): boolean {
+  isPastCeiling(): boolean {
     return (
-      this.busySince !== undefined &&
-      now - this.busySince >= SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
+      this.busySinceAwake !== undefined &&
+      this.awakeNow() - this.busySinceAwake >= SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
     );
+  }
+
+  /**
+   * The awake clock: `performance.now()`, monotonic milliseconds that stop
+   * while the machine sleeps on macOS and Linux.
+   */
+  private awakeNow(): number {
+    return performance.now();
   }
 
   /**
@@ -279,7 +298,8 @@ export class ProcessQuiet {
   reset(now: number): void {
     this.dispose();
     this.busySince = undefined;
-    this.quietSince = undefined;
+    this.busySinceAwake = undefined;
+    this.quietSinceAwake = undefined;
     this.segmentRunning = false;
     this.owedExpiredAt = undefined;
     this.lastFrame = now;
@@ -387,19 +407,21 @@ export class ProcessQuiet {
    * and is not what a purely lazy check would have given it.
    */
   private noteBusySpell(quiet: boolean): void {
-    const now = Date.now();
+    const awake = this.awakeNow();
     if (
-      this.quietSince !== undefined &&
-      now - this.quietSince >= SESSIONS.BACKGROUND_QUIET_RESET_MS
+      this.quietSinceAwake !== undefined &&
+      awake - this.quietSinceAwake >= SESSIONS.BACKGROUND_QUIET_RESET_MS
     ) {
       this.busySince = undefined;
+      this.busySinceAwake = undefined;
     }
     if (!quiet) {
-      this.quietSince = undefined;
-      this.busySince ??= now;
+      this.quietSinceAwake = undefined;
+      this.busySince ??= Date.now();
+      this.busySinceAwake ??= awake;
       return;
     }
-    this.quietSince ??= now;
+    this.quietSinceAwake ??= awake;
   }
 
   /**

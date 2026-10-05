@@ -40,6 +40,7 @@ import type {
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { logger } from '../../../lib/logger.js';
 import type { AcceptedExtensionTool, ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
+import { toolHandleProblem } from './tool-handle-rules.js';
 
 /**
  * The largest result, serialized, an agent is handed. A tool result lands in
@@ -178,29 +179,14 @@ export function createToolBinding(
 
   const api: ToolsApi = Object.freeze({
     handle(name: string, handler: ExtensionToolHandler): void {
-      const label =
-        typeof name === 'string' && /^[a-z0-9_]{1,64}$/.test(name) ? `"${name}"` : 'a tool';
-      if (!open) {
-        throw new Error(
-          `ctx.tools.handle(${label}) was called after register() finished. ` +
-            `Bind every tool while register() runs.`
-        );
-      }
-      const check = typeof name === 'string' ? byName.get(name) : undefined;
-      if (!check) {
-        throw new Error(
-          `${extensionId} handles ${label}, but extension.json declares no tool by that name.`
-        );
-      }
-      if (!check.ok) {
-        throw new Error(`${extensionId} handles ${label}, but DorkOS refused it: ${check.reason}`);
-      }
-      if (handlers.has(name)) {
-        throw new Error(`${extensionId} handles ${label} twice. Bind each tool once.`);
-      }
-      if (typeof handler !== 'function') {
-        throw new TypeError(`ctx.tools.handle(${label}) needs a handler function.`);
-      }
+      // The same rules, word for word, as an isolated extension's proxy ctx.
+      const problem = toolHandleProblem(
+        extensionId,
+        { open, checks: byName, handled: handlers },
+        name,
+        handler
+      );
+      if (problem) throw problem;
       handlers.set(name, handler);
     },
   });

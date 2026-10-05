@@ -518,12 +518,11 @@ export class SessionPump {
   /**
    * Has the current busy spell run past the four-hour ceiling (spec
    * `warm-process-lifecycle` D1)? The same bound the reaper honours; a
-   * consumer that only reports the long wait reads it here.
-   *
-   * @param now - Server epoch ms
+   * consumer that only reports the long wait reads it here. Measured in awake
+   * time (DOR-2717).
    */
-  isPastCeiling(now: number): boolean {
-    return this.quiet.isPastCeiling(now);
+  isPastCeiling(): boolean {
+    return this.quiet.isPastCeiling();
   }
 
   /**
@@ -602,7 +601,7 @@ export class SessionPump {
     // through this line before (DOR-2064, DOR-2065).
     const quietness = this.quiet.quietness();
     if (!quietness.quiet) {
-      if (!this.quiet.isPastCeiling(Date.now())) {
+      if (!this.quiet.isPastCeiling()) {
         logger.warn('[SessionPump] declined to reap a session that is still working', {
           sessionId: this.sessionId,
           because: quietness.because,

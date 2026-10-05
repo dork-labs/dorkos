@@ -1159,7 +1159,7 @@ describe('mapOpenCodeEvent', () => {
       ]);
     });
 
-    it('maps a completed assistant message to a usage session_status', () => {
+    it('RT-COST-01: maps a completed assistant message to a usage session_status', () => {
       const events = mapOpenCodeEvent(
         messageUpdated(assistantMessage(OC, { completed: true })),
         makeContext()
@@ -1327,7 +1327,7 @@ describe('mapOpenCodeTurn', () => {
     });
   });
 
-  it('surfaces the approval flow mid-turn and resolves it before the tool events', async () => {
+  it('RT-TOOL-01: surfaces the approval flow mid-turn and resolves it before the tool events', async () => {
     const events = await drain(opencodeApprovalTurn(OC));
     expect(events.map((e) => e.type)).toEqual([
       'approval_required',

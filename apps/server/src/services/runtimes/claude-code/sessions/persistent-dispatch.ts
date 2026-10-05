@@ -680,10 +680,7 @@ export class PersistentDispatch {
         because: busy.because,
         busyForMs,
       });
-      if (
-        bundle.pump.isPastCeiling(Date.now()) &&
-        bundle.staleToolListWarnedFor !== busy.busySince
-      ) {
+      if (bundle.pump.isPastCeiling() && bundle.staleToolListWarnedFor !== busy.busySince) {
         bundle.staleToolListWarnedFor = busy.busySince;
         logger.warn(
           '[persistent-dispatch] tool list is stale until this session’s background work ends',
