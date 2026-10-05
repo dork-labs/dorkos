@@ -801,11 +801,19 @@ it('recovery reads retain the fresh global corruption fence after validation reu
 });
 
 it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
+  const startedAt = performance.now();
+  const phase = (name: string, count?: number) =>
+    process.stderr.write(
+      `checkbox-101-phase ${JSON.stringify({ name, count, elapsedMs: performance.now() - startedAt })}\n`
+    );
+  phase('start');
   const h = await fixture();
+  phase('fixture');
   const before = await readFile(h.path);
   h.failCompletion(true);
   await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
   await writeFile(h.path, before);
+  phase('failed-toggle-and-source-restored');
   const base = h.store.getWriteIntent(h.row().intentId)!;
   h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
   for (let i = 0; i < 100; i++) {
@@ -830,9 +838,12 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
     h.service.validate(h.store.getWriteIntent(intentId)!);
   }
+  phase('seeded', 101);
   const one = await recoverCheckboxPage(h.service);
+  phase('page-one', one.selected);
   expect(one).toMatchObject({ selected: 100, verified: 0, retryableFailures: 0, hasMore: true });
   const two = await recoverCheckboxPage(h.service, one.cursor);
+  phase('page-two', two.selected);
   expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
   expect(one.cursor).not.toEqual(two.cursor);
   expect(await readFile(h.path)).toEqual(before);
@@ -841,6 +852,7 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
   ).rejects.toThrow('cursor');
   await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
+  phase('assertions-complete');
 });
 
 it('does not remove an unowned exclusive-create collider during failure or recovery', async () => {

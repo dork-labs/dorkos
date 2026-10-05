@@ -118,16 +118,31 @@ export async function readBoundedCheckboxFile(
     assertFs();
     if (String(current.dev) !== expected.device || String(current.ino) !== expected.inode)
       throw new CheckboxEvidenceError('Checkbox source identity changed.');
-    const bounded = Buffer.alloc(5 * 1024 * 1024 + 1);
+    const limit = 5 * 1024 * 1024 + 1;
+    const chunks: Buffer[] = [];
     let used = 0;
-    while (used < bounded.length) {
-      const { bytesRead } = await handle.read(bounded, used, bounded.length - used, used);
-      assertFs();
-      if (!bytesRead) break;
-      used += bytesRead;
+    while (used < limit) {
+      // Initial acquired size only sizes allocation; keep reading to EOF so growth is not trusted.
+      const capacity = Math.min(
+        64 * 1024,
+        limit - used,
+        used === 0 ? Math.max(1, Number(current.size) + 1) : 64 * 1024
+      );
+      const chunk = Buffer.alloc(capacity);
+      let filled = 0;
+      while (filled < chunk.length) {
+        const { bytesRead } = await handle.read(chunk, filled, chunk.length - filled, used);
+        assertFs();
+        if (!bytesRead) {
+          if (filled) chunks.push(chunk.subarray(0, filled));
+          return Buffer.concat(chunks, used);
+        }
+        filled += bytesRead;
+        used += bytesRead;
+      }
+      chunks.push(chunk);
     }
-    if (used === bounded.length) throw new Error('Checkbox source is too large.');
-    return bounded.subarray(0, used);
+    throw new Error('Checkbox source is too large.');
   } finally {
     await handle.close();
   }
