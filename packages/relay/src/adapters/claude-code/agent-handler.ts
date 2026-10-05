@@ -294,7 +294,7 @@ function followLateResults(
   const publishInOrder = (
     text: string,
     error: string | undefined,
-    marks: { continuing?: boolean; ended?: LateFollowEnd }
+    marks: { continuing?: boolean; ended?: Exclude<LateFollowEnd, 'final'> }
   ): void => {
     published = published
       .then(() =>

@@ -88,13 +88,13 @@ function handDrivenLateTurns(): LateTurnSource & {
       if (opts.sinceMark !== undefined && opts.sinceMark !== mark) finish(follow, 'superseded');
       return () => finish(follow, 'stopped');
     },
-    deliver(turn) {
+    deliver(turn: LateTurn) {
       const follow = follows.at(-1)!;
       if (follow.ended) return;
       follow.onTurn(turn);
       if (!turn.continuing) finish(follow, 'final');
     },
-    end(reason) {
+    end(reason: LateFollowEnd) {
       finish(follows.at(-1)!, reason);
     },
     get stopped() {
