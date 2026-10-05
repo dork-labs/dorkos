@@ -196,7 +196,11 @@ export function createPrivateLiveBrowserComposition(options: {
       });
       return Object.freeze({
         ...opened,
-        grantFixtureOrigin(original: Server, ttl = 10000) {
+        grantFixtureOrigin(
+          original: Server,
+          ttl = 10000,
+          transport: 'http' | 'websocket' | 'websocket-connect' = 'http'
+        ) {
           authority.authorizeOriginal(grant, opened.binding);
           const state = [...peers.values()].find(
             (entry) =>
@@ -204,7 +208,7 @@ export function createPrivateLiveBrowserComposition(options: {
               entry.receiver.browserGeneration === opened.binding.browserGeneration
           );
           if (!state || !state.broker.isCustodyKnown()) throw new BrokerError('AUTHORITY_REFUSED');
-          const url = origins.grant(original, opened.binding, state.broker, ttl);
+          const url = origins.grant(original, opened.binding, state.broker, ttl, transport);
           authority.authorizeOriginal(grant, opened.binding);
           return url;
         },

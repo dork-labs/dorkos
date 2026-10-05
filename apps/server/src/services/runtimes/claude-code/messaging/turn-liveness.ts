@@ -91,9 +91,10 @@ export interface LivenessChange {
 /**
  * How many live background tasks of each kind the level frame currently names.
  *
- * Split three ways rather than two because the quiet predicate treats them
- * differently (spec `warm-process-lifecycle` D1): agents and anything unknown
- * hold the process, shells never do. An unrecognised `task_type` counts as
+ * Split three ways because the consumers ask different questions: the resume
+ * path's stdin hold and the stall watchdog count only agents, while the warm
+ * quiet predicate counts all three (spec `warm-process-lifecycle` D1, widened to
+ * shells by DOR-2065). An unrecognised `task_type` counts as
  * `other` on purpose — a Monitor, or whatever the CLI ships next, is work
  * somebody would be upset to lose, and guessing "harmless" about a type nobody
  * has watched is the guess that throws work away.
@@ -101,7 +102,10 @@ export interface LivenessChange {
 export interface LiveTaskCounts {
   /** `local_agent` — a background subagent. Holds the process. */
   agents: number;
-  /** `local_bash` — a background shell. Never holds the process. */
+  /**
+   * `local_bash` — a background shell. Holds a warm process (DOR-2065); never
+   * holds the resume path's stdin, where the CLI ends shells itself at EOF.
+   */
   shells: number;
   /** Every other `task_type`, known or not. Holds the process. */
   other: number;
@@ -173,7 +177,7 @@ const INIT = 'init';
 /** The `task_type` the CLI stamps on a background SUBAGENT, as opposed to a shell. */
 const AGENT_TASK_TYPE = 'local_agent';
 
-/** The `task_type` the CLI stamps on a background SHELL, which holds nothing. */
+/** The `task_type` the CLI stamps on a background SHELL. */
 const SHELL_TASK_TYPE = 'local_bash';
 
 /** Nothing about the turn's liveness changed. */

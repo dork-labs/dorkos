@@ -189,12 +189,10 @@ export function ExtensionCard({
               version it already had running. Said beside an otherwise healthy
               extension rather than through the status badge: everything else
               about it — including the part that draws in this window — is fine. */}
-          {/* An extension that asks to run separately does not run yet
-              (DOR-2686, `isolation_not_ready`), and nothing of it is running, so
-              the rebuild sentence below would be false. Its message is complete. */}
-          {/* A server half that runs separately stopped or cannot start
-              (DOR-2686). The server's own sentence when it sent one, else the
-              shared copy for its code, with the tab's Reload beside it. */}
+          {/* A server half that stopped or cannot start, so nothing of it is
+              running and the rebuild sentence below would be false (DOR-2686).
+              The server's own sentence when it sent one, else the shared copy
+              for its code, with the tab's Reload beside it. */}
           {serverError && isExtensionServerErrorCode(serverError.code) && (
             <div
               className="flex flex-wrap items-center gap-x-2 gap-y-1"

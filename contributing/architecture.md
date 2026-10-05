@@ -98,7 +98,7 @@ Transport
 
 ### Key Design Decision: Trigger + Durable Stream
 
-There is no separate `Transport.createSession`: the first message creates a session. `postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). The HTTP implementation maps this contract to the server:
+There is no separate `Transport.createSession`: the first message creates a session, and says so with `create: true` (an id the server does not know is otherwise a `404 SESSION_NOT_FOUND`, so a stale id never starts a stranger session, DOR-2712). A new Claude Code session is launched under the id the client chose, so that id addresses it for its whole life. `postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). The HTTP implementation maps this contract to the server:
 
 - **HttpTransport** maps the streams to `GET /api/sessions/:id/events` and `GET /api/events` (WebSocket; the same paths also serve SSE for integrations — ADR 260805-041016)
 
@@ -607,6 +607,15 @@ The capability registry (`apps/server/src/services/core/capabilities/registry.ts
 - **Everything downstream follows the live list.** The catalog cache and its `catalogVersion` are rebuilt from core plus the current contributions, and `onChange` reports a monotonic surface version that the server broadcasts as `capabilities_changed` on `/api/events`, so the permissions pages re-read and an open Claude Code chat compares its tool list before its next message. The tier and permission gate is the same for both layers: an extension tool is gated exactly like a core one, and a destructive extension tool asks on every call.
 
 Author guide: `contributing/extension-authoring.md` (`ctx.tools`). Spec: `specs/extension-agent-tools-and-skills/`.
+
+## Extension server halves: inside DorkOS or in their own process
+
+An extension's `server.ts` runs one of two ways, chosen by `serverCapabilities.runtime` after the approval gate and the compile (`services/extensions/extension-server-lifecycle.ts`):
+
+- **In-process (the default, ADR 0213).** `require()`d into the server process with its full access. Most extensions, every core extension.
+- **Separately (`runtime: "subprocess"`, DOR-2686).** `services/extensions/isolation/` forks it as its own Node process with Node's permission model on and fixed grants (read its staged run folder, write its files folder), a scrubbed environment and a heap cap. The child reports what the permission model allows before any extension code runs, and the host refuses to go on unless every limit is confirmed: there is no fallback to running in-process. The host builds the extension's **real** `ctx` with `createDataProviderContext`, exactly as in-process, and `ctx-dispatcher.ts` routes each call from the child's proxy into it through one protocol table (`ctx-protocol.ts`), so the two runtimes differ only in transport. Its router is served over the IPC channel as real HTTP on virtual sockets (`isolated-router.ts`, `child/virtual-server.ts`), with credentials stripped going in and a sandboxing CSP added coming out. Programs in `allow.run` are started by the host (`run-broker.ts`); `allow.net` is enforced by a guard inside the child (`child/net-guard.ts`), not an OS firewall. A watchdog stops a hung child, and an exit DorkOS did not ask for runs the full stop bookkeeping, then restarts on a 1 s / 5 s / 30 s backoff until a third inside 10 minutes leaves it stopped (`restart-policy.ts`). Only the extension's own child, and programs it started, are ever signalled. Its client bundle is not isolated, and it cannot offer agents tools yet.
+
+Author guide: `contributing/extension-authoring.md` ("Running separately"). Spec: `specs/isolated-extension-backends/`.
 
 ## Per-Agent Tool Visibility
 

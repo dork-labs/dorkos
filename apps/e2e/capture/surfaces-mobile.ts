@@ -99,7 +99,7 @@ async function driveMobileSessions(page: Page): Promise<void> {
     const id = randomUUID();
     const cwd = path.join(FLEET_ROOT, entry.agent);
     await post('/api/test/scenario', { name: entry.scenario, sessionId: id });
-    await post(`/api/sessions/${id}/messages`, { content: entry.prompt, cwd });
+    await post(`/api/sessions/${id}/messages`, { content: entry.prompt, cwd, create: true });
     await sleep(MOBILE_RESOLVE_MS);
     await openMobileTab(page, 'library');
     await page

@@ -520,8 +520,8 @@ describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)'
     );
     expect(isOpen(REACH)).toBe(true);
     const lines = screen.getByTestId('preview-extension-reach-mail');
-    expect(lines).toHaveTextContent('Its server part can’t run in this version yet.');
-    expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+    expect(lines).toHaveTextContent('Runs separately from DorkOS.');
+    expect(lines).not.toHaveTextContent('Will run separately');
     expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com');
     expect(lines).toHaveTextContent('Can run: git');
     expect(lines).toHaveTextContent('Can message your agents and start chats.');

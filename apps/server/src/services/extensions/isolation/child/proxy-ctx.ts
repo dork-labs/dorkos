@@ -13,8 +13,9 @@
  *   answer. (Its `AbortController` is aborted too, but no handler receives the
  *   signal yet: the advisor and the action handler take none. Tools will.)
  * - `local`: `schedule` (the same 5-second floor as in-process; every cancel
- *   runs on stop) and `requirePerson`, which refuses every request until the
- *   host's verdict header reaches the child (a later phase): fail closed.
+ *   runs on stop) and `requirePerson`, which reads the verdict the host put
+ *   in a header (`isolated-router.ts`) and refuses when there is none: fail
+ *   closed.
  * - `refused`: throws the table's reason.
  *
  * Nothing here enforces anything: the extension shares this process, and
@@ -36,7 +37,14 @@ import {
   type ReverseKind,
   type SubscribeKind,
 } from '../ctx-protocol.js';
-import type { ChildMessage, HostMessage, InitMessage, WireError } from '../ipc-protocol.js';
+import {
+  PERSON_VERDICT_HEADER,
+  parsePersonVerdict,
+  type ChildMessage,
+  type HostMessage,
+  type InitMessage,
+  type WireError,
+} from '../ipc-protocol.js';
 
 /** Minimum scheduling interval in seconds, as in-process. */
 const MIN_INTERVAL_SECONDS = 5;
@@ -57,7 +65,7 @@ export interface ProxyCtxDeps {
   /** Send one message to the host. Throws when the message cannot be serialized. */
   send: (message: ChildMessage) => void;
   /** The host's `init`. */
-  init: Pick<InitMessage, 'extensionId' | 'ctx' | 'displayName' | 'allowAgents'>;
+  init: Pick<InitMessage, 'extensionId' | 'ctx' | 'displayName' | 'allowAgents' | 'personRefusal'>;
   /** The extension API's error classes. */
   errors: ProxyErrorClasses;
   /** Where to report a listener or task that threw (the host forwards stderr to its log). */
@@ -304,12 +312,18 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
     return cancel;
   };
 
-  // Fail closed until the host's person verdict reaches the child (spec §7).
-  const requirePerson: RequestHandler = (_req, res) => {
-    res.status(403).json({
-      error: `Only a person can change ${init.displayName}'s settings.`,
-      code: 'extension_person_required',
-    });
+  // The host ran the person bar on the real request (whose cookie and
+  // tokens never reach this process) and put its verdict in a header it
+  // always sets; a client-sent copy is replaced (spec §7). A missing or
+  // unreadable verdict refuses, with the in-process words for an agent.
+  const requirePerson: RequestHandler = (req, res, next) => {
+    const verdict = parsePersonVerdict(req.headers[PERSON_VERDICT_HEADER]);
+    if (verdict?.ok === true) {
+      next();
+      return;
+    }
+    if (verdict) res.status(verdict.status).json(verdict.body);
+    else res.status(403).json(init.personRefusal);
   };
 
   const consts: Record<string, string> = {

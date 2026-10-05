@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SessionStore } from '../sessions/session-store.js';
+import { ACCOUNT_ROOT_PROBE_LIMIT, SessionStore } from '../sessions/session-store.js';
 import type { TranscriptReader } from '../sessions/transcript-reader.js';
 
 /**
@@ -71,6 +71,73 @@ describe('SessionStore.accountRoot', () => {
     expect(hasTranscript).toHaveBeenCalledWith('/work', 's2');
     expect(session.accountRoot).toBe(ACCOUNT_B);
     expect(session.hasStarted).toBe(true);
+  });
+
+  // DOR-2065, the 2026-10-05 overnight builders. A chat started on a chosen
+  // account had no transcript when its record was made, so the record never
+  // learned its account. A message queued behind the first turn then ran the
+  // launch ladder, landed on the default account, relaunched the warm process
+  // there (killing its background shells) and the CLI answered "No
+  // conversation found". The transcript the first turn wrote settles it.
+  it('learns the account from the transcript its own first turn wrote', async () => {
+    const before = fakeTranscript({ exists: false });
+    const session = await store.ensureForMessage('s-fresh', before.reader, '/work');
+    expect(session.accountRoot).toBeUndefined();
+
+    // The first turn ran (its `system/init` marks the session started) and the
+    // CLI wrote the transcript under the account the launch picked.
+    session.hasStarted = true;
+    const after = fakeTranscript({ exists: true, root: ACCOUNT_B });
+    const next = await store.ensureForMessage('s-fresh', after.reader, '/work');
+
+    expect(after.hasTranscript).toHaveBeenCalledWith('/work', 's-fresh');
+    expect(next.accountRoot).toBe(ACCOUNT_B);
+  });
+
+  it('tries again after a miss, so a transcript written late is still found', async () => {
+    // A message queued behind the first turn can land after `system/init` but
+    // before the CLI has written the transcript. That miss must not be final.
+    const session = await store.ensureForMessage(
+      's-late',
+      fakeTranscript({ exists: false }).reader,
+      '/work'
+    );
+    session.hasStarted = true;
+    const miss = fakeTranscript({ exists: false });
+    await store.ensureForMessage('s-late', miss.reader, '/work');
+    expect(miss.hasTranscript).toHaveBeenCalledTimes(1);
+
+    const found = fakeTranscript({ exists: true, root: ACCOUNT_B });
+    const next = await store.ensureForMessage('s-late', found.reader, '/work');
+    expect(found.hasTranscript).toHaveBeenCalledTimes(1);
+    expect(next.accountRoot).toBe(ACCOUNT_B);
+  });
+
+  it('stops probing a started session after a bounded number of misses', async () => {
+    // A transcript that is never found must not cost a disk scan per message.
+    const session = await store.ensureForMessage(
+      's-never',
+      fakeTranscript({ exists: false }).reader,
+      '/work'
+    );
+    session.hasStarted = true;
+    const misses = fakeTranscript({ exists: false });
+    for (let i = 0; i < 10; i += 1) {
+      await store.ensureForMessage('s-never', misses.reader, '/work');
+    }
+    expect(misses.hasTranscript).toHaveBeenCalledTimes(ACCOUNT_ROOT_PROBE_LIMIT);
+  });
+
+  it('does not probe again for a session that has not started yet', async () => {
+    // Pinning a session before any transcript exists would keep a launch that
+    // died early from being retried on the account a person then picks.
+    await store.ensureForMessage('s-unstarted', fakeTranscript({ exists: false }).reader, '/work');
+    const again = fakeTranscript({ exists: true, root: ACCOUNT_B });
+
+    const session = await store.ensureForMessage('s-unstarted', again.reader, '/work');
+
+    expect(again.hasTranscript).not.toHaveBeenCalled();
+    expect(session.accountRoot).toBeUndefined();
   });
 
   it('survives a mid-turn SDK id rekey', async () => {

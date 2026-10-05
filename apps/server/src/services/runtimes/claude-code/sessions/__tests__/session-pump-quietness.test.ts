@@ -153,14 +153,23 @@ describe('reap declines while the process is still working', () => {
     expect(await reapNow(harness.pump)).toBe(false);
   });
 
-  it('proceeds when only background shells are running', async () => {
+  // DOR-2065. A warm process never closes stdin, so its background shells live
+  // on, and when one finishes the CLI wakes the model with the result, as it
+  // does in the bare CLI. Reaping took that wake away: a PR watcher started
+  // before a turn ended died with the process five minutes later, and the chat
+  // never heard back (the 2026-10-05 overnight builders).
+  it('declines while a background shell is running', async () => {
     const harness = await warmPump();
     await runTask(harness, 'local_bash');
 
-    // Shells are reported so the operator can be told they ended, and they hold
-    // nothing: the CLI kills them shortly after stdin closes either way.
-    expect(harness.pump.quietness()).toMatchObject({ quiet: true, shells: 1 });
-    expect(await reapNow(harness.pump)).toBe(true);
+    expect(harness.pump.quietness()).toMatchObject({
+      quiet: false,
+      because: 'background-work',
+      holding: { agents: 0, other: 0 },
+      shells: 1,
+    });
+    expect(await reapNow(harness.pump)).toBe(false);
+    expect(harness.pump.isHoldingWork()).toBe(true);
   });
 });
 

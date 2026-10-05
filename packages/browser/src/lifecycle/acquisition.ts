@@ -308,7 +308,7 @@ export async function acquireBrowser(
           viewport: { width: 1280, height: 720 },
           timeout: 10_000,
           proxy: { server: record.proxy!.url, bypass: '<-loopback>' },
-          args: ['--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],
+          args: ['--disable-quic', '--webrtc-ip-handling-policy=disable_non_proxied_udp'],
         },
       ]) as ReturnType<typeof launch>;
     },

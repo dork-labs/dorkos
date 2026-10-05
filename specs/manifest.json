@@ -3557,6 +3557,14 @@
       "linearIssue": "DOR-2107"
     },
     {
+      "id": "261005-112122",
+      "slug": "codex-app-server-transport",
+      "title": "Run Codex through codex app-server instead of codex exec per turn",
+      "created": "2026-10-05",
+      "status": "specified",
+      "linearIssue": "DOR-2719"
+    },
+    {
       "id": "261005-120219",
       "slug": "keep-awake",
       "title": "Keep the computer awake while agents work, and wake it for scheduled runs",

@@ -88,7 +88,7 @@ export interface RunBrokerOptions {
   isolation: Pick<ExtensionIsolation, 'run' | 'resolvedRun'>;
   /** The extension's files folder (a working folder may be inside it). */
   filesDir: string;
-  /** Project roots this extension may run programs in (later phases fill this). */
+  /** Project roots this extension may run programs in (`ctx.projects.list()` for it). */
   projectRoots?: () => Promise<readonly string[]>;
   /** Sends one message to the child; returns `false` when the channel is backed up. */
   send: (message: HostMessage) => boolean;

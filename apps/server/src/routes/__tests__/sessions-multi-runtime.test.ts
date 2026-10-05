@@ -123,7 +123,9 @@ async function postMessage(
   sessionId: string,
   body: Record<string, unknown>
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const res = await request(testServer).post(`/api/sessions/${sessionId}/messages`).send(body);
+  const res = await request(testServer)
+    .post(`/api/sessions/${sessionId}/messages`)
+    .send({ create: true, ...body });
   return { status: res.status, body: res.body as Record<string, unknown> };
 }
 
@@ -379,7 +381,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     it('returns 400 UNKNOWN_RUNTIME for an unregistered hint and persists no row', async () => {
       const res = await request(testServer)
         .post(`/api/sessions/${TEST_MODE_SESSION}/messages`)
-        .send({ content: 'hi', runtime: 'nonexistent-runtime' });
+        .send({ content: 'hi', runtime: 'nonexistent-runtime', create: true });
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('UNKNOWN_RUNTIME');

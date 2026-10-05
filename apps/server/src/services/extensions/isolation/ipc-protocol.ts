@@ -13,8 +13,8 @@
  * It carries the lifecycle (`hello`, `init`, `loaded`, `registered`, `ping`,
  * `stop`), the program broker (`run-*`), `ctx` over the boundary (`call`,
  * `ret`, `emit`, `sub`/`unsub`/`evt`, `expose`/`unexpose`, `rcall`/`rret`/
- * `cancel`; spec §5.2, routed by `ctx-protocol.ts`) and a test-only `probe`.
- * The HTTP byte streams join in a later phase.
+ * `cancel`; spec §5.2, routed by `ctx-protocol.ts`), the HTTP byte streams of
+ * the extension's router (`conn-*`, spec §7) and a test-only `probe`.
  *
  * @module services/extensions/isolation/ipc-protocol
  */
@@ -194,6 +194,44 @@ export interface ProbeResultMessage {
   error?: { code?: string; message: string };
 }
 
+/**
+ * Bytes on one virtual HTTP connection (spec §7), either way. `cid` names the
+ * connection the host opened; a chunk is at most {@link ISOLATION_LIMITS}
+ * `httpFrameBytes`.
+ */
+export interface ConnDataMessage {
+  type: 'conn-data';
+  cid: number;
+  chunk: Uint8Array;
+}
+
+/** One side finished writing on a virtual connection (a half-close), either way. */
+export interface ConnEndMessage {
+  type: 'conn-end';
+  cid: number;
+}
+
+/** A virtual connection is gone, either way: drop it without waiting. */
+export interface ConnDestroyMessage {
+  type: 'conn-destroy';
+  cid: number;
+}
+
+/**
+ * Flow control on a virtual connection, either way: the sender's read buffer
+ * is full (`conn-pause`) or has room again (`conn-resume`). The side told to
+ * pause holds back its writes until it hears `conn-resume`. Cooperative: a
+ * side that ignores it is cut off once the receiver holds more than
+ * {@link ISOLATION_LIMITS} `httpBufferBytes`.
+ */
+export interface ConnFlowMessage {
+  type: 'conn-pause' | 'conn-resume';
+  cid: number;
+}
+
+/** The HTTP byte-stream messages, sent by both sides. */
+export type ConnMessage = ConnDataMessage | ConnEndMessage | ConnDestroyMessage | ConnFlowMessage;
+
 /** The `ctx` messages a child may send. */
 export type CtxChildMessage =
   | CallMessage
@@ -214,6 +252,7 @@ export type ChildMessage =
   | RunSpawnMessage
   | RunStdinMessage
   | RunKillMessage
+  | ConnMessage
   | ProbeResultMessage;
 
 /** Sent once the host accepted the self-check: what the child needs to start. */
@@ -243,6 +282,62 @@ export interface InitMessage {
    * refuse early with the same words; the host enforces it on every call.
    */
   allowAgents: boolean;
+  /**
+   * What `ctx.requirePerson` answers when the host's verdict header is
+   * missing or unreadable: the in-process refusal of an agent, word for word
+   * (fail closed).
+   */
+  personRefusal: PersonVerdictRefusal['body'];
+}
+
+/**
+ * The header the host sets on every request it forwards to an isolated
+ * extension's router: the person bar's verdict ({@link PersonVerdict}), as
+ * JSON. A client-sent header of the same name is replaced, never forwarded.
+ */
+export const PERSON_VERDICT_HEADER = 'x-dorkos-ext-person';
+
+/** A refusal the host decided on (`assessPerson`), to be answered as is. */
+export interface PersonVerdictRefusal {
+  ok: false;
+  status: number;
+  body: { error: string; code: string; message: string };
+}
+
+/** The person bar's verdict on one request, as the host computed it. */
+export type PersonVerdict = { ok: true } | PersonVerdictRefusal;
+
+/**
+ * Read the verdict header in the child. Anything that is not a well-formed
+ * verdict reads as `null`, which `requirePerson` refuses.
+ *
+ * @param raw - The header's value.
+ */
+export function parsePersonVerdict(raw: unknown): PersonVerdict | null {
+  if (typeof raw !== 'string') return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  if (value.ok === true) return { ok: true };
+  if (value.ok !== false) return null;
+  const status = value.status;
+  const body = value.body;
+  if (typeof status !== 'number' || !Number.isInteger(status) || status < 400 || status > 599) {
+    return null;
+  }
+  if (
+    !isRecord(body) ||
+    typeof body.error !== 'string' ||
+    typeof body.code !== 'string' ||
+    typeof body.message !== 'string'
+  ) {
+    return null;
+  }
+  return { ok: false, status, body: { error: body.error, code: body.code, message: body.message } };
 }
 
 /** The host's answer to a {@link CallMessage}, or a refusal of a `sub` or `expose`. */
@@ -320,6 +415,12 @@ export interface RunErrorMessage {
   message: string;
 }
 
+/** The host opened a virtual HTTP connection to the extension's router. */
+export interface ConnOpenMessage {
+  type: 'conn-open';
+  cid: number;
+}
+
 /** A test-only request to run one of the bundle's exported probes. */
 export interface ProbeMessage {
   type: 'probe';
@@ -341,6 +442,8 @@ export type HostMessage =
   | EvtMessage
   | RcallMessage
   | CancelMessage
+  | ConnOpenMessage
+  | ConnMessage
   | ProbeMessage;
 
 /** Limits on the channel and on the child (spec §9). */
@@ -351,6 +454,17 @@ export const ISOLATION_LIMITS = {
   maxOutstandingCalls: 256,
   /** Host-to-child messages not yet written before the child counts as unresponsive. */
   maxBacklog: 1_000,
+  /** Largest chunk of HTTP bytes in one `conn-data` message. */
+  httpFrameBytes: 64 * 1024,
+  /**
+   * Most bytes one end of a virtual connection holds unread before it cuts
+   * the connection (the other side ignored `conn-pause`).
+   */
+  httpBufferBytes: 4 * 1024 * 1024,
+  /** Most virtual HTTP connections open to one child at once. */
+  maxConnections: 64,
+  /** How long a forwarded request may go with no bytes either way. */
+  httpIdleMs: 120_000,
   /** Most programs one extension may run at once. */
   maxPrograms: 8,
   /** How long the child has to send its self-check. */
@@ -491,6 +605,17 @@ export function isChildMessage(value: unknown): value is ChildMessage {
       return isId(value.rid) && (value.chunk === null || value.chunk instanceof Uint8Array);
     case 'run-kill':
       return isId(value.rid) && (value.signal === null || typeof value.signal === 'string');
+    case 'conn-data':
+      return (
+        isId(value.cid) &&
+        value.chunk instanceof Uint8Array &&
+        value.chunk.byteLength <= ISOLATION_LIMITS.httpFrameBytes
+      );
+    case 'conn-end':
+    case 'conn-destroy':
+    case 'conn-pause':
+    case 'conn-resume':
+      return isId(value.cid);
     case 'probe-result':
       return (
         isId(value.id) &&
