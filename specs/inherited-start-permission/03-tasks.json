@@ -1,0 +1,53 @@
+{
+  "spec": "inherited-start-permission",
+  "linearIssue": "DOR-2714",
+  "phases": [
+    {
+      "id": "P1",
+      "title": "Inherited ceiling for session_start",
+      "tasks": [
+        {
+          "id": "T1",
+          "title": "isNoLooserThan in shared permission-semantics, with tests",
+          "files": ["packages/shared/src/permission-semantics.ts"],
+          "dependsOn": []
+        },
+        {
+          "id": "T2",
+          "title": "Caller resolver carries the live mode; session_start computes the ceiling, refuses above it, inherits by default, checks consent, states the level",
+          "files": [
+            "apps/server/src/services/runtimes/claude-code/mcp-tools/types.ts",
+            "apps/server/src/services/runtimes/claude-code/mcp-tools/index.ts",
+            "apps/server/src/services/runtimes/claude-code/mcp-tools/session-tools.ts",
+            "apps/server/src/services/session/origin/turn-origin.ts"
+          ],
+          "dependsOn": ["T1"]
+        },
+        {
+          "id": "T3",
+          "title": "Record granted and starter level on session_started_by; carry it on the wire",
+          "files": [
+            "packages/db/src/schema/session/session-started-by.ts",
+            "apps/server/src/services/session/origin/session-started-by-store.ts",
+            "apps/server/src/services/session/origin/started-by-origin-overlay.ts",
+            "apps/server/src/services/extensions/start-work.ts",
+            "packages/shared/src/schemas.ts"
+          ],
+          "dependsOn": ["T2"]
+        },
+        {
+          "id": "T4",
+          "title": "StartedByLine shows the inherited level",
+          "files": ["apps/client/src/layers/features/chat/ui/StartedByLine.tsx"],
+          "dependsOn": ["T3"]
+        },
+        {
+          "id": "T5",
+          "title": "Docs sentence, ADR, changelog fragment",
+          "files": ["docs/", "decisions/", "changelog/unreleased/"],
+          "dependsOn": ["T2"]
+        }
+      ]
+    }
+  ]
+}

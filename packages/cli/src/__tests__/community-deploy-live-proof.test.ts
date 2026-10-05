@@ -15,7 +15,7 @@ function harness(
     corruptFile?: boolean;
     publicFile?: boolean;
     failSetup?: boolean;
-    oidc?: { label: string };
+    oidc?: { label: string; mark: 'dorkos' | null };
   } = {}
 ) {
   let stored = new Uint8Array();
@@ -131,7 +131,7 @@ describe('credentialed Community HTTP proof', () => {
   // DOR-2593: a launcher-made Community signs people in with its own accounts. Single sign-on on
   // its sign-in page is how a DorkOS sign-in would arrive, so the gate fails before any setup.
   it('fails before setup when the new Community offers single sign-on', async () => {
-    const { run, fetch } = harness({ oidc: { label: 'DorkOS' } });
+    const { run, fetch } = harness({ oidc: { label: 'DorkOS', mark: 'dorkos' } });
     await expect(run()).rejects.toThrow('single-sign-on');
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -139,7 +139,7 @@ describe('credentialed Community HTTP proof', () => {
   it('accepts only the wire shape of the sign-in options', () => {
     const none = { google: false, github: false, oidc: null, minimumAge: null };
     expect(() => assertNoSingleSignOn(none)).not.toThrow();
-    expect(() => assertNoSingleSignOn({ ...none, oidc: { label: 'Sign in' } })).toThrow(
+    expect(() => assertNoSingleSignOn({ ...none, oidc: { label: 'Sign in', mark: null } })).toThrow(
       'single-sign-on'
     );
     // A missing `oidc` is not an absent one: a changed shape must not read as a pass.

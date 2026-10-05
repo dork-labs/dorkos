@@ -21,6 +21,7 @@ import {
   type ServerPrincipalProof,
   type ServerPrincipalClaims,
 } from './server-principal.js';
+import type { ConnectorThreadKeyResolver } from './thread-keys.js';
 
 type RuntimeBindingRow = typeof connectorRuntimeBindings.$inferSelect;
 
@@ -72,6 +73,13 @@ export interface ConnectorRuntimePrincipalServiceOptions {
   readonly makeBootEpoch?: () => string;
   /** Injectable bearer source for deterministic hashing tests. */
   readonly makeBearer?: () => string;
+  /**
+   * Thread keys a long-lived runtime process holds (ADR 261005-113107). A
+   * bearer shaped like one resolves to the turn binding attached to it right
+   * now, then takes every check a turn bearer takes. Absent, no bearer is
+   * read as a thread key.
+   */
+  readonly threadKeys?: ConnectorThreadKeyResolver;
 }
 
 function tokenHash(token: string): string {
@@ -106,6 +114,7 @@ export class ConnectorRuntimePrincipalService
   private readonly now: () => Date;
   private readonly makeBootEpoch: () => string;
   private readonly makeBearer: () => string;
+  private readonly threadKeys: ConnectorThreadKeyResolver | undefined;
   /** Process-local deny fence installed before a durable revoke can fail. */
   private readonly revokedBindingIds = new Set<string>();
   /** Exact permit and adapter-owned liveness predicate for each open turn. */
@@ -127,6 +136,7 @@ export class ConnectorRuntimePrincipalService
     this.now = options.now ?? (() => new Date());
     this.makeBootEpoch = options.makeBootEpoch ?? randomUUID;
     this.makeBearer = options.makeBearer ?? (() => randomBytes(32).toString('base64url'));
+    this.threadKeys = options.threadKeys;
   }
 
   /** Revoke every prior-process binding and establish the current boot epoch. */
@@ -273,14 +283,57 @@ export class ConnectorRuntimePrincipalService
     return { status: 'refused', reason: 'revoked' };
   }
 
-  /** Resolve a bearer against current process, context, expiry, and live authority. */
+  /**
+   * Resolve a bearer against current process, context, expiry, and live authority.
+   *
+   * A thread key (ADR 261005-113107) is first turned into the turn binding
+   * attached to it right now; with none attached it is refused exactly as an
+   * expired bearer is. From there both kinds take the same checks, plus one: the
+   * binding must belong to the session the key was minted for.
+   */
   async resolve(input: ResolveConnectorTurnInput): Promise<ResolveConnectorTurnResult> {
+    if (this.threadKeys?.isThreadKey(input.bearer)) return this.resolveThreadKey(input);
     const row = this.db
       .select()
       .from(connectorRuntimeBindings)
       .where(eq(connectorRuntimeBindings.tokenHash, tokenHash(input.bearer)))
       .get();
     if (!row) return { status: 'refused', reason: 'invalid' };
+    return this.resolveRow(row, input);
+  }
+
+  private async resolveThreadKey(
+    input: ResolveConnectorTurnInput
+  ): Promise<ResolveConnectorTurnResult> {
+    const key = this.threadKeys?.lookup(input.bearer);
+    if (!key) return { status: 'refused', reason: 'invalid' };
+    if (key.scope.runtime !== input.expectedRuntime) {
+      return { status: 'refused', reason: 'wrong_runtime' };
+    }
+    if (key.scope.canonicalCwd !== input.expectedCanonicalCwd) {
+      return { status: 'refused', reason: 'wrong_cwd' };
+    }
+    // Between turns: the key authorizes nothing.
+    if (key.bindingId === undefined) return { status: 'refused', reason: 'expired' };
+    const row = this.bindingRow(key.bindingId);
+    if (!row || row.canonicalSessionId !== key.scope.canonicalSessionId) {
+      return { status: 'refused', reason: 'invalid' };
+    }
+    const result = await this.resolveRow(row, input);
+    // The turn may have ended while the authority check awaited.
+    if (
+      result.status === 'resolved' &&
+      this.threadKeys?.lookup(input.bearer)?.bindingId !== row.id
+    ) {
+      return { status: 'refused', reason: 'expired' };
+    }
+    return result;
+  }
+
+  private async resolveRow(
+    row: RuntimeBindingRow,
+    input: ResolveConnectorTurnInput
+  ): Promise<ResolveConnectorTurnResult> {
     const initialRefusal = this.bindingRefusal(row);
     if (initialRefusal) return { status: 'refused', reason: initialRefusal };
     if (row.runtime !== input.expectedRuntime) {

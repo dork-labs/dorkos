@@ -16,12 +16,15 @@
  *    to itself), and build the `child_process` shim.
  * 4. **Load the bundle** with the injected `require`.
  * 5. **register(router, ctx)** with the proxy ctx (`proxy-ctx.ts`), whose
- *    every member is decided by the protocol table; report `registered`. The
- *    host measures how long it takes.
+ *    every member is decided by the protocol table; report `registered`,
+ *    with the tools it bound. The host measures how long it takes.
  *
- * On `stop`: run the cleanup `register()` returned, cancel every scheduled
- * task, then exit. The router is not reachable yet (requests arrive in a
- * later phase). A test seam (`init.testSeams`) lets the host call the
+ * The router `register()` filled is served by a virtual HTTP server that
+ * never listens (`virtual-server.ts`): the host opens connections to it over
+ * the IPC channel.
+ *
+ * On `stop`: cancel every scheduled task, drop open connections, run the
+ * cleanup `register()` returned, then exit. A test seam (`init.testSeams`) lets the host call the
  * bundle's exported `probes`, so the suites can drive a real child; with it, a
  * bundle without `register` still starts.
  *
@@ -38,6 +41,7 @@ import type { ChildMessage, HostMessage, InitMessage, PermissionReport } from '.
 import { createChildProcessShim } from './child-process-shim.js';
 import { createProxyCtx, type ProxyCtx } from './proxy-ctx.js';
 import { createTrackedSend } from './tracked-send.js';
+import { createVirtualServer, type VirtualServer } from './virtual-server.js';
 import { createInjectedRequire, loadBundle } from './load-bundle.js';
 import { installNetGuard } from './net-guard.js';
 import { installProcessGuard } from './process-guard.js';
@@ -50,6 +54,24 @@ interface PermissionApi {
 /** `process.send`, captured before any extension code could replace it. */
 const sendRaw = process.send?.bind(process);
 
+/**
+ * Replace `process.send` with a locked, missing value, so extension code
+ * loaded after this has no public way to post raw IPC messages.
+ *
+ * Node's internal `process._send` stays: the captured `send` calls it through
+ * `this`, so removing it would cut the bootstrap's own channel. Code that
+ * digs into Node internals can still reach it, which is why the host, not
+ * this lock, is what refuses a forged message.
+ */
+function lockRawChannel(): void {
+  Object.defineProperty(process, 'send', {
+    value: undefined,
+    writable: false,
+    configurable: false,
+    enumerable: false,
+  });
+}
+
 /** Counted, so a stop exits only once everything sent has been written. */
 const tracked = sendRaw
   ? createTrackedSend((message, callback) => sendRaw(message as never, callback))
@@ -59,9 +81,10 @@ const tracked = sendRaw
  * Send one message to the host.
  *
  * @param message - The message.
+ * @param onWritten - Called once it is written to the channel.
  */
-function send(message: ChildMessage): void {
-  tracked?.send(message);
+function send(message: ChildMessage, onWritten?: () => void): void {
+  tracked?.send(message, onWritten);
 }
 
 /**
@@ -143,6 +166,7 @@ function main(): void {
   let receiveRun: ((message: HostMessage) => void) | null = null;
   let probes: Record<string, (...args: unknown[]) => unknown> | null = null;
   let proxy: ProxyCtx | null = null;
+  let virtual: VirtualServer | null = null;
   let cleanup: (() => unknown) | null = null;
   let stopping = false;
 
@@ -176,6 +200,13 @@ function main(): void {
       },
       __filename
     );
+    // Extension code shares this process: take the raw channel away from it,
+    // so it can only speak through ctx (the bootstrap keeps its own captured
+    // copy). The host still treats every message as untrusted; this removes
+    // the easy way to forge one. The test seam keeps it, because the
+    // isolation suites forge messages on purpose to prove the host refuses
+    // them.
+    if (!init.testSeams) lockRawChannel();
     let exported: Record<string, unknown> | null;
     try {
       exported = loadBundle(init.bundlePath, injected) as Record<string, unknown> | null;
@@ -216,22 +247,30 @@ function main(): void {
       return;
     }
     const router = express.Router();
+    // Requests reach the router over virtual connections the host opens once
+    // `registered` says it is ready (spec §7).
+    virtual = createVirtualServer({ extensionId: init.extensionId, express, router, send });
     const ctx = proxy.ctx;
+    const proxied = proxy;
     Promise.resolve()
       .then(() => (candidate as (r: unknown, c: unknown) => unknown)(router, ctx))
       .then(
         (result) => {
           cleanup = typeof result === 'function' ? (result as () => unknown) : null;
-          send({ type: 'registered', ok: true, hasCleanup: cleanup !== null, handledTools: [] });
+          // register() finished: no more tool handlers, as in-process.
+          const handledTools = proxied.sealTools();
+          send({ type: 'registered', ok: true, hasCleanup: cleanup !== null, handledTools });
         },
-        (err: unknown) =>
+        (err: unknown) => {
+          proxied.sealTools();
           send({
             type: 'registered',
             ok: false,
             hasCleanup: false,
             handledTools: [],
             error: describe(err).message,
-          })
+          });
+        }
       );
   };
 
@@ -249,6 +288,7 @@ function main(): void {
     const exit = () => process.exit(0);
     setTimeout(exit, 2_000).unref();
     proxy?.cancelScheduled();
+    virtual?.closeAll();
     Promise.resolve()
       .then(() => cleanup?.())
       .catch((err: unknown) => console.error('Cleanup error:', err))
@@ -297,6 +337,7 @@ function main(): void {
         break;
       }
       default:
+        if (virtual?.receive(message)) break;
         if (proxy?.receive(message)) break;
         receiveRun?.(message);
     }

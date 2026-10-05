@@ -724,35 +724,18 @@ describe('the named account (AC-7, claim half)', () => {
     return signedIn.cookie;
   }
 
-  it('refuses an account with no sign-in link, another subject, or a subject two accounts share, and changes nothing', async () => {
-    // Purpose: fails if anyone but the one account the host named can take ownership.
+  it('refuses an account with no sign-in link, or another subject, and changes nothing', async () => {
+    // Purpose: fails if anyone but the one account the host named can take ownership, or if two
+    // accounts could ever share the named subject (the account key is unique since 0031).
     const { c, subject, replacementId, claimCookie } = await namedRequest();
     const password = await member(sso, c);
     const otherSubject = await oidcAccount(c, `other-${unique()}`);
     const named = await oidcAccount(c, subject);
-    const cases: [string, string, () => Promise<void>][] = [
-      ['a password account', password.cookie, async () => undefined],
-      ['another subject', otherSubject, async () => undefined],
-      [
-        'a subject two account rows share',
-        named,
-        async () => {
-          const otherUser = (
-            await sso.h.pool.query<{ id: string }>(
-              'SELECT id FROM "user" WHERE id<>(SELECT "userId" FROM account WHERE "accountId"=$1) LIMIT 1',
-              [subject]
-            )
-          ).rows[0].id;
-          await sso.h.pool.query(
-            `INSERT INTO account(id,"accountId","providerId","userId","createdAt","updatedAt")
-             VALUES(gen_random_uuid()::text,$1,'oidc',$2,now(),now())`,
-            [subject, otherUser]
-          );
-        },
-      ],
+    const cases: [string, string][] = [
+      ['a password account', password.cookie],
+      ['another subject', otherSubject],
     ];
-    for (const [name, session, prepare] of cases) {
-      await prepare();
+    for (const [name, session] of cases) {
       const before = await everything(sso, c, replacementId);
       const refused = await claim(sso, cookies(session, claimCookie));
       expect(refused.status, name).toBe(403);
@@ -763,11 +746,19 @@ describe('the named account (AC-7, claim half)', () => {
       expect(droppedCookie(refused), name).toBe(false);
       expect(await everything(sso, c, replacementId), name).toEqual(before);
     }
-    await sso.h.pool.query(
-      `DELETE FROM account WHERE "providerId"='oidc' AND "accountId"=$1
-       AND "userId"<>(SELECT "userId" FROM account WHERE "accountId"=$1 ORDER BY "createdAt" LIMIT 1)`,
-      [subject]
-    );
+    const otherUser = (
+      await sso.h.pool.query<{ id: string }>(
+        'SELECT id FROM "user" WHERE id<>(SELECT "userId" FROM account WHERE "accountId"=$1) LIMIT 1',
+        [subject]
+      )
+    ).rows[0].id;
+    await expect(
+      sso.h.pool.query(
+        `INSERT INTO account(id,"accountId","providerId","userId","createdAt","updatedAt")
+         VALUES(gen_random_uuid()::text,$1,'oidc',$2,now(),now())`,
+        [subject, otherUser]
+      )
+    ).rejects.toMatchObject({ code: '23505' });
     await expectStatus(await claim(sso, cookies(named, claimCookie)), 200, 'the named account');
   });
 

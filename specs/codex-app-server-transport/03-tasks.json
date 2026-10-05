@@ -1,0 +1,275 @@
+{
+  "spec": "codex-app-server-transport",
+  "linearIssue": "DOR-2719",
+  "phases": [
+    {
+      "id": "P1",
+      "title": "Turns on app-server behind the switch, with the protocol snapshot check",
+      "pr": "One PR. Default stays exec (auto -> exec). Needs a security review of the thread key before merge.",
+      "tasks": [
+        {
+          "id": "T1",
+          "title": "Protocol subset: methods list, zod schemas, error classification table, committed schema snapshot + regenerate script",
+          "files": [
+            "apps/server/src/services/runtimes/codex/app-server/protocol/methods.ts",
+            "apps/server/src/services/runtimes/codex/app-server/protocol/schemas.ts",
+            "apps/server/src/services/runtimes/codex/app-server/protocol/errors.ts",
+            "apps/server/src/services/runtimes/codex/app-server/protocol/schema-snapshot.json",
+            "scripts/codex-protocol-snapshot.ts",
+            "package.json",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-schemas.test.ts"
+          ],
+          "dependsOn": []
+        },
+        {
+          "id": "T2",
+          "title": "JSON-RPC client (framing, line cap, request map, timeouts, overload retry, notifications, server requests answered exactly once, stderr ring); model-catalog rewritten onto it",
+          "files": [
+            "apps/server/src/services/runtimes/codex/app-server/json-rpc-client.ts",
+            "apps/server/src/services/runtimes/codex/model-catalog.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/json-rpc-client.test.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/model-catalog.test.ts"
+          ],
+          "dependsOn": ["T1"]
+        },
+        {
+          "id": "T3",
+          "title": "Fake app-server peer for tests (scripted, enforces the joining trap and loaded-config immutability)",
+          "files": ["apps/server/src/services/runtimes/codex/__tests__/fake-app-server.ts"],
+          "dependsOn": ["T1"]
+        },
+        {
+          "id": "T4",
+          "title": "Process pool: keying, lazy spawn, initialize with experimentalApi, version note, crash fan-out, crash-loop guard, idle reaping that never reaps a live process, stale recycle, shutdown wired beside openCodeServerManager.shutdown()",
+          "files": [
+            "apps/server/src/services/runtimes/codex/app-server/process-pool.ts",
+            "apps/server/src/services/runtimes/codex/check-dependencies.ts",
+            "apps/server/src/index.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/process-pool.test.ts"
+          ],
+          "dependsOn": ["T2", "T3"]
+        },
+        {
+          "id": "T5",
+          "title": "Thread key registry and listener resolution (mint, attach per turn, detach, revoke on unload/exit; resolve only to the open turn's binding)",
+          "files": [
+            "apps/server/src/services/connectors/principal/thread-keys.ts",
+            "apps/server/src/services/connectors/principal/runtime-principal-service.ts",
+            "apps/server/src/services/connectors/runtime-principal-port.ts",
+            "apps/server/src/services/connectors/principal/__tests__/thread-keys.test.ts"
+          ],
+          "dependsOn": []
+        },
+        {
+          "id": "T6",
+          "title": "Transport seam: CodexTransport interface, exec transport extracted unchanged from codex-runtime.ts, resolveCodexTransport, CodexRuntime delegates and merges per-transport capabilities",
+          "files": [
+            "apps/server/src/services/runtimes/codex/transport/codex-transport.ts",
+            "apps/server/src/services/runtimes/codex/transport/exec-transport.ts",
+            "apps/server/src/services/runtimes/codex/transport/index.ts",
+            "apps/server/src/services/runtimes/codex/codex-runtime.ts",
+            "apps/server/src/services/runtimes/codex/runtime-constants.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/codex-runtime.test.ts"
+          ],
+          "dependsOn": []
+        },
+        {
+          "id": "T7",
+          "title": "Config field runtimes.codex.transport (auto|app-server|exec, default auto) with migration, pinned hash, disclosure expose, write policy operator-only, docs rows",
+          "files": [
+            "packages/shared/src/config-schema.ts",
+            "apps/server/src/services/core/config-manager.ts",
+            "apps/server/src/services/core/__tests__/merged-migration-hashes.ts",
+            "apps/server/src/services/core/__tests__/config-manager.test.ts",
+            "apps/server/src/services/core/operator/config-disclosure.ts",
+            "apps/server/src/services/core/operator/config-write-policy.ts",
+            "contributing/configuration.md",
+            "docs/getting-started/configuration.mdx"
+          ],
+          "dependsOn": []
+        },
+        {
+          "id": "T8",
+          "title": "Thread loader: load params, load fingerprint, start/resume/no-rollout/not-found paths, binding at first turn/started, replaceThreadId, trust override from config/read, MCP servers with literal headers, identity via shell_environment_policy.set",
+          "files": [
+            "apps/server/src/services/runtimes/codex/app-server/thread-loader.ts",
+            "apps/server/src/services/runtimes/codex/thread-map.ts",
+            "apps/server/src/services/runtimes/codex/mcp-server-config.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/thread-loader.test.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/thread-map.test.ts"
+          ],
+          "dependsOn": ["T4", "T5"]
+        },
+        {
+          "id": "T9",
+          "title": "Notification mapper (every row of spec section 7, exactly-one done, usage from thread/tokenUsage/updated, rate limits merge, late-event sink)",
+          "files": [
+            "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/notification-mapper.test.ts"
+          ],
+          "dependsOn": ["T1"]
+        },
+        {
+          "id": "T10",
+          "title": "App-server transport runTurn + interrupt: activeTurn tracking and the joining trap, tagged sandboxPolicy, approvalPolicy never, P1 server-request handler refuses everything, interrupt receipts acked/unconfirmed",
+          "files": [
+            "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/app-server-transport.test.ts"
+          ],
+          "dependsOn": ["T6", "T8", "T9"]
+        },
+        {
+          "id": "T11",
+          "title": "Credits on app-server through the credits relay (relay started when Codex or OpenCode is enabled, key per credits process, untrusted credits home, unlink closes the process); binary test leg with a fake local provider",
+          "files": [
+            "apps/server/src/services/runtimes/codex/credits-launch.ts",
+            "apps/server/src/services/core/cloud/credits-relay.ts",
+            "apps/server/src/index.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/credits-launch.test.ts"
+          ],
+          "dependsOn": ["T10"]
+        },
+        {
+          "id": "T12",
+          "title": "Conformance on both transports (fake peer for app-server; warmSession, hangingInterrupt, creditsTurn drivers; supportsPersistentSession true on app-server); live arm runs both transports",
+          "files": [
+            "apps/server/src/services/runtimes/codex/__tests__/conformance.test.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/codex-scenarios.ts"
+          ],
+          "dependsOn": ["T10", "T11"]
+        },
+        {
+          "id": "T13",
+          "title": "Dependency tracking and notes: runtime-deps.json @openai/codex entry and sdk_surface_map, adding-a-runtime bump checklist step, NOTES.md spike verdicts, changelog fragment for the switch",
+          "files": [
+            ".claude/config/runtime-deps.json",
+            "contributing/adding-a-runtime.md",
+            "apps/server/src/services/runtimes/codex/NOTES.md",
+            "changelog/unreleased/"
+          ],
+          "dependsOn": ["T1", "T7"]
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "title": "Approvals, questions, elicitations and steer",
+      "pr": "One PR on top of P1. Default stays exec.",
+      "tasks": [
+        {
+          "id": "T14",
+          "title": "Server-request mapping: command, file change, permissions, MCP tool approval, elicitation, user input; timeout -> decline, abort -> cancel, serverRequest/resolved -> interaction_cancelled; pending map in the snapshot for recovery re-emit",
+          "files": [
+            "apps/server/src/services/runtimes/codex/app-server/server-requests.ts",
+            "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts",
+            "apps/server/src/services/runtimes/codex/codex-runtime.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/server-requests.test.ts"
+          ],
+          "dependsOn": ["T10"]
+        },
+        {
+          "id": "T15",
+          "title": "App-server mode descriptors (Ask first / Workspace write / Full access with honest asks/reach, denyReason false), on-request approval policy, copy under writing-app-copy",
+          "files": [
+            "apps/server/src/services/runtimes/codex/runtime-constants.ts",
+            "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/codex-runtime.test.ts"
+          ],
+          "dependsOn": ["T14"]
+        },
+        {
+          "id": "T16",
+          "title": "Steer via turn/steer with expectedTurnId; deliverIntoTurn receipts; supportsSteer true; dispositionTurn driver on the fake peer",
+          "files": [
+            "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts",
+            "apps/server/src/services/runtimes/codex/codex-runtime.ts",
+            "apps/server/src/services/runtimes/codex/turn-input.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/conformance.test.ts"
+          ],
+          "dependsOn": ["T10"]
+        },
+        {
+          "id": "T17",
+          "title": "Approval conformance case (approvalTurn driver; SKIP by name when undeclared-driver) wired for codex and test-mode; follow-up issue for claude-code and opencode",
+          "files": [
+            "packages/test-utils/src/runtime-conformance.ts",
+            "apps/server/src/services/runtimes/test-mode/__tests__/conformance.test.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/conformance.test.ts"
+          ],
+          "dependsOn": ["T14"]
+        },
+        {
+          "id": "T18",
+          "title": "Changelog fragment: Codex can ask before it changes things, and can be steered mid-reply (app-server switch only)",
+          "files": ["changelog/unreleased/"],
+          "dependsOn": ["T15", "T16"]
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "title": "Work that outlives the turn, listing, default flip, docs and live proof",
+      "pr": "One PR on top of P2. Flips auto -> app-server only after conformance is green and the live proof is attached.",
+      "tasks": [
+        {
+          "id": "T19",
+          "title": "Background work: track background terminals and sub-agents, late completions, wake the chat as a runtime turn (onRuntimeTurn, isSegmentPending, coalescing, wake only after a completed turn), stopTask via backgroundTerminals/terminate, 4 h ceiling, crash reports",
+          "files": [
+            "apps/server/src/services/runtimes/codex/app-server/background-work.ts",
+            "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts",
+            "apps/server/src/services/runtimes/codex/codex-runtime.ts",
+            "apps/server/src/services/runtimes/codex/app-server/process-pool.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/background-work.test.ts"
+          ],
+          "dependsOn": ["T14", "T16"]
+        },
+        {
+          "id": "T20",
+          "title": "Thread reconciliation on open via thread/read; not-found starts fresh with a notice",
+          "files": [
+            "apps/server/src/services/runtimes/codex/app-server/thread-loader.ts",
+            "apps/server/src/services/runtimes/codex/codex-runtime.ts",
+            "apps/server/src/services/runtimes/codex/app-server/__tests__/thread-loader.test.ts"
+          ],
+          "dependsOn": ["T8"]
+        },
+        {
+          "id": "T21",
+          "title": "Live tests on the operator's own sign-in (DORKOS_CODEX_LIVE): approval, steer, stop, background wake; sub-agent subscription check; newer-rollout resume check",
+          "files": ["apps/server/src/services/runtimes/codex/__tests__/app-server-live.test.ts"],
+          "dependsOn": ["T19"]
+        },
+        {
+          "id": "T22",
+          "title": "Flip auto -> app-server in resolveCodexTransport (no migration); accept ADR 261005-113107 and mark ADR-0309 superseded (frontmatter, Status paragraph, manifest)",
+          "files": [
+            "apps/server/src/services/runtimes/codex/transport/index.ts",
+            "apps/server/src/services/runtimes/codex/__tests__/codex-runtime.test.ts"
+          ],
+          "dependsOn": ["T21"]
+        },
+        {
+          "id": "T23",
+          "title": "Docs: runtimes guide (approvals, steer, background work; drop the stale restart line), permissions guide, adding-a-runtime worked example, credits-relay header, NOTES.md, changelog fragment",
+          "files": [
+            "docs/guides/runtimes.mdx",
+            "docs/guides/permissions.mdx",
+            "contributing/adding-a-runtime.md",
+            "apps/server/src/services/core/cloud/credits-relay.ts",
+            "apps/server/src/services/runtimes/codex/NOTES.md",
+            "changelog/unreleased/"
+          ],
+          "dependsOn": ["T22"]
+        },
+        {
+          "id": "T24",
+          "title": "Browser proof on dev:dogfood with transport app-server: approval card, steer, clean stop, background wake; recording attached to DOR-2719",
+          "files": [],
+          "dependsOn": ["T22"]
+        }
+      ]
+    }
+  ]
+}

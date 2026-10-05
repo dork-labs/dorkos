@@ -12,10 +12,14 @@ import { KEEP_OWNERSHIP_PATH, OWNER_REPLACEMENT_CLAIM_PATH } from './owner-repla
 import { ShortNameRoute } from './components/ShortNameRoute.js';
 import { COMMUNITY_RESERVED_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
 import { parseShortNamePath } from '../short-names/path.js';
+import { SignInLinkedNotice } from './sign-up/SignInLinkedNotice.js';
 
 const RESERVED_SHORT_NAMES: ReadonlySet<string> = new Set(COMMUNITY_RESERVED_SHORT_NAMES);
 
-/** Select the browser surface from an exact root or tenant-qualified path. */
+/**
+ * Select the browser surface from an exact root or tenant-qualified path, with the one-time
+ * notice a trusted sign-in leaves when it linked to an account already here.
+ */
 export function BrowserRoot({
   pathname = window.location.pathname,
   search = window.location.search,
@@ -23,6 +27,16 @@ export function BrowserRoot({
   pathname?: string;
   search?: string;
 }) {
+  return (
+    <>
+      <SignInLinkedNotice />
+      <Surface pathname={pathname} search={search} />
+    </>
+  );
+}
+
+/** The page this path names. */
+function Surface({ pathname, search }: { pathname: string; search: string }) {
   const pairing = pathname === '/pairing' || /^\/c\/[^/]+\/pairing$/.test(pathname);
   if (pairing) return <Pairing search={search} />;
   if (pathname === COMMUNITY_HOST_ADMIN_PATH) return <HostAdministration />;

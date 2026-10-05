@@ -829,7 +829,9 @@ describe('ExtensionManager — server lifecycle', () => {
 
       expect(timed.getServerRouter('hangs')).toBeNull();
       expect(timed.get('hangs')?.serverError).toMatchObject({ code: 'server_start_timeout' });
-      expect(timed.get('hangs')?.serverError?.message).toContain("couldn't start");
+      expect(timed.get('hangs')?.serverError?.message).toBe(
+        'hangs took too long to start. Reload it to try again.'
+      );
       // Its context is disposed: what it scheduled is cancelled, what it
       // registered released, and anything it tries later does nothing.
       expect(mockDispose).toHaveBeenCalledTimes(1);

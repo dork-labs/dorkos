@@ -17,6 +17,7 @@ import { recordToolSurface } from './tool-surface.js';
 import { getCoreTools } from './core-tools.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
+import { runningPermissionMode } from './session-start-permission.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
@@ -247,11 +248,22 @@ export function handRegisteredInSessionToolSet(
     // the agent that started the session, even from its room worktree. The
     // calling chat is what the new one says started it (spec
     // `flow-multiproject` §7.7), read at call time for the first-turn rekey
-    // reason the task provenance above gives.
+    // reason the task provenance above gives. So is the calling chat's live
+    // permission mode, the ceiling of what it may start (spec
+    // `inherited-start-permission`): read off the live session object at the
+    // moment of the call, so a chat lowered mid-turn is held to its new level,
+    // and as the mode its turn REALLY runs at (an Auto the model cannot do runs
+    // at Default; see `runningPermissionMode`).
     ...getSessionTools(deps, () => {
       if (!identityPath) return undefined;
       const callingSession = session?.sdkSessionId || sessionId;
-      return { agentPath: identityPath, ...(callingSession ? { sessionId: callingSession } : {}) };
+      const running = runningPermissionMode(session);
+      return {
+        agentPath: identityPath,
+        runtime: 'claude-code',
+        ...(callingSession ? { sessionId: callingSession } : {}),
+        ...(running ? { permissionMode: running } : {}),
+      };
     }),
     ...getTasksTools(deps, resolveTaskProvenance),
     ...getRelayTools(deps, relayIdentity, resolveInboundBudget),

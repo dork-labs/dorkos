@@ -90,9 +90,13 @@ import {
 import { LogForwarder, type ForwardLogger } from './log-forwarder.js';
 import { boundedMessageSize } from './message-size.js';
 import { RunBroker } from './run-broker.js';
+import { VirtualSocket } from './virtual-socket.js';
+import { requirePersonCopy } from '../inbox/extension-inbox-context.js';
+import type { ToolHandleCheck } from '../agent-tools/tool-handle-rules.js';
 
 /** Why a start was refused, as a record's `serverError.code`. */
-export type IsolatedStartErrorCode = 'isolation_unavailable' | 'server_start_failed';
+export type IsolatedStartErrorCode =
+  'isolation_unavailable' | 'server_start_failed' | 'server_start_timeout';
 
 /** The outcome of {@link IsolatedExtensionHost.start}. */
 export type IsolatedStartResult =
@@ -145,6 +149,20 @@ export interface IsolatedHostOptions {
   logger: HostLogger;
   /** Called once when a running child exits, for any reason. */
   onExit?: (exit: IsolatedExit) => void;
+  /**
+   * Called first when a running child's process ends, before anything it
+   * registered is released or any call waiting on it is rejected. The
+   * lifecycle takes the extension's agent tools out of the registry here, so
+   * no agent can reach a tool whose process is gone, and a call still running
+   * fails as "stopped" (DOR-2685's stop order).
+   */
+  onGone?: () => void;
+  /**
+   * Discovery's verdict on each tool the manifest declares, copied into the
+   * child so its `ctx.tools.handle` throws the in-process words. The host's
+   * real `ctx.tools.handle` checks again on its own copy.
+   */
+  tools?: readonly ToolHandleCheck[];
   /**
    * The extension's REAL ctx (`createDataProviderContext`), which every ctx
    * message from the child is dispatched into. Without it, every ctx message
@@ -247,6 +265,9 @@ export class IsolatedExtensionHost {
   private dispatcher: CtxDispatcher | null = null;
   private lastDispatchCounts: Record<string, number> = {};
   private registeredCleanup = false;
+  private serving = false;
+  private nextCid = 1;
+  private readonly connections = new Map<number, VirtualSocket>();
 
   /**
    * Prepare a host; nothing starts until {@link IsolatedExtensionHost.start}.
@@ -440,16 +461,43 @@ export class IsolatedExtensionHost {
     }, this.timings.helloTimeoutMs);
     let loadTimer: NodeJS.Timeout | null = null;
 
+    // Tell the lifecycle the running child is gone, once: on 'exit' (the
+    // moment the process ended, so its tools are unlisted at once) or, at the
+    // latest, first thing on 'close'.
+    let goneTold = false;
+    const tellGone = (): void => {
+      if (goneTold || phase !== 'running') return;
+      goneTold = true;
+      try {
+        this.options.onGone?.();
+      } catch (err) {
+        this.options.logger.error(
+          `[Extensions] ${this.options.extensionId}: removing its tools failed: ${String(err)}`
+        );
+      }
+    };
+    child.once('exit', tellGone);
+
     this.exitPromise = new Promise<void>((resolve) => {
       // 'close', not 'exit': stderr is fully read by then, so the OOM marker is seen.
       child.once('close', (code, signal) => {
-        // First: nothing the child registered on the real ctx outlives it.
+        // First of all: its tools leave the registry, before the calls
+        // waiting on the child are rejected below.
+        tellGone();
+        // Then: nothing the child registered on the real ctx outlives it.
         if (this.dispatcher) {
           this.lastDispatchCounts = this.dispatcher.dispatchCounts();
           this.dispatcher.close();
           this.dispatcher = null;
         }
         this.registeredCleanup = false;
+        // Every open request learns the child is gone: one still waiting for
+        // its headers answers 503, one already streaming is cut off.
+        this.serving = false;
+        for (const socket of this.connections.values()) {
+          socket.sever(new Error(`${name} stopped while answering.`));
+        }
+        this.connections.clear();
         clearTimeout(timer);
         if (loadTimer) clearTimeout(loadTimer);
         this.stopWatchdog();
@@ -543,14 +591,24 @@ export class IsolatedExtensionHost {
           },
           displayName: name,
           allowAgents: this.options.isolation.agents,
+          // Plain fields only: a check carries the parsed input schema too.
+          tools: (this.options.tools ?? []).map((check) => ({
+            name: check.name,
+            ok: check.ok,
+            ...(check.reason !== undefined ? { reason: check.reason } : {}),
+          })),
+          personRefusal: (() => {
+            const copy = requirePersonCopy(name);
+            return { error: copy.error, code: copy.code, message: copy.agent };
+          })(),
         });
         loadTimer = setTimeout(() => {
           if (phase !== 'load' && phase !== 'register') return;
           this.killNow();
           settleStart({
             ok: false,
-            code: 'server_start_failed',
-            message: `${name} took too long to start.`,
+            code: 'server_start_timeout',
+            message: `${name} took too long to start. Reload it to try again.`,
           });
         }, this.timings.loadTimeoutMs);
         return;
@@ -590,7 +648,11 @@ export class IsolatedExtensionHost {
           return;
         }
         this.registeredCleanup = message.hasCleanup;
+        // register() finished: from here no tool binds, whatever the child
+        // (or code inside it posting its own messages) sends next.
+        this.dispatcher?.closeTools();
         phase = 'running';
+        this.serving = true;
         this.startWatchdog();
         settleStart({ ok: true });
         return;
@@ -735,6 +797,14 @@ export class IsolatedExtensionHost {
       case 'run-kill':
         void this.broker?.handle(message);
         break;
+      case 'conn-data':
+      case 'conn-end':
+      case 'conn-destroy':
+      case 'conn-pause':
+      case 'conn-resume':
+        // Only connections this host opened; anything else is dropped.
+        this.connections.get(message.cid)?.receive(message);
+        break;
       case 'probe-result': {
         const probe = this.probes.get(message.id);
         if (!probe) break;
@@ -759,9 +829,10 @@ export class IsolatedExtensionHost {
    * 1,000 unwritten messages the child is killed as unresponsive.
    *
    * @param message - The message.
+   * @param onWritten - Called once the channel has written it (or failed to).
    * @returns `false` when the channel is backed up (or gone).
    */
-  private send(message: HostMessage): boolean {
+  private send(message: HostMessage, onWritten?: () => void): boolean {
     const child = this.child;
     if (!child || !child.connected) return false;
     this.backlog++;
@@ -776,6 +847,7 @@ export class IsolatedExtensionHost {
     try {
       child.send(message, (err) => {
         this.backlog = Math.max(0, this.backlog - 1);
+        onWritten?.();
         if (err) return;
         if (this.backlog <= DRAIN_LOW_WATER && this.drainWaiters.length > 0) {
           for (const waiter of this.drainWaiters.splice(0)) waiter();
@@ -815,6 +887,46 @@ export class IsolatedExtensionHost {
   private stopWatchdog(): void {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
+  }
+
+  /**
+   * Open a virtual HTTP connection to the child's router (spec §7), for one
+   * forwarded request. Refused while the child is not serving (starting,
+   * stopping, gone) and past {@link ISOLATION_LIMITS} `maxConnections` open
+   * at once.
+   *
+   * @param onActivity - Called on every frame either way (the idle timer).
+   * @returns The host end, or why there is none.
+   */
+  openConnection(
+    onActivity?: () => void
+  ): { ok: true; socket: VirtualSocket } | { ok: false; reason: 'not_running' | 'busy' } {
+    if (!this.serving || !this.child?.connected) return { ok: false, reason: 'not_running' };
+    if (this.connections.size >= ISOLATION_LIMITS.maxConnections) {
+      return { ok: false, reason: 'busy' };
+    }
+    const cid = this.nextCid++;
+    const socket = new VirtualSocket({
+      cid,
+      send: (message, onWritten) => this.send(message, onWritten) || this.child !== null,
+      onActivity,
+      onClose: () => this.connections.delete(cid),
+    });
+    this.connections.set(cid, socket);
+    this.send({ type: 'conn-open', cid });
+    return { ok: true, socket };
+  }
+
+  /** How many virtual connections are open right now. */
+  get openConnections(): number {
+    return this.connections.size;
+  }
+
+  /** Bytes the child sent that are not read yet, across every open connection (diagnostics). */
+  get bufferedBytes(): number {
+    let total = 0;
+    for (const socket of this.connections.values()) total += socket.readableLength;
+    return total;
   }
 
   /**

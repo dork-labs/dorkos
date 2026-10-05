@@ -21,7 +21,10 @@ import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/sha
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
-import { ExtensionServerLifecycle } from './extension-server-lifecycle.js';
+import {
+  ExtensionServerLifecycle,
+  type ServerLifecycleOptions,
+} from './extension-server-lifecycle.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { testClientExtension, testServerCompilation } from './extension-test-harness.js';
 import { scaffoldExtension, buildCreateResult } from './extension-scaffolder.js';
@@ -249,24 +252,30 @@ export class ExtensionManager {
    *
    * @param dorkHome - DorkOS's data directory.
    * @param coreExtensions - Tier metadata for the bundled core extensions.
-   * @param options.registerTimeoutMs - How long a server `register()` may take
-   *   (default `REGISTER_TIMEOUT_MS` in `extension-server-lifecycle.ts`); tests
-   *   shorten it.
+   * @param options - Server lifecycle options (`ServerLifecycleOptions` in
+   *   `extension-server-lifecycle.ts`): how long a server `register()` may
+   *   take, DorkOS's own port, and the restart and watchdog timings of
+   *   isolated extensions. Tests shorten them.
    */
   constructor(
     dorkHome: string,
     coreExtensions: CoreExtensionInfo[] = [],
-    options: { registerTimeoutMs?: number } = {}
+    options: Omit<ServerLifecycleOptions, 'recordOf' | 'onStatusChange'> = {}
   ) {
     this.dorkHome = dorkHome;
     this.coreExtensions = new Map(coreExtensions.map((info) => [info.id, info]));
     this.discovery = new ExtensionDiscovery(dorkHome);
     this.compiler = new ExtensionCompiler(dorkHome);
-    this.serverLifecycle = new ExtensionServerLifecycle(
-      dorkHome,
-      this.compiler,
-      options.registerTimeoutMs
-    );
+    this.serverLifecycle = new ExtensionServerLifecycle(dorkHome, this.compiler, {
+      ...options,
+      recordOf: (id) => this.extensions.get(id),
+      // An isolated extension stopped, restarted or gave up on its own:
+      // clients re-read its card, and anything listening hears it.
+      onStatusChange: (id) => {
+        this.announceReloaded?.([id]);
+        this.emitChanged();
+      },
+    });
   }
 
   /**
@@ -284,7 +293,19 @@ export class ExtensionManager {
    * copies never run, so they go through `toPublic` without tool statuses.
    */
   private publicOf(record: ExtensionRecord, approvals: ExtensionApprovals): ExtensionRecordPublic {
-    return toPublic(record, approvals, this.serverLifecycle.toolStatuses(record));
+    // An isolated extension's restart or stop after crashes outlives any one
+    // record (they are rebuilt every scan), so the lifecycle keeps it and it
+    // is laid over the record here (DOR-2686).
+    const supervised = this.serverLifecycle.supervisedStatus(record.id);
+    const shown =
+      supervised.serverError || supervised.restartingAt
+        ? {
+            ...record,
+            serverError: supervised.serverError ?? record.serverError,
+            restartingAt: supervised.restartingAt ?? null,
+          }
+        : record;
+    return toPublic(shown, approvals, this.serverLifecycle.toolStatuses(record));
   }
 
   /**
@@ -734,6 +755,9 @@ export class ExtensionManager {
 
     if (record.hasServerEntry || record.hasDataProxy) {
       await this.serverLifecycle.shutdown(id);
+      // A reload (a dev link's save included) is a fresh start for an
+      // isolated extension: its crash count goes (DOR-2686).
+      this.serverLifecycle.resetRestarts(id);
       const serverResult = await this.serverLifecycle.initialize(id, record);
       if (!serverResult.ok) {
         logger.warn(`[Extensions] Server reload failed for ${id}: ${serverResult.error}`);
@@ -1013,6 +1037,7 @@ export class ExtensionManager {
       );
 
       if (record.hasServerEntry || record.hasDataProxy) {
+        this.serverLifecycle.resetRestarts(id);
         const serverResult = await this.serverLifecycle.initialize(id, record);
         if (!serverResult.ok) {
           logger.warn(`[Extensions] Server init failed for ${id}: ${serverResult.error}`);
@@ -1131,6 +1156,7 @@ export class ExtensionManager {
     await this.placeSnapshots([record]);
 
     if (this.needsServer(record)) {
+      this.serverLifecycle.resetRestarts(id);
       const result = await this.serverLifecycle.initialize(id, record);
       if (!result.ok) {
         logger.warn(`[Extensions] Server init after approval failed for ${id}: ${result.error}`);

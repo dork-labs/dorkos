@@ -1928,6 +1928,19 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  */
 const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
+/** The ways DorkOS can run Codex — see `runtimes.codex.transport`. */
+export const CODEX_TRANSPORTS = ['auto', 'app-server', 'exec'] as const;
+
+/** A `runtimes.codex.transport` value. */
+export type CodexTransportSetting = (typeof CODEX_TRANSPORTS)[number];
+
+/**
+ * `runtimes.codex.transport` (ADR 261005-113107). `auto` carries no meaning of
+ * its own here on purpose: the server resolves it, so DorkOS can change its
+ * default without a migration and an explicit choice survives that change.
+ */
+const CodexTransportSchema = z.enum(CODEX_TRANSPORTS).default('auto');
+
 /**
  * The color a STANDALONE default Claude account is drawn in
  * (`runtimes.claudeCode.defaultAccountColor`, DOR-2492): lowercase `#rrggbb`,
@@ -2392,6 +2405,8 @@ export const UserConfigSchema = z.object({
       maxAgentTurnsPerAgentPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsPerAgentPerHour,
       maxAgentTurnsTotalPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsTotalPerHour,
     })),
+  /** Shared browser opt-in. A stored choice does not establish mode readiness. */
+  browser: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
   /**
    * Letting agents on other systems talk to the agents on this one.
    *
@@ -3388,6 +3403,15 @@ export const UserConfigSchema = z.object({
            * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
            */
           defaultTrustStop: DefaultTrustStopSchema,
+          /**
+           * How DorkOS runs Codex (ADR 261005-113107). `auto` follows DorkOS's
+           * own default, resolved in one place (`resolveCodexTransport`), so a
+           * later change of default reaches everyone who never chose; `exec` is
+           * the older one-process-per-reply way; `app-server` is one long-lived
+           * Codex process per home. Read once at startup: a change takes effect
+           * after a restart.
+           */
+          transport: CodexTransportSchema,
         })
         .default(() => ({
           enabled: true,
@@ -3396,6 +3420,7 @@ export const UserConfigSchema = z.object({
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
+          transport: 'auto' as const,
         })),
     })
     .default(() => ({
@@ -3430,6 +3455,7 @@ export const UserConfigSchema = z.object({
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
+        transport: 'auto' as const,
       },
     })),
   auth: z

@@ -6,7 +6,14 @@
  * through a real `sendMessage` on two turns of one thread.
  */
 import { describe, it, expect } from 'vitest';
-import { projectThreadOptions } from '../turn-input.js';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
+import type { SessionSettings } from '@dorkos/shared/types';
+import { grantedWritableDirectories, projectThreadOptions as fromWritable } from '../turn-input.js';
+
+/** Validate then project, the way the runtime and exec transport do together. */
+function projectThreadOptions(settings: SessionSettings, cwd?: string, grants?: DirectoryGrant[]) {
+  return fromWritable(settings, cwd, grantedWritableDirectories(grants, cwd));
+}
 
 const CWD = '/agents/ana';
 

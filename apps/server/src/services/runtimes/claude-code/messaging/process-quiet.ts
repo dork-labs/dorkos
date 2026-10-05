@@ -73,11 +73,20 @@ export interface ProcessQuietOptions {
   hasRuntimeTurnOpen: () => boolean;
   /** True while the session is parked on a person. */
   hasPendingInteraction: () => boolean;
+  /** True while a session timer the agent set has not fired yet (DOR-2717). */
+  hasPendingTimer?: () => boolean;
   /**
    * A hold this tracker owned has been released — today only the
    * owed-delivery clock expiring. Throws are logged and swallowed.
    */
   onGateChange: () => void;
+  /**
+   * This process started or stopped holding background work: a live helper,
+   * shell, Monitor or other task, or a delivery still owed (DOR-2065). Fired
+   * only on the flip, never per frame, so its consumer can afford a file write.
+   * Throws are logged and swallowed.
+   */
+  onHoldingWorkChange?: (holding: boolean) => void;
   /** Override the owed-delivery wait. Tests only. */
   owedDeliveryTimeoutMs?: number;
 }
@@ -95,10 +104,19 @@ export class ProcessQuiet {
    * to itself between turns is not read as unused.
    */
   private lastFrame = 0;
-  /** When the current busy spell began, or undefined while this process is quiet. */
+  /**
+   * When the current busy spell began, as epoch ms, or undefined while this
+   * process is quiet. Reported only (`Quietness.busySince`); the ceiling is
+   * measured on {@link busySinceAwake}.
+   */
   private busySince: number | undefined;
-  /** When the current run of continuous quiet began, or undefined while busy. */
-  private quietSince: number | undefined;
+  /**
+   * When the current busy spell began, on the awake clock, or undefined while
+   * this process is quiet. What the four-hour ceiling is measured from.
+   */
+  private busySinceAwake: number | undefined;
+  /** When the current run of continuous quiet began, on the awake clock, or undefined while busy. */
+  private quietSinceAwake: number | undefined;
   /**
    * True between a frame that proves a segment is running and the `result` that
    * ends it. The owed-delivery clock arms only when nothing is running to
@@ -116,6 +134,11 @@ export class ProcessQuiet {
    * reality instead of being assumed.
    */
   private owedExpiredAt: number | undefined;
+  /**
+   * Whether this process was holding background work at the last look — the
+   * state {@link ProcessQuietOptions.onHoldingWorkChange} reports flips of.
+   */
+  private holdingWork = false;
 
   /**
    * Build a tracker for one process.
@@ -155,6 +178,7 @@ export class ProcessQuiet {
     // Every frame is also a chance to notice the busy spell has ended, so the
     // sixty seconds of quiet do not wait on a consumer happening to ask.
     this.noteBusySpell(this.blockingReason(this.opts.liveness().liveTaskCounts()) === undefined);
+    this.noteHoldingWork();
     return change;
   }
 
@@ -201,36 +225,67 @@ export class ProcessQuiet {
   isHoldingWork(): boolean {
     const quietness = this.quietness();
     if (quietness.quiet) return false;
-    if (this.isPastCeiling(Date.now())) return false;
+    if (this.isPastCeiling()) return false;
     return quietness.because !== 'waiting-on-person';
   }
 
   /**
-   * Is a helper agent still working on this process (DOR-2681)?
+   * Are background shells and session timers the ONLY things this process is
+   * holding for (DOR-2065, DOR-2717)?
    *
-   * What the stall watchdog asks before it calls a silent turn stalled: a
-   * background helper sends nothing for the length of one of its steps. Helpers
-   * only — a Monitor or an unknown task type holds the process, but it is not
-   * the turn's own work going quiet. Bounded by the same four-hour ceiling the
-   * reaper honours, so a helper that never finishes cannot keep a turn open
-   * forever.
+   * No turn open, no helper or other task, nothing owed, nobody waited on —
+   * just shells, timers, or both. Such a process may be given up where a
+   * working one may not: either can run for ever (a dev server, a `/loop`), so
+   * twelve of them must not lock every other chat out. Helpers and Monitors
+   * are never given up this way.
+   */
+  isHoldingOnlyReclaimable(): boolean {
+    if (this.opts.isTurnOpen() || this.opts.hasRuntimeTurnOpen()) return false;
+    if (this.opts.hasPendingInteraction()) return false;
+    if (this.opts.liveness().owedCount() > 0) return false;
+    const counts = this.opts.liveness().liveTaskCounts();
+    if (counts.agents > 0 || counts.other > 0) return false;
+    return counts.shells > 0 || this.opts.hasPendingTimer?.() === true;
+  }
+
+  /**
+   * Is a helper or other background task still working on this process
+   * (DOR-2681, DOR-2717)?
+   *
+   * What the stall watchdog asks before it calls a silent turn stalled. A
+   * helper sends nothing for the length of one of its steps, and so does a
+   * Monitor, a Workflow or a backgrounded MCP task; each was cut at ten
+   * minutes when only helpers counted. Shells are left out on purpose: a dev
+   * server started in the background runs for hours, and counting it would
+   * hide every genuinely hung turn behind it. Bounded by the same four-hour
+   * ceiling the reaper honours, so work that never finishes cannot keep a
+   * turn open forever.
    */
   isHelperWorking(): boolean {
-    const quietness = this.quietness();
-    if (quietness.quiet) return false;
-    return quietness.holding.agents > 0 && !this.isPastCeiling(Date.now());
+    const counts = this.opts.liveness().liveTaskCounts();
+    return counts.agents + counts.other > 0 && !this.isPastCeiling();
   }
 
   /**
    * Has the current busy spell run past the four-hour ceiling?
    *
-   * @param now - Server epoch ms
+   * Measured in awake time (DOR-2717). A laptop asleep overnight moves the wall
+   * clock by hours while the process does nothing, and measuring that would
+   * reap the agent's waiting work the moment the machine woke up.
    */
-  isPastCeiling(now: number): boolean {
+  isPastCeiling(): boolean {
     return (
-      this.busySince !== undefined &&
-      now - this.busySince >= SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
+      this.busySinceAwake !== undefined &&
+      this.awakeNow() - this.busySinceAwake >= SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
     );
+  }
+
+  /**
+   * The awake clock: `performance.now()`, monotonic milliseconds that stop
+   * while the machine sleeps on macOS and Linux.
+   */
+  private awakeNow(): number {
+    return performance.now();
   }
 
   /**
@@ -243,10 +298,14 @@ export class ProcessQuiet {
   reset(now: number): void {
     this.dispose();
     this.busySince = undefined;
-    this.quietSince = undefined;
+    this.busySinceAwake = undefined;
+    this.quietSinceAwake = undefined;
     this.segmentRunning = false;
     this.owedExpiredAt = undefined;
     this.lastFrame = now;
+    // The tracker this reads was replaced with the process, so a hold the old
+    // one reported is released here rather than left standing.
+    this.noteHoldingWork();
   }
 
   /** Stop the owed-delivery clock, because the process it belonged to is going. */
@@ -274,6 +333,7 @@ export class ProcessQuiet {
     if (count <= 0) return;
     const cleared = this.opts.liveness().clearOldestOwed(count);
     if (cleared.length === 0) return;
+    this.noteHoldingWork();
     logger.info('[SessionPump] a delivery was folded into a turn the CLI answered', {
       sessionId: this.opts.sessionId,
       tasks: cleared,
@@ -295,13 +355,46 @@ export class ProcessQuiet {
   private blockingReason(counts: LiveTaskCounts): QuietnessBlocker | undefined {
     if (this.opts.isTurnOpen()) return 'turn-open';
     if (this.opts.hasRuntimeTurnOpen()) return 'runtime-turn-open';
-    // Shells are deliberately absent: the CLI kills them shortly after stdin
-    // ends and always has, so holding a whole process open for one would be a
-    // new promise this spec explicitly declines to make (Non-Goals).
-    if (counts.agents + counts.other > 0) return 'background-work';
+    // Shells count too (DOR-2065). A warm process never closes stdin, so its
+    // shells live on, and when one finishes the CLI wakes the model with the
+    // result, exactly as the bare CLI does. Taking the process back kills the
+    // shell and that wake with it: a chat that ended its turn to wait on a PR
+    // watcher was never heard from again. The spec's Non-Goal reasoned from the
+    // resume path, where stdin does close and the CLI ends its shells itself.
+    if (counts.agents + counts.other + counts.shells > 0) return 'background-work';
     if (this.opts.liveness().owedCount() > 0) return 'delivery-owed';
+    // A timer the agent set fires inside this process, so ending the process
+    // loses it, exactly like a shell (DOR-2717). Bounded by the same ceiling,
+    // which is what ends a `/loop` that would otherwise hold it forever.
+    if (this.opts.hasPendingTimer?.() === true) return 'timer-pending';
     if (this.opts.hasPendingInteraction()) return 'waiting-on-person';
     return undefined;
+  }
+
+  /**
+   * Report a flip in whether this process holds background work (DOR-2065).
+   *
+   * Narrower than {@link blockingReason} on purpose: an open turn or a person
+   * being waited on is not work that dies unheard with the process. A turn
+   * being open does not hide work either — a shell started mid-turn is held
+   * from the moment it starts.
+   */
+  private noteHoldingWork(): void {
+    const counts = this.opts.liveness().liveTaskCounts();
+    const holding =
+      counts.agents + counts.other + counts.shells > 0 ||
+      this.opts.liveness().owedCount() > 0 ||
+      this.opts.hasPendingTimer?.() === true;
+    if (holding === this.holdingWork) return;
+    this.holdingWork = holding;
+    try {
+      this.opts.onHoldingWorkChange?.(holding);
+    } catch (err) {
+      logger.warn('[SessionPump] a background-work observer threw', {
+        sessionId: this.opts.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -314,19 +407,21 @@ export class ProcessQuiet {
    * and is not what a purely lazy check would have given it.
    */
   private noteBusySpell(quiet: boolean): void {
-    const now = Date.now();
+    const awake = this.awakeNow();
     if (
-      this.quietSince !== undefined &&
-      now - this.quietSince >= SESSIONS.BACKGROUND_QUIET_RESET_MS
+      this.quietSinceAwake !== undefined &&
+      awake - this.quietSinceAwake >= SESSIONS.BACKGROUND_QUIET_RESET_MS
     ) {
       this.busySince = undefined;
+      this.busySinceAwake = undefined;
     }
     if (!quiet) {
-      this.quietSince = undefined;
-      this.busySince ??= now;
+      this.quietSinceAwake = undefined;
+      this.busySince ??= Date.now();
+      this.busySinceAwake ??= awake;
       return;
     }
-    this.quietSince ??= now;
+    this.quietSinceAwake ??= awake;
   }
 
   /**
@@ -386,6 +481,7 @@ export class ProcessQuiet {
     this.owedTimer = undefined;
     const abandoned = this.opts.liveness().expireOwed();
     if (abandoned.length === 0) return;
+    this.noteHoldingWork();
     this.owedExpiredAt = Date.now();
     logger.info('[SessionPump] an owed delivery never arrived; releasing the queue', {
       sessionId: this.opts.sessionId,

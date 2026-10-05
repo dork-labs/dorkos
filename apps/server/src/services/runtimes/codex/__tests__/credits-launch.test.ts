@@ -14,7 +14,9 @@ import { isCreditsTokenVar } from '../../../core/cloud/credits-protocols.js';
 const TOKEN_VAR = 'DORKOS_CREDITS_TOKEN_TEST';
 import {
   CODEX_CREDITS_PROVIDER_ID,
+  codexCreditsAppServerEnv,
   codexCreditsProcessEnv,
+  codexCreditsThreadConfig,
   codexRoutesOrPays,
   threadRunsOnCredits,
   withCodexCredits,
@@ -170,5 +172,37 @@ describe('a credits turn’s client options', () => {
     expect(Object.keys(options.config?.model_providers as object)).toEqual([
       CODEX_CREDITS_PROVIDER_ID,
     ]);
+  });
+});
+
+describe('credits on app-server (ADR 261005-113107)', () => {
+  it('gives the credits process nothing that routes or pays, and no token at all', () => {
+    const env = codexCreditsAppServerEnv({
+      PATH: '/usr/bin',
+      OPENAI_API_KEY: 'person-key',
+      OPENAI_BASE_URL: 'https://elsewhere',
+      CODEX_HOME: '/home/me/.codex',
+      AZURE_OPENAI_API_KEY: 'azure',
+      [TOKEN_VAR]: 'stale-token',
+    });
+    expect(env).toEqual({ PATH: '/usr/bin', CODEX_HOME: creditsCodexHome() });
+  });
+
+  it('points a thread at the relay with its key, and turns web search off', () => {
+    expect(
+      codexCreditsThreadConfig({ baseUrl: 'http://127.0.0.1:5/v1', key: 'relay-key' })
+    ).toEqual({
+      model_provider: CODEX_CREDITS_PROVIDER_ID,
+      model_providers: {
+        [CODEX_CREDITS_PROVIDER_ID]: {
+          name: 'DorkOS credits',
+          base_url: 'http://127.0.0.1:5/v1',
+          wire_api: 'responses',
+          requires_openai_auth: false,
+          experimental_bearer_token: 'relay-key',
+        },
+      },
+      web_search: 'disabled',
+    });
   });
 });

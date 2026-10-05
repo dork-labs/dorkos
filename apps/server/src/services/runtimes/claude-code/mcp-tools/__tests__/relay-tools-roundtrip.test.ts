@@ -45,6 +45,12 @@ const INTRUDER: SenderIdentity = { subject: 'relay.agent.intruder', agentId: 'in
  */
 class FakeAgentTurnRegistry implements AdapterRegistryLike {
   private relay: RelayPublisher | null = null;
+  /** The turn's final payload; a test overrides it to change what the agent ends with. */
+  finalPayload: Record<string, unknown> = {
+    type: 'agent_result',
+    text: 'final answer',
+    done: true,
+  };
 
   setRelay(relay: RelayPublisher): void {
     this.relay = relay;
@@ -71,7 +77,7 @@ class FakeAgentTurnRegistry implements AdapterRegistryLike {
       done: false,
     });
     await tick();
-    await reply({ type: 'agent_result', text: 'final answer', done: true });
+    await reply(this.finalPayload);
 
     return { success: true, durationMs: 30 };
   }
@@ -92,10 +98,12 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
   let tmpDir: string;
   let relay: RelayCore;
   let deps: McpToolDeps;
+  let registry: FakeAgentTurnRegistry;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-tools-roundtrip-'));
-    relay = new RelayCore({ dataDir: tmpDir, adapterRegistry: new FakeAgentTurnRegistry() });
+    registry = new FakeAgentTurnRegistry();
+    relay = new RelayCore({ dataDir: tmpDir, adapterRegistry: registry });
     deps = { relayCore: relay } as McpToolDeps;
   });
 
@@ -126,6 +134,24 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
 
     // Ephemeral query inbox is cleaned up.
     expect(relay.listEndpoints()).toHaveLength(0);
+  });
+
+  it('relay_send_and_wait says when the agent is still working, since its later report cannot reach it (DOR-2717)', async () => {
+    const handler = createRelayQueryHandler(deps, CALLER);
+    const ask = () =>
+      handler({ to_subject: 'relay.agent.responder', payload: { task: 'x' }, timeout_ms: 10_000 });
+
+    expect(parse(await ask()).note).toBeUndefined();
+
+    registry.finalPayload = {
+      type: 'agent_result',
+      text: 'Started a helper.',
+      done: true,
+      continuing: true,
+    };
+    const data = parse(await ask());
+    expect(data.reply).toMatchObject({ continuing: true });
+    expect(data.note).toMatch(/still working.*relay_send_async/s);
   });
 
   it('relay_send_async + relay_inbox polling (no status arg) returns payloads and ack drains pending (C2, DOR-406)', async () => {

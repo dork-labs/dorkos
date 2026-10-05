@@ -121,6 +121,53 @@ export function codexCreditsProcessEnv(
 }
 
 /**
+ * The process environment of the credits-home app-server (ADR 261005-113107):
+ * the projected environment minus every name that routes or pays, and the
+ * credits home. No token at all — on app-server the token never enters
+ * Codex's process; the thread's provider points at the credits relay, which
+ * adds it on the way out.
+ *
+ * @param projected - `runtimeEnvironment('codex', 'turn')`.
+ */
+export function codexCreditsAppServerEnv(
+  projected: Readonly<Record<string, string>>
+): Record<string, string> {
+  const kept: Record<string, string> = {};
+  for (const [name, value] of Object.entries(projected)) {
+    if (!codexRoutesOrPays(name) && !isCreditsTokenVar(name)) kept[name] = value;
+  }
+  return { ...kept, CODEX_HOME: creditsCodexHome() };
+}
+
+/**
+ * The thread config that points an app-server thread at the credits relay: the
+ * `dorkos-credits` provider with the relay's loopback URL and the relay key
+ * this credits process was issued, and web search off (the credits endpoint
+ * cannot carry the vendor's billed search). Sent over stdin inside
+ * `thread/start`/`thread/resume`, never argv or environment.
+ *
+ * @param relay - The relay's base URL and this process's key.
+ */
+export function codexCreditsThreadConfig(relay: {
+  baseUrl: string;
+  key: string;
+}): Record<string, unknown> {
+  return {
+    model_provider: CODEX_CREDITS_PROVIDER_ID,
+    model_providers: {
+      [CODEX_CREDITS_PROVIDER_ID]: {
+        name: 'DorkOS credits',
+        base_url: relay.baseUrl,
+        wire_api: 'responses',
+        requires_openai_auth: false,
+        experimental_bearer_token: relay.key,
+      },
+    },
+    web_search: 'disabled',
+  };
+}
+
+/**
  * What a credits turn's config overrides carry: the provider entry that points
  * the turn at the credits endpoint (the base URL, not a secret; the responses
  * wire format; the NAME of the variable the token is in;

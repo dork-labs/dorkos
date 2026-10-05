@@ -9,13 +9,17 @@
  * - `subscribe`: a `sub` message and a local listener; returns a function that
  *   sends `unsub`. Events arrive as `evt`.
  * - `reverse`: the function stays here under an id (`expose`); the host calls
- *   it with `rcall` and this answers with `rret`. A `cancel` drops that call's
- *   answer. (Its `AbortController` is aborted too, but no handler receives the
- *   signal yet: the advisor and the action handler take none. Tools will.)
+ *   it with `rcall` and this answers with `rret`. Each call gets its own
+ *   `AbortController`; a `cancel` aborts it and drops that call's answer. A
+ *   tool handler receives its signal as `call.signal` (the advisor and the
+ *   action handler take none). `tools.handle` checks the name against the
+ *   manifest's tools copied into `init`, with the in-process rules and words
+ *   (`agent-tools/tool-handle-rules.ts`), and closes when `register()`
+ *   finishes ({@link ProxyCtx.sealTools}).
  * - `local`: `schedule` (the same 5-second floor as in-process; every cancel
- *   runs on stop) and `requirePerson`, which refuses every request until the
- *   host's verdict header reaches the child (a later phase): fail closed.
- * - `refused`: throws the table's reason.
+ *   runs on stop) and `requirePerson`, which reads the verdict the host put
+ *   in a header (`isolated-router.ts`) and refuses when there is none: fail
+ *   closed.
  *
  * Nothing here enforces anything: the extension shares this process, and
  * could send any message itself. The host checks every message
@@ -36,7 +40,15 @@ import {
   type ReverseKind,
   type SubscribeKind,
 } from '../ctx-protocol.js';
-import type { ChildMessage, HostMessage, InitMessage, WireError } from '../ipc-protocol.js';
+import { toolHandleProblem, type ToolHandleCheck } from '../../agent-tools/tool-handle-rules.js';
+import {
+  PERSON_VERDICT_HEADER,
+  parsePersonVerdict,
+  type ChildMessage,
+  type HostMessage,
+  type InitMessage,
+  type WireError,
+} from '../ipc-protocol.js';
 
 /** Minimum scheduling interval in seconds, as in-process. */
 const MIN_INTERVAL_SECONDS = 5;
@@ -57,7 +69,10 @@ export interface ProxyCtxDeps {
   /** Send one message to the host. Throws when the message cannot be serialized. */
   send: (message: ChildMessage) => void;
   /** The host's `init`. */
-  init: Pick<InitMessage, 'extensionId' | 'ctx' | 'displayName' | 'allowAgents'>;
+  init: Pick<
+    InitMessage,
+    'extensionId' | 'ctx' | 'displayName' | 'allowAgents' | 'personRefusal' | 'tools'
+  >;
   /** The extension API's error classes. */
   errors: ProxyErrorClasses;
   /** Where to report a listener or task that threw (the host forwards stderr to its log). */
@@ -74,6 +89,11 @@ export interface ProxyCtx {
    * @returns `true` when it was one.
    */
   receive(message: HostMessage): boolean;
+  /**
+   * Close `ctx.tools.handle` (called once `register()` finished, however it
+   * finished) and say which tools got a handler.
+   */
+  sealTools(): string[];
   /** Cancel every scheduled task (the first step of a stop). */
   cancelScheduled(): void;
   /** Stop: cancel every scheduled task and refuse every later call. */
@@ -82,7 +102,11 @@ export interface ProxyCtx {
 
 /** A reverse handler held here: which function a method name means. */
 interface Exposed {
-  resolve(method: string): ((...args: unknown[]) => unknown) | undefined;
+  /**
+   * @param method - The method the host called.
+   * @param signal - Aborted when the host cancels this call.
+   */
+  resolve(method: string, signal: AbortSignal): ((...args: unknown[]) => unknown) | undefined;
 }
 
 /**
@@ -171,6 +195,11 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
   const running = new Map<number, AbortController>();
   const scheduled = new Set<() => void>();
   let onActionId: number | null = null;
+  const toolChecks = new Map<string, ToolHandleCheck>(
+    (Array.isArray(init.tools) ? init.tools : []).map((check) => [check.name, check])
+  );
+  const handledTools = new Set<string>();
+  let toolsOpen = true;
 
   /** Send, turning a serialization failure into a TypeError naming the member. */
   const post = (message: ChildMessage, path: string): void => {
@@ -230,12 +259,25 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
   };
 
   /** Expose a function under a fresh id; returns the unregister function. */
-  const expose = (path: string, exposed: Exposed, methods?: string[]): (() => void) => {
+  const expose = (
+    path: string,
+    exposed: Exposed,
+    detail: { methods?: string[]; name?: string } = {}
+  ): (() => void) => {
     if (stopped) throw new Error(`ctx.${path} was called after the extension stopped.`);
     const id = nextId++;
     exposes.set(id, exposed);
     try {
-      post({ type: 'expose', id, path, ...(methods ? { methods } : {}) }, path);
+      post(
+        {
+          type: 'expose',
+          id,
+          path,
+          ...(detail.methods ? { methods: detail.methods } : {}),
+          ...(detail.name !== undefined ? { name: detail.name } : {}),
+        },
+        path
+      );
     } catch (err) {
       exposes.delete(id);
       throw err;
@@ -271,7 +313,7 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
               ? (target[method] as (...args: unknown[]) => unknown).bind(target)
               : undefined,
         },
-        [...methods]
+        { methods: [...methods] }
       );
     },
     'inbox.onAction': () => (handler: unknown) => {
@@ -284,6 +326,36 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
       });
       onActionId = (unregister as { exposeId?: number }).exposeId ?? null;
       return unregister;
+    },
+    'tools.handle': () => (name: unknown, handler: unknown) => {
+      const problem = toolHandleProblem(
+        init.extensionId,
+        { open: toolsOpen, checks: toolChecks, handled: handledTools },
+        name,
+        handler
+      );
+      if (problem) throw problem;
+      const toolName = name as string;
+      const run = handler as (input: unknown, call: unknown) => unknown;
+      expose(
+        'tools.handle',
+        {
+          // The host calls `tool` with the input and who is calling; the
+          // handler gets the in-process call shape, with this call's signal.
+          resolve: (method, signal) =>
+            method === 'tool'
+              ? (input: unknown, meta: unknown) => {
+                  const agentId = (meta as { agentId?: unknown } | null)?.agentId;
+                  return run(
+                    input,
+                    Object.freeze({ signal, agentId: typeof agentId === 'string' ? agentId : null })
+                  );
+                }
+              : undefined,
+        },
+        { name: toolName }
+      );
+      handledTools.add(toolName);
     },
   };
 
@@ -304,12 +376,18 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
     return cancel;
   };
 
-  // Fail closed until the host's person verdict reaches the child (spec §7).
-  const requirePerson: RequestHandler = (_req, res) => {
-    res.status(403).json({
-      error: `Only a person can change ${init.displayName}'s settings.`,
-      code: 'extension_person_required',
-    });
+  // The host ran the person bar on the real request (whose cookie and
+  // tokens never reach this process) and put its verdict in a header it
+  // always sets; a client-sent copy is replaced (spec §7). A missing or
+  // unreadable verdict refuses, with the in-process words for an agent.
+  const requirePerson: RequestHandler = (req, res, next) => {
+    const verdict = parsePersonVerdict(req.headers[PERSON_VERDICT_HEADER]);
+    if (verdict?.ok === true) {
+      next();
+      return;
+    }
+    if (verdict) res.status(verdict.status).json(verdict.body);
+    else res.status(403).json(init.personRefusal);
   };
 
   const consts: Record<string, string> = {
@@ -355,13 +433,6 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
           if (!(path in locals)) throw new Error(`No local implementation of ctx.${path}.`);
           out[name] = locals[path];
           break;
-        case 'refused': {
-          const reason = kind.reason;
-          out[name] = () => {
-            throw new Error(reason);
-          };
-          break;
-        }
         default: {
           const never: never = kind;
           throw new Error(`Unknown ctx kind ${String(never)}`);
@@ -423,8 +494,8 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
       }
       case 'rcall': {
         const { id, handler, method } = message;
-        const fn = exposes.get(handler)?.resolve(method);
         const controller = new AbortController();
+        const fn = exposes.get(handler)?.resolve(method, controller.signal);
         running.set(id, controller);
         if (!fn) {
           answer(id, false, { name: 'Error', message: 'That handler is gone.' });
@@ -472,5 +543,10 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
     running.clear();
   };
 
-  return { ctx, receive, cancelScheduled, stop };
+  const sealTools = (): string[] => {
+    toolsOpen = false;
+    return [...handledTools];
+  };
+
+  return { ctx, receive, sealTools, cancelScheduled, stop };
 }

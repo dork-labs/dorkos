@@ -5,6 +5,13 @@
  * `serverCapabilities` or `dataProxy` in their manifest. Operates as a
  * collaborator to {@link ExtensionManager} — never called directly by routes.
  *
+ * Two runtimes, chosen by the manifest after the approval gate and the
+ * compile: an in-process server half is `require()`d here (ADR 0213); one
+ * that asks to run separately (`runtime: "subprocess"`, DOR-2686) runs in its
+ * own child process (`isolation/`), with a router that forwards to it, and is
+ * restarted on a backoff when it stops on its own. Nothing here ever ends a
+ * process other than an isolated extension's own child.
+ *
  * @module services/extensions/extension-server-lifecycle
  */
 import fs from 'fs/promises';
@@ -27,10 +34,20 @@ import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
 import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
-import { RunningExtensionTools } from './agent-tools/tool-binding.js';
+import { RunningExtensionTools, type ToolBinding } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
-import { isolationKeyOf, waitsForIsolation } from './isolation/isolation-view.js';
+import { isolationKeyOf } from './isolation/isolation-view.js';
 import { extensionServerErrorCopy } from '@dorkos/shared/extension-server-status';
+import {
+  IsolatedExtensionHost,
+  type IsolatedExit,
+  type IsolatedHostTimings,
+  type IsolatedStartErrorCode,
+} from './isolation/isolated-host.js';
+import { resolveChildEntry } from './isolation/child-entry.js';
+import { createIsolatedRouter } from './isolation/isolated-router.js';
+import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
+import { env } from '../../env.js';
 
 const require = createRequire(import.meta.url);
 
@@ -72,16 +89,10 @@ function buildSourceKey(record: ExtensionRecord, serverSourceHash: string | null
     dataProxy: record.manifest.dataProxy ?? null,
     declarations: extensionDeclarationDigest(record.manifest),
     isolation: isolationKeyOf(record),
+    separate: runsSeparately(record),
     serverSourceHash,
   });
 }
-
-/**
- * The code a `runtime: "subprocess"` extension is refused with until DorkOS
- * can run it in its own process (DOR-2686 phase 1; the phase that starts
- * isolated extensions deletes this and its one use).
- */
-export const ISOLATION_NOT_READY = 'isolation_not_ready';
 
 /**
  * How long an extension's server `register()` may take to finish.
@@ -94,8 +105,45 @@ export const ISOLATION_NOT_READY = 'isolation_not_ready';
  */
 export const REGISTER_TIMEOUT_MS = 15_000;
 
-/** Why a server half did not start in time, as its card shows it. */
-const REGISTER_TIMEOUT_ERROR = 'server_start_timeout';
+/**
+ * Why a server half did not start in time, as its card shows it. The
+ * isolated host reports the same code for the same reason.
+ */
+const REGISTER_TIMEOUT_ERROR = 'server_start_timeout' satisfies IsolatedStartErrorCode;
+
+/**
+ * Where an isolated extension's server half stands between starts: a restart
+ * pending after it stopped on its own, or the stop after too many of those
+ * (DOR-2686, spec §9). Kept here, not on the record, because records are
+ * rebuilt on every scan while this lasts; `ExtensionManager` lays it over the
+ * public record.
+ */
+export interface SupervisedServerStatus {
+  /** Why it is stopped and will not restart by itself. */
+  serverError?: { code: string; message: string };
+  /** When a pending restart is due (ISO 8601). */
+  restartingAt?: string;
+}
+
+/** What {@link ExtensionServerLifecycle} needs besides its data directory and compiler. */
+export interface ServerLifecycleOptions {
+  /**
+   * How long an extension's `register()` may take before DorkOS stops
+   * waiting ({@link REGISTER_TIMEOUT_MS}). For an isolated extension it also
+   * covers loading its code in the child.
+   */
+  registerTimeoutMs?: number;
+  /** DorkOS's own HTTP port, which an isolated extension may never connect to. */
+  dorkosPort?: number;
+  /** The record discovery holds for an id right now (records are rebuilt on every scan). */
+  recordOf?: (id: string) => ExtensionRecord | undefined;
+  /** Called when an isolated extension's status changed on its own (it stopped, restarted or gave up). */
+  onStatusChange?: (id: string) => void;
+  /** The restart backoff and crash budget (tests shorten them). */
+  restartPolicy?: RestartPolicyOptions;
+  /** Watchdog and start timings for isolated children (tests shorten them). */
+  isolatedTimings?: Partial<IsolatedHostTimings>;
+}
 
 /**
  * Manages the lifecycle of server-side extensions: compile, load, route, and teardown.
@@ -113,19 +161,32 @@ export class ExtensionServerLifecycle {
    */
   private capabilityRegistry: CapabilityRegistry | null = null;
 
+  private readonly registerTimeoutMs: number;
+  /** Per isolated extension: its crash budget and backoff. */
+  private readonly restartPolicies = new Map<string, RestartPolicy>();
+  /** Per isolated extension: the source its crash count is for. */
+  private readonly policySources = new Map<string, string>();
+  /** Per isolated extension: a pending restart. */
+  private readonly restartTimers = new Map<string, NodeJS.Timeout>();
+  /** Per isolated extension: the source it gave up on, so a page load does not start it again. */
+  private readonly gaveUp = new Map<string, string>();
+  /** Per isolated extension: what its card says between starts. */
+  private readonly supervised = new Map<string, SupervisedServerStatus>();
+
   /**
    * Build the lifecycle for one DorkOS data directory.
    *
    * @param dorkHome - DorkOS's data directory.
    * @param compiler - The shared extension compiler.
-   * @param registerTimeoutMs - How long an extension's `register()` may take
-   *   before DorkOS stops waiting ({@link REGISTER_TIMEOUT_MS}).
+   * @param options - See {@link ServerLifecycleOptions}.
    */
   constructor(
     private readonly dorkHome: string,
     private readonly compiler: ExtensionCompiler,
-    private readonly registerTimeoutMs: number = REGISTER_TIMEOUT_MS
-  ) {}
+    private readonly options: ServerLifecycleOptions = {}
+  ) {
+    this.registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_TIMEOUT_MS;
+  }
 
   /**
    * The tail of each extension's start/stop queue. `initialize` and
@@ -276,20 +337,6 @@ export class ExtensionServerLifecycle {
       return { ok: false, error: describeExtensionLoadRefusal(id) };
     }
 
-    // An extension that asks to run separately does not run at all until
-    // DorkOS can start it in its own process with its limits confirmed
-    // (DOR-2686, D7). Never in-process instead: its card promises limits that
-    // nothing here would keep. Anything still running for this id (a version
-    // that ran inside DorkOS before its manifest moved) is stopped, so the
-    // old in-process code cannot keep serving under the new promise.
-    if (waitsForIsolation(record.manifest)) {
-      await this.stop(id);
-      const message = extensionServerErrorCopy(ISOLATION_NOT_READY, record.manifest.name)!;
-      record.serverError = { code: ISOLATION_NOT_READY, message };
-      logger.info(`[Extensions] Server init refused for ${id}: ${ISOLATION_NOT_READY}`);
-      return { ok: false, error: message };
-    }
-
     // Proxy-only (dataProxy without server.ts) — no compilation needed
     if (record.hasDataProxy && !record.hasServerEntry) {
       const sourceKey = buildSourceKey(record, null);
@@ -347,6 +394,21 @@ export class ExtensionServerLifecycle {
       return { ok: true };
     }
 
+    // An isolated extension that stopped on its own waits for its restart,
+    // or, after too many, for a person: the client asks every page load to
+    // start every server half, and that must not undo either. New code or a
+    // new manifest is a fresh start; so is a reload, enable or approval
+    // (`resetRestarts`).
+    if (runsSeparately(record) && !active) {
+      const name = record.manifest.name;
+      if (this.restartTimers.has(id)) {
+        return { ok: false, error: `Restarting ${name}…` };
+      }
+      if (this.gaveUp.get(id) === sourceKey) {
+        return { ok: false, error: this.supervised.get(id)?.serverError?.message ?? 'Stopped' };
+      }
+    }
+
     // Shut down the stale instance before its replacement takes over
     await this.stop(id);
 
@@ -355,6 +417,8 @@ export class ExtensionServerLifecycle {
     await fs.mkdir(tempDir, { recursive: true });
     const tempFile = path.join(tempDir, `${id}.js`);
     await fs.writeFile(tempFile, compiled.code, 'utf-8');
+
+    if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
 
     try {
       delete require.cache[require.resolve(tempFile)];
@@ -409,9 +473,7 @@ export class ExtensionServerLifecycle {
         dispose();
         registered = undefined;
         const seconds = Math.round(this.registerTimeoutMs / 1000);
-        const message =
-          `${record.manifest.name} couldn't start: its server side didn't finish starting within ` +
-          `${seconds} seconds, so DorkOS stopped waiting and left it off. Reload it to try again.`;
+        const message = extensionServerErrorCopy(REGISTER_TIMEOUT_ERROR, record.manifest.name)!;
         record.serverError = { code: REGISTER_TIMEOUT_ERROR, message };
         logger.warn(`[Extensions] Server init timed out for ${id} after ${seconds}s`);
         return { ok: false, error: message };
@@ -420,24 +482,8 @@ export class ExtensionServerLifecycle {
       const cleanup = typeof result === 'function' ? result : null;
 
       // register() finished: no more handlers. Only an instance that started
-      // has tools, and only the declared tools it handled (DOR-2685). A
-      // declared tool with no handler is reported, not offered.
-      const { handled, unhandled } = tools.seal();
-      const agentTools = new RunningExtensionTools(id, record.manifest.name, handled, [
-        ...toolChecks.flatMap((check) =>
-          check.ok ? [] : [{ name: check.name, reason: check.reason }]
-        ),
-        ...unhandled.map((tool) => ({
-          name: tool.name,
-          reason: `${record.manifest.name} declares ${tool.name} but never handles it`,
-        })),
-      ]);
-      if (unhandled.length > 0) {
-        logger.warn(
-          `[Extensions] ${id} declares tools it never handles, so agents won't get them: ` +
-            unhandled.map((tool) => tool.name).join(', ')
-        );
-      }
+      // has tools, and only the declared tools it handled (DOR-2685).
+      const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
 
       // Mount proxy routes alongside custom routes for hybrid extensions
       if (record.hasDataProxy && record.manifest.dataProxy) {
@@ -509,16 +555,27 @@ export class ExtensionServerLifecycle {
    * tasks, call cleanup, remove its account listeners and advisor, remove
    * router.
    *
+   * Someone asked for this stop (turned it off, removed, reloaded or moved
+   * it to another copy), so an isolated extension's crash history goes with
+   * it: what runs next under this id starts fresh, and a card is never left
+   * saying it stopped 3 times.
+   *
    * @param id - Extension identifier
    */
   shutdown(id: string): Promise<void> {
-    return this.exclusive(id, () => this.stop(id));
+    return this.exclusive(id, async () => {
+      await this.stop(id);
+      this.resetRestarts(id);
+    });
   }
 
   /** The body of {@link shutdown}, run inside the id's queue. */
   private async stop(id: string): Promise<void> {
     const active = this.serverExtensions.get(id);
-    if (!active) return;
+    if (!active) {
+      this.cancelRestart(id);
+      return;
+    }
 
     // Its tools go FIRST, before anything else of it is torn down: no agent
     // can start a new call, a call that found a tool a moment ago is refused
@@ -549,12 +606,303 @@ export class ExtensionServerLifecycle {
       }
     }
 
+    // An isolated extension's cleanup runs in its own process: ask it to
+    // stop and wait until it has (3 s, then it is killed), so an async
+    // cleanup still reaches ctx before its listeners go. Only its own child
+    // is ever signalled — never anything by name, never an agent's process.
+    if (active.isolated) await active.isolated.stop();
+
     // After the extension's own cleanup, so it can still unregister gracefully;
     // whatever it left behind goes now.
     active.releaseListeners?.();
+    active.closeTools?.();
+    active.disposeCtx?.();
 
-    this.serverExtensions.delete(id);
+    // A pending restart is cancelled by any stop: turning it off, an
+    // uninstall or a reload must not be undone a few seconds later.
+    this.cancelRestart(id);
+
+    if (this.serverExtensions.get(id) === active) this.serverExtensions.delete(id);
     logger.info(`[Extensions] Server shutdown for ${id}`);
+  }
+
+  /**
+   * Start an isolated extension's server half in its own process (DOR-2686,
+   * spec §9): the real ctx is built here exactly as in-process, the child
+   * gets a proxy to it, and DorkOS mounts a router that forwards to the
+   * child. The child's self-check runs first; an extension that cannot
+   * confirm its limits does not run at all (no in-process fallback).
+   *
+   * @param id - The extension id.
+   * @param record - Its discovery record.
+   * @param bundlePath - The compiled server bundle.
+   * @param sourceKey - What this instance is built from.
+   */
+  private async startIsolated(
+    id: string,
+    record: ExtensionRecord,
+    bundlePath: string,
+    sourceKey: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    const name = record.manifest.name;
+    const isolation = record.isolation;
+    if (!isolation) {
+      // Discovery always fills this for a subprocess manifest; a record
+      // without it is refused, never run inside DorkOS instead.
+      const message = extensionServerErrorCopy('isolation_unavailable', name)!;
+      record.serverError = { code: 'isolation_unavailable', message };
+      return { ok: false, error: message };
+    }
+
+    // New code or a new manifest is a fresh start, however it arrived (an
+    // update, a rescan, a page load after an edit): its crash count is for
+    // this source only.
+    if (this.policySources.get(id) !== sourceKey) {
+      this.restartPolicies.get(id)?.reset();
+      this.policySources.set(id, sourceKey);
+    }
+
+    // Starting again lifts the stop on its messages (DOR-2683).
+    getAgentSendService()?.extensionStarted(id);
+    const toolChecks = checkDeclaredTools(record.manifest);
+    const built = createDataProviderContext({
+      extensionId: id,
+      extensionDir: record.runPath ?? record.path,
+      dorkHome: this.dorkHome,
+      extensionName: name,
+      toolChecks,
+    });
+    const release = (): void => {
+      built.tools.close();
+      built.dispose();
+      getAgentSendService()?.extensionStopped(id);
+    };
+
+    let host: IsolatedExtensionHost;
+    let result: Awaited<ReturnType<IsolatedExtensionHost['start']>>;
+    try {
+      const started = new IsolatedExtensionHost({
+        extensionId: id,
+        displayName: name,
+        bundlePath,
+        extensionDir: record.runPath ?? record.path,
+        dorkHome: this.dorkHome,
+        isolation,
+        dorkosPort: this.options.dorkosPort ?? env.DORKOS_PORT,
+        bootstrapPath: await resolveChildEntry(this.dorkHome),
+        logger: {
+          info: (message) => logger.info(message),
+          warn: (message) => logger.warn(message),
+          error: (message) => logger.error(message),
+        },
+        ctx: built.ctx,
+        projectRoots: async () => (await built.ctx.projects.list()).map((p) => p.root),
+        timings: { loadTimeoutMs: this.registerTimeoutMs, ...this.options.isolatedTimings },
+        tools: toolChecks,
+        // Its tools leave the registry before anything else of the dead
+        // child is released, so a call still running fails as stopped.
+        onGone: () => {
+          const active = this.serverExtensions.get(id);
+          if (active?.isolated === started) active.agentTools?.stop();
+        },
+        onExit: (exit) => this.onIsolatedExit(id, started, sourceKey, exit),
+      });
+      host = started;
+      result = await started.start();
+    } catch (err) {
+      release();
+      const message = `${name} couldn't start: ${err instanceof Error ? err.message : String(err)}`;
+      record.serverError = { code: 'server_start_failed', message };
+      logger.error(`[Extensions] Isolated start failed for ${id}:`, err);
+      return { ok: false, error: message };
+    }
+
+    if (!result.ok) {
+      release();
+      // The host's load timer is the register timer here, so a slow start
+      // carries the same code and words as in-process.
+      record.serverError = { code: result.code, message: result.message };
+      logger.warn(
+        `[Extensions] Isolated start refused for ${id}: ${result.code}: ${result.message}`
+      );
+      return { ok: false, error: record.serverError.message };
+    }
+
+    // Starting waited; a turn-off or revoke meanwhile wins.
+    if (!this.stillWanted(record)) {
+      await host.stop();
+      release();
+      logger.info(`[Extensions] ${id} was turned off or stopped while starting; left off`);
+      return { ok: false, error: 'Extension was turned off while it was starting' };
+    }
+    // One instance per id, ever.
+    await this.stop(id);
+
+    // register() finished in the child (`registered`), and every tool it
+    // bound was bound through the real ctx.tools.handle on the way: seal the
+    // host's binding exactly as after an in-process register() (spec §8).
+    const agentTools = sealAgentTools(id, name, toolChecks, built.tools);
+    const proxyRouter =
+      record.hasDataProxy && record.manifest.dataProxy
+        ? createProxyRouter(id, record.manifest.dataProxy, this.dorkHome)
+        : null;
+    this.serverExtensions.set(id, {
+      extensionId: id,
+      router: createIsolatedRouter({ displayName: name, host, proxyRouter }),
+      cleanup: null,
+      scheduledCleanups: [],
+      releaseListeners: built.releaseListeners,
+      closeTools: () => built.tools.close(),
+      disposeCtx: built.dispose,
+      sourceKey,
+      agentTools,
+      isolated: host,
+    });
+    // It may have died in the moment between starting and being stored, when
+    // nothing could hear it: treat that exactly like any other crash.
+    if (!host.running) {
+      this.onIsolatedExit(id, host, sourceKey, {
+        reason: 'server_crashed',
+        code: null,
+        signal: null,
+      });
+      return { ok: false, error: `${name} stopped while starting.` };
+    }
+
+    // Only now, with the instance active, can agents reach its tools, as
+    // in-process. Every call goes through the registry's gate here, in
+    // DorkOS, before anything reaches the child.
+    if (this.capabilityRegistry) agentTools.contribute(this.capabilityRegistry);
+
+    getExtensionInbox()?.markRunning(id, name);
+    record.serverError = undefined;
+    this.supervised.delete(id);
+    this.gaveUp.delete(id);
+    logger.info(`[Extensions] Isolated server started for ${id} (pid ${host.pid ?? '?'})`);
+    return { ok: true };
+  }
+
+  /**
+   * An isolated extension's process ended. A stop DorkOS asked for is
+   * handled by {@link stop}; anything else runs the same bookkeeping here,
+   * at once, then restarts it on the backoff or, after too many, leaves it
+   * stopped with the reason on its card.
+   *
+   * The bookkeeping matters most for what the dead child had already asked
+   * for: an `agent.send` waiting for room is still running in the real ctx,
+   * and only `extensionStopped` keeps it from going out (DOR-2683).
+   *
+   * Only the extension's own child ended; nothing here touches any other
+   * process, an agent's least of all.
+   *
+   * @param id - The extension id.
+   * @param host - The host whose child ended.
+   * @param sourceKey - What that instance was built from.
+   * @param exit - How it ended.
+   */
+  private onIsolatedExit(
+    id: string,
+    host: IsolatedExtensionHost,
+    sourceKey: string,
+    exit: IsolatedExit
+  ): void {
+    if (exit.reason === 'stopped') return;
+    const active = this.serverExtensions.get(id);
+    if (!active || active.isolated !== host) return;
+
+    active.agentTools?.stop();
+    getExtensionInbox()?.markStopped(id);
+    getAgentSendService()?.extensionStopped(id);
+    active.releaseListeners?.();
+    active.closeTools?.();
+    // Whatever the dead child still had running in the real ctx acts no more.
+    active.disposeCtx?.();
+    this.serverExtensions.delete(id);
+
+    const record = this.options.recordOf?.(id);
+    const name = record?.manifest.name ?? id;
+    logger.warn(
+      `[Extensions] ${id} stopped on its own (${exit.reason}, code ${exit.code}, signal ${exit.signal})`
+    );
+
+    let policy = this.restartPolicies.get(id);
+    if (!policy) {
+      policy = new RestartPolicy(this.options.restartPolicy);
+      this.restartPolicies.set(id, policy);
+    }
+    const decision = policy.onUnexpectedExit();
+    if ('giveUp' in decision) {
+      const message = extensionServerErrorCopy(exit.reason, name)!;
+      this.supervised.set(id, { serverError: { code: exit.reason, message } });
+      this.gaveUp.set(id, sourceKey);
+      logger.warn(`[Extensions] ${id} stopped too often; left off until it is reloaded`);
+    } else {
+      this.supervised.set(id, {
+        restartingAt: new Date(Date.now() + decision.restartIn).toISOString(),
+      });
+      const timer = setTimeout(() => {
+        this.restartTimers.delete(id);
+        void this.restartAfterExit(id);
+      }, decision.restartIn);
+      timer.unref();
+      this.restartTimers.set(id, timer);
+    }
+    this.options.onStatusChange?.(id);
+  }
+
+  /** The restart a backoff timer fires: a fresh process, `register()` again. */
+  private async restartAfterExit(id: string): Promise<void> {
+    const record = this.options.recordOf?.(id);
+    this.supervised.delete(id);
+    if (record) {
+      const result = await this.initialize(id, record);
+      if (!result.ok) logger.warn(`[Extensions] Restart of ${id} failed: ${result.error}`);
+    }
+    this.options.onStatusChange?.(id);
+  }
+
+  /** Cancel a pending restart, if any. */
+  private cancelRestart(id: string): void {
+    const timer = this.restartTimers.get(id);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.restartTimers.delete(id);
+    if (this.supervised.get(id)?.restartingAt) this.supervised.delete(id);
+  }
+
+  /**
+   * Forget an isolated extension's crashes: a person reloaded, enabled or
+   * approved it (a dev-link save reloads it too), so it gets a fresh crash
+   * budget and the stop after too many crashes is lifted (spec §9).
+   *
+   * @param id - The extension id.
+   */
+  resetRestarts(id: string): void {
+    this.restartPolicies.get(id)?.reset();
+    this.cancelRestart(id);
+    this.gaveUp.delete(id);
+    this.supervised.delete(id);
+  }
+
+  /**
+   * What an isolated extension's card says between starts (a pending
+   * restart, or the stop after too many crashes), laid over its record by
+   * `ExtensionManager`. Empty for everything else.
+   *
+   * @param id - The extension id.
+   */
+  supervisedStatus(id: string): SupervisedServerStatus {
+    return this.supervised.get(id) ?? {};
+  }
+
+  /**
+   * The running isolated extension's process id, for diagnostics and tests.
+   * Never used to signal anything.
+   *
+   * @param id - The extension id.
+   */
+  isolatedPid(id: string): number | undefined {
+    return this.serverExtensions.get(id)?.isolated?.pid;
   }
 
   /**
@@ -592,4 +940,52 @@ async function settleWithin<T>(
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * Whether an extension's server half runs in its own process: its manifest
+ * asks for it, or discovery says so. Either one is enough, so a record
+ * missing its isolation view is refused rather than run inside DorkOS.
+ *
+ * @param record - The extension's discovery record.
+ */
+function runsSeparately(record: ExtensionRecord): boolean {
+  return record.manifest.serverCapabilities?.runtime === 'subprocess' || !!record.isolation;
+}
+
+/**
+ * Close an instance's tool binding once its `register()` finished, and hold
+ * what it handled for contribution: only the declared tools it handled
+ * (DOR-2685). A declared tool with no handler is reported, not offered. The
+ * same for both runtimes: an isolated extension's tools were bound through
+ * the same real `ctx.tools.handle` by the host's dispatcher.
+ *
+ * @param id - The extension id.
+ * @param name - Its manifest name.
+ * @param toolChecks - Discovery's verdict on each declared tool.
+ * @param tools - The instance's binding, from `createDataProviderContext`.
+ */
+function sealAgentTools(
+  id: string,
+  name: string,
+  toolChecks: ReturnType<typeof checkDeclaredTools>,
+  tools: ToolBinding
+): RunningExtensionTools {
+  const { handled, unhandled } = tools.seal();
+  const agentTools = new RunningExtensionTools(id, name, handled, [
+    ...toolChecks.flatMap((check) =>
+      check.ok ? [] : [{ name: check.name, reason: check.reason }]
+    ),
+    ...unhandled.map((tool) => ({
+      name: tool.name,
+      reason: `${name} declares ${tool.name} but never handles it`,
+    })),
+  ]);
+  if (unhandled.length > 0) {
+    logger.warn(
+      `[Extensions] ${id} declares tools it never handles, so agents won't get them: ` +
+        unhandled.map((tool) => tool.name).join(', ')
+    );
+  }
+  return agentTools;
 }

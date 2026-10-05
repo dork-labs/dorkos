@@ -1006,8 +1006,15 @@
     {
       "idx": 143,
       "version": "6",
-      "when": 1791203047320,
-      "tag": "20261005122407_task_run_occurrence",
+      "when": 1791157937962,
+      "tag": "20261004235217_session_started_by_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "6",
+      "when": 1791230464518,
+      "tag": "20261005200104_task_run_occurrence",
       "breakpoints": true
     }
   ]

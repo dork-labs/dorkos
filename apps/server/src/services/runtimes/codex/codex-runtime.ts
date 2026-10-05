@@ -3,36 +3,37 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  * Codex Runtime — implements the AgentRuntime interface for OpenAI Codex.
  *
  * One DorkOS session maps to one Codex thread (ADR-0309), bound durably via
- * {@link CodexThreadMap}. Each turn spawns a fresh `codex exec` subprocess
- * through the SDK: an unbound session starts a new thread, a bound one
- * resumes it — both with EXPLICIT sandbox/approval options projected from the
- * session's permission mode ({@link projectThreadOptions}).
+ * {@link CodexThreadMap}. How a turn reaches Codex is a transport's job
+ * (`transport/`, ADR 261005-113107): on `exec` each turn is a fresh
+ * `codex exec` subprocess through the SDK; on `app-server` it is one turn on a
+ * long-lived `codex app-server` per Codex home. Everything above "run one
+ * resolved turn" lives here: settings, the cwd chain, who pays, the model
+ * swap, the connector binding and its lease, the identity token, managed MCP
+ * servers, the context gate, prompt assembly, the registry and `codex_threads`
+ * writes, and media capture.
  *
  * Live turn state follows the test-mode pattern: `sendMessage` is a pure
  * StreamEvent producer (the platform's trigger-turn consumes it into the
  * per-session {@link SessionStateProjector}), and `subscribeSession` /
  * `getSessionSnapshot` / `getMessageHistory` are served from that projector's
- * DorkOS-owned EventLog. The Codex SDK exposes NO thread listing or reading
- * API (`Codex` is exactly `startThread`/`resumeThread`), so session discovery
- * comes from the in-memory {@link CodexSessionRegistry}, and restart survival
- * comes from DorkOS itself: display metadata (title/preview/updatedAt) is
- * written through to the `codex_threads` rows alongside the durable
- * sessionId↔threadId binding, and {@link CodexRuntime.hydrateSessions}
- * re-seeds the registry from those rows at startup. Sessions that never bound
- * a thread (no completed `thread.started`) have no durable row and are not
- * rediscovered — a documented limitation of the SDK surface, not a shortcut.
- * The same boundary applies to writes: a rename issued before the session's
- * first turn lives in memory only until `thread.started` binds the row (the
+ * DorkOS-owned EventLog. Session discovery comes from the in-memory
+ * {@link CodexSessionRegistry}, and restart survival comes from DorkOS itself:
+ * display metadata (title/preview/updatedAt) is written through to the
+ * `codex_threads` rows alongside the durable sessionId↔threadId binding, and
+ * {@link CodexRuntime.hydrateSessions} re-seeds the registry from those rows at
+ * startup. Sessions that never bound a thread have no durable row and are not
+ * rediscovered. The same boundary applies to writes: a rename issued before
+ * the session's first turn lives in memory only until the binding lands (the
  * bind then carries the renamed title with it).
  *
- * Tool approvals are structurally unsupported (`supportsToolApproval: false`):
- * `codex exec` closes stdin after the prompt and auto-cancels approval-needing
- * calls (NOTES.md Verdict 1), so `approveTool` honestly reports `false`.
+ * Tool approvals are not offered on either transport yet
+ * (`supportsToolApproval: false`): `codex exec` closes stdin after the prompt
+ * (NOTES.md Verdict 1), and the app-server transport refuses every approval
+ * request until approvals are wired (spec phase P2), so `approveTool` honestly
+ * reports `false`.
  *
  * @module services/runtimes/codex/codex-runtime
  */
-import { runtimeInheritedNames } from '../shared/runtime-environment-config.js';
-import { Codex } from '@openai/codex-sdk';
 import type {
   StreamEvent,
   ModelOption,
@@ -56,6 +57,7 @@ import type {
   SessionSettingsPort,
   ManagedMcpServerResolver,
   SessionUpdateResult,
+  SessionWarmth,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -82,10 +84,16 @@ import {
   turnAgentOf,
   type AgentHome,
 } from '../../core/agent-identity/index.js';
-import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
-import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
+import {
+  checkCodexDependencies,
+  codexAppServerVersionNote,
+  resolveCodexBinaryPath,
+} from './check-dependencies.js';
+import { codexAppServerPool } from './app-server/process-pool.js';
+import { PINNED_CODEX_APP_SERVER_VERSION } from './app-server/protocol/methods.js';
+import { createCodexEventContext } from './event-mapper.js';
 import { readCodexTurnContextUsage, readCodexTurnReading } from './turn-context-usage.js';
-import { ensureCreditsCodexHome, threadRunsOnCredits, withCodexCredits } from './credits-launch.js';
+import { ensureCreditsCodexHome, threadRunsOnCredits } from './credits-launch.js';
 import { creditsCodexHome } from './codex-home.js';
 import { resolveCreditsLaunch } from '../../core/cloud/credits-inference.js';
 import {
@@ -109,21 +117,23 @@ import {
 } from './thread-map.js';
 import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
-import { CodexModelCatalog } from './model-catalog.js';
 import {
-  dorkosToolsPosture,
-  resolveDorkosMcpInjection,
-  type DorkosMcpInjection,
-} from '../shared/dorkos-mcp-injection.js';
-import { buildCodexOptions } from './codex-options.js';
+  ExecCodexTransport,
+  createAppServerTransport,
+  type CodexTransport,
+  type CodexTransportKind,
+} from './transport/index.js';
+import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
+import { CodexModelCatalog } from './model-catalog.js';
+import { dorkosToolsPosture, resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import {
   renderBlockedAreaLines,
   resolveToolVisibilityFor,
 } from '../shared/permission-tool-filter.js';
-import { resolveManagedMcpServers, type CodexManagedMcpServers } from './mcp-server-config.js';
-import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
+import { resolveManagedMcpServers } from './mcp-server-config.js';
+import { buildCodexPrompt, grantedWritableDirectories } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
@@ -192,6 +202,19 @@ export interface CodexRuntimeOptions {
    * quietly — see {@link CodexRuntime.getCapabilities}.
    */
   attachments?: SessionAttachmentStore;
+  /**
+   * How this runtime talks to Codex (`runtimes.codex.transport`, already
+   * resolved — `resolveCodexTransport`), or a ready transport (tests). Fixed
+   * for the runtime's life: capabilities are cached by clients, so a change
+   * takes effect at the next server start. Defaults to `exec`.
+   */
+  transport?: CodexTransportKind | CodexTransport;
+  /**
+   * The loopback credits relay, when boot started one. Only the app-server
+   * transport uses it: a credits thread's provider points at the relay, so the
+   * credits token never enters Codex's process.
+   */
+  creditsRelay?: () => CreditsRelay | undefined;
 }
 
 /**
@@ -200,16 +223,8 @@ export interface CodexRuntimeOptions {
 export class CodexRuntime implements AgentRuntime {
   readonly type = 'codex' as const;
 
-  /**
-   * The shared client and the binary it was built for, or `null` until the
-   * first turn resolves one. Built LAZILY: the SDK's `Codex` constructor
-   * resolves its own vendored binary and THROWS when it cannot find one, which
-   * in the packaged desktop app (where the vendor package is not shipped) took
-   * the whole runtime out of the registry — no Codex card, no honest status, no
-   * install hint (DOR-1334 / F9). Nothing here touches the SDK until a turn
-   * actually needs it, and by then DorkOS has resolved the path itself.
-   */
-  private sharedClient: { binary: string; policy: string; client: Codex } | null = null;
+  /** How turns reach Codex — see {@link CodexRuntimeOptions.transport}. */
+  private readonly transport: CodexTransport;
   /** How this runtime finds its `codex` binary — see {@link CodexRuntimeOptions.resolveBinary}. */
   private readonly resolveBinary: () => Promise<string | null>;
   /** Models visible to the same binary and Codex account a real turn uses. */
@@ -271,7 +286,43 @@ export class CodexRuntime implements AgentRuntime {
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
     this.modelCatalog =
       options.modelCatalog ?? new CodexModelCatalog({ resolveBinary: this.resolveBinary });
-    // No SDK client is built here on purpose — see `sharedClient`.
+    this.transport = this.buildTransport(options.transport ?? 'exec', options.creditsRelay);
+    // Capability-gated members exist only where the transport backs them, so a
+    // runtime on exec keeps the shape it always had.
+    if (this.transport.getSessionWarmth) {
+      const transport = this.transport;
+      this.getSessionWarmth = (sessionId) => transport.getSessionWarmth?.(sessionId) ?? 'cold';
+      this.reapSession = async (sessionId) => transport.reapSession?.(sessionId);
+      // A turn here ends with its stream (the generator returns at its own
+      // terminal), so there is never an open turn left to settle.
+      this.settleOpenTurn = async () => false;
+    }
+  }
+
+  /** How warm a session's thread is; present only on a persistent transport. */
+  getSessionWarmth?: (sessionId: string) => SessionWarmth;
+  /** Give back a session's warm thread; present only on a persistent transport. */
+  reapSession?: (sessionId: string) => Promise<void>;
+  /** Nothing to settle; present only on a persistent transport. */
+  settleOpenTurn?: (sessionId: string) => Promise<boolean>;
+
+  private buildTransport(
+    choice: CodexTransportKind | CodexTransport,
+    creditsRelay: (() => CreditsRelay | undefined) | undefined
+  ): CodexTransport {
+    if (typeof choice !== 'string') return choice;
+    if (choice === 'app-server') {
+      return createAppServerTransport({
+        connectorTools: () => this.connectorRuntimeTools,
+        ...(creditsRelay ? { creditsRelay } : {}),
+      });
+    }
+    return new ExecCodexTransport();
+  }
+
+  /** Stop every process this runtime's transport started (server shutdown). */
+  async shutdown(): Promise<void> {
+    await this.transport.shutdown();
   }
 
   /**
@@ -328,6 +379,14 @@ export class CodexRuntime implements AgentRuntime {
    */
   stopCreditsTurns(): void {
     for (const controller of this.creditsTurns) controller.abort();
+    // On app-server the credits home is a long-lived process: stop it too, so
+    // nothing paid for by the old link keeps running (its relay key revokes
+    // with it).
+    void this.transport
+      .closeCreditsProcess?.()
+      .catch((err: unknown) =>
+        logger.warn('[CodexRuntime] could not stop the credits Codex process', { err: String(err) })
+      );
   }
 
   /**
@@ -365,62 +424,6 @@ export class CodexRuntime implements AgentRuntime {
     if (!onCredits) return null;
     ensureCreditsCodexHome();
     return resolveCreditsLaunch(this.getCapabilities(), 'Codex');
-  }
-
-  /**
-   * The `Codex` client for one turn.
-   *
-   * Returns the shared client (subprocess receives a complete projected env,
-   * `dorkos_ui` bridge only) unless this turn needs a turn-scoped one: it
-   * carries an agent identity token (so the token reaches `codex exec` through
-   * its environment and nowhere else), or the agent has enabled managed MCP
-   * servers (which vary by session cwd, so they cannot ride the shared client).
-   * Constructing a client is cheap next to spawning the model subprocess: it
-   * stores options — and, because DorkOS always passes `codexPathOverride`, the
-   * SDK never runs (nor throws from) its own binary discovery.
-   *
-   * @param tokenEnv - The identity-token env fragment, `{}` when unattributed.
-   * @param managed - Enabled managed servers in Codex config shape, with the
-   *   header values that must ride the environment; empty maps when none.
-   * @param dorkosTools - The resolved `dorkos` tool server, or null when it is
-   *   not injected this turn. It carries the runtime's turn-bound principal,
-   *   so a client holding one can never be shared across turns.
-   * @param connectorTools - The same turn binding on the private connector
-   *   capability route, or null when this turn has none.
-   * @param credits - The credits endpoint and token when this turn runs on
-   *   DorkOS credits, else null. A credits client is always turn-scoped and
-   *   built by {@link withCodexCredits}; no other client ever carries the token.
-   */
-  private async clientForTurn(
-    tokenEnv: Record<string, string>,
-    managed: CodexManagedMcpServers,
-    dorkosTools: DorkosMcpInjection | null,
-    connectorTools: ConnectorRuntimeMcpInjection | null,
-    credits: CreditsLaunch | null = null
-  ): Promise<Codex> {
-    const binary = await this.resolveTurnBinary();
-    if (credits) {
-      return new Codex(
-        withCodexCredits(
-          buildCodexOptions(binary, tokenEnv, managed, dorkosTools, connectorTools),
-          credits
-        )
-      );
-    }
-    const hasToken = Object.keys(tokenEnv).length > 0;
-    const hasManaged = Object.keys(managed.servers).length > 0;
-    if (hasToken || hasManaged || dorkosTools || connectorTools) {
-      return new Codex(buildCodexOptions(binary, tokenEnv, managed, dorkosTools, connectorTools));
-    }
-    const policy = JSON.stringify(runtimeInheritedNames('codex'));
-    if (this.sharedClient?.binary !== binary || this.sharedClient.policy !== policy) {
-      this.sharedClient = {
-        binary,
-        policy,
-        client: new Codex(buildCodexOptions(binary)),
-      };
-    }
-    return this.sharedClient.client;
   }
 
   /** Install the internal connector tool boundary after its listener starts. */
@@ -765,10 +768,16 @@ export class CodexRuntime implements AgentRuntime {
       // Minted under the name a PERSON reads, never the slug: the token's label
       // is replayed onto the agent's author row by every room tool it calls, so
       // the slug there renames a live agent mid-conversation (DOR-1264).
-      const agentTokenEnv = await resolveAgentTokenEnv(
-        meshAgent ? agentPath : undefined,
-        meshAgent?.displayName ?? meshAgent?.name
-      );
+      //
+      // On app-server a loaded thread keeps the token it loaded with, so the
+      // transport mints only when a thread actually loads (`mintAgentToken`).
+      const mintAgentToken = () =>
+        resolveAgentTokenEnv(
+          meshAgent ? agentPath : undefined,
+          meshAgent?.displayName ?? meshAgent?.name
+        );
+      const mintsOnLoad = this.transport.kind === 'app-server' && meshAgent !== undefined;
+      const agentTokenEnv = mintsOnLoad ? {} : await mintAgentToken();
 
       // The `dorkos` tool server, when the experiment is on and this cwd hosts a
       // registered agent (spec `tool-only-room-replies` §D4). It reuses the
@@ -796,21 +805,14 @@ export class CodexRuntime implements AgentRuntime {
         ? resolveManagedMcpServers(this.managedMcpServers, agentPath, dorkosTools !== null)
         : { servers: {}, env: {} };
 
-      const threadOptions = projectThreadOptions(settings, cwd, opts?.additionalDirectories);
-      const client = await this.clientForTurn(
-        agentTokenEnv,
-        managedMcpServers,
-        dorkosTools,
-        connectorTools,
-        credits
-      );
+      // Validated before anything starts: an invalid grant set throws here.
+      const writableDirectories = grantedWritableDirectories(opts?.additionalDirectories, cwd);
+      // Resolved per turn, before any context work, so a missing CLI fails the
+      // turn with its actionable message as a setup failure.
+      const binary = await this.resolveTurnBinary();
       // A fresh thread holds nothing this session's previous thread was ever sent,
       // so the gate is cleared BEFORE it is consulted (DOR-477).
       if (boundThreadId === undefined) this.contextGate.forget(sessionId);
-      const thread =
-        boundThreadId !== undefined
-          ? client.resumeThread(boundThreadId, threadOptions)
-          : client.startThread(threadOptions);
 
       // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
       // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
@@ -885,32 +887,52 @@ export class CodexRuntime implements AgentRuntime {
             }
           : {}
       );
-      let bound = boundThreadId !== undefined;
       connectorRevokeReason = 'runtime_failed';
-      const { events } = await thread.runStreamed(
-        buildCodexPrompt(content, turnOpts, agentContext),
-        {
-          signal: controller.signal,
-        }
-      );
-      let completedTurn = false;
-      for await (const event of mapCodexThread(events, ctx)) {
-        // Persist the binding the moment thread.started reveals the id —
-        // before the terminal done — so even an interrupted or crashed first
-        // turn stays resumable. The cwd is persisted with it so a post-restart
-        // resume runs in the right dir, and the registry's current display
-        // metadata rides along so the first turn's title/preview land with the
-        // row. First-write-wins keeps re-binds benign.
-        if (!bound && ctx.threadId !== undefined) {
+      const turnEvents = this.transport.runTurn({
+        binary,
+        sessionId,
+        boundThreadId,
+        cwd,
+        settings,
+        writableDirectories,
+        prompt: buildCodexPrompt(content, turnOpts, agentContext),
+        ...(opts?.messageId !== undefined ? { messageId: opts.messageId } : {}),
+        launch: credits ? { home: 'credits', credits } : { home: 'person' },
+        tools: {
+          agentTokenEnv,
+          ...(mintsOnLoad ? { mintAgentToken } : {}),
+          managed: managedMcpServers,
+          dorkosTools,
+          connectorTools,
+          ...(connectorBinding ? { connectorBindingId: connectorBinding.bindingId } : {}),
+        },
+        signal: controller.signal,
+        events: ctx,
+        // Persisted the moment the transport learns the id — before the
+        // terminal done — so even an interrupted or crashed first turn stays
+        // resumable. The cwd is persisted with it so a post-restart resume runs
+        // in the right dir, and the registry's current display metadata rides
+        // along so the first turn's title/preview land with the row.
+        // First-write-wins keeps re-binds benign; `replaces` is the one
+        // exception (a thread Codex can no longer continue, spec §6).
+        onThreadBound: (threadId, replaces) => {
+          if (replaces !== undefined) {
+            this.threadMap.replaceThreadId(sessionId, replaces, threadId);
+            return;
+          }
           const tracked = this.registry.get(sessionId);
           this.threadMap.setThreadId(
             sessionId,
-            ctx.threadId,
+            threadId,
             cwd,
             tracked ? this.toMetadataPatch(tracked) : undefined
           );
-          bound = true;
-        }
+        },
+      });
+      let completedTurn = false;
+      let sawDone = false;
+      for await (const event of turnEvents) {
+        if (event.type === 'done') sawDone = true;
         if (
           event.type === 'session_status' &&
           'terminalReason' in event.data &&
@@ -932,6 +954,12 @@ export class CodexRuntime implements AgentRuntime {
         // here — after the event it rode in on, so an image lands in the
         // transcript exactly where the tool result that produced it did.
         yield* captureCodexMedia(this.attachments, sessionId, ctx);
+      }
+      // A transport promises exactly one `done`; if one ever ends without it,
+      // the session must not be left looking busy.
+      if (!sawDone) {
+        logger.error('[CodexRuntime] a turn ended without its done; closing it', { sessionId });
+        yield { type: 'done', data: { sessionId } };
       }
       // The SDK iterator is lazy: returning runStreamed is not delivery.
       // Only acknowledge after successful consumption; failures keep the notice owed.
@@ -1067,18 +1095,12 @@ export class CodexRuntime implements AgentRuntime {
   /**
    * @inheritdoc
    *
-   * Aborts the in-flight turn's AbortController, which SIGTERMs the per-turn
-   * `codex exec` subprocess (the SDK's only interrupt primitive). The events
-   * generator then throws AbortError, which the mapper normalizes to a quiet
-   * `done` — user-initiated, not an error.
-   *
-   * **`closed`, never `acked`, and that is deliberate** (spec
-   * `runtime-interrupt-receipts` D7). Nothing in codex acknowledges a stop; the
-   * turn ends because the process died. Reporting that as `acked` would tell the
-   * person the agent wound down when it did not, and would hide the very cost
-   * `closed` exists to name. It carries no `reason`: the reasons all say why a
-   * graceful attempt was abandoned, and there is no graceful attempt here to
-   * abandon — the escalation is where every codex stop starts.
+   * Aborts the in-flight turn's AbortController and revokes its connector
+   * binding, then asks the transport what that did. On exec the abort SIGTERMs
+   * the per-turn `codex exec` subprocess and the receipt is `closed` (nothing
+   * acknowledges a stop; spec `runtime-interrupt-receipts` D7). On app-server
+   * the abort sends `turn/interrupt` and the receipt is `acked` when Codex
+   * wound the turn down within the shared bound, `unconfirmed` when it did not.
    */
   async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
     const controller = this.activeTurns.get(sessionId);
@@ -1098,7 +1120,7 @@ export class CodexRuntime implements AgentRuntime {
       }
     }
     logger.debug('[CodexRuntime] interrupted in-flight turn', { sessionId });
-    return { outcome: 'closed', runtime: this.type };
+    return this.transport.interrupt(sessionId);
   }
 
   // --- Session queries (storage) ---
@@ -1252,12 +1274,23 @@ export class CodexRuntime implements AgentRuntime {
    * promise this field exists to end. Same arrangement as the OpenCode adapter.
    */
   getCapabilities(): RuntimeCapabilities {
-    if (!this.attachments) return CODEX_CAPABILITIES;
-    return { ...CODEX_CAPABILITIES, mediaOutput: 'attachments' };
+    const overrides = this.transport.capabilities;
+    const base =
+      Object.keys(overrides).length === 0
+        ? CODEX_CAPABILITIES
+        : { ...CODEX_CAPABILITIES, ...overrides };
+    if (!this.attachments) return base;
+    return { ...base, mediaOutput: 'attachments' };
   }
 
   async checkDependencies(): Promise<DependencyCheck[]> {
-    return checkCodexDependencies();
+    const checks = await checkCodexDependencies();
+    if (this.transport.kind !== 'app-server') return checks;
+    const note = codexAppServerVersionNote(
+      codexAppServerPool.lastSeenVersion,
+      PINNED_CODEX_APP_SERVER_VERSION
+    );
+    return note ? [...checks, note] : checks;
   }
 
   // --- Commands ---
@@ -1387,8 +1420,8 @@ export class CodexRuntime implements AgentRuntime {
   // --- Lifecycle ---
 
   /**
-   * No-op: there are no long-lived per-session processes to evict — each turn
-   * is a fresh `codex exec` subprocess that exits with the turn.
+   * No-op: nothing per session is evicted here. On exec each turn is a fresh
+   * subprocess; on app-server the process pool reaps idle processes itself.
    */
   checkSessionHealth(): void {}
 

@@ -35,7 +35,7 @@ import {
  * per-test timeouts are raised. Turns run in the 'default' permission mode →
  * read-only sandbox, so a live run cannot write outside its temp cwd.
  */
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -231,6 +231,7 @@ vi.mock('../credits-launch.js', async (importOriginal) => ({
 vi.mock('../check-dependencies.js', async (importOriginal) => {
   if (LIVE) return importOriginal();
   return {
+    codexAppServerVersionNote: () => null,
     checkCodexDependencies: vi.fn(() => [
       {
         name: 'Codex CLI',
@@ -258,6 +259,19 @@ import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import { initConfigManager } from '../../../core/config-manager.js';
+import { CONFORMANCE_CREDITS_TOKEN } from '@dorkos/test-utils';
+import {
+  appServerCreditsTurn,
+  appServerDirectoryGrantTurns,
+  appServerMediaTurn,
+  appServerSystemPromptAppendTurns,
+  hangAppServerInterrupt,
+  makeFailingAppServerRuntime,
+  makeAppServerRuntime,
+  startConformanceRelay,
+  stopAppServerConformance,
+  warmAppServerSession,
+} from './app-server-conformance.js';
 
 /**
  * The LIVE leg's two throwaway temp directories, or `null` when mocked.
@@ -337,7 +351,7 @@ describe('what codex says it does with media', () => {
     expect(runtime.getCapabilities().mediaOutput).toBe('none');
   });
 
-  it('promises attachments once the composition root hands it a store', () => {
+  it('RT-MEDIA-01: promises attachments once the composition root hands it a store', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-media-decl-'));
     try {
       const runtime = new CodexRuntime({
@@ -612,6 +626,138 @@ runtimeConformance(
               driveReloadedHistory(runtime, sessionId, content, projectDir),
           },
         }),
+  }
+);
+
+// --- The app-server transport (ADR 261005-113107) ---------------------------
+//
+// The same gate, on the transport `runtimes.codex.transport: 'app-server'`
+// selects: a long-lived `codex app-server` per home. Mocked mode runs it over
+// the fake app-server (`fake-app-server.ts`), which enforces the joining trap
+// and loaded-config immutability, with a real loopback credits relay. The
+// live arm (DORKOS_CODEX_LIVE=1) runs it against the real vendored binary on
+// the operator's own sign-in, exactly as the exec leg above does.
+
+if (!LIVE) {
+  beforeAll(startConformanceRelay);
+  afterAll(stopAppServerConformance);
+}
+
+/** Install a credits scenario the way the exec leg does; returns its undo. */
+function arrangeCredits(scenario: { runsOn: 'credits' | 'own-sign-in'; heldToken: string | null }) {
+  codexRunsOnCredits.value = scenario.runsOn === 'credits';
+  __setCreditsStateForTests({
+    token:
+      scenario.heldToken === null
+        ? null
+        : InferenceTokenSchema.parse({
+            ...CREDITS_TOKEN_FIXTURE,
+            token: scenario.heldToken,
+            expiresAt: '2999-01-01T00:00:00.000Z',
+          }),
+  });
+  return () => {
+    codexRunsOnCredits.value = false;
+    __setCreditsStateForTests({ token: null });
+  };
+}
+
+runtimeConformance(
+  () =>
+    LIVE
+      ? new CodexRuntime({ threadMap: new CodexThreadMap(createTestDb()), transport: 'app-server' })
+      : makeAppServerRuntime(
+          ATTACHMENT_HOME ? { attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME) } : {}
+        ),
+  {
+    name: LIVE
+      ? 'CodexRuntime on app-server (LIVE codex binary) — AgentRuntime conformance'
+      : 'CodexRuntime on app-server (fake app-server) — AgentRuntime conformance',
+    projectDir,
+    expectHistory: false,
+    durableHistory: (runtime, sessionId, content) =>
+      driveDurableTurn(runtime, sessionId, content, projectDir),
+    presenceTurn: (runtime, sessionId, content, probes) =>
+      drivePresenceTurn(runtime, sessionId, content, projectDir, probes),
+    terminalOnce: () => driveTerminalOnce(projectDir),
+    queueDurability: () => driveQueueDurability(),
+    // A thread stays loaded between turns, so a session is warm after one.
+    warmSession: (runtime, sessionId) => warmAppServerSession(runtime, sessionId, projectDir),
+    userLastMessageAtOmittedReason:
+      'codex sessions record no author for a message: the in-memory registry cannot tell a person’s message from a relay, task or room one, and the durable codex_threads row has no column for it — on either transport',
+    ...(LIVE
+      ? {
+          systemPromptAppendUnprovenReason:
+            'a live codex app-server is a subprocess this suite hands a prompt over stdin and cannot read back, so what it received is only observable in the mocked run',
+          directoryGrantsUnprovenReason:
+            'a live codex app-server is a subprocess this suite hands a sandbox policy and cannot read back, so which folders it was granted is only observable in the mocked run',
+          creditsUnprovenReason:
+            'a live run has no DorkOS credits link, so a credits turn cannot be arranged against the real binary; the mocked run proves it end to end through the real relay',
+        }
+      : {
+          // Stop is bounded: Codex never acknowledging a `turn/interrupt` ends
+          // in `unconfirmed`, never a killed process (that would end every
+          // other Codex chat in the home).
+          hangingInterrupt: (runtime, sessionId) =>
+            hangAppServerInterrupt(runtime, sessionId, projectDir),
+          creditsTurn: (runtime, scenario) =>
+            appServerCreditsTurn(runtime, scenario, projectDir, arrangeCredits),
+          ...(ATTACHMENT_HOME
+            ? {
+                mediaTurn: () =>
+                  appServerMediaTurn(
+                    makeAppServerRuntime({
+                      attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME),
+                    }),
+                    projectDir
+                  ),
+              }
+            : {}),
+          directoryGrantTurns: (runtime, sessionId, grants) =>
+            appServerDirectoryGrantTurns(runtime, sessionId, grants, projectDir),
+          systemPromptAppendTurns: (runtime, sessionId, appends) =>
+            appServerSystemPromptAppendTurns(runtime, sessionId, appends, projectDir),
+          makeFailingRuntime: () => makeFailingAppServerRuntime('Simulated Codex turn failure'),
+          // DOR-1656 on app-server: Codex reports a dead sign-in as
+          // `codexErrorInfo: unauthorized` with the vendor's words; the person
+          // must read DorkOS's sentence, the vendor's words kept in details.
+          authFailure: {
+            vendorText: CODEX_VENDOR_AUTH_TEXT,
+            makeRuntime: () => makeFailingAppServerRuntime(CODEX_VENDOR_AUTH_TEXT, 'unauthorized'),
+            hydratedHistory: (runtime, sessionId, content) =>
+              driveReloadedHistory(runtime, sessionId, content, projectDir),
+          },
+          roomCanvasTurn: () =>
+            driveRoomCanvasTurn(makeAppServerRuntime(), {
+              agentPath: '/agents/ana',
+              otherAgentPath: '/agents/ben',
+              produce: async (sessionId) => {
+                await controlUi(
+                  { action: 'open_canvas', content: { type: 'json', data: {}, title: 'The plan' } },
+                  { sessionId }
+                );
+              },
+            }),
+        }),
+  }
+);
+
+it.skipIf(LIVE)(
+  'app-server credits: the token reaches only the credits endpoint, through the relay, never Codex',
+  async () => {
+    const runtime = makeAppServerRuntime();
+    const seen = await appServerCreditsTurn(
+      runtime,
+      { runsOn: 'credits', heldToken: CONFORMANCE_CREDITS_TOKEN },
+      projectDir,
+      arrangeCredits
+    );
+    const handed = seen.handed as { spawns: unknown; received: unknown; upstream: unknown[] };
+    expect(JSON.stringify(handed.spawns)).not.toContain(CONFORMANCE_CREDITS_TOKEN);
+    expect(JSON.stringify(handed.received)).not.toContain(CONFORMANCE_CREDITS_TOKEN);
+    expect(handed.upstream).toEqual([
+      expect.objectContaining({ authorization: `Bearer ${CONFORMANCE_CREDITS_TOKEN}` }),
+    ]);
   }
 );
 

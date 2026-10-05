@@ -275,6 +275,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.opencode.port',
   'runtimes.codex.enabled',
   'runtimes.codex.binaryPath',
+  // `auto` follows DorkOS's own default, which is the long-shipped exec
+  // transport until app-server has passed its proof (ADR 261005-113107).
+  'runtimes.codex.transport',
 ];
 
 /**
@@ -298,6 +301,7 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'permissions.defaults.actions': {},
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
+  'browser.enabled': false,
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
   // reach the ones inside it until a person opens that door (DOR-1304).
   'a2a.enabled': false,

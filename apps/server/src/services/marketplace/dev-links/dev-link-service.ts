@@ -37,7 +37,6 @@ import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import { declaredSet, isCovered } from '../../extensions/isolation/permission-coverage.js';
 import { hasServerHalf } from '../../extensions/isolation/server-half.js';
-import { ISOLATED_SERVER_PARTS_RUN } from '@dorkos/shared/extension-server-status';
 import {
   DevLinkPackageNameSchema,
   disclosesAnything,
@@ -1038,13 +1037,8 @@ const IN_PROCESS_LINE = 'runs inside DorkOS with full access to this computer';
 /** How a card line says an extension has only screens. */
 const SCREENS_ONLY_LINE = 'only screens, which run in DorkOS with your access';
 
-/**
- * How a card line says an extension runs separately: in the future tense,
- * and saying so, while this version cannot run that half yet.
- */
-const SEPARATE_LINE = ISOLATED_SERVER_PARTS_RUN
-  ? 'runs separately'
-  : 'will run separately (its server part can’t run in this version yet)';
+/** How a card line says an extension runs separately. */
+const SEPARATE_LINE = 'runs separately';
 
 /**
  * One extension's permission set as a card line: where it runs, then every

@@ -7,6 +7,9 @@
  * the thing under test IS the wiring. A test that drove the pump directly would
  * pass with `sendMessage` still hard-wired to `executeSdkQuery`.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import nodePath from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent, SessionStatus } from '@dorkos/shared/session-stream';
@@ -173,6 +176,8 @@ import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
 import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
 import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
+import { BackgroundWorkLedger } from '../../messaging/background-work-ledger.js';
+import { shutdownSessionPumps } from '../session-pump-registry.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -182,6 +187,7 @@ const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
 let cli: FakeCli;
 let runtime: ClaudeCodeRuntime;
+let dorkHome: string;
 let sessionSeq = 0;
 
 /** A fresh session id per case, so no two cases share a pump. */
@@ -230,13 +236,17 @@ beforeEach(() => {
   mockedQuery.mockReset();
   mockedQuery.mockImplementation(cli.query as unknown as typeof query);
   vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue(CWD);
-  runtime = new ClaudeCodeRuntime('/tmp/dorkos-pump', CWD);
+  // A data directory of its own per case: the runtime writes its background
+  // work record there (DOR-2065), and no case may write into a shared one.
+  dorkHome = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'persistent-dispatch-'));
+  runtime = new ClaudeCodeRuntime(dorkHome, CWD);
 });
 
 afterEach(() => {
   // Every process this case booted, closed — a leaked one would keep reading a
   // prompt stream for the rest of the file.
   for (const process of cli.processes) process.endStream();
+  fs.rmSync(dorkHome, { recursive: true, force: true });
 });
 
 describe('the opt-in decides which path a message takes', () => {
@@ -452,10 +462,15 @@ describe('warmth is answered honestly', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
     try {
       runtime.checkSessionHealth();
     } finally {
       clock.mockRestore();
+      awake.mockRestore();
     }
 
     const events = await hanging;
@@ -486,7 +501,7 @@ describe('a helper still working is reported on both paths', () => {
     expect(runtime.isHelperWorking(sessionId)).toBe(false);
   });
 
-  it('answers from the held process on the warm path, for helpers and nothing else', async () => {
+  it('answers from the held process on the warm path, for every task type', async () => {
     optIn.persistentSession = true;
     const sessionId = nextSession();
     await turn(sessionId);
@@ -495,9 +510,11 @@ describe('a helper still working is reported on both paths', () => {
     process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
 
-    // A Monitor holds the process, but it is not the turn's own work going
-    // quiet, so it does not excuse a silent turn.
+    // A Monitor is as silent between its steps as a helper (DOR-2717).
     process.reportTasks([{ task_id: 'monitor-1', task_type: 'monitor' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    process.reportTasks([]);
     await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
   });
 });
@@ -1211,6 +1228,24 @@ describe("a running extension's skills root on a warm process (DOR-2685)", () =>
     expect(cli.processes[1]!.options.plugins ?? []).toEqual([]);
   });
 
+  it("does not hold a stopped extension's relaunch for a background shell alone (DOR-2065)", async () => {
+    // Purpose: a shell can run forever, so it must not pin a stale skill set.
+    // It dies with the relaunch, and the CLI's own notice tells the agent.
+    extensionRoots.paths = [`${ROOT}/mail`];
+    await runtime.refreshActivatedPlugins();
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    extensionRoots.paths = [];
+    await runtime.refreshActivatedPlugins();
+    await turn(sessionId, 'while the shell runs');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
   it('still relaunches a working process when a package is withdrawn with the extension', async () => {
     // Purpose: the hold is for skills only. A withdrawn package may run code
     // nobody approves any more (DOR-2306), so it never waits.
@@ -1367,6 +1402,22 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     expect(process.ended).toBe(true);
   });
 
+  it('does not hold the relaunch for a background shell alone (DOR-2065)', async () => {
+    // Purpose: a shell can run forever (a dev server), so it must not pin a
+    // stale tool list. It dies with the relaunch, and the CLI's own notice
+    // tells the agent on the turn that follows.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    listed = [...listed, 'ext_mail_app__send'];
+    await turn(sessionId, 'while the shell runs');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
   it('keeps holding past the four-hour ceiling, and warns once that the list is stale', async () => {
     // Purpose: a dispatch never tears down working background (DOR-2705), so
     // the hold has no ceiling. Past the reaper's ceiling it only says, once,
@@ -1380,6 +1431,10 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     listed = [...listed, 'ext_mail_app__send'];
 
     vi.useFakeTimers({ toFake: ['Date'] });
+    // The ceiling is measured on the awake clock (DOR-2717).
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
     try {
       vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
       vi.mocked(logger.warn).mockClear();
@@ -1398,6 +1453,7 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
       expect(cli.launches).toBe(1);
       expect(staleWarnings()).toHaveLength(1);
     } finally {
+      awake.mockRestore();
       vi.useRealTimers();
     }
   });
@@ -2643,5 +2699,278 @@ describe('an empty turn waits for its answer (DOR-2064)', () => {
       expect.objectContaining({ session: sessionId, taskType: 'monitor' }),
       expect.objectContaining({ session: sessionId, taskType: 'local_agent' }),
     ]);
+  });
+});
+
+// DOR-2065. A background shell, Monitor or helper that outlives its turn wakes
+// the chat when it finishes — but only while the process holding it lives. The
+// record written here is what lets the NEXT boot wake a chat whose process the
+// server took down with it; every ending the running server sees for itself
+// clears the record and wakes nothing.
+describe('the record of background work a process holds (DOR-2065)', () => {
+  const records = (): ReturnType<BackgroundWorkLedger['read']> =>
+    new BackgroundWorkLedger(dorkHome).read();
+
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  /** Warm a session and give its process a background shell that is still running. */
+  async function warmWithShell(): Promise<{ sessionId: string; process: FakeCliProcess }> {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes.at(-1)!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await vi.waitFor(() => expect(records()).toHaveLength(1));
+    return { sessionId, process };
+  }
+
+  it('is written while the work runs, and removed once the process is quiet', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    expect(records()).toEqual([]);
+
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await vi.waitFor(() =>
+      expect(records()).toEqual([
+        expect.objectContaining({
+          key: sessionId,
+          // The transcript id, which a restarted server can still find.
+          sessionId: runtime.getInternalSessionId(sessionId),
+          cwd: CWD,
+        }),
+      ])
+    );
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(records()).toEqual([]));
+  });
+
+  it('is what the runtime answers when asked whether more may follow a turn (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    expect(runtime.holdsBackgroundWork(sessionId)).toBe(false);
+
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
+    // Under the transcript id too: a caller may know the session by either.
+    expect(runtime.holdsBackgroundWork(runtime.getInternalSessionId(sessionId)!)).toBe(true);
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(false));
+  });
+
+  it('reads false by the time the turn that delivers a helper`s report settles (DOR-2717)', async () => {
+    // The order a caller following later turns depends on: the helper's settle
+    // and the delivery segment both land BEFORE the report turn ends, so the
+    // turn that carries the report is seen as the last one, not as "more to come".
+    const sessionId = nextSession();
+    let atSettle: boolean | undefined;
+    runtime.onRuntimeTurn((id, events) => {
+      void (async () => {
+        for await (const _event of events) {
+          // drained, as the projection would
+        }
+        atSettle = runtime.holdsBackgroundWork(id);
+      })();
+    });
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
+
+    process.emit({
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'helper-1',
+      status: 'completed',
+      uuid: 'notify-helper-1',
+      session_id: 'sess-notify',
+    } as unknown as SDKMessage);
+    // The CLI opens a delivery segment, and the agent reports.
+    process.startSegment();
+    process.say('the helper says the build is green');
+    process.closeEmpty(undefined);
+
+    await vi.waitFor(() => expect(atSettle).toBeDefined());
+    expect(atSettle).toBe(false);
+  });
+
+  it('reads true at settle while another helper is still running (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    let atSettle: boolean | undefined;
+    runtime.onRuntimeTurn((id, events) => {
+      void (async () => {
+        for await (const _event of events) {
+          // drained
+        }
+        atSettle = runtime.holdsBackgroundWork(id);
+      })();
+    });
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([
+      { task_id: 'helper-1', task_type: 'local_agent' },
+      { task_id: 'helper-2', task_type: 'local_agent' },
+    ]);
+    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
+
+    process.reportTasks([{ task_id: 'helper-2', task_type: 'local_agent' }]);
+    process.startSegment();
+    process.say('one of two is done');
+    process.closeEmpty(undefined);
+
+    await vi.waitFor(() => expect(atSettle).toBeDefined());
+    expect(atSettle).toBe(true);
+  });
+
+  it('tells its listener when a dispatched turn opens, and not for a turn the agent starts (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    const dispatched: string[] = [];
+    runtime.onDispatchedTurn((id) => dispatched.push(id));
+    await turn(sessionId);
+    expect(dispatched).toEqual([sessionId]);
+
+    const process = cli.processes[0]!;
+    process.say('picking my own work back up');
+    process.closeEmpty(undefined);
+    await vi.waitFor(() => expect(process.spoke).toBeGreaterThan(0));
+    expect(dispatched).toEqual([sessionId]);
+  });
+
+  it('tells every dispatched-turn listener, each unsubscribing only itself (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    const heard: string[] = [];
+    const first = runtime.onDispatchedTurn(() => heard.push('first'));
+    runtime.onDispatchedTurn(() => {
+      throw new Error('a careless listener');
+    });
+    runtime.onDispatchedTurn(() => heard.push('second'));
+
+    await turn(sessionId);
+    expect(heard).toEqual(['first', 'second']);
+
+    first();
+    await turn(sessionId, 'again');
+    expect(heard).toEqual(['first', 'second', 'second']);
+  });
+
+  it('is cleared when the ceiling reap takes a process still holding work', async () => {
+    const { sessionId } = await warmWithShell();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
+    try {
+      await runtime.reapSession(sessionId);
+    } finally {
+      clock.mockRestore();
+      awake.mockRestore();
+    }
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(records()).toEqual([]);
+  });
+
+  // DOR-2717: the dispatch layer is what tells the pump a timer is pending.
+  it('holds a process for a pending session timer, and forgets the timer with the process', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const session = (
+      runtime as unknown as {
+        sessionStore: { findSession: (id: string) => { pendingTimers?: number } };
+      }
+    ).sessionStore.findSession(sessionId);
+    // What the Stop hook records when the CLI reports one timer pending.
+    session.pendingTimers = 1;
+
+    await runtime.reapSession(sessionId);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
+    try {
+      await runtime.reapSession(sessionId);
+    } finally {
+      clock.mockRestore();
+      awake.mockRestore();
+    }
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(session.pendingTimers).toBeUndefined();
+  });
+
+  it('is cleared when the process crashes while holding work', async () => {
+    const { sessionId, process } = await warmWithShell();
+    process.crash(new Error('the CLI went away'));
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+    expect(records()).toEqual([]);
+  });
+
+  it('is cleared when a person stops the process', async () => {
+    const { sessionId, process } = await warmWithShell();
+    process.goSilent();
+    const stopped = turn(sessionId, 'stop this one');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.interruptRejectsWith = new Error('control write failed: the process is gone');
+    await runtime.interruptQuery(sessionId);
+    await stopped;
+
+    expect(process.closed).toBe(1);
+    expect(records()).toEqual([]);
+  });
+
+  it('is cleared when a dispatch replaces the process', async () => {
+    const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
+    const { sessionId } = await warmWithShell();
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>REPLACED</env>',
+      stable: '<env>REPLACED</env>',
+    });
+    try {
+      await turn(sessionId, 'after the change');
+    } finally {
+      vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+        text: '<env>test</env>',
+        stable: '<env>test</env>',
+      });
+    }
+
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(records()).toEqual([]);
+  });
+
+  it('is kept when the server shuts down, so the next boot can wake the chat', async () => {
+    const { sessionId } = await warmWithShell();
+    await shutdownSessionPumps();
+
+    expect(records()).toEqual([expect.objectContaining({ key: sessionId, cwd: CWD })]);
+  });
+
+  it('does not let a running shell keep a credits session alive after credits stop', async () => {
+    // A revoked token must not stay live for hours behind a shell: stopping
+    // credits ends the process even though a polite reap would decline it.
+    const { creditsClaudeRoot } = await import('../../credits-root.js');
+    const { sessionId, process } = await warmWithShell();
+    // The account the session runs on, set the way a credits launch sets it.
+    (
+      runtime as unknown as {
+        sessionStore: { findSession: (id: string) => { launchedAccountRoot?: string } };
+      }
+    ).sessionStore.findSession(sessionId).launchedAccountRoot = creditsClaudeRoot();
+
+    await runtime.stopCreditsSessions();
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(process.ended).toBe(true);
+    expect(records()).toEqual([]);
   });
 });

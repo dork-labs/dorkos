@@ -16,6 +16,9 @@ export type {
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
   TurnExecutionSettings,
+  LateFollowEnd,
+  LateTurn,
+  LateTurnSource,
 } from './types.js';
 export type { ApprovalAuthorizer } from './approval-handler.js';
 export type { TraceStoreLike } from '../../types.js';

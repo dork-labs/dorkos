@@ -2,7 +2,7 @@
  * Find the program an `allow.run` entry names on this computer (DOR-2686).
  *
  * Discovery calls this to show a person, before they approve, exactly which
- * file each entry means; the program broker (a later phase) refuses an entry
+ * file each entry means; the program broker (`run-broker.ts`) refuses an entry
  * this answers `null` for. It only ever looks at the disk. Nothing is run,
  * and no shell is involved.
  *

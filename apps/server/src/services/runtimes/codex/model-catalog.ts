@@ -12,13 +12,11 @@ import type { EffortLevel, ModelOption } from '@dorkos/shared/types';
 import { logger, logError } from '../../../lib/logger.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { resolveCodexHome } from './codex-home.js';
-import {
-  parseCodexAppServerVersion,
-  readCodexModelContextWindows,
-} from './model-context-windows.js';
+import { readCodexModelContextWindows } from './model-context-windows.js';
+import { CodexJsonRpcClient } from './app-server/json-rpc-client.js';
+import { initializeCodexClient } from './app-server/handshake.js';
+import { CodexRpcError } from './app-server/protocol/errors.js';
 
-const INITIALIZE_REQUEST_ID = 1;
-const FIRST_MODEL_REQUEST_ID = 2;
 const MODEL_PAGE_SIZE = 100;
 const MAX_MODEL_PAGES = 10;
 const MODEL_QUERY_TIMEOUT_MS = 15_000;
@@ -125,18 +123,18 @@ function addContextWindows(
   });
 }
 
-function writeMessage(child: ChildProcessWithoutNullStreams, message: unknown): void {
-  child.stdin.write(`${JSON.stringify(message)}\n`);
-}
-
 /**
  * Ask a resolved Codex CLI for the models visible to its current account.
+ *
+ * One-shot use of the shared app-server client: spawn, `initialize`, page
+ * `model/list`, close. Bounded end to end by `timeoutMs`, and per line by the
+ * same 2 MiB this query has always allowed.
  *
  * @param binary - Absolute path to the resolved Codex executable.
  * @param options - Injectable environment, process, and deadline seams.
  * @returns Every visible model across all returned pages.
  */
-export function queryCodexModels(
+export async function queryCodexModels(
   binary: string,
   options: QueryCodexModelsOptions = {}
 ): Promise<ModelOption[]> {
@@ -149,186 +147,115 @@ export function queryCodexModels(
     ((clientVersion: string) =>
       readCodexModelContextWindows({ codexHome: resolveCodexHome(environment), clientVersion }));
 
-  return new Promise<ModelOption[]>((resolve, reject) => {
-    let child: ChildProcessWithoutNullStreams;
-    try {
-      child = options.spawn
-        ? options.spawn(binary, ['app-server', '--stdio'], environment)
-        : nodeSpawn(binary, ['app-server', '--stdio'], { stdio: 'pipe', env: environment });
-    } catch (error) {
-      reject(error);
-      return;
-    }
+  const child = options.spawn
+    ? options.spawn(binary, ['app-server', '--stdio'], environment)
+    : nodeSpawn(binary, ['app-server', '--stdio'], { stdio: 'pipe', env: environment });
+  const client = new CodexJsonRpcClient(child, {
+    maxLineBytes: MAX_APP_SERVER_STDOUT_BYTES,
+    lineLimitMessage: 'Codex app-server model/list output exceeded the byte limit',
+    label: 'model catalog',
+  });
+  child.once('error', (error) => client.close({ kind: 'exited', detail: error.message }));
+  child.once('exit', (code, signal) =>
+    client.close({
+      kind: 'exited',
+      detail: `Codex app-server exited before model/list (${code ?? signal ?? 'unknown'})`,
+    })
+  );
 
-    child.stderr.resume();
-    child.stdout.setEncoding('utf8');
-    const models: AppServerModel[] = [];
-    let settled = false;
-    let appServerVersion: string | null = null;
-    let pendingModelRequestId = FIRST_MODEL_REQUEST_ID;
-    let pageCount = 0;
-    let stdoutBytes = 0;
-    let stdoutBuffer = '';
-
-    const closeChild = (): void => {
-      clearTimeout(timer);
-      try {
-        child.stdin.end();
-        child.kill();
-      } catch {
-        // The process already exited; the result that settled this exchange wins.
-      }
-    };
-
-    const finish = (result: { models: ModelOption[] } | { error: Error }): void => {
-      if (settled) return;
-      settled = true;
-      closeChild();
-      if ('error' in result) reject(result.error);
-      else resolve(result.models);
-    };
-
-    const finishModels = (models: ModelOption[]): void => {
-      if (settled) return;
-      settled = true;
-      closeChild();
-      const clientVersion = appServerVersion;
-      if (clientVersion === null) {
-        resolve(models);
-        return;
-      }
-      const remainingMs = Math.max(0, deadlineAt - Date.now());
-      const metadataBudgetMs = Math.min(Math.max(0, contextMetadataTimeoutMs), remainingMs);
-      if (metadataBudgetMs === 0) {
-        resolve(models);
-        return;
-      }
-
-      let metadataSettled = false;
-      const metadataTimer = setTimeout(() => {
-        metadataSettled = true;
-        resolve(models);
-      }, metadataBudgetMs);
-      void Promise.resolve()
-        .then(() => readContextWindows(clientVersion))
-        .then(
-          (windows) => {
-            if (metadataSettled) return;
-            metadataSettled = true;
-            clearTimeout(metadataTimer);
-            resolve(addContextWindows(models, windows));
-          },
-          () => {
-            if (metadataSettled) return;
-            metadataSettled = true;
-            clearTimeout(metadataTimer);
-            resolve(models);
-          }
-        );
-    };
-
-    const send = (message: unknown): void => {
-      if (settled) return;
-      try {
-        writeMessage(child, message);
-      } catch (error) {
-        finish({ error: error instanceof Error ? error : new Error(String(error)) });
-      }
-    };
-
-    const requestPage = (cursor: string | null): void => {
-      pageCount += 1;
-      if (pageCount > MAX_MODEL_PAGES) {
-        finish({ error: new Error('Codex model/list exceeded the page limit') });
-        return;
-      }
-      send({
-        id: pendingModelRequestId,
-        method: 'model/list',
-        params: { cursor, includeHidden: false, limit: MODEL_PAGE_SIZE },
-      });
-    };
-
-    const timer = setTimeout(() => {
-      finish({ error: new Error(`Codex model/list timed out after ${timeoutMs}ms`) });
-    }, timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Codex model/list timed out after ${timeoutMs}ms`)),
+      timeoutMs
+    );
     timer.unref?.();
+  });
+  let models: ModelOption[];
+  let appServerVersion: string | null;
+  try {
+    ({ models, appServerVersion } = await Promise.race([listAllModels(client), deadline]));
+  } finally {
+    clearTimeout(timer);
+    client.close();
+    try {
+      child.stdin.end();
+      child.kill();
+    } catch {
+      // The process already exited; the result that settled this exchange wins.
+    }
+  }
+  if (appServerVersion === null) return models;
+  return withContextWindows(
+    models,
+    appServerVersion,
+    Math.min(Math.max(0, contextMetadataTimeoutMs), Math.max(0, deadlineAt - Date.now())),
+    readContextWindows
+  );
+}
 
-    child.once('error', (error) => finish({ error }));
-    child.stdin.once('error', (error) => finish({ error }));
-    child.once('exit', (code, signal) => {
-      if (!settled) {
-        finish({
-          error: new Error(
-            `Codex app-server exited before model/list (${code ?? signal ?? 'unknown'})`
-          ),
-        });
-      }
-    });
-    const handleLine = (line: string): void => {
-      if (settled || line === '') return;
-      let message: unknown;
-      try {
-        message = JSON.parse(line);
-      } catch {
-        finish({ error: new Error('Codex app-server returned invalid JSON') });
-        return;
-      }
-      if (typeof message !== 'object' || message === null || !('id' in message)) return;
-      const response = message as { id: unknown; result?: unknown; error?: unknown };
-      if (response.id === INITIALIZE_REQUEST_ID) {
-        if (response.error !== undefined) {
-          finish({ error: new Error('Codex app-server rejected initialize') });
-          return;
-        }
-        appServerVersion = parseCodexAppServerVersion(
-          (response.result as { userAgent?: unknown } | undefined)?.userAgent
-        );
-        send({ method: 'initialized' });
-        requestPage(null);
-        return;
-      }
-      if (response.id !== pendingModelRequestId) return;
-      if (response.error !== undefined) {
-        finish({ error: new Error('Codex app-server rejected model/list') });
-        return;
-      }
-      const parsed = ModelListResponseSchema.safeParse(response.result);
-      if (!parsed.success) {
-        finish({ error: new Error('Codex app-server returned an invalid model/list response') });
-        return;
-      }
-      models.push(...parsed.data.data);
-      if (parsed.data.nextCursor) {
-        pendingModelRequestId += 1;
-        requestPage(parsed.data.nextCursor);
-        return;
-      }
-      finishModels(models.map(mapAppServerModel));
-    };
-    child.stdout.on('data', (chunk: Buffer | string) => {
+/** Initialize, then follow `model/list` pagination to the end. */
+async function listAllModels(
+  client: CodexJsonRpcClient
+): Promise<{ models: ModelOption[]; appServerVersion: string | null }> {
+  let appServerVersion: string | null;
+  try {
+    appServerVersion = await initializeCodexClient(client, { experimentalApi: false });
+  } catch (error) {
+    if (error instanceof CodexRpcError)
+      throw new Error('Codex app-server rejected initialize', { cause: error });
+    throw error;
+  }
+  const rows: AppServerModel[] = [];
+  let cursor: string | null = null;
+  for (let page = 1; ; page += 1) {
+    if (page > MAX_MODEL_PAGES) throw new Error('Codex model/list exceeded the page limit');
+    let result: unknown;
+    try {
+      result = await client.request('model/list', {
+        cursor,
+        includeHidden: false,
+        limit: MODEL_PAGE_SIZE,
+      });
+    } catch (error) {
+      if (error instanceof CodexRpcError)
+        throw new Error('Codex app-server rejected model/list', { cause: error });
+      throw error;
+    }
+    const parsed = ModelListResponseSchema.safeParse(result);
+    if (!parsed.success) {
+      throw new Error('Codex app-server returned an invalid model/list response');
+    }
+    rows.push(...parsed.data.data);
+    if (!parsed.data.nextCursor) break;
+    cursor = parsed.data.nextCursor;
+  }
+  return { models: rows.map(mapAppServerModel), appServerVersion };
+}
+
+/** Add optional context windows, within a budget that never fails the answer. */
+async function withContextWindows(
+  models: ModelOption[],
+  clientVersion: string,
+  budgetMs: number,
+  readContextWindows: ReadContextWindows
+): Promise<ModelOption[]> {
+  if (budgetMs === 0) return models;
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value: ModelOption[]): void => {
       if (settled) return;
-      stdoutBytes += Buffer.byteLength(chunk);
-      if (stdoutBytes > MAX_APP_SERVER_STDOUT_BYTES) {
-        finish({ error: new Error('Codex app-server model/list output exceeded the byte limit') });
-        return;
-      }
-      stdoutBuffer += chunk.toString();
-      let newline = stdoutBuffer.indexOf('\n');
-      while (newline !== -1) {
-        const line = stdoutBuffer.slice(0, newline);
-        stdoutBuffer = stdoutBuffer.slice(newline + 1);
-        handleLine(line);
-        if (settled) return;
-        newline = stdoutBuffer.indexOf('\n');
-      }
-    });
-
-    send({
-      id: INITIALIZE_REQUEST_ID,
-      method: 'initialize',
-      params: { clientInfo: { name: 'dorkos', version: '0.0.0' } },
-    });
+      settled = true;
+      clearTimeout(metadataTimer);
+      resolve(value);
+    };
+    const metadataTimer = setTimeout(() => settle(models), budgetMs);
+    void Promise.resolve()
+      .then(() => readContextWindows(clientVersion))
+      .then(
+        (windows) => settle(addContextWindows(models, windows)),
+        () => settle(models)
+      );
   });
 }
 

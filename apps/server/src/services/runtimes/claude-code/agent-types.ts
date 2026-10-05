@@ -34,6 +34,19 @@ export interface AgentSession {
    * (`messaging/launch-resolver.ts`), and nowhere earlier.
    */
   permissionMode: PermissionModeId;
+  /**
+   * The model Auto was CONFIRMED to work on at this session's last launch
+   * (`''` for the SDK's default model), or undefined when it was not.
+   *
+   * `permissionMode` can read `'auto'` while the turn runs at `'default'`: the
+   * launcher coerces Auto down for a model that cannot do it, per query, and
+   * deliberately leaves the stored choice alone (`messaging/launch-resolver.ts`).
+   * Anything that needs the mode the turn REALLY runs at — `session_start`'s
+   * ceiling — reads this beside `permissionMode` and `model`, and counts Auto
+   * only when this names the session's current model. Written by the launcher
+   * on every launch; never by a person.
+   */
+  autoModeConfirmedFor?: string;
   model?: string;
   effort?: EffortLevel;
   fastMode?: boolean;
@@ -92,6 +105,15 @@ export interface AgentSession {
    */
   launchedAccountRoot?: string;
   /**
+   * How many session timers (CronCreate, ScheduleWakeup, /loop) the CLI said
+   * were pending at its last turn end, read off the Stop hook's
+   * `session_crons` (DOR-2717). A timer lives inside the CLI and is no
+   * background task, so this is the only place it shows; the warm process is
+   * held while it is non-zero so the timer is not killed before it fires.
+   * Undefined until a turn has ended on this process.
+   */
+  pendingTimers?: number;
+  /**
    * True when the last launch this process resolved billed per token: its
    * final environment carried an API key or gateway token (stored, credits, or
    * inherited), or the binary's session-init `apiKeySource` said so, which
@@ -102,6 +124,13 @@ export interface AgentSession {
   launchedPerToken?: boolean;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
+  /**
+   * True when a failed resume restarts this session as new. Its id already
+   * names a transcript the resume could not load, so the SDK mints a fresh id
+   * rather than writing the new conversation into that file. Every other new
+   * session launches under the id DorkOS handed out (DOR-2712).
+   */
+  mintsFreshSdkSessionId?: boolean;
   /**
    * True when nobody is watching this session — a run the SCHEDULER started on
    * its own timer.
@@ -128,6 +157,12 @@ export interface AgentSession {
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**
+   * How many times a started session with no known account looked for its
+   * transcript and did not find it (DOR-2065). Bounds the retry, so a
+   * transcript that is never found is not looked for on every message.
+   */
+  accountRootProbeMisses?: number;
+  /**
    * Wire `uuid` of the last MAIN-THREAD assistant message this session produced
    * (SDK `SDKAssistantMessage.uuid`; subagent messages are excluded). Used to
    * anchor the NEXT turn's resume via `options.resumeSessionAt` so the CLI's
@@ -142,12 +177,19 @@ export interface AgentSession {
   /** Active SDK query object — used for mid-stream control (setPermissionMode, setModel) */
   activeQuery?: Query;
   /**
-   * How many helper agents the running resume-path turn has live, read off that
+   * How many background tasks (helpers, Monitors, Workflows, shells…) the
+   * running resume-path turn has live (DOR-2717), read off that
    * turn's own liveness tracker; undefined between turns and on the warm path,
    * whose pump answers instead. What `isHelperWorking` asks on this path
    * (DOR-2681). A getter, not a count, so the answer is never stale.
    */
   liveHelperCount?: () => number;
+  /**
+   * When the running resume-path turn started, on the awake clock
+   * (`performance.now()`), which stops while the machine sleeps. What that
+   * path's background-work ceiling is measured from (DOR-2717).
+   */
+  turnStartedAwake?: number;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */
   lastQuery?: Query;
   /**

@@ -52,6 +52,7 @@ import {
   type PumpDispatch,
   type PumpQuery,
   type PumpState,
+  type PumpTeardownReason,
   type Quietness,
   type SessionPumpOptions,
 } from './session-pump-contract.js';
@@ -136,6 +137,8 @@ export class SessionPump {
    * own state back through accessors.
    */
   private readonly quiet: ProcessQuiet;
+  /** Why {@link teardown} ended this pump, or undefined while it has not. */
+  private endedBy: PumpTeardownReason | undefined;
 
   /**
    * Build a pump for one session. Nothing is booted until it is warmed or
@@ -153,7 +156,17 @@ export class SessionPump {
       isTurnOpen: () => this.currentState === 'running',
       hasRuntimeTurnOpen: () => opts.hasRuntimeTurnOpen?.() === true,
       hasPendingInteraction: () => opts.hasPendingInteraction?.() === true,
+      hasPendingTimer: () => opts.hasPendingTimer?.() === true,
       onGateChange: () => opts.onDispatchGateChange?.(),
+      // Only while the process is ours to keep. Once it is being ended (`cold`,
+      // `reaped`) or is gone (`crashed`), a frame dropping a task describes
+      // work dying with it — the SIGTERM'd CLI reports its shells settled on
+      // the way out — and reporting that as "finished" would erase the very
+      // record that says the chat is owed a wake.
+      onHoldingWorkChange: (holding) => {
+        if (this.disposed || !this.holdsProcess) return;
+        opts.onBackgroundWorkChange?.(holding);
+      },
       ...(opts.owedDeliveryTimeoutMs !== undefined
         ? { owedDeliveryTimeoutMs: opts.owedDeliveryTimeoutMs }
         : {}),
@@ -173,6 +186,15 @@ export class SessionPump {
   /** What `getSessionWarmth` reports for this session. */
   get warmth(): SessionWarmth {
     return WARMTH_OF[this.currentState];
+  }
+
+  /**
+   * Why {@link teardown} ended this pump, or undefined when it was not torn
+   * down. Set before the state change to `cold` is reported, so an observer of
+   * that change can read it.
+   */
+  get teardownReason(): PumpTeardownReason | undefined {
+    return this.endedBy;
   }
 
   /** True while a subprocess exists or is being booted — what the ceiling counts. */
@@ -496,12 +518,19 @@ export class SessionPump {
   /**
    * Has the current busy spell run past the four-hour ceiling (spec
    * `warm-process-lifecycle` D1)? The same bound the reaper honours; a
-   * consumer that only reports the long wait reads it here.
-   *
-   * @param now - Server epoch ms
+   * consumer that only reports the long wait reads it here. Measured in awake
+   * time (DOR-2717).
    */
-  isPastCeiling(now: number): boolean {
-    return this.quiet.isPastCeiling(now);
+  isPastCeiling(): boolean {
+    return this.quiet.isPastCeiling();
+  }
+
+  /**
+   * Are background shells and session timers the only things this process is
+   * holding for (DOR-2065, DOR-2717)? See `ProcessQuiet.isHoldingOnlyReclaimable`.
+   */
+  isHoldingOnlyReclaimable(): boolean {
+    return this.quiet.isHoldingOnlyReclaimable();
   }
 
   /**
@@ -572,7 +601,7 @@ export class SessionPump {
     // through this line before (DOR-2064, DOR-2065).
     const quietness = this.quiet.quietness();
     if (!quietness.quiet) {
-      if (!this.quiet.isPastCeiling(Date.now())) {
+      if (!this.quiet.isPastCeiling()) {
         logger.warn('[SessionPump] declined to reap a session that is still working', {
           sessionId: this.sessionId,
           because: quietness.because,
@@ -597,6 +626,24 @@ export class SessionPump {
   }
 
   /**
+   * Give the process back although a background shell or a session timer is
+   * still pending in it: `WARM → REAPED` (DOR-2065, DOR-2717).
+   *
+   * The warm ceiling's last resort, for when every slot is held and nothing is
+   * quiet. Only a process holding for nothing but shells and timers qualifies
+   * (see {@link isHoldingOnlyReclaimable}); one with a helper, a Monitor, an
+   * owed delivery or a person waited on is refused as {@link reap} refuses it.
+   *
+   * @returns True when the process was closed, false when the pump declined
+   */
+  async reapReclaimable(): Promise<boolean> {
+    if (this.currentState !== 'warm' || !this.quiet.isHoldingOnlyReclaimable()) return false;
+    this.setState('reaped');
+    await this.drain();
+    return true;
+  }
+
+  /**
    * End this pump for good: `any → COLD`, no guards.
    *
    * The unconditional counterpart to {@link reap}, for the two callers that
@@ -604,13 +651,17 @@ export class SessionPump {
    * Idempotent, and safe while a launch is in flight: the launch sees the
    * teardown when it returns and closes whatever it got, so a process cannot
    * outlive the shutdown that raced it.
+   *
+   * @param reason - Why the pump is ending, read back through
+   *   {@link teardownReason}; defaults to `evict`
    */
-  async teardown(): Promise<void> {
+  async teardown(reason: PumpTeardownReason = 'evict'): Promise<void> {
     if (this.disposed) {
       await this.consumed?.catch(() => {});
       return;
     }
     this.disposed = true;
+    this.endedBy = reason;
     if (this.currentState !== 'cold') this.setState('cold');
     this.initReady?.reject(
       new PumpRefusedError('process-gone', `session ${this.sessionId} was torn down`)

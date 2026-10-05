@@ -2383,6 +2383,10 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'POST /account/erasures/:id/cancel': 'the caller cancels their own erasure',
   'GET /account/sign-in-methods': "how the caller's own account signs in",
   'POST /account/password': 'the caller adds a first password to their own account',
+  'POST /sign-in-link':
+    "the waiting sign-in's cookie plus the matched account's password; sign-in-link.integration.test.ts",
+  'DELETE /sign-in-link': "cancels this browser's own waiting sign-in",
+  'GET /sign-in-link/notice': "what this browser's own sign-in page should say about linking",
   'GET /owner/erasures':
     'completed self-erasures only; member-erasure.integration.test.ts covers who may read it',
   'GET /takedowns':

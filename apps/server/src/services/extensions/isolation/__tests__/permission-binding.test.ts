@@ -305,11 +305,12 @@ describe('an approval covers the permission set it was given for', () => {
   });
 });
 
-describe('an extension that asks to run separately does not run yet', () => {
+describe('an extension that asks to run separately never runs inside DorkOS', () => {
   let manager: ExtensionManager;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete (globalThis as { __ranInProcess?: boolean }).__ranInProcess;
     stored.value = {
       enabled: ['mail-app'],
       disabled: [],
@@ -318,26 +319,24 @@ describe('an extension that asks to run separately does not run yet', () => {
     };
     mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'h1' });
     mockCompileServer.mockResolvedValue({
-      code: 'module.exports = function register(router, ctx) {};',
+      code: 'globalThis.__ranInProcess = true; module.exports = function register(router, ctx) {};',
       sourceHash: 'h1',
     });
     manager = new ExtensionManager('/fake/dork-home');
   });
 
-  // Purpose: an approved subprocess extension is refused after the approval
-  // gate with the grep-able code, and none of its server code is compiled or
-  // evaluated — it never runs in-process as a fallback.
-  it('refuses it with isolation_not_ready and runs none of its code', async () => {
+  // Purpose: fail closed. When its limits cannot be confirmed (here the
+  // record carries no isolation view, as one built before discovery filled
+  // it would), an approved subprocess extension is left off with a reason on
+  // its card; its code is never evaluated in-process as a fallback, and no
+  // router is mounted.
+  it('leaves it off when its process cannot start, and runs none of its code here', async () => {
     mockDiscover.mockResolvedValue([makeRecord(isolated({}))]);
     await manager.initialize(null);
     const result = await manager.initializeServer('mail-app');
     expect(result.ok).toBe(false);
-    expect(result.error).toBe('Mail needs a newer DorkOS to run its server part.');
-    expect(manager.get('mail-app')!.serverError).toEqual({
-      code: 'isolation_not_ready',
-      message: 'Mail needs a newer DorkOS to run its server part.',
-    });
-    expect(mockCompileServer).not.toHaveBeenCalled();
+    expect(manager.get('mail-app')!.serverError?.code).toBe('isolation_unavailable');
+    expect((globalThis as { __ranInProcess?: boolean }).__ranInProcess).toBeUndefined();
     expect(manager.getServerRouter('mail-app')).toBeNull();
   });
 

@@ -14,10 +14,6 @@ import type {
   PendingExtensionApproval,
 } from '@dorkos/shared/extension-approval-schemas';
 import { RUN_PROGRAM_NOT_FOUND, type ExtensionRecordPublic } from '@dorkos/extension-api';
-import {
-  ISOLATED_SERVER_NOT_YET_COPY,
-  ISOLATED_SERVER_PARTS_RUN,
-} from '@dorkos/shared/extension-server-status';
 
 /** One program an extension may start, as far as this surface knows it. */
 export interface ExtensionPermissionProgram {
@@ -131,11 +127,6 @@ function plain(key: string, text: string, tone: ExtensionPermissionTone = 'plain
  * The lines for one extension, in reading order: what is new since the last
  * yes first (a re-ask), then where it runs, then what it may reach.
  *
- * While a separate server half cannot run in this version
- * (`ISOLATED_SERVER_PARTS_RUN`), the card says so before anything else and
- * puts where it runs in the future tense, so nothing promises what does not
- * happen yet.
- *
  * @param permissions - What it declares.
  * @param added - What its last approval did not cover, or `null`.
  */
@@ -181,17 +172,7 @@ export function extensionPermissionLines(
     return lines;
   }
 
-  if (!ISOLATED_SERVER_PARTS_RUN) {
-    lines.push(plain('not-yet', ISOLATED_SERVER_NOT_YET_COPY, 'warning'));
-  }
-  lines.push(
-    plain(
-      'separate',
-      ISOLATED_SERVER_PARTS_RUN
-        ? 'Runs separately from DorkOS.'
-        : 'Will run separately from DorkOS.'
-    )
-  );
+  lines.push(plain('separate', 'Runs separately from DorkOS.'));
   lines.push(
     permissions.net.length > 0
       ? { key: 'net', parts: ['Can connect to:'], items: permissions.net, tone: 'plain' }

@@ -519,6 +519,19 @@ export class TaskStore {
   }
 
   /**
+   * Rewrite a run's output and nothing else — the one write a terminal run
+   * accepts, for the words its agent says after its turn ended (DOR-2717).
+   * {@link updateRun} refuses every write to a terminal run, and the outcome
+   * the run settled to must stay as it was.
+   *
+   * @param id - The run.
+   * @param output - Its whole output, as it should now read.
+   */
+  setRunOutput(id: string, output: string): void {
+    this.db.update(pulseRuns).set({ output }).where(eq(pulseRuns.id, id)).run();
+  }
+
+  /**
    * Update fields on an existing run. Returns the updated run or null.
    *
    * A run's outcome is immutable once terminal (`completed`/`failed`/

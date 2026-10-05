@@ -7,9 +7,11 @@ import { recordHostAudit } from './authority.js';
  *
  * Anyone can create a password account for an email address they do not control, as long as they
  * hold an invitation, and Better Auth never checks that address. When the real owner of that email
- * later signs in through the host's single sign-on, the existing account blocks them: single
- * sign-on never attaches itself to an account that already exists. This command clears that
- * collision, and nothing else. It refuses unless the account:
+ * later signs in through Google, GitHub, or a single sign-on the host does not trust to link
+ * (`COMMUNITY_OIDC_LINK_VERIFIED_EMAIL`), the existing account stands in their way: the sign-in is
+ * held for that account's password, which they never set. (A trusted single sign-on takes the
+ * account over itself; see `sign-in/link-gate.ts`.) This command clears that collision, and
+ * nothing else. It refuses unless the account:
  *
  * - has an unverified email,
  * - signs in only with a password (no Google, GitHub or single sign-on link), and

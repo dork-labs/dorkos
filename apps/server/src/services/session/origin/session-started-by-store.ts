@@ -33,9 +33,32 @@ export interface StartedByRecord {
   reason: string | null;
   /** A move of a started chat to another account: outside the hourly count. */
   carried: boolean;
+  /**
+   * The permission mode a chat's start was granted, or null (an extension's
+   * start, or a row from before the level was recorded).
+   */
+  permissionMode: string | null;
+  /** The starting chat's live mode when it started this one, or null. */
+  starterPermissionMode: string | null;
+  /**
+   * Whether the grant was the starter's level exactly, compared by declared
+   * level rather than id; null where the levels are.
+   */
+  permissionSameAsStarter: boolean | null;
   /** When it was started (ISO 8601). */
   createdAt: string;
 }
+
+/** The fields a writer may leave out of a start. */
+type DefaultedField =
+  'carried' | 'permissionMode' | 'starterPermissionMode' | 'permissionSameAsStarter';
+
+/**
+ * A start as a writer hands it in: `carried` defaults to false, and the
+ * permission levels to null.
+ */
+export type StartedByInsert = Omit<StartedByRecord, DefaultedField> &
+  Partial<Pick<StartedByRecord, DefaultedField>>;
 
 /** Most ids one batched read asks SQLite for at once, well under its variable limit. */
 const BATCH = 500;
@@ -53,10 +76,10 @@ export class SessionStartedByStore {
    * Record a start. A second record for the same chat replaces nothing: the
    * first starter is the one the chat says.
    *
-   * @param record - The start; `carried` defaults to false.
+   * @param record - The start; `carried` defaults to false, the levels to null.
    * @returns Whether it was written.
    */
-  insert(record: Omit<StartedByRecord, 'carried'> & { carried?: boolean }): boolean {
+  insert(record: StartedByInsert): boolean {
     const result = this.db.insert(sessionStartedBy).values(record).onConflictDoNothing().run();
     return result.changes > 0;
   }

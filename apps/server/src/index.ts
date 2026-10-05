@@ -21,6 +21,7 @@ import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-clie
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
+import { sharedBackgroundWorkLedger } from './services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
 import { previewListeners } from './services/workbench-serve/index.js';
 import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
@@ -194,6 +195,9 @@ import { ConnectorAccessQueryService } from './services/connectors/execution/acc
 import { ConnectorProgramPrincipalService } from './services/connectors/principal/program-principal-service.js';
 import type { ConnectorOwnerAuthority } from './services/connectors/principal/server-principal.js';
 import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
+import { connectorThreadKeys } from './services/connectors/principal/thread-keys.js';
+import { codexAppServerPool } from './services/runtimes/codex/app-server/process-pool.js';
+import { resolveCodexTransport } from './services/runtimes/codex/transport/index.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
 import {
   ConnectorAgentRequestService,
@@ -377,6 +381,7 @@ import {
   onProjectorInteractionChange,
 } from './services/session/session-state-projector.js';
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
+import { wakeChatsCutShort } from './services/session/runtime-turns/wake-cut-short-work.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { globalConsentRecorder } from './services/marketplace/consent/global-plugin-consent.js';
@@ -980,6 +985,15 @@ async function start() {
       error: error instanceof Error ? error.message : String(error),
     });
   });
+
+  // The chats whose agent process was still holding background work when the
+  // previous run ended — a graceful restart or a hard kill — each owed a turn
+  // (DOR-2065). Read HERE, beside the sweep that just ended those processes and
+  // before anything can warm a new one, so a record this run writes is never
+  // mistaken for one. Not cleared: each record is removed only once its chat is
+  // settled, so a boot that dies midway wakes the rest next time. The wakes go
+  // out once the server is listening.
+  const backgroundWorkCutShort = sharedBackgroundWorkLedger().read();
 
   // Empty the hosted-community move staging directory. A copy a previous run
   // left behind can never be sent: its upload token died with that process.
@@ -1756,6 +1770,18 @@ async function start() {
     // sessionListBroadcaster.start() below — runtimes registered after
     // start() are not fanned into the global session-list stream.
     const codexConfig = configManager.get('runtimes').codex;
+    const openCodeConfig = configManager.get('runtimes').opencode;
+    // The loopback relay a backend's credits provider is pointed at, so the
+    // credits token never enters that backend's process (ADR 261002-221210,
+    // amended by 261005-113107: Codex on app-server goes through it too).
+    // Started where Codex or OpenCode runs; if it cannot start, a credits turn
+    // on either can pay for nothing and refuses, never falls back.
+    if (codexConfig.enabled || openCodeConfig.enabled) {
+      creditsRelay = await startCreditsRelay().catch((err: unknown) => {
+        logger.warn('[Cloud] Could not start the credits relay', logError(err));
+        return null;
+      });
+    }
     if (codexConfig.enabled) {
       // Construction no longer depends on a resolvable `codex` binary: the
       // runtime resolves one lazily, per turn, so a machine with no Codex still
@@ -1776,6 +1802,10 @@ async function start() {
             // the composition root owns the deployment decision, and the adapter
             // reports what it was actually given (ADR 260901-135657).
             attachments: sessionAttachmentStore,
+            // How turns reach Codex (ADR 261005-113107). Read once: a change
+            // takes effect at the next start, because clients cache capabilities.
+            transport: resolveCodexTransport(codexConfig.transport),
+            creditsRelay: () => creditsRelay ?? undefined,
           });
           // Durable per-session settings hydrate/write-through (ADR-0260), same
           // port the Claude adapter uses.
@@ -1801,16 +1831,7 @@ async function start() {
     // Gated on `runtimes.opencode.enabled` config. Must register BEFORE
     // sessionListBroadcaster.start() below, same as Codex. The sidecar spawns
     // lazily on first use; its shutdown is wired into shutdownServices().
-    const openCodeConfig = configManager.get('runtimes').opencode;
     if (openCodeConfig.enabled) {
-      // The loopback relay OpenCode's credits provider is pointed at, so the
-      // credits token never enters OpenCode's process (ADR 261002-221210).
-      // Started only where OpenCode runs; if it cannot start, OpenCode on
-      // credits can pay for nothing and refuses, never falls back.
-      creditsRelay = await startCreditsRelay().catch((err: unknown) => {
-        logger.warn('[Cloud] Could not start the credits relay', logError(err));
-        return null;
-      });
       // Same construct-can-throw exposure as Codex above — the sidecar's
       // binary discovery can throw synchronously if it isn't installed.
       // registerOptionalRuntime isolates the failure so it can't take the
@@ -3109,7 +3130,15 @@ async function start() {
   //      broadcasts to the feed live on BOTH paths, where before the relay path
   //      reached the feed only on the next poll.
   if (taskStore) {
-    taskStore.setOnRunTerminal(createRunTerminalListener(activityService));
+    // The fourth consumer (DOR-2717): a run whose agent finishes the work in a
+    // turn it starts after the run's own turn ended has that turn's words added
+    // to the run, rather than left only in its session.
+    taskStore.setOnRunTerminal(
+      createRunTerminalListener(activityService, {
+        store: taskStore,
+        runtimeFor: (type) => (runtimeRegistry.has(type) ? runtimeRegistry.get(type) : undefined),
+      })
+    );
   }
 
   // Catch up the escalation ladder on what was already waiting when this process
@@ -3720,6 +3749,7 @@ async function start() {
           mesh: meshCore,
           owner: connectorOwner,
         }),
+        threadKeys: connectorThreadKeys,
       })
     : undefined;
   if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
@@ -5793,6 +5823,7 @@ async function start() {
     for (const runtime of runtimeRegistry.listRuntimes()) {
       connectorRuntimeConsumer(runtime)?.setConnectorRuntimeTools({
         principals: agentScopedRuntimePrincipals,
+        threadKeys: connectorThreadKeys,
         listenerUrl: connectorRuntimeMcpListener.url,
         agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
         isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
@@ -6071,6 +6102,25 @@ async function start() {
   if (schedulerService) {
     await schedulerService.start();
     logger.info('[Tasks] Scheduler started');
+  }
+
+  // Wake the chats the boot found owed a turn (DOR-2065), now that every
+  // runtime and session service is up. A room's chat (`room_sessions`) and a
+  // scheduled task's (`pulse_runs`) have no person waiting on the work, so they
+  // are skipped. Detached, and it never rejects.
+  if (backgroundWorkCutShort.length > 0) {
+    const leftoverLedger = sharedBackgroundWorkLedger();
+    logger.info('[DorkOS] waking chats whose background work a restart stopped', {
+      sessions: backgroundWorkCutShort.map((record) => record.sessionId),
+    });
+    void wakeChatsCutShort(backgroundWorkCutShort, {
+      release: (record) => leftoverLedger.release(record.key, record.since),
+      drivenElsewhere: (sessionIds) =>
+        new Set([
+          ...roomStore.resolveRoomOrigins(sessionIds).keys(),
+          ...(taskStore?.resolveTaskOrigins(sessionIds).keys() ?? []),
+        ]),
+    });
   }
 
   // Run session health check periodically. Only ClaudeCodeRuntime needs the
@@ -6381,6 +6431,9 @@ async function shutdownServices() {
   // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
   // window) so shutdown never leaves an orphan. No-op when it never booted.
   await openCodeServerManager.shutdown();
+  // Same for Codex's app-server processes (ADR 261005-113107): end stdin,
+  // then SIGTERM, then SIGKILL, by the PID the pool spawned. No-op on exec.
+  await codexAppServerPool.shutdown();
   await creditsRelay?.close();
   creditsRelay = null;
   // Same for any warm claude-code process: close stdin so it drains, then close
