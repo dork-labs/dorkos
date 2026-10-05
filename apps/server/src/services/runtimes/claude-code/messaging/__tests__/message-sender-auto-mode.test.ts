@@ -150,3 +150,25 @@ describe('executeSdkQuery — auto-mode guard', () => {
     expect(events.some((event) => event.type === 'system_status')).toBe(false);
   });
 });
+
+describe('executeSdkQuery — records which model Auto was confirmed for', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // `session_start` reads this to tell the mode a turn REALLY runs at from the
+  // stored choice (spec `inherited-start-permission`).
+  it('records nothing when Auto support is unknown or absent', async () => {
+    for (const modelSupportsAutoMode of [undefined, false]) {
+      const session = makeSession({ model: 'opus', autoModeConfirmedFor: 'opus' });
+      await runTurn(session, { modelSupportsAutoMode });
+      expect(session.autoModeConfirmedFor).toBeUndefined();
+    }
+  });
+
+  it('records the model when Auto is confirmed for it', async () => {
+    const session = makeSession({ model: 'opus' });
+    await runTurn(session, { modelSupportsAutoMode: true });
+    expect(session.autoModeConfirmedFor).toBe('opus');
+  });
+});

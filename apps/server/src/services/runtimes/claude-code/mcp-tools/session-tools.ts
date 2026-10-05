@@ -23,9 +23,12 @@
  *   session is gone, the runtime's default when neither is known), never
  *   anything in the tool's input. A caller with no chat — the external `/mcp`
  *   server, an agent token — has no level to inherit and is held to
- *   `acceptEdits`. Leaving `permissionMode` out means "the same as me"; a mode
- *   above the ceiling is refused, never quietly lowered. Full autonomy still
- *   needs the person's standing acknowledgement.
+ *   `acceptEdits`. Leaving `permissionMode` out means "the same as me" for
+ *   every level but Full autonomy, which is granted only when named, so the
+ *   person approving the call sees it; a mode above the ceiling is refused,
+ *   never quietly lowered. Full autonomy also needs the person's standing
+ *   acknowledgement. Auto needs a caller at Auto or Full autonomy, and an Auto
+ *   the caller's model cannot do counts as Default.
  * - **No account the operator has not opened to agents.** A named account is
  *   checked by `checkAccountLaunch`: with no account advisor registered (the
  *   Flow extension), naming one is refused. Leaving it out walks the usual
@@ -149,7 +152,8 @@ export const SessionStartInputShape = {
   effort: EffortLevelSchema.optional().describe('The reasoning effort the session starts with.'),
   permissionMode: PermissionModeSchema.optional().describe(
     'The permission mode the session starts in. The session runs at your own permission level ' +
-      'unless you ask for a lower one; a higher one is refused. Absent: your own level.'
+      'unless you ask for a lower one; a higher one is refused. Absent: your own level, except ' +
+      'Full autonomy (e.g. `bypassPermissions`), which must be named here to be granted.'
   ),
   seedContext: z
     .string()
@@ -571,7 +575,8 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
         'return its id at once (the session then works on its own). Optionally on a named account (the account usage ' +
         'tool lists them), which the account policy must allow; otherwise the usual account is ' +
         'used. The session runs at your own permission level unless you ask for a lower one; a ' +
-        'higher one is refused. At most 8 sessions started this way run at once.',
+        'higher one is refused, and Full autonomy is granted only when named in permissionMode. ' +
+        'At most 8 sessions started this way run at once.',
       SessionStartInputShape,
       createSessionStartHandler(deps, resolveCaller)
     ),

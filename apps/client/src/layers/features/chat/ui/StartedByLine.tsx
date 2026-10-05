@@ -6,8 +6,8 @@
  *   waiting to be sorted", or "Started from <that chat>: <reason>" with the chat as a link.
  *   A session adornment, never a message, and never sent to the model. A chat
  *   started from another chat adds the level it was started at, which is never
- *   higher than its starter's (spec `inherited-start-permission`): "Full
- *   autonomy, same as the chat that started it."
+ *   higher than its starter's (spec `inherited-start-permission`): "Started at
+ *   Full autonomy, same as the chat that started it."
  * - {@link StartedPrompt} — the prompt it was started with, which is the chat's
  *   first message, folded to one line ("What it was asked ▸") so it is there to
  *   read but is never the headline. An extension's prompt is often a command
@@ -72,7 +72,8 @@ export function StartedByLine({
           data-testid="started-level-line"
           className="text-muted-foreground mx-auto max-w-prose px-4 pb-1 text-center text-xs"
         >
-          {startedLevelLabel(permission.mode, modes)},{' '}
+          {/* A record of the start, not the chat's mode now: that can change. */}
+          Started at {startedLevelLabel(permission.mode, modes)},{' '}
           {permission.sameAsStarter ? 'same as' : 'lower than'} the chat that started it.
         </p>
       )}

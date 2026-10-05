@@ -53,6 +53,14 @@ export interface McpToolSession {
    * built — a copy would let a chat lowered mid-turn start chats at its old level.
    */
   permissionMode?: string;
+  /** The session's model, read at call time beside {@link permissionMode}. */
+  model?: string;
+  /**
+   * The model Auto was confirmed for at the last launch (`AgentSession`'s field
+   * of the same name). `permissionMode` can say `'auto'` while the turn runs at
+   * `'default'`; this is how a reader tells the two apart. Read at call time.
+   */
+  autoModeConfirmedFor?: string;
 }
 
 /**

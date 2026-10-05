@@ -115,25 +115,27 @@ describe('StartedByLine', () => {
         permission: { mode, sameAsStarter },
       }) as const;
 
-    it('says Full autonomy, the same as the chat that started it', () => {
+    it('says it was started at Full autonomy, the same as the chat that started it', () => {
       render(
         <StartedByLine startedBy={startedAt('bypassPermissions', true)} modes={CLAUDE_MODES} />
       );
       expect(screen.getByTestId('started-level-line').textContent).toBe(
-        'Full autonomy, same as the chat that started it.'
+        'Started at Full autonomy, same as the chat that started it.'
       );
     });
 
     it("names a lower level in the runtime's own words", () => {
       render(<StartedByLine startedBy={startedAt('acceptEdits', false)} modes={CLAUDE_MODES} />);
       expect(screen.getByTestId('started-level-line').textContent).toBe(
-        'Accept edits, lower than the chat that started it.'
+        'Started at Accept edits, lower than the chat that started it.'
       );
     });
 
     it("names the level before the runtime's modes have loaded", () => {
       render(<StartedByLine startedBy={startedAt('bypassPermissions', true)} />);
-      expect(screen.getByTestId('started-level-line')).toHaveTextContent(/^Full autonomy, same/);
+      expect(screen.getByTestId('started-level-line')).toHaveTextContent(
+        /^Started at Full autonomy, same/
+      );
     });
 
     it('draws no level for a chat started before levels were recorded', () => {
