@@ -47,7 +47,7 @@ name: Desktop Smoke
 #
 # NOT run here: the signed/notarized path (that needs Apple credentials and ~30+
 # minutes of notarization — desktop-release.yml owns it) and the Windows
-# installer (desktop-release.yml's verify-windows job owns that).
+# installer (desktop-release.yml's "Verify the Windows installer" step owns that).
 
 on:
   pull_request:
