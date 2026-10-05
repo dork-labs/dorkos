@@ -54,7 +54,10 @@ describe('Codex prevent_idle_sleep', () => {
       const dir = await mkdtemp(path.join(tmpdir(), 'codex-argv-'));
       try {
         const fake = path.join(dir, 'codex');
-        await writeFile(fake, '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$0.argv"\n');
+        // Read the prompt the SDK writes to stdin before exiting: a stand-in
+        // that exits first makes that write fail with EPIPE, an uncaught error
+        // that fails whichever test file happens to be running.
+        await writeFile(fake, '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$0.argv"\ncat > /dev/null\n');
         await chmod(fake, 0o755);
 
         const thread = new Codex(buildCodexOptions(fake)).startThread();
