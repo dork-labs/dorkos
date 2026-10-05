@@ -853,13 +853,14 @@ it('leaves a reentrant newer same-owner inspection intact instead of accepting a
     const signal = vi.mocked(transport.getCanvasEventReceipt).mock.calls[0][3];
     expect(signal.aborted).toBe(false);
     expect(view.result.current.records[0].receipt).toBeUndefined();
+    const inspectedReceipt = receipt(original);
     await act(async () => {
-      resolve(receipt(original));
+      resolve(inspectedReceipt);
       await nested;
     });
     expect(view.result.current.records[0]).toMatchObject({
       phase: 'accepted',
-      receipt: receipt(original),
+      receipt: inspectedReceipt,
     });
     expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
   } finally {
