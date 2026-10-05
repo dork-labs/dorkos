@@ -144,6 +144,7 @@
  * @module services/runtimes/claude-code/sessions/persistent-dispatch
  */
 import { randomUUID } from 'node:crypto';
+import nodePath from 'node:path';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type {
   DeliverIntoTurnOpts,
@@ -184,7 +185,8 @@ import {
 import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashLoopError, SessionCrashRecovery } from './session-crash-recovery.js';
 import { isWaitingOnPerson } from './session-store.js';
-import { PumpRefusedError } from './session-pump-contract.js';
+import { PumpRefusedError, type Quietness } from './session-pump-contract.js';
+import type { QueuedWaitingOn } from '@dorkos/shared/types';
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
@@ -260,6 +262,12 @@ interface SessionBundle {
    * tell whether there is a record to clear without reading the file.
    */
   heldWork?: boolean;
+  /**
+   * The person chose Switch now (DOR-2065): the next restart this session
+   * decides goes ahead although background work is still running. Consumed by
+   * the next dispatch, whatever it decides.
+   */
+  switchRequested?: boolean;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -290,6 +298,29 @@ function* terminalFailure(
     },
   };
   yield { type: 'done', data: { sessionId } };
+}
+
+/**
+ * What a held message shows the person: what is running, and what the restart
+ * is for (spec `warm-process-lifecycle` D2a, DOR-2065).
+ *
+ * @param busy - What the process is doing
+ * @param changed - The pins that moved
+ * @param effectiveCwd - Where the message would run
+ */
+function waitingOnFor(
+  busy: Extract<Quietness, { quiet: false }>,
+  changed: readonly string[],
+  effectiveCwd: string
+): QueuedWaitingOn {
+  return {
+    reason: 'background-work',
+    holding: { agents: busy.holding.agents, shells: busy.shells, other: busy.holding.other },
+    pins: [...changed],
+    ...(changed.includes('cwd') ? { targetFolderName: nodePath.basename(effectiveCwd) } : {}),
+    since: busy.busySince,
+    releaseAt: busy.busySince + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS,
+  };
 }
 
 /**
@@ -440,6 +471,28 @@ export class PersistentDispatch {
   }
 
   /**
+   * Let the next restart of this session's agent go ahead although its
+   * background work is still running — the person's Switch now (spec
+   * `warm-process-lifecycle` D2a, DOR-2065). The held message is tried again at
+   * once through the gate listener.
+   *
+   * @param sessionId - The session, in any id it answers to
+   * @returns False when the session holds no running process to switch
+   */
+  switchWhenReady(sessionId: string): boolean {
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
+    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
+    if (bundle.live === undefined) return false;
+    bundle.switchRequested = true;
+    logger.info('[persistent-dispatch] switch now: the next restart ends background work', {
+      session: sessionId,
+    });
+    this.releaseHeldDispatch(key);
+    return true;
+  }
+
+  /**
    * Is a helper agent still working on this session's held process, inside the
    * four-hour ceiling (DOR-2681)? False for a session holding no process.
    *
@@ -582,6 +635,7 @@ export class PersistentDispatch {
       // moved cwd is a relaunch pin, so without it the pin comparison below
       // would tear the process down and only then be refused.
       logger.warn('[persistent-dispatch] boundary violation', { session: sessionId, effectiveCwd });
+      messageOpts?.dispatchHold?.proceed();
       yield boundaryViolationEvent(effectiveCwd);
       return;
     }
@@ -601,6 +655,7 @@ export class PersistentDispatch {
       // token keeps its warm process (if any) and bills nothing.
       const refusal = creditsRefusalEvent(err);
       if (!refusal) throw err;
+      messageOpts?.dispatchHold?.proceed();
       yield refusal;
       return;
     }
@@ -615,6 +670,10 @@ export class PersistentDispatch {
     };
 
     let bundle = this.acquire(key, session, opts);
+    // Read once and cleared, so a Switch now covers the next decision and no
+    // later one.
+    const switchNow = bundle.switchRequested === true;
+    bundle.switchRequested = false;
     // Nothing pinned to the live process may be stale by the time the turn
     // opens. A pin the SDK cannot set live replaces the process outright; the
     // four it can are awaited, never fired blind (`launch-live-settings.ts`).
@@ -647,11 +706,11 @@ export class PersistentDispatch {
       live !== undefined && (toolSurfaceMoved || skillWithdrawal)
         ? bundle.pump.quietness()
         : undefined;
-    // A background shell alone does not hold it (DOR-2065): a shell can run for
-    // ever (a dev server, a `tail -f`), so it would pin a stale list for good.
-    // It dies with the relaunch, and the CLI's own notice tells the agent.
-    const holding =
-      live !== undefined && busy !== undefined && !busy.quiet && !bundle.pump.isHoldingOnlyShells();
+    // A background shell holds it too (DOR-2065). The list moved from outside
+    // this session, so the person's message rides the old one rather than
+    // either ending the shell or waiting on it — and the stale list ends with
+    // the process, at the latest at the busy-spell ceiling's idle reap.
+    const holding = live !== undefined && busy !== undefined && !busy.quiet;
     let compared = plan.fingerprint;
     if (holding && toolSurfaceMoved) compared = withLiveToolSurface(live, compared);
     if (holding && skillWithdrawal) {
@@ -694,6 +753,33 @@ export class PersistentDispatch {
       ...(contextTokens !== undefined ? { contextTokens } : {}),
       onPluginReloadHeld: (impact) => this.onPluginReloadHeld?.(sessionId, impact, contextTokens),
     });
+    const handshake = messageOpts?.dispatchHold;
+    if (reuse.action === 'replace' && !switchNow) {
+      // Only a caller that can wait pays for the settle interval.
+      const busyNow =
+        handshake !== undefined
+          ? await this.workARestartWouldEnd(bundle, key)
+          : this.workARestartWouldEndNow(bundle, key);
+      if (busyNow !== undefined && handshake !== undefined) {
+        const waitingOn = waitingOnFor(busyNow, reuse.changed, plan.effectiveCwd);
+        logger.info('[persistent-dispatch] holding a restart while background work runs', {
+          session: sessionId,
+          reason: reuse.reason,
+          because: busyNow.because,
+        });
+        handshake.hold(waitingOn);
+        return;
+      }
+      if (busyNow !== undefined) {
+        // A caller that cannot wait: today's behaviour, said out loud.
+        logger.warn('[persistent-dispatch] restarting a process that is still working', {
+          session: sessionId,
+          reason: reuse.reason,
+          because: busyNow.because,
+        });
+      }
+    }
+    handshake?.proceed();
     if (reuse.action === 'replace') {
       logger.info('[persistent-dispatch] replacing a warm process', {
         session: sessionId,
@@ -1185,6 +1271,8 @@ export class PersistentDispatch {
         bundle.heldWork = holding;
         if (!holding) {
           this.backgroundWork().release(key);
+          // A message held for this work may run now.
+          this.releaseHeldDispatch(key);
           return;
         }
         this.backgroundWork().hold({
@@ -1292,6 +1380,11 @@ export class PersistentDispatch {
         ) {
           this.clearBackgroundWork(key, bundle);
         }
+        // With the process gone there is nothing left to end: a message held
+        // for its work may run.
+        if (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed') {
+          this.releaseHeldDispatch(key);
+        }
         bundle.recovery.noteStateChange(change);
       },
       // The map's raw SIZE was the wrong answer, for the same reason it is
@@ -1391,6 +1484,73 @@ export class PersistentDispatch {
   private async replaceProcess(key: string): Promise<void> {
     await this.registry.evict(key);
     this.forget(key);
+  }
+
+  /**
+   * What a restart of this process would end right now, or `undefined` when it
+   * may go ahead (spec `warm-process-lifecycle` D2, DOR-2065).
+   *
+   * Nothing to end when there is no process, or past the four-hour ceiling,
+   * which bounds every hold. A process that reads quiet but spoke in the last
+   * {@link SESSIONS.RESTART_SETTLE_MS} may still be flushing the frame that
+   * names a helper it just started, so the answer waits out the rest of that
+   * interval and asks again. The wait happens before any turn is shown.
+   *
+   * @param bundle - The session's wiring
+   * @param key - The resolved key its pump is filed under
+   */
+  private async workARestartWouldEnd(
+    bundle: SessionBundle,
+    key: string
+  ): Promise<Extract<Quietness, { quiet: false }> | undefined> {
+    const current = (): boolean =>
+      bundle.live !== undefined && this.registry.peek(key) === bundle.pump;
+    if (!current()) return undefined;
+    let quietness = bundle.pump.quietness();
+    if (quietness.quiet) {
+      const wait = quietness.lastFrameAt + SESSIONS.RESTART_SETTLE_MS - Date.now();
+      if (wait <= 0) return undefined;
+      await new Promise<void>((resolve) => setTimeout(resolve, wait));
+      if (!current()) return undefined;
+      quietness = bundle.pump.quietness();
+      if (quietness.quiet) return undefined;
+    }
+    if (bundle.pump.isPastCeiling(Date.now())) return undefined;
+    return quietness;
+  }
+
+  /**
+   * {@link workARestartWouldEnd} without the settle interval, for a caller that
+   * cannot wait and only needs to say what the restart ends.
+   *
+   * @param bundle - The session's wiring
+   * @param key - The resolved key its pump is filed under
+   */
+  private workARestartWouldEndNow(
+    bundle: SessionBundle,
+    key: string
+  ): Extract<Quietness, { quiet: false }> | undefined {
+    if (bundle.live === undefined || this.registry.peek(key) !== bundle.pump) return undefined;
+    const quietness = bundle.pump.quietness();
+    return quietness.quiet ? undefined : quietness;
+  }
+
+  /**
+   * Tell the queue a message held on this session may be tried again: its
+   * background work ended, its process went, or the person chose Switch now
+   * (DOR-2065).
+   *
+   * @param key - The resolved session key
+   */
+  private releaseHeldDispatch(key: string): void {
+    try {
+      this.dispatchGateListener?.(key);
+    } catch (err) {
+      logger.warn('[persistent-dispatch] a dispatch-gate listener threw', {
+        session: key,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

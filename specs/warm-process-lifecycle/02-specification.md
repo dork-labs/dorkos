@@ -65,7 +65,8 @@ See ideation §4. Short form:
 ## Non-Goals
 
 - Helpers that outlive their process (research §5.2's durable hand-off primitive).
-- Keeping background **shells** alive past their process.
+- Keeping background shells alive past their **process**. Shells now hold a live process (see the 2026-10-05
+  note under D1), but nothing keeps one alive once its process ends.
 - Changing which values are relaunch pins, or making room and direct-chat turns share a fingerprint.
 - Moving a running conversation to a different Claude account (§D9).
 - Reordering a person's queued chat messages behind their back.
@@ -109,7 +110,8 @@ type Quietness =
 ```
 
 - `background-work`: `TurnLiveness.liveTaskCounts(): { agents; shells; other }` from the level frame. `local_agent` →
-  agents, `local_bash` → shells, every other `task_type` → other. Agents and other hold the process; shells never do.
+  agents, `local_bash` → shells, every other `task_type` → other. Agents, shells and other all hold the process (reversed
+  2026-10-05, see the note below; this line used to say shells never do).
   `liveAgentCount()` stays for the resume path's stdin hold. (Each distinct `task_type` is logged once per process —
   **shipped in slice 1**, in `persistent-dispatch.ts`, not here.)
 - `delivery-owed`: `owedCount() > 0`, bounded by the **owed-delivery clock** below.
@@ -117,6 +119,18 @@ type Quietness =
   **`runtime-turn-open`, and the `hasRuntimeTurnOpen` seam that answers it, land in slice 3a together with their
   producer.** Slice 2 ships the other four: a union member nothing can ever return is dead code, and it invites a later
   reader to "fix" the gap into a bug.
+
+> **Reversed 2026-10-05 (DOR-2065, PR #2582 and slice 4a): background shells hold the process.** On 2026-10-05 five
+> builder chats ended their turns with a background PR watcher running and lost about eight hours between them. A warm
+> process never closes stdin, so its shells keep running and, when one finishes, the CLI wakes the model with the
+> result, exactly as the bare CLI does. The old rule reasoned from the resume path, where stdin closes and the CLI ends
+> its shells itself; on the warm path, reaping or replacing the process is what took that wake away. Two stated
+> exceptions remain: (1) the warm-ceiling reclaim may still take a process whose ONLY work is shells, as its last
+> resort (`SessionPumpRegistry`, `reapShellsOnly`), because a shell can run forever and twelve of them must not lock
+> every other chat out; (2) a tool-list or extension-skills change still never waits on anything, shells included: the
+> message rides the old list (slice 4a removed #2582's shell-only exemption from that hold, which used to relaunch and
+> end the shell; with the gate below it would instead have made the person's message wait on a dev server for an
+> outside change they did not ask for).
 
 **The owed-delivery clock (new on this path).** The warm path gets its own deadline, because the resume path's lives in
 a stdin close the pump never runs:
@@ -234,6 +248,37 @@ under "What is not done".
 
 **Implementer notes.** The only `await` in the gate is `prepareDispatch`, outside `withDispatchMutex`; commit is
 synchronous and decides. A config write bumps the generation. Runtimes without warm processes implement neither port.
+
+> **As built in slice 4a (2026-10-05): one decision, made by the dispatch itself, before the turn is shown.** Prepare
+> and commit are folded into a handshake rather than two ports, because `resolveLaunch` mints an identity token, may
+> refresh a credits token and stamps the session — running it once in `prepareDispatch` and again in `sendMessage`
+> doubles those side effects, and a handle carried between them would have to carry the connector-access context
+> `sendMessage` adds too. Instead `triggerTurn` passes `MessageOpts.dispatchHold { proceed(), hold(waitingOn) }`, starts
+> the runtime's stream, and waits for the answer (or the first event, or a 30 s fallback) BEFORE `feedProjector` mints
+> `turn_start`. `PersistentDispatch.dispatch` answers right after `decideProcessReuse`: `replace` on a process that is not
+> quiet (any blocker, shells included), not past the 4 h ceiling and not switched → `hold`, and its stream ends without
+> yielding; anything else → `proceed`. The settle interval runs inside that answer (`SESSIONS.RESTART_SETTLE_MS`, 2 s),
+> still before the turn is shown. On `hold`, `triggerTurn` restores the staged context it took, releases the lock and
+> returns `{ accepted: false, held }`; the dispatcher parks the row with `waitingOn`, blocks the rows behind it, and
+> tries it again at every turn boundary, every `onDispatchGateChange` (work ended, process gone, Switch now) and at
+> `releaseAt`, never at the 5-minute queue bound. `AgentRuntime.switchWhenReady?` is both Switch now and the marker
+> that a runtime answers the handshake.
+>
+> Consequences: there is no stale handle, so `reprepare` (T21c) does not exist; a send with no handshake (a direct
+> `sendMessage` caller) restarts as before, logged at `warn`; a protected (document-channel) message is not offered the
+> hold, because its claim is final before the runtime call. **Trimmed, with reasons:**
+>
+> - `not_sent` (T21b): the decision and the replace are the same step in the same call, so no turn can meet a busy
+>   process it was not told about; there is nothing to retract.
+> - `beginRetire` in the commit tick (T21): same reason — the quiet answer and the teardown run back to back in one
+>   `dispatch`, under the session lock, with nothing sent to the process between them.
+> - Room pass-once and the room slot (T26, T26b, T18-ceiling): slice 3b's `RoomPendingTriggers` never shipped. A room
+>   trigger that would end background work is refused like a busy session (today's visible busy notice); one that rides
+>   runs, as rooms always have, without a once-per-wait limit.
+> - The "Switched. 2 helpers were stopped." line in the following turn: the Switch now button already says what it
+>   stops, and the after-the-fact lines are slice 5's, with the other stopped-on-purpose lines.
+> - `targetFolderName` and the pin phrases are rendered by the client from `waitingOn.pins`, not a server
+>   `process-change-copy.ts`.
 
 ### D2a. Gated rows in the queue
 
@@ -449,11 +494,11 @@ shown to fail against the slice's build with that gate's bound removed.
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ------- | -------------------------------------------------- |
 | T1   | Early zero-content close waits; answer lands in the dispatched window; no empty-turn error                                                                                                                                                                                                                                                                                                 | `session-turn-windows.test.ts`, `pump-turn-stream-*.test.ts`             | 1       | closes at once                                     |
 | T2   | A genuinely empty turn still errors after the 30 s cap                                                                                                                                                                                                                                                                                                                                     | `session-turn-windows.test.ts`                                           | 1       | guard                                              |
-| T3   | `reap` declines for agent, Monitor-typed, unknown type, owed delivery; proceeds with only shells                                                                                                                                                                                                                                                                                           | `session-pump.test.ts`                                                   | 2       | only agents decline                                |
+| T3   | `reap` declines for agent, Monitor-typed, unknown type, owed delivery, and (since 2026-10-05) shells                                                                                                                                                                                                                                                                                       | `session-pump.test.ts`                                                   | 2       | only agents decline                                |
 | T4   | Idle timer re-arms while frames flow with no window                                                                                                                                                                                                                                                                                                                                        | `session-pump-registry.test.ts`                                          | 2       | ignores frames                                     |
 | T5   | Record eviction skips a session holding a helper past 30 min; evicts past the ceiling                                                                                                                                                                                                                                                                                                      | `session-store-eviction.test.ts`                                         | 2       | person-waits only                                  |
 | T6   | 30 s quiet does not reset the ceiling clock; 60 s does                                                                                                                                                                                                                                                                                                                                     | `session-pump.test.ts`                                                   | 2       | no ceiling                                         |
-| T7   | 12 helper-pinned sessions → 13th refused; shells-only reclaimed. **A guard row, and it only discriminates when the twelve are pinned by a Monitor-typed (or unknown) task** — pin them with `local_agent` and it passes on today's code too, because the old rule already counted subagents                                                                                                | `session-pump-registry.test.ts`                                          | 2       | guard                                              |
+| T7   | 12 helper-pinned sessions → 13th refused; shells-only reclaimed as the last resort (2026-10-05). **A guard row, and it only discriminates when the twelve are pinned by a Monitor-typed (or unknown) task** — pin them with `local_agent` and it passes on today's code too, because the old rule already counted subagents                                                                | `session-pump-registry.test.ts`                                          | 2       | guard                                              |
 | T35  | Owed-delivery clock: `task_notification`, `result`, no segment → `owed` expires at 30 s, logged, re-arm fired; a segment starting inside 30 s cancels it and its `system/init` clears `owed`; a further settle does not re-arm an armed clock; a delivery segment starting after expiry is logged with its lateness                                                                        | `session-pump.test.ts`, `turn-liveness.test.ts`                          | 2       | `owed` never expires                               |
 | T38  | **Notification while idle:** no turn open, a `task_notification` arrives (owed 0 → 1), no segment follows; a chat row is queued → the clock arms on the transition and the head launches within 30 s (fake timers), never later                                                                                                                                                            | `session-pump.test.ts`, `message-dispatcher.test.ts` (real `pumpLocked`) | 3a      | mutation: head never launches without the idle arm |
 | T8   | Unsolicited segment opens a runtime window at its first model frame                                                                                                                                                                                                                                                                                                                        | `session-turn-windows.test.ts`                                           | 3a      | opens at `result`                                  |
@@ -501,7 +546,8 @@ never throws) and `isSegmentPending` (never true forever: a driver asserts it go
 - `prepareDispatch` resolves the launch once per queue head; `sendMessage` reuses it.
 - A replace waits at most `COMMIT_SETTLE_MS` extra after the last frame.
 - The owed-delivery clock can hold the queue head up to 30 s when a delivery never arrives.
-- Pinned processes hold warm slots up to the ceiling; shells do not. A gated head blocks the rows behind it.
+- Pinned processes hold warm slots up to the ceiling; shells do too, except that a shell-only process is the warm
+  ceiling's last-resort reclaim (2026-10-05). A gated head blocks the rows behind it.
 
 ## Security Considerations
 
@@ -567,7 +613,10 @@ possible). A real-CLI check is the operator's to run on their own subscription, 
 4. ~~How often may a room pass a gated chat row?~~ (RESOLVED, rev 5) Once per gated wait. **Rationale:** no starvation.
 5. ~~Wait inside the turn or in the queue?~~ (RESOLVED, rev 3) The queue.
 6. ~~Does a default-account switch stop a running session?~~ (RESOLVED, rev 4) No.
-7. ~~Should background shells hold a process?~~ (RESOLVED) No.
+7. ~~Should background shells hold a process?~~ (RESOLVED, reversed 2026-10-05) **Yes.** A warm process never closes
+   stdin, so its shells live and wake the model when they finish; reaping or replacing the process took that wake away
+   and cost five builder chats about eight hours. Exceptions: the warm ceiling's last-resort reclaim, and tool-list
+   changes, which ride rather than wait (see D1).
 8. ~~Does a brief quiet reset the ceiling?~~ (RESOLVED) Only 60 s of continuous quiet.
 9. ~~Stall-guard or lock exemption for runtime turns?~~ (RESOLVED) No.
 10. ~~Second process for the new turn? Agent-facing read?~~ (RESOLVED) No; not here.

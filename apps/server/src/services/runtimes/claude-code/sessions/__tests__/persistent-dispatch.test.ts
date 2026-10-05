@@ -167,6 +167,7 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
+import { buildSystemPromptAppend } from '../../messaging/context-builder.js';
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
@@ -1221,9 +1222,9 @@ describe("a running extension's skills root on a warm process (DOR-2685)", () =>
     expect(cli.processes[1]!.options.plugins ?? []).toEqual([]);
   });
 
-  it("does not hold a stopped extension's relaunch for a background shell alone (DOR-2065)", async () => {
-    // Purpose: a shell can run forever, so it must not pin a stale skill set.
-    // It dies with the relaunch, and the CLI's own notice tells the agent.
+  it("holds a stopped extension's relaunch for a background shell too (DOR-2065)", async () => {
+    // Purpose: a shell is background work like any other. A skill set moved
+    // from outside the session rides the old one rather than ending it.
     extensionRoots.paths = [`${ROOT}/mail`];
     await runtime.refreshActivatedPlugins();
     const sessionId = nextSession();
@@ -1235,8 +1236,8 @@ describe("a running extension's skills root on a warm process (DOR-2685)", () =>
     extensionRoots.paths = [];
     await runtime.refreshActivatedPlugins();
     await turn(sessionId, 'while the shell runs');
-    expect(cli.launches).toBe(2);
-    expect(process.ended).toBe(true);
+    expect(cli.launches).toBe(1);
+    expect(process.ended).toBe(false);
   });
 
   it('still relaunches a working process when a package is withdrawn with the extension', async () => {
@@ -1395,10 +1396,10 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     expect(process.ended).toBe(true);
   });
 
-  it('does not hold the relaunch for a background shell alone (DOR-2065)', async () => {
-    // Purpose: a shell can run forever (a dev server), so it must not pin a
-    // stale tool list. It dies with the relaunch, and the CLI's own notice
-    // tells the agent on the turn that follows.
+  it('holds the relaunch for a background shell too (DOR-2065)', async () => {
+    // Purpose: a shell is background work like any other. A tool list moved
+    // from outside the session rides the old one rather than ending the shell
+    // or making the person's message wait on it.
     const sessionId = nextSession();
     await turn(sessionId);
     const process = cli.processes[0]!;
@@ -1407,8 +1408,8 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
 
     listed = [...listed, 'ext_mail_app__send'];
     await turn(sessionId, 'while the shell runs');
-    expect(cli.launches).toBe(2);
-    expect(process.ended).toBe(true);
+    expect(cli.launches).toBe(1);
+    expect(process.ended).toBe(false);
   });
 
   it('keeps holding past the four-hour ceiling, and warns once that the list is stale', async () => {
@@ -2814,5 +2815,217 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
     expect(process.ended).toBe(true);
     expect(records()).toEqual([]);
+  });
+});
+
+// DOR-2065, spec `warm-process-lifecycle` slice 4a. A message that would restart
+// the agent while its background work runs is held in the queue instead of
+// ending that work. The runtime answers the caller's handshake before its
+// stream yields anything, so a held message never becomes a turn.
+describe('a restart that would end background work is held (DOR-2065)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  afterEach(() => {
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>test</env>',
+      stable: '<env>test</env>',
+    });
+  });
+
+  /** Move a relaunch pin: the agent's instructions change. */
+  function changeInstructions(): void {
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>NEW</env>',
+      stable: '<env>NEW</env>',
+    });
+  }
+
+  /** Send with the caller's handshake, and record which answer came back. */
+  async function heldTurn(
+    sessionId: string,
+    content = 'after the change'
+  ): Promise<{
+    events: StreamEvent[];
+    answers: string[];
+    waitingOn: import('@dorkos/shared/types').QueuedWaitingOn | undefined;
+  }> {
+    const answers: string[] = [];
+    let waitingOn: import('@dorkos/shared/types').QueuedWaitingOn | undefined;
+    const events: StreamEvent[] = [];
+    for await (const event of runtime.sendMessage(sessionId, content, {
+      cwd: CWD,
+      dispatchHold: {
+        proceed: () => answers.push('proceed'),
+        hold: (w) => {
+          answers.push('hold');
+          waitingOn = w;
+        },
+      },
+    })) {
+      events.push(event);
+    }
+    return { events, answers, waitingOn };
+  }
+
+  /** Let the frames a fake process emitted reach the pump. */
+  const settle = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+
+  it('holds instead of restarting while a helper works, and starts no turn', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+
+    changeInstructions();
+    const { events, answers, waitingOn } = await heldTurn(sessionId);
+
+    expect(answers).toEqual(['hold']);
+    expect(events).toEqual([]);
+    expect(cli.launches).toBe(1);
+    expect(process.ended).toBe(false);
+    expect(process.received).toHaveLength(1);
+    expect(waitingOn).toMatchObject({
+      reason: 'background-work',
+      holding: { agents: 1, shells: 0, other: 0 },
+      pins: ['systemPromptAppend'],
+    });
+    expect(waitingOn!.releaseAt - waitingOn!.since).toBe(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+  });
+
+  it('holds for a background command too, naming the folder it would move to', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await settle();
+
+    vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue('/projects/dorkos-cloud');
+    const answers: string[] = [];
+    let waitingOn: import('@dorkos/shared/types').QueuedWaitingOn | undefined;
+    for await (const _ of runtime.sendMessage(sessionId, 'over there', {
+      cwd: '/projects/dorkos-cloud',
+      dispatchHold: {
+        proceed: () => answers.push('proceed'),
+        hold: (w) => {
+          answers.push('hold');
+          waitingOn = w;
+        },
+      },
+    })) {
+      // nothing is yielded
+    }
+    expect(answers).toEqual(['hold']);
+    expect(waitingOn).toMatchObject({
+      holding: { agents: 0, shells: 1, other: 0 },
+      targetFolderName: 'dorkos-cloud',
+    });
+    expect(waitingOn!.pins).toContain('cwd');
+    expect(process.ended).toBe(false);
+  });
+
+  it('proceeds and restarts once the work is done, telling the queue when it ends', async () => {
+    const sessionId = nextSession();
+    const released: string[] = [];
+    runtime.onDispatchGateChange((id) => released.push(id));
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+    changeInstructions();
+    expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(released).toContain(sessionId));
+
+    // Past the settle interval, so the quiet process is not still flushing.
+    const later = Date.now() + SESSIONS.RESTART_SETTLE_MS + 1;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      const { answers } = await heldTurn(sessionId);
+      expect(answers).toEqual(['proceed']);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
+  it('answers proceed on a send that rides the process, busy or not', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    cli.processes[0]!.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+
+    const { answers, events } = await heldTurn(sessionId, 'same settings');
+    expect(answers).toEqual(['proceed']);
+    expect(events.length).toBeGreaterThan(0);
+    expect(cli.launches).toBe(1);
+  });
+
+  it('waits out the settle interval, and holds when a helper is named meanwhile', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    changeInstructions();
+
+    // The last frame is fresh, so the process may still be flushing: the
+    // decision waits, and a helper named inside the wait turns it into a hold.
+    const pending = heldTurn(sessionId);
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    const { answers } = await pending;
+
+    expect(answers).toEqual(['hold']);
+    expect(process.ended).toBe(false);
+  });
+
+  it('switches now when asked, ending the work', async () => {
+    const sessionId = nextSession();
+    const released: string[] = [];
+    runtime.onDispatchGateChange((id) => released.push(id));
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+    changeInstructions();
+    expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
+
+    expect(runtime.switchWhenReady(sessionId)).toBe(true);
+    expect(released).toContain(sessionId);
+    const { answers } = await heldTurn(sessionId);
+
+    expect(answers).toEqual(['proceed']);
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+  });
+
+  it('has nothing to switch on a session with no running agent', () => {
+    expect(runtime.switchWhenReady(nextSession())).toBe(false);
+  });
+
+  it('restarts anyway past the four-hour ceiling', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+    changeInstructions();
+
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      expect((await heldTurn(sessionId)).answers).toEqual(['proceed']);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(process.ended).toBe(true);
+  });
+
+  it('answers proceed on the first send of a session with no process', async () => {
+    const { answers } = await heldTurn(nextSession(), 'first');
+    expect(answers).toEqual(['proceed']);
   });
 });

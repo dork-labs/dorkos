@@ -29,7 +29,7 @@ import { toast } from 'sonner';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { useSessionQueueOutcomes, useSessionStreamStore } from '@/layers/entities/session';
 import { useTransport } from '@/layers/shared/model';
-import { queueDowngradeNotice } from '../lib/queue-chips';
+import { describeWaitingOn, queueDowngradeNotice, type QueueWaiting } from '../lib/queue-chips';
 
 /**
  * One row of the queue as the panel draws it — the server's message plus the
@@ -52,6 +52,11 @@ export interface QueueItem {
    * majority, which got exactly what they asked for.
    */
   notice: string | null;
+  /**
+   * Set while the message is held for the agent's background work (DOR-2065):
+   * why it waits, and what Switch now would stop.
+   */
+  waiting?: QueueWaiting;
 }
 
 interface UseMessageQueueOptions {
@@ -152,6 +157,7 @@ export function useMessageQueue({
         // where there is only one window.
         mine: transport.clientId === undefined || message.enqueuedBy === transport.clientId,
         notice: queueDowngradeNotice(outcomes[message.id]),
+        ...(message.waitingOn ? { waiting: describeWaitingOn(message.waitingOn) } : {}),
       })),
     [waiting, outcomes, transport.clientId]
   );

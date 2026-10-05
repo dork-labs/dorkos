@@ -19,6 +19,7 @@ import type {
   SessionSettings,
   SessionListWarning,
   MessageDisposition,
+  QueuedWaitingOn,
 } from './types.js';
 import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
@@ -1061,6 +1062,33 @@ export interface MessageOpts extends SessionSettings {
    * its own ignores it.
    */
   unattended?: boolean;
+  /**
+   * The caller can wait rather than have this send end the agent's background
+   * work (spec `warm-process-lifecycle` D2, DOR-2065). Present only when the
+   * caller has not shown the turn yet and can put the message back in line.
+   *
+   * A runtime that implements {@link AgentRuntime.switchWhenReady} answers it
+   * on EVERY send, exactly once, before its stream yields anything: `proceed()`
+   * when the turn may start, or `hold(waitingOn)` — and then ends the stream
+   * without yielding — when starting it would restart a process whose helpers,
+   * Monitors or background commands are still running. Any other runtime
+   * ignores it.
+   */
+  dispatchHold?: DispatchHoldHandshake;
+}
+
+/**
+ * The two answers a runtime gives {@link MessageOpts.dispatchHold}.
+ */
+export interface DispatchHoldHandshake {
+  /** The turn may start: nothing running would be ended by it. */
+  proceed(): void;
+  /**
+   * Starting the turn now would end background work: keep the message queued.
+   *
+   * @param waitingOn - What it waits on, for the person to see
+   */
+  hold(waitingOn: QueuedWaitingOn): void;
 }
 
 /**
@@ -1612,9 +1640,11 @@ export interface AgentRuntime {
    * dropped, or a queue held by it waits for some unrelated event to come along
    * and pump it — which, for a session sitting idle, may be never.
    *
-   * Fired today by exactly one thing: the owed-delivery clock giving up on a
-   * report that never arrived. Every other reason a queue head waits ends with a
-   * turn boundary the server already observes.
+   * Fired by the owed-delivery clock giving up on a report that never arrived,
+   * and by the things that release a message held for background work
+   * ({@link MessageOpts.dispatchHold}): the work ending, the agent's process
+   * ending, and {@link switchWhenReady}. Every other reason a queue head waits
+   * ends with a turn boundary the server already observes.
    *
    * Optional, and only a runtime that implements {@link isSegmentPending} owes
    * it. A throw from the listener must not reach the runtime's own loop.
@@ -1643,6 +1673,20 @@ export interface AgentRuntime {
    * @param sessionId - The session being asked about, in any id it answers to
    */
   isHelperWorking?(sessionId: string): boolean;
+
+  /**
+   * The person chose Switch now on a message held for background work (spec
+   * `warm-process-lifecycle` D2a, DOR-2065): the next send may restart the
+   * agent even though its work is still running, ending that work.
+   *
+   * Implementing this is also the runtime's promise to answer
+   * {@link MessageOpts.dispatchHold} on every send. It fires
+   * {@link onDispatchGateChange} so the held message is tried again at once.
+   *
+   * @param sessionId - The session, in any id it answers to
+   * @returns False when the session holds no running agent to switch
+   */
+  switchWhenReady?(sessionId: string): boolean;
 
   // --- Session queries (storage) ---
 

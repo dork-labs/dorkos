@@ -124,7 +124,7 @@ import type {
   QueuedMessage,
 } from '@dorkos/shared/schemas';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import type { PermissionModeId, SessionSettings } from '@dorkos/shared/types';
+import type { PermissionModeId, QueuedWaitingOn, SessionSettings } from '@dorkos/shared/types';
 import type {
   AdditionalContext,
   ApprovalVerdictData,
@@ -134,7 +134,11 @@ import type {
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
-import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
+import {
+  getMessageQueueStore,
+  setQueuedWaitingOn,
+  toQueuedMessage,
+} from './message-queue-store.js';
 import type { SessionStateProjector } from './session-state-projector.js';
 import {
   onProjectorRekey,
@@ -242,6 +246,13 @@ interface PendingDispatch {
   abandon: () => void;
   /** A protected document's durable budget wait, independent of lock waiting. */
   notBefore?: number;
+  /**
+   * Set while this message is held for the agent's background work (DOR-2065):
+   * starting it would restart the agent and end that work. The pump does not
+   * launch it — nor anything behind it — until a turn boundary or the runtime's
+   * gate release clears this, or its own timer does at `releaseAt`.
+   */
+  held?: QueuedWaitingOn;
 }
 
 /** Turns open right now, keyed by resolved session id. */
@@ -780,6 +791,8 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
     getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
     rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
     getCapabilities: () => runtime.getCapabilities(),
+    // Switch now is the marker that a runtime answers the hold handshake.
+    answersDispatchHold: runtime.switchWhenReady !== undefined,
     ...(privateMessages
       ? {
           preparePrivateMessage: (receiptId: string) => privateMessages.prepare(receiptId),
@@ -1287,6 +1300,23 @@ function returnToQueue(plan: DispatchPlan): void {
 }
 
 /**
+ * Keep a queued message waiting on the agent's background work, showing every
+ * window what it waits on (spec `warm-process-lifecycle` D2a, DOR-2065).
+ *
+ * It holds no lock and no turn while it waits, so the stall watchdog never sees
+ * it and a helper's own wake-up still runs as the agent's own turn. It is tried
+ * again at every turn boundary, at every gate release from the runtime (the
+ * work ending, its process going, Switch now), and at `releaseAt`.
+ *
+ * @param plan - The message
+ * @param waitingOn - What it waits on, as the runtime reported it
+ */
+function holdInQueue(plan: DispatchPlan, waitingOn: QueuedWaitingOn): void {
+  if (setQueuedWaitingOn(plan.messageId, waitingOn)) emitQueueUpdate(plan.sessionKey);
+  parkDispatch(plan, unwatchedSettle(plan), { held: waitingOn });
+}
+
+/**
  * Give up on a {@link DispatchPlan.transient} message, and say so.
  *
  * The whole disposal: there is no row to remove and nobody holding a request
@@ -1480,6 +1510,17 @@ function launchDispatchInner(
   }
   return started.then(
     (result) => {
+      if (result.held) {
+        // Parked BEFORE the slot is handed back, so the pump that hand-back
+        // schedules already finds the message held rather than launching it
+        // straight back into the same answer.
+        if (plan.whenBusy === 'queue') holdInQueue(plan, result.held);
+        else returnToQueue(plan);
+        clearIfOurs();
+        return result;
+      }
+      // Whatever happens now, it is no longer waiting on background work.
+      if (setQueuedWaitingOn(messageId, undefined)) emitQueueUpdate(sessionKey);
       if (result.suspended) {
         clearIfOurs();
         return result;
@@ -1557,6 +1598,7 @@ function parkDispatch(
     budgetMs?: number;
     notBefore?: string;
     schedulingRetry?: boolean;
+    held?: QueuedWaitingOn;
   }
 ): void {
   if (plan.turn.privateDispatchSignal?.aborted) {
@@ -1613,6 +1655,7 @@ function parkDispatch(
     runtime: plan.runtime,
     waitingOnLock: opts?.waitingOnLock ?? false,
     ...(notBefore !== undefined ? { notBefore } : {}),
+    ...(opts?.held !== undefined ? { held: opts.held } : {}),
     launch: (launchOpts) => {
       if (pending.get(plan.messageId) !== entry) return;
       if (plan.turn.privateDispatchSignal?.aborted) {
@@ -1670,13 +1713,29 @@ function parkDispatch(
     //
     // How LONG the bound is, is the other half: a re-park spends what is left of
     // the original wait rather than a fresh copy of it (DOR-1242).
-    timer: setTimeout(() => {
-      if (plan.transient) {
-        dropTransient(plan, 'the stream it was waiting on had not closed within the wait budget');
-        return;
-      }
-      entry.launch({ budgetExhausted: true });
-    }, opts?.budgetMs ?? plan.budgetMs),
+    //
+    // A message held for background work is the exception (DOR-2065): it
+    // already waited past nothing, and launching it at the bound would restart
+    // the agent under the work it is waiting on. Its bound is the runtime's own
+    // ceiling, `releaseAt`, where it is tried again like at any boundary.
+    timer: setTimeout(
+      () => {
+        if (opts?.held !== undefined) {
+          if (pending.get(plan.messageId) !== entry) return;
+          entry.held = undefined;
+          schedulePump(entry.sessionKey);
+          return;
+        }
+        if (plan.transient) {
+          dropTransient(plan, 'the stream it was waiting on had not closed within the wait budget');
+          return;
+        }
+        entry.launch({ budgetExhausted: true });
+      },
+      opts?.held !== undefined
+        ? Math.min(2_147_483_647, Math.max(1, opts.held.releaseAt - Date.now() + 1))
+        : (opts?.budgetMs ?? plan.budgetMs)
+    ),
   };
   entry.timer.unref?.();
   pending.set(plan.messageId, entry);
@@ -1862,7 +1921,14 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // exactly as it always has. The wait is bounded by the runtime's own
   // owed-delivery clock, whose release reaches this module through
   // `onDispatchGateChange`, so a report that never arrives cannot wedge the queue.
-  if (whenBusy === 'queue' && runtime.isSegmentPending?.(sessionKey) === true) {
+  //
+  // A message already held for the agent's background work keeps its place the
+  // same way (DOR-2065): a later message starting on the idle session would
+  // jump it. A refusing trigger is not queued behind it and tries on its own.
+  if (
+    whenBusy === 'queue' &&
+    (runtime.isSegmentPending?.(sessionKey) === true || hasHeldMessage(sessionKey))
+  ) {
     plan.answered = true;
     parkDispatch(plan, unwatchedSettle(plan));
     return waiting();
@@ -2530,6 +2596,10 @@ function pumpLocked(sessionKey: string): void {
     (entry) => entry.notBefore === undefined || entry.notBefore <= Date.now()
   );
   if (!head || head.waitingOnLock) return;
+  // Held for the agent's background work: it, and everything behind it, waits
+  // (order is never changed behind a person's back). Cleared by a boundary or
+  // the runtime's gate release, each of which tries it again.
+  if (head.held !== undefined) return;
   // A delivery the runtime already owes is on its way, and it opens a segment of
   // its own (spec `warm-process-lifecycle` D6). Launching now would put the
   // person's words and a background helper's report into one turn. The runtime
@@ -2596,6 +2666,18 @@ export function noteRuntimeTurnClosed(sessionId: string): void {
 }
 
 /**
+ * Is a message on this session held for the agent's background work (DOR-2065)?
+ *
+ * @param sessionKey - The resolved session id
+ */
+function hasHeldMessage(sessionKey: string): boolean {
+  for (const entry of pending.values()) {
+    if (entry.sessionKey === sessionKey && entry.held !== undefined) return true;
+  }
+  return false;
+}
+
+/**
  * A session's waiting dispatches in the order they should run.
  *
  * The stored `position` is the authority, because that is what a reorder edits
@@ -2633,7 +2715,11 @@ export function noteTurnBoundary(sessionId: string): void {
   // is also what re-arms a message the lock refused earlier.
   const sessionKey = primaryOf(sessionId);
   for (const entry of pending.values()) {
-    if (entry.sessionKey === sessionKey) entry.waitingOnLock = false;
+    if (entry.sessionKey !== sessionKey) continue;
+    entry.waitingOnLock = false;
+    // Try a held message again: the work may be done. If it is not, the
+    // runtime holds it again, and the queue shows the latest counts.
+    entry.held = undefined;
   }
   schedulePump(sessionId);
 }
@@ -2683,6 +2769,7 @@ export function sweepOrphanedMessageQueues(opts?: {
     const gone = chunk.flatMap((id) => store?.list(id) ?? []);
     removed += store?.deleteForSessions(chunk) ?? 0;
     for (const row of gone) {
+      setQueuedWaitingOn(row.id, undefined);
       if (launching.has(row.id)) {
         sweptWhileLaunching.add(row.id);
         continue;

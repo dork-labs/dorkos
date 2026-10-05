@@ -34,6 +34,7 @@ import type {
   EffortLevel,
   SessionListWarning,
   InterruptReceipt,
+  QueuedWaitingOn,
 } from '@dorkos/shared/types';
 
 type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
@@ -120,10 +121,18 @@ export class FakeAgentRuntime implements AgentRuntime {
 
   sendMessage = vi.fn(async function* (
     this: FakeAgentRuntime,
-    _sessionId: string,
+    sessionId: string,
     content: string,
-    _opts?: MessageOpts
+    opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
+    // The dispatch handshake, answered before anything is yielded, as a real
+    // runtime that implements `switchWhenReady` must.
+    const waitingOn = opts?.dispatchHold !== undefined ? this.holdDispatch(sessionId) : undefined;
+    if (waitingOn !== undefined) {
+      opts!.dispatchHold!.hold(waitingOn);
+      return;
+    }
+    opts?.dispatchHold?.proceed();
     const scenario = this._scenarios[this._scenarioIndex];
     if (scenario) {
       this._scenarioIndex++;
@@ -196,6 +205,22 @@ export class FakeAgentRuntime implements AgentRuntime {
    * quiet legitimate by making it answer `true`.
    */
   isHelperWorking = vi.fn<(sessionId: string) => boolean>(() => false);
+
+  /**
+   * What a send on this session waits on instead of starting, or `undefined`
+   * to start it. Answers `undefined` — this fake has no background work — and
+   * is spied so a dispatcher test can hold a message (DOR-2065).
+   */
+  holdDispatch = vi.fn<(sessionId: string) => QueuedWaitingOn | undefined>(() => undefined);
+
+  /**
+   * The person chose Switch now. Answers `true` and releases the hold through
+   * {@link emitDispatchGateChange}; spied so a route test can assert it was asked.
+   */
+  switchWhenReady = vi.fn<(sessionId: string) => boolean>((sessionId) => {
+    this.dispatchGateListener?.(sessionId);
+    return true;
+  });
 
   /** The listener {@link onDispatchGateChange} registered, if anything is listening. */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;

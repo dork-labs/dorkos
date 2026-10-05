@@ -269,3 +269,28 @@ describe('QueuePanel — send next and reorder', () => {
     }
   });
 });
+
+describe('QueuePanel — a message held for background work (DOR-2065)', () => {
+  it('shows why it waits and offers Switch now', () => {
+    const onSwitchNow = vi.fn();
+    renderPanel({
+      queue: [
+        makeItem('move over', 0, {
+          waiting: {
+            line: 'Waiting on 2 helpers before moving to dorkos-cloud.',
+            switchHint: 'Stops 2 helpers.',
+          },
+        }),
+        makeItem('after that', 1),
+      ],
+      onSwitchNow,
+    });
+
+    expect(screen.getByText('Waiting on 2 helpers before moving to dorkos-cloud.')).toBeTruthy();
+    const button = screen.getByRole('button', { name: 'Switch now' });
+    expect(button.getAttribute('title')).toBe('Stops 2 helpers.');
+    fireEvent.click(button);
+    expect(onSwitchNow).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole('button', { name: 'Switch now' })).toHaveLength(1);
+  });
+});

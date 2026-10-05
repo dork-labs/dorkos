@@ -586,3 +586,56 @@ describe('POST /api/sessions/:id/tasks/:taskId/stop — the same receipt vocabul
     expect(missing.body.code).toBe('SESSION_NOT_FOUND');
   });
 });
+
+// DOR-2065, spec `warm-process-lifecycle` slice 4a (T23, T24, T33).
+describe('a message held for the agent’s background work', () => {
+  const waitingOn = {
+    reason: 'background-work' as const,
+    holding: { agents: 2, shells: 1, other: 0 },
+    pins: ['cwd'],
+    targetFolderName: 'dorkos-cloud',
+    since: 1,
+    releaseAt: Date.now() + 60 * 60_000,
+  };
+
+  it('shows every window what it waits on (T33)', async () => {
+    fakeRuntime.holdDispatch.mockReturnValue(waitingOn);
+    await post('move over', 'client-a');
+    // The turn it queued behind ends; trying it now meets the hold.
+    releaseTurn();
+    await vi.waitFor(() =>
+      expect(fakeRuntime.holdDispatch.mock.calls.length).toBeGreaterThanOrEqual(2)
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const queue = await readQueue();
+    expect(queue).toEqual([expect.objectContaining({ content: 'move over', waitingOn })]);
+  });
+
+  it('Switch now asks the runtime to switch (T24)', async () => {
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/process/switch`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ switched: true });
+    expect(fakeRuntime.switchWhenReady).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it('Stop hands the held message back and stops no task (T23)', async () => {
+    fakeRuntime.holdDispatch.mockReturnValue(waitingOn);
+    fakeRuntime.interruptQuery.mockResolvedValue(mockInterruptReceipt('not-running'));
+    await post('move over', 'client-a');
+    // The turn it queued behind ends; trying it now meets the hold.
+    releaseTurn();
+    await vi.waitFor(() =>
+      expect(fakeRuntime.holdDispatch.mock.calls.length).toBeGreaterThanOrEqual(2)
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/interrupt`);
+
+    expect(res.body.cancelledQueued.map((m: { content: string }) => m.content)).toEqual([
+      'move over',
+    ]);
+    expect(fakeRuntime.stopTask).not.toHaveBeenCalled();
+    expect(await readQueue()).toEqual([]);
+  });
+});

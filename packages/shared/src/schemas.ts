@@ -1180,6 +1180,47 @@ export function worthRetrying(receipt: InterruptReceipt): boolean {
   return receipt.outcome === 'unconfirmed' || receipt.outcome === 'failed';
 }
 
+/**
+ * Why a queued message is waiting on the agent's own background work rather
+ * than on a turn (spec `warm-process-lifecycle` D2a, DOR-2065).
+ *
+ * Running it now would restart the agent — it has to move folders, pick up new
+ * instructions or new settings — and the agent is still running helpers,
+ * Monitors or background commands that the restart would end. So the message
+ * waits until that work is done, or until the person chooses Switch now, or
+ * until `releaseAt`, when it runs regardless.
+ */
+export const QueuedWaitingOnSchema = z
+  .object({
+    /** The only reason today: background work the switch would end. */
+    reason: z.literal('background-work'),
+    /** What is still running, by kind. */
+    holding: z.object({
+      /** Helper agents. */
+      agents: z.number().int().nonnegative(),
+      /** Background commands (shells). */
+      shells: z.number().int().nonnegative(),
+      /** Anything else running: a Monitor, or a task kind DorkOS does not name. */
+      other: z.number().int().nonnegative(),
+    }),
+    /**
+     * What the switch would change, as launch-setting names (`cwd`,
+     * `agentIdentity`, `systemPromptAppend`, …). The client turns these into
+     * words; an unknown name reads as "new settings".
+     */
+    pins: z.array(z.string()),
+    /** The folder the agent is moving to, by its last path segment, when `cwd` is a pin. */
+    targetFolderName: z.string().optional(),
+    /** When the work began, as epoch ms. */
+    since: z.number(),
+    /** When the message runs anyway, ending the work, as epoch ms. */
+    releaseAt: z.number(),
+  })
+  .openapi('QueuedWaitingOn');
+
+/** See {@link QueuedWaitingOnSchema}. */
+export type QueuedWaitingOn = z.infer<typeof QueuedWaitingOnSchema>;
+
 /** One message waiting to be dispatched to a session. */
 export const QueuedMessageSchema = z
   .object({
@@ -1193,6 +1234,11 @@ export const QueuedMessageSchema = z
     enqueuedAt: z.number(),
     /** The client that enqueued it, so a window can tell its own from another's. */
     enqueuedBy: z.string(),
+    /**
+     * Present while this message is held for the agent's background work
+     * (DOR-2065). The rows behind it wait too, in order.
+     */
+    waitingOn: QueuedWaitingOnSchema.optional(),
   })
   .openapi('QueuedMessage');
 

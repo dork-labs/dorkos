@@ -663,7 +663,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let sawRuntimeError = false;
     try {
       const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey, turnAgentOf(opts));
-      const stream = this.persistent.shouldDispatch(sessionId)
+      const persistent = this.persistent.shouldDispatch(sessionId);
+      // The resume path keeps no process between turns, so a turn there can
+      // never end background work by restarting one (DOR-2065).
+      if (!persistent) opts?.dispatchHold?.proceed();
+      const stream = persistent
         ? this.persistent.dispatch({
             sessionId,
             content,
@@ -1407,6 +1411,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   onDispatchGateChange(listener: (sessionId: string) => void): () => void {
     return this.persistent.onDispatchGateChange(listener);
+  }
+
+  /** @inheritdoc */
+  switchWhenReady(sessionId: string): boolean {
+    return this.persistent.switchWhenReady(sessionId);
   }
 
   /** @inheritdoc */

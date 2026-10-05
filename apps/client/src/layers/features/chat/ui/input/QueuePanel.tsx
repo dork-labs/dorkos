@@ -48,6 +48,11 @@ interface QueuePanelProps {
    * genuinely holds the line is the agent waiting on a person.
    */
   statusNote: string;
+  /**
+   * Switch now, on a message held for the agent's background work: run it
+   * anyway, stopping that work. The row says what it stops.
+   */
+  onSwitchNow?: () => void;
 }
 
 /**
@@ -77,6 +82,7 @@ export function QueuePanel({
   onSend,
   onMoveUp,
   statusNote,
+  onSwitchNow,
 }: QueuePanelProps) {
   // Also guarded at the call site, which is what lets AnimatePresence see this
   // panel leave and play the exit below. Kept here too so the component never
@@ -143,6 +149,11 @@ export function QueuePanel({
                         {item.notice}
                       </span>
                     )}
+                    {item.waiting !== undefined && (
+                      <span className="text-muted-foreground/70 line-clamp-1 text-xs">
+                        {item.waiting.line}
+                      </span>
+                    )}
                   </span>
                   {!item.mine && (
                     <span
@@ -154,6 +165,18 @@ export function QueuePanel({
                     </span>
                   )}
                 </button>
+                {/* Held for background work: the one way to run it anyway. A
+                    text button, not an icon — it ends work, so it says so. */}
+                {item.waiting !== undefined && onSwitchNow !== undefined && (
+                  <button
+                    type="button"
+                    onClick={onSwitchNow}
+                    title={item.waiting.switchHint}
+                    className="focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-sm px-1.5 py-1 text-xs font-medium transition-colors"
+                  >
+                    Switch now
+                  </button>
+                )}
                 {/* Nothing to reorder on the head — it is already as far forward
                     as a message gets, and offering a control that cannot do
                     anything is worse than not offering one. */}

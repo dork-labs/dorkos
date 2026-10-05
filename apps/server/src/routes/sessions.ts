@@ -1357,6 +1357,17 @@ router.post('/:id/tasks/:taskId/stop', async (req, res) => {
   }
 });
 
+// POST /api/sessions/:id/process/switch - Switch now: run a message held for the
+// agent's background work, ending that work (spec `warm-process-lifecycle` D2a,
+// DOR-2065). Takes no body. `switched: false` means there was no running agent
+// to switch, which is a normal answer: the held message is already on its way.
+router.post('/:id/process/switch', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  res.json({ switched: runtime.switchWhenReady?.(sessionId) === true });
+});
+
 // POST /api/sessions/:id/interrupt - Interrupt the active query
 router.post('/:id/interrupt', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);

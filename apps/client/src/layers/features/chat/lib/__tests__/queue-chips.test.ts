@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import type { MessageDeliveryOutcome } from '@dorkos/shared/schemas';
-import { queueDowngradeNotice } from '../queue-chips';
+import type {
+  MessageDeliveryOutcome,
+  QueuedMessage,
+  QueuedWaitingOn,
+} from '@dorkos/shared/schemas';
+import { describeWaitingOn, queueDowngradeNotice, selectWaitingQueue } from '../queue-chips';
 
 /** A delivery outcome that was downgraded for `reason`. */
 function downgraded(reason: MessageDeliveryOutcome['degradedBecause']): MessageDeliveryOutcome {
@@ -85,5 +89,56 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     for (const reason of reasons) {
       expect(queueDowngradeNotice(downgraded(reason))).not.toContain('—');
     }
+  });
+});
+
+describe('a message held for background work (DOR-2065)', () => {
+  const held = (over: Partial<QueuedWaitingOn> = {}): QueuedWaitingOn => ({
+    reason: 'background-work',
+    holding: { agents: 2, shells: 0, other: 0 },
+    pins: ['cwd'],
+    targetFolderName: 'dorkos-cloud',
+    since: 1,
+    releaseAt: 2,
+    ...over,
+  });
+  const row = (id: string, waitingOn?: QueuedWaitingOn): QueuedMessage => ({
+    id,
+    content: id,
+    disposition: 'queue',
+    enqueuedAt: 1,
+    enqueuedBy: 'me',
+    ...(waitingOn ? { waitingOn } : {}),
+  });
+
+  it('says what it waits on and what the switch is for', () => {
+    expect(describeWaitingOn(held())).toEqual({
+      line: 'Waiting on 2 helpers before moving to dorkos-cloud.',
+      switchHint: 'Stops 2 helpers.',
+    });
+    expect(
+      describeWaitingOn(
+        held({ holding: { agents: 1, shells: 1, other: 1 }, pins: ['systemPromptAppend'] })
+      ).line
+    ).toBe('Waiting on 1 helper, 1 command and 1 task before loading new instructions.');
+    expect(describeWaitingOn(held({ pins: ['agentIdentity'] })).line).toBe(
+      'Waiting on 2 helpers before switching agents.'
+    );
+    expect(describeWaitingOn(held({ pins: ['effort'] })).line).toBe(
+      'Waiting on 2 helpers before applying new settings.'
+    );
+  });
+
+  it('keeps every line within the app’s word limit', () => {
+    const worst = describeWaitingOn(
+      held({ holding: { agents: 12, shells: 3, other: 2 }, pins: ['systemPromptAppend'] })
+    );
+    expect(worst.line.split(/\s+/).length).toBeLessThanOrEqual(15);
+  });
+
+  it('shows a held head even with no turn running', () => {
+    const queue = [row('a', held()), row('b')];
+    expect(selectWaitingQueue(queue, 'idle')).toEqual(queue);
+    expect(selectWaitingQueue([row('a'), row('b')], 'idle')).toEqual([row('b')]);
   });
 });
