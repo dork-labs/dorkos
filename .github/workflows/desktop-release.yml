@@ -46,7 +46,11 @@ name: Desktop Release
 # publish step first waits for build-windows to FINISH, whatever its outcome, so
 # on the happy path every asset (installer + latest*.yml) is attached before the
 # release is visible and an update check can never 404 on a not-yet-uploaded
-# metadata file.
+# metadata file. If the Windows verify step fails, the Windows assets are
+# never attached (before DOR-2728 a broken installer was attached and shipped),
+# so the release goes out macOS-only and Windows update checks 404 until the
+# next release; dorkos.ai/download/windows falls back to the newest release
+# that has an .exe.
 #
 # A desktop failure never unwinds the CLI/product release (that release is
 # published by /system:release's own npm + changelog path). If build-macos
@@ -90,6 +94,10 @@ jobs:
       # build-windows to finish.
       actions: read
     steps:
+      # The publish step's wait budget is measured from here: see its comment.
+      - name: Record job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
@@ -279,12 +287,24 @@ jobs:
       #
       # First it waits for build-windows to FINISH, with any outcome, so the
       # Windows installer and latest.yml are attached before the release is
-      # visible. The wait is capped at 28 min: past that the Windows job has
-      # hit its own 39-min timeout on any run where this job took 11 min or
-      # more to get here (no successful run has taken less), and this job's worst case,
-      # ~25 min plus the cap, stays inside its 56-min limit. Hitting the cap
-      # publishes anyway with a warning, because the Windows alpha must never
-      # hold back the macOS release.
+      # visible. The old publish-release job got that from `needs:`, which
+      # waits without limit. A step cannot: it lives inside this job's 56-min
+      # timeout, and `timeout-minutes` counts from when a runner picks a job
+      # up, so a build-windows stuck QUEUED (the v0.98.0 incident) can outlast
+      # any cap. So the wait spends this job's own remaining budget: it keeps
+      # polling until 50 min after this job started (see "Record job start"),
+      # leaving 6 min to publish. Only past that does it publish without the
+      # Windows assets, with a warning, because the Windows alpha must never
+      # hold back the macOS release. Windows update checks then 404 on
+      # latest.yml until build-windows attaches it; re-run build-windows.
+      #
+      # build-windows is found by its job id as the jobs API names it. Give
+      # that job a `name:` and this lookup must change with it: on a first
+      # attempt a missing build-windows is warned about, never silently passed.
+      #
+      # If this step fails, publish by hand (`gh release edit vX.Y.Z
+      # --draft=false`) rather than re-running this job: a re-run repeats the
+      # whole build and notarization.
       #
       # Off a tag, or with dry_run, it does the wait and stops before changing
       # anything, so a workflow_dispatch run rehearses the whole path.
@@ -295,22 +315,28 @@ jobs:
         run: |
           set -euo pipefail
           jobs_api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs"
-          deadline=$(( $(date +%s) + 28 * 60 ))
+          deadline=$(( ${JOB_STARTED_AT:?Record job start must run first} + 50 * 60 ))
           while :; do
             # A failed read is retried, never treated as "finished".
-            status="$(gh api "$jobs_api" --jq '[.jobs[] | select(.name == "build-windows") | .status] | first // "absent"' 2>/dev/null || echo unknown)"
+            if ! status="$(gh api "$jobs_api" --jq '[.jobs[] | select(.name == "build-windows") | .status] | first // "absent"' 2>/dev/null)"; then
+              status=unknown
+            fi
             case "$status" in
               completed)
                 echo "build-windows finished."
                 break
                 ;;
               absent)
-                echo "build-windows is not in this run attempt; nothing to wait for."
+                if [ "${GITHUB_RUN_ATTEMPT}" = "1" ]; then
+                  echo "::warning::No job named build-windows in this run; publishing without waiting for it. Was the job renamed?"
+                else
+                  echo "build-windows was not re-run in attempt ${GITHUB_RUN_ATTEMPT}; nothing to wait for."
+                fi
                 break
                 ;;
             esac
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::warning::build-windows still '${status}' after 28 min; publishing without waiting for the Windows assets."
+              echo "::warning::build-windows still '${status}' 50 min after this job started; publishing without the Windows assets. Re-run build-windows to attach them."
               break
             fi
             echo "build-windows is '${status}'; checking again in 20s…"
@@ -338,6 +364,9 @@ jobs:
     # are attached first; continue-on-error keeps a failure here from turning
     # the run red in a way that reads as a failed release.
     continue-on-error: true
+    # build-macos's publish step finds this job by the name the jobs API
+    # reports, which is this id while no `name:` is set. Keep it that way, or
+    # change that lookup with it.
     # Pinned to windows-2022, NOT windows-latest, on purpose. windows-latest now
     # ships Visual Studio 18 (2026), and node-gyp 11.x — which @electron/rebuild
     # uses to force-compile better-sqlite3 + node-pty against Electron's ABI —
