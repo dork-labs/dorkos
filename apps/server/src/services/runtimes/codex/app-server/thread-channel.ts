@@ -57,11 +57,13 @@ export class ThreadChannel {
    * @param process - The process it is loaded in.
    * @param threadId - The thread.
    * @param onThreadEvent - Thread-level notifications (`thread/closed`, `serverRequest/resolved`).
+   * @param onLate - Every notification that belonged to no open turn.
    */
   constructor(
     readonly process: CodexAppServerProcess,
     readonly threadId: string,
-    private readonly onThreadEvent: (notification: ServerNotification) => void
+    private readonly onThreadEvent: (notification: ServerNotification) => void,
+    private readonly onLate: (notification: ServerNotification) => void = () => {}
   ) {
     this.unsubscribe = process.client.subscribeThread(threadId, {
       notification: (notification) => this.route(notification),
@@ -130,6 +132,7 @@ export class ThreadChannel {
   }
 
   private toLate(notification: ServerNotification): void {
+    this.onLate(notification);
     this.late.count += 1;
     const item = (notification.params as { item?: { type?: unknown } } | undefined)?.item;
     this.late.last = {

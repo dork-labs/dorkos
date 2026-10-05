@@ -422,3 +422,70 @@ describe('reaping respects background terminals', () => {
     expect(fake.hasExited).toBe(true);
   });
 });
+
+describe('review fixes: every early exit ends with one done, and no turn is joined', () => {
+  it('ends with the crash and one done when Codex exits while turn/start is in flight', async () => {
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1' }));
+    h.host.home(PERSON_HOME).processes[0]!.exitOnTurnStart = true;
+    const events = await h.run(
+      h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
+    );
+    expect(events.map((e) => e.type)).toEqual(['session_status', 'error', 'done']);
+    expect(events[1]).toMatchObject({ data: { message: CODEX_STOPPED_COPY } });
+  });
+
+  it('ends with one done when a stop gives up before turn/start answered, then stops that turn', async () => {
+    const h = harness({ stopAckMs: 100 });
+    await h.run(h.request({ sessionId: 's1' }));
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    let open!: () => void;
+    fake.turnStartGate = new Promise((resolve) => (open = resolve));
+    h.host.home(PERSON_HOME).nextTurn(parkedTurn);
+    const gen = h.transport.runTurn(
+      h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
+    );
+    const reading = rest(gen);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await expect(h.transport.interrupt('s1')).resolves.toMatchObject({ outcome: 'unconfirmed' });
+    open();
+    expect(dones(await reading)).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fake.requestsOf('turn/interrupt')).toHaveLength(1);
+  });
+
+  it('never joins a turn Codex is still running after an unconfirmed stop', async () => {
+    const h = harness({ stopAckMs: 100 });
+    h.host.home(PERSON_HOME).nextTurn(hangingTurn);
+    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
+    await until(gen, 'text_delta');
+    await expect(h.transport.interrupt('s1')).resolves.toMatchObject({ outcome: 'unconfirmed' });
+    await rest(gen);
+    const next = await h.run(
+      h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
+    );
+    expect(next.map((e) => e.type)).toEqual(['error', 'done']);
+    expect(next[0]).toMatchObject({ data: { code: 'turn_stopping' } });
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    expect(fake.requestsOf('turn/start')).toHaveLength(1);
+    expect(fake.requestsOf('turn/interrupt')).toHaveLength(2);
+  });
+
+  it('starts the next turn once the abandoned one finally ends', async () => {
+    const h = harness({ stopAckMs: 100 });
+    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
+      ctx.emit('item/agentMessage/delta', { itemId: 'slow', delta: 'working' });
+      while (ctx.server.requestsOf('turn/interrupt').length < 2) await ctx.tick();
+      ctx.complete('interrupted');
+    });
+    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
+    await until(gen, 'text_delta');
+    await h.transport.interrupt('s1');
+    await rest(gen);
+    const next = await h.run(
+      h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
+    );
+    expect(texts(next)).toBe('pong');
+    expect(h.host.home(PERSON_HOME).processes[0]!.requestsOf('turn/start')).toHaveLength(2);
+  });
+});

@@ -923,7 +923,9 @@ export class CodexRuntime implements AgentRuntime {
         },
       });
       let completedTurn = false;
+      let sawDone = false;
       for await (const event of turnEvents) {
+        if (event.type === 'done') sawDone = true;
         if (
           event.type === 'session_status' &&
           'terminalReason' in event.data &&
@@ -945,6 +947,12 @@ export class CodexRuntime implements AgentRuntime {
         // here — after the event it rode in on, so an image lands in the
         // transcript exactly where the tool result that produced it did.
         yield* captureCodexMedia(this.attachments, sessionId, ctx);
+      }
+      // A transport promises exactly one `done`; if one ever ends without it,
+      // the session must not be left looking busy.
+      if (!sawDone) {
+        logger.error('[CodexRuntime] a turn ended without its done; closing it', { sessionId });
+        yield { type: 'done', data: { sessionId } };
       }
       // The SDK iterator is lazy: returning runStreamed is not delivery.
       // Only acknowledge after successful consumption; failures keep the notice owed.

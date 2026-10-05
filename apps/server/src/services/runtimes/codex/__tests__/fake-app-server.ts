@@ -181,6 +181,10 @@ export class FakeAppServer extends EventEmitter {
   readonly replies = new Map<number | string, unknown>();
   /** Background terminals each thread reports as still running. */
   readonly backgroundTerminals = new Map<string, unknown[]>();
+  /** Exit (as a crash) instead of answering the next `turn/start`. */
+  exitOnTurnStart = false;
+  /** Hold every `turn/start` answer until this settles. */
+  turnStartGate: Promise<void> | undefined;
   /** Set to refuse every request with `Server overloaded` this many times. */
   overloadNext = 0;
   /** Signals passed to `kill`. */
@@ -299,6 +303,11 @@ export class FakeAppServer extends EventEmitter {
       case 'thread/resume':
         return this.threadResume(id, params);
       case 'turn/start':
+        if (this.exitOnTurnStart) return this.exit(1);
+        if (this.turnStartGate) {
+          void this.turnStartGate.then(() => this.turnStart(id, params));
+          return;
+        }
         return this.turnStart(id, params);
       case 'turn/interrupt':
         return this.turnInterrupt(id, params);

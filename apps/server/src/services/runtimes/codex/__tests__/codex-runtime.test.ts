@@ -1668,4 +1668,19 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
     release();
     await drain(gen);
   });
+
+  it('closes a turn whose transport ended without its done, so the session is never left busy', async () => {
+    const { transport } = recordingTransport();
+    transport.runTurn = async function* () {
+      yield { type: 'text_delta', data: { text: 'partial' } };
+    };
+    const runtime = new CodexRuntime({
+      threadMap: new CodexThreadMap(createTestDb()),
+      resolveBinary: async () => '/opt/codex',
+      transport,
+    });
+    const events = await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(events.at(-1)?.type).toBe('done');
+  });
 });

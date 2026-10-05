@@ -42,7 +42,7 @@ import {
   type CodexAppServerProcess,
 } from '../app-server/process-pool.js';
 import { CodexThreadLoader, type LoadedThread } from '../app-server/thread-loader.js';
-import { ThreadChannel, type TurnSink } from '../app-server/thread-channel.js';
+import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
 import { EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
@@ -82,6 +82,10 @@ interface OpenTurn {
   readonly markCompleted: (status: string) => void;
   /** Ends the generator early (a stop Codex never confirmed). */
   readonly abandon: () => void;
+  /** Set when DorkOS gave up waiting on a stop: Codex may still be running it. */
+  abandoned: boolean;
+  /** Set when this turn's own terminal (or the process's end) was seen. */
+  sawTerminal: boolean;
   interrupting: Promise<InterruptReceipt> | undefined;
 }
 
@@ -100,6 +104,15 @@ export class AppServerCodexTransport implements CodexTransport {
   private readonly openByThread = new Map<string, OpenTurn>();
   /** Open turns, by session. */
   private readonly openBySession = new Map<string, OpenTurn>();
+  /**
+   * Turns DorkOS stopped waiting on (an unconfirmed stop) that Codex has not
+   * yet reported finished, by thread. A new `turn/start` on such a thread
+   * would silently join it, so the next turn re-sends the stop and waits.
+   */
+  private readonly lingering = new Map<
+    string,
+    { turnId: string; process: CodexAppServerProcess }
+  >();
   /** Last full rate-limit reading per person-home process. */
   private readonly rateLimits = new Map<string, unknown>();
   /** Relay keys per credits process, revoked when it stops. */
@@ -154,6 +167,18 @@ export class AppServerCodexTransport implements CodexTransport {
       return;
     }
 
+    if (!(await this.settleLingering(process, loaded.threadId))) {
+      release();
+      yield {
+        type: 'error',
+        data: {
+          message: 'Codex is still stopping the last reply. Try again in a moment.',
+          code: 'turn_stopping',
+        },
+      };
+      yield { type: 'done', data: { sessionId } };
+      return;
+    }
     const turn = this.openTurn(sessionId, process, loaded.threadId);
     if (!turn) {
       release();
@@ -193,6 +218,7 @@ export class AppServerCodexTransport implements CodexTransport {
           this.loader.markBound(process, loaded.threadId);
         }
         if (notification.method === 'turn/completed') {
+          turn.sawTerminal = true;
           turn.markCompleted(
             String((notification.params as { turn?: { status?: unknown } }).turn?.status)
           );
@@ -201,14 +227,24 @@ export class AppServerCodexTransport implements CodexTransport {
         if (mapper.isFinished) queue.end();
       },
       closed: (close) => {
+        turn.sawTerminal = true;
         turn.markCompleted('crashed');
         queue.push(mapper.closeOnCrash(close.detail));
         queue.end();
       },
     };
     (turn as { abandon: () => void }).abandon = () => {
+      turn.abandoned = true;
       queue.push(mapper.closeQuietly());
       queue.end();
+    };
+    // Every early exit ends the same way: whatever the mapper already queued
+    // (a crash it heard first, say) and then its closing events, so the turn
+    // always ends with exactly one `done`.
+    const finish = (closing: StreamEvent[]): AsyncGenerator<StreamEvent> => {
+      queue.push(closing);
+      queue.end();
+      return queue.drain();
     };
     const onAbort = (): void => void this.interrupt(sessionId);
     request.signal.addEventListener('abort', onAbort, { once: true });
@@ -235,7 +271,7 @@ export class AppServerCodexTransport implements CodexTransport {
       }
       channel.open(sink);
       if (request.signal.aborted) {
-        yield* mapper.closeQuietly();
+        yield* finish(mapper.closeQuietly());
         return;
       }
       let turnId: string;
@@ -246,21 +282,29 @@ export class AppServerCodexTransport implements CodexTransport {
         );
         turnId = result.turn.id;
       } catch (err) {
-        yield* this.failedStart(mapper, err);
+        yield* finish(this.failedStart(mapper, err));
         return;
       }
       if (this.isKnownOpenTurn(turnId, turn)) {
         logger.error('[CodexAppServer] turn/start joined a turn already open (invariant breach)', {
           sessionId,
         });
-        yield* mapper.closeQuietly({
-          message: 'Codex joined this message to a reply already running. Send it again.',
-          code: 'turn_joined',
-        });
+        yield* finish(
+          mapper.closeQuietly({
+            message: 'Codex joined this message to a reply already running. Send it again.',
+            code: 'turn_joined',
+          })
+        );
         return;
       }
       turn.turnId = turnId;
       sink.turnId = turnId;
+      if (turn.abandoned) {
+        // The stop gave up before Codex named the turn: stop it now that it has.
+        void process.client
+          .request('turn/interrupt', { threadId: loaded.threadId, turnId })
+          .catch(() => undefined);
+      }
       channel.flush();
       yield* queue.drain();
     } finally {
@@ -490,13 +534,28 @@ export class AppServerCodexTransport implements CodexTransport {
     const key = `${process.key}:${threadId}`;
     let channel = this.channels.get(key);
     if (!channel) {
-      channel = new ThreadChannel(process, threadId, (notification) => {
-        if (notification.method === 'thread/closed') {
-          // Codex unloaded it after its idle window: forget it, revoke its key.
-          this.loader.dropThread(process, threadId);
-          this.disposeChannel(process, threadId);
+      channel = new ThreadChannel(
+        process,
+        threadId,
+        (notification) => {
+          if (notification.method === 'thread/closed') {
+            // Codex unloaded it after its idle window: forget it, revoke its key.
+            this.loader.dropThread(process, threadId);
+            this.disposeChannel(process, threadId);
+          }
+        },
+        (notification) => {
+          // An abandoned turn finally ending clears the way for the next one.
+          const lingering = this.lingering.get(threadId);
+          if (
+            notification.method === 'turn/completed' &&
+            lingering !== undefined &&
+            turnIdOf(notification) === lingering.turnId
+          ) {
+            this.lingering.delete(threadId);
+          }
         }
-      });
+      );
       this.channels.set(key, channel);
     }
     return channel;
@@ -524,6 +583,8 @@ export class AppServerCodexTransport implements CodexTransport {
       completed,
       markCompleted,
       abandon: () => {},
+      abandoned: false,
+      sawTerminal: false,
       interrupting: undefined,
     };
     this.openByThread.set(threadId, turn);
@@ -535,13 +596,56 @@ export class AppServerCodexTransport implements CodexTransport {
     for (const turn of this.openByThread.values()) {
       if (turn !== mine && turn.turnId === turnId) return true;
     }
+    for (const lingering of this.lingering.values()) {
+      if (lingering.turnId === turnId) return true;
+    }
     return false;
   }
 
   private closeTurn(turn: OpenTurn): void {
     if (this.openByThread.get(turn.threadId) === turn) this.openByThread.delete(turn.threadId);
     if (this.openBySession.get(turn.sessionId) === turn) this.openBySession.delete(turn.sessionId);
+    if (turn.abandoned && !turn.sawTerminal && turn.turnId !== undefined && turn.process.isOpen) {
+      this.lingering.set(turn.threadId, { turnId: turn.turnId, process: turn.process });
+      turn.process.onExit(() => {
+        if (this.lingering.get(turn.threadId)?.process === turn.process) {
+          this.lingering.delete(turn.threadId);
+        }
+      });
+    }
     turn.markCompleted('closed');
+  }
+
+  /**
+   * Before a new turn on a thread whose last turn DorkOS stopped waiting on:
+   * stop it again and wait (bounded) for Codex to finish it. `true` when the
+   * thread is clear to start a turn.
+   */
+  private async settleLingering(
+    process: CodexAppServerProcess,
+    threadId: string
+  ): Promise<boolean> {
+    const lingering = this.lingering.get(threadId);
+    if (!lingering) return true;
+    if (lingering.process !== process || !process.isOpen) {
+      this.lingering.delete(threadId);
+      return true;
+    }
+    try {
+      await process.client.request(
+        'turn/interrupt',
+        { threadId, turnId: lingering.turnId },
+        { timeoutMs: this.stopAckMs }
+      );
+    } catch (err) {
+      if (isCodexRpcError(err, 'no-active-turn')) {
+        this.lingering.delete(threadId);
+        return true;
+      }
+    }
+    const deadline = Date.now() + this.stopAckMs;
+    while (this.lingering.has(threadId) && Date.now() < deadline) await sleep(20);
+    return !this.lingering.has(threadId);
   }
 
   private turnParams(request: CodexTurnRequest, threadId: string): TurnStartParams {
@@ -583,16 +687,13 @@ export class AppServerCodexTransport implements CodexTransport {
     yield { type: 'done', data: { sessionId } };
   }
 
-  private *failedStart(mapper: AppServerTurnMapper, err: unknown): Generator<StreamEvent> {
-    if (err instanceof CodexProcessExitedError) {
-      yield* mapper.closeOnCrash(err.detail);
-      return;
-    }
-    yield* mapper.closeQuietly({
+  private failedStart(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
+    if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
+    logger.warn('[CodexAppServer] turn/start failed', { err: String(err) });
+    return mapper.closeQuietly({
       message: 'Codex could not start this reply. Send your message again to retry.',
       code: 'codex_unavailable',
     });
-    logger.warn('[CodexAppServer] turn/start failed', { err: String(err) });
   }
 }
 
