@@ -189,18 +189,22 @@ export const CODEX_APP_SERVER_PERMISSION_MODES: RuntimeCapabilities['permissionM
     {
       id: 'default',
       label: 'Ask first',
-      description: 'Codex reads files freely. It asks before it changes anything.',
+      description:
+        'Codex reads freely and asks before changes. An approved step can reach beyond this project.',
       stop: 'ask',
       asks: 'always',
       reach: 'workspace',
-      promise: 'Codex can read files and run read-only commands. It asks before anything else.',
+      // "tools": an MCP tool its own server marks read-only runs without a
+      // card (verified on 0.154, app-server.binary.test.ts); every other one asks.
+      promise:
+        'Codex can read files and run read-only commands and tools. It asks before anything else.',
       native: 'read-only, asks first',
     },
     {
       id: 'acceptEdits',
       label: 'Workspace write',
       description:
-        'Codex can read anything on this machine and change this project without asking.',
+        'Codex reads anything here and changes this project freely. Approved steps can go further.',
       stop: 'act',
       asks: 'when-risky',
       reach: 'workspace',

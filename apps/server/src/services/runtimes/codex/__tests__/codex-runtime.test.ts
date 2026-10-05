@@ -425,6 +425,13 @@ describe('CodexRuntime', () => {
         { id: 'acceptEdits', label: 'Workspace write', asks: 'when-risky', reach: 'workspace' },
         { id: 'bypassPermissions', label: 'Full access', asks: 'never', reach: 'everything' },
       ]);
+      // Honest about what runs unasked and how far an approved step reaches
+      // (proven on the binary: an MCP tool its server marks read-only runs
+      // without a card).
+      const [ask, write] = caps.permissionModes.values;
+      expect(ask!.promise).toContain('read-only commands and tools');
+      expect(ask!.description).toContain('beyond this project');
+      expect(write!.description).toContain('Approved steps can go further');
       // App copy: no block over 15 words (writing-app-copy).
       for (const mode of caps.permissionModes.values) {
         for (const block of [mode.label, mode.description ?? '', mode.promise]) {

@@ -57,6 +57,8 @@ let base: string;
 let stallNext = false;
 /** Scripted provider answers, consumed in order before the default "pong". */
 const scripted: Array<(res: http.ServerResponse, body: string) => void> = [];
+/** Tool calls the third-party MCP server ran, by name. */
+const mcpCalls: string[] = [];
 /** `turn/started` notifications every spawned process sent, counted off its stdout. */
 let turnStartedSeen = 0;
 const seen: Seen = { responses: 0, mcpAuthorizations: [], resolvedDuringTurn: [] };
@@ -141,12 +143,16 @@ async function resolveAll(): Promise<void> {
 }
 
 /** One streamed Responses answer that calls `exec_command`. */
-function sseCall(args: Record<string, unknown>): string {
+function sseCall(
+  args: Record<string, unknown>,
+  tool: { name: string; namespace?: string } = { name: 'exec_command' }
+): string {
   const call = {
     type: 'function_call',
     id: 'fc_1',
     call_id: `call_${Math.random().toString(36).slice(2, 8)}`,
-    name: 'exec_command',
+    name: tool.name,
+    ...(tool.namespace ? { namespace: tool.namespace } : {}),
     arguments: JSON.stringify(args),
   };
   return [
@@ -190,6 +196,45 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
       }
       res.end(sse('pong'));
     });
+    return;
+  }
+  if (req.url?.startsWith('/repo-mcp')) {
+    // A third-party MCP server: one tool that changes things, one its server
+    // marks read-only.
+    const message = JSON.parse(body || '{}') as { id?: number; method?: string; params?: unknown };
+    if (message.id === undefined) {
+      res.writeHead(202).end();
+      return;
+    }
+    const result =
+      message.method === 'initialize'
+        ? {
+            protocolVersion: '2025-06-18',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'repo', version: '0' },
+          }
+        : message.method === 'tools/list'
+          ? {
+              tools: [
+                {
+                  name: 'delete_repo',
+                  description: 'Delete a repository',
+                  inputSchema: { type: 'object', properties: { name: { type: 'string' } } },
+                },
+                {
+                  name: 'read_file',
+                  description: 'Read a file',
+                  inputSchema: { type: 'object', properties: { name: { type: 'string' } } },
+                  annotations: { readOnlyHint: true },
+                },
+              ],
+            }
+          : message.method === 'tools/call'
+            ? (mcpCalls.push((message.params as { name: string }).name),
+              { content: [{ type: 'text', text: 'ok' }] })
+            : {};
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
     return;
   }
   if (req.url?.startsWith('/mcp')) {
@@ -477,6 +522,69 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     });
     await reader;
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  describe('Ask first and MCP tools (spec §10)', () => {
+    const repoTools = () => ({
+      agentTokenEnv: {},
+      managed: { servers: { repo: { url: `${base}/repo-mcp` } }, env: {} },
+      dorkosTools: null,
+      connectorTools: null,
+    });
+    const callTool = (name: string) =>
+      scripted.push(
+        (res) => res.end(sseCall({ name: 'prod' }, { name, namespace: 'mcp__repo' })),
+        (res) => res.end(sse('done'))
+      );
+
+    it('stops before an MCP tool that can change things, on that call’s own card', async () => {
+      mcpCalls.length = 0;
+      callTool('delete_repo');
+      const transport = makeTransport();
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(
+        request('mcp-ask', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+          tools: repoTools(),
+        })
+      )) {
+        events.push(event);
+        if (event.type === 'approval_required') {
+          const card = event.data as { toolCallId: string; toolName: string; input: string };
+          expect(card.toolName).toBe('mcp__repo__delete_repo');
+          expect(JSON.parse(card.input)).toEqual({ name: 'prod' });
+          const start = events.find(
+            (e) =>
+              e.type === 'tool_call_start' &&
+              (e.data as { toolCallId: string }).toolCallId === card.toolCallId
+          );
+          expect(start, 'the card is the running call’s own').toBeDefined();
+          expect(mcpCalls, 'nothing runs before a person answers').toEqual([]);
+          expect(transport.answerApproval('mcp-ask', card.toolCallId, true)).toBe(true);
+        }
+      }
+      expect(
+        events.some((e) => e.type === 'approval_required'),
+        JSON.stringify(events)
+      ).toBe(true);
+      expect(mcpCalls).toEqual(['delete_repo']);
+    });
+
+    it('runs an MCP tool its own server marks read-only without asking', async () => {
+      mcpCalls.length = 0;
+      callTool('read_file');
+      const transport = makeTransport();
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(
+        request('mcp-read', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+          tools: repoTools(),
+        })
+      ))
+        events.push(event);
+      expect(events.some((e) => e.type === 'approval_required')).toBe(false);
+      expect(mcpCalls).toEqual(['read_file']);
+    });
   });
 
   describe('approvals and steer (spec §10, §11)', () => {

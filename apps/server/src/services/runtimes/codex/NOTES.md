@@ -427,8 +427,16 @@ free):
 - `thread/fork` of a thread that never ran a turn answers "no rollout found"; the loader starts it
   again instead.
 
-Not yet seen on the binary: an MCP tool approval (`mcpServer/elicitation/request` with
-`_meta.codex_approval_kind: "mcp_tool_call"`). The card attaches to the running `mcpToolCall` of
-that server when the turn has one, else to its own id; the P3 live check confirms the `_meta` shape.
-Questions' `isSecret` has no masked input in the client yet, so a secret answer is typed in the
-clear.
+MCP tools under Ask first (fake MCP server on 127.0.0.1, review item 4): a tool with no
+annotations arrives as `mcpServer/elicitation/request`, `mode: "form"`, an EMPTY `requestedSchema`
+(`{type: object, properties: {}}`), `_meta: {codex_approval_kind: "mcp_tool_call", persist:
+["session","always"], tool_description, tool_params, tool_params_display}`, and the tool named
+only in the message (`run tool "delete_repo"`), after the call's `item/started`. It runs only once
+accepted. A tool its own server marks `readOnlyHint: true` runs WITHOUT asking, even in a read-only
+sandbox, so Ask first's promise says read-only "commands and tools"; the hint is the server's own
+claim. DorkOS trusts the approval label only when the request asks for nothing and the turn has a
+running call of that server and tool; one match gets that call's card, several get a card of their
+own.
+
+A question with an `isSecret` field is not drawn until the client has masked input (DOR-2726):
+Codex gets no answer and the turn gets a status line saying why.
