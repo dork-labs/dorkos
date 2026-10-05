@@ -89,3 +89,15 @@ it('preserves failed root attribution despite later reported completion', async 
   expect(await adapter.stop()).toBe('uncertain');
   expect(adapter.custody().uncertain).toBe(true);
 });
+
+it('keeps recorded gaps distinct from returned original worker custody', async () => {
+  controls.start.mockResolvedValue({
+    completion: Promise.resolve('campaign-closed-gapped'),
+    enrollRoot: vi.fn(async () => {}),
+    endBrowser: vi.fn(async () => {}),
+  });
+  const adapter = await startDarwinEngineJournal(await fixture());
+  expect(await adapter.stop()).toBe('campaign-closed-gapped');
+  expect(adapter.custody()).toEqual({ pending: false, uncertain: false });
+  expect(adapter.historyGapped()).toBe(true);
+});

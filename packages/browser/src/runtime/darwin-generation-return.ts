@@ -61,6 +61,7 @@ export function createDarwinGenerationReturnOwner(
     cell.record === record &&
     cell.records === records;
   const settled = () =>
+    !record.journal?.historyGapped() &&
     cell.phase === 'terminal' &&
     record.status === 'stopped' &&
     slot.result?.cleanup.state === 'settled' &&
@@ -74,6 +75,7 @@ export function createDarwinGenerationReturnOwner(
     used = false;
   const completion = slot.promise.then((result) => {
     if (
+      record.journal?.historyGapped() ||
       !current() ||
       slot.result !== result ||
       cell.phase !== 'terminal' ||

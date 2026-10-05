@@ -304,3 +304,167 @@ it('retains a genuine-shaped discovery gap while tracking admitted originals to 
     await rm(f.parentDirectory, { recursive: true, force: true });
   }
 });
+
+it.each([false, true])(
+  'records the selected controller-supervisor-root chain and refuses a replaced supervisor (%s)',
+  async (replaced) => {
+    const f = await fixture();
+    let round = 0,
+      clock = 10;
+    const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+    const supervisor = f.root;
+    const root = darwinBirth(f.childNative);
+    const observer: DarwinProcessObserver = {
+      async inspect(pids) {
+        return {
+          ...boot,
+          processes: pids.map((pid) => {
+            if (round >= 4) return { kind: 'absent' as const, pid };
+            const identity =
+              pid === 10
+                ? f.managerNative
+                : pid === 20
+                  ? { ...f.rootNative, ...(replaced ? { seconds: '201' } : {}) }
+                  : f.childNative;
+            return {
+              kind: 'present' as const,
+              identity,
+              parentPid: pid === 10 ? 1 : pid === 20 ? 10 : 20,
+              zombie: false,
+            };
+          }),
+        };
+      },
+      async children(parent) {
+        const identity = parent.pid === 20 ? f.rootNative : f.childNative;
+        return {
+          ...boot,
+          parentBefore: identity,
+          parentAfter: { ...identity },
+          complete: true,
+          processes:
+            parent.pid === 20
+              ? [
+                  {
+                    kind: 'present' as const,
+                    identity: f.childNative,
+                    parentPid: 20,
+                    zombie: false,
+                  },
+                ]
+              : [],
+        };
+      },
+    };
+    try {
+      const result = await observeDarwinJournal({
+        location: f.location,
+        initial: f.initial,
+        root,
+        rootSupervisor: () => supervisor,
+        observer,
+        monotonicNow: () => clock++,
+        pause: async () => {
+          round++;
+        },
+        endMonotonic: 100,
+        maxGap: 100,
+      });
+      const read = await readJournal(f.location);
+      expect(read.state).toBe('valid-recorded-data');
+      if (read.state !== 'valid-recorded-data') throw new Error('NO_DURABLE_IDENTITY');
+      if (replaced) {
+        expect(result).not.toBe('recorded-gone');
+        expect(read.snapshot.gaps.some((gap) => gap.cause === 'association-missing')).toBe(true);
+        expect(read.snapshot.root.kind).toBe('pending');
+      } else {
+        expect(result).toBe('recorded-gone');
+        expect(read.snapshot.gaps).toEqual([]);
+        const retainedSupervisor = read.snapshot.retainedIdentities.find(
+          (value) => value.identity.pid === 20
+        );
+        const retainedRoot = read.snapshot.retainedIdentities.find(
+          (value) => value.role === 'root'
+        );
+        expect(retainedSupervisor?.parent).toEqual(f.manager);
+        expect(retainedRoot?.identity).toEqual(root);
+        expect(retainedRoot?.parent).toEqual(supervisor);
+      }
+    } finally {
+      await rm(f.parentDirectory, { recursive: true, force: true });
+    }
+  }
+);
+
+it.each([false, true])(
+  'keeps admitted same-birth supervised zombies pending until disappearance (%s)',
+  async (remains) => {
+    const f = await fixture();
+    let round = 0,
+      clock = 10;
+    const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+    const observer: DarwinProcessObserver = {
+      async inspect(pids) {
+        return {
+          ...boot,
+          processes: pids.map((pid) => {
+            if (pid !== 10 && round >= 4 && !remains) return { kind: 'absent' as const, pid };
+            const identity =
+              pid === 10 ? f.managerNative : pid === 20 ? f.rootNative : f.childNative;
+            return {
+              kind: 'present' as const,
+              identity,
+              parentPid: pid === 10 ? 1 : pid === 20 ? 10 : 20,
+              zombie: pid === 30 && round >= 2,
+            };
+          }),
+        };
+      },
+      async children(parent) {
+        const identity = parent.pid === 20 ? f.rootNative : f.childNative;
+        return {
+          ...boot,
+          parentBefore: identity,
+          parentAfter: { ...identity },
+          complete: true,
+          processes:
+            parent.pid === 20
+              ? [
+                  {
+                    kind: 'present' as const,
+                    identity: f.childNative,
+                    parentPid: 20,
+                    zombie: round >= 2,
+                  },
+                ]
+              : [],
+        };
+      },
+    };
+    try {
+      const result = await observeDarwinJournal({
+        location: f.location,
+        initial: f.initial,
+        root: darwinBirth(f.childNative),
+        rootSupervisor: () => f.root,
+        observer,
+        endBrowser: () => true,
+        monotonicNow: () => clock++,
+        pause: async () => {
+          round++;
+        },
+        endMonotonic: 100,
+        maxGap: 100,
+      });
+      expect(result).toBe(remains ? 'retained' : 'campaign-closed-gapped');
+      const read = await readJournal(f.location);
+      expect(read.state).toBe('valid-recorded-data');
+      if (read.state === 'valid-recorded-data')
+        expect(
+          read.snapshot.retainedIdentities.find((value) => value.role === 'root')?.lifecycle
+        ).toBe(remains ? 'alive' : 'dead');
+    } finally {
+      await rm(f.parentDirectory, { recursive: true, force: true });
+    }
+  }
+);

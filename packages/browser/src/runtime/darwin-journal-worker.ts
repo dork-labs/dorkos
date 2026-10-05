@@ -45,7 +45,9 @@ const seedSchema = z
     maxGap: z.number().positive().max(10000),
   })
   .strict();
-const rootSchema = z.object({ kind: z.literal('root'), identity }).strict();
+const rootSchema = z
+  .object({ kind: z.literal('root'), identity, supervisor: identity.optional() })
+  .strict();
 const launchSchema = z
   .object({
     kind: z.literal('launch'),
@@ -64,6 +66,7 @@ const messages = z.discriminatedUnion('kind', [
       result: z.enum([
         'recorded-gone',
         'original-child-returned-observer-live',
+        'campaign-closed-gapped',
         'campaign-closed',
         'retained',
         'uncertain',
@@ -76,7 +79,7 @@ export interface DarwinJournalWorker {
   readonly child: ChildProcess;
   readonly location: JournalLocation;
   stderr(): Uint8Array;
-  enrollRoot(root: ProcessIdentity): Promise<void>;
+  enrollRoot(root: ProcessIdentity, supervisor?: ProcessIdentity): Promise<void>;
   endBrowser(launchEntered: boolean): Promise<void>;
   launchRoot(
     command: Readonly<{ executable: string; argv: readonly string[]; cwd: string }>
@@ -84,6 +87,7 @@ export interface DarwinJournalWorker {
   readonly completion: Promise<
     | 'recorded-gone'
     | 'original-child-returned-observer-live'
+    | 'campaign-closed-gapped'
     | 'campaign-closed'
     | 'retained'
     | 'uncertain'
@@ -124,6 +128,7 @@ export async function startDarwinJournalWorker(
     result:
       | 'recorded-gone'
       | 'original-child-returned-observer-live'
+      | 'campaign-closed-gapped'
       | 'campaign-closed'
       | 'retained'
       | 'uncertain' = 'uncertain';
@@ -270,10 +275,12 @@ export async function startDarwinJournalWorker(
       used = true;
       await send(launchSchema.parse({ kind: 'launch', ...command }));
     },
-    async enrollRoot(root: ProcessIdentity) {
+    async enrollRoot(root: ProcessIdentity, supervisor?: ProcessIdentity) {
       if (used || options.ownedLaunch) throw new Error('ROOT_ALREADY_ENROLLED');
       used = true;
-      await send(rootSchema.parse({ kind: 'root', identity: root }));
+      await send(
+        rootSchema.parse({ kind: 'root', identity: root, ...(supervisor ? { supervisor } : {}) })
+      );
     },
   });
 }
@@ -283,6 +290,7 @@ export function darwinMonotonicNow(): number {
   return Number(process.hrtime.bigint() / 1000000n);
 }
 async function runPrivateWorker(): Promise<void> {
+  let supervisor: ProcessIdentity | undefined;
   let rootResolve!: (identity: ProcessIdentity | null) => void;
   const root = new Promise<ProcessIdentity | null>((resolve) => {
     rootResolve = resolve;
@@ -349,6 +357,7 @@ async function runPrivateWorker(): Promise<void> {
       return;
     }
     rooted = true;
+    supervisor = parsed.data.supervisor;
     rootResolve(parsed.data.identity);
   };
   process.on('message', receive);
@@ -374,6 +383,7 @@ async function runPrivateWorker(): Promise<void> {
   let result:
     | 'recorded-gone'
     | 'original-child-returned-observer-live'
+    | 'campaign-closed-gapped'
     | 'campaign-closed'
     | 'retained'
     | 'uncertain';
@@ -426,6 +436,7 @@ async function runPrivateWorker(): Promise<void> {
         location: value.location,
         initial: value.initial,
         root,
+        rootSupervisor: () => supervisor,
         observer,
         endBrowser: () => ended,
         launchNotEntered: () => launchNotEntered,
