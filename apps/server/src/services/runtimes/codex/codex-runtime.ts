@@ -271,6 +271,12 @@ export class CodexRuntime implements AgentRuntime {
    * dispatched turn between them; see {@link MAX_CONSECUTIVE_WAKES}.
    */
   private readonly consecutiveWakes = new Map<string, number>();
+  /**
+   * The one wake per session that is being read right now. Only it may start
+   * a model turn: a second wake read meanwhile (drained by a consumer that
+   * gave up on the lock the first one holds) shows its finishes and stops.
+   */
+  private readonly openWakes = new Map<string, symbol>();
   /** Connector bearer bound to the exact in-flight turn controller. */
   private readonly activeConnectorBindings = new Map<AbortController, string>();
   /**
@@ -388,15 +394,29 @@ export class CodexRuntime implements AgentRuntime {
    */
   private async *wakeTurn(wake: BackgroundWake): AsyncGenerator<StreamEvent> {
     const { sessionId } = wake;
+    const self = Symbol('wake');
+    const owner = !this.openWakes.has(sessionId);
+    if (owner) this.openWakes.set(sessionId, self);
+    try {
+      yield* this.wakeEvents(wake, owner);
+    } finally {
+      if (this.openWakes.get(sessionId) === self) this.openWakes.delete(sessionId);
+    }
+  }
+
+  private async *wakeEvents(wake: BackgroundWake, owner: boolean): AsyncGenerator<StreamEvent> {
+    const { sessionId } = wake;
     for (const message of wake.notices) {
       yield { type: 'system_status', data: { message } };
     }
     for (const completion of wake.completions) yield backgroundDoneEvent(completion);
     const waking = wake.completions.filter((completion) => completion.wakes);
     const context = wake.startTurn ? sharedWakeContext(waking) : undefined;
-    // Only under the reserved runtime lock: a consumer that never took it (one
-    // that gave up waiting and is merely draining) must not start a hidden turn.
-    const locked = this.locks.getLockInfo(sessionId)?.clientId === runtimeLockHolder(sessionId);
+    // Only under the reserved runtime lock, and only the wake being read first:
+    // a consumer that never took the lock (one that gave up waiting while
+    // another wake held it, and is merely draining) must not start a hidden turn.
+    const locked =
+      owner && this.locks.getLockInfo(sessionId)?.clientId === runtimeLockHolder(sessionId);
     const spent = this.consecutiveWakes.get(sessionId) ?? 0;
     if (context === undefined || !locked || spent >= MAX_CONSECUTIVE_WAKES) {
       if (context !== undefined && !locked) {
@@ -411,6 +431,9 @@ export class CodexRuntime implements AgentRuntime {
       return;
     }
     this.consecutiveWakes.set(sessionId, spent + 1);
+    // The session's CURRENT mode, model and effort apply (`resolveTurnSettings`
+    // reads them): the context carries none, so a mode the person lowered
+    // since the starting turn is never climbed back over.
     yield* this.runTurn(sessionId, buildBackgroundUpdate(waking), context.opts, 'runtime', context);
   }
 
@@ -1693,8 +1716,13 @@ interface CodexWakeContext {
 
 /**
  * The part of a dispatched turn's options a wake's turn may carry: who it runs
- * as, where, with which folders, account and settings. Never the message's own
- * id, title, disposition or attached context, which belong to that message.
+ * as, where, with which folders and account. Never the message's own id,
+ * title, disposition or attached context, which belong to that message.
+ *
+ * **Never the permission mode, model, effort or fast mode.** Those are the
+ * session's, and the person may change them after the starting turn: a
+ * scheduled run at Full access must not make a wake run at Full access after
+ * the person set Ask first. The wake reads the session's current values.
  *
  * A room turn returns `undefined`: its tools and identity are bound to the
  * room's dispatch (its turn id and author), which a wake cannot reproduce, so
@@ -1703,12 +1731,8 @@ interface CodexWakeContext {
  */
 function wakeContextOf(opts: MessageOpts | undefined, cwd: string): CodexWakeContext | undefined {
   if (opts?.roomTurn !== undefined) return undefined;
-  const carried: MessageOpts = {
-    permissionMode: opts?.permissionMode,
+  const carried = {
     cwd,
-    ...(opts?.model !== undefined ? { model: opts.model } : {}),
-    ...(opts?.effort !== undefined ? { effort: opts.effort } : {}),
-    ...(opts?.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
     ...(opts?.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
     ...(opts?.systemPromptAppend !== undefined
       ? { systemPromptAppend: opts.systemPromptAppend }
@@ -1722,8 +1746,6 @@ function wakeContextOf(opts: MessageOpts | undefined, cwd: string): CodexWakeCon
       ? { unattendedApprovals: opts.unattendedApprovals }
       : {}),
   } as MessageOpts;
-  if (carried.permissionMode === undefined)
-    delete (carried as { permissionMode?: unknown }).permissionMode;
   return { opts: carried };
 }
 

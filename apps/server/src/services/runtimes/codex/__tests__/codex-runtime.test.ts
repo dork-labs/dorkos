@@ -1804,7 +1804,7 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       return turns;
     }
 
-    it('wakes as the same agent, in the same folder, with the same grants and settings', async () => {
+    it('wakes as the same agent, in the same folder, with the same grants', async () => {
       const { runtime, requests, wake } = backgroundRuntime();
       const identity = vi.spyOn(
         runtime as unknown as { identityPathFor: (cwd: string, agent?: string) => unknown },
@@ -1838,11 +1838,7 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
       expect(requests).toHaveLength(2);
       const [first, woken] = requests as [(typeof requests)[0], (typeof requests)[0]];
-      expect(woken).toMatchObject({
-        cwd: first.cwd,
-        settings: first.settings,
-        writableDirectories: ['/elsewhere/out'],
-      });
+      expect(woken).toMatchObject({ cwd: first.cwd, writableDirectories: ['/elsewhere/out'] });
       expect(woken.messageId).toBeUndefined();
       expect(woken.prompt).toContain('<background_update>');
       expect(woken.prompt).toContain('APPENDED-CONTEXT');
@@ -1854,6 +1850,80 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       expect((await runtime.getSession('/project', 's1'))?.lastMessagePreview).toBe(
         'start the tests'
       );
+    });
+
+    it('runs a wake at the session’s CURRENT mode and model, never the starting turn’s', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      runtime.ensureSession('s1', { permissionMode: 'default', cwd: '/project' });
+      // A scheduled run at Full access leaves a command running…
+      await drain(
+        runtime.sendMessage('s1', 'go', {
+          cwd: '/project',
+          permissionMode: 'bypassPermissions',
+          model: 'gpt-old',
+        })
+      );
+      expect(requests[0]!.settings).toMatchObject({
+        permissionMode: 'bypassPermissions',
+        model: 'gpt-old',
+      });
+      const turns = project(runtime);
+      const context = requests[0]!.wakeContext;
+      // …and the person sets Ask first and another model before it finishes.
+      await runtime.updateSession('s1', { permissionMode: 'default', model: 'gpt-new' });
+      wake({ sessionId: 's1', completions: [finished(context)], startTurn: true, notices: [] });
+      await turns[0];
+      expect(requests[1]!.settings).toMatchObject({ permissionMode: 'default', model: 'gpt-new' });
+      // A chain carries nothing of the first turn's mode either.
+      wake({
+        sessionId: 's1',
+        completions: [finished(requests[1]!.wakeContext)],
+        startTurn: true,
+        notices: [],
+      });
+      await turns[1];
+      expect(requests[2]!.settings.permissionMode).toBe('default');
+      // Raised only because the person raised it.
+      await runtime.updateSession('s1', { permissionMode: 'acceptEdits' });
+      wake({ sessionId: 's1', completions: [finished(context)], startTurn: true, notices: [] });
+      await turns[2];
+      expect(requests[3]!.settings.permissionMode).toBe('acceptEdits');
+    });
+
+    it('lets only the wake that holds the turn start a model turn; a drained one starts none and spends nothing', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
+      const context = requests[0]!.wakeContext;
+      const streams: Array<AsyncIterable<StreamEvent>> = [];
+      runtime.onRuntimeTurn!((_id, events) => streams.push(events));
+      wake({ sessionId: 's1', completions: [finished(context)], startTurn: true, notices: [] });
+      wake({
+        sessionId: 's1',
+        completions: [finished(context, { taskId: 'cmd-2' })],
+        startTurn: true,
+        notices: [],
+      });
+      // Wake 1 holds the session's runtime lock and has started reading.
+      const token = Symbol('wake-1');
+      expect(runtime.acquireRuntimeLock!('s1', { on: () => {} }, token)).toBe(true);
+      const first = streams[0]![Symbol.asyncIterator]();
+      expect((await first.next()).value).toMatchObject({ type: 'background_task_done' });
+      // Wake 2 gave up waiting for the lock and is merely drained.
+      const drained: StreamEvent[] = [];
+      for await (const event of streams[1]!) drained.push(event);
+      expect(drained.map((e) => e.type)).toEqual(['background_task_done', 'done']);
+      expect(requests).toHaveLength(1);
+      // Wake 1 runs its turn.
+      for (let next = await first.next(); !next.done; next = await first.next()) void next;
+      runtime.releaseLock('s1', 'runtime:s1', token);
+      expect(requests).toHaveLength(2);
+      // The drained wake spent none of the budget: two more turns still run.
+      const turns = project(runtime);
+      for (let i = 0; i < MAX_CONSECUTIVE_WAKES; i += 1) {
+        wake({ sessionId: 's1', completions: [finished(context)], startTurn: true, notices: [] });
+        await turns.at(-1);
+      }
+      expect(requests).toHaveLength(1 + MAX_CONSECUTIVE_WAKES);
     });
 
     it('shows a room turn’s finished work but starts no model turn (its tools are the room’s)', async () => {
