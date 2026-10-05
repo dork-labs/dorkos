@@ -15,15 +15,18 @@
  * nothing sent); if a response nevertheless names a turn already open, that is
  * an invariant breach, logged, and the generator ends with an error.
  *
- * **P1 posture.** `approvalPolicy: 'never'` with exec's sandbox mapping, so a
- * chat behaves as it does on exec; every server request is refused by the
- * client (nothing is ever accepted); `supportsPersistentSession` is the only
- * capability it adds.
+ * **Approvals (spec §10).** `on-request` for every mode but full access, so
+ * Codex stops and asks; each server request becomes a card in the open turn
+ * (`app-server/server-requests.ts`), answered only by a person.
  *
  * @module services/runtimes/codex/transport/app-server-transport
  */
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
-import type { SessionWarmth } from '@dorkos/shared/agent-runtime';
+import type {
+  DeliverIntoTurnOpts,
+  RuntimeDeliveryResult,
+  SessionWarmth,
+} from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../../lib/logger.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
@@ -35,20 +38,35 @@ import {
 } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome, resolveCodexHome } from '../codex-home.js';
 import { codexCreditsAppServerEnv, ensureCreditsCodexHome } from '../credits-launch.js';
-import { EFFORT_TO_REASONING } from '../turn-input.js';
+import { buildSteerText, EFFORT_TO_REASONING } from '../turn-input.js';
 import {
   CodexAppServerPool,
   CodexCrashLoopError,
   codexAppServerPool,
   type CodexAppServerProcess,
 } from '../app-server/process-pool.js';
-import { CodexThreadLoader, type LoadedThread } from '../app-server/thread-loader.js';
+import {
+  CodexThreadLoader,
+  type LoadedThread,
+  type ThreadLoadInput,
+} from '../app-server/thread-loader.js';
 import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
-import { EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
+import { approvalPolicyFor, EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
+import { CODEX_APP_SERVER_CAPABILITIES } from '../runtime-constants.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
-import type { ServerNotification, TurnStartParams } from '../app-server/protocol/methods.js';
+import type {
+  ServerNotification,
+  ServerRequest,
+  TurnStartParams,
+} from '../app-server/protocol/methods.js';
+import {
+  CodexServerRequestBroker,
+  logRefusedServerRequest,
+  mapServerRequest,
+  type ServerRequestTurnView,
+} from '../app-server/server-requests.js';
 import type { CodexTransport, CodexTurnRequest } from './codex-transport.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
@@ -71,6 +89,10 @@ export interface AppServerTransportOptions {
   readonly stopAckMs?: number;
   /** Realpath seam for the loader. */
   readonly realpath?: (path: string) => string;
+  /** The countdown an approval, question or elicitation card shows. */
+  readonly interactionCountdownMs?: number;
+  /** When an unanswered request is declined (default: the park ceiling). */
+  readonly interactionExpireMs?: number;
 }
 
 interface OpenTurn {
@@ -88,6 +110,10 @@ interface OpenTurn {
   /** Set when this turn's own terminal (or the process's end) was seen. */
   sawTerminal: boolean;
   interrupting: Promise<InterruptReceipt> | undefined;
+  /** Push events into the turn (a server request's card). */
+  deliver: (events: StreamEvent[]) => void;
+  /** What the turn has seen, for a card about one of its tools. */
+  view: ServerRequestTurnView;
 }
 
 /** A turn DorkOS stopped waiting on that Codex has not reported finished. */
@@ -109,8 +135,8 @@ const LINGERING_REFUSAL_LIMIT = 3;
 /** Codex turns on `codex app-server`. */
 export class AppServerCodexTransport implements CodexTransport {
   readonly kind = 'app-server' as const;
-  /** A thread stays loaded between turns, so a session can be warm. */
-  readonly capabilities = { supportsPersistentSession: true } as const;
+  /** What this transport adds over exec (spec §14): warmth, approvals, questions. */
+  readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
 
   private readonly pool: CodexAppServerPool;
   private readonly loader: CodexThreadLoader;
@@ -134,6 +160,8 @@ export class AppServerCodexTransport implements CodexTransport {
   /** Config warnings to say once, per process, in its next turn. */
   private readonly pendingWarnings = new Map<string, string[]>();
   private readonly watched = new WeakSet<CodexAppServerProcess>();
+  /** Approvals, questions and elicitations waiting on a person (spec §10). */
+  private readonly requests: CodexServerRequestBroker;
 
   /**
    * Construct the transport.
@@ -143,6 +171,14 @@ export class AppServerCodexTransport implements CodexTransport {
   constructor(private readonly options: AppServerTransportOptions) {
     this.pool = options.pool ?? codexAppServerPool;
     this.stopAckMs = options.stopAckMs ?? APP_SERVER_STOP_ACK_MS;
+    this.requests = new CodexServerRequestBroker({
+      ...(options.interactionCountdownMs !== undefined
+        ? { countdownMs: options.interactionCountdownMs }
+        : {}),
+      ...(options.interactionExpireMs !== undefined
+        ? { expireMs: options.interactionExpireMs }
+        : {}),
+    });
     this.loader = new CodexThreadLoader({
       threadKeys: () => options.connectorTools()?.threadKeys,
       ...(options.realpath ? { realpath: options.realpath } : {}),
@@ -163,11 +199,15 @@ export class AppServerCodexTransport implements CodexTransport {
     let relay: { baseUrl: string; key: string } | undefined;
     // Read once per turn, so the load and any reload agree (spec `keep-awake`).
     const preventIdleSleep = keepAwakeService.preventsIdleSleep();
+    let loadInput: ThreadLoadInput;
+    // Whether the thread this turn runs on has no turn of DorkOS's still
+    // winding down in Codex.
+    let clear: boolean;
     try {
       process = await this.acquire(request.binary, onCredits);
       release = process.hold();
       relay = onCredits ? this.relayFor(process) : undefined;
-      loaded = await this.loader.ensureLoaded({
+      loadInput = {
         process,
         home: onCredits ? 'credits' : 'person',
         sessionId,
@@ -177,33 +217,29 @@ export class AppServerCodexTransport implements CodexTransport {
         tools: request.tools,
         ...(relay ? { creditsRelay: relay } : {}),
         ...(preventIdleSleep ? { preventIdleSleep } : {}),
-      });
+      };
+      // Stop a turn DorkOS gave up on BEFORE loading: the load may fork this
+      // thread away (refreshed credentials), and a turn left running on the
+      // old one would keep going, and keep billing on credits, unseen.
+      const current = this.loader.loadedThreadFor(loadInput);
+      clear = current === undefined || (await this.settleLingering(process, current));
+      loaded = await this.loader.ensureLoaded(loadInput);
+      if (loaded.threadId !== current) clear = await this.settleLingering(process, loaded.threadId);
     } catch (err) {
       release?.();
       yield* this.failedSetup(sessionId, err);
       return;
     }
+    if (loaded.retired !== undefined) this.retire(process, loaded.retired);
 
-    if (!(await this.settleLingering(process, loaded.threadId))) {
+    if (!clear) {
       const lingering = this.lingering.get(loaded.threadId);
       if (lingering && ++lingering.refusals >= LINGERING_REFUSAL_LIMIT) {
         // Codex will not stop that turn. Reload just this thread (a fork,
         // with the conversation) rather than block the session indefinitely.
         try {
-          loaded = await this.loader.reload(
-            {
-              process,
-              home: onCredits ? 'credits' : 'person',
-              sessionId,
-              boundThreadId: request.boundThreadId,
-              cwd: request.cwd,
-              settings: request.settings,
-              tools: request.tools,
-              ...(relay ? { creditsRelay: relay } : {}),
-              ...(preventIdleSleep ? { preventIdleSleep } : {}),
-            },
-            loaded.threadId
-          );
+          loaded = await this.loader.reload(loadInput, loaded.threadId);
+          if (loaded.retired !== undefined) this.retire(process, loaded.retired);
         } catch (err) {
           logger.warn('[CodexAppServer] could not reload a thread stuck stopping', {
             sessionId,
@@ -212,7 +248,6 @@ export class AppServerCodexTransport implements CodexTransport {
         }
       }
     }
-    if (loaded.retired !== undefined) this.retire(process, loaded.retired);
     if (this.lingering.has(loaded.threadId)) {
       release();
       yield {
@@ -255,6 +290,10 @@ export class AppServerCodexTransport implements CodexTransport {
     });
     const channel = this.channelFor(process, loaded.threadId);
     let bound = !loaded.needsBinding;
+    // A server request's card can arrive before `turn/start` answered (the
+    // channel is still buffering the items it is about): hold it until then,
+    // so it never lands ahead of its tool's start.
+    const early: StreamEvent[] = [];
     const sink: TurnSink = {
       turnId: undefined,
       notify: (notification) => {
@@ -268,6 +307,8 @@ export class AppServerCodexTransport implements CodexTransport {
           turn.markCompleted(
             String((notification.params as { turn?: { status?: unknown } }).turn?.status)
           );
+          // Codex clears what it still asked about when a turn ends; so do the cards.
+          this.requests.cancelSession(sessionId);
         }
         queue.push(mapper.map(notification));
         if (mapper.isFinished) queue.end();
@@ -275,12 +316,22 @@ export class AppServerCodexTransport implements CodexTransport {
       closed: (close) => {
         turn.sawTerminal = true;
         turn.markCompleted('crashed');
+        this.requests.cancelSession(sessionId);
         queue.push(mapper.closeOnCrash(close.detail));
         queue.end();
       },
     };
+    turn.deliver = (events) => {
+      if (sink.turnId === undefined) early.push(...events);
+      else queue.push(events);
+    };
+    turn.view = {
+      inputOf: (itemId) => mapper.inputOf(itemId),
+      runningMcpCalls: (server) => mapper.runningMcpCalls(server),
+    };
     (turn as { abandon: () => void }).abandon = () => {
       turn.abandoned = true;
+      this.requests.cancelSession(sessionId);
       queue.push(mapper.closeQuietly());
       queue.end();
     };
@@ -352,8 +403,11 @@ export class AppServerCodexTransport implements CodexTransport {
           .catch(() => undefined);
       }
       channel.flush();
+      queue.push(early.splice(0));
       yield* queue.drain();
     } finally {
+      // Every request still held gets its one reply; the turn is over.
+      this.requests.dropSession(sessionId);
       request.signal.removeEventListener('abort', onAbort);
       channel.release(sink);
       if (attached) keys?.detach(attached.keyId, attached.bindingId);
@@ -374,12 +428,17 @@ export class AppServerCodexTransport implements CodexTransport {
     const turn = this.openBySession.get(sessionId);
     if (!turn)
       return Promise.resolve({ outcome: 'not-running', reason: 'no-open-turn', runtime: 'codex' });
-    turn.interrupting ??= this.sendInterrupt(turn);
+    // Cancel what the turn is waiting on first, then stop it (spec §10).
+    const cancelled = this.requests.cancelSession(sessionId);
+    turn.interrupting ??= this.sendInterrupt(turn, cancelled > 0);
     return turn.interrupting;
   }
 
-  private async sendInterrupt(turn: OpenTurn): Promise<InterruptReceipt> {
+  private async sendInterrupt(turn: OpenTurn, afterReplies: boolean): Promise<InterruptReceipt> {
     const deadline = Date.now() + this.stopAckMs;
+    // The cancel replies are written once their promises settle (microtasks);
+    // let them go out before the interrupt does.
+    if (afterReplies) await new Promise<void>((resolve) => setImmediate(resolve));
     // The turn id arrives with the `turn/start` answer; a stop before that waits for it.
     while (turn.turnId === undefined && Date.now() < deadline) {
       await Promise.race([turn.completed, sleep(10)]);
@@ -419,6 +478,114 @@ export class AppServerCodexTransport implements CodexTransport {
   getSessionWarmth(sessionId: string): SessionWarmth {
     if (this.openBySession.has(sessionId)) return 'running';
     return this.loader.holdsSession(sessionId) ? 'warm' : 'cold';
+  }
+
+  /**
+   * Deliver a message into the session's open turn (spec §11): `turn/steer`
+   * guarded by the open turn's id, so a steer never lands in a turn other
+   * than the one the person saw running. Ordinary refusals are receipts,
+   * never throws: no open turn (or Codex says the turn ended, moved on, or
+   * cannot be steered) is `no-open-turn`; the process gone is
+   * `stream-closed`; a stage is `unsupported` (`thread/inject_items` is a
+   * follow-up). The steered message's events arrive on the open turn's own
+   * stream.
+   *
+   * @param sessionId - The session.
+   * @param content - The person's words, pristine.
+   * @param opts - Mode, correlation id and context bag.
+   */
+  async deliverIntoTurn(
+    sessionId: string,
+    content: string,
+    opts: DeliverIntoTurnOpts
+  ): Promise<RuntimeDeliveryResult> {
+    if (opts.mode !== 'steer') return { delivered: false, reason: 'unsupported' };
+    const turn = this.openBySession.get(sessionId);
+    if (!turn) return { delivered: false, reason: 'no-open-turn' };
+    // A steer right after a send can beat `turn/start`'s answer: wait (bounded)
+    // for the turn to have an id rather than refuse a turn that is opening.
+    const deadline = Date.now() + this.stopAckMs;
+    while (turn.turnId === undefined && Date.now() < deadline) {
+      if (this.openBySession.get(sessionId) !== turn) break;
+      await Promise.race([turn.completed, sleep(10)]);
+    }
+    const turnId = turn.turnId;
+    if (turnId === undefined || turn.abandoned || turn.sawTerminal) {
+      return { delivered: false, reason: 'no-open-turn' };
+    }
+    try {
+      await turn.process.client.request('turn/steer', {
+        threadId: turn.threadId,
+        expectedTurnId: turnId,
+        input: [
+          {
+            type: 'text',
+            text: buildSteerText(content, opts.additionalContext),
+            text_elements: [],
+          },
+        ],
+        clientUserMessageId: opts.messageId,
+      });
+      return { delivered: true };
+    } catch (err) {
+      if (isCodexRpcError(err, 'no-active-turn', 'turn-mismatch', 'not-steerable')) {
+        return { delivered: false, reason: 'no-open-turn' };
+      }
+      if (err instanceof CodexProcessExitedError) {
+        return { delivered: false, reason: 'stream-closed' };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * A person approved or denied a card Codex is waiting on. `false` when
+   * nothing approvable is pending under that id.
+   *
+   * @param sessionId - The session.
+   * @param interactionId - The card's `toolCallId`.
+   * @param approved - The decision.
+   * @param alwaysAllow - Approve for the rest of the session, where offered.
+   */
+  answerApproval(
+    sessionId: string,
+    interactionId: string,
+    approved: boolean,
+    alwaysAllow?: boolean
+  ): boolean {
+    return this.requests.answerApproval(sessionId, interactionId, approved, alwaysAllow);
+  }
+
+  /**
+   * A person answered a question card.
+   *
+   * @param sessionId - The session.
+   * @param interactionId - The card's `toolCallId`.
+   * @param answers - Canonical answers, keyed by question index.
+   */
+  answerQuestion(
+    sessionId: string,
+    interactionId: string,
+    answers: Record<string, string>
+  ): boolean {
+    return this.requests.answerQuestion(sessionId, interactionId, answers);
+  }
+
+  /**
+   * A person answered an elicitation card.
+   *
+   * @param sessionId - The session.
+   * @param interactionId - The card's `interactionId`.
+   * @param action - Accept, decline or cancel.
+   * @param content - The form's content, on accept.
+   */
+  answerElicitation(
+    sessionId: string,
+    interactionId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, unknown>
+  ): boolean {
+    return this.requests.answerElicitation(sessionId, interactionId, action, content);
   }
 
   /**
@@ -498,6 +665,7 @@ export class AppServerCodexTransport implements CodexTransport {
     const unsubscribe = process.client.subscribeProcess((notification) =>
       this.onProcessNotification(process, notification)
     );
+    process.client.setServerRequestHandler((request) => this.onServerRequest(process, request));
     process.onExit(() => {
       unsubscribe();
       const relay = this.relayKeys.get(process.key);
@@ -513,6 +681,44 @@ export class AppServerCodexTransport implements CodexTransport {
       }
     });
     return process;
+  }
+
+  /**
+   * One server → client request: a card in the open turn it belongs to, or
+   * a refusal. `undefined` declines it with the method's own "no".
+   */
+  private onServerRequest(
+    process: CodexAppServerProcess,
+    request: ServerRequest
+  ): Promise<unknown> | unknown {
+    const params = (request.params ?? {}) as { threadId?: unknown; turnId?: unknown };
+    const turn =
+      typeof params.threadId === 'string' ? this.openByThread.get(params.threadId) : undefined;
+    const wrongTurn =
+      turn !== undefined &&
+      typeof params.turnId === 'string' &&
+      turn.turnId !== undefined &&
+      params.turnId !== turn.turnId;
+    if (!turn || turn.process !== process || wrongTurn) {
+      // Nobody is in a turn to ask: never answered yes on their behalf.
+      logRefusedServerRequest(request.method, 'no DorkOS turn is open on that thread');
+      return undefined;
+    }
+    const mapped = mapServerRequest(request, turn.view);
+    if ('refuse' in mapped) {
+      logRefusedServerRequest(request.method, mapped.why);
+      if (mapped.notice) {
+        turn.deliver([{ type: 'system_status', data: { message: mapped.notice } }]);
+      }
+      return mapped.refuse;
+    }
+    return this.requests.open({
+      sessionId: turn.sessionId,
+      processKey: process.key,
+      jsonRpcId: request.id,
+      mapped,
+      emit: (events) => turn.deliver(events),
+    });
   }
 
   private relayFor(process: CodexAppServerProcess): { baseUrl: string; key: string } {
@@ -594,6 +800,11 @@ export class AppServerCodexTransport implements CodexTransport {
         process,
         threadId,
         (notification) => {
+          if (notification.method === 'serverRequest/resolved') {
+            const params = notification.params as { requestId?: unknown } | undefined;
+            this.requests.resolvedByServer(process.key, params?.requestId);
+            return;
+          }
           if (notification.method === 'thread/closed') {
             // Codex unloaded it after its idle window: forget it, revoke its key.
             this.loader.dropThread(process, threadId);
@@ -643,6 +854,8 @@ export class AppServerCodexTransport implements CodexTransport {
       abandoned: false,
       sawTerminal: false,
       interrupting: undefined,
+      deliver: () => {},
+      view: { inputOf: () => undefined, runningMcpCalls: () => [] },
     };
     this.openByThread.set(threadId, turn);
     this.openBySession.set(sessionId, turn);
@@ -686,8 +899,19 @@ export class AppServerCodexTransport implements CodexTransport {
     this.lingering.delete(threadId);
   }
 
-  /** Stop routing a thread the loader reloaded as a fork. */
+  /**
+   * Stop routing a thread the loader reloaded as a fork. A turn DorkOS gave
+   * up on there is asked to stop once more on the way out: nothing will watch
+   * that thread again, and Codex otherwise runs the turn to its end (on a
+   * credits thread, billed until it does).
+   */
   private retire(process: CodexAppServerProcess, threadId: string): void {
+    const lingering = this.lingering.get(threadId);
+    if (lingering && lingering.process === process && process.isOpen) {
+      void process.client
+        .request('turn/interrupt', { threadId, turnId: lingering.turnId })
+        .catch(() => undefined);
+    }
     this.disposeChannel(process, threadId);
     this.clearLingering(threadId);
   }
@@ -738,7 +962,7 @@ export class AppServerCodexTransport implements CodexTransport {
       ...(request.messageId !== undefined ? { clientUserMessageId: request.messageId } : {}),
       // Sent every turn (they are sticky): a mode or model change between turns lands.
       cwd: request.cwd,
-      approvalPolicy: 'never',
+      approvalPolicy: approvalPolicyFor(request.settings),
       sandboxPolicy: sandboxPolicyFor(request),
       ...(request.settings.model !== undefined ? { model: request.settings.model } : {}),
       ...(effort !== undefined ? { effort } : {}),

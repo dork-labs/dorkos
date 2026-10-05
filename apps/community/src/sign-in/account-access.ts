@@ -6,6 +6,23 @@ export interface AccountAccessKeep {
   password: boolean;
   /** Keep the Google, GitHub and single sign-on links (`recover-password --keep-linked`). */
   links: boolean;
+  /**
+   * The one session to keep: the signed-in session that confirmed the account's email by a
+   * mailed link. Every other session ends. Unset, every session ends.
+   */
+  sessionId?: string;
+}
+
+/** What {@link clearAccountAccess} did. */
+export interface AccountAccessCleared {
+  /** The provider ids of the sign-in rows removed, sorted, `credential` included. */
+  removed: string[];
+  /**
+   * The clearing transaction's id (`pg_current_xact_id()`), as text. The request that cleared
+   * passes it to `markAccessCleared`, so its own new session stands only while this clean-out
+   * is still the account's latest.
+   */
+  xid: string;
 }
 
 /**
@@ -20,7 +37,8 @@ export interface AccountAccessKeep {
  * - every session;
  * - the connection grants, unfinished pairings and agent credentials of every membership;
  * - the host API keys the account issued, and the invitation links it issued that still work;
- * - its sign-ins waiting to be linked by password;
+ * - its sign-ins waiting to be linked by password, and its mailed reset, sign-in and
+ *   confirmation links;
  * - any session a sign-in that began before this transaction commits goes on to make: the
  *   account is stamped with this transaction (`access_cleared_xid`), and the session hooks refuse
  *   and delete such a session.
@@ -31,7 +49,7 @@ export interface AccountAccessKeep {
  * @param memberIds - The account's memberships, locked by the caller.
  * @param hostActor - Who the host audit names: `offline` for the recovery command, `system`
  *   for a sign-in.
- * @returns The provider ids of the sign-in rows removed, sorted, `credential` included.
+ * @returns The provider ids removed, and this transaction's id for `markAccessCleared`.
  */
 export async function clearAccountAccess(
   client: PoolClient,
@@ -39,15 +57,17 @@ export async function clearAccountAccess(
   memberIds: readonly string[],
   keep: AccountAccessKeep,
   hostActor: 'offline' | 'system'
-): Promise<string[]> {
+): Promise<AccountAccessCleared> {
   // Stamped first: a sign-in that began before this transaction commits cannot keep the session
   // it makes, whatever it read (see sign-in/request-start.ts).
   // The callers lock it already; taking it again here is free and keeps this function correct
   // on its own: every insert of a session or account row for this user waits on this lock.
   await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR UPDATE', [userId]);
-  await client.query('UPDATE "user" SET access_cleared_xid=pg_current_xact_id() WHERE id=$1', [
-    userId,
-  ]);
+  const stamped = await client.query<{ xid: string }>(
+    `UPDATE "user" SET access_cleared_xid=pg_current_xact_id() WHERE id=$1
+     RETURNING access_cleared_xid::text AS xid`,
+    [userId]
+  );
   const removed = new Set<string>();
   if (!keep.password || !keep.links) {
     const deleted = await client.query<{ providerId: string }>(
@@ -66,7 +86,10 @@ export async function clearAccountAccess(
        WHERE id=ANY($1::uuid[]) ORDER BY community_id,id`,
       [memberIds, links]
     );
-  await client.query('DELETE FROM session WHERE "userId"=$1', [userId]);
+  await client.query('DELETE FROM session WHERE "userId"=$1 AND ($2::text IS NULL OR id<>$2)', [
+    userId,
+    keep.sessionId ?? null,
+  ]);
   await client.query(
     `UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now())
      WHERE member_id=ANY($1::uuid[])`,
@@ -99,11 +122,15 @@ export async function clearAccountAccess(
        VALUES($1,$2,'api_key.revoke',ARRAY['revoked_at'])`,
       [hostActor, key.id]
     );
-  // Recovery may run from a new image before its server has applied migration 0031.
-  const pending = await client.query<{ present: boolean }>(
-    "SELECT to_regclass('pending_sign_in_links') IS NOT NULL AS present"
+  // Recovery may run from a new image before its server has applied migrations 0031 and 0032.
+  const tables = await client.query<{ pending: boolean; tokens: boolean }>(
+    `SELECT to_regclass('pending_sign_in_links') IS NOT NULL AS pending,
+            to_regclass('email_link_tokens') IS NOT NULL AS tokens`
   );
-  if (pending.rows[0]?.present)
+  if (tables.rows[0]?.pending)
     await client.query('DELETE FROM pending_sign_in_links WHERE user_id=$1', [userId]);
-  return [...removed].sort();
+  // A mailed link minted before now was sent on the old account's say-so; none survives.
+  if (tables.rows[0]?.tokens)
+    await client.query('DELETE FROM email_link_tokens WHERE user_id=$1', [userId]);
+  return { removed: [...removed].sort(), xid: stamped.rows[0]?.xid ?? '' };
 }

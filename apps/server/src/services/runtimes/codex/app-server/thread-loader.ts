@@ -39,6 +39,7 @@ import { withLiteralHeaders } from '../mcp-server-config.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
+import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
 import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
 
@@ -162,14 +163,7 @@ export class CodexThreadLoader {
     const desired = this.fingerprintOf(input);
     const credentials = credentialsOf(input);
 
-    // A thread this session already has loaded here: bound, or started for a
-    // first turn that never got as far as `turn/started`.
-    const existingId =
-      input.boundThreadId !== undefined && records.has(input.boundThreadId)
-        ? input.boundThreadId
-        : [...records.entries()].find(
-            ([, record]) => record.sessionId === input.sessionId && record.unbound
-          )?.[0];
+    const existingId = this.loadedThreadFor(input);
     if (existingId !== undefined) {
       const record = records.get(existingId)!;
       // Only a credential VALUE changed (a managed server's OAuth bearer was
@@ -210,6 +204,26 @@ export class CodexThreadLoader {
   }
 
   /**
+   * The thread this session already has loaded in `input.process`, if any:
+   * its bound thread, or one started for a first turn that never got as far
+   * as `turn/started`. Nothing is loaded or sent.
+   *
+   * @param input - The process, the session and its bound thread.
+   */
+  loadedThreadFor(
+    input: Pick<ThreadLoadInput, 'process' | 'sessionId' | 'boundThreadId'>
+  ): string | undefined {
+    const records = this.byProcess.get(input.process.key);
+    if (!records) return undefined;
+    if (input.boundThreadId !== undefined && records.has(input.boundThreadId)) {
+      return input.boundThreadId;
+    }
+    return [...records.entries()].find(
+      ([, record]) => record.sessionId === input.sessionId && record.unbound
+    )?.[0];
+  }
+
+  /**
    * Reload one loaded thread with the config this turn wants, leaving every
    * other thread in the process alone.
    *
@@ -222,12 +236,30 @@ export class CodexThreadLoader {
    * thread it replaces); the old thread's key is revoked and it is
    * unsubscribed, so Codex unloads it after its idle window.
    *
+   * A thread that never ran a turn has no rollout, and Codex refuses to fork
+   * it ("no rollout found", verified on 0.154). There is no conversation to
+   * carry over, so it is started again instead, exactly as a cold resume does.
+   *
+   * **The restart window.** Until the fork's first `turn/started`, the
+   * database still names the old thread. If DorkOS restarts in that window,
+   * the next turn resumes the old thread cold in a new process, with the
+   * config that turn wants: the fork had no turn of its own, so nothing is
+   * lost. Pinned by "resumes the old thread cold after a restart in the window
+   * before a fork binds" in `app-server-transport.test.ts`.
+   *
    * @param input - The turn's load inputs.
    * @param threadId - The loaded thread to reload.
    */
   async reload(input: ThreadLoadInput, threadId: string): Promise<LoadedThread> {
     const records = this.recordsFor(input.process);
     const old = records.get(threadId);
+    // The DB binding to replace: the old thread if it was bound, else whatever
+    // the old unbound thread itself was going to replace.
+    const replaces = old && old.unbound ? old.replaces : threadId;
+    const retire = () => {
+      this.dropThread(input.process, threadId);
+      void input.process.client.request('thread/unsubscribe', { threadId }).catch(() => undefined);
+    };
     const key = this.mintKey(input);
     let forked: string;
     try {
@@ -236,13 +268,18 @@ export class CodexThreadLoader {
         .thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
-      throw err;
+      if (!isCodexRpcError(err, 'no-rollout')) throw err;
+      retire();
+      const fresh = await this.start(
+        input,
+        records,
+        this.fingerprintOf(input),
+        credentialsOf(input),
+        replaces
+      );
+      return { ...fresh, retired: threadId };
     }
-    // The DB binding to replace: the old thread if it was bound, else whatever
-    // the old unbound thread itself was going to replace.
-    const replaces = old && old.unbound ? old.replaces : threadId;
-    this.dropThread(input.process, threadId);
-    void input.process.client.request('thread/unsubscribe', { threadId }).catch(() => undefined);
+    retire();
     records.set(forked, {
       sessionId: input.sessionId,
       fingerprint: this.fingerprintOf(input),
@@ -517,9 +554,9 @@ function sandboxFor(settings: SessionSettings): SandboxMode {
 }
 
 /**
- * Build one load's params (pure). P1 sends `approvalPolicy: 'never'` with the
- * exec sandbox mapping, so a Codex chat behaves as it does on exec; the
- * reviewer is always the person.
+ * Build one load's params (pure): exec's sandbox mapping, the mode's approval
+ * policy (`approvalPolicyFor`), and the reviewer always the person — never a
+ * model (spec §18).
  *
  * @param input - The load inputs.
  * @param secrets - The thread key, the trust verdict and the cwd's realpath.
@@ -566,7 +603,7 @@ export function buildLoadOverrides(
   return {
     cwd: input.cwd,
     ...(input.settings.model !== undefined ? { model: input.settings.model } : {}),
-    approvalPolicy: 'never',
+    approvalPolicy: approvalPolicyFor(input.settings),
     approvalsReviewer: 'user',
     sandbox: sandboxFor(input.settings),
     config,

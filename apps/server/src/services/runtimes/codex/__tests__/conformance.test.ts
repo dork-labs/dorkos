@@ -56,6 +56,7 @@ import {
   driveTerminalOnce,
   driveQueueDurability,
   driveRoomCanvasTurn,
+  driveDispositionTurn,
 } from '../../../session/__tests__/durable-turn-harness.js';
 
 /** Hoisted so the (also hoisted) vi.mock factories can branch on it. */
@@ -263,6 +264,8 @@ import { CONFORMANCE_CREDITS_TOKEN } from '@dorkos/test-utils';
 import {
   appServerCreditsTurn,
   appServerDirectoryGrantTurns,
+  appServerDispositionTurn,
+  appServerApprovalTurn,
   appServerMediaTurn,
   appServerSystemPromptAppendTurns,
   hangAppServerInterrupt,
@@ -683,6 +686,30 @@ runtimeConformance(
     queueDurability: () => driveQueueDurability(),
     // A thread stays loaded between turns, so a session is warm after one.
     warmSession: (runtime, sessionId) => warmAppServerSession(runtime, sessionId, projectDir),
+    // C1: app-server declares steer (`turn/steer` into the open turn). Mocked,
+    // the fake holds the turn open until it is stopped; live, the real model's
+    // turn has to still be running when the steer lands.
+    dispositionTurn: (runtime, sessionId, content, probes) =>
+      LIVE
+        ? driveDispositionTurn(runtime, sessionId, content, projectDir, probes, {
+            awaitOpen: () =>
+              vi.waitFor(
+                async () =>
+                  expect(
+                    (
+                      await runtime.getSessionSnapshot(
+                        { cwd: projectDir, permissionMode: 'default' },
+                        sessionId
+                      )
+                    ).status.lifecycle
+                  ).toBe('streaming'),
+                { timeout: 60_000 }
+              ),
+            endTurn: async () => {
+              await runtime.interruptQuery(sessionId);
+            },
+          })
+        : appServerDispositionTurn(runtime, sessionId, content, projectDir, probes),
     userLastMessageAtOmittedReason:
       'codex sessions record no author for a message: the in-memory registry cannot tell a person’s message from a relay, task or room one, and the durable codex_threads row has no column for it — on either transport',
     ...(LIVE
@@ -700,6 +727,10 @@ runtimeConformance(
           // other Codex chat in the home).
           hangingInterrupt: (runtime, sessionId) =>
             hangAppServerInterrupt(runtime, sessionId, projectDir),
+          // Approvals (spec §10): a card answered, denied or stopped. Live, a
+          // real model cannot be made to ask on demand, so the case skips by name.
+          approvalTurn: (runtime, sessionId, content, probes) =>
+            appServerApprovalTurn(runtime, sessionId, content, projectDir, probes),
           creditsTurn: (runtime, scenario) =>
             appServerCreditsTurn(runtime, scenario, projectDir, arrangeCredits),
           ...(ATTACHMENT_HOME

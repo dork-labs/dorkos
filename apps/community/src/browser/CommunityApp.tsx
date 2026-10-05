@@ -13,6 +13,8 @@ import { ErasureBanner } from './components/Erasure.js';
 import { ConnectDorkOS } from './connect/ConnectDorkOS.js';
 import { communityLink } from './connect/community-link.js';
 import { TakedownBanner } from './takedowns/TakedownNotices.js';
+import { AccountBannerSlot } from './email-links/AccountBannerSlot.js';
+import { confirmEmailBanner } from './email-links/ConfirmEmailBanner.js';
 import {
   communityBasePath,
   describeError,
@@ -42,6 +44,9 @@ function isCommunityUnavailable(cause: unknown): cause is RequestError {
     ].includes(cause.code)
   );
 }
+
+/** The account banners this app can show, most important first. */
+const ACCOUNT_BANNERS = [confirmEmailBanner];
 
 /** Render the signed-in community shell or the admission path. */
 export function CommunityApp() {
@@ -496,6 +501,8 @@ export function CommunityApp() {
           communityName={community!.name}
           lifecycle={communityLifecycle}
         />
+        {/* Account-level banners, at most one at a time, in order of importance. */}
+        <AccountBannerSlot banners={ACCOUNT_BANNERS} />
         {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (
           <Manage

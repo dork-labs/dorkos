@@ -85,19 +85,10 @@ gates:
   # --- desktop-release.yml ---
   - id: wf.desktop-release.build-macos
     source: .github/workflows/desktop-release.yml
-    purpose: Builds, signs and notarizes the macOS desktop app on a release tag and attaches it to the release.
+    purpose: Builds, signs and notarizes the macOS desktop app on a release tag, checks its signature and Gatekeeper, attaches it, and publishes the draft release.
   - id: wf.desktop-release.build-windows
     source: .github/workflows/desktop-release.yml
-    purpose: Builds the unsigned Windows installer on a release tag and attaches it, without blocking the release.
-  - id: wf.desktop-release.verify-macos
-    source: .github/workflows/desktop-release.yml
-    purpose: Checks the attached macOS artifacts are present and well-formed before the release is published.
-  - id: wf.desktop-release.verify-windows
-    source: .github/workflows/desktop-release.yml
-    purpose: Checks the attached Windows artifacts are present and well-formed, advisory only.
-  - id: wf.desktop-release.publish-release
-    source: .github/workflows/desktop-release.yml
-    purpose: Publishes the draft GitHub release once the macOS build and its verification passed.
+    purpose: Builds the unsigned Windows installer on a release tag, silent-installs it, and attaches it, without blocking the release.
 
   # --- desktop-renderer.yml ---
   - id: wf.desktop-renderer.renderer-defines

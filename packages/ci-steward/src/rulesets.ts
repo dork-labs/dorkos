@@ -172,7 +172,10 @@ export function globalChecks(gh: Gh, files: HandFiles): GlobalChecks {
     bytes: Number(usage.active_caches_size_in_bytes ?? 0),
     count: Number(usage.active_caches_count ?? 0),
   };
-  const rel = gh.rest(`repos/${repo}/releases?per_page=30`) as Obj[];
+  // A hundred, not the default thirty: tracked.desktop-release-wall-clock joins
+  // a backfilled day's tag pushes to these, and thirty releases is about a
+  // month, short of the 90 days a backfill can reach.
+  const rel = gh.rest(`repos/${repo}/releases?per_page=100`) as Obj[];
   const releases = rel
     .filter((r) => typeof r.published_at === 'string' && r.draft !== true)
     .map((r) => ({ tag: String(r.tag_name), published_at: String(r.published_at) }));

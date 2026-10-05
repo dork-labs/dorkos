@@ -16,7 +16,12 @@
  * @module services/runtimes/codex/transport/codex-transport
  */
 import type { InterruptReceipt, SessionSettings, StreamEvent } from '@dorkos/shared/types';
-import type { RuntimeCapabilities, SessionWarmth } from '@dorkos/shared/agent-runtime';
+import type {
+  DeliverIntoTurnOpts,
+  RuntimeCapabilities,
+  RuntimeDeliveryResult,
+  SessionWarmth,
+} from '@dorkos/shared/agent-runtime';
 import type { CreditsLaunch } from '../../../core/cloud/credits-protocols.js';
 import type { DorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../../connector-tools.js';
@@ -96,6 +101,38 @@ export interface CodexTransport {
    * after it aborted the turn's controller.
    */
   interrupt(sessionId: string): Promise<InterruptReceipt>;
+  /**
+   * Answer an approval card Codex is waiting on. `false` when nothing
+   * approvable is pending under that id. Absent on a transport that cannot ask.
+   */
+  answerApproval?(
+    sessionId: string,
+    interactionId: string,
+    approved: boolean,
+    alwaysAllow?: boolean
+  ): boolean;
+  /** Answer a question card (canonical index-keyed answers). */
+  answerQuestion?(
+    sessionId: string,
+    interactionId: string,
+    answers: Record<string, string>
+  ): boolean;
+  /** Answer an elicitation card. */
+  answerElicitation?(
+    sessionId: string,
+    interactionId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, unknown>
+  ): boolean;
+  /**
+   * Deliver a message into the session's open turn without opening one.
+   * Absent on a transport with no mid-turn input.
+   */
+  deliverIntoTurn?(
+    sessionId: string,
+    content: string,
+    opts: DeliverIntoTurnOpts
+  ): Promise<RuntimeDeliveryResult>;
   /** How warm the session's backing process is (persistent transports only). */
   getSessionWarmth?(sessionId: string): SessionWarmth;
   /** Give back the session's warm thread (persistent transports only). */

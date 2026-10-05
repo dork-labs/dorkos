@@ -3581,6 +3581,14 @@
       "linearIssue": "DOR-2719"
     },
     {
+      "id": "261004-221124",
+      "slug": "spaces-email",
+      "title": "Spaces email: forgot-password, email confirmation and sign-in links",
+      "created": "2026-10-04",
+      "status": "specified",
+      "linearIssue": "DOR-2710"
+    },
+    {
       "id": "261005-120219",
       "slug": "keep-awake",
       "title": "Keep the computer awake while agents work, and wake it for scheduled runs",

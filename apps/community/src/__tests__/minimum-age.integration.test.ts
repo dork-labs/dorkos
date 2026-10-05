@@ -298,6 +298,7 @@ describe('no minimum age set', () => {
       github: false,
       oidc: null,
       minimumAge: null,
+      emailLinks: false,
     });
     expect(
       (await call(plainUrl, '/api/v1/age-confirmation', 'POST', { confirmed: true })).status

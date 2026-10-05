@@ -235,3 +235,19 @@ export function buildCodexPrompt(
   blocks.push(content);
   return blocks.join('\n\n');
 }
+
+/**
+ * The text a steer carries into an open turn (spec `codex-app-server-transport`
+ * §11): the context bag rendered out of band exactly as {@link buildCodexPrompt}
+ * renders it, and the person's words last and untouched. Nothing the turn
+ * already carries (the `<gen_ui>` block, the agent context) is sent again.
+ *
+ * @param content - The person's message, passed through pristine
+ * @param additionalContext - The neutral context bag for this delivery
+ */
+export function buildSteerText(
+  content: string,
+  additionalContext?: readonly AdditionalContextEntry[]
+): string {
+  return [...(additionalContext ?? []).map(renderContextEntry), content].join('\n\n');
+}

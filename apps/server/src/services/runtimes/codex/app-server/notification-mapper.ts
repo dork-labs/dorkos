@@ -150,6 +150,13 @@ export interface TurnMapperOptions {
 /** Maps one turn's notifications. */
 export class AppServerTurnMapper {
   private readonly startedTools = new Set<string>();
+  /** The input each tool start carried, for an approval card about it. */
+  private readonly toolInputs = new Map<string, string>();
+  /** MCP tool calls still running, by item id. */
+  private readonly runningMcp = new Map<
+    string,
+    { server: string; tool: string; arguments: unknown }
+  >();
   /** Command items still running, with their process id when they have one. */
   private readonly runningCommands = new Map<
     string,
@@ -500,7 +507,15 @@ export class AppServerTurnMapper {
     const id = String(item.id);
     const toolName = `mcp__${String(item.server)}__${String(item.tool)}`;
     const events = this.toolStart(id, toolName, JSON.stringify(item.arguments ?? {}));
-    if (phase === 'started') return events;
+    if (phase === 'started') {
+      this.runningMcp.set(id, {
+        server: String(item.server),
+        tool: String(item.tool),
+        arguments: item.arguments ?? {},
+      });
+      return events;
+    }
+    this.runningMcp.delete(id);
     const status = item.status === 'completed' ? 'complete' : 'error';
     events.push({ type: 'tool_call_end', data: { toolCallId: id, toolName, status } });
     const result = item.result as { content?: unknown } | null | undefined;
@@ -561,9 +576,30 @@ export class AppServerTurnMapper {
     }
   }
 
+  /**
+   * The input a tool start in this turn carried, for a card about that tool.
+   *
+   * @param toolCallId - The item id.
+   */
+  inputOf(toolCallId: string): string | undefined {
+    return this.toolInputs.get(toolCallId);
+  }
+
+  /**
+   * The MCP tool calls of one server still running in this turn.
+   *
+   * @param server - The MCP server's name.
+   */
+  runningMcpCalls(server: string): Array<{ id: string; tool: string; arguments: unknown }> {
+    return [...this.runningMcp.entries()]
+      .filter(([, call]) => call.server === server)
+      .map(([id, call]) => ({ id, tool: call.tool, arguments: call.arguments }));
+  }
+
   private toolStart(toolCallId: string, toolName: string, input: string): StreamEvent[] {
     if (this.startedTools.has(toolCallId)) return [];
     this.startedTools.add(toolCallId);
+    this.toolInputs.set(toolCallId, input);
     return [{ type: 'tool_call_start', data: { toolCallId, toolName, input, status: 'running' } }];
   }
 }

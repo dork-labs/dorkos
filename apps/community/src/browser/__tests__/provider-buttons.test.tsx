@@ -11,6 +11,7 @@ const ALL: CommunityWireAuthOptions = {
   github: true,
   oidc: { label: 'DorkOS', mark: 'dorkos' },
   minimumAge: null,
+  emailLinks: false,
 };
 
 /** The mark drawn inside the named button. */
@@ -67,7 +68,13 @@ describe('the provider sign-in buttons', () => {
     // Purpose: fails if an empty stack leaves a gap or a stray button.
     const { container } = render(
       <ProviderButtons
-        providers={{ google: false, github: false, oidc: null, minimumAge: null }}
+        providers={{
+          google: false,
+          github: false,
+          oidc: null,
+          minimumAge: null,
+          emailLinks: false,
+        }}
         disabled={false}
         onChoose={() => {}}
       />

@@ -14,7 +14,10 @@
  * - the `dorkos` MCP server receives the thread key, and the listener's
  *   resolution of that key works only while the turn is open;
  * - no secret is in the child's argv or environment;
- * - the throwaway home's trust list is not written by a writable-mode turn.
+ * - the throwaway home's trust list is not written by a writable-mode turn;
+ * - a command Codex must ask about raises a card; approved, it runs; denied,
+ *   it does not (spec §10);
+ * - a steer mid-turn reaches the open turn, and no new turn starts (§11).
  *
  * Skipped by name where no vendored binary is installed for this platform.
  */
@@ -52,6 +55,12 @@ let project: string;
 let server: http.Server;
 let base: string;
 let stallNext = false;
+/** Scripted provider answers, consumed in order before the default "pong". */
+const scripted: Array<(res: http.ServerResponse, body: string) => void> = [];
+/** Tool calls the third-party MCP server ran, by name. */
+const mcpCalls: string[] = [];
+/** `turn/started` notifications every spawned process sent, counted off its stdout. */
+let turnStartedSeen = 0;
 const seen: Seen = { responses: 0, mcpAuthorizations: [], resolvedDuringTurn: [] };
 const pools: CodexAppServerPool[] = [];
 const spawned: Array<{ args: readonly string[]; env: Record<string, string> }> = [];
@@ -133,7 +142,48 @@ async function resolveAll(): Promise<void> {
   }
 }
 
+/** One streamed Responses answer that calls `exec_command`. */
+function sseCall(
+  args: Record<string, unknown>,
+  tool: { name: string; namespace?: string } = { name: 'exec_command' }
+): string {
+  const call = {
+    type: 'function_call',
+    id: 'fc_1',
+    call_id: `call_${Math.random().toString(36).slice(2, 8)}`,
+    name: tool.name,
+    ...(tool.namespace ? { namespace: tool.namespace } : {}),
+    arguments: JSON.stringify(args),
+  };
+  return [
+    { type: 'response.created', response: { id: 'resp_call' } },
+    { type: 'response.output_item.added', output_index: 0, item: { ...call, arguments: '' } },
+    { type: 'response.output_item.done', output_index: 0, item: call },
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_call',
+        usage: {
+          input_tokens: 10,
+          input_tokens_details: { cached_tokens: 0 },
+          output_tokens: 2,
+          output_tokens_details: { reasoning_tokens: 0 },
+          total_tokens: 12,
+        },
+      },
+    },
+  ]
+    .map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+    .join('');
+}
+
 function handle(req: http.IncomingMessage, res: http.ServerResponse, body: string): void {
+  if (req.url?.startsWith('/v1/responses') && scripted.length > 0) {
+    seen.responses += 1;
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    scripted.shift()!(res, body);
+    return;
+  }
   if (req.url?.startsWith('/v1/responses')) {
     seen.responses += 1;
     // The turn is open while Codex waits on this answer: resolve the key now.
@@ -146,6 +196,45 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
       }
       res.end(sse('pong'));
     });
+    return;
+  }
+  if (req.url?.startsWith('/repo-mcp')) {
+    // A third-party MCP server: one tool that changes things, one its server
+    // marks read-only.
+    const message = JSON.parse(body || '{}') as { id?: number; method?: string; params?: unknown };
+    if (message.id === undefined) {
+      res.writeHead(202).end();
+      return;
+    }
+    const result =
+      message.method === 'initialize'
+        ? {
+            protocolVersion: '2025-06-18',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'repo', version: '0' },
+          }
+        : message.method === 'tools/list'
+          ? {
+              tools: [
+                {
+                  name: 'delete_repo',
+                  description: 'Delete a repository',
+                  inputSchema: { type: 'object', properties: { name: { type: 'string' } } },
+                },
+                {
+                  name: 'read_file',
+                  description: 'Read a file',
+                  inputSchema: { type: 'object', properties: { name: { type: 'string' } } },
+                  annotations: { readOnlyHint: true },
+                },
+              ],
+            }
+          : message.method === 'tools/call'
+            ? (mcpCalls.push((message.params as { name: string }).name),
+              { content: [{ type: 'text', text: 'ok' }] })
+            : {};
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
     return;
   }
   if (req.url?.startsWith('/mcp')) {
@@ -180,7 +269,15 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
 function makeTransport(): AppServerCodexTransport {
   const spawn: SpawnAppServer = (binary, args, options) => {
     spawned.push({ args, env: options.env });
-    return nodeSpawn(binary, [...args], { env: options.env, cwd: options.cwd, stdio: 'pipe' });
+    const child = nodeSpawn(binary, [...args], {
+      env: options.env,
+      cwd: options.cwd,
+      stdio: 'pipe',
+    });
+    child.stdout.on('data', (chunk: Buffer) => {
+      turnStartedSeen += chunk.toString().split('"method":"turn/started"').length - 1;
+    });
+    return child;
   };
   const pool = new CodexAppServerPool({ spawn });
   pools.push(pool);
@@ -272,9 +369,19 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
 
   afterAll(async () => {
     await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
+    server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-  });
+    // Codex may still be finishing a background write into the throwaway home
+    // (its plugin cache) as it exits; a leftover temp dir is not a failure.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  }, 60_000);
 
   it('streams a turn, binds the thread key to it only while it is open, and leaks nothing', async () => {
     const transport = makeTransport();
@@ -415,5 +522,181 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     });
     await reader;
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  describe('Ask first and MCP tools (spec §10)', () => {
+    const repoTools = () => ({
+      agentTokenEnv: {},
+      managed: { servers: { repo: { url: `${base}/repo-mcp` } }, env: {} },
+      dorkosTools: null,
+      connectorTools: null,
+    });
+    const callTool = (name: string) =>
+      scripted.push(
+        (res) => res.end(sseCall({ name: 'prod' }, { name, namespace: 'mcp__repo' })),
+        (res) => res.end(sse('done'))
+      );
+
+    it('stops before an MCP tool that can change things, on that call’s own card', async () => {
+      mcpCalls.length = 0;
+      callTool('delete_repo');
+      const transport = makeTransport();
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(
+        request('mcp-ask', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+          tools: repoTools(),
+        })
+      )) {
+        events.push(event);
+        if (event.type === 'approval_required') {
+          const card = event.data as { toolCallId: string; toolName: string; input: string };
+          expect(card.toolName).toBe('mcp__repo__delete_repo');
+          expect(JSON.parse(card.input)).toEqual({ name: 'prod' });
+          const start = events.find(
+            (e) =>
+              e.type === 'tool_call_start' &&
+              (e.data as { toolCallId: string }).toolCallId === card.toolCallId
+          );
+          expect(start, 'the card is the running call’s own').toBeDefined();
+          expect(mcpCalls, 'nothing runs before a person answers').toEqual([]);
+          expect(transport.answerApproval('mcp-ask', card.toolCallId, true)).toBe(true);
+        }
+      }
+      expect(
+        events.some((e) => e.type === 'approval_required'),
+        JSON.stringify(events)
+      ).toBe(true);
+      expect(mcpCalls).toEqual(['delete_repo']);
+    });
+
+    it('runs an MCP tool its own server marks read-only without asking', async () => {
+      mcpCalls.length = 0;
+      callTool('read_file');
+      const transport = makeTransport();
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(
+        request('mcp-read', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+          tools: repoTools(),
+        })
+      ))
+        events.push(event);
+      expect(events.some((e) => e.type === 'approval_required')).toBe(false);
+      expect(mcpCalls).toEqual(['read_file']);
+    });
+  });
+
+  describe('approvals and steer (spec §10, §11)', () => {
+    const made = () => path.join(project, 'approved.txt');
+    const askToWrite = () => {
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: 'echo approved > approved.txt',
+              sandbox_permissions: 'require_escalated',
+              justification: 'Create approved.txt?',
+              login: false,
+            })
+          ),
+        (res) => res.end(sse('done'))
+      );
+    };
+
+    it('raises a card for a command that needs approval, and runs it once approved', async () => {
+      fs.rmSync(made(), { force: true });
+      askToWrite();
+      const transport = makeTransport();
+      const gen = transport.runTurn(
+        request('approve-1', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+        })
+      );
+      const events: StreamEvent[] = [];
+      let answered = false;
+      for await (const event of gen) {
+        events.push(event);
+        if (event.type === 'approval_required' && !answered) {
+          answered = true;
+          const card = event.data as { toolCallId: string; toolName: string; input: string };
+          expect(card.toolName).toBe('Shell');
+          expect(card.input).toContain('approved.txt');
+          expect(fs.existsSync(made()), 'nothing runs before a person answers').toBe(false);
+          expect(transport.answerApproval('approve-1', card.toolCallId, true)).toBe(true);
+        }
+      }
+      expect(answered, JSON.stringify(events)).toBe(true);
+      expect(fs.readFileSync(made(), 'utf8').trim()).toBe('approved');
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    });
+
+    it('declines the command when a person denies it, and it never runs', async () => {
+      fs.rmSync(made(), { force: true });
+      askToWrite();
+      const transport = makeTransport();
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(
+        request('deny-1', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+        })
+      )) {
+        events.push(event);
+        if (event.type === 'approval_required') {
+          const id = (event.data as { toolCallId: string }).toolCallId;
+          expect(transport.answerApproval('deny-1', id, false)).toBe(true);
+        }
+      }
+      expect(
+        events.some((e) => e.type === 'approval_required'),
+        JSON.stringify(events)
+      ).toBe(true);
+      expect(fs.existsSync(made())).toBe(false);
+      const ends = events.filter((e) => e.type === 'tool_call_end');
+      expect(ends.at(-1)).toMatchObject({ data: { status: 'error' } });
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    });
+
+    it('steers a running turn: the words reach that turn, and no new turn starts', async () => {
+      let secondBody = '';
+      scripted.push(
+        // A long first answer: half now, the rest a while later.
+        (res) => {
+          const whole = sse('first');
+          const cut = whole.indexOf('event: response.output_item.done');
+          res.write(whole.slice(0, cut));
+          setTimeout(() => res.end(whole.slice(cut)), 1_500);
+        },
+        (res, body) => {
+          secondBody = body;
+          res.end(sse('after steer'));
+        }
+      );
+      const transport = makeTransport();
+      const startedBefore = turnStartedSeen;
+      const gen = transport.runTurn(request('steer-1', undefined));
+      const events: StreamEvent[] = [];
+      for (;;) {
+        const next = await gen.next();
+        if (next.done) break;
+        events.push(next.value);
+        if (next.value.type === 'text_delta') break;
+      }
+      await expect(
+        transport.deliverIntoTurn('steer-1', 'STEERED-WORDS', {
+          mode: 'steer',
+          messageId: 'steer-msg-1',
+        })
+      ).resolves.toEqual({ delivered: true });
+      for await (const event of gen) events.push(event);
+      const text = events
+        .filter((e) => e.type === 'text_delta')
+        .map((e) => (e.data as { text: string }).text)
+        .join('');
+      expect(text).toContain('after steer');
+      expect(secondBody).toContain('STEERED-WORDS');
+      expect(turnStartedSeen - startedBefore, 'one turn, steered').toBe(1);
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    });
   });
 });

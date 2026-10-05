@@ -25,7 +25,8 @@ const MESSAGES_PER_TICK = 20;
 /** A message the worker has claimed for one send attempt. */
 export interface ClaimedNotice {
   id: string;
-  communityId: string;
+  /** The community it belongs to; `null` for an account-level notice (a mailed link). */
+  communityId: string | null;
   kind: NoticeKind;
   subjectId: string;
   recipientUserId: string;
@@ -101,7 +102,7 @@ export type NoticeAttempt = {
 async function claimNotice(pool: Pool, now: Date): Promise<ClaimedNotice | null> {
   const claimed = await pool.query<{
     id: string;
-    community_id: string;
+    community_id: string | null;
     kind: NoticeKind;
     subject_id: string;
     recipient_user_id: string;
@@ -254,13 +255,26 @@ export async function deliverNextNotice(options: MailWorkerOptions): Promise<Not
  * attempts, because each claim takes a lease and skips locked and leased rows.
  */
 export function startMailWorker(
-  options: MailWorkerOptions & { pollMs?: number }
+  options: MailWorkerOptions & {
+    pollMs?: number;
+    /**
+     * Runs before each tick's sends, such as the resolver that turns mailed-link requests into
+     * queued notices. A failure there is logged and the tick still sends.
+     */
+    beforeEachTick?: () => Promise<unknown>;
+  }
 ): ReturnType<typeof setInterval> {
   let sending = false;
   const timer = setInterval(() => {
     if (sending) return;
     sending = true;
     void (async () => {
+      await options.beforeEachTick?.().catch((error: unknown) => {
+        console.error(
+          'Community mail requests unavailable',
+          error instanceof Error ? error.name : 'unknown'
+        );
+      });
       for (let sent = 0; sent < MESSAGES_PER_TICK; sent++) {
         const attempt = await deliverNextNotice(options);
         if (!attempt) return;
@@ -295,6 +309,8 @@ export function startMailDelivery(options: {
   composers: NoticeComposers;
   log?: (line: string) => void;
   pollMs?: number;
+  /** Runs before each tick's sends; only ever with mail on. */
+  beforeEachTick?: () => Promise<unknown>;
 }): ReturnType<typeof setInterval> | null {
   const log = options.log ?? ((line: string) => console.info(line));
   const mail = options.config.mail;
@@ -308,5 +324,6 @@ export function startMailDelivery(options: {
     transport: createSmtpTransport(mail),
     composers: options.composers,
     pollMs: options.pollMs,
+    beforeEachTick: options.beforeEachTick,
   });
 }

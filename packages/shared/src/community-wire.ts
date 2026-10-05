@@ -99,6 +99,25 @@ export const COMMUNITY_API_V1_ROUTES = {
   accountFormerMemberships: '/api/v1/account/former-memberships',
   accountErasures: '/api/v1/account/erasures',
   accountErasureCancel: '/api/v1/account/erasures/:id/cancel',
+  accountSignInMethods: '/api/v1/account/sign-in-methods',
+  passwordReset: '/api/v1/account/password-reset',
+  signInLinkEmail: '/api/v1/sign-in-link/email',
+  emailConfirmation: '/api/v1/account/email-confirmation',
+  emailConfirmationConfirm: '/api/v1/account/email-confirmation/confirm',
+  emailLinkPeek: '/api/v1/email-links/peek',
+} as const;
+
+/** The Better Auth paths that use a mailed reset or sign-in link (POST only). */
+export const COMMUNITY_EMAIL_LINK_AUTH_ROUTES = {
+  resetPassword: '/api/auth/email-link/reset-password',
+  signIn: '/api/auth/email-link/sign-in',
+} as const;
+
+/** The browser pages a mailed link opens; each carries its token after `#`, never in the path. */
+export const COMMUNITY_EMAIL_LINK_PAGES = {
+  password_reset: '/reset-password',
+  sign_in: '/email-sign-in',
+  email_confirmation: '/confirm-email',
 } as const;
 
 /** Public immutable identity and display metadata for one deployment. */
@@ -397,6 +416,11 @@ export const CommunityWireAuthOptionsSchema = z.strictObject({
     .min(COMMUNITY_MINIMUM_AGE_FLOOR)
     .max(COMMUNITY_MINIMUM_AGE_CEILING)
     .nullable(),
+  /**
+   * Whether this space mails reset, sign-in and confirmation links: on exactly when the host set
+   * up mail. A Community from before these links reads as `false`, which is what it does.
+   */
+  emailLinks: z.boolean().default(false),
 });
 /** Public sign-in options: which buttons the sign-in page shows beside email and password. */
 export type CommunityWireAuthOptions = z.infer<typeof CommunityWireAuthOptionsSchema>;
@@ -455,6 +479,8 @@ export type CommunityWireHostLinks = z.infer<typeof CommunityWireHostLinksSchema
 export const CommunityWireAccountSignInMethodsSchema = z.strictObject({
   password: z.boolean(),
   oidc: z.boolean(),
+  /** Whether the account's email was ever confirmed (a mailed link, or a trusted sign-in). */
+  emailConfirmed: z.boolean(),
 });
 /** How the signed-in account can sign in. */
 export type CommunityWireAccountSignInMethods = z.infer<
@@ -488,6 +514,91 @@ export const CommunityWireSignInLinkNoticeSchema = z.strictObject({
 });
 /** What the sign-in page should say about linking. */
 export type CommunityWireSignInLinkNotice = z.infer<typeof CommunityWireSignInLinkNoticeSchema>;
+
+/** What a mailed link does: reset a password, sign in, or confirm an email. */
+export const CommunityWireEmailLinkKindSchema = z.enum([
+  'password_reset',
+  'sign_in',
+  'email_confirmation',
+]);
+/** What a mailed link does. */
+export type CommunityWireEmailLinkKind = z.infer<typeof CommunityWireEmailLinkKindSchema>;
+/** A mailed link's token: 32 random bytes in base64url, read from the page's `#` fragment. */
+export const CommunityWireEmailLinkTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
+/**
+ * A new password set through a mailed link: the same rule as sign-up and offline recovery, and
+ * no line break or NUL, which some password managers paste by mistake.
+ */
+export const CommunityWireNewPasswordSchema = z
+  .string()
+  .min(COMMUNITY_PASSWORD_MIN_LENGTH)
+  .max(128)
+  .refine((value) => !/[\r\n\0]/u.test(value), 'Use a password with no line breaks.');
+/** Ask for a password reset link (`POST /api/v1/account/password-reset`). */
+export const CommunityWirePasswordResetRequestSchema = z.strictObject({
+  email: z.string().trim().toLowerCase().max(320).pipe(z.email()),
+});
+/**
+ * The one answer every mailed-link request gets once it is recorded. For a reset it is the same
+ * whether or not the address has an account, and whatever happens to the request after.
+ */
+export const CommunityWireEmailLinkAcceptedSchema = z.strictObject({
+  accepted: z.literal(true),
+});
+/** A mailed link's token, for the page to look at it or use it. */
+export const CommunityWireEmailLinkTokenRequestSchema = z.strictObject({
+  token: CommunityWireEmailLinkTokenSchema,
+});
+/**
+ * What a mailed link is, read before using it (`POST /api/v1/email-links/peek`); nothing is used
+ * up. `email` is the address it was sent to, so the page can say whose account it is. `clears`
+ * lists what using it ends, by key (an open list: a client shows a key it does not know by its
+ * own fallback). `needsPassword` means confirming asks for a new password. `signedInAs` is the
+ * account this browser is signed in as now, if any; `method` is how, when known.
+ */
+export const CommunityWireEmailLinkPeekSchema = z.strictObject({
+  kind: CommunityWireEmailLinkKindSchema,
+  email: z.string().min(1).max(320),
+  expiresAt: timestamp,
+  clears: z.array(z.string().min(1).max(64)).max(32),
+  needsPassword: z.boolean(),
+  signedInAs: z
+    .strictObject({ email: z.string().min(1).max(320), method: z.string().max(64).nullable() })
+    .nullable(),
+});
+/** What a mailed link is, before it is used. */
+export type CommunityWireEmailLinkPeek = z.infer<typeof CommunityWireEmailLinkPeekSchema>;
+/** Use a reset link (`POST /api/auth/email-link/reset-password`). */
+export const CommunityWirePasswordResetUseRequestSchema = z.strictObject({
+  token: CommunityWireEmailLinkTokenSchema,
+  newPassword: CommunityWireNewPasswordSchema,
+});
+/**
+ * The password is reset and this browser is signed in. `access`: sessions, connections, agent
+ * keys, pairings, invitation links and server API keys ended, provider sign-ins kept.
+ * `everything`: those and the provider sign-ins, on an account whose email was never confirmed.
+ */
+export const CommunityWirePasswordResetUseResponseSchema = z.strictObject({
+  cleared: z.enum(['access', 'everything']),
+});
+/**
+ * Signed in by a mailed link (`POST /api/auth/email-link/sign-in`). `cleared` means the old
+ * password and other sign-ins were removed first; `linked` names the held sign-in now linked.
+ */
+export const CommunityWireEmailSignInResponseSchema = z.strictObject({
+  cleared: z.boolean(),
+  linked: z.string().min(1).max(40).nullable(),
+});
+/** Confirm the signed-in account's email (`POST /api/v1/account/email-confirmation/confirm`). */
+export const CommunityWireEmailConfirmRequestSchema = z.strictObject({
+  token: CommunityWireEmailLinkTokenSchema,
+  newPassword: CommunityWireNewPasswordSchema.optional(),
+});
+/** Confirmed. `others`: every other device was signed out and derived access ended. */
+export const CommunityWireEmailConfirmResponseSchema = z.strictObject({
+  confirmed: z.literal(true),
+  cleared: z.enum(['none', 'others']),
+});
 
 /** Public channel projection. `joined` is for the current caller only. */
 export const CommunityWireChannelSchema = z.strictObject({
@@ -1538,7 +1649,10 @@ export const CommunityWireErrorCodeSchema = z.enum([
    * `404 NOT_FOUND` like any unknown id. Added later; older readers see an unknown code.
    */
   'COMMUNITY_DELETED',
-  /** The host has no mail configured, so it cannot give an owner notice. */
+  /**
+   * The host has no mail configured, so it cannot give an owner notice or mail a reset, sign-in
+   * or confirmation link.
+   */
   'NOTICE_DELIVERY_UNAVAILABLE',
   /** The community already has an open owner replacement. */
   'OWNER_REPLACEMENT_OPEN',
@@ -1560,9 +1674,10 @@ export const CommunityWireErrorCodeSchema = z.enum([
    */
   'ACCOUNT_OWNS_COMMUNITY',
   /**
-   * `410`: a sign-in waiting to be linked by password is gone: it expired, was used, was
-   * cancelled, or the account's password changed meanwhile. The person signs in again. Added
-   * later; older readers see an unknown code.
+   * `410`: a sign-in waiting to be linked by password is gone (it expired, was used, was
+   * cancelled, or the account's password changed meanwhile), or a mailed link can no longer be
+   * used (expired, used, replaced by a newer one, or opened in another browser). Added later;
+   * older readers see an unknown code.
    */
   'LINK_EXPIRED',
   /**
@@ -1570,6 +1685,12 @@ export const CommunityWireErrorCodeSchema = z.enum([
    * readers see an unknown code.
    */
   'ALREADY_LINKED',
+  /**
+   * `403`: the account may not sign in right now (its erasure is running, or the host closed
+   * it). A mailed link that meets this stays usable. Added later; older readers see an unknown
+   * code.
+   */
+  'SIGN_IN_REFUSED',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

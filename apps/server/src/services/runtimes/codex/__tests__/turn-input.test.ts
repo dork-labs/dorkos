@@ -8,7 +8,12 @@
 import { describe, it, expect } from 'vitest';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/types';
-import { grantedWritableDirectories, projectThreadOptions as fromWritable } from '../turn-input.js';
+import {
+  buildCodexPrompt,
+  buildSteerText,
+  grantedWritableDirectories,
+  projectThreadOptions as fromWritable,
+} from '../turn-input.js';
 
 /** Validate then project, the way the runtime and exec transport do together. */
 function projectThreadOptions(settings: SessionSettings, cwd?: string, grants?: DirectoryGrant[]) {
@@ -44,5 +49,26 @@ describe('projectThreadOptions and folder grants', () => {
     expect(() =>
       projectThreadOptions({}, undefined, [{ path: '/rooms/r1/repo', access: 'read' }])
     ).toThrow(/working directory/);
+  });
+});
+
+describe('buildSteerText (spec §11)', () => {
+  const note = {
+    kind: 'queue_note',
+    scope: 'per-turn',
+    data: { composedDuringPrevTurn: true },
+  } as const;
+
+  it('renders the context bag as a turn does, then the person’s words last and untouched', () => {
+    const text = buildSteerText('use tabs, not spaces', [note]);
+    const turn = buildCodexPrompt('use tabs, not spaces', { additionalContext: [note] });
+    expect(text.endsWith('\n\nuse tabs, not spaces')).toBe(true);
+    // The same block a turn would carry, and none of the turn's own preamble.
+    expect(turn.endsWith(text)).toBe(true);
+    expect(text.length).toBeLessThan(turn.length);
+  });
+
+  it('is just the words when there is no context', () => {
+    expect(buildSteerText('stop and summarise')).toBe('stop and summarise');
   });
 });

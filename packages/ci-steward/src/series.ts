@@ -7,6 +7,7 @@ import type { Run } from './collect.ts';
 import {
   CANARY_EVENTS,
   type CanaryRun,
+  type DesktopReleaseRun,
   type MainCommit,
   type QueueBuild,
   type Snapshot,
@@ -133,6 +134,36 @@ export function queueBuilds(
     });
   }
   return out.sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+/** The workflow whose tag-push runs `tracked.desktop-release-wall-clock` times. */
+export const DESKTOP_RELEASE_WORKFLOW = '.github/workflows/desktop-release.yml';
+
+/**
+ * The day's Desktop Release runs, each joined to the published GitHub Release
+ * its ref names (`tracked.desktop-release-wall-clock`).
+ *
+ * Every run of the workflow is kept, dispatches included; which ones count is
+ * the reader's rule (`desktopReleaseWallClock` in verdicts.ts), so the raw
+ * runs on disk stay enough to change that rule without re-collecting.
+ *
+ * @param runs - The day's runs.
+ * @param releases - The published (non-draft) releases read this run.
+ */
+export function desktopReleaseRuns(
+  runs: readonly Run[],
+  releases: readonly { tag: string; published_at: string }[]
+): DesktopReleaseRun[] {
+  const published = new Map(releases.map((r) => [r.tag, r.published_at]));
+  return runs
+    .filter((r) => r.path === DESKTOP_RELEASE_WORKFLOW && r.head_branch !== null)
+    .map((r) => ({
+      ref: r.head_branch!,
+      event: r.event,
+      started: r.created_at,
+      published_at: published.get(r.head_branch!) ?? null,
+    }))
+    .sort((a, b) => a.started.localeCompare(b.started) || a.ref.localeCompare(b.ref));
 }
 
 /**

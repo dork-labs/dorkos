@@ -46,6 +46,7 @@ import { failingGatesFor, priorQueueBuilds, repeatEjections } from './ejection-f
 import { refreshOlderDays } from './refresh.ts';
 import {
   canaryRuns,
+  desktopReleaseRuns,
   FAILED,
   mainCommits,
   prFeedback,
@@ -430,6 +431,18 @@ function collectDay(
   snap.main = mainCommits(runs, config.default_branch);
   snap.canary = canaryRuns(runs, config.default_branch, config.canary.workflows);
   reviews(runs, config.collect.review_workflow, snap);
+  snap.desktop_release_runs = desktopReleaseRuns(runs, global.releases);
+  // A tag pushed late in the day may not have its release out by the time the
+  // day is collected. Not a failure: the reader also looks the tag up in the
+  // releases the next day's snapshot records. Said out loud so it is not a gap
+  // nobody can see.
+  const unpublished = snap.desktop_release_runs.filter(
+    (r) => r.event === 'push' && r.published_at === null
+  );
+  if (unpublished.length)
+    warnings.push(
+      `Desktop Release: no published release yet for ${[...new Set(unpublished.map((r) => r.ref))].join(', ')} when collected; tracked.desktop-release-wall-clock reads it from the day it is published, or leaves it out as a draft or a release over 24 hours late.`
+    );
 
   // PRs merged this day.
   let prs: PrFacts[] = [];

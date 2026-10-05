@@ -17,9 +17,6 @@ gates:
   - wf.claude.claude
   - wf.desktop-release.build-macos
   - wf.desktop-release.build-windows
-  - wf.desktop-release.verify-macos
-  - wf.desktop-release.verify-windows
-  - wf.desktop-release.publish-release
   - wf.update-homebrew.update-formula
   - wf.db-check.db-check
   - claude.PreToolUse.merge-guard
@@ -107,3 +104,5 @@ no file shows them):**
 
 Revert the steps if the census proves slower than a few seconds or reds PRs on correct trees;
 revert the merge guard if it refuses `gh pr merge --auto`.
+
+Later edit (DOR-2728, 2026-10-05): `wf.desktop-release.verify-macos`, `verify-windows` and `publish-release` were dropped from `gates:` above because those jobs became steps of `build-macos` and `build-windows`; the timeouts this entry set for them retired with them. `ci/ledger/*-desktop-release-one-runner-per-platform.md` records that change.
