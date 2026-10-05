@@ -1,6 +1,7 @@
-import { Button } from '@dork-labs/ui';
+import type { CommunityWireSignInMark } from '@dorkos/shared/community-wire';
 import type { ReactNode, Ref } from 'react';
 import { MinimumAgeConfirmation } from './MinimumAgeConfirmation.js';
+import { ProviderButton } from './ProviderButton.js';
 
 /**
  * A page's sign-in, led by the host's single sign-on where the page was opened with the single
@@ -21,8 +22,11 @@ export function SingleSignOnFirst({
   children,
   ref,
 }: {
-  /** The host's single sign-on and its name, `loading`, or `null` to show the other ways alone. */
-  lead: { label: string } | 'loading' | null;
+  /**
+   * The host's single sign-on, its name and mark, `loading`, or `null` to show the other ways
+   * alone.
+   */
+  lead: { label: string; mark: CommunityWireSignInMark | null } | 'loading' | null;
   disabled: boolean;
   /** Start the single sign-on. */
   onContinue: () => void;
@@ -57,17 +61,15 @@ export function SingleSignOnFirst({
             onChange={onAgeConfirmed}
           />
         )}
-        <Button
+        <ProviderButton
           ref={ref}
-          variant="default"
-          className="w-full"
-          type="button"
+          provider="oidc"
+          label={lead.label}
+          mark={lead.mark}
           // A new account must confirm the host's minimum age first, as on every sign-up.
           disabled={disabled || (minimumAge !== null && !ageConfirmed)}
           onClick={onContinue}
-        >
-          Continue with {lead.label}
-        </Button>
+        />
       </div>
       <details className="mt-4">
         <summary className="small muted cursor-pointer">Other ways to sign in</summary>

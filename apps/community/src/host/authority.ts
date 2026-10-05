@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { z } from 'zod';
 import type { CommunityAdminHostApiKeyScopeSchema } from '@dorkos/shared/community-admin-wire';
 import type { CommunityAuth } from '../auth.js';
-import { requireSessionUser } from '../data.js';
+import { refuseIfClearedSinceStart, requireSessionUser } from '../data.js';
 import { ApiError } from '../http.js';
 import { HOST_API_KEY_PATTERN, bearerCredential, hashSecret } from '../security.js';
 
@@ -89,7 +89,9 @@ export async function recordHostAudit(
  * Recheck host authority inside a write transaction, after the rows it will change are locked.
  *
  * A key row is re-read `FOR SHARE` with the same live predicate as authentication, so a
- * revocation or expiry that commits before this point always wins over a waiting request.
+ * revocation or expiry that commits before this point always wins over a waiting request. A
+ * person whose account was cleared after the request began is refused
+ * (`refuseIfClearedSinceStart`).
  */
 export async function assertHostActor(
   client: PoolClient,
@@ -97,6 +99,8 @@ export async function assertHostActor(
   now: Date
 ): Promise<void> {
   if (actor.kind === 'person') {
+    // An operator whose account was cleared after this request began acts no more.
+    await refuseIfClearedSinceStart(client, actor.userId);
     const operator = await client.query(
       'SELECT 1 FROM host_operators WHERE user_id=$1 AND revoked_at IS NULL FOR SHARE',
       [actor.userId]

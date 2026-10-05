@@ -136,16 +136,35 @@ describe('community server port additions', () => {
       CommunityWireAuthOptionsSchema.parse({
         google: false,
         github: false,
-        oidc: { label: 'Example sign-in' },
+        oidc: { label: 'Example sign-in', mark: null },
         minimumAge: null,
       }).oidc
-    ).toEqual({ label: 'Example sign-in' });
-    // Only the button text crosses the wire: never the issuer, client ID or secret.
+    ).toEqual({ label: 'Example sign-in', mark: null });
+    // The button may carry the DorkOS mark, and no other named mark.
+    expect(
+      CommunityWireAuthOptionsSchema.parse({
+        google: false,
+        github: false,
+        oidc: { label: 'DorkOS', mark: 'dorkos' },
+        minimumAge: null,
+      }).oidc
+    ).toEqual({ label: 'DorkOS', mark: 'dorkos' });
+    for (const mark of ['google', 'https://example.com/logo.svg', undefined])
+      expect(
+        CommunityWireAuthOptionsSchema.safeParse({
+          google: false,
+          github: false,
+          oidc: { label: 'Example sign-in', mark },
+          minimumAge: null,
+        }).success,
+        String(mark)
+      ).toBe(false);
+    // Only the button text and mark cross the wire: never the issuer, client ID or secret.
     expect(
       CommunityWireAuthOptionsSchema.safeParse({
         google: false,
         github: false,
-        oidc: { label: 'Example sign-in', clientId: 'private' },
+        oidc: { label: 'Example sign-in', mark: null, clientId: 'private' },
         minimumAge: null,
       }).success
     ).toBe(false);

@@ -73,6 +73,8 @@ export interface ProcessQuietOptions {
   hasRuntimeTurnOpen: () => boolean;
   /** True while the session is parked on a person. */
   hasPendingInteraction: () => boolean;
+  /** True while a session timer the agent set has not fired yet (DOR-2717). */
+  hasPendingTimer?: () => boolean;
   /**
    * A hold this tracker owned has been released — today only the
    * owed-delivery clock expiring. Throws are logged and swallowed.
@@ -219,36 +221,40 @@ export class ProcessQuiet {
   }
 
   /**
-   * Is a background shell the ONLY thing this process is doing (DOR-2065)?
+   * Are background shells and session timers the ONLY things this process is
+   * holding for (DOR-2065, DOR-2717)?
    *
    * No turn open, no helper or other task, nothing owed, nobody waited on —
-   * just one or more shells. Such a process may be given up where a working
-   * one may not: a shell can run for ever (a dev server, a `tail -f`), and
-   * when its process goes the CLI's own "stopped" notice tells the agent on
-   * its next turn. Helpers and Monitors are never given up this way.
+   * just shells, timers, or both. Such a process may be given up where a
+   * working one may not: either can run for ever (a dev server, a `/loop`), so
+   * twelve of them must not lock every other chat out. Helpers and Monitors
+   * are never given up this way.
    */
-  isHoldingOnlyShells(): boolean {
+  isHoldingOnlyReclaimable(): boolean {
     if (this.opts.isTurnOpen() || this.opts.hasRuntimeTurnOpen()) return false;
     if (this.opts.hasPendingInteraction()) return false;
     if (this.opts.liveness().owedCount() > 0) return false;
     const counts = this.opts.liveness().liveTaskCounts();
-    return counts.shells > 0 && counts.agents === 0 && counts.other === 0;
+    if (counts.agents > 0 || counts.other > 0) return false;
+    return counts.shells > 0 || this.opts.hasPendingTimer?.() === true;
   }
 
   /**
-   * Is a helper agent still working on this process (DOR-2681)?
+   * Is a helper or other background task still working on this process
+   * (DOR-2681, DOR-2717)?
    *
-   * What the stall watchdog asks before it calls a silent turn stalled: a
-   * background helper sends nothing for the length of one of its steps. Helpers
-   * only — a Monitor or an unknown task type holds the process, but it is not
-   * the turn's own work going quiet. Bounded by the same four-hour ceiling the
-   * reaper honours, so a helper that never finishes cannot keep a turn open
-   * forever.
+   * What the stall watchdog asks before it calls a silent turn stalled. A
+   * helper sends nothing for the length of one of its steps, and so does a
+   * Monitor, a Workflow or a backgrounded MCP task; each was cut at ten
+   * minutes when only helpers counted. Shells are left out on purpose: a dev
+   * server started in the background runs for hours, and counting it would
+   * hide every genuinely hung turn behind it. Bounded by the same four-hour
+   * ceiling the reaper honours, so work that never finishes cannot keep a
+   * turn open forever.
    */
   isHelperWorking(): boolean {
-    const quietness = this.quietness();
-    if (quietness.quiet) return false;
-    return quietness.holding.agents > 0 && !this.isPastCeiling(Date.now());
+    const counts = this.opts.liveness().liveTaskCounts();
+    return counts.agents + counts.other > 0 && !this.isPastCeiling(Date.now());
   }
 
   /**
@@ -337,6 +343,10 @@ export class ProcessQuiet {
     // resume path, where stdin does close and the CLI ends its shells itself.
     if (counts.agents + counts.other + counts.shells > 0) return 'background-work';
     if (this.opts.liveness().owedCount() > 0) return 'delivery-owed';
+    // A timer the agent set fires inside this process, so ending the process
+    // loses it, exactly like a shell (DOR-2717). Bounded by the same ceiling,
+    // which is what ends a `/loop` that would otherwise hold it forever.
+    if (this.opts.hasPendingTimer?.() === true) return 'timer-pending';
     if (this.opts.hasPendingInteraction()) return 'waiting-on-person';
     return undefined;
   }
@@ -352,7 +362,9 @@ export class ProcessQuiet {
   private noteHoldingWork(): void {
     const counts = this.opts.liveness().liveTaskCounts();
     const holding =
-      counts.agents + counts.other + counts.shells > 0 || this.opts.liveness().owedCount() > 0;
+      counts.agents + counts.other + counts.shells > 0 ||
+      this.opts.liveness().owedCount() > 0 ||
+      this.opts.hasPendingTimer?.() === true;
     if (holding === this.holdingWork) return;
     this.holdingWork = holding;
     try {
