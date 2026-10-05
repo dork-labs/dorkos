@@ -219,6 +219,7 @@ describe('private browser package boundaries', () => {
             // Private envelope schemas/correlation; no installer backend or SDK imports.
             'runtime/installation-envelope/records.ts',
             'runtime/installation-envelope/correlation.ts',
+            'runtime/identity/native-observation.ts',
             'runtime/installation/contracts.ts',
             'runtime/installation/filesystem.ts',
           ],
