@@ -1,15 +1,17 @@
 ---
 number: 309
 title: 'Codex Adapter: SDK Threads Mapped to DorkOS Sessions'
-status: accepted
+status: superseded
 created: 2026-07-02
 spec: additional-agent-runtimes
-superseded-by: null
+superseded-by: '261005-113107'
 ---
 
 # 309. Codex Adapter: SDK Threads Mapped to DorkOS Sessions
 
 ## Status
+
+Superseded (2026-10-05, DOR-2719, spec `codex-app-server-transport` phase 3) by ADR-261005-113107 (Codex runs on one supervised app-server process per home): Codex turns now run on `codex app-server` by default. The session-to-thread map this ADR chose carries over unchanged; one `codex exec` per turn remains only as the `exec` fallback of `runtimes.codex.transport`.
 
 Accepted (implemented in spec: additional-agent-runtimes, `@openai/codex-sdk@0.142.5`)
 

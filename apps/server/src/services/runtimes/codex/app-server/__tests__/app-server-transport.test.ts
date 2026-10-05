@@ -726,7 +726,7 @@ describe('background work (spec §12)', () => {
     expect(check()).toBe(true);
   }
 
-  it('wakes the chat once when a command finishes after a completed turn', async () => {
+  it('RT-LIFE-03: wakes the chat once when a command finishes after a completed turn', async () => {
     const h = harness();
     const seen = wakes(h);
     const bg = backgroundCommandTurn();

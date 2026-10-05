@@ -279,7 +279,7 @@ describe('mapServerRequest (spec §10)', () => {
 });
 
 describe('approvals over the fake app-server', () => {
-  it('draws the card after its tool start, and runs the command once a person approves', async () => {
+  it('RT-TOOL-01: draws the card after its tool start, and runs the command once a person approves', async () => {
     const h = harness();
     h.host.home(PERSON_HOME).nextTurn(approvalTurn);
     const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));

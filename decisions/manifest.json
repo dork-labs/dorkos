@@ -5,7 +5,7 @@
       "id": "261005-113107",
       "slug": "codex-runs-on-app-server",
       "title": "Codex runs on one supervised app-server process per home, not one exec process per turn",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-10-05",
       "extractedFrom": "codex-app-server-transport",
       "specSlug": "codex-app-server-transport",

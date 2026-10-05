@@ -5,7 +5,7 @@ import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { CodexRuntime } from '../codex-runtime.js';
-import type { CodexTransport } from '../transport/index.js';
+import { resolveCodexTransport, type CodexTransport } from '../transport/index.js';
 import type { BackgroundWake } from '../app-server/background-work.js';
 import { buildCodexOptions } from '../codex-options.js';
 import { CodexThreadMap } from '../thread-map.js';
@@ -1576,6 +1576,15 @@ describe('CodexRuntime', () => {
 
       nowSpy.mockRestore();
     });
+  });
+});
+
+describe('resolveCodexTransport (spec §15)', () => {
+  it('runs app-server by default since phase 3, and still honours an explicit exec', () => {
+    expect(resolveCodexTransport(undefined)).toBe('app-server');
+    expect(resolveCodexTransport('auto')).toBe('app-server');
+    expect(resolveCodexTransport('app-server')).toBe('app-server');
+    expect(resolveCodexTransport('exec')).toBe('exec');
   });
 });
 
