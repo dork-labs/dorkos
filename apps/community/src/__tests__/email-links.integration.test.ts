@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Client, Pool } from 'pg';
+import { Pool } from 'pg';
 import { serve } from '@hono/node-server';
 import { hashPassword } from 'better-auth/crypto';
 import { migrate } from '../migrate.js';

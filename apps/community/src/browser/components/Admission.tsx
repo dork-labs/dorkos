@@ -25,6 +25,7 @@ import {
   useSignInOptionsState,
 } from '../sign-in-options.js';
 import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
+import { ForgotPassword } from '../email-links/ForgotPassword.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
 import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 
@@ -97,6 +98,10 @@ export function Admission({
   const [returned] = useState(() => returnedSignIn(takeSignInFailure()));
   const [error, setError] = useState(returned.error);
   const [linking, setLinking] = useState(returned.linking);
+  // `/?forgot` (an expired reset link's "Forgot password?") opens the reset request at once.
+  const [forgot, setForgot] = useState(() =>
+    new URLSearchParams(window.location.search).has('forgot')
+  );
   const signInOptions = useSignInOptionsState();
   const providers = signInOptions.options;
   // Read as the page loaded: the hint the DorkOS app adds where the person's DorkOS account is
@@ -349,7 +354,9 @@ export function Admission({
             {error}
           </Notice>
         )}
-        {stage === 'failed' && failure ? (
+        {forgot && providers.emailLinks ? (
+          <ForgotPassword initialEmail={email} onBack={() => setForgot(false)} />
+        ) : stage === 'failed' && failure ? (
           <AdmissionFailurePanel failure={failure} busy={busy} onRetry={() => void retryFailed()} />
         ) : stage === 'joining' ? (
           <div role="status" className="panel">
@@ -485,7 +492,16 @@ export function Admission({
                   onChange={(event) => setPassword(event.target.value)}
                   required
                 />
-                {mode === 'signin' ? (
+                {mode === 'signin' && providers.emailLinks ? (
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto justify-start p-0"
+                    onClick={() => setForgot(true)}
+                  >
+                    Forgot password?
+                  </Button>
+                ) : mode === 'signin' ? (
                   <span className="hint">
                     Forgot your password? Ask the person running this space for help.
                   </span>
