@@ -1,3 +1,7 @@
+import {
+  initialNavigationInputFenced,
+  adoptInitialNavigation,
+} from '../lifecycle/initial-navigation-state.js';
 import type { EnginePolicy } from '../configuration.js';
 import { parseBrowserCommand, type BrowserBinding } from '../contracts.js';
 import { BrowserValidationError } from '../errors.js';
@@ -31,6 +35,7 @@ export interface EngineTabInput {
   close(deadline?: number): Promise<PageInputCustody>;
   /** Original input/session attribution, not a settled-cleanup or action permission. */
   isCustodyKnown(): boolean;
+  hasNeverEnteredInput(): boolean;
   custody(): PageInputCustody;
 }
 
@@ -45,6 +50,7 @@ export function createEngineInput(options: EngineInputOptions): EngineTabInput {
     retire: (end: number) => owner.retire(end),
     close: (deadline?: number) => owner.close(deadline),
     isCustodyKnown: () => owner.isCustodyKnown(),
+    hasNeverEnteredInput: () => owner.hasNeverEnteredInput(),
     custody: () => owner.custody(),
   });
 }
@@ -53,7 +59,8 @@ class EngineInputOwner {
   readonly ready: Promise<void>;
   private resolve!: () => void;
   private reject!: (error: unknown) => void;
-  private readonly initial: BrowserBinding;
+  private initial: Readonly<BrowserBinding>;
+  private inputEverEntered = false;
   private readonly page;
   private transport?: OwnedPageTransport;
   private queue?: TabInput;
@@ -76,7 +83,15 @@ class EngineInputOwner {
     this.initial = Object.freeze({ ...options.tab.binding });
     this.page = options.tab.page;
     this.navigation = (frame) => {
-      if (frame === this.page.mainFrame()) this.invalidate();
+      if (frame !== this.page.mainFrame()) return;
+      if (!this.inputEverEntered && !this.resetPromise && !this.retired) {
+        const adopted = adoptInitialNavigation(this.options.tab, this.initial, this);
+        if (adopted) {
+          this.initial = adopted;
+          return;
+        }
+      }
+      this.invalidate();
     };
     this.ready = new Promise<void>((resolve, reject) => {
       this.resolve = resolve;
@@ -135,10 +150,14 @@ class EngineInputOwner {
   }
 
   async submit(value: unknown, signal?: AbortSignal): Promise<InputResult> {
+    const fenced = initialNavigationInputFenced(this.options.tab);
+    if (!fenced) this.inputEverEntered = true;
     const command = parseBrowserCommand(value);
     if (command.kind !== 'input') throw new BrowserValidationError('INVALID_COMMAND');
     // Do not make requests during acquisition wait for a later native lifetime.
     if (
+      fenced ||
+      initialNavigationInputFenced(this.options.tab) ||
       this.resetPromise ||
       !this.queue ||
       !this.current() ||
@@ -155,6 +174,9 @@ class EngineInputOwner {
   }
 
   reset(): Promise<ResetResult> {
+    if (initialNavigationInputFenced(this.options.tab))
+      return Promise.resolve(Object.freeze({ binding: this.initial, status: 'stopped' }));
+    this.inputEverEntered = true;
     if (!this.options.cleanup.ordinary() || this.retired)
       return Promise.resolve(Object.freeze({ binding: this.initial, status: 'stopped' }));
     this.options.tab.pointer.invalidate();
@@ -334,6 +356,9 @@ class EngineInputOwner {
     return this.closePromise;
   }
 
+  hasNeverEnteredInput(): boolean {
+    return !this.inputEverEntered && !this.resetPromise && this.isCustodyKnown();
+  }
   isCustodyKnown(): boolean {
     return (
       this.queue !== undefined &&
@@ -377,6 +402,7 @@ class EngineInputOwner {
 
   private current(): boolean {
     if (
+      initialNavigationInputFenced(this.options.tab) ||
       this.retired ||
       !this.options.cleanup.ordinary() ||
       !this.options.stopGate.accepts(this.initial)
@@ -385,6 +411,7 @@ class EngineInputOwner {
     try {
       const tab = this.options.readTab();
       return (
+        !initialNavigationInputFenced(this.options.tab) &&
         !this.retired &&
         this.options.cleanup.ordinary() &&
         this.options.stopGate.accepts(this.initial) &&
@@ -397,6 +424,7 @@ class EngineInputOwner {
         tab.binding.navigationGeneration === this.initial.navigationGeneration &&
         tab.binding.viewportVersion === this.initial.viewportVersion &&
         !this.page.isClosed() &&
+        !initialNavigationInputFenced(this.options.tab) &&
         !this.retired &&
         this.options.cleanup.ordinary() &&
         this.options.stopGate.accepts(this.initial)

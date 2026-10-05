@@ -1,3 +1,4 @@
+import { commitInitialNavigation } from '../lifecycle/initial-navigation-state.js';
 import { createPointerLedger } from './pointer.js';
 import { ordinaryRecord } from '../lifecycle/ownership.js';
 import { createDiagnosticsOwner, unavailableDiagnostics } from './diagnostics.js';
@@ -105,6 +106,12 @@ export function trackPage(
         }
         try {
           tab.pointer.invalidate();
+          const initialCommit = commitInitialNavigation(tab, frame.url());
+          if (initialCommit !== null) {
+            if (!initialCommit) retire();
+            else tab.diagnostics.replaceEpoch();
+            return;
+          }
           tab.binding = {
             ...tab.binding,
             navigationGeneration: advanceCounter(tab.binding.navigationGeneration),

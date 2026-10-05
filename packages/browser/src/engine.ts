@@ -1,3 +1,5 @@
+import { navigateOwnedInitial } from './lifecycle/initial-navigation.js';
+import { initialNavigationPending } from './lifecycle/initial-navigation-state.js';
 import { currentAuthorityCustody } from './lifecycle/live-custody.js';
 import { createDiagnosticsBudget } from './tabs/diagnostics-budget.js';
 import { randomBytes, createHash } from 'node:crypto';
@@ -53,6 +55,7 @@ export interface PrivateBrowserRetirementReceiver {
   readonly observation: Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   isOrdinary(): boolean;
   isAuthorityCurrent(): boolean;
+  navigateInitial(command: unknown): Promise<Readonly<BrowserBinding>>;
   verifiedBrowserAdminEndpoint(): Readonly<{
     url: string;
     root: import('./configuration.js').ProcessIdentity;
@@ -193,6 +196,7 @@ function constructEngine(
       observation,
       isOrdinary: () => current() && ordinaryRecord(record),
       isAuthorityCurrent: () => currentAuthorityCustody(record, current),
+      navigateInitial: (command: unknown) => navigateOwnedInitial(config, record, current, command),
       verifiedBrowserAdminEndpoint: () => {
         if (
           !current() ||
@@ -451,7 +455,8 @@ function constructEngine(
       const command = parseBrowserCommand(value);
       if (command.kind !== 'capture') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
       const record = find(command.binding.browserId, command.binding.browserGeneration);
-      if (!ordinaryRecord(record)) throw new BrowserLifecycleError('BROWSER_STOPPED');
+      if (!ordinaryRecord(record) || initialNavigationPending(record))
+        throw new BrowserLifecycleError('BROWSER_STOPPED');
       const tab = record.tabs.get(command.binding.tabId);
       const page = tab?.page;
       const capture = await ownOperation(record, () => captureTab(config, record, command)).catch(
