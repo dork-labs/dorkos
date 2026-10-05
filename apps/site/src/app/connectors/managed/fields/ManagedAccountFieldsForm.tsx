@@ -1,6 +1,6 @@
 'use client';
 
-import type { ComposioAuthenticationField } from '@dorkos/connector-providers/composio';
+import type { ComposioAuthenticationField } from '@dork-labs/connector-providers/composio';
 import type { ManagedAuthenticationFieldsPage } from '@/lib/connectors/managed/authentication-owner-contract';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';

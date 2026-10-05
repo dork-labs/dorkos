@@ -189,7 +189,9 @@ export class MockExtensionAPI {
  * server's own privileges — no sandbox, no boundary check, and the manifest's
  * declared capabilities constrain nothing at this point. That makes this the
  * sharpest of the in-process load paths, which is why the approval gate is the
- * first thing it does, ahead of even compiling.
+ * first thing it does, ahead of even compiling. An extension that asks to run
+ * separately (DOR-2686) is no exception here: only its `server.ts` runs in its
+ * own process with limits, and this is its client bundle.
  *
  * @param record - The extension's discovery record
  * @param compiler - Extension compiler instance

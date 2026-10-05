@@ -8,6 +8,8 @@ class Channel extends EventTarget {
   readyState = 1;
   readonly commands: Message[] = [];
   withholdClose = false;
+  refuseMethod: string | undefined;
+  beforeReply: ((message: Message) => void) | undefined;
   constructor() {
     super();
     Channel.current = this;
@@ -20,6 +22,11 @@ class Channel extends EventTarget {
     const message = JSON.parse(input) as Message;
     this.commands.push(message);
     queueMicrotask(() => {
+      this.beforeReply?.(message);
+      if (message.method === this.refuseMethod) {
+        this.emit({ id: message.id, error: { code: -32602, message: 'private-original-secret' } });
+        return;
+      }
       if (message.method === 'Target.setAutoAttach' && !message.sessionId)
         this.emit({
           method: 'Target.attachedToTarget',
@@ -126,3 +133,58 @@ it('fails custody on unknown auth sessions without sending credentials', async (
   expect(f.channel.commands.some((m) => m.method === 'Fetch.continueWithAuth')).toBe(false);
   await expect(f.owner.close()).rejects.toThrow('PROXY_AUTH_CUSTODY_UNCERTAIN');
 });
+
+it('resumes only an exact ancestor-covered dedicated worker without its unsupported Fetch domain', async () => {
+  const f = await fixture();
+  f.channel.refuseMethod = 'Fetch.enable';
+  f.channel.emit({
+    method: 'Target.attachedToTarget',
+    sessionId: 'original-page',
+    params: { sessionId: 'dedicated-one', targetInfo: { type: 'worker' } },
+  });
+  await settle();
+  expect(
+    f.channel.commands.filter((m) => m.sessionId === 'dedicated-one').map((m) => m.method)
+  ).toEqual(['Target.setAutoAttach', 'Runtime.runIfWaitingForDebugger']);
+  f.channel.emit({
+    method: 'Target.attachedToTarget',
+    sessionId: 'dedicated-one',
+    params: { sessionId: 'nested-worker', targetInfo: { type: 'worker' } },
+  });
+  await settle();
+  expect(
+    f.channel.commands.filter((m) => m.sessionId === 'nested-worker').map((m) => m.method)
+  ).toEqual(['Target.setAutoAttach', 'Runtime.runIfWaitingForDebugger']);
+  expect(f.failed).not.toHaveBeenCalled();
+  expect(f.owner.isCustodyKnown()).toBe(true);
+  await f.owner.close();
+});
+it.each(['missing', 'detached'] as const)(
+  'withholds dedicated worker resume when exact ancestor coverage is %s',
+  async (mode) => {
+    const f = await fixture();
+    if (mode === 'detached') {
+      f.channel.beforeReply = (message) => {
+        if (message.method === 'Target.setAutoAttach' && message.sessionId === 'dedicated-one')
+          f.channel.emit({
+            method: 'Target.detachedFromTarget',
+            params: { sessionId: 'original-page' },
+          });
+      };
+    }
+    f.channel.emit({
+      method: 'Target.attachedToTarget',
+      sessionId: mode === 'missing' ? 'unowned' : 'original-page',
+      params: { sessionId: 'dedicated-one', targetInfo: { type: 'worker' } },
+    });
+    await settle();
+    expect(
+      f.channel.commands.some(
+        (m) => m.sessionId === 'dedicated-one' && m.method === 'Runtime.runIfWaitingForDebugger'
+      )
+    ).toBe(false);
+    expect(f.failed).toHaveBeenCalledOnce();
+    expect(f.owner.isCustodyKnown()).toBe(false);
+    await expect(f.owner.close()).rejects.toThrow('PROXY_AUTH_CUSTODY_UNCERTAIN');
+  }
+);

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -8,6 +8,46 @@ import { configuration, requestId } from './parent-fixture.js';
 const verify = vi.hoisted(() => vi.fn());
 vi.mock('../runtime/public-library.js', () => ({ verifiedLibrary: verify }));
 afterEach(() => verify.mockReset());
+it.each([
+  { mode: 'ephemeral' as const },
+  { mode: 'persistent' as const, profileId: 'profile_owned_birth_A_0000000000' },
+])(
+  'captures immutable actual $mode acquisition before verification or native work',
+  async (acquisition) => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'owned-acquisition-birth-'));
+    let calls = 0;
+    let namedRefusalEntered = false;
+    const engine = constructOwnedBrowserEngine(
+      { ...configuration(), dataDir },
+      {
+        registerBirth(receiver) {
+          calls++;
+          expect(receiver.acquisition).toEqual(acquisition);
+          expect(Object.isFrozen(receiver.acquisition)).toBe(true);
+          expect(Object.isFrozen(receiver)).toBe(true);
+          expect(Reflect.set(receiver, 'acquisition', { mode: 'ephemeral' })).toBe(false);
+          expect(Reflect.set(receiver.acquisition, 'mode', 'different')).toBe(false);
+          expect(receiver.isAuthorityCurrent()).toBe(false);
+          namedRefusalEntered = true;
+          throw new Error('NAMED_PRELAUNCH_ACQUISITION_REFUSAL');
+        },
+        refuseBirth() {},
+      }
+    );
+    try {
+      await expect(engine.open({ kind: 'open', requestId, ...acquisition })).rejects.toMatchObject({
+        code: 'OPEN_FAILED',
+      });
+      expect(namedRefusalEntered).toBe(true);
+      expect(calls).toBe(1);
+      expect(verify).not.toHaveBeenCalled();
+      expect(await readdir(dataDir)).toEqual([]);
+    } finally {
+      await engine.shutdown();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  }
+);
 it('publishes exact verified runtime to the original prelaunch receiver without claiming ready custody', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'owned-network-birth-'));
   const config = {

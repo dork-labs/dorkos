@@ -145,6 +145,9 @@ describe('a message held for background work (DOR-2065)', () => {
     expect(describeWaitingOn(held({ holding: none, because: 'waiting-on-person' })).line).toBe(
       'Held for your answer. Sending it moves to dorkos-cloud.'
     );
+    const timer = describeWaitingOn(held({ holding: none, because: 'timer-pending' }));
+    expect(timer.line).toBe('Held for a reminder the agent set. Sending it moves to dorkos-cloud.');
+    expect(timer.switchHint).toBe('Switching now cancels the reminder.');
     const busy = describeWaitingOn(held({ holding: none, because: 'turn-open' }));
     expect(busy.line).toBe('Held until the agent is free. Sending it moves to dorkos-cloud.');
     expect(busy.line).not.toMatch(/background/);

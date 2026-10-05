@@ -7,7 +7,7 @@ import {
   eq,
   type Db,
 } from '@dorkos/db';
-import { ConnectorEventPayloadProtector } from '@dorkos/connector-providers';
+import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import type { CredentialProvider, CredentialStore } from '../../core/credential-provider.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';

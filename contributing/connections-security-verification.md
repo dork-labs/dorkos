@@ -16,7 +16,7 @@ DOR-1905 owns the final live acceptance verdict. Runtime renewal, environment fi
 | Runtime launch seams                          | `apps/server/src/services/runtimes/{claude-code,codex,opencode}/`                                                              |
 | Hosted tenant, instance and account authority | `apps/site/src/lib/connectors/managed/`, `apps/site/src/app/api/instances/connectors/`                                         |
 | Hosted event intake and delivery              | `apps/site/src/lib/connectors/managed/{event-ingress-service,event-delivery-service,event-protection}.ts`                      |
-| Public connector schemas                      | `packages/shared/src/connector-*.ts`                                                                                           |
+| Public connector schemas                      | `packages/connector-providers/src/connector-*.ts`, `packages/shared/src/connector-*.ts`                                        |
 | Provider SDK boundary                         | `packages/connector-providers/src/`                                                                                            |
 | Hosted capacity ledger and cutover            | `apps/site/src/lib/connectors/managed/event-capacity-service.ts`, `apps/site/scripts/verify-managed-event-capacity-cutover.ts` |
 | Production rollout procedure                  | `contributing/managed-connections-operations.md`                                                                               |

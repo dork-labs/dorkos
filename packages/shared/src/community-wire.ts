@@ -369,12 +369,24 @@ export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
 export const COMMUNITY_MINIMUM_AGE_FLOOR = 13;
 /** The highest minimum age a host may ask for; a larger number is almost surely a typo. */
 export const COMMUNITY_MINIMUM_AGE_CEILING = 21;
+/** A brand mark a host may name for its OpenID Connect sign-in button. */
+export const CommunityWireSignInMarkSchema = z.enum(['dorkos']);
+/** A brand mark a host may name for its OpenID Connect sign-in button. */
+export type CommunityWireSignInMark = z.infer<typeof CommunityWireSignInMarkSchema>;
 /** Public provider availability, without OAuth IDs, secrets or callback details. */
 export const CommunityWireAuthOptionsSchema = z.strictObject({
   google: z.boolean(),
   github: z.boolean(),
-  /** The host's OpenID Connect sign-in and its button text, or `null` when the host set none. */
-  oidc: z.strictObject({ label: z.string().trim().min(1).max(40) }).nullable(),
+  /**
+   * The host's OpenID Connect sign-in, or `null` when the host set none: its button text, and the
+   * mark its button shows (`dorkos` for the DorkOS mark, `null` for a neutral key).
+   */
+  oidc: z
+    .strictObject({
+      label: z.string().trim().min(1).max(40),
+      mark: CommunityWireSignInMarkSchema.nullable(),
+    })
+    .nullable(),
   /**
    * The age a person must confirm they have reached before a new account is created, or `null`
    * when the host set none. Signing in to an existing account never asks.
@@ -452,6 +464,30 @@ export type CommunityWireAccountSignInMethods = z.infer<
 export const CommunityWireAccountPasswordRequestSchema = z.strictObject({
   newPassword: z.string().min(COMMUNITY_PASSWORD_MIN_LENGTH).max(128),
 });
+
+/**
+ * Prove the password of the account a provider sign-in matched by email, so the sign-in is
+ * linked to it (`POST /api/v1/sign-in-link`). Any length an older password may have.
+ */
+export const CommunityWireSignInLinkRequestSchema = z.strictObject({
+  password: z.string().min(1).max(128),
+});
+/** The sign-in was linked and this browser is now signed in. */
+export const CommunityWireSignInLinkResponseSchema = z.strictObject({
+  linked: z.literal(true),
+});
+/**
+ * What the sign-in page should say about linking, read once (`GET /api/v1/sign-in-link/notice`).
+ * `pending` means a sign-in is waiting for the matched account's password; `linked` and
+ * `linkedCleared` mean a trusted sign-in was linked, the latter after the old password and other
+ * sign-ins were removed. `provider` is the sign-in's button name, such as "Google".
+ */
+export const CommunityWireSignInLinkNoticeSchema = z.strictObject({
+  state: z.enum(['none', 'pending', 'linked', 'linkedCleared']),
+  provider: z.string().min(1).max(40).nullable(),
+});
+/** What the sign-in page should say about linking. */
+export type CommunityWireSignInLinkNotice = z.infer<typeof CommunityWireSignInLinkNoticeSchema>;
 
 /** Public channel projection. `joined` is for the current caller only. */
 export const CommunityWireChannelSchema = z.strictObject({
@@ -1523,6 +1559,17 @@ export const CommunityWireErrorCodeSchema = z.enum([
    * later; older readers see an unknown code.
    */
   'ACCOUNT_OWNS_COMMUNITY',
+  /**
+   * `410`: a sign-in waiting to be linked by password is gone: it expired, was used, was
+   * cancelled, or the account's password changed meanwhile. The person signs in again. Added
+   * later; older readers see an unknown code.
+   */
+  'LINK_EXPIRED',
+  /**
+   * `409`: the sign-in being linked is already linked to an account here. Added later; older
+   * readers see an unknown code.
+   */
+  'ALREADY_LINKED',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

@@ -30,7 +30,7 @@ function options(overrides: Record<string, unknown> = {}): Reply {
     body: {
       google: false,
       github: false,
-      oidc: { label: 'DorkOS' },
+      oidc: { label: 'DorkOS', mark: 'dorkos' },
       minimumAge: null,
       ...overrides,
     },

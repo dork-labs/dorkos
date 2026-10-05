@@ -11,7 +11,9 @@ import { describeError, hostRequest, RequestError } from '../api.js';
 import { FocusDialog } from '../components/CommunityAdministration.js';
 import { HostPolicyLinks } from '../components/HostLinks.js';
 import { rememberCommunity } from '../remembered-community.js';
-import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
+import { returnedSignIn, takeSignInFailure, useSignInOptions } from '../sign-in-options.js';
+import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
+import { ProviderButton } from '../sign-up/ProviderButton.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import { confirmMinimumAge, MinimumAgeConfirmation } from '../sign-up/MinimumAgeConfirmation.js';
 import { replacementDate } from './copy.js';
@@ -88,7 +90,10 @@ export function OwnerReplacementClaim() {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   // A sign-in round trip that failed comes back here with `?error=`; say why once.
-  const [error, setError] = useState(() => takeSignInError() ?? '');
+  const [returned] = useState(() => returnedSignIn(takeSignInFailure()));
+  const [error, setError] = useState(returned.error);
+  // A provider sign-in waiting for the matched account's password asks for it here.
+  const [linking, setLinking] = useState(returned.linking);
   const providers = useSignInOptions();
   const heading = useRef<HTMLHeadingElement>(null);
   const shownStage = useRef(stage);
@@ -288,6 +293,7 @@ export function OwnerReplacementClaim() {
           {title}
         </h1>
         {intro && <p className="muted mb-6">{intro}</p>}
+        {linking && <LinkWithPassword onCancel={() => setLinking(false)} />}
         {error && (
           <Notice role="alert" tone="error" className="mb-4">
             {error}
@@ -310,16 +316,14 @@ export function OwnerReplacementClaim() {
               />
             )}
             {providers.oidc ? (
-              <Button
-                variant="default"
-                className="w-full"
-                type="button"
+              <ProviderButton
+                provider="oidc"
+                label={providers.oidc.label}
+                mark={providers.oidc.mark ?? null}
                 // A new account must confirm the host's minimum age first, as on the owner claim.
                 disabled={busy || (minimumAge !== null && !ageConfirmed)}
                 onClick={() => void social('oidc', minimumAge !== null)}
-              >
-                Continue with {providers.oidc.label}
-              </Button>
+              />
             ) : (
               <p role="status" className="mb-0">
                 Loading sign-in…

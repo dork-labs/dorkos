@@ -34,7 +34,7 @@ import {
 import type {
   ComposioOperationClient,
   ComposioSdkExecuteInput,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 
 /**
  * In-memory {@link ComposioHttpClient} — the fake Composio cloud the provider is

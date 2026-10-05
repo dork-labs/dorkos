@@ -186,7 +186,7 @@ export async function launchDarwinSupervisorBrowser(
         `--proxy-server=${options.ownedProxy?.url ?? state.proxy!.url}`,
         '--proxy-bypass-list=<-loopback>',
         '--disable-quic',
-        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+        '--webrtc-ip-handling-policy=disable_non_proxied_udp',
         'about:blank',
       ],
     });

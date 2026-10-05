@@ -141,6 +141,54 @@ export interface PersonBarCopy {
   agent: string;
 }
 
+/** A refusal {@link assessPerson} decided on, not yet written. */
+export interface PersonRefusal {
+  /** The HTTP status to answer with. */
+  status: number;
+  /** The JSON body to answer with. */
+  body: { error: string; code: string; message: string };
+}
+
+/**
+ * Run the three bars without answering: the verdict, for a caller that
+ * writes it itself or carries it elsewhere. An isolated extension's router
+ * gets this verdict in a header, because the request it sees has the
+ * person's cookie and tokens stripped (DOR-2686, spec §7).
+ *
+ * @param req - The request, read for `Origin` and for the agent-identity and
+ *   approval-token headers.
+ * @param res - The response, read for a resolved session user. Never written.
+ * @param copy - What this surface says when it refuses.
+ * @returns The refusal, or `null` when a person is asking.
+ */
+export function assessPerson(
+  req: Request,
+  res: Response,
+  copy: PersonBarCopy
+): PersonRefusal | null {
+  const origin = req.headers.origin;
+  if (origin && !resolveTrustedOrigins().includes(origin)) {
+    return {
+      status: 403,
+      body: { error: copy.error, code: copy.code, message: copy.crossSite(origin) },
+    };
+  }
+
+  const cookieRefusal = requireOperatorCookieUnderLogin(res, copy.subject);
+  if (cookieRefusal) {
+    return {
+      status: cookieRefusal.status,
+      body: { error: copy.error, code: cookieRefusal.code, message: cookieRefusal.error },
+    };
+  }
+
+  if (!trustedCaller(readCallerAuthority(req, res))) {
+    return { status: 403, body: { error: copy.error, code: copy.code, message: copy.agent } };
+  }
+
+  return null;
+}
+
 /**
  * Run the three bars, answering the request when any of them refuses.
  *
@@ -153,24 +201,8 @@ export interface PersonBarCopy {
  *   return immediately without performing its effect.
  */
 export function refuseIfNotAPerson(req: Request, res: Response, copy: PersonBarCopy): boolean {
-  const origin = req.headers.origin;
-  if (origin && !resolveTrustedOrigins().includes(origin)) {
-    res.status(403).json({ error: copy.error, code: copy.code, message: copy.crossSite(origin) });
-    return true;
-  }
-
-  const cookieRefusal = requireOperatorCookieUnderLogin(res, copy.subject);
-  if (cookieRefusal) {
-    res
-      .status(cookieRefusal.status)
-      .json({ error: copy.error, code: cookieRefusal.code, message: cookieRefusal.error });
-    return true;
-  }
-
-  if (!trustedCaller(readCallerAuthority(req, res))) {
-    res.status(403).json({ error: copy.error, code: copy.code, message: copy.agent });
-    return true;
-  }
-
-  return false;
+  const refusal = assessPerson(req, res, copy);
+  if (!refusal) return false;
+  res.status(refusal.status).json(refusal.body);
+  return true;
 }

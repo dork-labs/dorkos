@@ -62,6 +62,7 @@ import {
   peekProjector,
 } from '../services/session/index.js';
 import { accountUsageForSession } from '../services/session/fleet/session-account.js';
+import { sessionExists } from '../services/session/launch/session-exists.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
@@ -1037,6 +1038,18 @@ router.post('/:id/messages', async (req, res) => {
     refuseErrorUnlessOwner(req, res, RUN_ON_CREDITS)
   ) {
     return;
+  }
+
+  // An id nobody started is a 404, never a new session (DOR-2712): a stale id
+  // used to start a stranger session on the default runtime in the default
+  // folder. Starting a chat is said out loud with `create: true`.
+  if (parsed.data.create !== true && !(await sessionExists(sessionId, parsed.data.cwd))) {
+    return sendError(
+      res,
+      404,
+      'No session has this id. To start a new one, send create: true.',
+      'SESSION_NOT_FOUND'
+    );
   }
 
   // Read X-Client-Id header, or generate UUID if missing

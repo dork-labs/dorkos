@@ -92,6 +92,15 @@ export interface AgentSession {
    */
   launchedAccountRoot?: string;
   /**
+   * How many session timers (CronCreate, ScheduleWakeup, /loop) the CLI said
+   * were pending at its last turn end, read off the Stop hook's
+   * `session_crons` (DOR-2717). A timer lives inside the CLI and is no
+   * background task, so this is the only place it shows; the warm process is
+   * held while it is non-zero so the timer is not killed before it fires.
+   * Undefined until a turn has ended on this process.
+   */
+  pendingTimers?: number;
+  /**
    * True when the last launch this process resolved billed per token: its
    * final environment carried an API key or gateway token (stored, credits, or
    * inherited), or the binary's session-init `apiKeySource` said so, which
@@ -102,6 +111,13 @@ export interface AgentSession {
   launchedPerToken?: boolean;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
+  /**
+   * True when a failed resume restarts this session as new. Its id already
+   * names a transcript the resume could not load, so the SDK mints a fresh id
+   * rather than writing the new conversation into that file. Every other new
+   * session launches under the id DorkOS handed out (DOR-2712).
+   */
+  mintsFreshSdkSessionId?: boolean;
   /**
    * True when nobody is watching this session — a run the SCHEDULER started on
    * its own timer.
@@ -148,7 +164,8 @@ export interface AgentSession {
   /** Active SDK query object — used for mid-stream control (setPermissionMode, setModel) */
   activeQuery?: Query;
   /**
-   * How many helper agents the running resume-path turn has live, read off that
+   * How many background tasks (helpers, Monitors, Workflows, shells…) the
+   * running resume-path turn has live (DOR-2717), read off that
    * turn's own liveness tracker; undefined between turns and on the warm path,
    * whose pump answers instead. What `isHelperWorking` asks on this path
    * (DOR-2681). A getter, not a count, so the answer is never stale.

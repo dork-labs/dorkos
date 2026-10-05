@@ -1214,7 +1214,8 @@ export const QueuedWaitingOnSchema = z
     /**
      * What the agent is doing, when the counts above are all zero: a helper's
      * report still owed (`delivery-owed`), a question waiting on the person
-     * (`waiting-on-person`), or a turn still open. A string rather than an
+     * (`waiting-on-person`), a reminder the agent set (`timer-pending`), or a
+     * turn still open. A string rather than an
      * enum, so a reason added later reads as "busy" on an older client.
      */
     because: z.string().optional(),
@@ -1256,6 +1257,13 @@ export const SendMessageRequestSchema = z
   .object({
     content: z.string().min(1, 'content is required'),
     cwd: z.string().optional(),
+    /**
+     * Start a new session under this id if none exists yet. Without it, an id
+     * this server does not know is a `404 SESSION_NOT_FOUND` and nothing is
+     * started, so a stale or mistyped id can never open a stranger session
+     * (DOR-2712). Harmless on a session that exists: the message feeds it.
+     */
+    create: z.boolean().optional(),
     correlationId: z.string().uuid().optional(),
     clientMessageId: z.string().optional(),
     /** Neutral client-sourced context signals (ui_state, queued). Server derives git_status/env. */

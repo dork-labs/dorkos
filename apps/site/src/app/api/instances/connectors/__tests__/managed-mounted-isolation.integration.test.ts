@@ -7,7 +7,7 @@ import { neon } from '@neondatabase/serverless';
 import type {
   ComposioManagedAccountClient,
   ComposioOperationClient,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 import { memoryAdapter } from 'better-auth/adapters/memory';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -59,8 +59,8 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/auth')>()),
   getAuth: () => state.auth,
 }));
-vi.mock('@dorkos/connector-providers/composio', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@dorkos/connector-providers/composio')>()),
+vi.mock('@dork-labs/connector-providers/composio', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dork-labs/connector-providers/composio')>()),
   createComposioHostedClients: () => ({
     operations: state.operations,
     accounts: state.accounts,

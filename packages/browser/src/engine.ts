@@ -52,6 +52,8 @@ export interface BrowserLifecycleEngine {
 export interface PrivateBrowserRetirementReceiver {
   readonly browserId: string;
   readonly browserGeneration: number;
+  /** Immutable acquisition metadata from the original parsed record, before native birth. */
+  readonly acquisition: Readonly<{ mode: 'persistent'; profileId: string } | { mode: 'ephemeral' }>;
   readonly observation: Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   isOrdinary(): boolean;
   isAuthorityCurrent(): boolean;
@@ -193,6 +195,11 @@ function constructEngine(
     return Object.freeze({
       browserId: record.browserId,
       browserGeneration: generation,
+      acquisition: Object.freeze(
+        record.mode === 'persistent'
+          ? { mode: 'persistent' as const, profileId: record.profileId! }
+          : { mode: 'ephemeral' as const }
+      ),
       observation,
       isOrdinary: () => current() && ordinaryRecord(record),
       isAuthorityCurrent: () => currentAuthorityCustody(record, current),

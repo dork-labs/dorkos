@@ -328,9 +328,10 @@ export class CtxDispatcher {
    * The child is gone (or going): remove everything it registered on the real
    * ctx, reject every reverse call waiting on it, and send nothing more.
    *
-   * NOT done here, and required of the lifecycle's isolated stop AND its
-   * unexpected-exit path (Phase 5, task 5.3): `getExtensionInbox()?.markStopped(id)`
-   * and `getAgentSendService()?.extensionStopped(id)`. A call already running
+   * NOT done here, and done by the lifecycle's isolated stop AND its
+   * unexpected-exit path (`extension-server-lifecycle.ts`):
+   * `getExtensionInbox()?.markStopped(id)` and
+   * `getAgentSendService()?.extensionStopped(id)`. A call already running
    * in the real ctx (an `agent.send` waiting for room) keeps its effect after
    * the child is gone unless agent-send is told, exactly as for an in-process
    * stop (`extension-server-lifecycle.ts` shutdown).

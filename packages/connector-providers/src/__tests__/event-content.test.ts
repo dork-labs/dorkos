@@ -3,7 +3,7 @@ import {
   ConnectorEventPayloadProtector,
   normalizeConnectorEventContent,
 } from '../event-content.js';
-import type { ConnectorEventDefinition } from '@dorkos/shared/connector-event-schemas';
+import type { ConnectorEventDefinition } from '../connector-event-schemas.js';
 const key = new Uint8Array(32).fill(17);
 const scope = {
   providerInstanceId: 'provider-one',

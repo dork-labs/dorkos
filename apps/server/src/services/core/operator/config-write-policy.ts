@@ -371,6 +371,7 @@ export const CONFIG_WRITE_POLICY = {
   'relay.maxAgentTurnsPerAgentPerHour': 'operator-only',
   'relay.maxAgentTurnsTotalPerHour': 'operator-only',
 
+  'browser.enabled': 'operator-only',
   // Whether the external A2A surface mounts: an agent card describing the agents
   // here, plus a JSON-RPC address outside clients post work to. That is squarely
   // "who can reach this instance", which is why it sits with `tunnel.enabled` and
@@ -930,6 +931,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.authtoken',
       'tunnel.auth',
       'mcp.enabled',
+      'browser.enabled',
       'a2a.enabled',
       'mcp.apiKey',
       'mcp.rateLimit.enabled',

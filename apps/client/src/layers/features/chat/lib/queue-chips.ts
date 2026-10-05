@@ -71,6 +71,13 @@ function counted(count: number, one: string, many: string): string {
 const HELD_FOR: Record<string, string> = {
   'delivery-owed': 'a helper’s report',
   'waiting-on-person': 'your answer',
+  // A session timer the agent set (DOR-2717): it fires into this process.
+  'timer-pending': 'a reminder the agent set',
+};
+
+/** What Switch now ends when nothing is running in the background. */
+const SWITCH_STOPS: Record<string, string> = {
+  'timer-pending': 'Switching now cancels the reminder.',
 };
 
 /**
@@ -114,7 +121,8 @@ export function describeWaitingOn(waitingOn: QueuedWaitingOn): QueueWaiting {
     switchHint:
       work !== undefined
         ? `Switching now stops ${work}.`
-        : 'Switching now stops what the agent is doing.',
+        : ((waitingOn.because !== undefined ? SWITCH_STOPS[waitingOn.because] : undefined) ??
+          'Switching now stops what the agent is doing.'),
   };
 }
 

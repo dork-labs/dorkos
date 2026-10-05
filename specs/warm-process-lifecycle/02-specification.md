@@ -125,12 +125,14 @@ type Quietness =
 > process never closes stdin, so its shells keep running and, when one finishes, the CLI wakes the model with the
 > result, exactly as the bare CLI does. The old rule reasoned from the resume path, where stdin closes and the CLI ends
 > its shells itself; on the warm path, reaping or replacing the process is what took that wake away. Two stated
-> exceptions remain: (1) the warm-ceiling reclaim may still take a process whose ONLY work is shells, as its last
-> resort (`SessionPumpRegistry`, `reapShellsOnly`), because a shell can run forever and twelve of them must not lock
-> every other chat out; (2) a tool-list or extension-skills change still never waits on anything, shells included: the
-> message rides the old list (slice 4a removed #2582's shell-only exemption from that hold, which used to relaunch and
-> end the shell; with the gate below it would instead have made the person's message wait on a dev server for an
-> outside change they did not ask for).
+> exceptions remain: (1) the warm-ceiling reclaim may still take a process whose ONLY work is shells or session timers
+> (DOR-2717), as its last resort (`SessionPumpRegistry`, `reapReclaimable`), because such work can run forever and
+> twelve of them must not lock every other chat out; (2) a tool-list or extension-skills change never waits on
+> anything: the message rides the old list (slice 4a removed #2582's shell-only exemption from that hold, which used
+> to relaunch and end the shell; with the gate below it would instead have made the person's message wait on a dev
+> server for an outside change they did not ask for). A process whose only work is shells or timers keeps the old
+> list until the four-hour ceiling, then relaunches for the new one, so a chat in use with a dev server still gets
+> its new tools; helpers and Monitors keep it with no ceiling.
 
 **The owed-delivery clock (new on this path).** The warm path gets its own deadline, because the resume path's lives in
 a stdin close the pump never runs:

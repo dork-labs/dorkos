@@ -726,17 +726,18 @@ export class PersistentDispatch {
       live !== undefined && (toolSurfaceMoved || skillWithdrawal)
         ? bundle.pump.quietness()
         : undefined;
-    // A background shell holds it too (DOR-2065): the list moved from outside
-    // this session, so the person's message rides the old one rather than
-    // either ending the shell or waiting on it. Until the four-hour ceiling: a
-    // dev server never ends and a chat in use is never idle-reaped, so past
-    // the ceiling a process whose ONLY work is shells relaunches for the new
+    // A background shell or session timer holds it too (DOR-2065): the list
+    // moved from outside this session, so the person's message rides the old
+    // one rather than either ending that work or waiting on it. Until the
+    // four-hour ceiling: a dev server never ends and a chat in use is never
+    // idle-reaped, so past the ceiling a process whose ONLY work is the
+    // last-resort reclaimable kind (shells, timers) relaunches for the new
     // list. Helpers and Monitors keep it (see below).
     const holding =
       live !== undefined &&
       busy !== undefined &&
       !busy.quiet &&
-      !(bundle.pump.isHoldingOnlyShells() && bundle.pump.isPastCeiling(Date.now()));
+      !(bundle.pump.isHoldingOnlyReclaimable() && bundle.pump.isPastCeiling(Date.now()));
     let compared = plan.fingerprint;
     if (holding && toolSurfaceMoved) compared = withLiveToolSurface(live, compared);
     if (holding && skillWithdrawal) {
@@ -755,7 +756,7 @@ export class PersistentDispatch {
     // work (the gate still refuses any call a person blocked). So past the
     // ceiling the hold goes on, with one warning per busy spell saying the list
     // is stale. The stale list ends when that work does, when the process does,
-    // or — for shells alone — at the ceiling (above).
+    // or — for shells and timers alone — at the ceiling (above).
     if (holding && busy !== undefined && !busy.quiet && toolSurfaceMoved) {
       const busyForMs = Date.now() - busy.busySince;
       logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
@@ -1412,6 +1413,11 @@ export class PersistentDispatch {
         // through `this.bundles`: eviction forgets the bundle before it tears
         // the process down.
         if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
+        // Session timers live in the process, so they end with it; the next
+        // process has none until its own first Stop hook says otherwise.
+        if (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed') {
+          session.pendingTimers = undefined;
+        }
         // Work still held when DorkOS ends the process dies with it. Only a
         // shutdown keeps the record, for the next boot to wake the chat; every
         // other ending (the ceiling, an eviction, a replace, a slot reclaim)
@@ -1442,6 +1448,9 @@ export class PersistentDispatch {
       // pump's own state machine never left WARM and would read a process
       // mid-sentence as idle (spec `warm-process-lifecycle` D6).
       hasRuntimeTurnOpen: () => bundle.windows?.openWindow?.origin === 'runtime',
+      // Read off the Stop hook (`launch-resolver.ts`): the only place the CLI
+      // names the timers that will wake this session later (DOR-2717).
+      hasPendingTimer: () => (session.pendingTimers ?? 0) > 0,
       // The owed-delivery clock giving up is the one hold release nothing else
       // observes: the session may be idle, with no turn boundary coming to pump
       // its queue (spec `warm-process-lifecycle` D1).

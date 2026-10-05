@@ -113,6 +113,10 @@ export const ISOLATION_MEMORY_MB = { min: 64, max: 1024, default: 256 } as const
  *
  * - `in-process` (the default): inside the DorkOS server, with its full access.
  * - `subprocess`: in its own Node process, limited to what `allow` declares.
+ *   Files, processes and threads are limited by Node's permission model;
+ *   hosts by a guard inside that process (not an OS firewall). Its client
+ *   bundle is not isolated, and it can't offer agents tools yet. See
+ *   "Running separately" in `contributing/extension-authoring.md`.
  *
  * `"worker"` is reserved and refused: a worker thread shares DorkOS's process
  * and its permissions, so it could not be given limits of its own.
@@ -132,6 +136,8 @@ const ExtensionAllowSchema = z
      * Hosts it may connect to, each `host[:port]`: a lowercase name (a leading
      * `*.` matches names below it), an IPv4 address, or a bracketed IPv6
      * address. A local address needs a port. See `net-allowlist.ts`.
+     * Enforced by a guard inside the extension's own process, not an OS
+     * firewall.
      */
     net: z
       .array(z.string())
@@ -140,6 +146,8 @@ const ExtensionAllowSchema = z
     /**
      * Programs it may start, each a bare name found on this computer's `PATH`
      * (`git`) or an absolute path. No arguments. See `run-allowlist.ts`.
+     * DorkOS starts them for the extension; a permitted program runs with
+     * the person's full access.
      */
     run: z
       .array(z.string())

@@ -113,10 +113,10 @@ describe('which extensions the ledger lists', () => {
     expect(await ask(record(dir), approving('mail', path.join(dorkHome, 'other')))).toEqual([]);
   });
 
-  it('leaves out a copy that widened past its approval, or does not run yet (DOR-2686)', async () => {
+  it('leaves out a copy that widened past its approval, and ships one it covers (DOR-2686)', async () => {
     // Purpose: skills ride the coverage-aware gate. A copy approved for one
-    // host that now declares another waits for a person, and a copy asking to
-    // run separately is refused (isolation_not_ready) — neither ships skills.
+    // host that now declares another waits for a person and ships nothing;
+    // the same copy within its approval runs separately and ships its skill.
     const dir = path.join(dorkHome, 'extensions', 'mail');
     await writeSkill(dir, 'triage-inbox');
     const isolated = (net: string[]) =>
@@ -142,8 +142,10 @@ describe('which extensions the ledger lists', () => {
     expect(
       await selectRunningSkills([isolated(['a.example.com', 'b.example.com'])], { config, core })
     ).toEqual([]);
-    expect(await selectRunningSkills([isolated(['a.example.com'])], { config, core })).toEqual([]);
-    // The same copy in-process, approved, still ships its skill.
+    expect(await selectRunningSkills([isolated(['a.example.com'])], { config, core })).toHaveLength(
+      1
+    );
+    // The same copy in-process, approved, ships its skill too.
     expect(
       await selectRunningSkills([record(dir)], { config: approving('mail', dir), core })
     ).toHaveLength(1);

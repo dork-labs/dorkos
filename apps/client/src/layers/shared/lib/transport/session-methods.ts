@@ -207,6 +207,7 @@ export function createSessionMethods(
       content: string,
       cwd?: string,
       options?: {
+        create?: boolean;
         clientMessageId?: string;
         context?: ClientContext;
         runtime?: string;
@@ -218,6 +219,7 @@ export function createSessionMethods(
     ): Promise<{ sessionId: string }> {
       const body: Record<string, unknown> = { content };
       if (cwd) body.cwd = cwd;
+      if (options?.create) body.create = true;
       if (options?.clientMessageId) body.clientMessageId = options.clientMessageId;
       if (options?.context) body.context = options.context;
       if (options?.runtime) body.runtime = options.runtime;

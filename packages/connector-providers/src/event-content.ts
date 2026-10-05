@@ -5,7 +5,7 @@ import {
   CONNECTOR_EVENT_MAX_PAYLOAD_BYTES,
   type ConnectorEventContent,
   type ConnectorEventDefinition,
-} from '@dorkos/shared/connector-event-schemas';
+} from './connector-event-schemas.js';
 
 /** Retain a bounded set of notification text fields; never persist arbitrary provider objects. */
 export function normalizeConnectorEventContent(

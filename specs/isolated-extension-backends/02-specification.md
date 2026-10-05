@@ -576,6 +576,11 @@ so the 4 MB limit bounds what the host acts on, not what it reads. A child that 
 still costs the host that much memory, once. Closing it needs a framed pipe of DorkOS's own in place
 of `fork`'s channel, which checks the length before reading.)
 Programs: 8 concurrent. CPU: no cap; the watchdog bounds a stuck event loop only.
+HTTP (found in the Phase 5 review): each virtual connection has flow control. An end whose
+reader is full sends `conn-pause` and `conn-resume`; a write completes only once the channel has
+written its last frame and the other end has room, so a fast writer sees ordinary backpressure.
+The child is untrusted and may ignore a pause, so an end holding more than 4 MB unread cuts the
+connection, and bytes that arrive while paused do not reset the 120 s idle timer.
 
 ### 10. Dev link (DOR-2696)
 

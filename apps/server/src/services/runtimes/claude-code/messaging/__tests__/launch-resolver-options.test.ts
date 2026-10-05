@@ -155,6 +155,35 @@ describe('the launch options every Claude Code turn is given', () => {
     expect(specific?.classifierContext).toContain("passed DorkOS's own permission check");
   });
 
+  // DOR-2717. A session timer (CronCreate, ScheduleWakeup, /loop) lives inside
+  // the CLI and is no background task, so nothing on the stream says one is
+  // pending. The Stop hook's input does, at every turn end; the warm process is
+  // held on it so the idle reaper cannot kill the timer before it fires.
+  it('records the timers the CLI reports pending at each turn end', async () => {
+    const session = makeSession();
+    const options = await captureSdkOptions(undefined, session);
+
+    const stop = options.hooks?.Stop ?? [];
+    expect(stop).toHaveLength(1);
+    const hook = stop[0]!.hooks[0]!;
+    const fire = (crons: unknown) =>
+      hook(
+        { hook_event_name: 'Stop', stop_hook_active: false, session_crons: crons } as never,
+        undefined,
+        { signal: new AbortController().signal }
+      );
+
+    expect(
+      await fire([{ id: 'c1', schedule: '5 9 * * *', recurring: false, prompt: 'tick' }])
+    ).toEqual({});
+    expect(session.pendingTimers).toBe(1);
+    await fire([]);
+    expect(session.pendingTimers).toBe(0);
+    // A CLI too old to report the field says nothing about timers.
+    await fire(undefined);
+    expect(session.pendingTimers).toBe(0);
+  });
+
   it('sends the plugin list over stdin rather than on the command line', async () => {
     const options = await captureSdkOptions();
 

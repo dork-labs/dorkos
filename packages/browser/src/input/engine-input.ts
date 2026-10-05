@@ -2,6 +2,14 @@ import {
   initialNavigationInputFenced,
   adoptInitialNavigation,
 } from '../lifecycle/initial-navigation-state.js';
+import {
+  adoptPopup,
+  completePopupAdoption,
+  popupPending,
+  registerPopupInput,
+  registerPopupHandle,
+  popupOwnsInput,
+} from '../tabs/popup-navigation.js';
 import type { EnginePolicy } from '../configuration.js';
 import { parseBrowserCommand, type BrowserBinding } from '../contracts.js';
 import { BrowserValidationError } from '../errors.js';
@@ -35,6 +43,7 @@ export interface EngineTabInput {
   close(deadline?: number): Promise<PageInputCustody>;
   /** Original input/session attribution, not a settled-cleanup or action permission. */
   isCustodyKnown(): boolean;
+  isPopupCustodyKnown(): boolean;
   hasNeverEnteredInput(): boolean;
   custody(): PageInputCustody;
 }
@@ -42,17 +51,20 @@ export interface EngineTabInput {
 /** Compose the accepted queue with a canonical public Page transport without public activation. */
 export function createEngineInput(options: EngineInputOptions): EngineTabInput {
   const owner = new EngineInputOwner(options);
-  owner.acquire();
-  return Object.freeze({
+  const handle = Object.freeze({
     ready: owner.ready,
     submit: (command: unknown, signal?: AbortSignal) => owner.submit(command, signal),
     reset: () => owner.reset(),
     retire: (end: number) => owner.retire(end),
     close: (deadline?: number) => owner.close(deadline),
     isCustodyKnown: () => owner.isCustodyKnown(),
+    isPopupCustodyKnown: () => owner.isPopupCustodyKnown(),
     hasNeverEnteredInput: () => owner.hasNeverEnteredInput(),
     custody: () => owner.custody(),
   });
+  registerPopupHandle(options.tab, owner, handle, owner.ready);
+  owner.acquire();
+  return handle;
 }
 
 class EngineInputOwner {
@@ -85,6 +97,25 @@ class EngineInputOwner {
     this.navigation = (frame) => {
       if (frame !== this.page.mainFrame()) return;
       if (!this.inputEverEntered && !this.resetPromise && !this.retired) {
+        const popup = adoptPopup(this.options.tab, this.initial, this);
+        if (popup) {
+          void popup.then((binding) => {
+            if (
+              !binding ||
+              this.inputEverEntered ||
+              this.resetPromise ||
+              this.retired ||
+              this.options.tab.page !== this.page ||
+              this.options.readTab() !== this.options.tab
+            )
+              this.invalidate();
+            else {
+              this.initial = binding;
+              if (!completePopupAdoption(this.options.tab, this, binding)) this.invalidate();
+            }
+          }, this.invalidate);
+          return;
+        }
         const adopted = adoptInitialNavigation(this.options.tab, this.initial, this);
         if (adopted) {
           this.initial = adopted;
@@ -98,6 +129,7 @@ class EngineInputOwner {
       this.reject = reject;
     });
     void this.ready.catch(() => {});
+    registerPopupInput(options.tab, this.initial, this, this.ready);
   }
 
   acquire(): void {
@@ -150,7 +182,7 @@ class EngineInputOwner {
   }
 
   async submit(value: unknown, signal?: AbortSignal): Promise<InputResult> {
-    const fenced = initialNavigationInputFenced(this.options.tab);
+    const fenced = initialNavigationInputFenced(this.options.tab) || popupPending(this.options.tab);
     if (!fenced) this.inputEverEntered = true;
     const command = parseBrowserCommand(value);
     if (command.kind !== 'input') throw new BrowserValidationError('INVALID_COMMAND');
@@ -158,6 +190,7 @@ class EngineInputOwner {
     if (
       fenced ||
       initialNavigationInputFenced(this.options.tab) ||
+      popupPending(this.options.tab) ||
       this.resetPromise ||
       !this.queue ||
       !this.current() ||
@@ -174,7 +207,7 @@ class EngineInputOwner {
   }
 
   reset(): Promise<ResetResult> {
-    if (initialNavigationInputFenced(this.options.tab))
+    if (initialNavigationInputFenced(this.options.tab) || popupPending(this.options.tab))
       return Promise.resolve(Object.freeze({ binding: this.initial, status: 'stopped' }));
     this.inputEverEntered = true;
     if (!this.options.cleanup.ordinary() || this.retired)
@@ -369,6 +402,31 @@ class EngineInputOwner {
       this.closePromise === undefined &&
       this.retirement === undefined &&
       this.transport.isCustodyKnown()
+    );
+  }
+
+  isPopupCustodyKnown(): boolean {
+    if (
+      !popupOwnsInput(this.options.tab, this) ||
+      this.inputEverEntered ||
+      this.resetPromise ||
+      this.retired ||
+      this.cleanupUncertain ||
+      this.closePromise ||
+      this.retirement ||
+      !this.transport
+    )
+      return false;
+    const known = this.transport.isAcquisitionCustodyKnown() || this.transport.isCustodyKnown();
+    return (
+      known &&
+      popupOwnsInput(this.options.tab, this) &&
+      !this.inputEverEntered &&
+      this.resetPromise === undefined &&
+      !this.retired &&
+      !this.cleanupUncertain &&
+      this.closePromise === undefined &&
+      this.retirement === undefined
     );
   }
 

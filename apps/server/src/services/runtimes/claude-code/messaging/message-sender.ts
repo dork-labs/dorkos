@@ -262,7 +262,13 @@ export async function* executeSdkQuery(
   // The stall watchdog asks this before it calls a silent turn stalled: a
   // background helper sends nothing for the length of one step (DOR-2681).
   // Cleared in the `finally` only if still ours, for the reason `activeQuery` is.
-  const liveHelperCount = (): number => liveness.liveAgentCount();
+  const liveHelperCount = (): number => {
+    // Every task type but shells: a Monitor or Workflow is as silent between
+    // its steps as a helper is, while a background shell can run for hours and
+    // would hide a hung turn (DOR-2717; see `ProcessQuiet.isHelperWorking`).
+    const counts = liveness.liveTaskCounts();
+    return counts.agents + counts.other;
+  };
   session.liveHelperCount = liveHelperCount;
   // The bound on the ONE hold nothing else bounds — an owed delivery that never
   // arrives. A hold for a live agent is deliberately never given one.
@@ -582,6 +588,7 @@ export async function* executeSdkQuery(
       // conversation onto whichever account happens to be active. The account is
       // a fact about the conversation, not about whether it has started.
       session.hasStarted = false;
+      session.mintsFreshSdkSessionId = true;
       retriedViaRecursion = true;
       yield* executeSdkQuery(sessionId, content, session, opts, messageOpts, retryDepth + 1);
       return;

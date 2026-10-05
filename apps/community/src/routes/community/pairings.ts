@@ -27,6 +27,7 @@ import type { CommunityConfig } from '../../config.js';
 import {
   requireConnectionGrant,
   requireLiveRole,
+  refuseIfClearedSinceStart,
   requireMember,
   revokeCallingConnectionGrant,
   transaction,
@@ -113,6 +114,7 @@ async function requirePairingMember(
     await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
     return;
   }
+  await refuseIfClearedSinceStart(client, actor.user_id);
   const member = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [actor.id, actor.community_id]
@@ -439,6 +441,18 @@ export function registerPairingRoutes(
         community.communityId,
         community.qualified && exactArchivedRead(scopes)
       );
+      // The approving member is locked before the pairing, the order a clean-out of that
+      // member's account takes them (members, then their pairings), so the two cannot deadlock.
+      const approver = await client.query<{ member_id: string | null }>(
+        'SELECT member_id FROM connection_pairings WHERE id=$1 AND community_id=$2',
+        [id, community.communityId]
+      );
+      const approverId = approver.rows[0]?.member_id ?? null;
+      if (approverId)
+        await client.query('SELECT 1 FROM members WHERE id=$1 AND community_id=$2 FOR SHARE', [
+          approverId,
+          community.communityId,
+        ]);
       const pair = await client.query<{
         verifier_hash: string;
         code_hash: string | null;
@@ -459,6 +473,8 @@ export function registerPairingRoutes(
         throw new ApiError(409, 'STATE_CONFLICT', 'This pairing request is no longer available.');
       if (!row.code_hash || !equalSecret(hashSecret(code), row.code_hash) || !row.member_id)
         throw new ApiError(403, 'FORBIDDEN', 'Invalid pairing code.');
+      if (row.member_id !== approverId)
+        throw new ApiError(409, 'STATE_CONFLICT', 'This pairing request changed. Try again.');
       const member = await client.query(
         'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
         [row.member_id, community.communityId]

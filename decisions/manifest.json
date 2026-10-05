@@ -2,6 +2,24 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261005-113107",
+      "slug": "codex-runs-on-app-server",
+      "title": "Codex runs on one supervised app-server process per home, not one exec process per turn",
+      "status": "proposed",
+      "created": "2026-10-05",
+      "extractedFrom": "codex-app-server-transport",
+      "specSlug": "codex-app-server-transport",
+      "supersedes": "0309",
+      "amends": "261002-221210",
+      "affects": [
+        "apps/server/src/services/runtimes/codex/**",
+        "apps/server/src/services/core/cloud/credits-relay.ts",
+        "apps/server/src/services/connectors/**",
+        "packages/shared/src/config-schema.ts",
+        "packages/db/src/schema/codex.ts"
+      ]
+    },
+    {
       "id": "261002-221210",
       "slug": "codex-and-opencode-run-on-credits-by-request-format",
       "title": "Codex and OpenCode run on credits through their own request format, offered only once it is served",
@@ -6993,6 +7011,22 @@
         "apps/client/src/layers/shared/model/app-tabs/",
         "apps/client/src/layers/features/app-tabs/",
         "apps/client/src/AppShell.tsx"
+      ]
+    },
+    {
+      "id": "261004-200411",
+      "slug": "link-matching-account-on-trusted-verified-sign-in",
+      "title": "Link a matching Community account on a trusted, verified sign-in, or with its password",
+      "status": "accepted",
+      "created": "2026-10-04",
+      "extractedFrom": "community-sign-in-linking",
+      "specSlug": "community-sign-in-linking",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/auth.ts",
+        "apps/community/src/sign-in/",
+        "apps/community/src/recover-password.ts",
+        "apps/community/src/browser/sign-up/"
       ]
     }
   ]

@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
+import type { ComposioOperationClient } from '@dork-labs/connector-providers/composio';
 import type { ConnectorToolkit } from '@dorkos/shared/connector-provider';
 import { describe, expect, it, vi } from 'vitest';
 

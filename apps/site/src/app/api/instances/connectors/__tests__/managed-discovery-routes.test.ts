@@ -46,7 +46,7 @@ vi.mock('@/lib/connectors/managed/usage-service', () => ({
 }));
 
 import { ZodError } from 'zod';
-import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
+import type { ComposioOperationClient } from '@dork-labs/connector-providers/composio';
 import type { ManagedConnectorConfig } from '@/lib/connectors/managed/config';
 import { GET as getCatalog } from '../catalog/route';
 import { GET as getConnection } from '../connections/[managedConnectionId]/route';
