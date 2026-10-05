@@ -17,6 +17,7 @@ import {
 
 /** Private engine custody, not evidence granting profile release. */
 export interface DarwinEngineJournal {
+  readonly binding: Readonly<JournalBinding>;
   attributeRoot(root: ProcessIdentity, supervisor?: ProcessIdentity): Promise<void>;
   stop(
     launchEntered?: boolean
@@ -132,6 +133,7 @@ export async function startDarwinEngineJournal(
     }
   );
   return Object.freeze({
+    binding: initial.binding,
     async attributeRoot(root: ProcessIdentity, supervisor?: ProcessIdentity) {
       if (stopped || attributed || !pending) throw new Error('JOURNAL_ROOT_REFUSED');
       attributed = true;

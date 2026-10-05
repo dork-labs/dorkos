@@ -98,4 +98,5 @@ export const SupervisorReplySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('closed'), nonce, sequence, returned: z.boolean() }).strict(),
   z.object({ kind: z.literal('refused'), nonce, sequence }).strict(),
   z.object({ kind: z.literal('custodyFault'), nonce }).strict(),
+  z.object({ kind: z.literal('rootFailure'), nonce, root: identity }).strict(),
 ]);

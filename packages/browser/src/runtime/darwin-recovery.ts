@@ -123,8 +123,15 @@ export function createDarwinRecordedRecovery(
         current.identity.inode !== original.identity.inode
       )
         return 'unknown';
-      return reconcileDarwinBatch(original.snapshot, batch, options.sourceDigest, start, end)
-        .recordedDisposition;
+      const result = reconcileDarwinBatch(
+        original.snapshot,
+        batch,
+        options.sourceDigest,
+        start,
+        end
+      );
+      // Replacement is absence of one PID birth, never completion of the original campaign.
+      return result.replacementIdentities.length ? 'unknown' : result.recordedDisposition;
     } catch {
       return 'unknown';
     }

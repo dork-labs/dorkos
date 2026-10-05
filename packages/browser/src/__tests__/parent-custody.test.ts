@@ -56,6 +56,8 @@ it('throwing sibling cannot suppress exact cooperative closes or release profile
     release,
     nonce: '00000000-0000-4000-8000-000000000000',
     profileDir: '/fixture/data/profiles/owned',
+    recordJournal: vi.fn(),
+    recordFailure: vi.fn(),
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
   } as typeof h.record.reservation;
@@ -96,6 +98,8 @@ it('pending exact detach blocks release and late ACK cannot heal its installed c
     release,
     nonce: '00000000-0000-4000-8000-000000000000',
     profileDir: '/fixture/data/profiles/owned',
+    recordJournal: vi.fn(),
+    recordFailure: vi.fn(),
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
   } as typeof h.record.reservation;
@@ -150,6 +154,8 @@ it('pending proxy blocks profile release and shares the captured parent deadline
     release,
     nonce: '00000000-0000-4000-8000-000000000000',
     profileDir: '/fixture/data/profiles/owned',
+    recordJournal: vi.fn(),
+    recordFailure: vi.fn(),
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
   } as typeof r.reservation;
@@ -249,6 +255,8 @@ it('pending capture tail participates in the one shared wait and blocks release'
     release,
     nonce: '00000000-0000-4000-8000-000000000000',
     profileDir: '/fixture/data/profiles/owned',
+    recordJournal: vi.fn(),
+    recordFailure: vi.fn(),
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
   } as typeof h.record.reservation;

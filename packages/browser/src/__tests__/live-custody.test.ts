@@ -111,3 +111,30 @@ it('fails closed when the original input producer has no custody predicate or th
   } as unknown as NonNullable<InputOwnerSlot['handle']>;
   expect(f.observe()).toBe(false);
 });
+
+it('keeps original authority through a known reset while input admission remains fenced', () => {
+  const f = fixture();
+  f.slot.resetPromise = new Promise(() => {});
+  expect(f.observe()).toBe(true);
+  f.known.mockReturnValue(false);
+  expect(f.observe()).toBe(false);
+  f.known.mockReturnValue(true);
+  f.slot.uncertain = true;
+  expect(f.observe()).toBe(false);
+  f.slot.uncertain = false;
+  f.lifetime.requestRetirement('cleanupFailure');
+  expect(f.observe()).toBe(false);
+});
+it('rechecks original custody when reset starts during the producer observation', () => {
+  const f = fixture();
+  f.known.mockImplementation(() => {
+    f.slot.resetPromise ??= new Promise(() => {});
+    return true;
+  });
+  expect(f.observe()).toBe(true);
+  f.known.mockImplementation(() => {
+    f.slot.uncertain = true;
+    return true;
+  });
+  expect(f.observe()).toBe(false);
+});
