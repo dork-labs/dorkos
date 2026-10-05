@@ -107,6 +107,16 @@ it('refuses generation authority from a gapped journal even after local original
   const f = fixture();
   let gapped = true;
   f.record.journal = {
+    binding: {
+      journalId: 'fixture_gapped',
+      browserId: f.record.browserId,
+      browserGeneration: f.record.browserGeneration,
+      profile: { kind: 'ephemeral' },
+      reservationNonce: f.owner.binding.reservationNonce,
+      manager: f.record.manager,
+      runtimeIdentityDigest: f.owner.binding.runtimeIdentityDigest,
+      bootScope: { kind: 'unknown', cause: 'boot-unknown' },
+    },
     historyGapped: () => gapped,
     custody: () => ({ pending: false, uncertain: false }),
     attributeRoot: async () => {},

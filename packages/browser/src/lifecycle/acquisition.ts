@@ -1,3 +1,4 @@
+import { ownCrashRetirement, noteOriginalRootFailure } from '../runtime/crash-custody.js';
 import { startDarwinSupervisorClient } from '../runtime/darwin-supervisor-client.js';
 import { sameProcess } from './process-journal.js';
 import { randomUUID } from 'node:crypto';
@@ -226,6 +227,8 @@ export async function acquireBrowser(
       }
     );
     if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+    if (record.reservation) record.reservation.recordJournal(record.journal!.binding);
+    if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   }
   const begin = record.reservation?.beginLaunch;
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
@@ -238,18 +241,21 @@ export async function acquireBrowser(
     await ownOperation(
       record,
       () =>
-        startDarwinSupervisorClient({
-          workerPath: config.nativeJournal!.browserWorkerPath!,
-          artifact: config.nativeJournal!.artifact,
-          runtime: config.runtime,
-          manager: record.manager,
-          profileDir: record.profileDir!,
-          origin: config.network.origin,
-          ...(record.networkEndpoint ? { ownedProxy: record.networkEndpoint } : {}),
-          browserId: record.browserId,
-          generation: record.browserGeneration,
-          reservationNonce,
-        }),
+        startDarwinSupervisorClient(
+          {
+            workerPath: config.nativeJournal!.browserWorkerPath!,
+            artifact: config.nativeJournal!.artifact,
+            runtime: config.runtime,
+            manager: record.manager,
+            profileDir: record.profileDir!,
+            origin: config.network.origin,
+            ...(record.networkEndpoint ? { ownedProxy: record.networkEndpoint } : {}),
+            browserId: record.browserId,
+            generation: record.browserGeneration,
+            reservationNonce,
+          },
+          () => noteOriginalRootFailure(record)
+        ),
       (supervisor) => {
         record.supervisor = supervisor;
         // The proxy is an exact supervisor-owned lifetime, not a second controller listener.
@@ -310,6 +316,7 @@ export async function acquireBrowser(
   );
   const context = await deadline(acquired, 10_000, 'BROWSER_LAUNCH_TIMEOUT');
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+  if (record.supervisor) ownCrashRetirement(record, context);
   if (!record.supervisor) await attributeRoot(config, record, stopped);
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   const register = (

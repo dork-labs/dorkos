@@ -116,7 +116,7 @@ export async function launchDarwinSupervisorBrowser(
       credentials: Readonly<{ username: string; password: string }>;
     }>;
   }>,
-  failed: () => void = () => {}
+  failed: (cause: 'custody' | 'browser', root?: ProcessIdentity) => void = () => {}
 ) {
   if (endpointUncertain) throw new Error('DEVTOOLS_CLOSE_UNCERTAIN');
   const directory = ownDirectory(options.profileDir);
@@ -191,6 +191,13 @@ export async function launchDarwinSupervisorBrowser(
       ],
     });
     root = await state.child.identity();
+    const originalRoot = root;
+    state.child.child.once('exit', (code, signal) => {
+      if (code !== 0 || signal !== null) {
+        state.uncertain = true;
+        failed('browser', originalRoot);
+      }
+    });
     const end = performance.now() + 10000;
     let url: string | undefined;
     while (performance.now() < end) {
@@ -213,7 +220,7 @@ export async function launchDarwinSupervisorBrowser(
     if (options.ownedProxy)
       state.auth = await ownPrivateProxyAuthentication(url, options.ownedProxy, () => {
         state.uncertain = true;
-        failed();
+        failed('custody');
       });
     state.browser = await chromium.connectOverCDP(url, {
       timeout: Math.max(1, end - performance.now()),

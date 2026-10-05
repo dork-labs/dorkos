@@ -54,6 +54,8 @@ function fixture() {
   mocks.reserve.mockResolvedValue({
     profileDir: '/fixture/data/profiles/owned',
     release,
+    recordJournal: vi.fn(),
+    recordFailure: vi.fn(),
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
   });
@@ -231,6 +233,8 @@ it('shutdown enters all available closes before waiting for held opening, then r
   mocks.reserve.mockResolvedValue({
     profileDir: '/fixture/data/profiles/second',
     release: vi.fn(),
+    recordJournal: vi.fn(),
+    recordFailure: vi.fn(),
     beginLaunch: vi.fn(),
     recordBrowser: vi.fn(),
   });

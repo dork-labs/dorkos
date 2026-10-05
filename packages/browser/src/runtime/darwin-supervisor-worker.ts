@@ -95,8 +95,12 @@ export async function runDarwinSupervisorWorker(): Promise<void> {
         return;
       }
       launching = (async () => {
-        owner = await launchDarwinSupervisorBrowser(seed, () => {
-          void send({ kind: 'custodyFault', nonce: seed!.nonce }).catch(() => {});
+        owner = await launchDarwinSupervisorBrowser(seed, (cause, root) => {
+          void send(
+            cause === 'browser' && root
+              ? { kind: 'rootFailure', nonce: seed!.nonce, root }
+              : { kind: 'custodyFault', nonce: seed!.nonce }
+          ).catch(() => {});
           disconnect();
         });
         if (stopping) return;

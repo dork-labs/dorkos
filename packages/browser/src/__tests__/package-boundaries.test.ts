@@ -115,6 +115,7 @@ describe('private browser package boundaries', () => {
       'lifecycle-negative.fixture.test.ts',
       'lifecycle.fixture.test.ts',
       'private-proxy-auth.fixture.test.ts',
+      'supervisor-crash-recovery.fixture.test.ts',
     ]);
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
     expect(manifest.scripts['test:fixture']).toBe(
@@ -320,6 +321,7 @@ describe('private browser package boundaries', () => {
           // Only pinned public types/library imports in these reviewed internal modules.
           // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [
+            'runtime/crash-custody.ts',
             // Public Request identity for the private one-shot navigation owner.
             'lifecycle/initial-navigation.ts',
             'runtime/darwin-supervisor-worker.ts',

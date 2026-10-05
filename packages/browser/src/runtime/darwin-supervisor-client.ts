@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import type { launchDarwinSupervisorBrowser } from './darwin-supervisor-browser.js';
 import type { ProcessIdentity } from '../configuration.js';
+import { sameProcess } from '../lifecycle/process-journal.js';
 import { AbsolutePathSchema } from '../runtime-descriptor.js';
 import {
   SupervisorSeedSchema,
@@ -26,7 +27,8 @@ export async function startDarwinSupervisorClient(
     browserId: string;
     generation: number;
     reservationNonce: string;
-  }
+  },
+  originalRootFailure: () => void = () => {}
 ) {
   const nonce = randomUUID();
   const { workerPath, ...input } = options;
@@ -50,7 +52,8 @@ export async function startDarwinSupervisorClient(
     stopped = false,
     exited = false,
     closedReport = false,
-    sawReady = false;
+    sawReady = false,
+    sawRootFailure = false;
   let reportedRoot: ProcessIdentity | undefined;
   let reportedSupervisor: ProcessIdentity | undefined,
     reportedProxyURL = '',
@@ -98,6 +101,21 @@ export async function startDarwinSupervisorClient(
     const value = parsed.data;
     if (value.nonce !== nonce) {
       refuse();
+      return;
+    }
+    if (value.kind === 'rootFailure') {
+      if (sawRootFailure || !reportedRoot || !sameProcess(reportedRoot, value.root)) {
+        refuse();
+        return;
+      }
+      sawRootFailure = true;
+      state.uncertain = true;
+      stopped = true;
+      try {
+        originalRootFailure();
+      } catch {
+        refuse();
+      }
       return;
     }
     if (value.kind === 'custodyFault') {

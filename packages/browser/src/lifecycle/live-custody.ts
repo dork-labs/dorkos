@@ -64,7 +64,6 @@ export function currentAuthorityCustody(record: BrowserRecord, current: () => bo
         slot.uncertain ||
         slot.closePending ||
         slot.closePromise ||
-        slot.resetPromise ||
         slot.retirement ||
         !slot.handle ||
         !slot.registeredTarget ||
@@ -73,6 +72,7 @@ export function currentAuthorityCustody(record: BrowserRecord, current: () => bo
         return false;
       const handle = slot.handle;
       const target = slot.registeredTarget;
+      // Reset fences new input, but retains the original browser/network authority.
       // This genuine input-owner predicate deliberately distinguishes held ordinary
       // work from sticky unknown custody. Older producers cannot assert a positive.
       const known = handle.isCustodyKnown;
@@ -86,7 +86,6 @@ export function currentAuthorityCustody(record: BrowserRecord, current: () => bo
         slot.constructing ||
         slot.closePending ||
         slot.closePromise ||
-        slot.resetPromise ||
         slot.retirement ||
         tab.stopped ||
         slot.page !== tab.page ||
