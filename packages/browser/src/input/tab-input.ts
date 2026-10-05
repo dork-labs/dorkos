@@ -11,6 +11,7 @@ import type {
   InputReason,
   InputResult,
   NativeInputStep,
+  NativeInputTransport,
   ResetResult,
   TabInput,
 } from './types.js';
@@ -283,9 +284,25 @@ class InputQueue implements TabInput {
           completed ? 'aborted' : 'rejected',
           afterAuthorization ?? 'policyRefused'
         );
+      // Capture fallible port properties before attributing any native effect to this work.
+      let transport: NativeInputTransport;
+      let dispatch: NativeInputTransport['dispatch'];
+      try {
+        transport = this.ports.native;
+        dispatch = transport.dispatch;
+      } catch {
+        return this.result(work.command, completed ? 'aborted' : 'rejected', 'dispatchFailed');
+      }
+      const beforeDispatch = this.refusal(work.command.binding);
+      if (beforeDispatch || work.cancel.signal.aborted || performance.now() >= work.end)
+        return this.result(
+          work.command,
+          completed ? 'aborted' : 'rejected',
+          beforeDispatch ?? 'deadline'
+        );
       this.held.track(step);
       try {
-        const native = this.dispatchNative(step, work.cancel.signal);
+        const native = this.dispatchNative(step, work.cancel.signal, transport, dispatch);
         await within(native, work.end, work.cancel.signal);
       } catch (error) {
         // A cancelled/failed started call may already have changed native state.
@@ -318,7 +335,12 @@ class InputQueue implements TabInput {
     return this.result(work.command, 'completed');
   }
 
-  private dispatchNative(step: NativeInputStep, signal: AbortSignal): Promise<void> {
+  private dispatchNative(
+    step: NativeInputStep,
+    signal: AbortSignal,
+    transport: NativeInputTransport,
+    dispatch: NativeInputTransport['dispatch']
+  ): Promise<void> {
     let acknowledge!: () => void;
     let refuse!: (error: unknown) => void;
     const native = new Promise<void>((resolve, reject) => {
@@ -332,7 +354,10 @@ class InputQueue implements TabInput {
       () => this.clearNative(native)
     );
     try {
-      void Promise.resolve(this.ports.native.dispatch(step, signal)).then(acknowledge, refuse);
+      void Promise.resolve(Reflect.apply(dispatch, transport, [step, signal])).then(
+        acknowledge,
+        refuse
+      );
     } catch (error) {
       refuse(error);
     }
