@@ -324,6 +324,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
 
   afterAll(async () => {
     await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
+    server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     // Codex may still be finishing a background write into the throwaway home
     // (its plugin cache) as it exits; a leftover temp dir is not a failure.
@@ -335,7 +336,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
-  });
+  }, 60_000);
 
   it('streams a turn, binds the thread key to it only while it is open, and leaks nothing', async () => {
     const transport = makeTransport();

@@ -696,8 +696,12 @@ runtimeConformance(
               vi.waitFor(
                 async () =>
                   expect(
-                    (await runtime.getSessionSnapshot({ cwd: projectDir }, sessionId)).status
-                      .lifecycle
+                    (
+                      await runtime.getSessionSnapshot(
+                        { cwd: projectDir, permissionMode: 'default' },
+                        sessionId
+                      )
+                    ).status.lifecycle
                   ).toBe('streaming'),
                 { timeout: 60_000 }
               ),

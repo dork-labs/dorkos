@@ -398,7 +398,10 @@ export function appServerDispositionTurn(
   return driveDispositionTurn(runtime, sessionId, content, projectDir, probes, {
     awaitOpen: () =>
       vi.waitFor(async () => {
-        const snapshot = await runtime.getSessionSnapshot({ cwd: projectDir }, sessionId);
+        const snapshot = await runtime.getSessionSnapshot(
+          { cwd: projectDir, permissionMode: 'default' },
+          sessionId
+        );
         expect(snapshot.status.lifecycle).toBe('streaming');
         expect(host.processes.some((p) => p.requestsOf('turn/start').length > 0)).toBe(true);
       }),
