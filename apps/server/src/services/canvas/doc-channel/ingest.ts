@@ -22,7 +22,7 @@ import {
   backfillEnvelopeAccounting,
   DOC_INGEST_LIMITS,
   type DocIngestLimits,
-} from './accounting.js';
+} from './current/accounting.js';
 
 /** Durable accepted input with route receipts; publication can occur only after this returns. */
 export interface DocIngestResult {

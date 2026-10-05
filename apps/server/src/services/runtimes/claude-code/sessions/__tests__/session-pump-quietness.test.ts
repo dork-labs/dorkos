@@ -164,6 +164,47 @@ describe('reap declines while the process is still working', () => {
   });
 });
 
+// DOR-2681. Record eviction asks this, and it is the only thing that protects a
+// turn the AGENT started: nobody dispatched it, so the session has no
+// `activeQuery` for the store's own in-flight rule to see. It used to answer
+// only for background work, and a runtime turn outranks that reason, so a
+// helper's report still being written thirty minutes on was torn down mid-turn.
+describe('isHoldingWork, the question record eviction asks', () => {
+  it('holds while a turn the agent started is open, even with a helper running under it', async () => {
+    const harness = await warmPump({ hasRuntimeTurnOpen: () => true });
+    await runTask(harness, 'local_agent');
+
+    expect(harness.pump.quietness()).toMatchObject({ because: 'runtime-turn-open' });
+    expect(harness.pump.isHoldingWork()).toBe(true);
+  });
+
+  it('leaves a person-wait to the store, which bounds it by its own ceiling', async () => {
+    const harness = await warmPump({ hasPendingInteraction: () => true });
+
+    expect(harness.pump.quietness()).toMatchObject({ because: 'waiting-on-person' });
+    expect(harness.pump.isHoldingWork()).toBe(false);
+  });
+
+  it('holds nothing once the process is quiet', async () => {
+    const harness = await warmPump();
+
+    expect(harness.pump.isHoldingWork()).toBe(false);
+  });
+});
+
+// DOR-2681. What the stall watchdog asks, and the ceiling that keeps a helper
+// that never finishes from excusing a silent turn forever.
+describe('isHelperWorking, the question the stall watchdog asks', () => {
+  it('answers yes while a helper runs, until its spell passes the ceiling', async () => {
+    const harness = await warmPump();
+    await runTask(harness, 'local_agent');
+    expect(harness.pump.isHelperWorking()).toBe(true);
+
+    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
+    expect(harness.pump.isHelperWorking()).toBe(false);
+  });
+});
+
 // T6. The ceiling is what stops "declines while working" from becoming
 // "declines forever", and the reset is what stops two helpers running back to
 // back from being read as two separate spells.
@@ -185,7 +226,7 @@ describe('the background-work ceiling and its quiet reset', () => {
     // The spell still dates from the first helper, so eleven more minutes puts
     // it past four hours and the process is taken back.
     vi.advanceTimersByTime(11 * 60_000);
-    expect(harness.pump.isHoldingBackgroundWork()).toBe(false);
+    expect(harness.pump.isHoldingWork()).toBe(false);
     expect(await reapNow(harness.pump)).toBe(true);
   });
 
@@ -195,7 +236,7 @@ describe('the background-work ceiling and its quiet reset', () => {
     // Same eleven minutes, but the spell restarted at the second helper, so the
     // ceiling is nowhere near and the work is still protected.
     vi.advanceTimersByTime(11 * 60_000);
-    expect(harness.pump.isHoldingBackgroundWork()).toBe(true);
+    expect(harness.pump.isHoldingWork()).toBe(true);
     expect(await reapNow(harness.pump)).toBe(false);
   });
 });

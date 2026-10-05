@@ -101,6 +101,13 @@ export interface ProjectionAction {
    * is about {@link harness}.
    */
   harnessAgnostic?: boolean;
+  /**
+   * The working folder this action's package runs from, when it is a
+   * registered dev link (DOR-2696). Set together with the
+   * `(dev link: <folder>)` label on {@link reason}, so a report can read the
+   * fact without parsing the sentence. Absent for every installed copy.
+   */
+  devLink?: string;
 }
 
 /**
@@ -287,6 +294,14 @@ export interface ProjectionPlan {
    * `buildPlan` is the only thing that sets it.
    */
   unreadableSkillRoots?: string[];
+  /**
+   * What the running extensions' skills ledger said when this plan was built
+   * (DOR-2685). Only `read` makes the plan evidence about extension skill
+   * links: an absent or unreadable ledger (or a plan built without one, like an
+   * offline sync) says nothing about which extensions run, so the installed
+   * sweep then keeps every link that points into an extension's folder.
+   */
+  extensionLedger?: 'read' | 'absent' | 'unreadable';
 }
 
 /**

@@ -79,6 +79,8 @@ import {
 } from '@dorkos/shared/schemas';
 import {
   RelayEnvelopeSchema,
+  RelayDeliveryReceiptSchema,
+  RelayMessageIdSchema,
   SendMessageRequestSchema as RelaySendMessageRequestSchema,
   MessageListQuerySchema,
   InboxQuerySchema,
@@ -284,6 +286,51 @@ import {
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
+import {
+  CanvasChannelEventSchema,
+  CanvasChannelFrameSchema,
+  CanvasChannelSnapshotFrameSchema,
+} from '@dorkos/shared/canvas-channel-schemas';
+
+/**
+ * Documentation-only mirrors: OpenAPI cannot expand recursive JSON or express
+ * the own-property incarnation checks. Reuse every field schema without
+ * extending refined objects; production parsing retains the original guards.
+ */
+const LocalDocEventFrameSchema = z
+  .object({
+    ...CanvasChannelFrameSchema.shape,
+    event: CanvasChannelEventSchema.extend({
+      payload: z
+        .unknown()
+        .describe(
+          'Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit.'
+        ),
+    }),
+  })
+  .strict();
+const LocalDocSnapshotFrameSchema = z
+  .object({
+    ...CanvasChannelSnapshotFrameSchema.shape,
+    snapshot: z
+      .object({
+        ...CanvasChannelSnapshotFrameSchema.shape.snapshot.shape,
+        state: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content.'
+          ),
+      })
+      .strict(),
+  })
+  .strict();
+const LocalRoomEventSchema = z.union([
+  ...RoomEventSchema.options.filter(
+    (option) => !['canvas_event', 'canvas_channel_snapshot'].includes(option.shape.type.value)
+  ),
+  LocalDocEventFrameSchema,
+  LocalDocSnapshotFrameSchema,
+]);
 
 /**
  * Simplified documentation mirror of `@dorkos/marketplace`'s
@@ -391,7 +438,24 @@ const LocalPermissionPreviewSchema = z.object({
       action: z.enum(['create', 'modify', 'delete']),
     })
   ),
-  extensions: z.array(z.object({ id: z.string(), slots: z.array(z.string()) })),
+  extensions: z.array(
+    z.object({
+      id: z.string(),
+      slots: z.array(z.string()),
+      isolation: z
+        .object({
+          runtime: z.enum(['in-process', 'subprocess']),
+          net: z.array(z.string()),
+          run: z.array(z.string()),
+          agents: z.boolean(),
+        })
+        .optional()
+        .describe(
+          'Where the extension runs and what it may reach: in-process is inside DorkOS ' +
+            'with full access (empty lists); subprocess is limited to the lists.'
+        ),
+    })
+  ),
   hooks: z.array(
     z.object({
       event: z.string(),
@@ -808,7 +872,11 @@ registry.registerPath({
     '`__heartbeat` frame rather than an SSE comment, and a refusal arrives as WebSocket ' +
     'close code `4000 + status` because a browser cannot read the status of a failed ' +
     'handshake. SSE remains the documented integration contract — see ' +
-    '`docs/integrations/sse-protocol.mdx`.',
+    '`docs/integrations/sse-protocol.mdx`. Authorized document channels also emit ' +
+    '`canvas_channel_snapshot` and `canvas_event` frames on this connection, including ' +
+    'while the agent is idle. These carry no frame id or session seq; `docSeq` belongs ' +
+    'only to that physical document. Each connection replays current document state and ' +
+    'bounded document history independently of the session resume cursor.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     query: z.object({
@@ -838,9 +906,16 @@ registry.registerPath({
         'sequence as JSON frames.',
       content: {
         'text/event-stream': {
-          schema: z.union([SessionSnapshotSchema, SessionEventSchema]).openapi({
-            description: 'A SessionSnapshot (cold connect) followed by SessionEvent frames.',
-          }),
+          schema: z
+            .union([
+              SessionSnapshotSchema,
+              SessionEventSchema,
+              LocalDocEventFrameSchema,
+              LocalDocSnapshotFrameSchema,
+            ])
+            .openapi({
+              description: 'A SessionSnapshot (cold connect) followed by SessionEvent frames.',
+            }),
         },
       },
     },
@@ -1332,9 +1407,26 @@ registry.registerPath({
   method: 'get',
   path: '/api/models',
   tags: ['Models'],
-  summary: 'List available Claude models',
+  summary: 'List the models a runtime offers',
   description:
-    'Returns models available to the user. Serves SDK-reported models if cached, otherwise returns defaults.',
+    "Returns the models the resolved runtime offers. A session on DorkOS credits (or `account=dorkos-credits` with no session) gets only the models credits serve on the runtime's protocol, the recommended one first, once the service says which protocols its models are on. When the service cannot be read, the last list it answered stands, marked out of date.",
+  request: {
+    query: z.object({
+      runtime: z.string().optional().openapi({ description: 'The runtime whose models to list' }),
+      sessionId: z
+        .string()
+        .optional()
+        .openapi({ description: 'The session whose runtime and account decide the menu' }),
+      account: z.string().optional().openapi({
+        description:
+          'The account the person picked for a session that has not started, or `dorkos-credits` with no session to ask about credits directly',
+      }),
+      cwd: z
+        .string()
+        .optional()
+        .openapi({ description: 'The folder a session that has not started runs in' }),
+    }),
+  },
   responses: {
     200: {
       description: 'List of available models',
@@ -1343,6 +1435,10 @@ registry.registerPath({
           schema: z.object({ models: z.array(ModelOptionSchema) }),
         },
       },
+    },
+    400: {
+      description: 'Unknown runtime',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -1530,6 +1626,10 @@ const RuntimeCapabilitiesSchema = z.object({
       scope: z.enum(['conversation', 'runtime']).openapi({
         description:
           'What a change of the credits choice reaches: `conversation` — new conversations follow it and one already going stays on what it started on; `runtime` — the whole runtime moves, so a switch is refused while it is in the middle of a reply.',
+      }),
+      caveat: z.string().optional().openapi({
+        description:
+          'What a person does not get on credits that they would on their own sign-in, as one sentence shown beside the choice. Absent when nothing is missing.',
       }),
     })
     .optional()
@@ -1938,6 +2038,57 @@ registry.registerPath({
 
 // --- Relay ---
 
+/** Receipt availability errors are safe and distinguish acceptance from response loss. */
+const RelayReceiptAvailabilityErrorSchema = z.object({
+  error: z.string(),
+  code: z.enum([
+    'RELAY_RECEIPT_TRANSACTION_ACTIVE',
+    'RELAY_RECEIPT_OBSERVER_BUSY',
+    'RELAY_RECEIPT_STORAGE_UNAVAILABLE',
+  ]),
+});
+const RelayReceiptResponseErrorSchema = z.object({
+  error: z.string(),
+  code: z.literal('RELAY_RECEIPT_RESPONSE_UNAVAILABLE'),
+  messageId: RelayMessageIdSchema,
+  statusUrl: z.string(),
+});
+const RelayPublishResponseSchema = z.object({
+  messageId: z.string(),
+  deliveredTo: z.number(),
+  rejected: z
+    .array(
+      z.object({
+        endpointHash: z.string(),
+        reason: z.enum([
+          'backpressure',
+          'circuit_open',
+          'rate_limited',
+          'budget_exceeded',
+          'initiate_denied',
+          'untrusted_bridge_principal',
+          'turn_ceiling',
+        ]),
+      })
+    )
+    .optional(),
+  mailboxPressure: z.record(z.string(), z.number()).optional(),
+  adapterResult: z
+    .object({
+      success: z.boolean(),
+      durationMs: z.number().optional(),
+      error: z.string().optional(),
+      code: z.enum(['at_capacity', 'chat_unavailable', 'rate_limited']).optional(),
+      skipped: z.boolean().optional(),
+      retryAfterMs: z.number().optional(),
+      deadLettered: z.boolean().optional(),
+      responseMessageId: z.string().optional(),
+    })
+    .optional(),
+  receipt: RelayDeliveryReceiptSchema.optional(),
+  statusUrl: z.string().optional(),
+});
+
 registry.registerPath({
   method: 'post',
   path: '/api/relay/messages',
@@ -1952,16 +2103,68 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'Message sent',
-      content: {
-        'application/json': {
-          schema: z.object({ messageId: z.string(), deliveredTo: z.number() }),
-        },
-      },
+      description:
+        'Publication result. Agent-target scheduling counts do not confirm delivery or turn success; receipt/statusUrl observe target delivery.',
+      content: { 'application/json': { schema: RelayPublishResponseSchema } },
     },
     400: {
       description: 'Validation error',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login requires a verified session or per-user API key',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Reserved sender, destination or reply address',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    422: {
+      description: 'Publication refused before acceptance',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    503: {
+      description:
+        'Receipt storage/observer/caller transaction unavailable before acceptance, or response unavailable after durable acceptance. A retained locator does not permit replay.',
+      content: {
+        'application/json': {
+          schema: z.union([RelayReceiptAvailabilityErrorSchema, RelayReceiptResponseErrorSchema]),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/relay/messages/{messageId}/status',
+  tags: ['Relay'],
+  summary: 'Read a delivery receipt',
+  description:
+    'Authoritative metadata for an HTTP agent-target publication, independent of the derived message index. Delivered confirms target delivery, not agent turn success. With login on, only the verified owner may read it; historical local-trust receipts belong to the verified install owner. With login off, local trust applies. Receipts expire seven days after acceptance. No replay or message content is provided.',
+  request: { params: z.object({ messageId: RelayMessageIdSchema }) },
+  responses: {
+    200: {
+      description: 'Minimized delivery receipt',
+      headers: { 'Cache-Control': { schema: { type: 'string', const: 'no-store' } } },
+      content: { 'application/json': { schema: RelayDeliveryReceiptSchema } },
+    },
+    400: {
+      description: 'INVALID_RELAY_MESSAGE_ID after authentication',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'AUTH_REQUIRED before ID validation',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description:
+        'RELAY_RECEIPT_NOT_FOUND: unknown, expired, untracked and other-owner locators have the same response',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    503: {
+      description: 'Receipt observer/storage/caller transaction unavailable',
+      content: { 'application/json': { schema: RelayReceiptAvailabilityErrorSchema } },
     },
   },
 });
@@ -3491,6 +3694,233 @@ registry.registerPath({
   },
 });
 
+// --- Marketplace dev links (DOR-2696) ---
+
+const DevLinkStateSchema = z.enum(['active', 'folder-missing', 'link-missing', 'link-replaced']);
+
+const LocalDevLinkStatusSchema = z.object({
+  name: z.string(),
+  type: z.enum(['plugin', 'skill-pack']),
+  scope: z.enum(['global', 'project']),
+  projectPath: z.string().optional(),
+  path: z.string().describe('The real path of the folder the package runs from.'),
+  state: DevLinkStateSchema,
+  parked: z
+    .object({ version: z.string().optional() })
+    .nullable()
+    .describe('The installed copy set aside for the link, or null.'),
+  linkedAt: z.string(),
+  lastReloadAt: z.string().optional(),
+});
+
+const LocalDevLinkErrorSchema = z.object({
+  error: z.string().describe('One plain sentence: what did not happen and what to do.'),
+  code: z.string(),
+  realPath: z.string().optional(),
+  name: z.string().optional(),
+  installedVersion: z.string().optional(),
+});
+
+const DevLinkScopeBody = {
+  scope: z.enum(['global', 'project']),
+  projectPath: z.string().min(1).optional().describe('Required for, and only for, scope project.'),
+};
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/dev-links',
+  tags: ['Marketplace'],
+  summary: 'List dev links',
+  description:
+    'Every package running from a folder on this computer, and whether its link is in force. ' +
+    '`registryUnreadable` is set when the record of dev links cannot be read; no folder counts ' +
+    'as linked then.',
+  responses: {
+    200: {
+      description: 'Every dev link',
+      content: {
+        'application/json': {
+          schema: z.object({
+            links: z.array(LocalDevLinkStatusSchema),
+            registryUnreadable: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/dev-links/preview',
+  tags: ['Marketplace'],
+  summary: 'Preview running a package from a folder',
+  description:
+    'Read-only. Names the package, the slot the link would take, an installed copy it would ' +
+    'set aside, what the folder runs on its own, and the extensions it carries. A folder that ' +
+    'cannot be linked answers with the reason.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              path: z.string().min(1).max(1024),
+              ...DevLinkScopeBody,
+              replaceInstalled: z
+                .boolean()
+                .optional()
+                .describe('Describe the link as setting an installed copy aside.'),
+            })
+            .strict(),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What linking would do',
+      content: {
+        'application/json': {
+          schema: z.object({
+            name: z.string(),
+            type: z.enum(['plugin', 'skill-pack']),
+            version: z.string().optional(),
+            path: z.string(),
+            scope: z.enum(['global', 'project']),
+            slot: z.string(),
+            replaces: z.object({ version: z.string() }).nullable(),
+            effects: DisclosedEffectsSchema.nullable(),
+            extensions: z.array(z.string()),
+            change: z
+              .string()
+              .describe(
+                'The approval text for this folder as it reads now. Send it back as ' +
+                  '`expectedChange` when linking, so a folder that changed meanwhile is refused.'
+              ),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Not linkable (`code` says why)',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+    403: {
+      description: 'Outside the folders DorkOS may use',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+    409: {
+      description: 'The slot or the name is taken',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/dev-links',
+  tags: ['Marketplace'],
+  summary: 'Run a package from a folder',
+  description:
+    'Gated by the `marketplace.link` capability (destructive, no permission area): the person ' +
+    'runs it, and an agent gets an approval card showing the folder in full (202), retried with ' +
+    'the `X-DorkOS-Approval` header. No setting can approve it ahead of time. An installed copy ' +
+    'of the same package is set aside only with `replaceInstalled: true`.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              path: z.string().min(1).max(1024),
+              ...DevLinkScopeBody,
+              replaceInstalled: z.boolean().optional(),
+              via: z.enum(['app', 'terminal']).optional(),
+              expectedChange: z
+                .string()
+                .min(1)
+                .max(65_536)
+                .optional()
+                .describe(
+                  "The preview's `change` the person said yes to; a mismatch is refused with " +
+                    '`dev_link_changed`. Ignored for an agent, whose yes is the approval card.'
+                ),
+            })
+            .strict(),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Linked',
+      content: { 'application/json': { schema: LocalDevLinkStatusSchema } },
+    },
+    202: {
+      description: 'A person has been asked; retry with the approval token',
+      content: { 'application/json': { schema: z.object({ status: z.string() }).passthrough() } },
+    },
+    400: {
+      description: 'Not linkable, or a malformed body',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+    403: {
+      description: 'Refused by the gate, or outside the folders DorkOS may use',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The slot or the name is taken, or the folder changed after it was approved ' +
+        '(`dev_link_changed`)',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/dev-links/{name}/unlink',
+  tags: ['Marketplace'],
+  summary: 'Unlink a dev link',
+  description:
+    'The person only: the same bar as deciding an approval card. Takes the link out (never the ' +
+    'folder) and puts a set-aside installed copy back with its approvals.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: { 'application/json': { schema: z.object(DevLinkScopeBody).strict() } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Unlinked',
+      content: {
+        'application/json': {
+          schema: z.object({
+            restored: z.enum(['installed', 'removed']),
+            parkedLeftAt: z.string().optional(),
+            leftInPlace: z
+              .literal(true)
+              .optional()
+              .describe(
+                "Set when something else had already taken the link's place; it was left as it is."
+              ),
+          }),
+        },
+      },
+    },
+    403: {
+      description: 'Not the person (`operator_only`), or not a signed-in session under sign-in',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such dev link',
+      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
+    },
+  },
+});
+
 // --- Cloud (device-link) ---
 
 const CloudLinkStateSchema = z.enum(['idle', 'pending', 'linked', 'expired', 'denied', 'unlinked']);
@@ -3790,10 +4220,14 @@ const CloudAccountExportResponseDocSchema = z
       export: z.object({
         requestedAt: z.string(),
         readyAt: z.string().nullable(),
-        downloadUrl: z
-          .string()
-          .nullable()
-          .openapi({ description: 'A short-lived https link, null until the export is ready.' }),
+        downloadUrl: z.string().nullable().openapi({
+          description:
+            'An https link the person opens in their own browser to get the export; it may ask them to sign in. Null until the export is ready.',
+        }),
+        emailRequested: z.boolean().openapi({
+          description:
+            'Whether an email for when the export is ready was asked for. Asked only when the first answer had no link.',
+        }),
       }),
     }),
     z.object({ ok: z.literal(false), problem: CloudProblemDocSchema }),
@@ -7157,7 +7591,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Durable room event stream (SSE, or WebSocket at the same path)',
   description:
-    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again.",
+    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again. Authorized document channels also emit `canvas_channel_snapshot` and `canvas_event` frames while the room is idle. These carry no frame id or entry seq; `docSeq` belongs only to that physical document, and document replay is independent of the room resume cursor.",
   request: {
     params: RoomIdParams,
     query: z.object({
@@ -7181,7 +7615,7 @@ registry.registerPath({
         'SSE stream: a RoomSnapshot frame on a cold connect, then RoomEvent frames. A ' +
         'WebSocket upgrade of the same path answers `101` with the identical sequence.',
       content: {
-        'text/event-stream': { schema: z.union([RoomSnapshotSchema, RoomEventSchema]) },
+        'text/event-stream': { schema: z.union([RoomSnapshotSchema, LocalRoomEventSchema]) },
       },
     },
     404: roomNotFound,

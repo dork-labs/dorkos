@@ -190,12 +190,19 @@ export type CloudBillingSessionResponse =
  * Where an account export stands, as the service answered.
  *
  * `downloadUrl` is null until the export is ready; asking again is how to get
- * it. Once present it is a short-lived https link.
+ * it. Once present it is an https link the person opens in their own browser,
+ * which may ask them to sign in first.
  */
 export interface CloudAccountExport {
   requestedAt: string;
   readyAt: string | null;
   downloadUrl: string | null;
+  /**
+   * Whether this request asked the service to email the account when the
+   * export is ready. Asked only when the answer had no link, so the app may
+   * say an email will follow only when this is true.
+   */
+  emailRequested: boolean;
 }
 
 /** `POST /api/cloud/account/export` — the export just asked for, or a refusal. */

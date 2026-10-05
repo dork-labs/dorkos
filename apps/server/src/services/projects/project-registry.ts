@@ -13,6 +13,17 @@
  * An extension can name at most {@link MAX_REPORTED_ROOTS_PER_EXTENSION} roots,
  * so it cannot squat names at scale.
  *
+ * A person's lookups are capped too: at most {@link MAX_LOOKUP_ROOTS} roots are
+ * kept that only a lookup named (reported, and no extension named them). Past
+ * it, the one used least recently is forgotten and its name freed. A `seen`
+ * root, any root an extension named, and any root a setting names
+ * ({@link ProjectRegistry.protectRoots}) is never forgotten this way. A
+ * forgotten root looked up again may get a different name: "a name never
+ * changes" holds for every root that is kept. A lookup
+ * records the root because the name it answers must stay the root's name; the
+ * cap is what keeps that from growing without end, since a caller the person
+ * bar trusts (any local script while login is off) can look up any folder.
+ *
  * ## The boundary
  *
  * Anything an extension or a person names is checked twice: the folder they
@@ -40,9 +51,7 @@
  *
  * @module services/projects/project-registry
  */
-import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { ProjectInfo, ProjectRef } from '@dorkos/shared/project-schemas';
 
 import { validateBoundary } from '../../lib/boundary.js';
@@ -53,7 +62,9 @@ import type {
   KnownProjectReporter,
   KnownProjectsPort,
 } from './known-projects-store.js';
+import { folderExists, holdsExtensionCopy } from './extension-copy.js';
 import { parseOriginRepo } from './origin-repo.js';
+import { assignProjectName } from './project-names.js';
 import { peekProjectRoot, resolveProjectRoot } from './resolve-project-root.js';
 
 /** How often a project's `lastSeenAt` is written, at most. */
@@ -70,6 +81,12 @@ const EXTENSION_SCOPE_TTL_MS = 60_000;
  * seen. Past it, naming a new root answers null and records nothing.
  */
 export const MAX_REPORTED_ROOTS_PER_EXTENSION = 200;
+
+/**
+ * The most roots kept that only a person's lookup named. Past it, the least
+ * recently used is forgotten. See the module documentation.
+ */
+export const MAX_LOOKUP_ROOTS = 200;
 
 /** Timeout for `git remote get-url origin`. */
 const ORIGIN_GIT_TIMEOUT_MS = 5_000;
@@ -107,14 +124,6 @@ async function readOriginRepoFromGit(root: string): Promise<string | null> {
   }
 }
 
-async function folderExists(dir: string): Promise<boolean> {
-  try {
-    return (await fs.stat(dir)).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
 const defaultDeps: ProjectRegistryDeps = {
   resolveRoot: resolveProjectRoot,
   peekRoot: peekProjectRoot,
@@ -123,34 +132,6 @@ const defaultDeps: ProjectRegistryDeps = {
   checkBoundary: (dir) => validateBoundary(dir),
   now: Date.now,
 };
-
-/**
- * A folder name in the characters a project name may hold.
- *
- * @param segment - One path segment.
- * @returns The segment with every character outside `[A-Za-z0-9._-]` as `-`.
- */
-export function sanitizeNameSegment(segment: string): string {
-  return segment.replace(/[^A-Za-z0-9._-]/g, '-');
-}
-
-/**
- * The name a new root gets, given the names already taken.
- *
- * @param root - The new project's root.
- * @param isTaken - Whether a name already belongs to another project.
- */
-export function assignProjectName(root: string, isTaken: (name: string) => boolean): string {
-  const base = sanitizeNameSegment(path.basename(root)) || 'project';
-  if (!isTaken(base)) return base;
-  const parent = sanitizeNameSegment(path.basename(path.dirname(root))) || 'root';
-  const withParent = `${base}~${parent}`;
-  if (!isTaken(withParent)) return withParent;
-  for (let n = 2; ; n++) {
-    const candidate = `${withParent}-${n}`;
-    if (!isTaken(candidate)) return candidate;
-  }
-}
 
 function toRef(project: KnownProject): ProjectRef {
   return { root: project.root, name: project.name };
@@ -167,30 +148,6 @@ function toInfo(project: KnownProject): ProjectInfo {
 
 function byName(a: { name: string }, b: { name: string }): number {
   return a.name.localeCompare(b.name);
-}
-
-/**
- * Whether a root holds a copy of an extension: a `.dork/extensions/<id>`
- * folder, or one inside a plugin at `.dork/plugins/<plugin>/.dork/extensions/<id>`.
- *
- * @param root - A project root.
- * @param extensionId - The extension's id.
- */
-export async function holdsExtensionCopy(root: string, extensionId: string): Promise<boolean> {
-  if (await folderExists(path.join(root, '.dork', 'extensions', extensionId))) return true;
-  let plugins: string[];
-  try {
-    plugins = await fs.readdir(path.join(root, '.dork', 'plugins'));
-  } catch {
-    return false;
-  }
-  for (const plugin of plugins) {
-    // A half-finished or backed-up install beside a plugin is not a copy.
-    if (isInstallSiblingName(plugin)) continue;
-    const copy = path.join(root, '.dork', 'plugins', plugin, '.dork', 'extensions', extensionId);
-    if (await folderExists(copy)) return true;
-  }
-  return false;
 }
 
 /** How a root became known when it is recorded. */
@@ -218,6 +175,7 @@ export class ProjectRegistry {
   private readonly reserved = new Map<string, Set<string>>();
   private readonly listeners = new Set<() => void>();
   private sources: ProjectSources | undefined;
+  private protectedRoots: () => Iterable<string> = () => [];
   private sourcesReadAt: number | undefined;
   private sourcesRead: Promise<void> | undefined;
   private readonly scoped = new Map<string, { at: number; roots: Promise<Set<string>> }>();
@@ -282,6 +240,17 @@ export class ProjectRegistry {
   }
 
   /**
+   * Roots the lookup cap must never forget, read each time it forgets: the
+   * project roots a setting names (account rules), so a setting never points
+   * at a root whose name was freed. Boot wires it.
+   *
+   * @param roots - Returns the canonical roots to keep.
+   */
+  protectRoots(roots: () => Iterable<string>): void {
+    this.protectedRoots = roots;
+  }
+
+  /**
    * The project a folder belongs to, remembered as seen. For core's own
    * folders only (a session, agent, workspace or install folder); anything a
    * person or an extension names goes through {@link resolveWithin}.
@@ -322,7 +291,9 @@ export class ProjectRegistry {
    * Both the folder and the root git answers with must be inside the
    * directory boundary. A root core had not seen is recorded as `reported`;
    * for an extension it counts against its cap, and it does not join the
-   * extension's own list (only {@link report} does that).
+   * extension's own list (only {@link report} does that). For a person it
+   * counts against {@link MAX_LOOKUP_ROOTS}, and looking it up again marks it
+   * used.
    *
    * @param dir - Any folder.
    * @param extensionId - The extension asking, or undefined for a person.
@@ -333,8 +304,17 @@ export class ProjectRegistry {
     const root = await this.boundedRoot(dir);
     if (root === 'outside' || root === null) return root;
     const known = this.byRoot.get(root);
-    if (known) return toRef(known);
-    if (extensionId === undefined) return toRef(await this.remember(root, 'reported'));
+    if (known) {
+      // A lookup refreshes only a lookup's own row: a seen project's
+      // `lastSeenAt` means a real session, agent, workspace or install folder.
+      const used = extensionId === undefined && known.source === 'reported';
+      return toRef(used ? this.touch(known, 'reported') : known);
+    }
+    if (extensionId === undefined) {
+      const project = await this.remember(root, 'reported');
+      this.forgetOldLookups(root);
+      return toRef(project);
+    }
     return this.withSlot(extensionId, root, async () => {
       const project = await this.remember(root, 'reported');
       this.addReporter(root, extensionId, 'resolve');
@@ -410,6 +390,17 @@ export class ProjectRegistry {
   get(root: string): ProjectInfo | undefined {
     const project = this.byRoot.get(root);
     return project ? toInfo(project) : undefined;
+  }
+
+  /**
+   * The name a root has, or would get if it were recorded now, without
+   * recording it: never a name another project already holds. For readers
+   * that must not write (an ungated GET naming a folder).
+   *
+   * @param root - A project root, canonical.
+   */
+  nameFor(root: string): string {
+    return this.byRoot.get(root)?.name ?? assignProjectName(root, (name) => this.names.has(name));
   }
 
   /**
@@ -490,6 +481,88 @@ export class ProjectRegistry {
     } finally {
       pending.delete(root);
       if (pending.size === 0) this.reserved.delete(extensionId);
+    }
+  }
+
+  /**
+   * Forget the least recently used roots that only a lookup named until at
+   * most {@link MAX_LOOKUP_ROOTS} remain. Never `keep` (the root just looked
+   * up), a `seen` root, a root any extension named or is naming right now, one
+   * being recorded, or one a setting names ({@link protectRoots}). Storage
+   * re-checks lookup-only in the delete itself, so a row another process
+   * upgraded meanwhile stays, and memory learns its new state.
+   */
+  private forgetOldLookups(keep: string): void {
+    let held: ReadonlySet<string>;
+    try {
+      held = new Set(this.protectedRoots());
+    } catch (err) {
+      // Not knowing which roots a setting names, forget none of them.
+      this.warn('could not read the roots settings name', err);
+      return;
+    }
+    const naming = new Set([...this.reserved.values()].flatMap((roots) => [...roots]));
+    const lookups = [...this.byRoot.values()].filter(
+      (p) =>
+        p.source === 'reported' &&
+        !this.reporters.get(p.root)?.size &&
+        !naming.has(p.root) &&
+        !this.recording.has(p.root) &&
+        !held.has(p.root)
+    );
+    let excess = lookups.length - MAX_LOOKUP_ROOTS;
+    if (excess <= 0) return;
+    lookups.sort(
+      (a, b) =>
+        a.lastSeenAt.localeCompare(b.lastSeenAt) || a.firstSeenAt.localeCompare(b.firstSeenAt)
+    );
+    const over = excess;
+    for (const project of lookups) {
+      if (excess <= 0) break;
+      if (project.root === keep) continue;
+      let removed: boolean;
+      try {
+        removed = this.store ? this.store.removeLookupOnly(project.root) : true;
+      } catch (err) {
+        // Memory keeps what storage has; the next lookup tries again.
+        this.warn(`could not forget ${project.root}`, err);
+        break;
+      }
+      if (!removed) {
+        // Another process saw it, an extension named it, or it is already
+        // gone: take storage's word for it instead of dropping it here.
+        this.relearn(project.root);
+        continue;
+      }
+      this.drop(project.root);
+      excess--;
+    }
+    if (excess < over) this.changed();
+  }
+
+  /** Forget a project in memory only. */
+  private drop(root: string): void {
+    const project = this.byRoot.get(root);
+    if (!project) return;
+    this.byRoot.delete(project.root);
+    this.names.delete(project.name);
+    this.lastWritten.delete(project.root);
+    this.reporters.delete(project.root);
+  }
+
+  /** Replace one root's row in memory with what storage holds now. */
+  private relearn(root: string): void {
+    if (!this.store) return;
+    try {
+      const stored = this.store.all().find((p) => p.root === root);
+      if (stored) {
+        this.byRoot.set(root, stored);
+        this.names.add(stored.name);
+      } else this.drop(root);
+      for (const reporter of this.store.reporters()) this.noteReporter(reporter);
+      this.changed();
+    } catch (err) {
+      this.warn(`could not re-read ${root}`, err);
     }
   }
 

@@ -61,6 +61,63 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
+// The fake service behind `GET /v1/inference/models`, for the credits gate.
+const service = vi.hoisted(() => ({ status: 200, saysProtocols: true }));
+vi.mock('../../services/core/cloud/v1-client.js', async (importOriginal) => {
+  const { createCloudApiClient } = await import('@dork-labs/cloud-api/client');
+  const supports = { tools: true, promptCaching: true, streaming: true, thinking: true };
+  const body = {
+    catalogVersion: 'cv_1',
+    models: [
+      {
+        id: 'md_claude_pick',
+        displayName: 'Pick',
+        contextWindow: 200000,
+        maxOutputTokens: 64000,
+        supports,
+        protocols: ['anthropicMessages'],
+        recommendedOn: ['anthropicMessages'],
+      },
+      {
+        id: 'md_gpt_like',
+        displayName: 'Other protocol',
+        contextWindow: 128000,
+        maxOutputTokens: 16000,
+        supports,
+        protocols: ['openaiChat'],
+      },
+    ],
+  };
+  return {
+    ...(await importOriginal<typeof import('../../services/core/cloud/v1-client.js')>()),
+    readCloudInstanceToken: () => 'ik',
+    captureCloudV1Context: () => ({
+      client: createCloudApiClient({
+        baseUrl: 'https://cloud.example.invalid',
+        token: 'ik',
+        fetch: async () =>
+          new Response(
+            JSON.stringify(
+              service.saysProtocols
+                ? body
+                : {
+                    ...body,
+                    models: body.models.map(
+                      ({ protocols: _p, recommendedOn: _r, ...rest }) => rest
+                    ),
+                  }
+            ),
+            {
+              status: service.status,
+              headers: { 'content-type': 'application/json' },
+            }
+          ),
+      }),
+      isCurrent: () => true,
+    }),
+  };
+});
+
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { ModelOption, Session } from '@dorkos/shared/types';
@@ -69,6 +126,16 @@ import { projectModelOptions } from '../../services/runtimes/opencode/providers/
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { __resetCreditsModelsForTests } from '../../services/core/cloud/credits-models.js';
+import fs from 'node:fs';
+import nodeOs from 'node:os';
+import nodePath from 'node:path';
+
+/** Where these tests keep the credits list: never the dev data folder. */
+const CREDITS_STORE = nodePath.join(
+  nodeOs.tmpdir(),
+  `credits-models-${process.pid}-${Math.random().toString(36).slice(2)}.json`
+);
 
 const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
@@ -529,5 +596,129 @@ describe('PATCH /api/sessions/:id — the model menu and the write door agree', 
 
     expect(res.status).toBe(200);
     expect(rowFor(BOUND_OPENCODE)?.model).toBe('ollama/qwen2.5-coder:7b');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DOR-2636. A session on DorkOS credits may only be set to a model credits
+// serve on its runtime's protocol: the service's list is the catalog, and it
+// does not degrade.
+// ---------------------------------------------------------------------------
+
+describe('PATCH /api/sessions/:id — the model gate on DorkOS credits', () => {
+  /** Which account the ladder says a session launches on. */
+  let ladderAccount: string;
+
+  beforeEach(() => {
+    db = createTestDb();
+    registerRuntimes();
+    fs.rmSync(CREDITS_STORE, { force: true });
+    __resetCreditsModelsForTests({ storePath: CREDITS_STORE });
+    service.status = 200;
+    service.saysProtocols = true;
+    ladderAccount = 'default';
+    const base = claude.getCapabilities();
+    claude.getCapabilities.mockReturnValue({
+      ...base,
+      credits: { protocol: 'anthropic-messages', scope: 'conversation' },
+    });
+    Object.assign(claude, {
+      checkLaunchAccount: vi.fn(async (_id: string, _dir: string, hintId?: string) => ({
+        ok: true,
+        root: '/accounts/x',
+        accountId: hintId ?? ladderAccount,
+      })),
+    });
+  });
+
+  it('stores a model credits serve on a session that runs on credits', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+
+    const res = await patch(BOUND_CLAUDE, { model: 'md_claude_pick' });
+
+    expect(res.status).toBe(200);
+    expect(rowFor(BOUND_CLAUDE)?.model).toBe('md_claude_pick');
+  });
+
+  it('refuses the runtime’s own model, and one offered only on another protocol', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+
+    for (const model of [CLAUDE_MODEL, 'md_gpt_like']) {
+      const res = await patch(BOUND_CLAUDE, { model });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('UNSUPPORTED_MODEL');
+      expect(res.body.error).toMatch(/DorkOS credits don’t cover that model/);
+    }
+    expect(rowFor(BOUND_CLAUDE)?.model ?? null).toBeNull();
+  });
+
+  it('keeps judging from the last good list when the service cannot be read', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+    let clock = 0;
+    __resetCreditsModelsForTests({ now: () => clock, storePath: CREDITS_STORE });
+    expect((await patch(BOUND_CLAUDE, { model: 'md_claude_pick' })).status).toBe(200);
+    clock += 6 * 60_000;
+    service.status = 500;
+
+    expect((await patch(BOUND_CLAUDE, { model: 'md_claude_pick' })).status).toBe(200);
+    expect((await patch(BOUND_CLAUDE, { model: 'md_gpt_like' })).status).toBe(400);
+  });
+
+  it('judges a runtime alias by the id it expands to', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+    claude.getSupportedModels.mockResolvedValue([
+      { value: 'sonnet', displayName: 'Sonnet', description: '', resolvedModel: 'md_claude_pick' },
+      { value: 'haiku', displayName: 'Haiku', description: '', resolvedModel: 'md_gpt_like' },
+    ]);
+
+    expect((await patch(BOUND_CLAUDE, { model: 'sonnet' })).status).toBe(200);
+    expect((await patch(BOUND_CLAUDE, { model: 'haiku' })).status).toBe(400);
+  });
+
+  it('judges a session not yet started by the person’s pick of account', async () => {
+    const onCredits = await patch(UNBOUND, {
+      model: 'md_claude_pick',
+      runtime: 'claude-code',
+      account: 'dorkos-credits',
+    });
+    expect(onCredits.status).toBe(200);
+
+    const own = await patch(UNBOUND, {
+      model: 'md_claude_pick',
+      runtime: 'claude-code',
+      account: 'work',
+    });
+    expect(own.status).toBe(400);
+    expect(own.body.error).toContain('claude-code');
+  });
+
+  it('judges by the runtime’s own catalog while the service says nothing about protocols', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+    service.saysProtocols = false;
+
+    expect((await patch(BOUND_CLAUDE, { model: CLAUDE_MODEL })).status).toBe(200);
+    // And the runtime's own refusal still stands, as before.
+    expect((await patch(BOUND_CLAUDE, { model: 'md_claude_pick' })).status).toBe(400);
+  });
+
+  it('judges by the runtime’s own catalog when the list cannot be read and the service never said', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+    ladderAccount = 'dorkos-credits';
+    service.status = 500;
+
+    expect((await patch(BOUND_CLAUDE, { model: CLAUDE_MODEL })).status).toBe(200);
+  });
+
+  it('keeps the runtime’s own catalog for a session on its own sign-in', async () => {
+    bindSession(BOUND_CLAUDE, 'claude-code');
+
+    const res = await patch(BOUND_CLAUDE, { model: CLAUDE_MODEL });
+
+    expect(res.status).toBe(200);
   });
 });

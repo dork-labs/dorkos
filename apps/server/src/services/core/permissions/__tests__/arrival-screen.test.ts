@@ -135,6 +135,8 @@ describe('which cards offer Always allow', () => {
     requestedByPath: '/agents/newcomer',
     area: 'agents',
     authorityBindingDigest: null,
+    capabilityId: 'operator.update_agent_execution',
+    tier: 'destructive',
   };
   it('offers it on an ordinary card', () => {
     expect(isAlwaysOffered({ ...card, detail: null })).toBe(true);

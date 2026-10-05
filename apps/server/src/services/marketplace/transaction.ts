@@ -246,6 +246,13 @@ export interface TransactionOwnership {
  * deepest ancestor that does exist and re-joins the missing tail, the same rule
  * `lib/boundary.ts` applies to a path it is validating.
  *
+ * The target's OWN name is never resolved, only its parent's (DOR-2696). The
+ * lock guards a directory entry that gets renamed, and a dev link puts a link
+ * in exactly that entry: resolving it would key the slot on the developer's
+ * folder while the link is in place and on the slot itself before and after,
+ * so a link, an install and an unlink of one package would take different
+ * locks.
+ *
  * Best-effort by construction. An ancestor that cannot be read (EACCES, or a
  * platform that refuses `realpath` here) falls back to the resolved-but-not-
  * canonical path, which is exactly the key this used before and never worse.
@@ -256,8 +263,10 @@ export interface TransactionOwnership {
  */
 async function canonicalTargetKey(target: string): Promise<string> {
   const absolute = path.resolve(target);
-  const missingTail: string[] = [];
-  let current = absolute;
+  const container = path.dirname(absolute);
+  if (container === absolute) return absolute;
+  const missingTail: string[] = [path.basename(absolute)];
+  let current = container;
 
   for (;;) {
     try {

@@ -1785,6 +1785,42 @@ describe('ClaudeCodeRuntime', () => {
     });
   });
 
+  describe('refreshProjectCommands() (DOR-2696)', () => {
+    it("drops the project's cached commands and tells clients, reloading no session's plugins", async () => {
+      // Purpose: a project dev link's projected command must reach that
+      // project's palette; the cached list would otherwise stay stale until a
+      // restart, and a session reload would cost a cache rebuild for nothing.
+      _mockListConsentedPluginNames.mockResolvedValue([]);
+      _mockBuildPluginsArray.mockResolvedValue([]);
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const queryResult = wrapSdkQuery(sdkSimpleText(''));
+      queryResult.supportedCommands.mockResolvedValue([
+        { name: '/stale', description: 'From before the projection', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
+      const cwd = process.cwd();
+      agentManager.ensureSession('project-cmds', { permissionMode: 'default', cwd });
+      for await (const _ of agentManager.sendMessage('project-cmds', 'hello')) {
+        // drain
+      }
+      await vi.waitFor(async () => {
+        const result = await agentManager.getCommands(false, cwd);
+        expect(result.commands.map((c) => c.fullCommand)).toContain('/stale');
+      });
+      _mockBroadcast.mockClear();
+
+      agentManager.refreshProjectCommands(cwd);
+
+      const result = await agentManager.getCommands(false, cwd);
+      expect(result.commands.map((c) => c.fullCommand)).not.toContain('/stale');
+      expect(queryResult.reloadPlugins).not.toHaveBeenCalled();
+      expect(_mockBroadcast).toHaveBeenCalledWith(
+        'commands_changed',
+        expect.objectContaining({ changedAt: expect.any(String) })
+      );
+    });
+  });
+
   // ===========================================================================
   // What a plugin reload costs, and when it is worth waiting for
   // (spec `plugin-reload-cache-cost`)

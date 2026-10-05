@@ -111,7 +111,7 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 70 tools in total, covering sessions, account usage, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent permissions, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting gives a client DorkOS's full external tool surface: 71 tools in total, covering sessions, account usage, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent permissions, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
 
 | Domain              | Tools | Examples                                                                                       |
 | ------------------- | ----- | ---------------------------------------------------------------------------------------------- |
@@ -128,23 +128,24 @@ Connecting gives a client DorkOS's full external tool surface: 70 tools in total
 | Permissions         | 3     | `request_permission`, `list_my_permissions`, `change_permission`                               |
 | Self-description    | 1     | `list_capabilities`                                                                            |
 | Document events     | 2     | `canvas_send`, `canvas_patch_state`                                                            |
-| Marketplace         | 9     | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_uninstall`     |
+| Marketplace         | 10    | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_link`          |
 
-The last six rows (operator, memory, permissions, self-description, document events, marketplace: 27 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 43 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+The last six rows (operator, memory, permissions, self-description, document events, marketplace: 28 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 43 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
 
 Being off the registry does not mean running unasked. All 43 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive` and answer with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 
 Inside a DorkOS session, Claude Code is also told which tier a tool sits at and that the call already passed this check, so its auto mode stops asking about things DorkOS has already decided. This server gets no equivalent: it has no session, so there is nothing to tell. Your client makes its own decisions about when to ask you, exactly as it does today.
 
 <Callout type="info">
-  The 9 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
+  The 10 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
   successfully. Without that, the marketplace branch is silently skipped and the server still boots
   with the other 61. `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`,
   and `marketplace_update` with `apply: true` each return a pending approval with a token instead of
   doing the work; a person decides it in the DorkOS UI, and the client retries with the token.
   Without `apply`, `marketplace_update` only says which packages have a newer version.
   `marketplace_uninstall` is `destructive`-tier, so the registry's own approval gate stops it as
-  well.
+  well. `marketplace_link`, which runs a package from a folder on your computer, is
+  `destructive`-tier with no setting that can approve it ahead of time: every call waits for you.
 </Callout>
 
 Every tool's full name, description, and input schema is visible from any connected MCP client's tool list. This table is a map of the territory, not the source of truth.

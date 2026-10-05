@@ -469,7 +469,7 @@ describe('what the box does when a hit is chosen', () => {
 
     await waitFor(() => expect(toastInfo).toHaveBeenCalled());
     expect(toastInfo).toHaveBeenCalledWith(
-      'DorkOS could not open that folder',
+      'Couldn’t open that folder',
       expect.objectContaining({
         description: expect.stringContaining('/private/tmp/scratch') as string,
       })
@@ -489,7 +489,7 @@ describe('what the box does when a hit is chosen', () => {
     fireEvent.click(await screen.findByRole('option'));
 
     await waitFor(() => expect(toastInfo).toHaveBeenCalled());
-    expect(toastInfo).toHaveBeenCalledWith('DorkOS could not open that folder', expect.anything());
+    expect(toastInfo).toHaveBeenCalledWith('Couldn’t open that folder', expect.anything());
   });
 
   it('says nothing about a folder that is still there', async () => {

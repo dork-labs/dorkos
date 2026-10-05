@@ -136,7 +136,15 @@ try {
       ['dist-server/main.js'],
       '/packaged-community',
       {
-        ...(name === 'a' ? { COMMUNITY_TEST_RUNTIME: 'true' } : {}),
+        // The delivery-gate controls are unauthenticated, so the server refuses them without the
+        // exact acknowledgement (DOR-2655).
+        ...(name === 'a'
+          ? {
+              COMMUNITY_TEST_RUNTIME: 'true',
+              COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT:
+                'I understand this exposes unauthenticated test controls',
+            }
+          : {}),
         COMMUNITY_DATABASE_URL: url.toString(),
         COMMUNITY_PUBLIC_URL: origin,
         COMMUNITY_PORT: String(port),

@@ -28,6 +28,20 @@ const FLY_REFUSAL =
  */
 const NEON_REFUSAL =
   /^ERROR: (?:not allowed to |[a-z-]+ keys are not allowed to |permission denied\b)/u;
+/**
+ * Neon's answer when an endpoint does not serve this KIND of key at all, whatever it may reach:
+ * `GET /regions` and `GET /users/me` answer an organization or project key with "not allowed for
+ * organization API keys" (seen live in DOR-2700; neonctl `link.js` `ORG_KEY_LIMITED_FRAGMENT`).
+ * It says nothing about the organization, so it is not an access refusal.
+ */
+const NEON_KEY_KIND_LIMIT = /^ERROR: not allowed for [a-z][a-z -]* API keys$/u;
+
+function errorLines(stderr: string): string[] {
+  return stderr
+    .replace(ANSI_ESCAPE, '')
+    .split(/\r?\n/u)
+    .map((line) => line.trim());
+}
 
 /**
  * Whether a provider CLI's error output is a definite access refusal: the service answered and
@@ -40,11 +54,19 @@ const NEON_REFUSAL =
  * @returns True only for a line in one of the known refusal shapes.
  */
 export function isProviderAccessRefusal(stderr: string): boolean {
-  return stderr
-    .replace(ANSI_ESCAPE, '')
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .some((line) => FLY_REFUSAL.test(line) || NEON_REFUSAL.test(line));
+  return errorLines(stderr).some((line) => FLY_REFUSAL.test(line) || NEON_REFUSAL.test(line));
+}
+
+/**
+ * Whether a provider CLI's error output says the endpoint does not serve this kind of key, such
+ * as Neon's region list answering an organization key. Never an access refusal: the same key may
+ * reach everything else setup needs.
+ *
+ * @param stderr - The command's error output.
+ * @returns True only for a line in the known key-kind shape.
+ */
+export function isProviderKeyKindLimit(stderr: string): boolean {
+  return errorLines(stderr).some((line) => NEON_KEY_KIND_LIMIT.test(line));
 }
 
 /**
@@ -90,18 +112,25 @@ export class ProviderCommandError extends Error {
    * ({@link isProviderAccessRefusal}). The output itself is never kept.
    */
   readonly refused: boolean;
+  /**
+   * True only for an `EXIT` whose error output said the endpoint does not serve this kind of key
+   * ({@link isProviderKeyKindLimit}). The output itself is never kept.
+   */
+  readonly keyKindLimited: boolean;
 
   /**
    * Create a provider command error without raw stdout or stderr.
    *
    * @param code - Stable failure category.
    * @param refused - Whether the service definitely refused the credential.
+   * @param keyKindLimited - Whether the endpoint does not serve this kind of key.
    */
-  constructor(code: ProviderCommandError['code'], refused = false) {
+  constructor(code: ProviderCommandError['code'], refused = false, keyKindLimited = false) {
     super(`Provider command failed (${code})`);
     this.name = 'ProviderCommandError';
     this.code = code;
     this.refused = code === 'EXIT' && refused;
+    this.keyKindLimited = code === 'EXIT' && !refused && keyKindLimited;
   }
 }
 
@@ -184,10 +213,12 @@ export function runProviderCommand<T>(
       }
       if (code !== 0) {
         const errorOutput = Buffer.concat(stderrHead);
-        const refused = isProviderAccessRefusal(errorOutput.toString('utf8'));
+        const text = errorOutput.toString('utf8');
+        const refused = isProviderAccessRefusal(text);
+        const keyKindLimited = isProviderKeyKindLimit(text);
         errorOutput.fill(0);
         scrubStdout();
-        return reject(new ProviderCommandError('EXIT', refused));
+        return reject(new ProviderCommandError('EXIT', refused, keyKindLimited));
       }
       const output = Buffer.concat(stdout);
       try {

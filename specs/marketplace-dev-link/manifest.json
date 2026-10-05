@@ -1,0 +1,15 @@
+{
+  "id": "261003-184400",
+  "slug": "marketplace-dev-link",
+  "title": "Dev link: run a marketplace package from a working folder, owner-only, hot-reloaded",
+  "created": "2026-10-03",
+  "status": "specified",
+  "project": "Marketplace Package Management",
+  "linearIssue": "DOR-2696",
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md",
+    "designDecisions": "design-decisions.md",
+    "tasks": "03-tasks.json"
+  }
+}

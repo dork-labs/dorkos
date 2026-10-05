@@ -59,6 +59,7 @@ import type { InstalledPlugin, ProjectInstalledPlugin } from '../sources/install
 import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookMatcherGroup } from '../generate/hooks.js';
 import { setActionContent } from './content-map.js';
+import { MANAGED_HOOK_DEV_LINK_KEY, withDevLinkMarker } from './dev-link-labels.js';
 import { commandDropReason } from './command-formats.js';
 // Codex reads `.agents/skills/<name>` directly; Claude Code reads `.claude/skills`.
 // Installed-plugin skills are symlinked there under their namespaced name
@@ -68,6 +69,15 @@ import {
   CLAUDE_PLUGIN_DATA_TOKEN,
   CLAUDE_PLUGIN_ROOT_TOKEN,
 } from '../scan/scanner.js';
+
+/**
+ * What the skill planners read of a package: its namespace and its skills.
+ *
+ * Narrower than an installed plugin on purpose, so a running extension's skills
+ * (`sources/running-extension-skills.ts`, DOR-2685) go through exactly the same
+ * planners as a plugin's without pretending to be a marketplace package.
+ */
+export type SkillSourcePackage = Pick<InstalledPlugin, 'name' | 'skills'>;
 
 /** Repo-relative Claude Code project slash-command dir (holds authored + wrapper commands). */
 export const CLAUDE_COMMANDS_DIR = '.claude/commands';
@@ -116,6 +126,8 @@ export const MANAGED_HOOK_SENTINEL_KEY = '_dorkosHarness';
 export interface ManagedHookGroup extends HookMatcherGroup {
   /** The owning plugin's package name (the {@link MANAGED_HOOK_SENTINEL_KEY} value). */
   [MANAGED_HOOK_SENTINEL_KEY]: string;
+  /** The dev link's folder, when the owning plugin runs from one ({@link MANAGED_HOOK_DEV_LINK_KEY}). */
+  [MANAGED_HOOK_DEV_LINK_KEY]?: string;
 }
 
 /**
@@ -291,9 +303,17 @@ export function pluginEnvPrefix(absInstallDir: string, platform: NodeJS.Platform
 }
 
 /** Build a command wrapper: rewrite the plugin tokens to absolute, mark it generated. */
-function buildCommandWrapper(content: string, absInstallDir: string, relDir: string): string {
+function buildCommandWrapper(
+  content: string,
+  absInstallDir: string,
+  relDir: string,
+  devLink: string | undefined
+): string {
   const rewritten = rewritePluginTokens(content, absInstallDir);
-  return insertAfterFrontmatter(rewritten, generatedCommandMarkerLine(relDir));
+  return insertAfterFrontmatter(
+    rewritten,
+    withDevLinkMarker(generatedCommandMarkerLine(relDir), devLink)
+  );
 }
 
 /** Split a markdown file into its leading YAML frontmatter lines and the body after it. */
@@ -333,12 +353,13 @@ export function opencodeWrapperFilename(pkg: string, command: string): string {
 function buildOpencodeCommandWrapper(
   content: string,
   absInstallDir: string,
-  relDir: string
+  relDir: string,
+  devLink: string | undefined
 ): string {
   const rewritten = rewritePluginTokens(content, absInstallDir);
   const { frontmatter, body } = splitFrontmatter(rewritten);
   const description = frontmatterField(frontmatter, 'description');
-  const marker = generatedCommandMarkerLine(relDir);
+  const marker = withDevLinkMarker(generatedCommandMarkerLine(relDir), devLink);
   const reducedFrontmatter =
     description !== undefined ? `---\ndescription: ${description}\n---\n` : '';
   return `${reducedFrontmatter}${marker}\n${body}`;
@@ -506,6 +527,7 @@ function toManagedHooks(
       ...group,
       hooks: group.hooks.map((h) => ({ ...h, command: `${prefix}${h.command}` })),
       [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
+      ...(plugin.devLink !== undefined && { [MANAGED_HOOK_DEV_LINK_KEY]: plugin.devLink.path }),
     }));
   }
   return out;
@@ -591,7 +613,7 @@ function pluginRootSkillWarning(
  */
 export function planInstalledSkills(
   harness: HarnessId,
-  plugin: ProjectInstalledPlugin
+  plugin: SkillSourcePackage
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const dir = INSTALLED_SKILL_TARGET_DIRS[harness];
   const actions: ProjectionAction[] = [];
@@ -669,7 +691,7 @@ export function planInstalledSkills(
  *   when an enabled harness already covers the directory).
  */
 export function planCanonicalSkillLinks(input: {
-  plugins: readonly ProjectInstalledPlugin[];
+  plugins: readonly SkillSourcePackage[];
   harnesses: readonly HarnessId[];
 }): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const alreadyLinked = input.harnesses.some(
@@ -754,6 +776,7 @@ function planClaudeInstalledCommands(
   repoRoot: string
 ): ProjectionAction[] {
   const absInstallDir = join(repoRoot, relDir);
+  const devLink = plugin.devLink?.path;
   const pkgDir = `${CLAUDE_COMMANDS_DIR}/${plugin.name}`;
   const actions: ProjectionAction[] = [];
   for (const cmd of plugin.commands) {
@@ -766,7 +789,7 @@ function planClaudeInstalledCommands(
       source: cmd.sourcePath,
       target: `${pkgDir}/${cmd.name}.md`,
     };
-    setActionContent(action, buildCommandWrapper(cmd.content, absInstallDir, relDir));
+    setActionContent(action, buildCommandWrapper(cmd.content, absInstallDir, relDir, devLink));
     actions.push(action);
   }
   // A self-ignoring `.gitignore` inside the wrapper dir keeps the machine-local
@@ -797,6 +820,7 @@ function planOpencodeInstalledCommands(
   repoRoot: string
 ): ProjectionAction[] {
   const absInstallDir = join(repoRoot, relDir);
+  const devLink = plugin.devLink?.path;
   const actions: ProjectionAction[] = [];
   for (const cmd of plugin.commands) {
     const action: ProjectionAction = {
@@ -808,7 +832,10 @@ function planOpencodeInstalledCommands(
       source: cmd.sourcePath,
       target: `${OPENCODE_COMMANDS_DIR}/${opencodeWrapperFilename(plugin.name, cmd.name)}`,
     };
-    setActionContent(action, buildOpencodeCommandWrapper(cmd.content, absInstallDir, relDir));
+    setActionContent(
+      action,
+      buildOpencodeCommandWrapper(cmd.content, absInstallDir, relDir, devLink)
+    );
     actions.push(action);
   }
   return actions;
@@ -949,7 +976,9 @@ interface EffectiveInstalledSkill {
 }
 
 /** Enumerate every installed skill by its effective (frontmatter) identity. */
-function effectiveInstalledSkills(plugins: readonly InstalledPlugin[]): EffectiveInstalledSkill[] {
+function effectiveInstalledSkills(
+  plugins: readonly SkillSourcePackage[]
+): EffectiveInstalledSkill[] {
   const out: EffectiveInstalledSkill[] = [];
   for (const plugin of plugins) {
     for (const skill of plugin.skills) {
@@ -982,7 +1011,7 @@ function effectiveInstalledSkills(plugins: readonly InstalledPlugin[]): Effectiv
  */
 export function planSkillNameCollisions(input: {
   authoredSkillNames: readonly string[];
-  plugins: readonly InstalledPlugin[];
+  plugins: readonly SkillSourcePackage[];
   harnesses: readonly HarnessId[];
 }): ProjectionWarning[] {
   const affectedHarnesses = input.harnesses.filter((h) => FRONTMATTER_KEYED_HARNESSES.includes(h));

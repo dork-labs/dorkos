@@ -900,6 +900,23 @@ function stoppedResult(crash: PumpCrash): SDKMessage {
 }
 
 /**
+ * The `result` for a turn whose process DorkOS ended on purpose while the turn
+ * was still running (DOR-2681): an eviction, a reclaim, or a shutdown.
+ *
+ * @param sessionId - The session the window belongs to
+ */
+function retiredResult(sessionId: string): SDKMessage {
+  return {
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    errors: ['DorkOS closed the agent before it finished this turn.'],
+    uuid: `retired-${sessionId}`,
+    session_id: sessionId,
+  } as unknown as SDKMessage;
+}
+
+/**
  * Whether this message is the CLI STARTING a turn, rather than bookkeeping it
  * emits between them.
  *
@@ -1606,6 +1623,36 @@ export class SessionTurnWindows {
    * @param crash - What the pump observed
    */
   onCrash(crash: PumpCrash): void {
+    // A death the operator ASKED for is not a crash to whoever is watching the
+    // turn, even though it reached this seam as one (DOR-1302).
+    this.closeForGoneProcess(
+      crash.stopRequested === true ? stoppedResult(crash) : crashResult(crash)
+    );
+  }
+
+  /**
+   * The process was ended on purpose — evicted, reclaimed or shut down — so
+   * close whatever window is still open on it (DOR-2681).
+   *
+   * A death DorkOS asks for never reaches {@link onCrash}: the pump reads it as
+   * silence, which is right for the process and wrong for a turn still open on
+   * it. That turn's stream never ended, so it sat dark until the stall watchdog
+   * gave up ten minutes later with nothing left to interrupt. Closing it at the
+   * moment the process is let go ends it at once, saying why. A no-op with no
+   * window open, which is every reap: a reap only takes a quiet process.
+   */
+  onRetired(): void {
+    this.closeForGoneProcess(retiredResult(this.opts.sessionId));
+  }
+
+  /**
+   * Close the open window behind `terminal`, because the process that owed it
+   * is gone. Shared by a crash and a retirement: the held buffer and the id
+   * ledgers belong to that process, whichever way it went.
+   *
+   * @param terminal - The synthetic `result` the window ends on
+   */
+  private closeForGoneProcess(terminal: SDKMessage): void {
     this.discardHeld();
     // The process that owed these answers is gone, and a relaunched one owes
     // nothing under an id it never read. Keeping them would let a fresh
@@ -1619,9 +1666,7 @@ export class SessionTurnWindows {
     this.current = undefined;
     // Whatever this window was waiting for, the process that owed it is gone.
     this.finalizeGrace(record);
-    // A death the operator ASKED for is not a crash to whoever is watching the
-    // turn, even though it reached this seam as one (DOR-1302).
-    record.channel.push(crash.stopRequested === true ? stoppedResult(crash) : crashResult(crash));
+    record.channel.push(terminal);
     record.channel.end();
     this.opts.onWindowClose?.(record.window);
     record.markSettled();

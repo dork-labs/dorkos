@@ -186,6 +186,8 @@ function FileEditor({
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftRef = useRef(draft);
+  const editRevisionRef = useRef(0);
+  const finishAttemptRef = useRef(0);
   const saveRef = useRef(fileSave.save);
   const onEditingChangeRef = useRef(onEditingChange);
   useEffect(() => {
@@ -195,6 +197,8 @@ function FileEditor({
   });
 
   const handleChange = useCallback((next: string) => {
+    editRevisionRef.current += 1;
+    draftRef.current = next;
     setDraft(next);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
@@ -204,33 +208,45 @@ function FileEditor({
   }, []);
 
   const enterEdit = () => {
+    editRevisionRef.current += 1;
+    draftRef.current = loaded;
     setDraft(loaded);
     onEditingChange(true);
     setDocumentEditing(documentId, true);
   };
   const exitEdit = async () => {
     // Cancel the debounce and flush the latest draft, AWAITING the write so the
-    // view renders exactly what was saved — no flash of pre-edit content. `save`
-    // is a no-op when the draft already matches the tracked base.
+    // view renders exactly what the server acknowledged. A server no-op still
+    // confirms this request's bytes and hash.
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    const outcome = await saveRef.current(draftRef.current);
+    const submitted = draftRef.current;
+    const revision = editRevisionRef.current;
+    const attempt = ++finishAttemptRef.current;
+    const outcome = await saveRef.current(submitted);
     // The draft did NOT land on disk: leaving edit mode would silently discard
     // it. A conflict is owned by the banner's Reload / Overwrite; an error keeps
     // the "Couldn't save" label up next to the checkmark so the user can retry.
-    if (outcome === 'conflict' || outcome === 'error') return;
+    if (outcome.status !== 'changed' && outcome.status !== 'no_op') return;
+    // Acknowledging an older write must not close a newer edit or finish attempt.
+    if (
+      editRevisionRef.current !== revision ||
+      finishAttemptRef.current !== attempt ||
+      outcome.confirmed.content !== submitted
+    )
+      return;
 
     // Reflect the just-saved bytes into the read cache so exiting shows them. We
     // deferred every mid-edit sync to here on purpose: writing a new hash into
     // the cache re-keys the editor (mounted by `${sourcePath}:${hash}`) and would
     // remount it — fine now that we're leaving edit mode, unacceptable mid-edit.
-    const base = fileSave.getConfirmedBase();
-    if (base.hash !== null && base.content === draftRef.current) {
+    const base = outcome.confirmed;
+    if (base.content === draftRef.current) {
       queryClient.setQueryData<FileContentResponse>(
         fileContentQueryKey(cwd, content.sourcePath),
-        (prev) => (prev ? { ...prev, content: base.content, hash: base.hash as string } : prev)
+        (prev) => (prev ? { ...prev, content: base.content, hash: base.hash } : prev)
       );
     }
     onEditingChange(false);

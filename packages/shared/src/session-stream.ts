@@ -39,6 +39,7 @@ import {
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
   PermissionDeniedEventSchema,
+  ModelSubstitutedEventSchema,
   SessionImageEventSchema,
   SystemStatusEventSchema,
   OperationProgressEventShapeSchema,
@@ -61,6 +62,7 @@ import {
 // beside it (spec `canvas-agent-seat` §1.3): one client reducer handles both
 // scopes, and two definitions of "what is on the table" would drift.
 import { CanvasDocumentSchema } from './canvas-schemas.js';
+import { CanvasChannelNotificationSchema } from './canvas-channel-schemas.js';
 import { AccountUsageSchema } from './account-usage.js';
 
 extendZodWithOpenApiOnce();
@@ -593,6 +595,16 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('permission_denied'),
       ...PermissionDeniedEventSchema.shape,
+    }),
+    // A turn that ran on another model than its session names, because who
+    // pays for it does not serve that model (DOR-2636). NOT a fidelity member:
+    // the runtime's transcript does not say a model was swapped, so it is
+    // recorded durably (`RECORDED_EVENT_TYPES`) and overlaid back onto a
+    // reopened conversation as a lasting notice.
+    z.object({
+      ...seqShape,
+      type: z.literal('model_substituted'),
+      ...ModelSubstitutedEventSchema.shape,
     }),
     // A transient operational status (SDK status messages — hook progress, a raw
     // `status` token). Drives the client's transient status strip — NOT the
@@ -1244,3 +1256,11 @@ export class StaleResumeCursorError extends Error {
     this.name = 'StaleResumeCursorError';
   }
 }
+
+/** Document notifications are durable in their own store and carry no session cursor. */
+export const SessionWireEventSchema = z.union([
+  SessionEventSchema,
+  CanvasChannelNotificationSchema,
+]);
+/** A typed session wire frame, including independent document notifications. */
+export type SessionWireEvent = z.infer<typeof SessionWireEventSchema>;

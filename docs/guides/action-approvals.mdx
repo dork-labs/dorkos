@@ -9,7 +9,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Action Approvals
 
-Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. Most of that is easy to take back. Five things are different: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, and changing what an agent runs on (its runtime, model or effort). The first four have no undo. The fifth can be changed back, but every schedule that follows the agent would run differently in the meantime.
+Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. Most of that is easy to take back. Six things are different: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. The first four have no undo. The fifth can be changed back, but every schedule that follows the agent would run differently in the meantime. The sixth lets whatever is in that folder run in DorkOS, edits included, without another review.
 
 So DorkOS stops at those five and asks you. The card for the fifth shows each change as it is now and as it would be, for example **Model: claude-sonnet-4 → claude-opus-4**. An agent does not get to do one of them and then tell you about it afterwards.
 
@@ -61,13 +61,14 @@ When one of an agent's rooms caused the request, the card also shows up inside t
 
 ## What needs your OK, and what doesn't
 
-Seven things an agent asks for will wait for you today. Five of them change something you already have, and the first four have no undo:
+Eight things an agent asks for will wait for you every time. Six of them change what you already have or what runs on it, and the first four have no undo:
 
 - **Removing an installed package**, with or without its saved data
 - **Deleting a scheduled task**, which has no undo: the prompt, the schedule, and the timezone are gone
 - **Removing an agent**, which also deletes its setup file and turns off its scheduled tasks
 - **Changing an agent's safety boundaries**, the list of things you told it never to do: the new text replaces the whole list, so whatever it said before is gone
 - **Changing what an agent runs on**: its runtime, model or effort. Every scheduled task that doesn't pick its own would move with it. The card shows each change, as it is now and as it would be
+- **Running a package from a folder** on your computer: whatever is in that folder runs in DorkOS, edits included, without another review. No setting can approve this ahead of time, so the card shows the folder's full path each time, and every command it runs and when. Approving covers those commands; anything new the folder adds later asks again
 
 Two more wait for you because they bring new code onto your machine:
 
@@ -98,11 +99,11 @@ One set of settings is neither of those things. Agents are refused them outright
 
 Each action DorkOS does cover carries a size label on its card, so you can tell at a glance what you are being asked:
 
-| Label                | What it means                                                                                                                                                                                                                                                                                             |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Read only**        | Only reads. You will not be asked about these at all.                                                                                                                                                                                                                                                     |
-| **Changes things**   | Changes something you can change back.                                                                                                                                                                                                                                                                    |
-| **Cannot be undone** | There is no undo, or the change reaches work you already approved. For example: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on, or making a workspace that brings its own settings or setup commands. |
+| Label                | What it means                                                                                                                                                                                                                                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Read only**        | Only reads. You will not be asked about these at all.                                                                                                                                                                                                                                                                                      |
+| **Changes things**   | Changes something you can change back.                                                                                                                                                                                                                                                                                                     |
+| **Cannot be undone** | There is no undo, or the change reaches work you already approved. For example: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on, running a package from a folder, or making a workspace that brings its own settings or setup commands. |
 
 ## Settings your agents cannot change
 

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { CanvasChannelRouteSchema } from '@dorkos/shared/canvas-channel-schemas';
 import { DocChannelIngest } from '../../ingest.js';
-import { DOC_INGEST_LIMITS } from '../../accounting.js';
+import { DOC_INGEST_LIMITS } from '../../current/accounting.js';
 import {
   canvasDocGrants,
   canvasDocEvents,

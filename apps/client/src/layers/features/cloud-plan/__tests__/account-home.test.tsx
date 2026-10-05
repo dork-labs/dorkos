@@ -117,6 +117,28 @@ describe('readCreditsFor — a runtime still recorded on credits', () => {
   });
 });
 
+describe('readCreditsFor — what a runtime does not get on credits', () => {
+  it('carries the runtime’s own caveat onto its row', () => {
+    const report: CloudCreditsStatus = {
+      ...ARMED,
+      runtimes: { ...ARMED.runtimes, codex: 'wired' },
+    };
+    const rows = readCreditsFor(report, () => null, {
+      codex: {
+        credits: {
+          protocol: 'openai-responses',
+          scope: 'conversation',
+          caveat: "Codex can't search the web on DorkOS credits.",
+        },
+      } as never,
+    });
+    expect(rows.find((row) => row.runtime === 'codex')?.caveat).toBe(
+      "Codex can't search the web on DorkOS credits."
+    );
+    expect(rows.find((row) => row.runtime === 'claude-code')?.caveat).toBeUndefined();
+  });
+});
+
 describe('creditsRuntimesOnOffer', () => {
   // Before linking, `enabled` is false by definition; the offer must not wait on it.
   it('names the wired runtimes before linking, by the name every runtime surface uses', () => {
@@ -307,7 +329,7 @@ describe('What’s on your account', () => {
 
   it('says one plain line when nothing is on the account yet', async () => {
     renderWith(<AccountContents />, createMockTransport());
-    expect(await screen.findByText(/^Nothing yet\./)).toBeInTheDocument();
+    expect(await screen.findByText(/^Nothing uses this account yet\./)).toBeInTheDocument();
   });
 });
 

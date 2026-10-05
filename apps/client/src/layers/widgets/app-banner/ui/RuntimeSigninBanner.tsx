@@ -157,8 +157,8 @@ export function RuntimeSigninBanner({ runtimes }: RuntimeSigninBannerProps) {
         </>
       }
     >
-      Your <span className="font-medium">{subject}</span> stopped working{rest}. Agents and
-      scheduled tasks stay stuck until you sign in again.
+      Your <span className="font-medium">{subject}</span> stopped working{rest}. Agents and tasks
+      wait until you sign in again.
     </Banner>
   );
 }

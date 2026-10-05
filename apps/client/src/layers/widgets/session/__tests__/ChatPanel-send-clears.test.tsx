@@ -414,11 +414,11 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
 
     expect(postMessage).not.toHaveBeenCalled();
     expect(draft()).toBe('do not lose my owner');
-    expect(screen.getByText('Couldn’t check this directory')).toBeInTheDocument();
+    expect(screen.getByText('Couldn’t check this folder')).toBeInTheDocument();
     screen.getByRole('button', { name: 'Retry' }).click();
     await waitFor(() => expect(getAgentByPath).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.queryByText('Couldn’t check this directory')).not.toBeInTheDocument()
+      expect(screen.queryByText('Couldn’t check this folder')).not.toBeInTheDocument()
     );
 
     await send('ordinary directories stay unowned');
@@ -456,7 +456,7 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
     await send('reply to the existing session');
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText('Couldn’t check this directory')).not.toBeInTheDocument();
+    expect(screen.queryByText('Couldn’t check this folder')).not.toBeInTheDocument();
   });
 
   it('empties the composer once the trigger has been accepted', async () => {

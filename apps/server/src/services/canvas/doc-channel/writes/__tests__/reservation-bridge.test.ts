@@ -19,7 +19,7 @@ import {
   type DbTransaction,
 } from '@dorkos/db';
 import { DocChannelStore } from '../../store.js';
-import { DOC_INGEST_LIMITS } from '../../accounting.js';
+import { DOC_INGEST_LIMITS } from '../../current/accounting.js';
 import { DocIngestRefusal } from '../../ingest-types.js';
 import { scanCheckboxReservationPolicies } from '../reservation-policy-census.js';
 import { DocCheckboxAuthority } from '../authority.js';

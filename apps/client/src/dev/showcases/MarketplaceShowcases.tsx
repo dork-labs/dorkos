@@ -21,6 +21,7 @@ import {
   ConfirmUpdatesDialogShowcase,
   KeepFilesDialogShowcase,
 } from './MarketplaceUpdateShowcases';
+import { DevLinkShowcase } from './MarketplaceDevLinkShowcases';
 
 // The barrel first, then the leaves it does not carry — see the import rule in
 // `.claude/skills/maintaining-dev-playground/SKILL.md`.
@@ -569,6 +570,7 @@ export function MarketplaceShowcases() {
       <InstalledPackagesViewShowcase />
       <ConfirmUpdatesDialogShowcase />
       <KeepFilesDialogShowcase />
+      <DevLinkShowcase />
       <MarketplaceSourcesViewShowcase />
       <MarketplaceToolbarShowcase />
       <MarketplaceSidebarShowcase />

@@ -4,6 +4,7 @@ import { sameBinding } from '../input/binding.js';
 import type { InputResult, ResetResult } from '../input/types.js';
 import { readyInput, currentTab } from './input-owner.js';
 import { BrowserLifecycleError } from './errors.js';
+import { ordinaryRecord } from './ownership.js';
 
 /** Admission is rechecked after observing the child method; bodies never choose a Page. */
 export function submitInput(
@@ -25,7 +26,8 @@ export function submitInput(
         requestId: command.requestId,
         binding: command.binding,
         outcome: 'rejected',
-        reason: record.lifetime.gate.stopped ? 'stopped' : 'staleBinding',
+        reason:
+          record.lifetime.gate.stopped || !ordinaryRecord(record) ? 'stopped' : 'staleBinding',
       })
     );
   }
@@ -42,8 +44,8 @@ export function resetInput(record: BrowserRecord, binding: BrowserBinding): Prom
   slot.resetPromise = shared;
   const fail = () => {
     slot.ready = false;
-    record.lifetime.gate.stop();
-    record.lifetime.retire?.();
+    // Retirement is a synchronous ordinary fence followed by cleanup-only drain, not early gate-stop.
+    record.lifetime.requestRetirement('engineFault');
     resolve(Object.freeze({ binding: Object.freeze({ ...slot.tab.binding }), status: 'stopped' }));
   };
   try {

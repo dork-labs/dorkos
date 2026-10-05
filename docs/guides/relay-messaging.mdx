@@ -62,22 +62,76 @@ This HTTP example lets you choose a human sender address. Read [Sending from loc
 </Step>
 <Step>
 
-**See it arrive.** The response confirms delivery:
+**Check delivery.** A message sent to a `relay.agent.*` destination includes a delivery receipt and a status URL:
 
 ```json
 {
-  "id": "01HX...",
-  "delivered": 1,
-  "deadLettered": 0
+  "messageId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "deliveredTo": 1,
+  "receipt": {
+    "messageId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "scope": "agent_delivery",
+    "state": "accepted",
+    "acceptedAt": "2026-10-02T12:00:00.000Z",
+    "updatedAt": "2026-10-02T12:00:00.000Z",
+    "expiresAt": "2026-10-09T12:00:00.000Z"
+  },
+  "statusUrl": "/api/relay/messages/01ARZ3NDEKTSV4RRFFQ69G5FAV/status"
 }
 ```
 
-`delivered: 1` means an agent picked it up. If it had failed, it would show up in `deadLettered` instead (Relay's term for "delivery failed, here's why").
+`deliveredTo` counts publish targets, including mailbox copies and accepted agent handoffs. It does not confirm that an agent ran your task. The receipt describes the attempt to deliver to the agent.
+
+Read the returned `statusUrl` to check that attempt. When sign-in is on, use the same session cookie or per-user API key as for sending:
+
+```bash
+curl http://localhost:4242/api/relay/messages/01ARZ3NDEKTSV4RRFFQ69G5FAV/status \
+  -H 'Authorization: Bearer <your-api-key>'
+```
+
+The status response contains only the receipt, without the message body, sender, destination, or account identity. It uses `Cache-Control: no-store` so clients do not cache it.
+
+A busy agent can produce this response without a `replyTo` address:
+
+```json
+{
+  "messageId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "scope": "agent_delivery",
+  "state": "failed",
+  "acceptedAt": "2026-10-02T12:00:00.000Z",
+  "updatedAt": "2026-10-02T12:00:01.000Z",
+  "expiresAt": "2026-10-09T12:00:00.000Z",
+  "settledAt": "2026-10-02T12:00:01.000Z",
+  "failure": {
+    "code": "at_capacity",
+    "message": "The agent was busy and did not take this message."
+  }
+}
+```
+
+Read the state this way:
+
+- `accepted`: DorkOS recorded the attempt but has not recorded its outcome. This does not promise a queued task or eventual execution.
+- `delivered`: The delivery attempt reported success. This does not prove the requested task succeeded or anyone read a reply.
+- `failed`: A delivery check or the delivery attempt reported a refusal or failure. It does not promise that nothing happened.
+- `outcome_unknown`: DorkOS could not confirm how delivery ended. The message may already have had effects.
+
+While the state is `accepted`, you can wait longer between status reads. Stop polling on a terminal state, 404, or an authentication failure. A 503 on a status read means the status is unavailable; retry the read rather than resend the message.
+
+Each receipt expires exactly seven days after acceptance. Polling and delivery updates do not extend that time. At expiry, the status URL returns 404, even before cleanup removes the stored receipt.
+
+With sign-in on, only the verified account that sent the message can read its receipt. Receipts created with sign-in off use local trust. After sign-in is enabled, only the install owner can read those earlier receipts. A missing, expired, untracked, or other account's receipt returns the same 404 response.
+
+A lost POST response does not prove that delivery failed. If an error response includes `messageId` and `statusUrl`, retain them and check status. Do not automatically resend after a lost response or an unknown outcome. No receipt state grants permission to resend.
+
+Receipts are authoritative delivery records in the database. Rebuilding the message index does not rebuild receipts from mailbox files. Traces are separate: their eight-day history does not extend a receipt's seven-day status window.
+
+Other destinations keep their existing response without a receipt or status URL.
 
 </Step>
 </Steps>
 
-That's the whole loop: publish a message to a subject, Relay routes it, the recipient gets it. Everything below is what you can build once you know that.
+That is the publish-and-check loop. The receipt tells you the recorded delivery outcome; replies and task results remain separate.
 
 ## Reference
 

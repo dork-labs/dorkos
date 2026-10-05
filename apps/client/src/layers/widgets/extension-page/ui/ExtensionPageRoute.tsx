@@ -9,6 +9,7 @@ import { useExtensions } from '@/layers/features/extensions';
 import { extensionPageState, type ExtensionPageState } from '../model/extension-page-state';
 import { createPageSearchWriter, pageSearchFrom } from '../model/page-search';
 import { useSettledPageState } from '../model/use-settled-page-state';
+import { DevLinkStrip } from './DevLinkStrip';
 
 /** The answer for `/x/Not_An_Id`: no extension could have that id. */
 const NOT_AN_EXTENSION: ExtensionPageState = { kind: 'not-installed', name: 'This add-on' };
@@ -50,6 +51,8 @@ export function ExtensionPageRoute() {
 
   if (state.kind === 'page') {
     const { page, params } = state.at.match;
+    // The extension behind this page, for the dev-link strip (DOR-2696).
+    const pageRecord = extensions.find((extension) => extension.id === state.at.extensionId);
     const Page = page.component;
     return (
       // Keyed on the page, and reset when the address under it changes, so an
@@ -62,6 +65,7 @@ export function ExtensionPageRoute() {
         {/* The whole content area, scrolled here. Layout and padding are the
             page's own: a lens page and a settings form want different ones. */}
         <div data-testid="extension-page" className="h-full min-h-0 overflow-y-auto">
+          {pageRecord?.devLink && <DevLinkStrip extension={pageRecord} />}
           <Page params={params} search={search} setSearch={setSearch} />
         </div>
       </ErrorBoundary>
@@ -101,7 +105,7 @@ function PageFailed({ name }: { name: string }) {
         tone="destructive"
         headingLevel={2}
         headline={`${name} ran into a problem`}
-        description="Something in this page broke while it was drawing. Reloading may fix it."
+        description="Reloading the page may fix it."
         action={{ label: 'Reload', variant: 'outline', onClick: () => window.location.reload() }}
       />
     </PageContainer>
@@ -121,8 +125,8 @@ function UnavailablePage({
         <EmptyState
           icon={PackageX}
           headingLevel={2}
-          headline="This page isn't available"
-          description={`${state.name} isn't installed.`}
+          headline="This page isn’t available"
+          description={`${state.name} isn’t installed.`}
         />
       );
     case 'not-allowed':
@@ -130,8 +134,8 @@ function UnavailablePage({
         <EmptyState
           icon={Puzzle}
           headingLevel={2}
-          headline="This page isn't available yet"
-          description={`${state.name} isn't allowed to run yet.`}
+          headline="This page isn’t available yet"
+          description={`${state.name} isn’t allowed to run yet.`}
           action={{ label: 'Allow it', ...openExtensions }}
         />
       );
@@ -140,7 +144,7 @@ function UnavailablePage({
         <EmptyState
           icon={Puzzle}
           headingLevel={2}
-          headline="This page isn't available"
+          headline="This page isn’t available"
           description={`${state.name} is turned off.`}
           action={{ label: 'Turn it on', ...openExtensions }}
         />
@@ -151,8 +155,8 @@ function UnavailablePage({
           icon={AlertTriangle}
           tone="destructive"
           headingLevel={2}
-          headline="This page isn't available"
-          description={`${state.name} couldn't start. Settings says why.`}
+          headline="This page isn’t available"
+          description={`${state.name} couldn’t start. Settings says why.`}
           action={{ label: 'Open Settings', variant: 'outline', ...openExtensions }}
         />
       );
@@ -161,8 +165,8 @@ function UnavailablePage({
         <EmptyState
           icon={PackageX}
           headingLevel={2}
-          headline="This page isn't available"
-          description={`${state.name} doesn't have this page.`}
+          headline="This page isn’t available"
+          description={`${state.name} doesn’t have this page.`}
         />
       );
   }

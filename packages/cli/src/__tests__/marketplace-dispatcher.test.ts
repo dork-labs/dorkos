@@ -50,6 +50,8 @@ describe('runMarketplaceDispatcher', () => {
       'uninstall <name>',
       'installed',
       'outdated',
+      'link <path>',
+      'unlink <name>',
       'add <url>',
       'remove <name>',
       'list',
@@ -61,16 +63,34 @@ describe('runMarketplaceDispatcher', () => {
     expect(help).toMatch(/dorkos install.*shorthand/is);
   });
 
-  it.each(['install', 'update', 'uninstall', 'installed', 'outdated', 'check-files'])(
-    'prints help for `%s --help` without calling the server',
-    async (verb) => {
-      // Purpose: each package verb documents itself under its canonical name.
-      expect(await runMarketplaceDispatcher(verb, ['--help'])).toBe(0);
+  it('says in link help that --approval skips the question, and an agent needs no --yes', async () => {
+    // Purpose (DOR-2696): the help must match what the command does. --approval
+    // skips the local question like --yes, and an agent's --json run links
+    // after approval with no --yes at all.
+    expect(await runMarketplaceDispatcher('link', ['--help'])).toBe(0);
 
-      expect(printed(logSpy)).toContain(`Usage: dorkos marketplace ${verb}`);
-      expect(fetchMock).not.toHaveBeenCalled();
-    }
-  );
+    const help = printed(logSpy);
+    expect(help).toMatch(/--approval <token>.*like --yes/s);
+    expect(help).toMatch(/an agent does not need it/);
+    expect(help).not.toContain('needs --yes to link');
+  });
+
+  it.each([
+    'install',
+    'update',
+    'uninstall',
+    'installed',
+    'outdated',
+    'check-files',
+    'link',
+    'unlink',
+  ])('prints help for `%s --help` without calling the server', async (verb) => {
+    // Purpose: each package verb documents itself under its canonical name.
+    expect(await runMarketplaceDispatcher(verb, ['--help'])).toBe(0);
+
+    expect(printed(logSpy)).toContain(`Usage: dorkos marketplace ${verb}`);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
   // Purpose (DOR-2197 review 6): the command says what it is for in the same
   // words as the app's "Check files" button.
@@ -161,6 +181,17 @@ describe('runMarketplaceDispatcher', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
       /\/api\/marketplace\/packages\/flow\/uninstall$/
     );
+  });
+
+  // DOR-2696: unlink reaches its own door with the scope the route requires.
+  it('routes `unlink <name>` to the dev-link unlink door', async () => {
+    fetchMock.mockResolvedValueOnce(mockResponse(200, { restored: 'removed' }));
+
+    expect(await runMarketplaceDispatcher('unlink', ['flow'])).toBe(0);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/marketplace\/dev-links\/flow\/unlink$/);
+    expect(JSON.parse(String(init.body))).toEqual({ scope: 'global' });
   });
 
   it('names the canonical command when a package verb gets a bad option', async () => {

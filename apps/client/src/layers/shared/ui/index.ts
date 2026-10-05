@@ -327,7 +327,9 @@ export {
   consentActionLabel,
   consentAsksNote,
   SCHEDULED_RUN_CONSENT_CONSEQUENCE,
+  SCHEDULED_RUN_CONSENT_CONTRAST,
 } from './consent-ritual-copy';
+export { ScheduledRunConsequence } from './scheduled-run-consequence';
 export { UnattendedAutonomyDialog } from './unattended-autonomy-dialog';
 export type { UnattendedAutonomyDialogProps } from './unattended-autonomy-dialog';
 export {
@@ -351,6 +353,8 @@ export type {
   UseRovingTabListParams,
 } from './use-roving-tab-list';
 export type { TabsListProps } from './tabs';
+export { DevLinkTag, DevLinkPath } from './dev-link-tag';
+export type { DevLinkTagProps, DevLinkPathProps } from './dev-link-tag';
 export { DirectoryPicker } from './DirectoryPicker';
 export type { DirectoryPickerProps } from './DirectoryPicker';
 export { PageContainer, pageContainerVariants } from './page-container';

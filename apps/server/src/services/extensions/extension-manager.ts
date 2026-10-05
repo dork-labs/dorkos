@@ -17,11 +17,12 @@
 import path from 'path';
 import type { Router } from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
-import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
+import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
 import { ExtensionServerLifecycle } from './extension-server-lifecycle.js';
+import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { testClientExtension, testServerCompilation } from './extension-test-harness.js';
 import { scaffoldExtension, buildCreateResult } from './extension-scaffolder.js';
 import { configManager } from '../core/config-manager.js';
@@ -43,11 +44,19 @@ import {
   isApprovedCopy,
   isFromTrustedSource,
   mayRunExtensionCode,
+  type ExtensionApprovals,
 } from './extension-load-policy.js';
+import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 
 import { logger } from '../../lib/logger.js';
 import { collectSnapshots, ensureSnapshot } from './extension-snapshots.js';
 import { installRootOf } from './extension-trusted-origin.js';
+import {
+  reconcileRunningSkills,
+  type RunningSkillsChange,
+} from './agent-skills/running-skills-ledger.js';
+import { declaredSet, isCovered, isSamePermissionSet } from './isolation/permission-coverage.js';
+import { isolationKeyOf } from './isolation/isolation-view.js';
 
 /**
  * How long discovery waits for a burst of project changes to settle before it
@@ -74,6 +83,12 @@ export interface ExpectedCopy {
   path?: string;
   version: string;
   plugin?: string | null;
+  /**
+   * The permission set the person was shown (DOR-2686); absent means "not
+   * compared". The copy must ask for nothing outside it: equal or narrower
+   * approves (recording what it declares now), wider is stale.
+   */
+  permissions?: ApprovedPermissionSet;
 }
 
 /**
@@ -91,6 +106,15 @@ export function isExpectedCopy(record: ExtensionRecord, expected: ExpectedCopy):
   }
   if (expected.version !== record.manifest.version) return false;
   if (expected.plugin !== undefined && expected.plugin !== (record.sourcePlugin ?? null)) {
+    return false;
+  }
+  // The yes covers what the card showed. A copy that narrowed since asks for
+  // nothing the person did not see, and the approval records what it declares
+  // now (the narrower set), so it is approved; one that widened is stale.
+  if (
+    expected.permissions !== undefined &&
+    !isCovered(declaredSet(record.manifest), expected.permissions)
+  ) {
     return false;
   }
   return true;
@@ -133,6 +157,46 @@ function applyCompileResult(
 }
 
 /**
+ * What {@link ExtensionManager.attachSkillDelivery} does with a change to the
+ * running extensions' skills (DOR-2685).
+ */
+export interface ExtensionSkillDelivery {
+  /**
+   * Project one project again: its local extension skills changed. `remaining`
+   * is false when no extension's skills are left there, so a caller can skip a
+   * project that has nothing to add and no harness set up.
+   */
+  projectChanged(project: { root: string; ids: string[]; remaining: boolean }): unknown;
+  /** The global extension skills changed: refresh the plugins sessions load. */
+  globalChanged(): unknown;
+}
+
+/**
+ * Two undelivered changes as one: every project either named, and a global
+ * change if either had one.
+ */
+function mergeSkillChanges(
+  a: RunningSkillsChange | null,
+  b: RunningSkillsChange
+): RunningSkillsChange {
+  if (!a) return b;
+  const projects = new Map(a.projects.map((p) => [p.root, p]));
+  for (const p of b.projects) {
+    const prior = projects.get(p.root);
+    projects.set(p.root, {
+      root: p.root,
+      ids: [...new Set([...(prior?.ids ?? []), ...p.ids])].sort(),
+      remaining: p.remaining,
+    });
+  }
+  return {
+    ledgerChanged: a.ledgerChanged || b.ledgerChanged,
+    projects: [...projects.values()],
+    globalChanged: a.globalChanged || b.globalChanged,
+  };
+}
+
+/**
  * Facade for the extension system.
  */
 export class ExtensionManager {
@@ -170,6 +234,15 @@ export class ExtensionManager {
   private projectRoots: ((cwd: string | null) => Promise<readonly string[]>) | null = null;
   /** Tells connected clients which extensions changed under them. */
   private announceReloaded: ((ids: string[]) => void) | null = null;
+  /** Delivers running extensions' skills; see {@link attachSkillDelivery}. */
+  private skillDelivery: ExtensionSkillDelivery | null = null;
+  /** The tail of the skills reconcile queue: one at a time, in order. */
+  private skillsReconcile: Promise<void> = Promise.resolve();
+  /** What changed while nothing was attached to deliver it (boot). */
+  private undeliveredSkills: RunningSkillsChange | null = null;
+  /** Clears an uninstalled extension's tool permission settings; see {@link attachAgentTools}. */
+  private forgetToolPermissions:
+    ((extensionId: string, extensionName: string) => Promise<unknown>) | null = null;
 
   /**
    * Build the extension system rooted at one DorkOS data directory.
@@ -203,6 +276,102 @@ export class ExtensionManager {
    */
   getCompiler(): ExtensionCompiler {
     return this.compiler;
+  }
+
+  /**
+   * The public record for a copy that runs (or would run): the record plus
+   * where each of its declared tools stands right now (DOR-2685). Shadowed
+   * copies never run, so they go through `toPublic` without tool statuses.
+   */
+  private publicOf(record: ExtensionRecord, approvals: ExtensionApprovals): ExtensionRecordPublic {
+    return toPublic(record, approvals, this.serverLifecycle.toolStatuses(record));
+  }
+
+  /**
+   * Connect running extensions' tools to the rest of DorkOS, once boot has
+   * composed the capability registry (DOR-2685). Extensions start before it
+   * exists, so tools of every instance already running are handed over here.
+   *
+   * @param wiring.registry - The live capability registry.
+   * @param wiring.forgetToolPermissions - Clears every permission setting
+   *   (defaults and each agent's own) kept for one extension's tools. Called
+   *   when an extension is uninstalled, so a standing Allowed never carries
+   *   over to whatever is installed under the same id next.
+   */
+  attachAgentTools(wiring: {
+    registry: CapabilityRegistry;
+    forgetToolPermissions?: (extensionId: string, extensionName: string) => Promise<unknown>;
+  }): void {
+    this.forgetToolPermissions = wiring.forgetToolPermissions ?? null;
+    this.serverLifecycle.attachCapabilityRegistry(wiring.registry);
+  }
+
+  /**
+   * Connect running extensions' skills to the rest of DorkOS (DOR-2685).
+   *
+   * Every change to which extensions run — a scan, turning one on or off, an
+   * approval or its withdrawal, an uninstall, a reload — republishes the
+   * running-skills ledger (`running-skills-ledger.ts`) and hands what changed
+   * to `delivery`: each project whose local extension skills changed is
+   * projected again, and a change to the global ones refreshes the plugins
+   * Claude Code sessions load. Changes made before this is attached (the boot
+   * scan) are delivered as soon as it is.
+   *
+   * @param delivery - What to do with a change. Its failures are logged and
+   *   never reach the change that caused them.
+   */
+  attachSkillDelivery(delivery: ExtensionSkillDelivery): void {
+    this.skillDelivery = delivery;
+    const pending = this.undeliveredSkills;
+    this.undeliveredSkills = null;
+    if (pending) this.deliverSkills(pending);
+  }
+
+  /** Resolves once every skills reconcile asked for so far has finished. */
+  whenSkillsSettled(): Promise<void> {
+    return this.skillsReconcile;
+  }
+
+  /**
+   * Republish the running-skills ledger after the change that just happened,
+   * one reconcile at a time and off the caller's path. Best-effort: a failure
+   * is logged, and the next change tries again from the disk as it is.
+   */
+  private scheduleSkillsReconcile(): void {
+    this.skillsReconcile = this.skillsReconcile
+      .then(async () => {
+        const change = await reconcileRunningSkills(this.listRecords(), {
+          dorkHome: this.dorkHome,
+          config: configManager.get('extensions'),
+          core: this.coreExtensions,
+        });
+        if (change.projects.length === 0 && !change.globalChanged) return;
+        if (this.skillDelivery) this.deliverSkills(change);
+        else this.undeliveredSkills = mergeSkillChanges(this.undeliveredSkills, change);
+      })
+      .catch((err) => {
+        logger.warn('[Extensions] Could not publish the running extensions\u2019 skills', err);
+      });
+  }
+
+  /** Hand a change to the delivery, isolating each step's failure. */
+  private deliverSkills(change: RunningSkillsChange): void {
+    const delivery = this.skillDelivery;
+    if (!delivery) return;
+    for (const project of change.projects) {
+      void Promise.resolve()
+        .then(() => delivery.projectChanged(project))
+        .catch((err) => {
+          logger.warn(`[Extensions] Projecting extension skills into ${project.root} failed`, err);
+        });
+    }
+    if (change.globalChanged) {
+      void Promise.resolve()
+        .then(() => delivery.globalChanged())
+        .catch((err) => {
+          logger.warn('[Extensions] Refreshing global extension skills failed', err);
+        });
+    }
   }
 
   /**
@@ -303,6 +472,7 @@ export class ExtensionManager {
       this.extensions.set(rec.id, rec);
     }
     this.bindUnsourcedApprovals(records);
+    this.ratchetFullAccessApprovals(records);
     await this.placeSnapshots(records);
 
     await this.compileEnabled();
@@ -430,6 +600,8 @@ export class ExtensionManager {
           path: path.resolve(rec.path),
           runPath: rec.runPath ?? null,
           runs: mayRunExtensionCode(rec, configManager.get('extensions')),
+          declarations: extensionDeclarationDigest(rec.manifest),
+          isolation: JSON.stringify(isolationKeyOf(rec)),
         },
       ])
     );
@@ -443,7 +615,14 @@ export class ExtensionManager {
         !prior ||
         prior.path !== path.resolve(rec.path) ||
         prior.runPath !== (rec.runPath ?? null) ||
-        prior.runs !== runs;
+        prior.runs !== runs ||
+        // A running copy whose manifest now declares different tools or
+        // skills restarts, so the tools agents see match its manifest
+        // (DOR-2685).
+        (runs && prior.declarations !== extensionDeclarationDigest(rec.manifest)) ||
+        // Where it runs, or what it may reach, changed while it still may
+        // run: restart it under the new declaration (DOR-2686).
+        (runs && prior.isolation !== JSON.stringify(isolationKeyOf(rec)));
       if (!switched) continue;
       changed.push(rec.id);
       if (prior) await this.serverLifecycle.shutdown(rec.id);
@@ -495,6 +674,9 @@ export class ExtensionManager {
 
   /** Tell every {@link onChange} listener, isolating each one's failure. */
   private emitChanged(): void {
+    // Every change that can move an extension into or out of the running set
+    // passes through here, so this is where its skills are republished.
+    this.scheduleSkillsReconcile();
     for (const listener of this.changeListeners) {
       try {
         listener();
@@ -557,6 +739,9 @@ export class ExtensionManager {
         logger.warn(`[Extensions] Server reload failed for ${id}: ${serverResult.error}`);
       }
     }
+    // A declared skill whose `SKILL.md` just appeared (a dev link's save) joins
+    // the ledger now rather than at the next scan.
+    this.scheduleSkillsReconcile();
 
     return { id, status: 'compiled', bundleReady: true, sourceHash: record.sourceHash };
   }
@@ -598,7 +783,7 @@ export class ExtensionManager {
   /** Get all extensions as public records (for API responses). */
   listPublic(): ExtensionRecordPublic[] {
     const approvals = configManager.get('extensions');
-    return Array.from(this.extensions.values()).map((record) => toPublic(record, approvals));
+    return Array.from(this.extensions.values()).map((record) => this.publicOf(record, approvals));
   }
 
   /**
@@ -659,11 +844,16 @@ export class ExtensionManager {
     if (!trusted.some((entry) => entry.source === source)) return false;
     const approvedToRun = [...before.approvedToRun];
     const approvedSources = { ...(before.approvedSources ?? {}) };
+    const approvedPermissions = { ...(before.approvedPermissions ?? {}) };
     for (const rec of this.extensions.values()) {
       if (rec.origin !== 'user' || rec.trustedOrigin?.source !== source) continue;
       if (isApprovedCopy(rec, before)) continue;
       if (!isEnabled(rec.id, before, this.coreExtensions)) continue;
       if (!approvedToRun.includes(rec.id)) approvedToRun.push(rec.id);
+      // What it declares now, so it keeps running exactly as it is and a
+      // later widening asks (DOR-2686). An entry left from another copy could
+      // be narrower and stop it, which "nothing stops" rules out.
+      approvedPermissions[rec.id] = declaredSet(rec.manifest);
       // Pinned to this copy's files alone: no origin, so a newer copy from the
       // source does not ride on it, and its digest, so it keeps running from
       // the verified snapshot of exactly those files and any change asks again.
@@ -676,6 +866,7 @@ export class ExtensionManager {
       ...before,
       approvedToRun,
       approvedSources,
+      approvedPermissions,
       trustedSources: trusted.filter((entry) => entry.source !== source),
     });
     logConfigWrite(
@@ -744,6 +935,49 @@ export class ExtensionManager {
     );
   }
 
+  /**
+   * Pin an approval that still stands for full access to the narrower set its
+   * copy now declares, the first time that copy is seen running separately
+   * (DOR-2686).
+   *
+   * An approval given before permission sets were recorded (no entry), or to
+   * a copy that ran inside DorkOS (an `in-process` entry), covers anything, so
+   * moving the copy to `subprocess` is a narrowing that asks nothing. Left at
+   * full access, though, the next version could add hosts, programs or agent
+   * access without a card, which is the widening the set exists to catch. So
+   * on first sight the record is ratcheted down to what is declared: still no
+   * card now, a card for any later widening. Only for a copy approved on its
+   * own: a copy that runs because its source is trusted is not held to a set.
+   * Applies to dev links made before sets were recorded too.
+   *
+   * @param records - The records this discovery pass produced.
+   */
+  private ratchetFullAccessApprovals(records: readonly ExtensionRecord[]): void {
+    const before = configManager.get('extensions');
+    const permissions = before.approvedPermissions ?? {};
+    const additions: Record<string, ApprovedPermissionSet> = {};
+    for (const record of records) {
+      if (record.origin !== 'user' || record.status === 'invalid') continue;
+      const declared = declaredSet(record.manifest);
+      if (declared.runtime !== 'subprocess') continue;
+      const stored = permissions[record.id];
+      if (stored && stored.runtime !== 'in-process') continue;
+      if (!isApprovedCopy(record, before)) continue;
+      additions[record.id] = declared;
+    }
+    if (Object.keys(additions).length === 0) return;
+    configManager.set('extensions', {
+      ...before,
+      approvedPermissions: { ...permissions, ...additions },
+    });
+    logConfigWrite(
+      'recording what an extension approved for full access now declares',
+      'extensions',
+      before,
+      configManager.get('extensions')
+    );
+  }
+
   /** Get a single extension by ID. */
   get(id: string): ExtensionRecord | undefined {
     return this.extensions.get(id);
@@ -788,7 +1022,7 @@ export class ExtensionManager {
 
     this.emitChanged();
     return {
-      extension: toPublic(record, configManager.get('extensions')),
+      extension: this.publicOf(record, configManager.get('extensions')),
       reloadRequired: true,
     };
   }
@@ -806,7 +1040,11 @@ export class ExtensionManager {
       return null;
     }
 
-    await this.serverLifecycle.shutdown(id);
+    // Marked off BEFORE the stop: a start already under way checks this
+    // record again before it stores its instance, so it leaves nothing
+    // running, and the stop queued behind it releases anything it did start
+    // (DOR-2685 review).
+    record.status = 'disabled';
 
     // Route through the deviation-list resolver so the correct list is mutated.
     const before = configManager.get('extensions');
@@ -814,13 +1052,14 @@ export class ExtensionManager {
     configManager.set('extensions', next);
     logConfigWrite('the extensions manager', 'extensions', before, configManager.get('extensions'));
 
-    record.status = 'disabled';
+    await this.serverLifecycle.shutdown(id);
+
     record.bundleReady = false;
     record.error = undefined;
 
     this.emitChanged();
     return {
-      extension: toPublic(record, configManager.get('extensions')),
+      extension: this.publicOf(record, configManager.get('extensions')),
       reloadRequired: true,
     };
   }
@@ -855,7 +1094,13 @@ export class ExtensionManager {
       record.pinnedDigest = record.currentDigest;
     }
     const dismissed = extensions.dismissedApprovals ?? {};
-    if (!isApprovedCopy(record, extensions) || dismissed[id]) {
+    // The yes covers the permission set it declares right now and nothing
+    // wider (DOR-2686): recorded beside the copy, so a later version that
+    // asks for more waits for the person again.
+    const declared = declaredSet(record.manifest);
+    const permissions = extensions.approvedPermissions ?? {};
+    const permissionsChanged = !isSamePermissionSet(declared, permissions[id]);
+    if (!isApprovedCopy(record, extensions) || dismissed[id] || permissionsChanged) {
       // A "Not now" for this id is answered by the approval, so it goes too
       // (DOR-2517): a later withdrawal plus reinstall asks again rather than
       // staying silenced by a decline the person has since reversed.
@@ -865,6 +1110,7 @@ export class ExtensionManager {
           ? extensions.approvedToRun
           : [...extensions.approvedToRun, id],
         approvedSources: { ...(extensions.approvedSources ?? {}), [id]: source },
+        approvedPermissions: { ...permissions, [id]: declared },
       };
       if (dismissed[id]) {
         const remainingDismissals = { ...dismissed };
@@ -892,7 +1138,7 @@ export class ExtensionManager {
     }
 
     this.emitChanged();
-    return toPublic(record, configManager.get('extensions'));
+    return this.publicOf(record, configManager.get('extensions'));
   }
 
   /**
@@ -975,7 +1221,7 @@ export class ExtensionManager {
     if (record.origin === 'user') this.recordDismissal(record, 'stopping an extension');
     await this.forgetRunApproval(id);
 
-    return toPublic(record, configManager.get('extensions'));
+    return this.publicOf(record, configManager.get('extensions'));
   }
 
   /**
@@ -1055,13 +1301,19 @@ export class ExtensionManager {
       );
       return;
     }
-    if (extensions.approvedToRun.includes(id) || sources[id]) {
+    const permissions = extensions.approvedPermissions ?? {};
+    if (extensions.approvedToRun.includes(id) || sources[id] || permissions[id]) {
       const remainingSources = { ...sources };
       delete remainingSources[id];
+      // The permission set goes with the approval it described (DOR-2686): a
+      // set left behind would be read against whatever is approved next.
+      const remainingPermissions = { ...permissions };
+      delete remainingPermissions[id];
       configManager.set('extensions', {
         ...extensions,
         approvedToRun: extensions.approvedToRun.filter((eid) => eid !== id),
         approvedSources: remainingSources,
+        approvedPermissions: remainingPermissions,
       });
       logConfigWrite(
         'withdrawing an extension run approval',
@@ -1072,8 +1324,22 @@ export class ExtensionManager {
       logger.info(`[Extensions] Forgot the run approval for ${id} — its code is being replaced`);
     }
 
+    const name = this.extensions.get(id)?.manifest.name ?? id;
     await this.serverLifecycle.shutdown(id);
+    // Removed, not stopped: a per-tool setting kept for its tools must not
+    // carry over to whatever is installed under this id next (DOR-2685).
+    if (installRoot) await this.forgetToolPermissionsOf(id, name);
     this.emitChanged();
+  }
+
+  /** Clear one extension's tool permission settings, best-effort. */
+  private async forgetToolPermissionsOf(id: string, name: string): Promise<void> {
+    if (!this.forgetToolPermissions) return;
+    try {
+      await this.forgetToolPermissions(id, name);
+    } catch (err) {
+      logger.warn(`[Extensions] Could not clear the tool permission settings of ${id}`, err);
+    }
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */

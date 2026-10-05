@@ -52,8 +52,18 @@ export function UseCreditsFor() {
  * @param row - The runtime's row.
  */
 function rowDescription(row: CreditsForRow): string {
+  const sentence = rowSentence(row);
+  return row.caveat ? `${sentence} ${row.caveat}` : sentence;
+}
+
+/**
+ * The row's own sentence, before what the runtime does not get on credits.
+ *
+ * @param row - The runtime's row.
+ */
+function rowSentence(row: CreditsForRow): string {
   if (row.on && row.unreachable) {
-    return `${row.name} is set to DorkOS credits, which can't run it right now, so its new work stops instead of using your own sign-in. Turn this off to use its own sign-in.`;
+    return `${row.name} can’t run on credits now, so new work stops. Turn this off to continue.`;
   }
   if (!row.on) {
     return row.previousSignIn === null

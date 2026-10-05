@@ -565,7 +565,7 @@ describe('a start against a tunnel that is already up converges (DOR-1738)', () 
     // Both refusals are 409s; only one of them means the tunnel is up.
     const request = getOwnerSetupRequest();
     expect(request?.reason).toBe('exposure');
-    expect(request?.message).toBe('Exposing DorkOS requires a login.');
+    expect(request?.message).toBe('Remote access needs a login.');
     expect(result.current.remote.state).toBe('off');
     expect(result.current.remote.error).toBeNull();
   });

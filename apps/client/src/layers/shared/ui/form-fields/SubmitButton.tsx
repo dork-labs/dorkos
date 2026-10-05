@@ -2,7 +2,9 @@ import { Button } from '@/layers/shared/ui/button';
 import { useFormContext } from '@/layers/shared/lib/form-context';
 
 export interface SubmitButtonProps {
-  label?: string;
+  /** The exact action, like "Save" or "Create task". Required: a generic "Submit" names nothing. */
+  label: string;
+  /** What the button says while the form is sending. @default 'Saving…' */
   pendingLabel?: string;
 }
 
@@ -12,10 +14,7 @@ export interface SubmitButtonProps {
  * Automatically disables when the form cannot be submitted and shows a loading
  * state while submission is in progress.
  */
-export function SubmitButton({
-  label = 'Submit',
-  pendingLabel = 'Submitting…',
-}: SubmitButtonProps) {
+export function SubmitButton({ label, pendingLabel = 'Saving…' }: SubmitButtonProps) {
   const form = useFormContext();
   return (
     <form.Subscribe

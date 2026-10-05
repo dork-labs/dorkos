@@ -139,6 +139,98 @@ export interface CapabilitySurfaces {
 }
 
 /**
+ * Where a capability came from, when DorkOS itself did not declare it.
+ *
+ * Today the only other origin is a running extension (DOR-2685): its tools
+ * join the live registry while it runs and leave when it stops. The catalog,
+ * the permissions pages and approval cards read this to say which extension a
+ * tool belongs to. A core capability carries no source at all.
+ */
+export interface CapabilitySource {
+  /** The kind of origin. Only extensions contribute capabilities today. */
+  kind: 'extension';
+  /** The extension's id, e.g. `mail-app`. */
+  id: string;
+  /** The extension's display name, e.g. `Mail`. */
+  name: string;
+}
+
+/**
+ * The prefix every extension tool's capability id starts with (`ext_<id>.<tool>`,
+ * DOR-2685). No DorkOS capability may use it.
+ */
+export const EXTENSION_CAPABILITY_ID_PREFIX = 'ext_';
+
+/**
+ * The shape of one tool's name inside its extension, e.g. `send_message`:
+ * lowercase words joined by single underscores. No `__` and no leading or
+ * trailing `_`, so the first `__` in `ext_<id>__<tool>` always marks where the
+ * extension ends and the tool begins.
+ *
+ * Shared by the manifest schema (`@dorkos/extension-api`) and the registry's
+ * contribution check, so a manifest that parses never names a tool the
+ * registry would refuse.
+ */
+export const EXTENSION_TOOL_NAME_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
+
+/**
+ * The longest MCP tool name (`ext_<id>__<tool>`) an extension tool may have:
+ * 64 characters, the model API's limit, less the `mcp__dorkos__` prefix the
+ * longest-spelling harness (Claude Code) puts in front. One name over it would
+ * fail every turn of every session that lists it.
+ */
+export const EXTENSION_MCP_TOOL_NAME_MAX = 64 - 'mcp__dorkos__'.length;
+
+/** The longest extension tool title, which a person reads on cards and the permissions page. */
+export const EXTENSION_TOOL_TITLE_MAX = 80;
+
+/**
+ * The registry domain an extension's tools live under: `ext_` plus the
+ * extension id with every `-` turned into `_`.
+ *
+ * Injective because an extension id can never contain `_`
+ * (`EXTENSION_ID_REGEX`), so two different extensions can never share a domain.
+ *
+ * @param extensionId - A valid extension id, e.g. `mail-app`.
+ * @returns The domain, e.g. `ext_mail_app`.
+ */
+export function extensionDomainName(extensionId: string): string {
+  return EXTENSION_CAPABILITY_ID_PREFIX + extensionId.replaceAll('-', '_');
+}
+
+/**
+ * The MCP tool name an extension tool is listed under, e.g.
+ * `ext_mail_app__send_message`.
+ *
+ * @param extensionId - A valid extension id.
+ * @param toolName - The tool's name inside the extension.
+ */
+export function extensionMcpToolName(extensionId: string, toolName: string): string {
+  return `${extensionDomainName(extensionId)}__${toolName}`;
+}
+
+/**
+ * What a caller is told when it names an extension tool that is not registered
+ * right now: its extension stopped, is restarting, or never ran. One sentence for
+ * every surface — the in-session tool, `POST /api/capabilities/:id/invoke` and
+ * `dorkos call` — so a caller reads the same answer wherever it asked.
+ */
+export const EXTENSION_TOOL_UNAVAILABLE_MESSAGE =
+  "That tool isn't available right now: its extension is stopped or restarting.";
+
+/** The machine-readable code carried beside {@link EXTENSION_TOOL_UNAVAILABLE_MESSAGE}. */
+export const EXTENSION_TOOL_UNAVAILABLE_CODE = 'EXTENSION_TOOL_UNAVAILABLE';
+
+/**
+ * Whether a capability id is in the extension namespace, registered or not.
+ *
+ * @param id - A capability id.
+ */
+export function isExtensionCapabilityId(id: string): boolean {
+  return id.startsWith(EXTENSION_CAPABILITY_ID_PREFIX);
+}
+
+/**
  * A single capability as it appears in the serialized catalog: everything from
  * its runtime definition except the handler, with the Zod input/output schemas
  * converted to JSON Schema.
@@ -169,6 +261,11 @@ export interface SerializedCapability {
    * contract and must not narrow ahead of the server.
    */
   area: string | null;
+  /**
+   * Where the capability came from, present only for one a running extension
+   * contributed. Core capabilities omit it. See {@link CapabilitySource}.
+   */
+  source?: CapabilitySource;
 }
 
 /**

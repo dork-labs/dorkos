@@ -1,4 +1,8 @@
 import { DocChannelMetrics } from './services/observability/doc-channel-metrics.js';
+import { subscribeCommittedDocEvents } from './services/canvas/doc-channel/committed-events.js';
+import { DocChannelLiveBuffer } from './services/canvas/doc-channel/streams/live-buffer.js';
+import { DocScopeStream } from './services/canvas/doc-channel/streams/scope-stream.js';
+import { setDocScopeNotificationsFactory } from './services/canvas/doc-channel/streams/registry.js';
 import { DocBatchAdmission } from './services/canvas/doc-channel/delivery/batch-admission.js';
 import { privateDocTurnBudget } from './services/canvas/doc-channel/delivery/final-budget.js';
 import { DocBatchDeliveryPump } from './services/canvas/doc-channel/delivery/pump.js';
@@ -8,6 +12,8 @@ import { createDocChannelHttpComposition } from './services/canvas/doc-channel/h
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
+import { existsSync } from 'node:fs';
+import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
@@ -85,6 +91,7 @@ import { NotificationStore } from './services/notifications/notification-store.j
 import {
   connectorAgentRequestsChangedAnnouncer,
   wireLiveChangeBroadcasts,
+  wireCapabilitiesChangedBroadcast,
 } from './services/core/streams/live-change-broadcasts.js';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
@@ -340,6 +347,12 @@ import {
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall/uninstall.js';
+import {
+  DevLinkService,
+  DevLinkWatcher,
+  devLinkExtensionsOf,
+  hookDecisionConsentStore,
+} from './services/marketplace/dev-links/index.js';
 import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/installer/marketplace-installer.js';
@@ -559,6 +572,7 @@ import {
   formatFirstRunTelemetryNotice,
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
+import { operatorAudience } from './services/notifications/notification-entitlement.js';
 import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
@@ -567,7 +581,10 @@ import { onSessionAccountLaunched } from './services/runtimes/claude-code/accoun
 import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
 import { renameAccountInProjectAccounts } from './services/core/usage/account-eligibility-writes.js';
-import { warnMalformedAccountRules } from './services/core/usage/account-eligibility.js';
+import {
+  accountRuleRoots,
+  warnMalformedAccountRules,
+} from './services/core/usage/account-eligibility.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
 import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
@@ -599,6 +616,12 @@ import {
   getStartWorkService,
   setStartWorkService,
 } from './services/extensions/start-work.js';
+import {
+  AgentSendService,
+  getAgentSendService,
+  setAgentSendService,
+} from './services/extensions/agent-send/agent-send.js';
+import { AgentSendStore } from './services/extensions/agent-send/agent-send-store.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,
@@ -696,6 +719,8 @@ let remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
 let remoteCommunitySubscriptions: RemoteRoomSubscriptionRuntime | undefined;
 let remoteRedactionSync: RemoteRedactionSync | undefined;
 let extensionManager: ExtensionManager | undefined;
+/** Where room conversations run (DOR-1624); set once rooms are wired. */
+let roomSessionPlacePort: RoomSessionPlacePort | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
 let testComposioFixture:
   | Awaited<
@@ -816,6 +841,8 @@ let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
 /** The `.agents/skills` projection watcher; absent when `harness.autoSync` is off. */
 let skillsWatcher: SkillsWatcherHandle | undefined;
+/** Hot reload for dev links (DOR-2696); absent when the marketplace did not start. */
+let devLinkWatcher: DevLinkWatcher | undefined;
 /** The turn-end half of the same trigger; absent whenever {@link skillsWatcher} is. */
 let turnEndReprojection: TurnEndReprojection | undefined;
 /**
@@ -1150,6 +1177,8 @@ async function start() {
   // here, before extensions start, because a name handed out earlier could
   // belong to a saved project and would change on the next read.
   projectRegistry.attachStore(new KnownProjectsStore(db));
+  // A root an account rule names is never forgotten by the lookup cap.
+  projectRegistry.protectRoots(() => accountRuleRoots(configManager.get('runtimes')?.claudeCode));
 
   // The inbox extensions ask a person through (`ctx.inbox`, spec
   // `flow-multiproject` §7). Before extensions start, so an extension that
@@ -1262,6 +1291,19 @@ async function start() {
       projects: projectRegistry,
       extensionName: (id) => extensionManager?.get(id)?.manifest.name ?? id,
       activity: activityService,
+    })
+  );
+  // The seam behind `ctx.agent.send` (DOR-2683): an extension sending one of
+  // the person's agents a message. Built before extensions start, beside the
+  // start-work seam it opens kept chats through; Mesh is read at call time,
+  // since it starts later. Started once the runtimes are registered.
+  setAgentSendService(
+    new AgentSendService({
+      store: new AgentSendStore(db),
+      extensionName: (id) => extensionManager?.get(id)?.manifest.name ?? id,
+      meshCore: () => meshCore,
+      // Wired later in boot; read at call time, like Mesh.
+      roomSessionPlace: () => roomSessionPlacePort,
     })
   );
   // Sharing with every agent that ends as a side effect (a disconnect, a move
@@ -1816,6 +1858,14 @@ async function start() {
     });
     initCloudLinkManager(); // real fetch, real defaults — behavior-preserving
   }
+
+  // Every runtime is registered, so the messages extensions sent before a
+  // restart can be settled and re-armed, and held ones retried.
+  await getAgentSendService()
+    ?.start()
+    .catch((err: unknown) =>
+      logger.warn('[DorkOS] could not resume extension messages', { err: String(err) })
+    );
 
   // Workspace subsystem (DOR-84) — server-managed isolated workspaces. Sessions
   // bind via cwd; the manager allocates collision-free port blocks and owns the
@@ -3182,7 +3232,14 @@ async function start() {
     projectForFolder: (cwd) => projectRegistry.peek(cwd),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
-      if (capability) return { title: capability.title, tier: capability.tier };
+      if (capability) {
+        return {
+          title: capability.title,
+          tier: capability.tier,
+          // An extension's tool names its extension, so its card can say so.
+          ...(capability.source ? { source: capability.source } : {}),
+        };
+      }
       // Two ids that are not capabilities anyone can invoke: the card raised when
       // an installed package wants to write shell commands into a coding agent's
       // hook files (DOR-522), and the one a global package raises before its
@@ -3211,6 +3268,45 @@ async function start() {
       docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
   });
   app.locals.docChannelHttp = { ...docChannelHttp, metrics: docChannelMetrics };
+  const docStreamAuthority = {
+    resolveScope: (scope: string) => canvasDocuments.lifecycle.resolveScope(scope),
+    requireScopeCurrent: (
+      scope: string,
+      actor: import('./services/canvas/doc-channel/authorization.js').DocChannelActor
+    ): undefined => {
+      docChannelHttp.authorization.requireScopeCurrent(scope, actor);
+      return undefined;
+    },
+    requireDocumentCurrent: (
+      documentId: string,
+      scope: string,
+      actor: import('./services/canvas/doc-channel/authorization.js').DocChannelActor
+    ): undefined => {
+      if (docChannelHttp.authorization.requireCurrent(documentId, actor).scope !== scope)
+        throw new Error('Document stream scope changed.');
+      return undefined;
+    },
+  };
+  const docLive = new DocChannelLiveBuffer(docChannelHttp.channels, docStreamAuthority);
+  const disposeDocNotifications = subscribeCommittedDocEvents(db, (documentId) => {
+    docLive.notifyCommitted(documentId);
+    return undefined;
+  });
+  docNotificationCleanup = () => {
+    disposeDocNotifications();
+    setDocScopeNotificationsFactory(undefined);
+  };
+  const docScopes = new DocScopeStream(
+    canvasDocuments,
+    docChannelHttp.service,
+    docLive,
+    docStreamAuthority
+  );
+  setDocScopeNotificationsFactory(
+    (scope, req, res) => (signal) =>
+      docScopes.subscribe(scope, docChannelHttp.actor(req, res), signal)
+  );
+
   // An answer given after the in-session hold gave up has to reach the agent that
   // asked, or a person ends up relaying it by hand — which is the bug DOR-1931
   // reports. The subscription lives for the life of the process; its listener does
@@ -4030,7 +4126,11 @@ async function start() {
           launch?.hiddenToolNames,
           // Whose identity the tools act as, as the launch resolved it — the
           // agent a room worktree belongs to, not the worktree (DOR-2091).
-          launch?.identity
+          launch?.identity,
+          // Whether the connector tools are listed, from facts that hold for
+          // the whole session, so a staged warm-up and the turn after it list
+          // the same tools (DOR-2685).
+          launch?.connectorTools
         ),
       })
     );
@@ -4519,12 +4619,13 @@ async function start() {
   // port doctrine as the line above — the session route asks a room question
   // without importing a room type — and the same three reads the room-turn path
   // makes, so both answer the one worktree.
-  app.locals.roomSessionPlace = roomSessionPlace({
+  roomSessionPlacePort = roomSessionPlace({
     bindings: roomStore.sessionLedger,
     authors: roomAuthors,
     worktrees: () => roomWorktrees,
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
+  app.locals.roomSessionPlace = roomSessionPlacePort;
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
@@ -5270,19 +5371,28 @@ async function start() {
     // (`marketplaceMcpDeps`). It is required on both deps types, so a surface
     // cannot be wired without it — an agent's `marketplace_install` used to skip
     // it entirely and leave the plugin unprojected (DOR-2057).
+    // The runtime half of the post-change notifier, on its own so the dev link
+    // watcher can refresh plugins without also queuing a projection per edit.
+    // Resolves when the refresh is done, and never rejects.
+    const refreshRuntimePlugins = (projectPath: string | undefined): Promise<void> => {
+      // Pass the project path (when the change was project-scoped) so the
+      // runtime drops that cwd's cached command list and re-warms it with
+      // the merged per-cwd plugin set.
+      const refreshed =
+        claudeRuntime?.refreshActivatedPlugins(projectPath).catch((err) => {
+          logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
+        }) ?? Promise.resolve();
+      // A global change can leave a package held back from every session until
+      // a person approves what it runs (DOR-2306): ask now, in the background.
+      if (projectPath === undefined) askAboutWithheldGlobals();
+      return refreshed;
+    };
+
     const onPluginsChanged: MarketplaceMcpDeps['onPluginsChanged'] = (ctx) => {
       // Never throws into the caller: it runs after a mutation already succeeded,
       // and a failed follow-up must not be reported as a failed install.
       try {
-        // Pass the project path (when the change was project-scoped) so the
-        // runtime drops that cwd's cached command list and re-warms it with
-        // the merged per-cwd plugin set.
-        claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
-          logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
-        });
-        // A global change can leave a package held back from every session until
-        // a person approves what it runs (DOR-2306): ask now, in the background.
-        if (ctx.projectPath === undefined) askAboutWithheldGlobals();
+        void refreshRuntimePlugins(ctx.projectPath);
         // Harness Sync auto-projection (GAP-4): project the changed plugin's
         // assets to the project's other harnesses. Fire-and-forget; the
         // service is internally best-effort and never throws, but we still
@@ -5294,6 +5404,79 @@ async function start() {
         logger.warn('[Marketplace] Post-change notification failed', { err });
       }
     };
+
+    // Running extensions' skills (DOR-2685): when the set of extension skills
+    // agents should see changes, project each affected project again (the same
+    // consent seam and `harness.autoSync` gate a plugin install goes through)
+    // and refresh the plugins Claude Code sessions load for global ones. A
+    // project an extension only LEFT and that has no harness manifest has
+    // nothing projected to sweep, so it is not scaffolded one.
+    extensionManager?.attachSkillDelivery({
+      projectChanged: async ({ root, ids, remaining }) => {
+        if (!remaining && !existsSync(path.join(root, HARNESS_MANIFEST_PATH))) return;
+        await runAutoProjection(
+          {
+            projectPath: root,
+            packageName: ids.join(', '),
+            action: remaining ? 'install' : 'uninstall',
+          },
+          { dorkHome, approvals: approvalService }
+        );
+        claudeRuntime?.refreshProjectCommands(root);
+      },
+      globalChanged: () => claudeRuntime?.refreshActivatedPlugins(),
+    });
+
+    // Dev links (DOR-2696): run a plugin or skill pack from a folder. One
+    // service for the routes and the `marketplace_link` capability. A link's
+    // yes for the extensions it carries is written beside every other
+    // extension approval, keeping the rest of that section as it is.
+    const devLinkExtensions = extensionManager;
+    // An edit in a linked folder reaches DorkOS within seconds, through the
+    // seams an install uses (spec §6). It records no approval: a rebuild needs
+    // the extension already approved, and anything new asks on its own card.
+    devLinkWatcher = new DevLinkWatcher({
+      dorkHome,
+      extensions: devLinkExtensionsOf(devLinkExtensions, {
+        config: () => configManager.get('extensions'),
+        announce: (ids) => broadcastExtensionReloaded(ids),
+      }),
+      // Global dev links only: a project package is not an SDK plugin, so a
+      // project dev link's edits reach sessions through the projection alone.
+      refreshPlugins: () => refreshRuntimePlugins(undefined),
+      reproject: (ctx) =>
+        runAutoProjection({ ...ctx, action: 'install' }, { dorkHome, approvals: approvalService }),
+      refreshProjectCommands: (projectPath) => claudeRuntime?.refreshProjectCommands(projectPath),
+      // A person's surface: it names folders and build errors, so it goes
+      // where `config_changed` goes and no agent reads it.
+      broadcast: (event) =>
+        eventFanOut.broadcast('marketplace_dev_link_reloaded', event, operatorAudience),
+    });
+    const devLinkService = new DevLinkService({
+      dorkHome,
+      approvals: {
+        read: () => {
+          const extensions = configManager.get('extensions');
+          return {
+            approvedToRun: extensions.approvedToRun,
+            approvedSources: extensions.approvedSources ?? {},
+            approvedPermissions: extensions.approvedPermissions ?? {},
+          };
+        },
+        write: (next) => {
+          const before = configManager.get('extensions');
+          configManager.set('extensions', { ...before, ...next });
+          logConfigWrite('linking a folder', 'extensions', before, configManager.get('extensions'));
+        },
+      },
+      // The link card's yes for the hooks and programs it showed (task 2.2).
+      consent: hookDecisionConsentStore,
+      onPluginsChanged,
+      refreshExtensions: () => devLinkExtensions.requestRefresh(),
+      reloads: devLinkWatcher,
+    });
+    // Not awaited: boot does not wait on watches opening. It never rejects.
+    void devLinkWatcher.start();
 
     // Build the confirmation provider that gates marketplace mutations. There is
     // exactly one, and no way to switch it off: it records an approval the
@@ -5330,6 +5513,7 @@ async function start() {
           approvals: approvalService,
           onGranted: () => claudeRuntime?.refreshActivatedPlugins(),
         },
+        devLinks: devLinkService,
       })
     );
     mountedRouters.push('marketplace');
@@ -5384,6 +5568,7 @@ async function start() {
       consent: globalConsentRecorder,
       onPluginsChanged,
       listAgentScopes,
+      devLinks: devLinkService,
       logger,
     };
     logger.info('[Marketplace] MCP tools wired into external /mcp server');
@@ -5500,6 +5685,18 @@ async function start() {
     },
     createCapabilityAttributionObserver(activityService)
   );
+  // A running extension's tools join and leave the registry (DOR-2685); every
+  // open window re-fetches the catalog and the permissions page when they do.
+  wireCapabilitiesChangedBroadcast(capabilityRegistry, eventFanOut);
+  // Extensions started at boot, before the registry existed: hand every
+  // running one's tools over now, and every later start hands its own over
+  // as it starts. An uninstall clears the removed extension's per-tool
+  // permission settings through the one permission writer (DOR-2685).
+  extensionManager?.attachAgentTools({
+    registry: capabilityRegistry,
+    forgetToolPermissions: (extensionId, extensionName) =>
+      permissionService.forgetExtensionActions(extensionId, extensionName),
+  });
   // Arm tier enforcement (spec `agent-trust` §3.2) now that both the approval
   // primitive and the Activity feed exist. The gate runs INSIDE `registry.invoke`
   // (DOR-467), so every surface that reaches a capability through the registry is
@@ -6075,11 +6272,15 @@ function stopCodexCreditsTurns(): void {
 
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
+let docNotificationCleanup: (() => void) | undefined;
+
 async function shutdownServices() {
   mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
   await stopDocDelivery?.();
   stopDocDelivery = undefined;
+  docNotificationCleanup?.();
+  docNotificationCleanup = undefined;
   logger.info('[DorkOS] shutting down services');
   stopSessionContinuation?.();
   stopSessionContinuation = undefined;
@@ -6122,6 +6323,7 @@ async function shutdownServices() {
   }
   stopConnectorFreshness?.();
   stopConnectorFreshness = undefined;
+  getAgentSendService()?.stop();
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
   // Give back every port an open dev-server preview is holding.
@@ -6163,6 +6365,11 @@ async function shutdownServices() {
   if (skillsWatcher) {
     await skillsWatcher.stop();
     skillsWatcher = undefined;
+  }
+  // Every dev link's watch closes here, so shutdown leaves no handle open.
+  if (devLinkWatcher) {
+    await devLinkWatcher.stop();
+    devLinkWatcher = undefined;
   }
   if (searchIndexer) {
     searchIndexer.stop();
@@ -6249,6 +6456,8 @@ start().catch(async (err) => {
   testComposioFixture = undefined;
   await stopDocDelivery?.();
   stopDocDelivery = undefined;
+  docNotificationCleanup?.();
+  docNotificationCleanup = undefined;
   // Two startup failures are addressed to the operator rather than to whoever
   // maintains DorkOS: a database that will not open, and a backup that could not
   // be written. Both carry instructions in their message and both are resolved

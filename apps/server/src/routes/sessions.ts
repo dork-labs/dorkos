@@ -77,6 +77,7 @@ import sessionCanvasRouter from './session-canvas.js';
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
+import { sessionRunsOnCredits } from '../services/core/cloud/credits-model-gate.js';
 import { rejectUnknownModel } from './session-model-gate.js';
 import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
 import {
@@ -713,6 +714,7 @@ router.patch('/:id', async (req, res) => {
     title,
     acknowledgedAutonomy,
     runtime: runtimeHint,
+    account: accountHint,
   } = parsed.data;
   // Fail-closed by construction: an unresolvable session throws here, before
   // any check below can be skipped and before anything is written.
@@ -825,9 +827,22 @@ router.patch('/:id', async (req, res) => {
   // the runtime finally becomes known (`RuntimeRegistry.claimedPermissionMode`
   // drops a mode the bound runtime does not declare). Narrowing it to the hint
   // would ADD refusals, not remove them, and that is a separate decision.
+  //
+  // Which MENU is the other half of the question. A session on DorkOS credits
+  // may run only what credits serve on its runtime's protocol, so it is judged
+  // against the service's list rather than the runtime's own (DOR-2636), and
+  // that check does not degrade: nothing is stored while the list is
+  // unreadable. Whether the session is on credits is the same answer its launch
+  // reaches (`sessionRunsOnCredits`).
   if (model !== undefined) {
     const authority = modelGateAuthority(runtime, bound, runtimeHint);
-    const modelError = authority ? await rejectUnknownModel(authority, model) : null;
+    const onCredits = authority
+      ? await sessionRunsOnCredits(authority, sessionId, {
+          accountHint,
+          cwd: typeof req.query.cwd === 'string' ? req.query.cwd : undefined,
+        })
+      : false;
+    const modelError = authority ? await rejectUnknownModel(authority, model, { onCredits }) : null;
     if (modelError) return sendError(res, 400, modelError, 'UNSUPPORTED_MODEL');
   }
   // Past the gate the id is one THIS runtime declares, so it is a real mode by

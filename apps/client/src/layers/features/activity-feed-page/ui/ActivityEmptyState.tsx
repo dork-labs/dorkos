@@ -29,7 +29,7 @@ export function ActivityEmptyState({ isFiltered = false, className }: ActivityEm
         className={className}
         icon={Activity}
         headline="No activity yet"
-        description="Events will appear here as your agents work."
+        description="Your agents’ work shows up here."
       />
     );
   }
@@ -39,7 +39,7 @@ export function ActivityEmptyState({ isFiltered = false, className }: ActivityEm
       className={className}
       icon={Activity}
       headline={`No ${buildCategoryLabel(filters.categories)} activity found`}
-      description="Try adjusting your filters."
+      description="Try other filters."
       action={{ label: 'Clear filters', onClick: clearAll, variant: 'outline' }}
     />
   );

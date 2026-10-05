@@ -14,7 +14,12 @@ import {
   BrowserCloseReceiptSchema,
   SemanticSnapshotV1Schema,
 } from '../browser-schemas.js';
-import { binding, reference, snapshot } from './browser-schema-fixtures.js';
+import {
+  binding,
+  reference,
+  snapshot,
+  maximumDiagnosticSummary,
+} from './browser-schema-fixtures.js';
 
 const requestId = reference(7);
 const frame = {
@@ -230,4 +235,118 @@ it('keeps diagnostic and error metadata free of generic payload/echo fields', ()
       field
     ).toBe(false);
   }
+});
+it('constructs the capture factory without a facade back-edge and preserves legacy validators', async () => {
+  const factory = await import('../browser-capture-schemas.js');
+  const facade = await import('../browser-schemas.js');
+  const independent = factory.createBrowserCaptureSchemas({
+    binding: BrowserBindingSchema,
+    frame: BrowserFrameSchema,
+  });
+  const envelope = {
+    frame,
+    geometry: {
+      cssViewport: { width: 1280, height: 720 },
+      raster: { width: 2560, height: 1440, format: 'jpeg' },
+      scaleX: 2,
+      scaleY: 2,
+    },
+    pointer: { x: 0, y: 0, revision: 0 },
+  };
+  expect(independent.BrowserFramePointerEnvelopeSchema.parse(envelope)).toEqual(
+    facade.BrowserFramePointerEnvelopeSchema.parse(envelope)
+  );
+  expect(BrowserFrameSchema.parse(frame)).toEqual(frame);
+  for (const changed of [
+    { ...envelope, geometry: { ...envelope.geometry, scaleX: 1 } },
+    { ...envelope, pointer: { x: 1280, y: 0, revision: 0 } },
+    { ...envelope, pointer: { x: 0, y: 720, revision: 0 } },
+  ])
+    expect(facade.BrowserFramePointerEnvelopeSchema.safeParse(changed).success).toBe(false);
+});
+it('validates maximum-width summaries, ordering, closed fields and terminal interval coherence', async () => {
+  const { BrowserDiagnosticSummarySchema } = await import('../browser-schemas.js');
+  const max = Number.MAX_SAFE_INTEGER;
+  const summary = maximumDiagnosticSummary();
+  const entries = summary.entries;
+  expect(BrowserDiagnosticSummarySchema.safeParse(summary).success).toBe(true);
+  const serialized = new TextEncoder().encode(JSON.stringify(summary));
+  expect(serialized.length).toBeLessThanOrEqual(266240);
+  console.info(
+    'CAPTURE45_MAXIMUM_SCHEMA_WIDTH',
+    JSON.stringify({
+      summaryBytes: serialized.length,
+      containerBytes: new TextEncoder().encode(
+        JSON.stringify(Array.from({ length: 16 }, () => summary))
+      ).length,
+      wrapperBytes: new TextEncoder().encode(JSON.stringify({ ...summary, entries: [] })).length,
+    })
+  );
+  const wrapper = { ...summary, entries: [] };
+  expect(new TextEncoder().encode(JSON.stringify(wrapper)).length).toBeLessThanOrEqual(4096);
+  expect(
+    new TextEncoder().encode(JSON.stringify(Array.from({ length: 16 }, () => summary))).length
+  ).toBeLessThanOrEqual(4 * 1024 * 1024);
+  for (const invalid of [
+    { ...summary, subsequentEventsUncounted: false },
+    { ...summary, entries: [entries[0], entries[0]] },
+    { ...summary, interval: { startOffsetMs: max, endOffsetMs: max - 1 } },
+    { ...summary, entries: [{ ...entries[0], url: 'SECRET' }] },
+  ])
+    expect(BrowserDiagnosticSummarySchema.safeParse(invalid).success).toBe(false);
+});
+it('serializes maximum-width geometry and refuses area, format and boundary mismatches', async () => {
+  const { BrowserFramePointerEnvelopeSchema } = await import('../browser-schemas.js');
+  const max = Number.MAX_SAFE_INTEGER;
+  const binding = maximumDiagnosticSummary().binding;
+  const envelope = {
+    frame: {
+      ...frame,
+      binding,
+      viewerId: 'V'.repeat(64),
+      frameId: 'F'.repeat(64),
+      sequence: max,
+      width: 16384,
+      height: 512,
+      byteLength: 2097152,
+    },
+    geometry: {
+      cssViewport: { width: 16384, height: 512 },
+      raster: { width: 16384, height: 512, format: 'jpeg' },
+      scaleX: 1,
+      scaleY: 1,
+    },
+    pointer: { x: 16383.999999999998, y: 511.99999999999994, revision: max },
+  };
+  expect(BrowserFramePointerEnvelopeSchema.safeParse(envelope).success).toBe(true);
+  const bytes = new TextEncoder().encode(JSON.stringify(envelope)).length;
+  expect(bytes).toBeLessThanOrEqual(16384);
+  console.info('CAPTURE45_GEOMETRY_WIDTH', JSON.stringify({ bytes }));
+  for (const invalid of [
+    {
+      ...envelope,
+      geometry: {
+        ...envelope.geometry,
+        raster: { width: 16384, height: 513, format: 'jpeg' },
+        scaleY: 513 / 512,
+      },
+    },
+    {
+      ...envelope,
+      geometry: { ...envelope.geometry, raster: { width: 16384, height: 512, format: 'png' } },
+    },
+    { ...envelope, pointer: { x: 16384, y: 0, revision: max } },
+    { ...envelope, pointer: { x: 0, y: 512, revision: max } },
+  ])
+    expect(BrowserFramePointerEnvelopeSchema.safeParse(invalid).success).toBe(false);
+  let invoked = 0;
+  const malicious = Object.defineProperty({ ...envelope }, 'pointer', {
+    enumerable: true,
+    get: () => {
+      invoked++;
+      return null;
+    },
+  });
+  expect(BrowserFramePointerEnvelopeSchema.safeParse(malicious).success).toBe(false);
+  expect(invoked).toBe(0);
 });

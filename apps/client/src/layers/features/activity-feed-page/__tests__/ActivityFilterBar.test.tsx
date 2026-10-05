@@ -41,7 +41,7 @@ describe('ActivityFilterBar', () => {
     render(<ActivityFilterBar />);
 
     expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument();
-    for (const label of ['Schedules', 'Relay', 'Agent', 'Config', 'System']) {
+    for (const label of ['Schedules', 'Messages', 'Agent', 'Settings', 'System']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
   });
@@ -50,7 +50,7 @@ describe('ActivityFilterBar', () => {
     mockReturn = makeFilters();
     render(<ActivityFilterBar />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
     expect(toggleCategory).toHaveBeenCalledWith('relay');
   });
 
@@ -58,7 +58,10 @@ describe('ActivityFilterBar', () => {
     mockReturn = makeFilters();
     render(<ActivityFilterBar />);
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Relay' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Messages' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
   });
 
   it('clears all filters when "All" is clicked while filtered', () => {

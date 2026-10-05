@@ -149,6 +149,9 @@ describe('Database Migrations', () => {
       // Opaque author identities keyed on (kind, natural_key) — an agent's
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
       'authors',
+      'browser_attachments',
+      'browser_instances',
+      'browser_profiles',
       // Durable document channels, route authority, input outcomes and recovery
       // evidence (spec `doc-channel`, migration 0137). These survive physical
       // document removal so closure and accepted delivery history stay intact.
@@ -210,6 +213,10 @@ describe('Database Migrations', () => {
       'connector_runtime_bindings',
       'connector_usage_attempts',
       'connector_usage_terminal_receipts',
+      // The chat an extension keeps with each agent it messages, and every
+      // message it sent with ctx.agent.send (DOR-2683).
+      'extension_agent_chats',
+      'extension_agent_sends',
       // Decisions an extension raised in the inbox (spec flow-multiproject
       // §7.2, migration 0131).
       'extension_decisions',
@@ -254,7 +261,9 @@ describe('Database Migrations', () => {
       // agent-side cursor stays on `room_members.last_read_seq`
       // (ADR 260808-140956, migration 0060).
       'read_cursors',
+      'relay_delivery_receipts',
       'relay_index',
+      'relay_receipt_observer_owner',
       'relay_traces',
       // Files uploaded into a room, bound to the entry that carries them inside
       // that entry's own transaction — nullable `entry_id` is the "uploaded,

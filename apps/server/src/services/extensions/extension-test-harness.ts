@@ -50,13 +50,24 @@ const ALL_CONTRIBUTION_KEYS: ContributionCountKey[] = [
 export class MockExtensionAPI {
   readonly id: string;
   private counts: Record<string, number> = {};
+  /** Calls the real host would refuse, reported with the result. */
+  readonly warnings: string[] = [];
 
   constructor(id: string) {
     this.id = id;
   }
 
-  /** Register a component in a UI slot (counted, returns cleanup no-op). */
-  registerComponent(slot: ExtensionPointId, _id: string, _component: unknown): () => void {
+  /**
+   * Register a component in a UI slot (counted, returns cleanup no-op). The
+   * `dialog` slot is refused and not counted, as the real host refuses it.
+   */
+  registerComponent(slot: ExtensionPointId, id: string, _component: unknown): () => void {
+    if (slot === 'dialog') {
+      this.warnings.push(
+        `registerComponent('dialog', '${id}') adds nothing: use registerDialog, which returns open() and close()`
+      );
+      return () => {};
+    }
     this.counts[slot] = (this.counts[slot] ?? 0) + 1;
     return () => {};
   }
@@ -259,6 +270,7 @@ export async function testClientExtension(
       id,
       contributions,
       message: `Extension activated successfully. Registered ${totalContributions} contribution(s).`,
+      ...(mockApi.warnings.length > 0 ? { warnings: mockApi.warnings } : {}),
     };
   } catch (err) {
     return {

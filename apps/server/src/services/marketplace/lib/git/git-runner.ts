@@ -15,11 +15,12 @@
  *
  * @module services/marketplace/lib/git-runner
  */
-import { execFile, spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { lstat, readdir, statfs } from 'node:fs/promises';
 import path from 'node:path';
 import { withGitConfigEnv, type GitConfigEntry } from '@dorkos/shared/git-hardening';
 import { hardenedGitEnv, internalGitArgs } from '../../../../lib/git-safety.js';
+import { killProcessTree } from '../../../../lib/process/kill-tree.js';
 
 /** One `git -c`-style setting, passed through the environment instead of argv. */
 export type { GitConfigEntry };
@@ -159,39 +160,6 @@ export function pastByteLimit(sample: {
   const { size, freeBefore, freeNow, maxBytes } = sample;
   const drop = freeBefore !== undefined && freeNow !== undefined ? freeBefore - freeNow : 0;
   return size > maxBytes || drop > maxBytes + FREE_SPACE_MARGIN;
-}
-
-/**
- * Stop a process and everything it started. On POSIX the process leads its
- * own group, and the group is killed; on Windows, `taskkill /T` walks the tree.
- *
- * @param pid - The process to stop, with its descendants.
- * @param platform - The platform to act for; a parameter so tests can check
- *   the Windows branch anywhere.
- * @param run - Runs `taskkill` on Windows; a parameter for the same reason.
- * @internal Exported for tests.
- */
-export function killProcessTree(
-  pid: number,
-  platform: NodeJS.Platform = process.platform,
-  run: (file: string, args: string[]) => void = (file, args) => {
-    execFile(file, args, { windowsHide: true }, () => {});
-  }
-): void {
-  if (platform === 'win32') {
-    run('taskkill', ['/T', '/F', '/PID', String(pid)]);
-    return;
-  }
-  try {
-    process.kill(-pid, 'SIGKILL');
-  } catch {
-    // Not a group leader after all (or already gone): stop the process itself.
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {
-      // Already gone.
-    }
-  }
 }
 
 /** Every git process (group) this process has started and not yet seen end. */

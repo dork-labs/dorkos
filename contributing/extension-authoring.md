@@ -97,6 +97,8 @@ my-extension/
 | `canDisable`         | No       | **Core extensions only.** Defaults to `true`. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. See [Core Extensions](#core-extensions).                       |
 | `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration).                                                               |
 | `dataProxy`          | No       | Declarative API proxy config. See [Declarative Proxy](#declarative-proxy).                                                                                                                                         |
+| `tools`              | No       | Tools the extension gives the person's agents while it runs. Needs `serverCapabilities`. See [`ctx.tools`](#ctxtools).                                                                                             |
+| `skills`             | No       | Skill folder names under `<extension>/skills/`. See [Shipping skills](#shipping-skills).                                                                                                                           |
 
 ## Entry Point (`activate`)
 
@@ -128,8 +130,8 @@ api.registerComponent(slot, id, Component, { priority?, label?, icon?, visibleWh
 // Add a command palette item
 api.registerCommand(id, label, callback, { icon?, shortcut? }): () => void
 
-// Register a dialog
-api.registerDialog(id, Component): { open: () => void; close: () => void }
+// Register a dialog, closed until you call open()
+api.registerDialog(id, Dialog): { open: () => void; close: () => void }
 
 // Add a tab to the settings dialog
 api.registerSettingsTab(id, label, Component, { group? }): () => void
@@ -149,7 +151,7 @@ api.registerStatusBarItem(id, Item, { label, priority?, when?, urgent? }): () =>
 - **`visibleWhen?`** — `dashboard.sections` only: a predicate the host re-evaluates on every render. Return false to hide your section without unregistering it (useful when it has nothing to say). Omit it and the section is always visible.
 - **`group?`** — `settings.tabs` only: names the sidebar section the tab sits under in the Settings dialog. The built-in sections are `'You'`, `'Agents'` and `'This computer'`, and naming one adds your tab to the end of it. `'Advanced'` puts your tab behind the folded Advanced disclosure at the bottom, with Server, Tools, Room limits, Experiments and Danger zone; use it for something most people set once or never. Any other name makes a section of its own, below the built-in ones and above Advanced. Omit it and the tab lands under "Add-ons", the section reserved for contributed tabs, so a tab written before this field existed still files itself somewhere honest. Same option on `registerSettingsTab`.
 
-`registerPage` and `registerStatusBarItem` have sections of their own under [UI Slots](#ui-slots): [Pages](#pages-x) and [The status bar](#the-status-bar).
+`registerPage`, `registerStatusBarItem` and `registerDialog` have sections of their own under [UI Slots](#ui-slots): [Pages](#pages-x), [The status bar](#the-status-bar) and [Dialogs](#dialogs).
 
 ### UI Control
 
@@ -168,6 +170,8 @@ api.setTabMarker(tabId: string, marker: 'attention' | null): void
 ```
 
 **`navigate`** takes a core route (`/team`, `/session?dir=…`) or one of **your own** pages (`/x/<your-id>/p/dorkos?view=list`). Anything else is refused with a console warning: another extension's page, another origin (`https://…`, `//host`), or a scheme like `javascript:`.
+
+To send a person to one of your open asks, open the Inbox on it: `api.navigate('/activity?inbox=' + encodeURIComponent(view.id))`, where `view` is the row from `api.listDecisions()` (`view.id` is core's id, not your key). The Inbox opens with that row focused, a bottom sheet on a phone. An id that is no longer waiting opens the Inbox with nothing singled out; `?inbox=open` opens it plain. Naming `/activity` keeps the link working on a DorkOS too old to answer `?inbox=`: there it lands on the Activity page, as such links always have. Once your `minHostVersion` is a release that answers `?inbox=`, prefer the search-only form, `api.navigate('?inbox=' + encodeURIComponent(view.id))`, which opens the Inbox over the page the person is already on.
 
 **`setTabMarker`** marks a tab you registered with `registerComponent('right-panel', tabId, …)`. Core draws a small amber dot after the tab's label and adds "something needs you" to its accessible name ("Flow, something needs you"). You choose only whether the tab is marked; you cannot change how the dot looks. Marking a tab you did not register does nothing and logs a warning. Marks clear when your extension deactivates. Use it for "something here needs the person", not for "something changed": no counts, and clear it once the person has seen what needed them.
 
@@ -340,7 +344,7 @@ api.id: string
 | `sidebar.footer`        | Bottom of the sidebar                                  |
 | `dashboard.sections`    | "From your extensions", at the top of the Activity tab |
 | `command-palette.items` | Command palette entries                                |
-| `dialog`                | Modal dialog layer                                     |
+| `dialog`                | Modal dialog layer, through `registerDialog`           |
 | `settings.tabs`         | Settings dialog tabs                                   |
 | `right-panel`           | Shell-level right panel (contextual inspector) tabs    |
 | `status-bar`            | The chat status bar, beside the runtime and account    |
@@ -469,6 +473,49 @@ function RunChip({ trackerItems, compact }: StatusBarSlotContext) {
 }
 ```
 
+### Dialogs
+
+`api.registerDialog(id, Dialog)` adds a dialog that starts closed and returns `{ open, close }`. Call `open()` from anywhere, such as a palette command, and `close()` to hide it again; both are safe to call before the dialog first renders, and calling them twice does nothing.
+
+The host keeps whether the dialog is open. It mounts your component only while the dialog is open and unmounts it once it closes, so you never hide it yourself, and its state starts fresh each time it opens. Your component receives `ExtensionDialogProps`:
+
+- **`open`**: always `true` while your component is mounted. It is there for a component you also use somewhere else.
+- **`onOpenChange(open)`**: call `onOpenChange(false)` when the person closes the dialog. It never throws.
+
+Extensions cannot import the host's UI components, so your component draws the dialog itself: a backdrop, a frame with `role="dialog"` and an accessible name, and the ways to close it. Escape, a click on the backdrop and your own close button each call `onOpenChange(false)`. Move focus into the dialog when it mounts and keep Tab inside it.
+
+```tsx
+import type { ExtensionAPI, ExtensionDialogProps } from '@dorkos/extension-api';
+import { useEffect } from 'react';
+
+function PauseDialog({ onOpenChange }: ExtensionDialogProps) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onOpenChange(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onOpenChange]);
+  return (
+    <div className="backdrop" onClick={(e) => e.target === e.currentTarget && onOpenChange(false)}>
+      <div role="dialog" aria-label="Pause flow">
+        {/* … */}
+        <button onClick={() => onOpenChange(false)}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+export function activate(api: ExtensionAPI): void {
+  const pause = api.registerDialog('pause', PauseDialog);
+  api.registerCommand('pause', 'Pause flow', () => pause.open());
+}
+```
+
+One extension dialog is open at a time, across every extension: opening one closes any other first, so two never fight over Escape or focus. If your component throws while it renders, the host closes it and logs the error; the rest of the app keeps working, and `open()` tries again with a fresh mount.
+
+`registerComponent('dialog', …)` is refused with a console warning: a dialog added that way would have no `open()`.
+
 ## TypeScript vs JavaScript
 
 **TypeScript** (`index.ts`): Compiled automatically by the host using esbuild. JSX is supported in `.ts` files. Type against `@dorkos/extension-api` for full autocompletion.
@@ -519,6 +566,7 @@ Use CSS custom properties (`var(--border)`, `var(--muted-foreground)`) from the 
 - **Source maps**: TypeScript extensions include inline source maps. Set breakpoints in the original `.ts` file via the Sources panel.
 - **Compilation errors**: Check Settings > Extensions for error details if your extension fails to compile.
 - **State inspection**: Call `api.getState()` from a command callback to inspect host state.
+- **Building an extension inside a plugin**: link the plugin's folder instead of reinstalling it on every edit. Marketplace → Installed → "Link a folder" (or `dorkos marketplace link <path>`) runs the plugin from your folder, and each saved edit to one of its extensions rebuilds it without asking again. See the dev-link section of `contributing/marketplace-installs.md` and the user guide `docs/marketplace/dev-links.mdx`.
 
 ## Core Extensions
 
@@ -715,6 +763,10 @@ ctx.extensionDir; // "/Users/kai/.dork/extensions/my-extension" — absolute pat
 
 The resolved DorkOS data directory (`~/.dork` in production, `apps/server/.temp/.dork` in dev, or whatever `DORK_HOME` names). Use it for a file another tool also reads, such as the Flow extension's `<dorkHome>/flow/fleet.json`. A project-local extension's `extensionDir` is not under it, so never derive it from `extensionDir`. Data only your extension reads belongs in `ctx.storage`.
 
+#### `ctx.filesDir`
+
+A folder only your extension writes to: `{dorkHome}/extension-data/<id>/files`. DorkOS creates it before `register()` runs. Put files you write yourself (downloads, caches, a SQLite file of your own) here rather than next to your code. An extension that runs separately (`serverCapabilities.runtime: "subprocess"`) can write nowhere else. In such an extension, an account advisor's methods are fixed when `registerAdvisor` is called: DorkOS calls only the methods the advisor had then, so add every method before registering it.
+
 #### `ctx.accounts`
 
 Read access to the agent accounts DorkOS knows, and the account advisor seam (spec `claude-account-fleet` §6 X1-X3). Every type is exported from `@dorkos/extension-api/server`.
@@ -895,9 +947,134 @@ if (ctx.sessions !== undefined) {
 
 The input, the limits, the refusals and the first line are exactly `api.startWork`'s, with one difference: the project must hold a copy of your extension or be one you reported. A `watch` on an inbox row may point only at a chat you started, or one your chats started; any other is dropped.
 
+#### `ctx.agent`
+
+Send one of the person's agents a message, and hear what became of it (DOR-2683). `to` is a Mesh agent id or a chat id; an agent id is tried first.
+
+```typescript
+if (ctx.agent !== undefined) {
+  ctx.agent.subscribe((event) => {
+    // turn.started is the ack. Then exactly one of turn.done or turn.failed.
+    if (event.kind === 'turn.failed') markUnsent(event.messageId, event.reason);
+  });
+
+  const receipt = await ctx.agent.send({
+    to: '01JN4M2X5SZMHXP3EZFM9DWRXF', // a Mesh agent id, or a chat id
+    text: 'A reviewer left 3 comments on DOR-123. Reply in the thread.',
+    context: 'Thread: …',
+    idempotencyKey: 'reply:DOR-123:4',
+  });
+  // { messageId, status: 'started' | 'queued', reason?: 'busy' | 'at_capacity', sessionId }
+  // A resend after the message failed: { messageId, status: 'failed', failure, sessionId }
+}
+```
+
+- **Where it goes.** An agent id goes to the one chat your extension keeps with that agent: the first message opens it in the agent's home (its first line says your extension started it, and it counts against the start limits above), and every later message lands in the same chat, even when two first messages race. A chat id must be a person's own chat, or one your extension started or keeps. Another extension's chat, a room's conversation, a chat bridged from Telegram or Slack, an agent-to-agent thread, a scheduled run, and a chat from before DorkOS recorded where chats come from are refused (`not_allowed`). The receipt and every event for a message carry the same chat id.
+- **A busy agent holds the message.** It waits in the chat's queue, where the person can see, edit or remove it, and runs when the current turn ends. There is no time limit on that wait: the dispatcher's five-minute wait budget only makes the message try again, and a turn still running turns that try away, so the message goes back in line. It survives a restart.
+- **No room means waiting, not a refusal.** When too many chats nobody typed into are running, or opening the agent's chat would pass your start limits, the receipt says `queued` with `reason: 'at_capacity'` and the message is sent as soon as there is room (retried every 5 seconds, across restarts). Until then it is held by DorkOS, not in any chat's queue, so nobody sees it there or can edit it. If your extension stops, reloads, is turned off or removed first, it is failed with `reason: 'stopped'` and never sent.
+- **The ack.** `ctx.agent.subscribe` hears every message your extension sent, by `messageId`: `turn.started`, then `turn.done` (`outcome: 'ok' | 'error'`), or `turn.failed` when it will never run, with `reason` `removed` (a person took it off the queue or pressed Stop), `session_gone`, `interrupted` (DorkOS restarted mid-turn) `undeliverable` (it waited for room and the chat could no longer take it) or `stopped`. One case is not reported: a message whose launch keeps failing (the runtime throws every time it starts a turn) stays waiting in the queue and is retried, with no event, until it runs or is removed. Use your own timeout on `turn.started` for that. These are not limited to the chat a person has open, unlike `api.events`. Events that arrive while nothing listens, such as around a restart, go to your first listener.
+- **Resends are safe.** The same `idempotencyKey` answers with the first receipt and sends nothing, for 24 hours and for as long as the message is unfinished. Once the message has failed, the resend answers `status: 'failed'` with the `failure` reason, never a stale `queued`. A refused send remembers nothing.
+- **It cannot shape the turn.** Any field other than `to`, `text`, `context` and `idempotencyKey` (a `cwd`, a `permissionMode`, a `forAgent`) is refused with `invalid_input`. The agent reads your words inside a fence that labels them as data from your app, not instructions, and a chat your extension opens starts with no permission mode of its own.
+- **Refusals** throw `AgentSendError` with `code` `invalid_input`, `not_found`, `not_allowed`, `unavailable` or `stopped`; nothing was sent. No manifest capability is needed, on the same terms as `ctx.sessions`.
+
+#### `ctx.tools`
+
+Give the person's agents typed tools while your extension runs (DOR-2685). Declare each tool in `extension.json`, then bind its handler with `ctx.tools.handle` while `register()` runs. A complete mail-style extension, with one tool and one skill:
+
+```jsonc
+{
+  "id": "mail-app",
+  "name": "Mail",
+  "version": "1.0.0",
+  "description": "Send email from your agents.",
+  "serverCapabilities": { "serverEntry": "./server.ts" },
+  "tools": [
+    {
+      "name": "send_message",
+      "title": "Send an email",
+      "description": "Send an email from the person's mail account. Use it when they ask you to reply.",
+      "tier": "act",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": { "type": "string", "format": "email" },
+          "subject": { "type": "string", "maxLength": 200 },
+          "body": { "type": "string", "maxLength": 20000 },
+        },
+        "required": ["to", "body"],
+        "additionalProperties": false,
+      },
+      "approvalDisplayFields": ["to", "subject"],
+      "timeoutSeconds": 60,
+    },
+  ],
+  "skills": ["triage-inbox"],
+}
+```
+
+```typescript
+// server.ts
+import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+
+interface Outbox {
+  sent: Array<{ to: string; subject?: string; body: string; sentAt: string }>;
+}
+
+const register: ServerExtensionRegister = (_router, ctx) => {
+  ctx.tools.handle('send_message', async (input, call) => {
+    // Already parsed against inputSchema, so the shape is known.
+    const { to, subject, body } = input as { to: string; subject?: string; body: string };
+    if (call.signal.aborted) throw new Error('The send was cancelled.');
+    // A real extension calls its mail service here, passing call.signal on.
+    const outbox = (await ctx.storage.loadData<Outbox>()) ?? { sent: [] };
+    outbox.sent.push({ to, subject, body, sentAt: new Date().toISOString() });
+    await ctx.storage.saveData(outbox);
+    return { sent: true, to };
+  });
+};
+
+export default register;
+```
+
+- **Naming.** `name` is lowercase words joined by single underscores. Agents see the tool as `ext_<id with - as _>__<name>` (`ext_mail_app__send_message`), and `mcp__dorkos__` plus that name must fit 64 characters, which the manifest checks. In a skill, name the tool by that bare name: the prefix in front of it differs per agent runtime.
+- **Tiers.** `observe` only reads. `act` changes something, and sits in the **Extension tools** permission area, so a person can set it to Ask or Blocked. `destructive` deletes or removes something and asks a person on every call, bound to that call's input. The tier is your claim; the area lets a person block all of your tools at once. `act` and `destructive` tools must name `approvalDisplayFields`, top-level input fields the approval card shows.
+- **The schema subset.** `inputSchema` must be closed JSON Schema: `type`, `properties`, `required`, `items`, `enum`, `const`, `description`, `title`, `default`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `format`, `minItems`/`maxItems`, `anyOf`, and on every object `"additionalProperties": false`. Every node says its `type` (or lists its values with `enum`, `const` or `anyOf`), every array says its `items`, and a `default` must fit its own schema. An open object, `patternProperties`, `propertyNames`, `$ref` and `$defs` are refused, because each becomes an open-ended map, and one open-ended map anywhere on the `dorkos` server hides every DorkOS tool from Claude Code agents. DorkOS checks each tool when it discovers the extension, before any of its code runs, with the same check (`@dorkos/extension-api/tool-check`) the capability registry runs when the tools register and `dorkos marketplace validate` runs on a package, so a tool that passes one passes the others. A refused tool is reported on `GET /api/extensions` (`tools[].status: 'refused'` and a `reason`); your other tools still load. Titles are one line with no quote marks, and the extension's display name must be plain A to Z letters and may not be "DorkOS".
+- **Which problems cost what.** A problem the manifest schema catches makes the whole extension invalid, its client half included: a tool name that breaks the pattern, a name too long for 64 characters, a tool declared twice, an approval display field the input does not have, `timeoutSeconds` out of range, or `tools` with no `serverCapabilities`. A problem with one tool's schema, title or card fields (the subset above, a quoted title, a missing `approvalDisplayFields`) refuses only that tool, and the rest of the extension loads. A display name the registry refuses ("DorkOS", non-ASCII letters, quotes) refuses every tool but loads the extension. `dorkos marketplace validate` reports all of these as errors before you publish.
+- **Binding.** `ctx.tools.handle` throws for a name the manifest does not declare, a tool DorkOS refused, a second handler for one tool, or a call after `register()` finished. A declared tool you never handle is not offered, and its status says why. A `register()` that throws or times out offers no tools.
+- **Calls.** `input` is already parsed against your schema. `call` carries only `signal` and `agentId` (the calling agent's Mesh id, or `null`): no session id, folder or token. Return plain JSON; a string passes through as text. A result over 256 KB serialized, or one that is not JSON, becomes an error. A throw becomes a tool error the agent reads as `<your extension name>: <message>`, capped at 500 characters, with absolute file paths replaced by `<path>` and never a stack.
+- **Time and stops.** A call runs at most `timeoutSeconds` (1 to 300, default 60), counted after any approval. Past that, or when the agent's turn is cancelled, or when your extension stops, `call.signal` aborts and any later result is thrown away. On stop, reload, turn-off, revoke or uninstall, your tools leave the registry first, before your cleanup runs. An uninstall also clears every per-tool permission setting kept for your tools, so nothing carries over to whatever is installed under the same id next.
+- **When agents see them.** Tools join once `register()` finishes and leave when the extension stops. Codex and OpenCode chats see a change the next time they ask DorkOS for its tool list: their tool server is built from the live registry for every request, so even a client that stays connected gets the new list on its next `tools/list`. A Claude Code chat sees it with its next message: a process kept warm between messages compares its tool list (every tool's name, description and input schema) with what a fresh launch would list, and relaunches before that message when they differ. A reply already in progress finishes with the tools it started with, and a chat whose helper agent or Monitor is still working keeps its process, and the old list, until that work ends. The relaunch costs that chat its prompt cache once, so it happens only when the list really changed.
+- **Where people see them.** Settings → Extensions sums up each extension's tools and skills on its card ("Gives agents 3 tools and 1 skill" while it runs, "Would give agents …" while it is off, waiting for approval or broken; only tools and skills that reach agents are counted) and opens to each tool's title with its tier as "Reads", "Acts" or "Asks you first", and each skill. A refused tool or a skill left out is listed by name with its reason. The Activity inbox row that asks a person to turn the extension on carries the same summary and list (`agentTools` and `agentSkills` on `GET /api/extensions/pending-approvals`), so a person sees every tool and tier before the first run. Each tool is a row in Settings → Permissions under **Extension tools**, labelled "From <extension name>", and its approval card says the same under the tool's title. A person blocks every extension tool at once by setting that area to Blocked, or one tool from its own row.
+- **The dev loop.** Editing `server.ts` restarts the extension. Editing only the `tools` or `skills` in `extension.json` restarts it too (the restart key includes a digest of those declarations), so a dev-linked extension picks up a new tool on save. A `server.ts`-only save re-registers the same tools, which leaves the tool list unchanged, so normally no Claude Code chat is relaunched for it.
+
+#### Shipping skills
+
+An extension can ship skills that teach agents when and how to use it (DOR-2685). List each folder under `<extension>/skills/` in the manifest; each holds a `SKILL.md` whose frontmatter `name` matches the folder:
+
+```jsonc
+{ "id": "mail-app", "skills": ["triage-inbox"] }
+```
+
+```
+mail-app/skills/triage-inbox/SKILL.md
+---
+name: triage-inbox
+description: Sort the person's inbox. Use ext_mail_app__send_message to reply.
+---
+```
+
+- **When they reach agents.** Only while the extension runs: turned on, approved to run, valid, and the copy DorkOS chose for its id. The same approval covers its code and its skills, so an extension with no `server.ts` still needs it. Turning the extension off, stopping it, withdrawing its approval or removing it takes the skills away again. A trusted copy that runs from a verified snapshot ships the snapshot's skills, never the project folder's.
+- **Where they land.** Exactly where a plugin's skills land at the same scope (ADR 260706-192819). A project extension's skills are linked into that project as `.claude/skills/<id>__<skill>` and `.agents/skills/<id>__<skill>`. A global extension's skills go where a global plugin's go: `{dorkHome}/skills` always, the shared user folders only once the person chose to share with those tools (`harness.global`), and DorkOS's own Claude Code chats through a generated plugin. Skills only: an extension projects no commands or hooks.
+- **The ledger.** After every change to which extensions run, the server writes `{dorkHome}/extensions/running-skills.json` (only when it changed), and `dorkos harness sync` reads the same file, so a terminal sync plans the same links and never sweeps a running extension's skills. The file is derived and deleting it is safe: while it is missing or unreadable, a sync keeps every link that points into an extension's folder rather than removing it, and the next change to any extension writes the file again. Code: `services/extensions/agent-skills/running-skills-ledger.ts` writes it, `@dorkos/harness` `sources/running-extension-skills.ts` reads it.
+- **Name tools by their bare name.** Write `ext_mail_app__send_message` in a skill, never `mcp__dorkos__ext_mail_app__send_message`: the prefix in front of the bare name differs per agent runtime, and every runtime's agents recognise the bare name.
+- **What is refused.** A skill whose folder is missing, is a symbolic link, or resolves outside `skills/`, or whose `SKILL.md` is not a plain file or does not parse, is left out with a warning `dorkos harness sync --check` prints. Discovery runs the same check (`checkExtensionSkillFolder` in `@dorkos/harness`) when it finds the extension, so its card in Settings and `GET /api/extensions` (`skills[].status: 'dropped'` with a plain `reason`) say which skill is left out and why before any sync. Folders you did not list are never linked.
+- **Name clashes.** `<id>__<skill>` is the namespace a plugin uses too, so a plugin carrying an extension of its own name (Flow does) can ship one skill name twice. The plugin's skill wins, and the extension's is dropped with a warning naming both. A skill of the project's own with that name wins too. In DorkOS's Claude Code chats, a global extension whose id is the name of a loaded global plugin is left out.
+- **Global extensions in Claude Code chats.** DorkOS writes `{dorkHome}/cache/extensions/skill-plugins/<id>/` (a `.claude-plugin/plugin.json` and one `skills/<name>` link per accepted skill) and hands it to its Claude Code chats as a plugin. A chat launched after the extension starts loads its skills; a chat already open is asked to reload its plugins, the same path a newly installed global package takes to reach it. When an extension stops, a chat kept warm between messages relaunches without it before its next message, unless a helper agent or Monitor is still working, in which case it waits for that work to end.
+- **The dev loop.** Editing a `SKILL.md` needs nothing: the links point at your folder. Adding or removing a skill in `extension.json` re-scans and re-projects. A dev-linked extension's skills are labelled `(dev link: <folder>)` in `dorkos harness sync --check` and on the harness status page.
+
 #### Feature detection
 
-Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
+Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `ctx.agent !== undefined`, `ctx.tools !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
 
 ### Route Conventions
 

@@ -9,11 +9,20 @@
  * validate-and-invoke a capability by id or emit the serializable
  * {@link CapabilityCatalog} the self-description surfaces consume.
  *
+ * The core is frozen at boot. On top of it sits one live layer: a running
+ * extension may {@link CapabilityRegistry.contribute | contribute} tools while
+ * it runs and remove them when it stops (DOR-2685). That layer lives in its own
+ * reserved namespace (`ext_<id>`), is checked against the same claim tables as
+ * the core, and is reached through the same gate.
+ *
  * @module services/core/capabilities/registry
  */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
+  EXTENSION_TOOL_UNAVAILABLE_CODE,
+  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
+  isExtensionCapabilityId,
   stableStringify,
   type CapabilityCatalog,
   type McpServerId,
@@ -42,6 +51,14 @@ import {
   isCapabilityAuthorityBinding,
   type CapabilityAuthorityBindingProof,
 } from '../../connectors/principal/capability-authority-binding.js';
+import { CapabilityToolError } from './mcp-envelope.js';
+import {
+  buildExtensionDefinitions,
+  checkExtensionContribution,
+  EXTENSION_DOMAIN_PREFIX,
+  EXTENSION_TOOLS_AREA,
+  type ExtensionContribution,
+} from './extension-contribution.js';
 
 /**
  * What a transport adapter supplies to {@link CapabilityRegistry.invoke}.
@@ -261,6 +278,14 @@ export interface CapabilityHandlerContext {
    */
   approval?: GrantedApproval;
   /**
+   * For a capability with `describeApprovalChange`: the description the gate
+   * computed and let through, which is exactly the text the person approved
+   * when an approval was spent (DOR-2696). Set by the registry, never by a
+   * caller. A handler that acts on what the card showed acts on THIS text
+   * rather than reading the state again, which could have moved since.
+   */
+  approvedChange?: string;
+  /**
    * The approval token the caller presented, handed to the handler only for a
    * capability that declares `forwardsApproval` (the request tool), which passes
    * it on to the action it asked for. Every other handler never sees a token.
@@ -332,12 +357,32 @@ export type CapabilityInvocationObserver = (event: {
 }) => void;
 
 /**
- * The immutable runtime registry produced by {@link composeRegistry}. Holds the
- * composed capabilities plus the boot-time dependency bag, and exposes lookup,
- * validated invocation, and catalog serialization.
+ * What {@link CapabilityRegistry.contribute} answers: a handle to take the
+ * tools away again, or the reason nothing was added.
+ */
+export type ContributeResult =
+  | {
+      ok: true;
+      /**
+       * Take this contribution's tools away again. Idempotent: a second call,
+       * or a call after the same owner contributed afresh, changes nothing.
+       */
+      remove(): void;
+    }
+  | { ok: false; reason: string };
+
+/**
+ * The runtime registry produced by {@link composeRegistry}: a frozen core plus
+ * a live extension layer. Holds the composed capabilities plus the boot-time
+ * dependency bag, and exposes lookup, validated invocation, and catalog
+ * serialization.
  */
 export interface CapabilityRegistry {
-  /** Every registered capability, frozen in registration order. */
+  /**
+   * Every registered capability: the core in registration order, then each
+   * live extension contribution in contribution order. A frozen array, rebuilt
+   * only when a contribution is added or removed.
+   */
   readonly capabilities: readonly CapabilityDefinition[];
   /**
    * Look up a capability by its `${domain}.${verb}` id.
@@ -367,7 +412,10 @@ export interface CapabilityRegistry {
    *   approvals. Omitting it invokes as an unidentified, untrusted caller — which
    *   is gated, because the TIER decides that, not the identity.
    * @returns The capability's plain output.
-   * @throws If no capability is registered under `id`; if `input` fails schema
+   * @throws A {@link CapabilityToolError} saying the tool is not available right
+   *   now when `id` is in the extension namespace but not registered (its
+   *   extension stopped or is restarting); if no other capability is registered
+   *   under `id`; if `input` fails schema
    *   validation (a `ZodError`); if the context carries both a trusted marker and
    *   an agent identity; or, when the gate (tier and permission together) does
    *   not allow the call, a {@link CapabilityGateRefusal} carrying the payload to
@@ -382,6 +430,29 @@ export interface CapabilityRegistry {
    * @returns The catalog snapshot.
    */
   catalog(): CapabilityCatalog;
+  /**
+   * Add one running extension's tools. Never throws: anything wrong comes back
+   * as a refusal the caller reports on the extension.
+   *
+   * Refused, with nothing added, when the contribution is malformed, when its
+   * owner already has a live contribution (remove that first — nothing is ever
+   * replaced), or when any of its ids or MCP tool names is already claimed by
+   * the core or by another contribution. All of one extension's tools are
+   * added, or none are.
+   *
+   * @param contribution - The extension id, display name and tool specs.
+   * @returns A handle whose `remove()` takes the tools away, or the refusal.
+   */
+  contribute(contribution: ExtensionContribution): ContributeResult;
+  /**
+   * Hear about every successful contribute and remove.
+   *
+   * @param listener - Called with the new surface version, a monotonically
+   *   increasing integer, after each change. A listener that throws is logged
+   *   and ignored.
+   * @returns A function that stops the listener.
+   */
+  onChange(listener: (version: number) => void): () => void;
 }
 
 /**
@@ -393,6 +464,9 @@ export interface CapabilityRegistry {
  * the gate resolves it, the permissions pages read each area's actions off the
  * live catalog instead of a static list that would drift, and the docs
  * projection reports the same field.
+ *
+ * `source` is present only for an extension's capability, naming the
+ * extension, so every reader of the catalog can say where a tool came from.
  *
  * @param capability - The runtime capability definition.
  * @returns The serialized, wire-safe entry.
@@ -407,6 +481,9 @@ export function serializeCapability(capability: CapabilityDefinition): Serialize
     outputSchema: z.toJSONSchema(capability.output),
     surfaces: capability.surfaces,
     area: capability.area,
+    // Only a definition the host built for a running extension has a source;
+    // a core capability's entry stays exactly as it was (DOR-2685).
+    ...(capability.source ? { source: { ...capability.source } } : {}),
   };
 }
 
@@ -458,13 +535,16 @@ export function computeCatalogVersion(capabilities: readonly SerializedCapabilit
  * - a capability id that does not begin with its owning domain's name;
  * - a duplicate capability id across domains;
  * - a duplicate MCP tool name, CLI verb (+ optional subcommand), or HTTP
- *   method+path across any two capabilities.
+ *   method+path across any two capabilities;
+ * - a domain named in the extension namespace (`ext_…`), or a capability that
+ *   claims an extension `source` — both are the live layer's alone.
  *
  * @param domains - The service domains contributing capabilities.
  * @param deps - The boot-time service-dependency bag captured by the registry.
  * @param onInvocation - Optional observer called after every invocation, for
  *   attribution and audit. Omitted in tests and in the docs-only composer.
- * @returns The frozen, ready-to-serve registry.
+ * @returns The frozen, ready-to-serve registry. Its core never changes; only
+ *   the extension layer does, through `contribute`.
  * @throws If any of the structural conflicts above is detected.
  */
 export function composeRegistry(
@@ -488,8 +568,18 @@ export function composeRegistry(
   };
 
   for (const domain of domains) {
+    if (domain.name.startsWith(EXTENSION_DOMAIN_PREFIX)) {
+      throw new Error(
+        `Capability registry: domain "${domain.name}" uses the "${EXTENSION_DOMAIN_PREFIX}" prefix, which is reserved for extension tools.`
+      );
+    }
     for (const capability of domain.capabilities) {
       const { id, surfaces } = capability;
+      if (capability.source !== undefined) {
+        throw new Error(
+          `Capability registry: core capability "${id}" declares a source; only extension tools carry one.`
+        );
+      }
 
       if (!id.startsWith(`${domain.name}.`)) {
         throw new Error(
@@ -529,24 +619,125 @@ export function composeRegistry(
     domain.assertDeps?.(deps);
   }
 
-  const capabilities: readonly CapabilityDefinition[] = Object.freeze(
+  const core: readonly CapabilityDefinition[] = Object.freeze(
     domains.flatMap((domain) => [...domain.capabilities])
   );
 
-  // The registry is immutable, so the JSON-Schema serialization and the content
-  // hash are computed once, lazily, and reused (spec §Performance — "catalog
-  // serialization cached by content hash"). Only `generatedAt` is refreshed per
-  // read, which is trivial and keeps the timestamp honest.
+  // The live extension layer (DOR-2685). Kept apart from the core tables so a
+  // contribution can be checked against both and removed without ever touching
+  // a core claim. Map insertion order is contribution order.
+  const contributions = new Map<string, readonly CapabilityDefinition[]>();
+  const extensionById = new Map<string, CapabilityDefinition>();
+  const extensionToolNames = new Set<string>();
+  const listeners = new Set<(version: number) => void>();
+  let capabilities = core;
+  let surfaceVersion = 0;
+
+  // The JSON-Schema serialization and the content hash are computed lazily and
+  // reused until the capability list changes (spec §Performance — "catalog
+  // serialization cached by content hash"). A contribute or remove drops the
+  // cache, and the hash is recomputed from the whole list, so removing a
+  // contribution returns `catalogVersion` to exactly what it was before. Only
+  // `generatedAt` is refreshed per read, which keeps the timestamp honest.
   let serializedCache: { capabilities: SerializedCapability[]; catalogVersion: string } | undefined;
 
+  const lookup = (id: string): CapabilityDefinition | undefined =>
+    byId.get(id) ?? extensionById.get(id);
+
+  /** Rebuild the live list, drop the catalog cache, and tell every listener. */
+  const changed = (): void => {
+    capabilities = Object.freeze([...core, ...[...contributions.values()].flat()]);
+    serializedCache = undefined;
+    surfaceVersion += 1;
+    const version = surfaceVersion;
+    for (const listener of [...listeners]) {
+      try {
+        listener(version);
+      } catch (err) {
+        deps.logger.warn('[capabilities] a registry change listener threw', {
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  };
+
+  const contribute = (contribution: ExtensionContribution): ContributeResult => {
+    const checked = checkExtensionContribution(contribution);
+    if (!checked.ok) return { ok: false, reason: checked.reason };
+    const { owner, displayName } = checked.value;
+    if (contributions.has(owner)) {
+      return { ok: false, reason: `${displayName} already has tools registered` };
+    }
+    const definitions = Object.freeze(
+      buildExtensionDefinitions(checked.value, EXTENSION_TOOLS_AREA)
+    );
+    // Check every claim before adding anything, so a refusal leaves the
+    // registry exactly as it was: all of one extension's tools, or none.
+    // While the id and tool-name rules hold, an extension's names cannot clash
+    // with another extension's (the mapping is injective) and its ids cannot
+    // clash with the core's (the `ext_` prefix is reserved); a core MCP tool
+    // name, which is free-form, can. Every table is still consulted, so that
+    // loosening a rule later fails closed instead of shadowing a tool.
+    for (const definition of definitions) {
+      if (lookup(definition.id)) {
+        return { ok: false, reason: `"${definition.id}" is already registered` };
+      }
+      const toolName = definition.surfaces.mcp!.toolName;
+      if (mcpToolNames.has(toolName) || extensionToolNames.has(toolName)) {
+        return { ok: false, reason: `the tool name "${toolName}" is already taken` };
+      }
+    }
+    for (const definition of definitions) {
+      extensionById.set(definition.id, definition);
+      extensionToolNames.add(definition.surfaces.mcp!.toolName);
+    }
+    contributions.set(owner, definitions);
+    changed();
+
+    let removed = false;
+    return {
+      ok: true,
+      remove() {
+        // Once only: the same owner may have contributed afresh since, and a
+        // second call on this handle must never take that newer one away.
+        if (removed) return;
+        removed = true;
+        contributions.delete(owner);
+        for (const definition of definitions) {
+          extensionById.delete(definition.id);
+          extensionToolNames.delete(definition.surfaces.mcp!.toolName);
+        }
+        changed();
+      },
+    };
+  };
+
   const registry: CapabilityRegistry = {
-    capabilities,
+    get capabilities() {
+      return capabilities;
+    },
     get(id) {
-      return byId.get(id);
+      return lookup(id);
+    },
+    contribute,
+    onChange(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
     async invoke(id, input, context) {
-      const capability = byId.get(id);
+      const capability = lookup(id);
       if (!capability) {
+        // A tool from a stopped or restarting extension is a normal moment,
+        // not a wiring bug: an agent may still hold a tool list built while it
+        // ran. Answer the way any tool error answers, so the agent reads why.
+        if (isExtensionCapabilityId(id)) {
+          throw new CapabilityToolError({
+            error: EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
+            code: EXTENSION_TOOL_UNAVAILABLE_CODE,
+          });
+        }
         throw new Error(`Capability registry: no capability registered for id "${id}".`);
       }
       const supplied = context ?? {};
@@ -684,6 +875,7 @@ export function composeRegistry(
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
         if (decision.approval) invocationContext.approval = decision.approval;
+        if (change !== undefined) invocationContext.approvedChange = change;
       }
 
       // No observer, or nothing to attribute: run the original path untouched so
@@ -714,7 +906,21 @@ export function composeRegistry(
     },
     catalog() {
       if (!serializedCache) {
-        const serialized = capabilities.map(serializeCapability);
+        // One entry that cannot be serialized is left out and logged rather
+        // than throwing the whole catalog for everyone. `contribute` already
+        // refuses an extension schema that cannot render; this is the second
+        // wall, so no future entry can take discovery down either.
+        const serialized = capabilities.flatMap((capability) => {
+          try {
+            return [serializeCapability(capability)];
+          } catch (err) {
+            deps.logger.error('[capabilities] a capability could not be serialized; left out', {
+              capabilityId: capability.id,
+              err: err instanceof Error ? err.message : String(err),
+            });
+            return [];
+          }
+        });
         serializedCache = {
           capabilities: serialized,
           catalogVersion: computeCatalogVersion(serialized),

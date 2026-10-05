@@ -2,9 +2,11 @@
  * Shared marketplace API response types — consumed by the client transport
  * layer and the React query hooks that wrap it.
  *
- * Types are plain TypeScript interfaces (no Zod schemas) because they model
- * HTTP response shapes, not validated domain inputs. They must remain
- * browser-safe (no Node.js imports).
+ * Types are plain TypeScript interfaces because they model HTTP response
+ * shapes, not validated domain inputs. The one exception is the dev-link
+ * registry ({@link DevLinksFileSchema}): a file on disk the server, the
+ * harness engine and the CLI all read, so its one Zod schema lives here. Every
+ * export must remain browser-safe (no Node.js imports).
  *
  * Server-side source of truth:
  *   - `apps/server/src/routes/marketplace.ts` — AggregatedPackage
@@ -23,7 +25,10 @@
  *
  * @module shared/marketplace-schemas
  */
+import { z } from 'zod';
+import { ApprovedPermissionSetSchema, ExtensionApprovedSourceSchema } from './config-schema.js';
 import type { PermissionMode } from './schemas.js';
+import type { CheckResult } from './health-schemas.js';
 
 // ---------------------------------------------------------------------------
 // Package type
@@ -316,14 +321,21 @@ export const HOOK_EVENT_SUMMARY: Record<string, string> = {
 /**
  * Describe when a hook fires, in plain words.
  *
+ * The matcher, and an event with no known phrasing, are package-chosen text
+ * that approval cards bind (a dev link's card is held to its exact text), so
+ * each is written out whole: quoted and escaped, with every hidden or
+ * direction-changing character shown. A matcher holding a line break can then
+ * never fake a line of the card around it.
+ *
  * @param event - The harness event name the package declared.
  * @param matcher - Optional tool/event matcher the hook narrows to.
  * @returns A phrase completing "Runs ...". An event with no known phrasing
- *   falls back to naming it verbatim, which is still true.
+ *   falls back to naming it, quoted, which is still true.
  */
 export function describeHookEvent(event: string, matcher?: string): string {
-  const when = HOOK_EVENT_SUMMARY[event] ?? `on ${event}`;
-  return matcher ? `${when} (${matcher})` : when;
+  const whole = (value: string): string => revealHiddenCharacters(JSON.stringify(value));
+  const when = HOOK_EVENT_SUMMARY[event] ?? `on ${whole(event)}`;
+  return matcher ? `${when} (${whole(matcher)})` : when;
 }
 
 /**
@@ -545,8 +557,23 @@ export interface PreviewNpmDependency {
 export interface PermissionPreview {
   /** Files that will be created, modified, or deleted. */
   fileChanges: { path: string; action: 'create' | 'modify' | 'delete' }[];
-  /** Extensions that will be registered. */
-  extensions: { id: string; slots: string[] }[];
+  /**
+   * Extensions that will be registered. `isolation` says where each runs and
+   * what it may reach (DOR-2686): `in-process` is inside DorkOS with full
+   * access and empty lists; `subprocess` is limited to the lists.
+   */
+  extensions: {
+    id: string;
+    slots: string[];
+    isolation?: {
+      runtime: 'in-process' | 'subprocess';
+      net: string[];
+      run: string[];
+      agents: boolean;
+    };
+    /** Whether it has a server half; without one it is screens only (DOR-2686). */
+    hasServer?: boolean;
+  }[];
   /** Shell hooks the package registers with the harness, commands verbatim. */
   hooks: PreviewHook[];
   /** Hook declarations the package ships that could not be read. */
@@ -1184,6 +1211,13 @@ export interface InstalledPackage {
    */
   linked?: true;
   /**
+   * Set when this installation is a dev link (DOR-2696): the package runs
+   * straight from a folder on this computer, which a person linked. Never set
+   * together with {@link InstalledPackage.linked}, which is a link someone made
+   * by hand.
+   */
+  devLink?: InstalledDevLink;
+  /**
    * Set on a global installation that runs things on its own and is held
    * back from every session because nobody approved it as it is now
    * (DOR-2306). Absent when it loads.
@@ -1477,6 +1511,15 @@ export const MARKETPLACE_STAGE_DIR_MARKER = '.dorkos-stage-';
 export const MARKETPLACE_UNINSTALL_DIR_MARKER = '.dorkos-uninstall-';
 
 /**
+ * Suffix of the folder an installed copy is set aside in while a dev link
+ * takes its slot (DOR-2696): `<slot>.dorkos-devlink-parked`, restored by
+ * unlink. It carries no `<timestamp>-<uuid>` stamp on purpose, so install
+ * recovery and the backup janitor never touch it, while every reader that
+ * lists packages still skips it ({@link isInstallSiblingName}).
+ */
+export const MARKETPLACE_DEVLINK_PARKED_MARKER = '.dorkos-devlink-parked';
+
+/**
  * Every basename marker the install engine writes beside an install target.
  * Anything carrying one of these is the engine's own bookkeeping — never an
  * installed package, agent, plugin or skill — whatever it contains (a backup
@@ -1488,6 +1531,7 @@ export const MARKETPLACE_INSTALL_SIBLING_MARKERS: readonly string[] = [
   MARKETPLACE_BACKUP_DIR_MARKER,
   MARKETPLACE_STAGE_DIR_MARKER,
   MARKETPLACE_UNINSTALL_DIR_MARKER,
+  MARKETPLACE_DEVLINK_PARKED_MARKER,
 ];
 
 /**
@@ -1656,4 +1700,438 @@ export interface ForkShapeResult {
   installPath: string;
   /** The forked manifest, as written to disk. */
   manifest: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Dev links (DOR-2696) — a marketplace package run straight from a folder.
+//
+// A dev link is a symlink (a junction on Windows) in a package's normal slot,
+// `{dorkHome}/plugins/<name>` or `<project>/.dork/plugins/<name>`, plus one
+// record in `{dorkHome}/marketplace/dev-links.json` that DorkOS writes only on
+// a person's yes. The server, the harness engine and the CLI all read that
+// file through the schema below, so they can never disagree about its shape.
+// ---------------------------------------------------------------------------
+
+/** Where the dev-link registry lives, relative to the DorkOS data directory. */
+export const DEV_LINKS_FILE = 'marketplace/dev-links.json';
+
+/**
+ * A package name as a dev link records it. The same rule as the marketplace's
+ * `PackageNameSchema` (lowercase letters, digits and single hyphens, 1-64
+ * characters), restated because `@dorkos/shared` cannot depend on the package
+ * that owns it. The name is joined into a slot path, so nothing looser may pass.
+ */
+export const DevLinkPackageNameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/)
+  .refine((name) => !name.includes('--'), 'Must not contain consecutive hyphens');
+
+/** The package types a dev link can run. Agents, adapters and shapes load elsewhere. */
+export const DevLinkPackageTypeSchema = z.enum(['plugin', 'skill-pack']);
+
+/** Where a dev link was made from, kept for the record and the listing. */
+export const DevLinkViaSchema = z.enum(['app', 'terminal', 'agent-card']);
+
+/** One dev link, as DorkOS recorded it when a person said yes. */
+export const DevLinkRecordSchema = z
+  .object({
+    /** The package name from the folder's manifest at link time. */
+    name: DevLinkPackageNameSchema,
+    /** The package type from the folder's manifest at link time. */
+    type: DevLinkPackageTypeSchema,
+    /** `global` for every session, `project` for one project. */
+    scope: z.enum(['global', 'project']),
+    /** The canonical project folder; present exactly when `scope` is `project`. */
+    projectPath: z.string().min(1).optional(),
+    /** Absolute path of the link itself: the package's normal slot. */
+    slot: z.string().min(1),
+    /** The real path of the working folder the link points at. */
+    target: z.string().min(1),
+    /** Absolute path of the installed copy set aside for the link, when there was one. */
+    parked: z.string().min(1).optional(),
+    /** What unlink puts back for the parked copy, or for another copy of an extension id. */
+    restoreApprovals: z
+      .object({
+        /** Extension approvals the link's own approvals replaced, by extension id. */
+        extensions: z.record(z.string(), ExtensionApprovedSourceSchema).optional(),
+        /** Which of those ids were approved to run then; the rest only had a source. */
+        runIds: z.array(z.string()).optional(),
+        /**
+         * The permission sets recorded with those approvals (DOR-2686), by
+         * extension id. An id with a replaced approval but no entry here had
+         * none, which means the full in-process set, so unlink restores it by
+         * leaving no entry.
+         */
+        permissions: z.record(z.string(), ApprovedPermissionSetSchema).optional(),
+        /** Stored global-activation entries (`<name>@global-<digest>`) of the parked copy. */
+        globalActivation: z.array(z.string()).optional(),
+      })
+      .optional(),
+    /**
+     * Project hook approvals (`harness.approvedHooks` entries) this link
+     * recorded when it was made, because the card showed those hooks. Unlink
+     * removes exactly these, so an approval that was there before the link
+     * (the installed copy's, the same hooks in the same project) stays.
+     */
+    grantedHooks: z.array(z.string()).optional(),
+    /** When the link was made. ISO 8601. */
+    linkedAt: z.string().min(1),
+    /** Where the person said yes. */
+    linkedVia: DevLinkViaSchema,
+  })
+  .refine((record) => (record.scope === 'project') === (record.projectPath !== undefined), {
+    message: 'A project dev link names its project, and a global one does not',
+    path: ['projectPath'],
+  });
+
+/** One dev link record. */
+export type DevLinkRecord = z.infer<typeof DevLinkRecordSchema>;
+
+/** The whole registry file. */
+export const DevLinksFileSchema = z.object({
+  version: z.literal(1),
+  links: z.array(DevLinkRecordSchema),
+});
+
+/** The whole registry file. */
+export type DevLinksFile = z.infer<typeof DevLinksFileSchema>;
+
+/**
+ * Parse the registry file's text. Pure.
+ *
+ * Anything that is not exactly the shape DorkOS writes (a torn write, a hand
+ * edit) is `'unreadable'`, and every reader treats that as "no slot is a dev
+ * link", never as an empty list it could write over without noticing.
+ *
+ * @param text - The file's contents.
+ * @returns The parsed file, or `'unreadable'`.
+ */
+export function parseDevLinksFile(text: string): DevLinksFile | 'unreadable' {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return 'unreadable';
+  }
+  const parsed = DevLinksFileSchema.safeParse(raw);
+  return parsed.success ? parsed.data : 'unreadable';
+}
+
+/** What a slot looks like on disk, read by the caller for {@link isActiveDevLink}. */
+export interface DevLinkSlotReading {
+  /** Whether the slot itself is a symlink or junction (`lstat`), false when it is missing. */
+  lstatIsLink: boolean;
+  /** The slot's real path, or `null` when it cannot be resolved (missing, dangling). */
+  realpathOfSlot: string | null;
+}
+
+/**
+ * Whether a recorded dev link is in force: the slot is a link and it still
+ * resolves to the recorded folder. A link someone pointed elsewhere since
+ * fails this, and is then treated like any link made by hand. Pure.
+ *
+ * @param record - The registry record.
+ * @param slot - What the slot looks like now.
+ */
+export function isActiveDevLink(
+  record: Pick<DevLinkRecord, 'target'>,
+  slot: DevLinkSlotReading
+): boolean {
+  return slot.lstatIsLink && slot.realpathOfSlot !== null && slot.realpathOfSlot === record.target;
+}
+
+/**
+ * The state of a recorded dev link, as the listing and doctor report it.
+ *
+ * - `active` — the link is in place and points at the recorded folder.
+ * - `folder-missing` — the link is in place but its folder is gone.
+ * - `link-missing` — nothing is at the slot any more.
+ * - `link-replaced` — a real folder, or a link to somewhere else, is at the slot.
+ */
+export type DevLinkState = 'active' | 'folder-missing' | 'link-missing' | 'link-replaced';
+
+/** A dev link as `GET /api/marketplace/dev-links` reports it. */
+export interface DevLinkStatus {
+  /** Package name. */
+  name: string;
+  /** Package type. */
+  type: 'plugin' | 'skill-pack';
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The project, for a project dev link. */
+  projectPath?: string;
+  /** The real path of the working folder. */
+  path: string;
+  /** Whether the link is in force, and what happened when it is not. */
+  state: DevLinkState;
+  /** The installed copy set aside for the link, or `null` when there is none. */
+  parked: { version?: string } | null;
+  /** When the link was made. ISO 8601. */
+  linkedAt: string;
+  /**
+   * When an edit in the folder last reloaded it, since the server started.
+   * ISO 8601. Absent until the first reload.
+   */
+  lastReloadAt?: string;
+}
+
+/** The dev-link fields on an {@link InstalledPackage}. */
+export interface InstalledDevLink {
+  /** The real path of the working folder. */
+  path: string;
+  /** Whether the link is in force. */
+  state: DevLinkState;
+  /** Whether an installed copy is set aside and comes back on unlink. */
+  parked: boolean;
+}
+
+/**
+ * What a reload did after an edit in a linked folder:
+ *
+ * - `extension` — an extension it carries was rebuilt, or the extensions were re-scanned.
+ * - `projection` — the project's harness projection was asked to run again.
+ * - `plugins` — the runtime's plugin list was refreshed and what the package
+ *   runs on its own was checked again, so anything new is held back to ask.
+ */
+export const DevLinkReloadActionSchema = z.enum(['extension', 'projection', 'plugins']);
+
+/** One thing a dev link's reload did. */
+export type DevLinkReloadAction = z.infer<typeof DevLinkReloadActionSchema>;
+
+/**
+ * The payload of the `marketplace_dev_link_reloaded` event on the global
+ * stream (`GET /api/events`): one per dev link, after each burst of edits in
+ * its folder has settled and been acted on. The server spells the event name
+ * inline, where the client allowlist test can see it.
+ */
+export interface DevLinkReloadedEvent {
+  /** Package name. */
+  name: string;
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The project, for a project dev link. */
+  projectPath?: string;
+  /** When the reload finished. ISO 8601. */
+  at: string;
+  /** What the reload did, in a fixed order. */
+  actions: DevLinkReloadAction[];
+  /** One plain sentence per thing that did not reload, such as an extension that failed to build. */
+  errors?: string[];
+}
+
+/** What linking a folder would do, as `POST /api/marketplace/dev-links/preview` reports it. */
+export interface DevLinkPreview {
+  /** Package name from the folder's manifest. */
+  name: string;
+  /** Package type. */
+  type: 'plugin' | 'skill-pack';
+  /** The version the folder declares, when it declares one. */
+  version?: string;
+  /** The real path of the folder. */
+  path: string;
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The slot the link would sit in. */
+  slot: string;
+  /** The installed copy that would be set aside, or `null`. */
+  replaces: { version: string } | null;
+  /** What the folder runs on its own, exactly as an install preview discloses it. */
+  effects: DisclosedEffects | null;
+  /** The extension ids the folder carries under `.dork/extensions`. */
+  extensions: string[];
+}
+
+/**
+ * What `POST /api/marketplace/dev-links/preview` answers: the preview plus the
+ * approval text a yes binds to.
+ */
+export interface DevLinkPreviewResponse extends DevLinkPreview {
+  /**
+   * The approval card text for this folder as it reads now. A person who says
+   * yes after reading the preview sends it back as `expectedChange` on
+   * `POST /api/marketplace/dev-links`, which refuses with `dev_link_changed`
+   * when the folder no longer describes the same way.
+   */
+  change: string;
+}
+
+/** Where a dev link goes: every session, or one project. */
+export interface DevLinkScopeInput {
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The project folder. Required for, and only for, `scope: 'project'`. */
+  projectPath?: string;
+}
+
+/** The body of `POST /api/marketplace/dev-links/preview`. */
+export interface DevLinkPreviewInput extends DevLinkScopeInput {
+  /** The folder's absolute real path. */
+  path: string;
+  /** Describe the link as setting an installed copy aside, as the link would. */
+  replaceInstalled?: boolean;
+}
+
+/** The body of `POST /api/marketplace/dev-links`. */
+export interface DevLinkCreateInput extends DevLinkPreviewInput {
+  /** Where the person is linking from, for the record. */
+  via?: 'app' | 'terminal';
+  /**
+   * The preview's `change` text the person said yes to. The link is refused
+   * with `dev_link_changed` when the folder no longer describes the same way.
+   */
+  expectedChange?: string;
+}
+
+/** What `GET /api/marketplace/dev-links` answers: every recorded dev link and its state. */
+export interface DevLinkListing {
+  /** One entry per record. */
+  links: DevLinkStatus[];
+  /** Set when the registry file cannot be read; no slot counts as dev-linked then. */
+  registryUnreadable?: string;
+}
+
+/** What `POST /api/marketplace/dev-links/:name/unlink` answers. */
+export interface DevUnlinkResult {
+  /** `installed` when the set-aside copy is back, `removed` when the package is gone. */
+  restored: 'installed' | 'removed';
+  /**
+   * Set when an installed copy was set aside but could not be put back,
+   * because something else now holds the slot: where it still is.
+   */
+  parkedLeftAt?: string;
+  /**
+   * Set when the link had already been replaced by something else in its
+   * place (a real folder, or a link elsewhere). That was left as it is: only
+   * the record of the dev link was dropped.
+   */
+  leftInPlace?: true;
+}
+
+/** Refusal codes a dev link can answer with, each with one plain sentence. */
+export type DevLinkErrorCode =
+  | 'dev_link_path_not_real'
+  | 'dev_link_path_not_allowed'
+  | 'dev_link_not_a_package'
+  | 'dev_link_unsupported_type'
+  | 'dev_link_project_not_found'
+  | 'dev_link_exists'
+  | 'dev_link_slot_is_linked'
+  | 'dev_link_slot_taken'
+  | 'dev_link_parked_exists'
+  | 'dev_link_not_found'
+  | 'dev_link_changed'
+  | 'dev_link_card_too_long'
+  | 'package_is_dev_linked';
+
+/** One recorded dev link as the `Dev links` health check judges it. */
+export interface DevLinkHealthEntry {
+  /** Package name. */
+  name: string;
+  /** `global` or `project`. */
+  scope: 'global' | 'project';
+  /** The project, for a project dev link. */
+  projectPath?: string;
+  /** The real path of the working folder. */
+  target: string;
+  /**
+   * What the link looks like on disk now, or `slot-unreadable` when the
+   * place it sits could not be looked at (a permission error, say), so
+   * whether it is there is unknown rather than "missing".
+   */
+  state: DevLinkState | 'slot-unreadable';
+}
+
+/** What reading the registry found, for {@link judgeDevLinks}. */
+export type DevLinkHealthReading =
+  { entries: readonly DevLinkHealthEntry[] } | { unreadable: true; file?: string };
+
+/** What each state that is not `active` means, said to a person. */
+const DEV_LINK_STATE_WORDS: Record<Exclude<DevLinkHealthEntry['state'], 'active'>, string> = {
+  'folder-missing': 'its folder is gone',
+  'link-missing': 'its link was removed',
+  'link-replaced': 'something else is in its place',
+  'slot-unreadable': "its place on disk can't be read; check its permissions",
+};
+
+/**
+ * A value as it can be pasted back into a POSIX shell (bare when safe,
+ * otherwise single-quoted).
+ */
+function devLinkShellWord(value: string): string {
+  return /^[A-Za-z0-9_./,:@%+=-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The `Dev links` health verdict, shared by `dorkos doctor` and
+ * `GET /api/health/deep` so the two cannot disagree. Pure.
+ *
+ * `paths: false` is the content-free form the server returns: package names
+ * only, no folder or project path (the deep-health response is readable by
+ * anything that can reach the server). The CLI, reading on the person's own
+ * machine, passes `paths: true` and names each folder.
+ *
+ * @param reading - The recorded links and their states, or that the file could not be read.
+ * @param opts.paths - Whether to name folders and projects.
+ */
+export function judgeDevLinks(
+  reading: DevLinkHealthReading,
+  opts: { paths: boolean }
+): CheckResult & { status: 'pass' | 'warn' } {
+  if ('unreadable' in reading) {
+    return {
+      label: "Dev links can't be read",
+      status: 'warn',
+      detail:
+        `No package runs from a folder until this file is fixed` +
+        (opts.paths && reading.file ? `: ${reading.file}` : '.'),
+      fix: 'Linking a folder again starts a fresh list and keeps the old file aside:\n  dorkos marketplace link <path>',
+    };
+  }
+  const entries = reading.entries;
+  if (entries.length === 0) return { label: 'No dev links', status: 'pass' };
+  const where = (entry: DevLinkHealthEntry): string =>
+    entry.scope === 'project'
+      ? opts.paths && entry.projectPath
+        ? ` (project ${entry.projectPath})`
+        : ' (one project)'
+      : '';
+  const broken = entries.filter((entry) => entry.state !== 'active');
+  // Unlinking cannot fix a place nobody can read, so those get no unlink line.
+  const unlinkable = broken.filter((entry) => entry.state !== 'slot-unreadable');
+  const count = (n: number) => `${n} dev ${n === 1 ? 'link' : 'links'}`;
+  if (broken.length === 0) {
+    return {
+      label: `${count(entries.length)} in use`,
+      status: 'pass',
+      detail: entries
+        .map((entry) => `${entry.name}${where(entry)}${opts.paths ? ` → ${entry.target}` : ''}`)
+        .join('; '),
+    };
+  }
+  return {
+    label: `${count(broken.length)} ${broken.length === 1 ? 'needs' : 'need'} a look`,
+    status: 'warn',
+    detail: broken
+      .map(
+        (entry) =>
+          `${entry.name}${where(entry)}: ${DEV_LINK_STATE_WORDS[entry.state as Exclude<DevLinkHealthEntry['state'], 'active'>]}` +
+          (opts.paths && entry.state === 'folder-missing' ? ` (${entry.target})` : '')
+      )
+      .join('; '),
+    fix: [
+      ...(unlinkable.length > 0 ? ['Unlink each one to switch back:'] : []),
+      ...unlinkable.map(
+        (entry) =>
+          `  dorkos marketplace unlink ${entry.name}` +
+          (entry.scope === 'project'
+            ? ` --project ${opts.paths && entry.projectPath ? devLinkShellWord(entry.projectPath) : '<project folder>'}`
+            : '')
+      ),
+      ...(unlinkable.length < broken.length
+        ? ['Make sure you can read the plugins folder, then run dorkos doctor again.']
+        : []),
+    ].join('\n'),
+  };
 }

@@ -54,6 +54,19 @@ describe('CreditsNotices', () => {
     vi.clearAllMocks();
   });
 
+  it('says what a runtime it moved onto credits does not get there', async () => {
+    renderSource({
+      runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'follow-up' },
+      defaults: { codex: { runsOn: 'credits', chosenBy: 'default' } },
+      notices: [{ kind: 'filled', runtimes: ['codex'] }],
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('credits-notice-filled')).toHaveTextContent(
+        "Codex can't search the web on DorkOS credits."
+      )
+    );
+  });
+
   it('announces the gaps a new link filled, with Change and Undo all', async () => {
     const user = userEvent.setup();
     const transport = renderSource({
@@ -61,9 +74,8 @@ describe('CreditsNotices', () => {
       notices: [{ kind: 'filled', runtimes: ['claude-code'] }],
     });
     const notice = await screen.findByTestId('credits-notice-filled');
-    expect(notice).toHaveTextContent(
-      'Claude Code now runs on your DorkOS credits, because it had no working sign-in when you linked your account.'
-    );
+    expect(notice).toHaveTextContent('Claude Code now runs on your DorkOS credits.');
+    expect(notice).toHaveTextContent('It had no working sign-in when you linked.');
     await user.click(screen.getByRole('button', { name: 'Undo all' }));
     await waitFor(() => expect(transport.undoFilledCloudCredits).toHaveBeenCalledOnce());
   });

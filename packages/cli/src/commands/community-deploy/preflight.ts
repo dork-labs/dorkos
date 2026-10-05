@@ -40,6 +40,11 @@ export interface CommunityPreflightInventory {
   neonOrganizations: readonly NeonOrganization[];
   /** Neon region inventory. */
   neonRegions: readonly NeonRegion[];
+  /**
+   * True when the key could not read Neon's live region list, so `neonRegions` is the saved
+   * snapshot (`NEON_REGIONS_SNAPSHOT`) and a missing region may simply be newer than it.
+   */
+  neonRegionsFromSavedList?: boolean;
   /** Existing projects in the explicitly selected Neon organization. */
   neonProjects: readonly NeonProject[];
 }
@@ -89,9 +94,14 @@ export class CommunityPreflightError extends Error {
     | 'NEON_PROJECT_NAME_AMBIGUOUS'
     | 'RELEASE_PLATFORM_UNSUPPORTED';
 
-  /** Create one secret-free preflight rejection. */
-  constructor(code: CommunityPreflightError['code']) {
-    super(`Space server launch preflight failed (${code})`);
+  /**
+   * Create one secret-free preflight rejection.
+   *
+   * @param code - Safe failure classification.
+   * @param message - Plain guidance for the person, when there is more to say than the code.
+   */
+  constructor(code: CommunityPreflightError['code'], message?: string) {
+    super(message ?? `Space server launch preflight failed (${code})`);
     this.name = 'CommunityPreflightError';
     this.code = code;
   }
@@ -140,6 +150,12 @@ export function buildCommunityPreflight(
   );
   if (!neonOrganization) throw new CommunityPreflightError('NEON_ORGANIZATION_NOT_FOUND');
   const neonRegion = inventory.neonRegions.find(({ id }) => id === selection.neonRegion);
+  if (!neonRegion && inventory.neonRegionsFromSavedList) {
+    throw new CommunityPreflightError(
+      'NEON_REGION_UNAVAILABLE',
+      `This Neon key can't read Neon's live list of regions, so setup checked ${selection.neonRegion} against a saved list, and it isn't there. Check the region name. If it's a new Neon region, use a personal key or sign in with neonctl auth, so setup can read the live list.`
+    );
+  }
   if (!neonRegion) throw new CommunityPreflightError('NEON_REGION_UNAVAILABLE');
   const matchingNeonProjects = inventory.neonProjects.filter(
     ({ name }) => name === selection.neonProjectName

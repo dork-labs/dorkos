@@ -110,9 +110,9 @@ export type ManagedConnectorOperationPageRequest = z.infer<
  * One immutable managed operation revision with its server-owned hosted identity.
  *
  * The control plane vendors this module byte-for-byte. `displayName` and
- * `important` are optional presentation hints: the cloud must not send them
- * until the oldest supported app accepts them, because an older app parses
- * this object strictly and would refuse the whole page.
+ * `important` are optional presentation hints the cloud sends. Apps before
+ * v0.95.0 parse this object without them and refuse a page that carries
+ * them; those apps are no longer supported against DorkOS Cloud.
  */
 export const ManagedConnectorOperationSchema = z
   .object({
@@ -126,7 +126,7 @@ export const ManagedConnectorOperationSchema = z
     retryPolicy: ConnectorRetryPolicySchema,
     inputSchema: ConnectorJsonObjectSchema,
     // Presentation hints only, mirroring ConnectorOperationPageSchema's own
-    // displayName/important. Optional until every supported app accepts them.
+    // displayName/important; a provider may leave either out.
     displayName: z.string().min(1).max(200).optional(),
     important: z.boolean().optional(),
   })

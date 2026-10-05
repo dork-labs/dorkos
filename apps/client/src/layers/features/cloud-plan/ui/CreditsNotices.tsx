@@ -7,7 +7,7 @@ import {
   useSettingsDeepLink,
   useUndoFilledCredits,
 } from '@/layers/shared/model';
-import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { getRuntimeDescriptor, useCreditsCaveats } from '@/layers/entities/runtime';
 import { errorReason } from '../model/use-credits-for';
 
 /** A runtime's name as the app shows it everywhere ("Claude Code"). */
@@ -52,6 +52,8 @@ export function CreditsNotices() {
 
 function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
   const dismiss = useDismissCreditsNotice();
+  // What the runtimes DorkOS moved onto credits do not get there.
+  const caveats = useCreditsCaveats(notice.kind === 'filled' ? notice.runtimes : []);
   const undo = useUndoFilledCredits();
   const setDefault = useSetCreditsDefault();
   const settings = useSettingsDeepLink();
@@ -70,10 +72,16 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
     return (
       <Notice className="space-y-2" data-testid="credits-notice-filled">
         <p className="text-sm">
-          {names} now {notice.runtimes.length === 1 ? 'runs' : 'run'} on your DorkOS credits,
-          because {notice.runtimes.length === 1 ? 'it' : 'they'} had no working sign-in when you
-          linked your account.
+          {names} now {notice.runtimes.length === 1 ? 'runs' : 'run'} on your DorkOS credits.
         </p>
+        <p className="text-muted-foreground text-sm">
+          {notice.runtimes.length === 1 ? 'It' : 'They'} had no working sign-in when you linked.
+        </p>
+        {caveats.map((caveat) => (
+          <p key={caveat} className="text-muted-foreground text-sm">
+            {caveat}
+          </p>
+        ))}
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -135,7 +143,7 @@ function CreditsNoticeRow({ notice }: { notice: CloudCreditsNotice }) {
   return (
     <Notice className="space-y-2" data-testid="credits-notice-signed-in">
       <p className="text-sm">
-        You’re signed in to {name} now. It still runs on your DorkOS credits until you switch back.
+        You’re signed in to {name} now. It still uses your credits until you switch back.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button

@@ -22,7 +22,13 @@ import {
   useSessionPermissionPicker,
 } from '@/layers/features/status';
 import { GlobalTrustRow, TrustRow, type GlobalTrustRowRuntime } from '@/layers/features/settings';
-import { Button, InfoTip, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
+import {
+  Button,
+  InfoTip,
+  ScheduledRunConsequence,
+  TrustDial,
+  UnattendedAutonomyDialog,
+} from '@/layers/shared/ui';
 import { needsConsentRitual } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -279,13 +285,7 @@ const BINDING_CONSEQUENCE = (
 );
 
 /** What a scheduled run gives up at a stop that never asks. */
-const TASK_CONSEQUENCE = (
-  <>
-    A scheduled run has nobody to ask, so nothing is asked: no approval card, no message, no record
-    of a decision anybody made. At a stop that asks, an action it cannot take is refused and the run
-    works around it. Here it simply happens.
-  </>
-);
+const TASK_CONSEQUENCE = <ScheduledRunConsequence />;
 
 /** The three runtimes the settings surfaces below talk about, with their modes. */
 const SETTINGS_RUNTIMES = [

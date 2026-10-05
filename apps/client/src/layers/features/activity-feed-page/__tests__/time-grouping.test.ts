@@ -34,7 +34,7 @@ function localDate(reference: Date, dayOffset: number, hours = 10): Date {
 }
 
 // Reference "now": a Wednesday at 14:00 local time.
-// We use Wednesday so that: today=Wed, yesterday=Tue, Mon/Tue=This Week, >=2 weeks ago=Earlier.
+// We use Wednesday so that: today=Wed, yesterday=Tue, Mon/Tue=This week, >=2 weeks ago=Earlier.
 const NOW = (() => {
   // Find the most recent Wednesday (or today if Wednesday)
   const d = new Date();
@@ -63,10 +63,10 @@ describe('getTimeGroupLabel', () => {
     expect(getTimeGroupLabel(date, NOW)).toBe('Yesterday');
   });
 
-  it('returns "This Week" for a timestamp earlier in the week', () => {
+  it('returns "This week" for a timestamp earlier in the week', () => {
     // NOW is Wednesday; go back 2 days to Monday (still same week, not yesterday)
     const date = localDate(NOW, -2, 10); // Monday at 10:00 local
-    expect(getTimeGroupLabel(date, NOW)).toBe('This Week');
+    expect(getTimeGroupLabel(date, NOW)).toBe('This week');
   });
 
   it('returns "Earlier" for a timestamp from last week', () => {
@@ -130,7 +130,7 @@ describe('groupByTime', () => {
     ];
 
     const groups = groupByTime(items, NOW);
-    // Yesterday and This Week should be absent
+    // Yesterday and This week should be absent
     expect(groups.map((g) => g.label)).toEqual(['Today', 'Earlier']);
   });
 
@@ -155,7 +155,7 @@ describe('groupByTime', () => {
     ];
 
     const groups = groupByTime(items, NOW);
-    expect(groups.map((g) => g.label)).toEqual(['Today', 'Yesterday', 'This Week', 'Earlier']);
+    expect(groups.map((g) => g.label)).toEqual(['Today', 'Yesterday', 'This week', 'Earlier']);
     expect(groups[0].items[0].id).toBe('today');
     expect(groups[1].items[0].id).toBe('yesterday');
     expect(groups[2].items[0].id).toBe('this-week');

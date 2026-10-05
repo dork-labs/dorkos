@@ -52,7 +52,7 @@ function queueHeader(page: Page) {
  * The composer, by role rather than by its label.
  *
  * `ChatPage.input` matches the IDLE label ("Send a message…"), and the label is
- * exactly what changes here — mid-turn it becomes "Compose another — 2 queued".
+ * exactly what changes here — mid-turn it becomes "Compose another (2 queued)".
  * There is one composer on the page, so the role alone is unambiguous.
  */
 function composer(page: Page) {

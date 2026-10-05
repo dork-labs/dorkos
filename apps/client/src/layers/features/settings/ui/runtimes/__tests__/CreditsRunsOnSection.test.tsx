@@ -80,7 +80,7 @@ describe('whether the section shows', () => {
     const { setCloudCreditsDefault } = renderSection('codex', stranded);
     expect(await screen.findByRole('radio', { name: 'DorkOS credits' })).toBeChecked();
     expect(screen.getByTestId('credits-runs-on-note')).toHaveTextContent(
-      "DorkOS credits can't run Codex right now"
+      'Codex can’t run on credits now, so new work stops.'
     );
     await userEvent.click(screen.getByRole('radio', { name: 'Your Codex sign-in' }));
     await waitFor(() => expect(setCloudCreditsDefault).toHaveBeenCalledWith('codex', false));
@@ -106,6 +106,15 @@ describe('what a change reaches', () => {
     );
     expect(creditsRunsOnNote('OpenCode', 'runtime', true)).toMatch(
       /^DorkOS chose credits when you linked, because OpenCode had no sign-in\./
+    );
+  });
+});
+
+describe('what a runtime does not get on credits', () => {
+  it('says it beside the choice, on its own line under the runtime’s sentence', async () => {
+    renderSection('codex', { ...LINKED, runtimes: { ...LINKED.runtimes, codex: 'wired' } });
+    expect(await screen.findByTestId('credits-runs-on-caveat')).toHaveTextContent(
+      "Codex can't search the web on DorkOS credits."
     );
   });
 });

@@ -3,7 +3,7 @@ import { and, eq, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
 import { readChecked } from '../store-json.js';
 import { types as utilTypes } from 'node:util';
 import { DocChannelIngest, completeOriginalCheckboxOutbox } from '../ingest.js';
-import type { DocIngestLimits } from '../accounting.js';
+import type { DocIngestLimits } from '../current/accounting.js';
 import {
   createCheckboxReservationBridge,
   failCheckboxCompletion,

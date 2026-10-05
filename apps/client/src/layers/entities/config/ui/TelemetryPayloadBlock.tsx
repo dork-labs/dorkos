@@ -15,9 +15,7 @@ export function TelemetryPayloadBlock({ className }: { className?: string }) {
       <pre className="text-muted-foreground bg-background/60 max-w-full overflow-x-auto rounded-md border p-3 text-xs">
         <code>{HEARTBEAT_PAYLOAD_EXAMPLE}</code>
       </pre>
-      <p className="text-muted-foreground text-xs">
-        This is the whole thing. Nothing else is sent.
-      </p>
+      <p className="text-muted-foreground text-xs">That’s the whole daily ping.</p>
     </div>
   );
 }

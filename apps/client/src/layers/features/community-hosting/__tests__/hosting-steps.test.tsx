@@ -66,7 +66,7 @@ const progressHandlers = {
  */
 function expectEligibilityLineBefore(commitButton: HTMLElement) {
   const line = screen.getByText(
-    /Paid plans, and spaces that run on DorkOS for you, are for people in the United States who are 18 or older\./
+    /Paid plans and hosted spaces are for people in the United States, 18 or older\./
   );
   const link = within(line).getByRole('link', { name: 'Who can buy a plan?' });
   expect(link).toHaveAttribute('href', 'https://dorkos.ai/pricing#faq');

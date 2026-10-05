@@ -49,7 +49,12 @@ function LinkedCard({ usage, children }: { usage: CloudUsageResponse; children?:
       createCloudBillingSession: { ok: false, problem: refusalFixture },
       requestCloudAccountExport: {
         ok: true,
-        export: { requestedAt: '2026-09-15T12:00:00.000Z', readyAt: null, downloadUrl: null },
+        export: {
+          requestedAt: '2026-09-15T12:00:00.000Z',
+          readyAt: null,
+          downloadUrl: null,
+          emailRequested: true,
+        },
       },
       // Asking to delete deletes nothing anywhere: it shows the "check your
       // email" state, and the link check keeps answering linked.

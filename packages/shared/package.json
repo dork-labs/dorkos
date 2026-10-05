@@ -29,6 +29,10 @@
       "types": "./src/extension-approval-schemas.ts",
       "default": "./dist/extension-approval-schemas.js"
     },
+    "./extension-server-status": {
+      "types": "./src/extension-server-status.ts",
+      "default": "./dist/extension-server-status.js"
+    },
     "./notification-schemas": {
       "types": "./src/notification-schemas.ts",
       "default": "./dist/notification-schemas.js"
@@ -112,6 +116,10 @@
     "./extension-id": {
       "types": "./src/extension-id.ts",
       "default": "./dist/extension-id.js"
+    },
+    "./portable-input-shape": {
+      "types": "./src/portable-input-shape.ts",
+      "default": "./dist/portable-input-shape.js"
     },
     "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
@@ -448,6 +456,10 @@
     "./canvas-channel-schemas": {
       "types": "./src/canvas-channel-schemas.ts",
       "default": "./dist/canvas-channel-schemas.js"
+    },
+    "./canvas-doc-frame-wire": {
+      "types": "./src/canvas-doc-frame-wire.ts",
+      "default": "./dist/canvas-doc-frame-wire.js"
     },
     "./canvas-app-manifest": {
       "types": "./src/canvas-app-manifest.ts",

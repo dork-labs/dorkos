@@ -4,6 +4,7 @@ import { cn } from '@/layers/shared/lib';
 import { resolveWidgetIcon } from '../../lib/widget-icon';
 import { toneBadgeClass } from '../../lib/widget-tone';
 import { useWidgetMotion, widgetEntrance, widgetStaggerContainer } from '../../lib/widget-motion';
+import { useWidgetNodePath } from '../../model/widget-node-context';
 import { WidgetActionButton } from './ActionNodes';
 
 type ListNodeData = Extract<WidgetNode, { type: 'list' }>;
@@ -11,6 +12,7 @@ type ListNodeData = Extract<WidgetNode, { type: 'list' }>;
 /** `list` node — items cascade in and lift on hover; optional icon, badge, and actions. */
 export function ListNode({ node }: { node: ListNodeData }) {
   const motionOn = useWidgetMotion();
+  const path = useWidgetNodePath();
   return (
     <motion.ul
       className="divide-border divide-y"
@@ -62,7 +64,14 @@ export function ListNode({ node }: { node: ListNodeData }) {
                   <WidgetActionButton
                     key={ai}
                     action={action}
-                    label={action.kind === 'agent' ? (action.label ?? 'Action') : label(action)}
+                    controlId={`${path}.items.${i}.actions.${ai}`}
+                    label={
+                      action.kind === 'agent'
+                        ? (action.label ?? 'Action')
+                        : action.kind === 'emit'
+                          ? 'Send'
+                          : label(action)
+                    }
                   />
                 ))}
               </div>

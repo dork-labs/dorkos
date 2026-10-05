@@ -206,6 +206,7 @@ describe('main admission root adoption', () => {
     const laterCleanup = vi.fn(() => {
       throw stopAfterPrefix;
     });
+    const docNotificationCleanup = vi.fn();
     const compiled = ts.transpileModule(`(${rootFunction('shutdownServices').getText(source)})`, {
       compilerOptions: { target: ts.ScriptTarget.ES2022 },
     }).outputText;
@@ -214,11 +215,13 @@ describe('main admission root adoption', () => {
       workspaceReconcilerLifecycle: owner,
       stopDocDelivery,
       logger: { info: laterCleanup },
+      docNotificationCleanup,
     }) as () => Promise<void>;
     try {
       const completion = cleanup();
       expect(admission.isClosed).toBe(true);
       expect(stopDocDelivery).not.toHaveBeenCalled();
+      expect(docNotificationCleanup).not.toHaveBeenCalled();
       expect(() => reconciler.start()).toThrow(/disposed/i);
       pendingListener.emit('listening');
       expect(close).toHaveBeenCalledTimes(1);
@@ -227,9 +230,11 @@ describe('main admission root adoption', () => {
       await pass;
       await vi.waitFor(() => expect(stopDocDelivery).toHaveBeenCalledTimes(1));
       expect(laterCleanup).not.toHaveBeenCalled();
+      expect(docNotificationCleanup).not.toHaveBeenCalled();
       releaseDocDelivery();
       await expect(completion).rejects.toBe(stopAfterPrefix);
       expect(stopDocDelivery).toHaveBeenCalledTimes(1);
+      expect(docNotificationCleanup).toHaveBeenCalledTimes(1);
       expect(removeRow).not.toHaveBeenCalled();
     } finally {
       releaseDocDelivery();

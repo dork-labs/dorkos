@@ -113,12 +113,12 @@ describe('Conversation.Composer', () => {
     mount({
       input: {
         isStreaming: false,
-        placeholder: 'Edit queued message 1 of 2 — press Enter to save',
+        placeholder: 'Edit queued message 1 of 2. Press Enter to save',
       },
     });
 
     expect(screen.getByRole('combobox')).toHaveAccessibleName(
-      'Edit queued message 1 of 2 — press Enter to save'
+      'Edit queued message 1 of 2. Press Enter to save'
     );
   });
 

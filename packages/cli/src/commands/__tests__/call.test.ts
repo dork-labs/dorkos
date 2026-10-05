@@ -103,6 +103,18 @@ describe('runCall', () => {
     expect(apiCallMock).toHaveBeenCalledTimes(1); // catalog only, no invoke
   });
 
+  it("says a stopped extension's tool isn't available, not that it is unknown (DOR-2685)", async () => {
+    // An extension's tool is listed only while it runs; the server's sentence
+    // for that is the one the person reads here too.
+    apiCallMock.mockResolvedValueOnce(catalog);
+    const code = await runCall({ id: 'ext_mail_app.send_message', input: {} });
+    expect(code).toBe(1);
+    expect(apiCallMock).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith(
+      "Error: That tool isn't available right now: its extension is stopped or restarting."
+    );
+  });
+
   it('surfaces a server validation error on stderr and exits non-zero', async () => {
     apiCallMock.mockResolvedValueOnce(catalog);
     apiCallMock.mockRejectedValueOnce(

@@ -17,12 +17,15 @@ import { TransportProvider } from '@/layers/shared/model';
 import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../use-session-status';
 
+const store = vi.hoisted(() => ({
+  pendingAccount: null as { id: string; sessionId: string } | null,
+}));
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...original,
     useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/test/cwd' };
+      const state = { selectedCwd: '/test/cwd', pendingAccount: store.pendingAccount };
       return selector ? selector(state) : state;
     },
   };
@@ -46,7 +49,38 @@ describe('useSessionStatus — the runtime hint on a settings write', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    store.pendingAccount = null;
     mockTransport = createMockTransport();
+  });
+
+  it('says which account the person picked for this session, so the model is judged by who pays', async () => {
+    store.pendingAccount = { id: 'dorkos-credits', sessionId: SESSION_ID };
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(mockTransport),
+    });
+
+    await result.current.updateSession({ model: 'md_pick' });
+
+    expect(mockTransport.updateSession).toHaveBeenCalledWith(
+      SESSION_ID,
+      { runtime: 'claude-code', account: 'dorkos-credits', model: 'md_pick' },
+      '/test/cwd'
+    );
+  });
+
+  it('never sends a pick made for another session', async () => {
+    store.pendingAccount = { id: 'dorkos-credits', sessionId: 'another-session' };
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(mockTransport),
+    });
+
+    await result.current.updateSession({ model: 'sonnet' });
+
+    expect(mockTransport.updateSession).toHaveBeenCalledWith(
+      SESSION_ID,
+      { runtime: 'claude-code', model: 'sonnet' },
+      '/test/cwd'
+    );
   });
 
   it('sends the resolved runtime alongside the model the person picked', async () => {
@@ -121,6 +155,8 @@ describe('useSessionStatus — the runtime hint on a settings write', () => {
     expect(transport.getModels).toHaveBeenCalledWith({
       runtime: 'codex',
       sessionId: SESSION_ID,
+      account: undefined,
+      cwd: '/test/cwd',
     });
   });
 });

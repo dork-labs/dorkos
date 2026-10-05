@@ -83,28 +83,57 @@ export async function openBillingPage(
   return url;
 }
 
+/** An account export as this app hands it on: the service's answer, plus whether an email was asked for. */
+export type RequestedAccountExport = AccountExport & {
+  /** True only when this request asked the service to email the account once the export is ready. */
+  emailRequested: boolean;
+};
+
 /**
  * Ask for a copy of everything the account holds.
  *
- * The service assembles it as a job. An email when it is ready is asked for,
- * because the contract publishes no route to check on a job later, but the
- * app promises nothing about it: asking again is how a person gets the link.
- * When the answer already carries a download link,
- * that link is held to the same rule as a billing page; one that fails it is
+ * **The "it's ready" email is asked for only when the export is not ready.**
+ * One request cannot know that beforehand, so this asks first without the
+ * email. An answer that already carries a link is the whole job: the person
+ * downloads it now, and an email about it would be noise. Only an answer
+ * without a link is followed by a second request that asks for the email, and
+ * only then may the app say one will come. A service that assembles exports at
+ * once never sees the second request. A service that queues them must treat
+ * that second request as the same export job, not a new one; the contract
+ * does not say so yet.
+ *
+ * A link is held to the same rule as a billing page; one that fails it is
  * dropped, so the export reads as still being prepared rather than offering a
  * link this app would not open.
  *
- * @param signal - Aborts the request.
+ * @param signal - Aborts the requests.
  * @throws When this instance is not linked, or when the service refuses.
  */
-export async function requestAccountExport(signal?: AbortSignal): Promise<AccountExport> {
+export async function requestAccountExport(signal?: AbortSignal): Promise<RequestedAccountExport> {
   const client = requireClient();
-  const job = await client.post(V1_ROUTES.accountExport, AccountExportResponseSchema, {
-    body: { notifyEmail: true },
-    signal,
-  });
-  const downloadUrl = job.downloadUrl === null ? null : safePageUrl(job.downloadUrl);
-  return { ...job, downloadUrl, readyAt: downloadUrl === null ? null : job.readyAt };
+  const ask = async (notifyEmail: boolean) => {
+    const job = await client.post(V1_ROUTES.accountExport, AccountExportResponseSchema, {
+      body: { notifyEmail },
+      signal,
+    });
+    const downloadUrl = job.downloadUrl === null ? null : safePageUrl(job.downloadUrl);
+    return {
+      job: { ...job, downloadUrl, readyAt: downloadUrl === null ? null : job.readyAt },
+      // Whether the service sent any link at all, before this app's own check.
+      served: job.downloadUrl !== null,
+    };
+  };
+  const first = await ask(false);
+  // A link the service sent means the export is ready, even when it fails the
+  // https check above and is dropped: asking again for an email would only
+  // announce a link this app will not open.
+  if (first.served) return { ...first.job, emailRequested: false };
+  // The second request names the same export as the first. A service that
+  // queues exports has to treat it as that job, not a new one; the contract
+  // does not say so yet, and today's service never gets here, because it
+  // answers the first request with a link.
+  const second = await ask(true);
+  return { ...second.job, emailRequested: true };
 }
 
 /**

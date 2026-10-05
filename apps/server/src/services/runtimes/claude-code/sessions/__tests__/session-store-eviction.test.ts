@@ -12,6 +12,7 @@
  * raised, so a STRANDED entry cannot make a record immortal.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import { SessionStore, isWaitingOnPerson } from '../session-store.js';
 import { SessionLockManager } from '../../../../session/session-lock.js';
 import { SESSIONS } from '../../../../../config/constants.js';
@@ -150,5 +151,46 @@ describe('checkSessionHealth exempts a session whose agent is still working', ()
 
     expect(store.checkSessionHealth(new SessionLockManager())).toEqual([SESSION_ID]);
     expect(store.findSession(SESSION_ID)).toBeUndefined();
+  });
+});
+
+/**
+ * DOR-2681. `lastActivity` is stamped when a turn STARTS, so a turn still
+ * running thirty minutes later read as idle and was evicted out from under
+ * itself: the warm process was torn down, the turn sat dark, and the stall
+ * watchdog ended it ten minutes later with nothing left to interrupt. Both
+ * stalls in that report were this sweep.
+ */
+describe('checkSessionHealth exempts a session whose turn is still running', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000_000);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A store holding one session whose turn started `agedMs` ago and is still running. */
+  function storeRunningTurn(agedMs: number): SessionStore {
+    const store = new SessionStore();
+    store.ensureSession(SESSION_ID, { permissionMode: 'default' });
+    store.findSession(SESSION_ID)!.activeQuery = {} as Query;
+    vi.setSystemTime(Date.now() + agedMs);
+    return store;
+  }
+
+  it('keeps a session whose turn started thirty-one minutes ago and has not finished', () => {
+    const store = storeRunningTurn(THIRTY_ONE_MINUTES);
+
+    expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([]);
+    expect(store.findSession(SESSION_ID)).toBeDefined();
+  });
+
+  it('evicts it once the turn has run past the background-work ceiling', () => {
+    // The bound: a turn whose `finally` never ran must not keep the record
+    // forever. The stall watchdog ends a turn that has gone dark long before.
+    const store = storeRunningTurn(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
+
+    expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([SESSION_ID]);
   });
 });

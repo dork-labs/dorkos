@@ -12,7 +12,7 @@ import { appendInitialDocStatuses } from '../initial-status.js';
 import { replayDocChannel } from '../replay.js';
 import { retainDocHistory } from '../retention.js';
 import { selectBatchSlice } from '../coalescer.js';
-import type { DocIngestLimits } from '../accounting.js';
+import type { DocIngestLimits } from '../current/accounting.js';
 
 const dbs: Db[] = [];
 const folders: string[] = [];

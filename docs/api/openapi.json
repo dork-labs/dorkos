@@ -2419,6 +2419,9 @@
                   "$ref": "#/components/schemas/PermissionDeniedPart"
                 },
                 {
+                  "$ref": "#/components/schemas/ModelSubstitutedPart"
+                },
+                {
                   "$ref": "#/components/schemas/CompactBoundaryPart"
                 }
               ],
@@ -2436,6 +2439,7 @@
                   "mcp_signin": "#/components/schemas/McpSigninPart",
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
+                  "model_substituted": "#/components/schemas/ModelSubstitutedPart",
                   "compact_boundary": "#/components/schemas/CompactBoundaryPart"
                 }
               }
@@ -3074,6 +3078,7 @@
               "messages",
               "connections",
               "packages",
+              "extensions",
               "settings",
               "safety",
               "permissions",
@@ -3106,6 +3111,28 @@
           },
           "roomId": {
             "type": "string"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ]
           },
           "requestedAt": {
             "type": "string"
@@ -3415,6 +3442,43 @@
           "toolCallId",
           "toolName",
           "message"
+        ]
+      },
+      "ModelSubstitutedPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "model_substituted"
+            ]
+          },
+          "from": {
+            "type": "string"
+          },
+          "fromName": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "toName": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "credits-not-covered"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "from",
+          "fromName",
+          "to",
+          "toName",
+          "reason"
         ]
       },
       "CompactBoundaryPart": {
@@ -4269,6 +4333,48 @@
               "toolCallId",
               "toolName",
               "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "model_substituted"
+                ]
+              },
+              "from": {
+                "type": "string"
+              },
+              "fromName": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "toName": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "credits-not-covered"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "from",
+              "fromName",
+              "to",
+              "toName",
+              "reason"
             ]
           },
           {
@@ -7162,6 +7268,9 @@
           },
           "runtime": {
             "type": "string"
+          },
+          "account": {
+            "type": "string"
           }
         }
       },
@@ -7623,6 +7732,14 @@
           },
           "isDeprecated": {
             "type": "boolean"
+          },
+          "creditsListOutOfDate": {
+            "type": "boolean",
+            "description": "True on a credits row when DorkOS could not refresh the list just now and this is the last one the service answered, so it may be out of date."
+          },
+          "paidFromCredits": {
+            "type": "boolean",
+            "description": "True when this row comes from the models DorkOS credits serve on the runtime's protocol, so the menu is the credits menu rather than the runtime's own."
           }
         },
         "required": [
@@ -8528,6 +8645,94 @@
         "required": [
           "success",
           "state"
+        ]
+      },
+      "RelayDeliveryReceipt": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "$ref": "#/components/schemas/RelayMessageId"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "agent_delivery"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "delivered",
+              "failed",
+              "outcome_unknown"
+            ]
+          },
+          "acceptedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "settledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "failure": {
+            "$ref": "#/components/schemas/RelayDeliveryFailure"
+          }
+        },
+        "required": [
+          "messageId",
+          "scope",
+          "state",
+          "acceptedAt",
+          "updatedAt",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "RelayMessageId": {
+        "type": "string",
+        "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "RelayDeliveryFailure": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/RelayDeliveryFailureCode"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "RelayDeliveryFailureCode": {
+        "type": "string",
+        "enum": [
+          "at_capacity",
+          "chat_unavailable",
+          "rate_limited",
+          "budget_exceeded",
+          "initiate_denied",
+          "untrusted_bridge_principal",
+          "turn_ceiling",
+          "adapter_unavailable",
+          "not_dispatched",
+          "adapter_failed",
+          "observation_lost"
         ]
       },
       "RelaySendMessageRequest": {
@@ -9878,13 +10083,18 @@
                       "string",
                       "null"
                     ],
-                    "description": "A short-lived https link, null until the export is ready."
+                    "description": "An https link the person opens in their own browser to get the export; it may ask them to sign in. Null until the export is ready."
+                  },
+                  "emailRequested": {
+                    "type": "boolean",
+                    "description": "Whether an email for when the export is ready was asked for. Asked only when the first answer had no link."
                   }
                 },
                 "required": [
                   "requestedAt",
                   "readyAt",
-                  "downloadUrl"
+                  "downloadUrl",
+                  "emailRequested"
                 ]
               }
             },
@@ -10685,6 +10895,26 @@
           },
           "why": {
             "type": "string"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/ExtensionApprovalPermissions"
+          },
+          "added": {
+            "$ref": "#/components/schemas/ExtensionApprovalAdditions"
+          },
+          "agentTools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentToolSummary"
+            },
+            "default": []
+          },
+          "agentSkills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
+            },
+            "default": []
           }
         },
         "required": [
@@ -10697,6 +10927,139 @@
           "adds",
           "since",
           "why"
+        ]
+      },
+      "ExtensionApprovalPermissions": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "in-process",
+              "subprocess"
+            ]
+          },
+          "net": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "found": {
+                  "type": "boolean"
+                },
+                "refusedReason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "found"
+              ]
+            }
+          },
+          "agents": {
+            "type": "boolean"
+          },
+          "hasPage": {
+            "type": "boolean"
+          }
+        },
+        "default": null,
+        "required": [
+          "runtime",
+          "net",
+          "run",
+          "agents",
+          "hasPage"
+        ]
+      },
+      "ExtensionApprovalAdditions": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "net": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agents": {
+            "type": "boolean"
+          },
+          "runtime": {
+            "type": "boolean"
+          }
+        },
+        "default": null,
+        "required": [
+          "net",
+          "run",
+          "agents",
+          "runtime"
+        ]
+      },
+      "ExtensionAgentToolSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "refusedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "tier"
+        ]
+      },
+      "ExtensionAgentSkillSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "droppedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ]
       },
       "ExtensionTrustOffer": {
@@ -10728,6 +11091,41 @@
               "null"
             ],
             "minLength": 1
+          },
+          "permissions": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "in-process",
+                  "subprocess"
+                ]
+              },
+              "net": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 64
+              },
+              "run": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 16
+              },
+              "agents": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "runtime",
+              "net",
+              "run",
+              "agents"
+            ]
           }
         },
         "required": [
@@ -11157,6 +11555,7 @@
           "messages",
           "connections",
           "packages",
+          "extensions",
           "settings",
           "safety",
           "permissions",
@@ -11191,6 +11590,28 @@
           },
           "lastChange": {
             "$ref": "#/components/schemas/PermissionLastChange"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ]
           }
         },
         "required": [
@@ -11562,7 +11983,8 @@
               "origin": {
                 "type": "string",
                 "enum": [
-                  "arrival-screen"
+                  "arrival-screen",
+                  "extension-removed"
                 ]
               },
               "note": {
@@ -18014,7 +18436,7 @@
           "Projects"
         ],
         "summary": "Name the project a folder belongs to",
-        "description": "The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ \"project\": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused).",
+        "description": "The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ \"project\": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused). Only a person may ask: a caller that names itself an agent, a browser request from another site (a foreign `Origin`, or `Sec-Fetch-Site: cross-site`), or (with login on) a caller without a session cookie is refused. With login off, a local caller that is neither is trusted as the person. The server keeps at most 200 roots that only a lookup named, and forgets the least recently used one past that.",
         "parameters": [
           {
             "schema": {
@@ -18048,7 +18470,7 @@
             }
           },
           "403": {
-            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary",
+            "description": "`cwd`, or the repository it belongs to, is outside the server's directory boundary; or the caller is not a person",
             "content": {
               "application/json": {
                 "schema": {
@@ -18855,7 +19277,7 @@
           "Sessions"
         ],
         "summary": "Durable session stream (SSE, or WebSocket at the same path)",
-        "description": "Always-on Server-Sent Events stream — the single delivery path for session state (spec chat-stream-reconnection, ADR-0264/ADR-0266). NO feature flag or `enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event (a SessionSnapshot: completed messages, in-progress turn, status, non-expired pending interactions, and the resume `cursor`) then goes live, emitting one SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<generation>-<seq>` line; the client echoes it back as `Last-Event-ID` on reconnect. The `generation` names the seq space that stamped it — a session's `seq` belongs to an in-process projector, and a projector can be replaced behind the same session id, so a cursor whose generation no longer matches is treated as foreign and answered with a fresh snapshot rather than a plausible-looking replay. On a RESUME connect it SKIPS the snapshot and replays only events with `seq` greater than the cursor, then goes live. A cursor the server cannot serve gap-free falls back to the cold snapshot path instead of resuming. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: no` defeats proxy buffering. **The same path also answers a WebSocket upgrade** (ADR 260805-041016), which is what the DorkOS app uses — a browser allows only ~6 connections per origin and an SSE stream holds one open, so a few windows exhaust them. Identical contract; each message is one JSON text frame `{ event, data, id? }`, the resume cursor rides `?resume=` (a browser `WebSocket` cannot set headers), liveness is a `__heartbeat` frame rather than an SSE comment, and a refusal arrives as WebSocket close code `4000 + status` because a browser cannot read the status of a failed handshake. SSE remains the documented integration contract — see `docs/integrations/sse-protocol.mdx`.",
+        "description": "Always-on Server-Sent Events stream — the single delivery path for session state (spec chat-stream-reconnection, ADR-0264/ADR-0266). NO feature flag or `enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event (a SessionSnapshot: completed messages, in-progress turn, status, non-expired pending interactions, and the resume `cursor`) then goes live, emitting one SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<generation>-<seq>` line; the client echoes it back as `Last-Event-ID` on reconnect. The `generation` names the seq space that stamped it — a session's `seq` belongs to an in-process projector, and a projector can be replaced behind the same session id, so a cursor whose generation no longer matches is treated as foreign and answered with a fresh snapshot rather than a plausible-looking replay. On a RESUME connect it SKIPS the snapshot and replays only events with `seq` greater than the cursor, then goes live. A cursor the server cannot serve gap-free falls back to the cold snapshot path instead of resuming. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: no` defeats proxy buffering. **The same path also answers a WebSocket upgrade** (ADR 260805-041016), which is what the DorkOS app uses — a browser allows only ~6 connections per origin and an SSE stream holds one open, so a few windows exhaust them. Identical contract; each message is one JSON text frame `{ event, data, id? }`, the resume cursor rides `?resume=` (a browser `WebSocket` cannot set headers), liveness is a `__heartbeat` frame rather than an SSE comment, and a refusal arrives as WebSocket close code `4000 + status` because a browser cannot read the status of a failed handshake. SSE remains the documented integration contract — see `docs/integrations/sse-protocol.mdx`. Authorized document channels also emit `canvas_channel_snapshot` and `canvas_event` frames on this connection, including while the agent is idle. These carry no frame id or session seq; `docSeq` belongs only to that physical document. Each connection replays current document state and bounded document history independently of the session resume cursor.",
         "parameters": [
           {
             "schema": {
@@ -19660,6 +20082,48 @@
                         "type": {
                           "type": "string",
                           "enum": [
+                            "model_substituted"
+                          ]
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "fromName": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "toName": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "credits-not-covered"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "from",
+                        "fromName",
+                        "to",
+                        "toName",
+                        "reason"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
                             "system_status"
                           ]
                         },
@@ -20321,6 +20785,420 @@
                         "content",
                         "messageId"
                       ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "canvas_event"
+                          ]
+                        },
+                        "scope": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "docSeq": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "incarnation": {
+                          "type": "object",
+                          "properties": {
+                            "v": {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "physicalOpenedAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "channelCreatedAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "generation": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$/u"
+                            }
+                          },
+                          "required": [
+                            "v",
+                            "documentId",
+                            "physicalOpenedAt",
+                            "channelCreatedAt",
+                            "generation"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "event": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                            },
+                            "type": {
+                              "type": "string",
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                            },
+                            "payload": {
+                              "description": "Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit."
+                            },
+                            "direction": {
+                              "type": "string",
+                              "enum": [
+                                "upstream",
+                                "downstream",
+                                "system"
+                              ]
+                            },
+                            "receivedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "type",
+                            "direction",
+                            "receivedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "scope",
+                        "documentId",
+                        "docSeq",
+                        "event"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "canvas_channel_snapshot"
+                          ]
+                        },
+                        "scope": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "snapshot": {
+                          "type": "object",
+                          "properties": {
+                            "routing": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "approvedEventTypes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                                  },
+                                  "maxItems": 2048
+                                },
+                                "destinationLabel": {
+                                  "type": "string",
+                                  "maxLength": 500
+                                }
+                              },
+                              "required": [
+                                "enabled",
+                                "approvedEventTypes",
+                                "destinationLabel"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "incarnation": {
+                              "type": "object",
+                              "properties": {
+                                "v": {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                "documentId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "physicalOpenedAt": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "format": "date-time"
+                                },
+                                "channelCreatedAt": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "format": "date-time"
+                                },
+                                "generation": {
+                                  "type": "string",
+                                  "pattern": "^[a-f0-9]{64}$/u"
+                                }
+                              },
+                              "required": [
+                                "v",
+                                "documentId",
+                                "physicalOpenedAt",
+                                "channelCreatedAt",
+                                "generation"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "state": {
+                              "type": "object",
+                              "additionalProperties": {},
+                              "description": "Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content."
+                            },
+                            "stateRev": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "highWatermark": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "retentionFloor": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "receiptRetentionFloor": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "resetRequired": {
+                              "type": "boolean"
+                            },
+                            "health": {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ready",
+                                    "warning",
+                                    "closed",
+                                    "in_doubt"
+                                  ]
+                                },
+                                "reasons": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "maxItems": 128
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reasons"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "receipts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "receipt": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                                      },
+                                      "status": {
+                                        "type": "string",
+                                        "enum": [
+                                          "recorded",
+                                          "duplicate"
+                                        ]
+                                      },
+                                      "docSeq": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "status",
+                                      "docSeq"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "deliveries": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "eventId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                                        },
+                                        "routeId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "batchId": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "status": {
+                                          "type": "string",
+                                          "enum": [
+                                            "saved",
+                                            "pending",
+                                            "routed",
+                                            "waiting",
+                                            "accepted",
+                                            "turn_started",
+                                            "turn_done",
+                                            "failed",
+                                            "in_doubt",
+                                            "expired",
+                                            "superseded",
+                                            "cancelled",
+                                            "handled",
+                                            "rejected",
+                                            "unavailable"
+                                          ]
+                                        },
+                                        "turnId": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "reason": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "maxLength": 1000
+                                        },
+                                        "nextEligibleAt": {
+                                          "type": "string",
+                                          "format": "date-time"
+                                        },
+                                        "updatedAt": {
+                                          "type": "string",
+                                          "format": "date-time"
+                                        },
+                                        "ackOutcome": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "enum": [
+                                            "handled",
+                                            "rejected",
+                                            null
+                                          ]
+                                        },
+                                        "acknowledgedAt": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "format": "date-time"
+                                        }
+                                      },
+                                      "required": [
+                                        "eventId",
+                                        "routeId",
+                                        "batchId",
+                                        "status",
+                                        "turnId",
+                                        "reason",
+                                        "updatedAt"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 16
+                                  },
+                                  "payloadAvailable": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "receipt",
+                                  "deliveries"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 200
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "stateRev",
+                            "highWatermark",
+                            "retentionFloor",
+                            "receiptRetentionFloor",
+                            "resetRequired",
+                            "health",
+                            "receipts"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "scope",
+                        "documentId",
+                        "snapshot"
+                      ],
+                      "additionalProperties": false
                     }
                   ],
                   "description": "A SessionSnapshot (cold connect) followed by SessionEvent frames."
@@ -21074,8 +21952,50 @@
         "tags": [
           "Models"
         ],
-        "summary": "List available Claude models",
-        "description": "Returns models available to the user. Serves SDK-reported models if cached, otherwise returns defaults.",
+        "summary": "List the models a runtime offers",
+        "description": "Returns the models the resolved runtime offers. A session on DorkOS credits (or `account=dorkos-credits` with no session) gets only the models credits serve on the runtime's protocol, the recommended one first, once the service says which protocols its models are on. When the service cannot be read, the last list it answered stands, marked out of date.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The runtime whose models to list"
+            },
+            "required": false,
+            "description": "The runtime whose models to list",
+            "name": "runtime",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The session whose runtime and account decide the menu"
+            },
+            "required": false,
+            "description": "The session whose runtime and account decide the menu",
+            "name": "sessionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The account the person picked for a session that has not started, or `dorkos-credits` with no session to ask about credits directly"
+            },
+            "required": false,
+            "description": "The account the person picked for a session that has not started, or `dorkos-credits` with no session to ask about credits directly",
+            "name": "account",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The folder a session that has not started runs in"
+            },
+            "required": false,
+            "description": "The folder a session that has not started runs in",
+            "name": "cwd",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List of available models",
@@ -21094,6 +22014,16 @@
                   "required": [
                     "models"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown runtime",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -21346,6 +22276,10 @@
                                   "runtime"
                                 ],
                                 "description": "What a change of the credits choice reaches: `conversation` — new conversations follow it and one already going stays on what it started on; `runtime` — the whole runtime moves, so a switch is refused while it is in the middle of a reply."
+                              },
+                              "caveat": {
+                                "type": "string",
+                                "description": "What a person does not get on credits that they would on their own sign-in, as one sentence shown beside the choice. Absent when nothing is missing."
                               }
                             },
                             "required": [
@@ -22238,7 +23172,7 @@
         },
         "responses": {
           "200": {
-            "description": "Message sent",
+            "description": "Publication result. Agent-target scheduling counts do not confirm delivery or turn success; receipt/statusUrl observe target delivery.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22249,6 +23183,82 @@
                     },
                     "deliveredTo": {
                       "type": "number"
+                    },
+                    "rejected": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "endpointHash": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "backpressure",
+                              "circuit_open",
+                              "rate_limited",
+                              "budget_exceeded",
+                              "initiate_denied",
+                              "untrusted_bridge_principal",
+                              "turn_ceiling"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "endpointHash",
+                          "reason"
+                        ]
+                      }
+                    },
+                    "mailboxPressure": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      }
+                    },
+                    "adapterResult": {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean"
+                        },
+                        "durationMs": {
+                          "type": "number"
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "at_capacity",
+                            "chat_unavailable",
+                            "rate_limited"
+                          ]
+                        },
+                        "skipped": {
+                          "type": "boolean"
+                        },
+                        "retryAfterMs": {
+                          "type": "number"
+                        },
+                        "deadLettered": {
+                          "type": "boolean"
+                        },
+                        "responseMessageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "success"
+                      ]
+                    },
+                    "receipt": {
+                      "$ref": "#/components/schemas/RelayDeliveryReceipt"
+                    },
+                    "statusUrl": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -22265,6 +23275,93 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login requires a verified session or per-user API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Reserved sender, destination or reply address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Publication refused before acceptance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Receipt storage/observer/caller transaction unavailable before acceptance, or response unavailable after durable acceptance. A retained locator does not permit replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "RELAY_RECEIPT_TRANSACTION_ACTIVE",
+                            "RELAY_RECEIPT_OBSERVER_BUSY",
+                            "RELAY_RECEIPT_STORAGE_UNAVAILABLE"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "RELAY_RECEIPT_RESPONSE_UNAVAILABLE"
+                          ]
+                        },
+                        "messageId": {
+                          "$ref": "#/components/schemas/RelayMessageId"
+                        },
+                        "statusUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "code",
+                        "messageId",
+                        "statusUrl"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -22346,6 +23443,102 @@
                   },
                   "required": [
                     "messages"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/messages/{messageId}/status": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Read a delivery receipt",
+        "description": "Authoritative metadata for an HTTP agent-target publication, independent of the derived message index. Delivered confirms target delivery, not agent turn success. With login on, only the verified owner may read it; historical local-trust receipts belong to the verified install owner. With login off, local trust applies. Receipts expire seven days after acceptance. No replay or message content is provided.",
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/RelayMessageId"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minimized delivery receipt",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelayDeliveryReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_RELAY_MESSAGE_ID after authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_REQUIRED before ID validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "RELAY_RECEIPT_NOT_FOUND: unknown, expired, untracked and other-owner locators have the same response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Receipt observer/storage/caller transaction unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RELAY_RECEIPT_TRANSACTION_ACTIVE",
+                        "RELAY_RECEIPT_OBSERVER_BUSY",
+                        "RELAY_RECEIPT_STORAGE_UNAVAILABLE"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
                   ]
                 }
               }
@@ -24719,6 +25912,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [
@@ -25743,6 +26970,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [
@@ -26901,6 +28162,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [
@@ -30657,6 +31952,912 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/dev-links": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "List dev links",
+        "description": "Every package running from a folder on this computer, and whether its link is in force. `registryUnreadable` is set when the record of dev links cannot be read; no folder counts as linked then.",
+        "responses": {
+          "200": {
+            "description": "Every dev link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "plugin",
+                              "skill-pack"
+                            ]
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "global",
+                              "project"
+                            ]
+                          },
+                          "projectPath": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string",
+                            "description": "The real path of the folder the package runs from."
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "folder-missing",
+                              "link-missing",
+                              "link-replaced"
+                            ]
+                          },
+                          "parked": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "description": "The installed copy set aside for the link, or null."
+                          },
+                          "linkedAt": {
+                            "type": "string"
+                          },
+                          "lastReloadAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "type",
+                          "scope",
+                          "path",
+                          "state",
+                          "parked",
+                          "linkedAt"
+                        ]
+                      }
+                    },
+                    "registryUnreadable": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "links"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Run a package from a folder",
+        "description": "Gated by the `marketplace.link` capability (destructive, no permission area): the person runs it, and an agent gets an approval card showing the folder in full (202), retried with the `X-DorkOS-Approval` header. No setting can approve it ahead of time. An installed copy of the same package is set aside only with `replaceInstalled: true`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "global",
+                      "project"
+                    ]
+                  },
+                  "projectPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Required for, and only for, scope project."
+                  },
+                  "replaceInstalled": {
+                    "type": "boolean"
+                  },
+                  "via": {
+                    "type": "string",
+                    "enum": [
+                      "app",
+                      "terminal"
+                    ]
+                  },
+                  "expectedChange": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 65536,
+                    "description": "The preview's `change` the person said yes to; a mismatch is refused with `dev_link_changed`. Ignored for an agent, whose yes is the approval card."
+                  }
+                },
+                "required": [
+                  "path",
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "plugin",
+                        "skill-pack"
+                      ]
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "global",
+                        "project"
+                      ]
+                    },
+                    "projectPath": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string",
+                      "description": "The real path of the folder the package runs from."
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "folder-missing",
+                        "link-missing",
+                        "link-replaced"
+                      ]
+                    },
+                    "parked": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "description": "The installed copy set aside for the link, or null."
+                    },
+                    "linkedAt": {
+                      "type": "string"
+                    },
+                    "lastReloadAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "scope",
+                    "path",
+                    "state",
+                    "parked",
+                    "linkedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person has been asked; retry with the approval token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not linkable, or a malformed body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused by the gate, or outside the folders DorkOS may use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The slot or the name is taken, or the folder changed after it was approved (`dev_link_changed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/dev-links/preview": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Preview running a package from a folder",
+        "description": "Read-only. Names the package, the slot the link would take, an installed copy it would set aside, what the folder runs on its own, and the extensions it carries. A folder that cannot be linked answers with the reason.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "global",
+                      "project"
+                    ]
+                  },
+                  "projectPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Required for, and only for, scope project."
+                  },
+                  "replaceInstalled": {
+                    "type": "boolean",
+                    "description": "Describe the link as setting an installed copy aside."
+                  }
+                },
+                "required": [
+                  "path",
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What linking would do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "plugin",
+                        "skill-pack"
+                      ]
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "global",
+                        "project"
+                      ]
+                    },
+                    "slot": {
+                      "type": "string"
+                    },
+                    "replaces": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "version"
+                      ]
+                    },
+                    "effects": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "hooks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "event": {
+                                "type": "string"
+                              },
+                              "matcher": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "event",
+                              "matcher",
+                              "command",
+                              "source"
+                            ]
+                          }
+                        },
+                        "schedules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "cron": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "permissionMode": {
+                                "type": "string"
+                              },
+                              "startsEnabled": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "cron",
+                              "permissionMode",
+                              "startsEnabled"
+                            ]
+                          }
+                        },
+                        "mcpServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "transport": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "url": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "transport",
+                              "command",
+                              "args",
+                              "url"
+                            ]
+                          }
+                        },
+                        "lspServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "when": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command",
+                              "args",
+                              "when"
+                            ]
+                          }
+                        },
+                        "monitors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "when": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command",
+                              "args",
+                              "when"
+                            ]
+                          }
+                        },
+                        "executables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "skillTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "tools": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "tools"
+                            ]
+                          }
+                        },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "default": []
+                        }
+                      },
+                      "required": [
+                        "hooks",
+                        "schedules",
+                        "mcpServers",
+                        "lspServers",
+                        "monitors",
+                        "executables",
+                        "skillTools"
+                      ]
+                    },
+                    "extensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "change": {
+                      "type": "string",
+                      "description": "The approval text for this folder as it reads now. Send it back as `expectedChange` when linking, so a folder that changed meanwhile is refused."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "path",
+                    "scope",
+                    "slot",
+                    "replaces",
+                    "effects",
+                    "extensions",
+                    "change"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not linkable (`code` says why)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Outside the folders DorkOS may use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The slot or the name is taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/dev-links/{name}/unlink": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Unlink a dev link",
+        "description": "The person only: the same bar as deciding an approval card. Takes the link out (never the folder) and puts a set-aside installed copy back with its approvals.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "global",
+                      "project"
+                    ]
+                  },
+                  "projectPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Required for, and only for, scope project."
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Unlinked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "restored": {
+                      "type": "string",
+                      "enum": [
+                        "installed",
+                        "removed"
+                      ]
+                    },
+                    "parkedLeftAt": {
+                      "type": "string"
+                    },
+                    "leftInPlace": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ],
+                      "description": "Set when something else had already taken the link's place; it was left as it is."
+                    }
+                  },
+                  "required": [
+                    "restored"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the person (`operator_only`), or not a signed-in session under sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such dev link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "One plain sentence: what did not happen and what to do."
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "realPath": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "installedVersion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }
@@ -70011,7 +72212,7 @@
           "Rooms"
         ],
         "summary": "Durable room event stream (SSE, or WebSocket at the same path)",
-        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again.",
+        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, a `reaction`, a `canvas` change, or a `revision`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached. A `canvas` frame carries one canvas document's whole current state (or its id and `closed: true`), also without an `id:` line; a resume re-sends every live document, and a client replaces its table from that set. A `revision` frame is sent only for a room mirrored from a Community: it carries an entry the reader may already hold, as the log holds it after the Community server deleted, removed or erased it, and never the text it replaced. It has no `id:` line either; a reader replaces the entry it holds with the same `id` and ignores one it does not hold. A resume of a mirrored room re-sends the trailing window (the last 100 entries) as `revision` frames; an entry older than that is corrected only when it is read again. Authorized document channels also emit `canvas_channel_snapshot` and `canvas_event` frames while the room is idle. These carry no frame id or entry seq; `docSeq` belongs only to that physical document, and document replay is independent of the room resume cursor.",
         "parameters": [
           {
             "schema": {
@@ -70071,6 +72272,420 @@
                     },
                     {
                       "$ref": "#/components/schemas/RoomRevisionEvent"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "canvas_event"
+                          ]
+                        },
+                        "scope": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "docSeq": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "incarnation": {
+                          "type": "object",
+                          "properties": {
+                            "v": {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "physicalOpenedAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "channelCreatedAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "generation": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$/u"
+                            }
+                          },
+                          "required": [
+                            "v",
+                            "documentId",
+                            "physicalOpenedAt",
+                            "channelCreatedAt",
+                            "generation"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "event": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                            },
+                            "type": {
+                              "type": "string",
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                            },
+                            "payload": {
+                              "description": "Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit."
+                            },
+                            "direction": {
+                              "type": "string",
+                              "enum": [
+                                "upstream",
+                                "downstream",
+                                "system"
+                              ]
+                            },
+                            "receivedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "type",
+                            "direction",
+                            "receivedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "scope",
+                        "documentId",
+                        "docSeq",
+                        "event"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "canvas_channel_snapshot"
+                          ]
+                        },
+                        "scope": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "snapshot": {
+                          "type": "object",
+                          "properties": {
+                            "routing": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "approvedEventTypes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                                  },
+                                  "maxItems": 2048
+                                },
+                                "destinationLabel": {
+                                  "type": "string",
+                                  "maxLength": 500
+                                }
+                              },
+                              "required": [
+                                "enabled",
+                                "approvedEventTypes",
+                                "destinationLabel"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "incarnation": {
+                              "type": "object",
+                              "properties": {
+                                "v": {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                "documentId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "physicalOpenedAt": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "format": "date-time"
+                                },
+                                "channelCreatedAt": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "format": "date-time"
+                                },
+                                "generation": {
+                                  "type": "string",
+                                  "pattern": "^[a-f0-9]{64}$/u"
+                                }
+                              },
+                              "required": [
+                                "v",
+                                "documentId",
+                                "physicalOpenedAt",
+                                "channelCreatedAt",
+                                "generation"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "state": {
+                              "type": "object",
+                              "additionalProperties": {},
+                              "description": "Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content."
+                            },
+                            "stateRev": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "highWatermark": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "retentionFloor": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "receiptRetentionFloor": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "resetRequired": {
+                              "type": "boolean"
+                            },
+                            "health": {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ready",
+                                    "warning",
+                                    "closed",
+                                    "in_doubt"
+                                  ]
+                                },
+                                "reasons": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "maxItems": 128
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reasons"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "receipts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "receipt": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                                      },
+                                      "status": {
+                                        "type": "string",
+                                        "enum": [
+                                          "recorded",
+                                          "duplicate"
+                                        ]
+                                      },
+                                      "docSeq": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "status",
+                                      "docSeq"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "deliveries": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "eventId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                                        },
+                                        "routeId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "batchId": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "status": {
+                                          "type": "string",
+                                          "enum": [
+                                            "saved",
+                                            "pending",
+                                            "routed",
+                                            "waiting",
+                                            "accepted",
+                                            "turn_started",
+                                            "turn_done",
+                                            "failed",
+                                            "in_doubt",
+                                            "expired",
+                                            "superseded",
+                                            "cancelled",
+                                            "handled",
+                                            "rejected",
+                                            "unavailable"
+                                          ]
+                                        },
+                                        "turnId": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "reason": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "maxLength": 1000
+                                        },
+                                        "nextEligibleAt": {
+                                          "type": "string",
+                                          "format": "date-time"
+                                        },
+                                        "updatedAt": {
+                                          "type": "string",
+                                          "format": "date-time"
+                                        },
+                                        "ackOutcome": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "enum": [
+                                            "handled",
+                                            "rejected",
+                                            null
+                                          ]
+                                        },
+                                        "acknowledgedAt": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "format": "date-time"
+                                        }
+                                      },
+                                      "required": [
+                                        "eventId",
+                                        "routeId",
+                                        "batchId",
+                                        "status",
+                                        "turnId",
+                                        "reason",
+                                        "updatedAt"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 16
+                                  },
+                                  "payloadAvailable": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "receipt",
+                                  "deliveries"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 200
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "stateRev",
+                            "highWatermark",
+                            "retentionFloor",
+                            "receiptRetentionFloor",
+                            "resetRequired",
+                            "health",
+                            "receipts"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "scope",
+                        "documentId",
+                        "snapshot"
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 }
@@ -73595,6 +76210,28 @@
                               },
                               "summary": {
                                 "type": "string"
+                              },
+                              "source": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "extension"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "id",
+                                  "name"
+                                ]
                               }
                             },
                             "required": [
@@ -73760,6 +76397,28 @@
                                 "type": [
                                   "string",
                                   "null"
+                                ]
+                              },
+                              "source": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "extension"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "id",
+                                  "name"
                                 ]
                               }
                             },

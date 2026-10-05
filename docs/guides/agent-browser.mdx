@@ -26,6 +26,28 @@ Agents that browse the web keep running into sign-in pages. With the signed-in b
 
 ## Sign in to a site
 
+### Install the experimental managed browser
+
+On Apple Silicon Macs, you can download and verify the browser files for the experimental managed browser:
+
+```bash
+dorkos browser install
+```
+
+This installs a separate copy of Chromium. It does not turn on the experiment or use your personal Chrome profile.
+
+Check the installed files with:
+
+```bash
+dorkos browser status --runtime
+```
+
+This checks saved files. It does not confirm that an agent can browse yet. Add `--json` to either command for a machine-readable result.
+
+If verification fails, replace the files with `dorkos browser install --repair`. Installation on Windows and Linux is not supported yet.
+
+### Save a sign-in
+
 ```bash
 dorkos browser login github.com
 ```

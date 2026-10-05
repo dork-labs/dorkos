@@ -73,7 +73,7 @@ function linkedTransport(overrides: Partial<Record<string, unknown>> = {}): Tran
 /** The line saying who can buy a plan, with its link to the pricing page's answer. */
 async function findEligibilityLine() {
   const line = await screen.findByText(
-    /Paid plans, and spaces that run on DorkOS for you, are for people in the United States who are 18 or older\./
+    /Paid plans and hosted spaces are for people in the United States, 18 or older\./
   );
   const link = within(line).getByRole('link', { name: 'Who can buy a plan?' });
   expect(link).toHaveAttribute('href', 'https://dorkos.ai/pricing#faq');
@@ -87,7 +87,7 @@ describe('the plan-aware surfaces', () => {
   it('says so plainly when the linked account has no plan to describe', async () => {
     const transport = createMockTransport();
     renderPanel(transport);
-    expect(await screen.findByText(/has no plan details to show yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no plan details to show yet/i)).toBeInTheDocument();
     // No card, no gauge, no seat list — nothing to hide, because nothing rendered.
     expect(screen.queryByText(/your plan/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Included')).not.toBeInTheDocument();

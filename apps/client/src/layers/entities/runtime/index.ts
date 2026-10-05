@@ -11,6 +11,7 @@
 export {
   useRuntimeCapabilities,
   useCapabilitiesForRuntime,
+  useCreditsCaveats,
 } from './model/use-runtime-capabilities';
 export type { UseRuntimeCapabilitiesOptions } from './model/use-runtime-capabilities';
 export { useAccountIdentityGate } from './model/use-account-identity-gate';

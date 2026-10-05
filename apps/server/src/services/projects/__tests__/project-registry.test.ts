@@ -17,11 +17,11 @@ import { MARKETPLACE_STAGE_DIR_MARKER } from '@dorkos/shared/marketplace-schemas
 
 import { KnownProjectsStore } from '../known-projects-store.js';
 import { parseOriginRepo } from '../origin-repo.js';
+import { assignProjectName, sanitizeNameSegment } from '../project-names.js';
 import {
-  assignProjectName,
+  MAX_LOOKUP_ROOTS,
   MAX_REPORTED_ROOTS_PER_EXTENSION,
   ProjectRegistry,
-  sanitizeNameSegment,
   type ProjectRegistryDeps,
 } from '../project-registry.js';
 
@@ -329,6 +329,226 @@ describe('reported roots are second-class', () => {
   });
 });
 
+describe('nameFor', () => {
+  it('answers a known name, or the name a root would get, and records nothing', async () => {
+    const reg = registry({ resolveRoot: async (cwd) => cwd, checkBoundary: async (d) => d });
+    const first = path.join(boundary, 'names-for', 'a', 'app');
+    await reg.resolve(first);
+    expect(reg.nameFor(first)).toBe('app');
+    const second = path.join(boundary, 'names-for', 'b', 'app');
+    expect(reg.nameFor(second)).toBe('app~b');
+    expect(reg.get(second)).toBeUndefined();
+    expect(reg.nameFor(path.join(boundary, 'names-for', 'c', 'fresh'))).toBe('fresh');
+  });
+});
+
+describe("a person's lookups are capped", () => {
+  it(`keeps at most ${MAX_LOOKUP_ROOTS} lookup-only roots, forgetting the least recently used`, async () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    let clock = Date.parse('2026-10-01T00:00:00Z');
+    const reg = registry(
+      {
+        resolveRoot: async (cwd) => cwd,
+        checkBoundary: async (dir) => dir,
+        exists: async () => true,
+        now: () => clock,
+      },
+      db
+    );
+    const dir = (name: string) => path.join(boundary, 'lookups', name);
+    // The oldest rows of all: a seen project and one an extension named.
+    const seen = dir('seen');
+    const named = dir('named');
+    await reg.resolve(seen);
+    await reg.report(named, 'flow');
+    const lookups = Array.from({ length: MAX_LOOKUP_ROOTS }, (_, i) => dir(`l${i}`));
+    for (const lookup of lookups) {
+      clock += 1_000;
+      expect(await reg.resolveWithin(lookup)).not.toBeNull();
+    }
+    // Looking the oldest up again, past the write interval, marks it used.
+    clock += 11 * 60_000;
+    await reg.resolveWithin(lookups[0]);
+
+    const fresh = dir('fresh');
+    expect(await reg.resolveWithin(fresh)).toEqual({ root: fresh, name: 'fresh' });
+
+    const stored = new KnownProjectsStore(db).all().map((p) => p.root);
+    expect(stored).not.toContain(lookups[1]);
+    expect(reg.get(lookups[1])).toBeUndefined();
+    for (const kept of [seen, named, lookups[0], lookups[2], fresh]) expect(stored).toContain(kept);
+    expect(stored).toHaveLength(MAX_LOOKUP_ROOTS + 2);
+
+    // Its name is free again, and a restart sees exactly what was kept.
+    const restarted = registry(
+      { resolveRoot: async (cwd) => cwd, checkBoundary: async (d) => d },
+      db
+    );
+    expect(restarted.get(lookups[1])).toBeUndefined();
+    expect(restarted.get(lookups[0])).toBeDefined();
+  });
+
+  it('never forgets a seen root or one an extension named, however many lookups follow', async () => {
+    const reg = registry({
+      resolveRoot: async (cwd) => cwd,
+      checkBoundary: async (dir) => dir,
+      exists: async () => true,
+    });
+    const dir = (name: string) => path.join(boundary, 'lookups-2', name);
+    await reg.resolve(dir('seen'));
+    await reg.resolveWithin(dir('resolved-by-ext'), 'flow');
+    for (let i = 0; i < MAX_LOOKUP_ROOTS + 50; i++) await reg.resolveWithin(dir(`l${i}`));
+    expect(reg.get(dir('seen'))).toBeDefined();
+    expect(reg.get(dir('resolved-by-ext'))).toBeDefined();
+    expect(reg.get(dir('l0'))).toBeUndefined();
+    expect(reg.get(dir(`l${MAX_LOOKUP_ROOTS + 49}`))).toBeDefined();
+  });
+
+  it('keeps a row storage would not forget, and tries again on the next lookup', async () => {
+    let refuse = true;
+    const removeLookupOnly = vi.fn(() => {
+      if (refuse) throw new Error('disk busy');
+      return true;
+    });
+    const reg = registry({
+      resolveRoot: async (cwd) => cwd,
+      checkBoundary: async (dir) => dir,
+      exists: async () => true,
+    });
+    reg.attachStore({
+      all: () => [],
+      reporters: () => [],
+      insert: vi.fn(),
+      update: vi.fn(),
+      addReporter: vi.fn(),
+      removeLookupOnly,
+    });
+    const dir = (name: string) => path.join(boundary, 'lookups-3', name);
+    for (let i = 0; i <= MAX_LOOKUP_ROOTS; i++) await reg.resolveWithin(dir(`l${i}`));
+    expect(removeLookupOnly).toHaveBeenCalledTimes(1);
+    expect(reg.get(dir('l0'))).toBeDefined();
+    refuse = false;
+    await reg.resolveWithin(dir('next'));
+    expect(reg.get(dir('l0'))).toBeUndefined();
+    expect(reg.get(dir('l1'))).toBeUndefined();
+  });
+
+  it('never forgets a root an account rule names', async () => {
+    const reg = registry({
+      resolveRoot: async (cwd) => cwd,
+      checkBoundary: async (dir) => dir,
+      exists: async () => true,
+    });
+    const dir = (name: string) => path.join(boundary, 'lookups-4', name);
+    reg.protectRoots(() => [dir('l0')]);
+    // l0 does not count against the cap, so it takes one more to go over.
+    for (let i = 0; i <= MAX_LOOKUP_ROOTS + 1; i++) await reg.resolveWithin(dir(`l${i}`));
+    expect(reg.get(dir('l0'))).toBeDefined();
+    expect(reg.get(dir('l1'))).toBeUndefined();
+    expect(reg.get(dir('l2'))).toBeDefined();
+  });
+
+  it('forgets nothing when it cannot read which roots the settings name', async () => {
+    const reg = registry({
+      resolveRoot: async (cwd) => cwd,
+      checkBoundary: async (dir) => dir,
+      exists: async () => true,
+    });
+    const dir = (name: string) => path.join(boundary, 'lookups-5', name);
+    reg.protectRoots(() => {
+      throw new Error('config unreadable');
+    });
+    for (let i = 0; i <= MAX_LOOKUP_ROOTS; i++) await reg.resolveWithin(dir(`l${i}`));
+    expect(reg.get(dir('l0'))).toBeDefined();
+  });
+
+  it('wires the account-rule roots into the registry at boot (index.ts)', () => {
+    const index = readFileSync(path.resolve(import.meta.dirname, '../../../index.ts'), 'utf8');
+    expect(index).toMatch(/projectRegistry\.protectRoots\(\(\) =>\s*accountRuleRoots\(/);
+  });
+
+  it.each([
+    [
+      'seen it',
+      (store: KnownProjectsStore, root: string) => store.update(root, { source: 'seen' }),
+    ],
+    [
+      'had an extension report it',
+      (store: KnownProjectsStore, root: string) =>
+        store.addReporter({ root, extensionId: 'flow', kind: 'report', reportedAt: 'x' }),
+    ],
+  ])(
+    'keeps a row another process %s after this one loaded it, and learns its state',
+    async (_what, meanwhile) => {
+      const db = createDb(':memory:');
+      runMigrations(db);
+      let clock = Date.parse('2026-10-01T00:00:00Z');
+      const reg = registry(
+        {
+          resolveRoot: async (cwd) => cwd,
+          checkBoundary: async (dir) => dir,
+          exists: async () => true,
+          now: () => clock,
+        },
+        db
+      );
+      const dir = (name: string) => path.join(boundary, 'lookups-6', name);
+      for (let i = 0; i < MAX_LOOKUP_ROOTS; i++) {
+        clock += 1_000;
+        await reg.resolveWithin(dir(`l${i}`));
+      }
+      // Another server process on the same database changes the oldest row.
+      const other = new KnownProjectsStore(db);
+      meanwhile(other, dir('l0'));
+
+      await reg.resolveWithin(dir('fresh'));
+
+      const stored = other.all();
+      expect(stored.map((p) => p.root)).toContain(dir('l0'));
+      expect(stored.map((p) => p.root)).not.toContain(dir('l1'));
+      expect(reg.get(dir('l0'))).toBeDefined();
+      expect(reg.get(dir('l1'))).toBeUndefined();
+      // Memory now agrees with storage: l0 no longer counts as a lookup, so
+      // one more lookup brings the count back to the cap and forgets nothing.
+      await reg.resolveWithin(dir('fresh-2'));
+      expect(reg.get(dir('l0'))).toBeDefined();
+      expect(reg.get(dir('l2'))).toBeDefined();
+    }
+  );
+
+  it('never forgets a root an extension is naming at that moment', async () => {
+    let clock = Date.parse('2026-10-01T00:00:00Z');
+    const reg = registry({
+      resolveRoot: async (cwd) => cwd,
+      checkBoundary: async (dir) => dir,
+      exists: async () => true,
+      now: () => clock,
+    });
+    const dir = (name: string) => path.join(boundary, 'lookups-7', name);
+    for (let i = 0; i < MAX_LOOKUP_ROOTS; i++) {
+      clock += 1_000;
+      await reg.resolveWithin(dir(`l${i}`));
+    }
+    // The extension's root is the oldest of all, and it is in memory (inserted)
+    // but still being recorded and still holding the extension's slot when
+    // the change listener runs. Forgetting there is the in-flight window.
+    const named = dir('in-flight');
+    clock = Date.parse('2026-01-01T00:00:00Z');
+    const forget = (reg as unknown as { forgetOldLookups(keep: string): void }).forgetOldLookups;
+    let ran = false;
+    reg.onChange(() => {
+      if (ran || reg.get(named) === undefined) return;
+      ran = true;
+      forget.call(reg, '');
+    });
+    expect(await reg.resolveWithin(named, 'flow')).toEqual({ root: named, name: 'in-flight' });
+    expect(ran).toBe(true);
+    expect(reg.get(named)).toBeDefined();
+    for (let i = 0; i < MAX_LOOKUP_ROOTS; i++) expect(reg.get(dir(`l${i}`))).toBeDefined();
+  });
+});
+
 describe('the cap under concurrency, and a clash from another process', () => {
   it(`records at most ${MAX_REPORTED_ROOTS_PER_EXTENSION} of 300 roots named at once`, async () => {
     const db = createDb(':memory:');
@@ -370,6 +590,7 @@ describe('the cap under concurrency, and a clash from another process', () => {
       },
       update: vi.fn(),
       addReporter: vi.fn(),
+      removeLookupOnly: vi.fn(() => true),
     });
     const dirs = Array.from({ length: MAX_REPORTED_ROOTS_PER_EXTENSION }, (_, i) =>
       path.join(boundary, 'slots', `r${i}`)
@@ -531,6 +752,7 @@ describe('boot order and naming', () => {
       insert,
       update: vi.fn(),
       addReporter: vi.fn(),
+      removeLookupOnly: vi.fn(() => true),
     });
     const root = repo('home', 'refused', 'app');
     await expect(reg.resolve(root)).rejects.toThrow('disk full');

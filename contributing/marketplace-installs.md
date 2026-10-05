@@ -93,6 +93,7 @@ apps/server/src/services/marketplace/
 ├── consent/                     # Global-plugin consent and held-back packages
 ├── telemetry/                   # Install events, install counts, updated-at
 ├── recovery/                    # Crash recovery and the backup janitor
+├── dev-links/                   # Dev links (DOR-2696): run a package from a folder; registry, service, consent
 ├── package-resolver.ts          # name@source → resolved source descriptor
 ├── package-fetcher.ts           # Verified git fetch through the cache + marketplace.json fetch
 ├── transaction.ts               # Stage → activate → cleanup/rollback engine
@@ -112,7 +113,7 @@ apps/server/src/services/marketplace/
     └── (sample packages used by integration tests)
 ```
 
-The HTTP surface is `apps/server/src/routes/marketplace.ts`, which builds the router from one module per route group under `routes/marketplace/`: `sources`, `installed`, `cache`, `packages`, `package-actions` (preview, install, check-files, uninstall, update), `updates` and `held-back`, plus `context.ts` (the tier gate and the approval asks every group shares) and `shared.ts` (request schemas and error mapping). The CLI subcommands live at `packages/cli/src/commands/{install,uninstall,update,marketplace-*,cache-*}.ts`.
+The HTTP surface is `apps/server/src/routes/marketplace.ts`, which builds the router from one module per route group under `routes/marketplace/`: `sources`, `installed`, `cache`, `packages`, `package-actions` (preview, install, check-files, uninstall, update), `updates`, `held-back` and `dev-links`, plus `context.ts` (the tier gate and the approval asks every group shares) and `shared.ts` (request schemas and error mapping). The CLI subcommands live at `packages/cli/src/commands/{install,uninstall,update,marketplace-*,cache-*}.ts`. `marketplace-link.ts` and `marketplace-unlink.ts` drive the `/dev-links` routes (DOR-2696): `link` sends the folder's real path to `/dev-links/preview`, asks, then posts `/dev-links` with `via: 'terminal'`; an agent (whose `X-DorkOS-Agent` header the API client always sends) skips the local question and gets the 202 approval card, and the printed retry repeats the folder, `--project` and `--replace-installed` because the approval is bound to all three. `dorkos doctor` reads the dev-link registry straight from disk (`checkDevLinks`); `GET /api/health/deep` returns the same verdict (`judgeDevLinks` in `@dorkos/shared/marketplace-schemas`) without folder or project paths.
 
 ## 4. The install flows
 
@@ -238,6 +239,18 @@ An AGENT's HTTP install of a global package of an activated type that runs anyth
 - A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'HEAD'` (`'main'` in sidecars written before DOR-2248, which `resolvedFromSourceKey` reads as `HEAD` and `matchesRecordedKey` accepts against `HEAD`), `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
 
 The update flow never changes an installed package on its own. Anything that mutates installed state lives inside the installer's transaction. A check may stage a new version into the package cache, as the per-package advisory always has.
+
+### Dev links (`dev-links/`, DOR-2696)
+
+A dev link runs a plugin or skill pack straight from a folder on the owner's computer, reloading on every edit. It is its own install kind, not an install: nothing is staged, recorded in an installed-files record, or counted in telemetry.
+
+- **What it is on disk.** A symlink (a junction on Windows) in the package's normal slot (`{dorkHome}/plugins/<name>` or `<project>/.dork/plugins/<name>`), plus a record in `{dorkHome}/marketplace/dev-links.json` (`DevLinksFileSchema`) that DorkOS writes only on a person's yes. A slot counts as dev-linked only while the record exists, the slot is a link, and its realpath equals the recorded target (`isActiveDevLink`). A link nobody recorded is a **hand-built linked install** (DOR-2194, the record's `linked: true`) and keeps its old behaviour; the two are never set together.
+- **The installed copy is set aside, never deleted.** Linking over an installed copy needs `replaceInstalled: true` (the app's "Use my folder instead of the installed copy" tick, the CLI's `--replace-installed`). The copy is renamed to `<slot>.dorkos-devlink-parked` (`MARKETPLACE_DEVLINK_PARKED_MARKER`), its approvals captured in the record, and both come back on unlink. Every scanner skips the parked sibling.
+- **Guards.** Install, update and uninstall refuse a registered dev link with `package_is_dev_linked` ("Unlink it first"). The update check reports it as unchecked, and the Installed view leaves it out of the update summary.
+- **Trust.** A dev-linked copy never has a trusted origin (`originProblem: 'dev-link'`), and its approvals carry `devLink: <realpath>`, so no approval crosses between it and an installed copy at the same path.
+- **One door, gated.** Linking is the `marketplace.link` capability (destructive, no permission area): the app and the terminal run it, an agent gets an approval card naming the folder. `POST /dev-links` binds a person's yes to the preview text they read: the app and the CLI send the preview's `change` back as `expectedChange`, and a folder that describes differently by then is refused with `dev_link_changed`. Unlinking is the person's only (`trustedCaller`); its answer says exactly what happened (`restored`, and `parkedLeftAt` or `leftInPlace` when the installed copy could not come back or something else had taken the slot).
+- **Reload.** `DevLinkWatcher` debounces edits in the folder and drives the existing seams (extension reload, harness re-projection, plugin refresh), then broadcasts `marketplace_dev_link_reloaded` to the operator on the global stream.
+- **In the app.** The Installed toolbar's "Link a folder" opens `LinkFolderDialog` (features/marketplace). Dev-linked rows, the package sheet, the browse card, Settings → Extensions (`ExtensionCard`) and the `/x/<id>` page strip (`widgets/extension-page/ui/DevLinkStrip.tsx`) show the `DevLinkTag` and `DevLinkPath` primitives from `shared/ui`. `useDevLinkReloadSync` (entities/marketplace, mounted by the app shell) keeps the last reload event per link, so a row can say "Reloaded 4s ago" or that a build failed, and refreshes the installed, dev link and extension lists.
 
 ## 5. Transaction lifecycle
 
@@ -651,27 +664,31 @@ If the new type introduces its own collision class (e.g. theme IDs must be globa
 
 All endpoints mount under `/api/marketplace/*`. The router factory is `createMarketplaceRouter(deps)` in `apps/server/src/routes/marketplace.ts`. Every response is JSON.
 
-| Method | Path                          | Body                                                         | Response                                                                                                                                      |
-| ------ | ----------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/sources`                    | —                                                            | `{ sources: (MarketplaceSource & { lastFetch })[] }`; `lastFetch` is `never` / `fetched` / `failed` / `stale` (DOR-2324)                      |
-| POST   | `/sources`                    | `{ name, source, enabled? }`                                 | `MarketplaceSource & { listing }` (201); `listing` is `{ fetched: true, packageCount }` or `{ fetched: false, reason }`                       |
-| DELETE | `/sources/:name`              | —                                                            | 204; also forgets the source's cached listing (`MarketplaceCache.removeMarketplace`) and the update memos                                     |
-| POST   | `/sources/:name/refresh`      | —                                                            | `{ marketplace, fetchedAt, stale, reason? }`; unreachable with a cached copy → `stale: true`; nothing cached → 502                            |
-| GET    | `/installed`                  | `?projectPath=<path>`                                        | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16                                                                          |
-| GET    | `/installed/:name`            | —                                                            | `{ installations: InstalledPackage[] }` — one per scope; see §16                                                                              |
-| GET    | `/cache`                      | —                                                            | `{ marketplaces, packages, totalSizeBytes, cleanup: { paused, reason, since } }`                                                              |
-| DELETE | `/cache`                      | —                                                            | 204                                                                                                                                           |
-| POST   | `/cache/prune`                | — (no options)                                               | `{ removed: [{ packageName, commitSha, path, lastUsedAt }], freedBytes }`; 503 when it cannot read every install                              |
-| GET    | `/packages`                   | —                                                            | `{ packages: AggregatedPackage[] }`                                                                                                           |
-| GET    | `/packages/:name`             | `?marketplace=<name>`                                        | `{ manifest, packagePath, preview, disclosed }`                                                                                               |
-| POST   | `/packages/:name/preview`     | `InstallRequestBody`                                         | `{ preview, manifest, packagePath, disclosed }` — `disclosed` is what an install is held to                                                   |
-| POST   | `/packages/:name/install`     | `InstallRequestBody`                                         | `InstallResult`                                                                                                                               |
-| POST   | `/packages/:name/uninstall`   | `{ purge?, projectPath? }`                                   | `UninstallResult`                                                                                                                             |
-| POST   | `/packages/:name/check-files` | `{ projectPath?, installRoot? }`                             | `{ outcome, message }`: records an older install's files from its exact commit, sorts files an update kept unproven, or says why not (§5.3)   |
-| POST   | `/packages/:name/keep-files`  | `{ keepKey, review?, projectPath?, installRoot? }`           | `{ outcome, message, files?, approved? }`: a person keeps files an update couldn't sort as theirs; 403 for anyone else, 409 when they changed |
-| POST   | `/packages/:name/update`      | `{ projectPath? }` (strict)                                  | `UpdateResult` — advisory only                                                                                                                |
-| GET    | `/updates`                    | `?projectPath=<path>`                                        | `{ checks: InstallationUpdateCheck[] }` — advisory, one per installation, each newer version with `disclosed`                                 |
-| POST   | `/updates`                    | `{ apply: true, targets, projectPath?, confirmationToken? }` | `{ checks }` with `applied` / `applyError`; 202 card for an agent; 409 `disclosure_changed`                                                   |
+| Method | Path                          | Body                                                         | Response                                                                                                                                             |
+| ------ | ----------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/sources`                    | —                                                            | `{ sources: (MarketplaceSource & { lastFetch })[] }`; `lastFetch` is `never` / `fetched` / `failed` / `stale` (DOR-2324)                             |
+| POST   | `/sources`                    | `{ name, source, enabled? }`                                 | `MarketplaceSource & { listing }` (201); `listing` is `{ fetched: true, packageCount }` or `{ fetched: false, reason }`                              |
+| DELETE | `/sources/:name`              | —                                                            | 204; also forgets the source's cached listing (`MarketplaceCache.removeMarketplace`) and the update memos                                            |
+| POST   | `/sources/:name/refresh`      | —                                                            | `{ marketplace, fetchedAt, stale, reason? }`; unreachable with a cached copy → `stale: true`; nothing cached → 502                                   |
+| GET    | `/installed`                  | `?projectPath=<path>`                                        | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16                                                                                 |
+| GET    | `/installed/:name`            | —                                                            | `{ installations: InstalledPackage[] }` — one per scope; see §16                                                                                     |
+| GET    | `/cache`                      | —                                                            | `{ marketplaces, packages, totalSizeBytes, cleanup: { paused, reason, since } }`                                                                     |
+| DELETE | `/cache`                      | —                                                            | 204                                                                                                                                                  |
+| POST   | `/cache/prune`                | — (no options)                                               | `{ removed: [{ packageName, commitSha, path, lastUsedAt }], freedBytes }`; 503 when it cannot read every install                                     |
+| GET    | `/packages`                   | —                                                            | `{ packages: AggregatedPackage[] }`                                                                                                                  |
+| GET    | `/packages/:name`             | `?marketplace=<name>`                                        | `{ manifest, packagePath, preview, disclosed }`                                                                                                      |
+| POST   | `/packages/:name/preview`     | `InstallRequestBody`                                         | `{ preview, manifest, packagePath, disclosed }` — `disclosed` is what an install is held to                                                          |
+| POST   | `/packages/:name/install`     | `InstallRequestBody`                                         | `InstallResult`                                                                                                                                      |
+| POST   | `/packages/:name/uninstall`   | `{ purge?, projectPath? }`                                   | `UninstallResult`                                                                                                                                    |
+| POST   | `/packages/:name/check-files` | `{ projectPath?, installRoot? }`                             | `{ outcome, message }`: records an older install's files from its exact commit, sorts files an update kept unproven, or says why not (§5.3)          |
+| POST   | `/packages/:name/keep-files`  | `{ keepKey, review?, projectPath?, installRoot? }`           | `{ outcome, message, files?, approved? }`: a person keeps files an update couldn't sort as theirs; 403 for anyone else, 409 when they changed        |
+| POST   | `/packages/:name/update`      | `{ projectPath? }` (strict)                                  | `UpdateResult` — advisory only                                                                                                                       |
+| GET    | `/updates`                    | `?projectPath=<path>`                                        | `{ checks: InstallationUpdateCheck[] }` — advisory, one per installation, each newer version with `disclosed`                                        |
+| POST   | `/updates`                    | `{ apply: true, targets, projectPath?, confirmationToken? }` | `{ checks }` with `applied` / `applyError`; 202 card for an agent; 409 `disclosure_changed`                                                          |
+| GET    | `/dev-links`                  | —                                                            | Every dev link and whether it is in force                                                                                                            |
+| POST   | `/dev-links/preview`          | `{ path, scope, projectPath? }`                              | What linking that folder would do                                                                                                                    |
+| POST   | `/dev-links`                  | `{ path, scope, projectPath?, replaceInstalled?, via? }`     | The new link's status (201); gated by `marketplace.link`, so an agent gets an approval card                                                          |
+| POST   | `/dev-links/:name/unlink`     | `{ scope, projectPath? }`                                    | `DevUnlinkResult`: `restored` is `installed` (the set-aside copy is back) or `removed`; the person only (403 for an agent). Never deletes the folder |
 
 Where `InstallRequestBody` is:
 
@@ -869,7 +886,7 @@ The manifest at `apps/server/src/core-extensions/marketplace/extension.json` is 
 The Marketplace UI follows the standard FSD layout under `apps/client/src/`:
 
 - `layers/entities/marketplace/` — TanStack Query hooks (list, detail, permission preview, install, uninstall, update, sources) plus the `marketplaceKeys` cache-key factory in `api/query-keys.ts`.
-- `layers/features/marketplace/` — UI components: `Marketplace`, `PackageGrid`, `PackageCard`, `PackageDetailSheet`, `PermissionPreviewSection`, `InstallConfirmationDialog`, `InstalledPackagesView`, `MarketplaceSourcesView`, plus the `useMarketplaceStore` Zustand store under `model/marketplace-store.ts`.
+- `layers/features/marketplace/` — UI components: `Marketplace`, `PackageGrid`, `PackageCard`, `PackageDetailSheet`, `PermissionPreviewSection`, `InstallConfirmationDialog`, `InstalledPackagesView`, `MarketplaceSourcesView`, the dev-link surfaces (`LinkFolderDialog`, `UnlinkDialog`, `DevLinkRow`), plus the `useMarketplaceStore` Zustand store under `model/marketplace-store.ts`.
 - `layers/widgets/marketplace/` — Page shells (`MarketplacePage`, `MarketplaceSourcesPage`).
 - `layers/shared/lib/transport/marketplace-methods.ts` — `marketplaceMethods` factory wired into `HttpTransport`.
 - `packages/shared/src/marketplace-schemas.ts` — shared types (`AggregatedPackage`, `MarketplacePackageDetail`, `PermissionPreview`, etc.) consumed by both client and server.
@@ -885,6 +902,7 @@ Always import from the layer barrels (`index.ts`), never internal paths — the 
 - `marketplaceKeys.permissionPreview(name)` — permission preview for a target package.
 - `marketplaceKeys.installed()` — currently installed packages.
 - `marketplaceKeys.sources()` — configured marketplace sources.
+- `marketplaceKeys.devLinks()` — every dev link and its state (under the `installed` prefix, so anything that refreshes the installed list refreshes it).
 
 Install, uninstall, update, add-source, and remove-source mutations invalidate the appropriate keys on success. See `contributing/state-management.md` for the broader Zustand-vs-TanStack-Query rationale.
 

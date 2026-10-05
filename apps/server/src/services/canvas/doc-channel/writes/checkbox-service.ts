@@ -25,7 +25,7 @@ import { prepareCheckboxBytes, rawByteHash } from './checkbox-bytes.js';
 import { CheckboxWriteFence } from './checkbox-fence.js';
 import { DocCheckboxAuthority, type CheckboxReservationSubject } from './authority.js';
 import { createOriginalCheckboxCompletion } from './completion.js';
-import type { DocIngestLimits } from '../accounting.js';
+import type { DocIngestLimits } from '../current/accounting.js';
 import {
   UNRESOLVED_CHECKBOX_STATUSES,
   VerifiedCheckboxAuthoritySchema,

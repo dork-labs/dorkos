@@ -76,8 +76,17 @@ export interface InboxDecisionRowProps {
   why?: string;
   /** The muted mono line: "flow plugin · dork-labs/marketplace", or the extension's name. */
   sourceLine?: string;
-  /** A muted line of timing: "since 09:14 · asked after 1h". */
+  /**
+   * A muted line under the why: timing ("since 09:14 · asked after 1h"), or a
+   * short fact about what is asked ("Would give agents 3 tools and 1 skill").
+   */
   meta?: string;
+  /**
+   * Lines read before the answer, drawn under `meta`: what an extension can
+   * reach ("Runs separately from DorkOS.", "Can connect to: …"). Kept on the
+   * row, never behind ⓘ, because a yes has to be given to what it lists.
+   */
+  details?: ReactNode;
   /** A line that needs the reader: "The agent couldn't go ahead. It needs you." */
   notice?: string;
   /**
@@ -107,6 +116,8 @@ export interface InboxDecisionRowProps {
    * survive the row being drawn again, e.g. when the inbox regroups by project.
    */
   draftKey?: string;
+  /** An id for the title's text, so a container can name itself after it. */
+  titleId?: string;
 }
 
 /** Drafts typed into a row's fields, kept across a row being drawn again. */
@@ -225,7 +236,7 @@ function InlineAnswer({
       />
       {failed && (
         <p role="alert" className="text-status-error-fg text-[11px]">
-          That didn’t go through. Your text is still here; try again.
+          Couldn’t send. Try again.
         </p>
       )}
       <div className="flex items-center justify-end gap-1.5">
@@ -291,6 +302,7 @@ export function InboxDecisionRow({
   why,
   sourceLine,
   meta,
+  details,
   notice,
   trail,
   more,
@@ -301,6 +313,7 @@ export function InboxDecisionRow({
   followUp,
   unread = false,
   draftKey,
+  titleId,
 }: InboxDecisionRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [answering, setAnswering] = useState<'note' | 'word' | 'reply' | null>(null);
@@ -326,10 +339,10 @@ export function InboxDecisionRow({
       onClick={onOpen}
       className="hover:text-foreground focus-visible:ring-ring rounded-sm text-left outline-none hover:underline focus-visible:ring-2"
     >
-      <bdi>{title}</bdi>
+      <bdi id={titleId}>{title}</bdi>
     </button>
   ) : (
-    <bdi>{title}</bdi>
+    <bdi id={titleId}>{title}</bdi>
   );
 
   const watchLine = watch ? (
@@ -398,6 +411,7 @@ export function InboxDecisionRow({
             </p>
           )}
           {meta && <p className="text-muted-foreground mt-0.5 text-[11px]">{meta}</p>}
+          {details && <div className="mt-1">{details}</div>}
           {watchLine && <p className="mt-0.5 text-[11px]">{watchLine}</p>}
           {sourceLine && (
             <p className="text-muted-foreground mt-0.5 truncate font-mono text-[11px]">
@@ -568,7 +582,7 @@ export function InboxDecisionRow({
               responsive={false}
               onClick={followUp.onAccept}
             >
-              Yes
+              Always do this
             </Button>
             <Button
               type="button"

@@ -34,6 +34,8 @@ import path from 'path';
 import { WorkbenchProbeRequestSchema, WorkbenchSignRequestSchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import { WORKBENCH } from '../config/constants.js';
+import { injectFrameScripts } from '../services/workbench-serve/frame-inject.js';
 import { getTunnelHost, parseHostname, resolveAuthTrustedOrigins } from '../lib/trusted-origins.js';
 import {
   workbenchTokenSigner,
@@ -41,7 +43,6 @@ import {
   PreviewPortExhaustedError,
   previewListeners,
   probeLoopbackPort,
-  injectDevtoolsScript,
   PREVIEW_BOOTSTRAP_PARAM,
 } from '../services/workbench-serve/index.js';
 
@@ -277,24 +278,43 @@ async function handleServe(req: Request, res: Response) {
   // let it leak to any onward navigation/subresource via the Referer header.
   res.setHeader('Referrer-Policy', 'no-referrer');
 
-  // Inject the DevTools capture shim into HTML only (DOR-213): read the (small)
-  // document, insert the inline shim as the first <head> child, and send it with
-  // a recomputed Content-Length. Every other content-type streams byte-for-byte
-  // unchanged. A page whose own CSP forbids inline scripts simply refuses ours.
-  if (contentType?.startsWith('text/html')) {
-    let injected: string;
+  // Bounded raw bytes: unsupported encoding/markup/CSP is served without SDKs.
+  // Never decode an oversized file or let growth after stat cause an unbounded read.
+  let knownLength = true;
+  if (contentType?.startsWith('text/html') && size <= WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) {
     try {
-      injected = injectDevtoolsScript(await fs.readFile(resolved, 'utf8'));
+      const file = await fs.open(resolved, 'r');
+      let raw: Buffer;
+      try {
+        const buffer = Buffer.alloc(WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES + 1);
+        let count = 0;
+        while (count < buffer.length) {
+          const { bytesRead } = await file.read(buffer, count, buffer.length - count, count);
+          if (bytesRead === 0) break;
+          count += bytesRead;
+        }
+        raw = buffer.subarray(0, count);
+      } finally {
+        await file.close();
+      }
+      if (raw.length <= WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES) {
+        const enforcingPolicies = Object.entries(res.getHeaders())
+          .filter(([key]) => key.toLowerCase() === 'content-security-policy')
+          .flatMap(([, value]) => (Array.isArray(value) ? value.map(String) : [String(value)]));
+        const decision = injectFrameScripts(raw, { contentType, enforcingPolicies });
+        res.setHeader('Content-Length', decision.bytes.length);
+        res.end(decision.bytes);
+        return;
+      }
+      // A growing file exceeded the cap: stream unchanged without a stale stat length.
+      knownLength = false;
     } catch (err) {
       logger.error('[workbench-serve] serve read/inject failed', { err, resolved });
       return res.status(500).json({ error: 'Internal server error' });
     }
-    res.setHeader('Content-Length', Buffer.byteLength(injected));
-    res.end(injected);
-    return;
   }
 
-  res.setHeader('Content-Length', size);
+  if (knownLength) res.setHeader('Content-Length', size);
   const stream = createReadStream(resolved);
   stream.on('error', (err) => {
     logger.error('[workbench-serve] serve stream failed', { err, resolved });

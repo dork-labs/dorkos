@@ -187,7 +187,7 @@ describe('the current link', () => {
     // is read on mount, the layouts hydrate after, and an agent nobody has
     // opened hydrates CLOSED. The panel was opened and shut on the same frame.
     localStorage.setItem(
-      'dorkos-right-panel-layouts',
+      'dorkos-right-panel-layouts-v2',
       JSON.stringify({ [AGENT]: { open: false, activeTab: 'files', accessedAt: 1 } })
     );
     const harness = renderHooks(`/?panel=profile&agentPath=${encodeURIComponent(AGENT)}`);

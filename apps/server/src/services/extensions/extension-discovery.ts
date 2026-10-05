@@ -1,7 +1,8 @@
 import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
-import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { ExtensionManifestSchema, NO_SERVER_CODE_TO_ISOLATE } from '@dorkos/extension-api';
+import { checkDeclaredTools, summarizeToolCheck } from '@dorkos/extension-api/tool-check';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { ExtensionRecord, ExtensionManifest } from '@dorkos/extension-api';
 import {
@@ -11,6 +12,7 @@ import {
 } from './extension-enable-resolution.js';
 import { isApprovedCopy, isFromTrustedSource } from './extension-load-policy.js';
 import { mergePluginRecords, type DiscoveredRecord } from './extension-precedence.js';
+import { checkDeclaredSkills } from './agent-skills/skill-checks.js';
 import {
   inspectCopy,
   installRootOf,
@@ -18,7 +20,9 @@ import {
   readTrustedInstalls,
   type CopyOnDisk,
 } from './extension-trusted-origin.js';
+import { activeDevLinks, canonicalSlotPath } from '../marketplace/dev-links/registry.js';
 import { logger } from '../../lib/logger.js';
+import { isolationOf } from './isolation/isolation-view.js';
 import {
   satisfiesMinHostVersion,
   RUNNING_HOST_VERSION,
@@ -131,9 +135,15 @@ export class ExtensionDiscovery {
     // Where each plugin-carried copy provably came from (§9.1): only from this
     // machine's own install records, never from a file inside the project.
     const installs = await readTrustedInstalls(this.dorkHome);
+    // Plugins that run from a folder a person linked (DOR-2696): no origin, no
+    // digest, only an approval given to that dev link. Read once per pass.
+    const devLinked = await this.devLinkedRoots(pluginRecords);
     // One walk per plugin folder per scan, however many extensions it carries.
+    // A dev-linked folder is never walked: it has no digest to compare, and a
+    // working folder can hold a whole `node_modules`.
     const copies = new Map<string, DiscoveredRecord>();
     for (const rec of pluginRecords) {
+      if (devLinked.has(installRootOf(rec.path))) continue;
       const key = `${rec.scope}:${installRootOf(rec.path)}`;
       if (!copies.has(key)) copies.set(key, rec);
     }
@@ -159,11 +169,21 @@ export class ExtensionDiscovery {
       const result = inspected.get(key)!;
       if (!result.ok) throw result.reason;
     }
+    const devRoots = new Set(devLinked.keys());
     for (const rec of pluginRecords) {
-      const result = inspected.get(`${rec.scope}:${installRootOf(rec.path)}`)!;
-      if (!result.ok) throw result.reason;
-      const onDisk = result.value;
-      const proof = proveOrigin(rec, installs, onDisk);
+      const target = devLinked.get(installRootOf(rec.path));
+      let onDisk: CopyOnDisk;
+      if (target !== undefined) {
+        // Never inspected (above): `proveOrigin` answers `dev-link` for it
+        // before it would look at the folder at all.
+        rec.devLink = { path: target };
+        onDisk = { folder: { kind: 'clean' } };
+      } else {
+        const result = inspected.get(`${rec.scope}:${installRootOf(rec.path)}`)!;
+        if (!result.ok) throw result.reason;
+        onDisk = result.value;
+      }
+      const proof = proveOrigin(rec, installs, onDisk, devRoots);
       if (proof.origin) {
         rec.trustedOrigin = proof.origin;
         if (proof.pinnedDigest) rec.pinnedDigest = proof.pinnedDigest;
@@ -352,6 +372,30 @@ export class ExtensionDiscovery {
       roots.push({ root: project, isCwd: false });
     }
     return roots;
+  }
+
+  /**
+   * The plugin install roots among these copies that are dev links in force,
+   * each mapped to the folder it runs from. Matched on the slot's canonical
+   * spelling, because a project may be named through a link of its own.
+   *
+   * @param pluginRecords - Every plugin-carried copy this pass found.
+   * @returns Install root (as {@link installRootOf} spells it) to the dev link's folder.
+   */
+  private async devLinkedRoots(
+    pluginRecords: readonly DiscoveredRecord[]
+  ): Promise<Map<string, string>> {
+    const found = new Map<string, string>();
+    const active = await activeDevLinks(this.dorkHome);
+    if (active.length === 0) return found;
+    const bySlot = new Map(active.map((link) => [link.slot, link.target]));
+    for (const rec of pluginRecords) {
+      const root = installRootOf(rec.path);
+      if (found.has(root)) continue;
+      const target = bySlot.get(await canonicalSlotPath(root));
+      if (target !== undefined) found.set(root, target);
+    }
+    return found;
   }
 
   /**
@@ -548,6 +592,44 @@ export class ExtensionDiscovery {
       const manifest = result.data;
       const { hasServerEntry, resolvedPath } = await this.detectServerEntry(extDir, manifest);
       const hasDataProxy = !!manifest.dataProxy;
+      // Every declared tool is judged here, before any code runs, so a card
+      // can say which tool was refused and why (DOR-2685). The lifecycle runs
+      // the same check again when it binds handlers.
+      const toolChecks = manifest.tools?.length
+        ? checkDeclaredTools(manifest).map(summarizeToolCheck)
+        : undefined;
+      // Each declared skill is checked against its folder by the harness's own
+      // rules, so the card can say which skill is left out before any sync.
+      const skillChecks = checkDeclaredSkills(extDir, manifest);
+
+      // An extension asking to run separately needs server code to run
+      // (DOR-2686). The schema cannot see the disk, so the check is here: a
+      // dataProxy-only folder declaring it would otherwise be "isolated" with
+      // nothing in it.
+      if (manifest.serverCapabilities?.runtime === 'subprocess' && !hasServerEntry) {
+        return {
+          id: manifest.id,
+          manifest,
+          status: 'invalid',
+          scope,
+          path: extDir,
+          error: {
+            code: 'invalid_manifest',
+            message: 'Manifest validation failed',
+            details: NO_SERVER_CODE_TO_ISOLATE,
+          },
+          bundleReady: false,
+          hasServerEntry: false,
+          hasDataProxy,
+          isolation: null,
+        };
+      }
+      // Where it runs and what it may reach, with each `allow.run` entry
+      // resolved to the program it means here. Looking only: nothing runs.
+      const isolation = await isolationOf(manifest, {
+        dorkHome: this.dorkHome,
+        extensionDir: extDir,
+      });
 
       return {
         id: manifest.id,
@@ -559,6 +641,9 @@ export class ExtensionDiscovery {
         hasServerEntry,
         hasDataProxy,
         serverEntryPath: hasServerEntry ? resolvedPath : undefined,
+        ...(toolChecks ? { toolChecks } : {}),
+        isolation,
+        ...(skillChecks ? { skillChecks } : {}),
       };
     } catch (err) {
       return {

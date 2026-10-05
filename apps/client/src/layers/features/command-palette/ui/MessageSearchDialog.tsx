@@ -166,12 +166,12 @@ export function MessageSearchDialog() {
           const status = (err as { status?: number } | null)?.status;
           if (status === 404) {
             toast.info('That folder is gone', {
-              description: `You can still read this conversation, but ${path} no longer exists, so nothing new can run there.`,
+              description: `${path} is gone, so nothing new can run there. You can still read it.`,
             });
             return;
           }
-          toast.info('DorkOS could not open that folder', {
-            description: `Something stopped DorkOS reading ${path}. The conversation may not open.`,
+          toast.info('Couldn’t open that folder', {
+            description: `DorkOS couldn’t read ${path}. The conversation may not open.`,
           });
         });
       }

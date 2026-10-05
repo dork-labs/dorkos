@@ -66,6 +66,7 @@ export const SWEEP_REASONS = {
   'global-skill-gone': 'The package this skill came from no longer has a skill of this name.',
   'global-folder-unshared':
     'You stopped sharing your all-projects packages with the agent tools that read this folder.',
+  'global-extension-stopped': 'The extension this skill came from is not running any more.',
 } as const satisfies Record<string, string>;
 
 /** Which sweep found a path — the whole of what decides its reason. */

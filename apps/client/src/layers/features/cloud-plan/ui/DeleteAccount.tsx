@@ -142,8 +142,7 @@ export function DeleteAccount() {
           <ResponsiveDialogHeader>
             <ResponsiveDialogTitle>Delete your DorkOS account?</ResponsiveDialogTitle>
             <ResponsiveDialogDescription>
-              This can’t be undone. We’ll email you a link to finish, and nothing is deleted until
-              you follow it.
+              This can’t be undone. Nothing is deleted until you follow the emailed link.
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
           <ResponsiveDialogBody>
@@ -160,8 +159,10 @@ export function DeleteAccount() {
               <div className="space-y-1">
                 <p className="font-medium">What stays</p>
                 <p className="text-muted-foreground">
-                  Everything on this computer: your agents, sessions, projects and files. This
-                  computer unlinks and keeps working on its own.
+                  Everything on this computer: your agents, sessions, projects and files.
+                </p>
+                <p className="text-muted-foreground">
+                  This computer unlinks and keeps working on its own.
                 </p>
               </div>
               <ExportAccountData heading="Want a copy first?" />
@@ -217,10 +218,14 @@ function SentText({ sentTo, confirmBy }: { sentTo: string; confirmBy: string | n
   const until = confirmBy === null ? null : formatConfirmBy(confirmBy);
   return (
     <>
-      Check your email. We sent a link to <span className="font-medium">{sentTo}</span>. Your
-      account is deleted only when you follow it
-      {until === null ? '.' : `, and the link works until ${until}.`} When you do, this computer
-      unlinks on its own.
+      <span className="block">
+        Check your email. A link went to <span className="font-medium">{sentTo}</span>.
+      </span>{' '}
+      <span className="block">
+        Your account is deleted only when you follow it
+        {until === null ? '.' : `, and the link works until ${until}.`}
+      </span>{' '}
+      <span className="block">This computer then unlinks on its own.</span>
     </>
   );
 }

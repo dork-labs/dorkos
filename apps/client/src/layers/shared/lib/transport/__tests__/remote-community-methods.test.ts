@@ -155,7 +155,7 @@ describe('qualified remote community transport', () => {
     stream(pending);
     await expect(
       methods().subscribeRemoteCommunityRoom('community-a', 'same-id', vi.fn())
-    ).rejects.toThrow('begin with a snapshot');
+    ).rejects.toThrow('before the room loaded');
     const foreign = stream(snapshot, { ...pending, community: 'community-b' });
     await expect(
       methods().subscribeRemoteCommunityRoom('community-a', 'same-id', vi.fn())
@@ -318,7 +318,7 @@ describe('qualified remote community transport', () => {
     stream({ type: 'entry', entry });
     await expect(
       methods().subscribeRemoteCommunityRoom('community-a', 'same-id', vi.fn())
-    ).rejects.toThrow('snapshot');
+    ).rejects.toThrow('before the room loaded');
     const { cancel } = stream({
       type: 'closed',
       community: 'community-a',

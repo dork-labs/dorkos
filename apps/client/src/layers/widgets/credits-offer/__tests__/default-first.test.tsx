@@ -31,15 +31,18 @@ const AUTH: DependencyCheck = {
   status: 'missing',
 };
 
-/** Requirements with Claude Code in the given sign-in state. */
-function requirements(signIn: 'none' | 'expired' | 'working'): SystemRequirements {
+/** Requirements with a runtime (Claude Code unless named) in the given sign-in state. */
+function requirements(
+  signIn: 'none' | 'expired' | 'working',
+  runtime = 'claude-code'
+): SystemRequirements {
   const auth =
     signIn === 'working'
       ? { ...AUTH, status: 'satisfied' as const }
       : signIn === 'expired'
         ? { ...AUTH, expiresAt: '2026-09-01T00:00:00.000Z' }
         : AUTH;
-  return { runtimes: { 'claude-code': { dependencies: [CLI, auth] } } };
+  return { runtimes: { [runtime]: { dependencies: [CLI, auth] } } };
 }
 
 /** A credits report: Claude Code wired, the rest a follow-up. */
@@ -84,6 +87,8 @@ interface Setup {
   remote?: boolean;
   /** Draw this in place of the connect step (a harness for the card alone). */
   content?: ReactNode;
+  /** The runtime whose connect step is drawn; Claude Code unless named. */
+  runtime?: string;
 }
 
 function setup({
@@ -95,6 +100,7 @@ function setup({
   withSlot = true,
   remote = false,
   content,
+  runtime = 'claude-code',
 }: Setup = {}) {
   const transport = createMockTransport();
   if (remote) {
@@ -104,7 +110,7 @@ function setup({
       port: 4242,
     } as never);
   }
-  vi.mocked(transport.checkRequirements).mockResolvedValue(requirements(signIn));
+  vi.mocked(transport.checkRequirements).mockResolvedValue(requirements(signIn, runtime));
   vi.mocked(transport.getCloudCredits).mockResolvedValue(credits);
   vi.mocked(transport.getCloudStatus).mockResolvedValue({
     linked,
@@ -132,7 +138,7 @@ function setup({
   });
   const flow = content ?? (
     <RuntimeConnectFlow
-      type="claude-code"
+      type={runtime}
       connect={{ kind: 'login', label: 'Connect Claude' }}
       onConnected={onConnected}
     />
@@ -381,6 +387,31 @@ describe('a runtime connect step that does not lead with credits', () => {
     );
   });
 
+  // Codex can't search the web on credits, and every place that can move it
+  // there says so (DOR-2679).
+  it('says what Codex does not get on credits, on the card and once it runs on them', async () => {
+    const wiredCodex = { 'claude-code': 'wired', codex: 'wired', opencode: 'follow-up' } as const;
+    setup({ runtime: 'codex', credits: creditsReport({ runtimes: wiredCodex }) });
+    expect(await screen.findByTestId('credits-offer-caveat')).toHaveTextContent(
+      "Codex can't search the web on DorkOS credits."
+    );
+    cleanup();
+    setup({
+      runtime: 'codex',
+      linked: true,
+      credits: creditsReport({
+        enabled: true,
+        linked: true,
+        runtimes: wiredCodex,
+        defaults: { codex: { runsOn: 'credits', chosenBy: 'user' } },
+      }),
+    });
+    expect(await screen.findByText('You’re ready')).toBeInTheDocument();
+    expect(screen.getByTestId('credits-ready-codex')).toHaveTextContent(
+      "New work on Codex runs on your DorkOS credits. Codex can't search the web on DorkOS credits."
+    );
+  });
+
   it('shows only its own ways where the app supplies no offer', async () => {
     const { queryClient } = setup({ withSlot: false });
     await settled(queryClient);
@@ -618,7 +649,7 @@ describe('where the offer sits', () => {
     expect(screen.getByTestId('remote-signin-notice')).toBeInTheDocument();
     // "This computer" would be the phone: the line names the right one.
     expect(screen.getByTestId('keep-it-local-note')).toHaveTextContent(
-      'Prefer to keep everything on the computer DorkOS runs on? Use your own sign-in there.'
+      'Prefer everything on the computer DorkOS runs on? Use your own sign-in there.'
     );
     expect(screen.queryByRole('button', { name: /Sign in with Claude/ })).not.toBeInTheDocument();
   });

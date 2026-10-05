@@ -10,12 +10,14 @@ import type { AggregatedPackage, PackageFilter } from '@dorkos/shared/marketplac
  * can navigate between pages without re-fetching on every mount.
  *
  * @param filter - Optional filter by marketplace source name or free-text query.
+ * @param options - `enabled: false` holds the fetch until a caller needs it.
  */
-export function useMarketplacePackages(filter?: PackageFilter) {
+export function useMarketplacePackages(filter?: PackageFilter, options?: { enabled?: boolean }) {
   const transport = useTransport();
   return useQuery<AggregatedPackage[]>({
     queryKey: marketplaceKeys.packageList(filter),
     queryFn: () => transport.listMarketplacePackages(filter),
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }

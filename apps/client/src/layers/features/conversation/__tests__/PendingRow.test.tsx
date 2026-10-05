@@ -99,7 +99,7 @@ describe('PendingRow', () => {
     expect(row).toHaveAttribute('data-status', 'failed');
     // The words above all — this is the only place they still exist.
     expect(row).toHaveTextContent('is the build ok?');
-    expect(row).toHaveTextContent('Not sent');
+    expect(row).toHaveTextContent('can’t tell if this sent');
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Discard' })).toBeInTheDocument();
   });
@@ -219,7 +219,7 @@ describe('PendingRow', () => {
     renderRow(post({ status: 'failed' }));
 
     expect(screen.getByTestId('room-pending')).toHaveTextContent(
-      'Not sent, or it went through and the confirmation got lost.'
+      'DorkOS can’t tell if this sent. Check before trying again.'
     );
   });
 

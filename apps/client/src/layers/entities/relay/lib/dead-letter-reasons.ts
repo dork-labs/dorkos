@@ -8,10 +8,10 @@
  * reason so there is exactly one map to keep in sentence case.
  */
 export const DEAD_LETTER_REASON_LABEL: Record<string, string> = {
-  hop_limit: 'Hop limit',
-  ttl_expired: 'TTL expired',
-  cycle_detected: 'Cycle detected',
-  budget_exhausted: 'Budget exhausted',
+  hop_limit: 'Passed on too many times',
+  ttl_expired: 'Expired before delivery',
+  cycle_detected: 'Stuck in a loop',
+  budget_exhausted: 'Out of calls',
 };
 
 /** Fallback label for a reason code this map does not recognize. */

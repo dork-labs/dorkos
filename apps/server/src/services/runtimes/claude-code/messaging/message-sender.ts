@@ -32,7 +32,12 @@ import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
 import { recordSessionUsage } from '../accounts/account-usage-feed.js';
-import { creditsRefusalEvent, resolveEffectiveCwd, resolveLaunch } from './launch-resolver.js';
+import {
+  creditsRefusalEvent,
+  deliverStatusEvents,
+  resolveEffectiveCwd,
+  resolveLaunch,
+} from './launch-resolver.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
 // The turn path's boundary rule and the refusal it surfaces, shared with the
 // pump's per-dispatch gate so the two cannot drift. Which validator it picks,
@@ -164,11 +169,13 @@ export async function* executeSdkQuery(
     yield refusal;
     return;
   }
-  const { sdkOptions, enrichedContent, meshAgentId, statusEvents } = resolved;
+  const { sdkOptions, enrichedContent, meshAgentId } = resolved;
   // The auto-permission-mode downgrade notice, which the resolver returns as
   // data rather than yielding. Ahead of every SDK event, exactly where this
   // turn has always emitted it.
-  for (const event of statusEvents) yield event;
+  // The swap a credits launch made is saved only once its notice has gone out
+  // (`deliverStatusEvents`), so a turn that never gets this far saves nothing.
+  yield* deliverStatusEvents(resolved);
 
   // Hold the input stream open so the subprocess survives past the result message
   // and can answer getContextUsage() (closed below once the turn completes).
@@ -252,6 +259,11 @@ export async function* executeSdkQuery(
   // subagent still running, or a settled notification still owed its delivery.
   // One tracker per PROCESS, which on this path is one per turn (DOR-1238).
   const liveness = createTurnLiveness();
+  // The stall watchdog asks this before it calls a silent turn stalled: a
+  // background helper sends nothing for the length of one step (DOR-2681).
+  // Cleared in the `finally` only if still ours, for the reason `activeQuery` is.
+  const liveHelperCount = (): number => liveness.liveAgentCount();
+  session.liveHelperCount = liveHelperCount;
   // The bound on the ONE hold nothing else bounds — an owed delivery that never
   // arrives. A hold for a live agent is deliberately never given one.
   const deferredClose = createDeferredClose();
@@ -625,6 +637,7 @@ export async function* executeSdkQuery(
       session.lastQuery = agentQuery;
       session.activeQuery = undefined;
     }
+    if (session.liveHelperCount === liveHelperCount) session.liveHelperCount = undefined;
     // Commit this turn's resume anchor for the next turn: the last main-thread
     // assistant uuid, or undefined when the turn produced none (empty/error) so
     // the next resume stays plain and keeps this turn's user message in context.

@@ -149,136 +149,166 @@ export function defaultTurnCeilingLimits(): TurnCeilingLimits {
   };
 }
 
-/**
- * A rolling count of agent turns started over the bus, per agent subject and in
- * total.
- *
- * Insertion-ordered `Map`, so the least recently touched subject is always the
- * first key — which is what makes eviction one `keys().next()`.
- */
-export class RelayTurnCeiling {
-  private readonly limits: TurnCeilingLimits;
-  private readonly now: () => number;
-  private readonly windowMs: number;
-  private readonly perAgent = new Map<string, number[]>();
-  private globalRuns: number[] = [];
+interface TurnReservation {
+  readonly at: number;
+  readonly owned: boolean;
+}
+interface CounterState {
+  limits: TurnCeilingLimits;
+  now: () => number;
+  windowMs: number;
+  perAgent: Map<string, TurnReservation[]>;
+  globalRuns: TurnReservation[];
+}
+interface DispatchTurnDecision extends TurnCeilingDecision {
+  /** Exact, once-only refund for this counted dispatch; absent for an uncounted one. */
+  refund?: () => void;
+}
+const states = new WeakMap<RelayTurnCeiling, CounterState>();
 
+/**
+ * Internal publisher accounting; never exported from the public package barrel.
+ * @param ceiling - The actual counter instance shared by the publisher.
+ * @internal
+ */
+export function dispatchTurnAccounting(ceiling: RelayTurnCeiling): {
+  reserve(subject: string): DispatchTurnDecision;
+} {
+  const state = states.get(ceiling);
+  if (!state) throw new Error('Unknown Relay turn ceiling instance.');
+  return {
+    reserve(subject) {
+      const { decision, reservation } = reserve(state, subject, true);
+      if (!reservation) return decision;
+      let refunded = false;
+      return {
+        ...decision,
+        refund() {
+          if (refunded) return;
+          refunded = true;
+          const window = state.perAgent.get(subject);
+          // Pruned, evicted or expired entries must not refresh subject recency:
+          // changing LRU order could erase another subject's newer debt.
+          if (window?.includes(reservation) && reservation.at > state.now() - state.windowMs)
+            store(
+              state,
+              subject,
+              window.filter((entry) => entry !== reservation)
+            );
+          state.globalRuns = state.globalRuns.filter((entry) => entry !== reservation);
+        },
+      };
+    },
+  };
+}
+
+function lastLegacyIndex(entries: TurnReservation[]): number {
+  for (let index = entries.length - 1; index >= 0; index--) {
+    if (!entries[index]!.owned) return index;
+  }
+  return -1;
+}
+
+function store(state: CounterState, subject: string, window: TurnReservation[]): void {
+  state.perAgent.delete(subject);
+  state.perAgent.set(subject, window);
+  if (state.perAgent.size > TRACKED_SUBJECTS) {
+    const oldest = state.perAgent.keys().next().value;
+    if (oldest !== undefined) state.perAgent.delete(oldest);
+  }
+}
+
+function reserve(
+  state: CounterState,
+  subject: string,
+  owned: boolean
+): { decision: TurnCeilingDecision; reservation?: TurnReservation } {
+  const globalCap = state.limits.global();
+  const agentCap = state.limits.perAgent();
+  if (globalCap === null && agentCap === null)
+    return { decision: { allowed: true, counted: false } };
+  const at = state.now();
+  const floor = at - state.windowMs;
+  state.globalRuns = state.globalRuns.filter((entry) => entry.at > floor);
+  const agent = (state.perAgent.get(subject) ?? []).filter((entry) => entry.at > floor);
+  if (globalCap !== null && state.globalRuns.length >= globalCap) {
+    store(state, subject, agent);
+    return { decision: { allowed: false, scope: 'global', counted: false } };
+  }
+  if (agentCap !== null && agent.length >= agentCap) {
+    store(state, subject, agent);
+    return { decision: { allowed: false, scope: 'agent', counted: false } };
+  }
+  const reservation: TurnReservation = { at, owned };
+  agent.push(reservation);
+  state.globalRuns.push(reservation);
+  store(state, subject, agent);
+  return { decision: { allowed: true, counted: true }, reservation };
+}
+
+/** A rolling count of ordinary public reservations and publisher-owned dispatches. */
+export class RelayTurnCeiling {
   /**
    * Build a counter over an empty window.
-   *
    * @param opts.limits - The two live ceilings; defaults to the shipped ones.
-   * @param opts.now - Clock, injectable so a test can move a window without sleeping.
+   * @param opts.now - Injectable clock for the rolling window.
    * @param opts.windowMs - Window length; defaults to one hour.
    */
   constructor(opts: { limits?: TurnCeilingLimits; now?: () => number; windowMs?: number } = {}) {
-    this.limits = opts.limits ?? defaultTurnCeilingLimits();
-    this.now = opts.now ?? (() => Date.now());
-    this.windowMs = opts.windowMs ?? WINDOW_MS;
+    states.set(this, {
+      limits: opts.limits ?? defaultTurnCeilingLimits(),
+      now: opts.now ?? (() => Date.now()),
+      windowMs: opts.windowMs ?? WINDOW_MS,
+      perAgent: new Map(),
+      globalRuns: [],
+    });
   }
 
   /**
-   * Claim one agent turn for a subject.
-   *
-   * Reserves on success, so two dispatches racing in the same tick cannot both
-   * spend the last unit. The global ceiling is checked FIRST: when the install
-   * is out of budget the answer is the same for every agent, and naming the
-   * agent as the reason would send someone to the wrong setting.
-   *
-   * **A ceiling that is off is not asked and not charged.** With BOTH off
-   * nothing is reserved, so an hour spent unlimited cannot leave an agent out of
-   * budget the moment somebody turns the ceilings back on. With only ONE off the
-   * dispatch is still charged, because the other is genuinely counting it.
-   *
-   * @param subject - The `relay.agent.*` subject about to be dispatched.
+   * Claim a public legacy reservation, synchronously spending the last unit.
+   * The global ceiling is checked first. Both unlimited ceilings charge nothing;
+   * with only one unlimited, the other still counts the reservation.
+   * @param subject - The subject about to be dispatched.
    */
   tryReserve(subject: string): TurnCeilingDecision {
-    const globalCap = this.limits.global();
-    const agentCap = this.limits.perAgent();
-    if (globalCap === null && agentCap === null) return { allowed: true, counted: false };
-
-    const at = this.now();
-    const floor = at - this.windowMs;
-    this.globalRuns = this.globalRuns.filter((t) => t > floor);
-    const agent = (this.perAgent.get(subject) ?? []).filter((t) => t > floor);
-
-    if (globalCap !== null && this.globalRuns.length >= globalCap) {
-      this.store(subject, agent);
-      return { allowed: false, scope: 'global', counted: false };
-    }
-    if (agentCap !== null && agent.length >= agentCap) {
-      this.store(subject, agent);
-      return { allowed: false, scope: 'agent', counted: false };
-    }
-
-    agent.push(at);
-    this.globalRuns.push(at);
-    this.store(subject, agent);
-    return { allowed: true, counted: true };
+    return reserve(states.get(this)!, subject, false).decision;
   }
 
   /**
-   * Give back a reservation whose turn never ran.
-   *
-   * A dispatch is reserved BEFORE it is handed to the adapter, because the
-   * reservation is what stops a burst from all spending the last unit at once.
-   * But a handed-over dispatch can still not happen: the runtime refuses for
-   * want of a slot, the adapter throws, the registry loses the adapter
-   * mid-flight. Every one of those dead-letters, and without a refund the
-   * allowance drains anyway — an agent whose slots are full could burn a
-   * thousand turns an hour having run none. That is the same shape of bug as
-   * charging for an adapter-less subject, and it is worse, because it happens to
-   * an install that is merely busy.
-   *
-   * Pops the newest timestamp from both windows rather than matching the
-   * reservation's own instant. This is a counter, not a ledger: which of two
-   * timestamps in the same window is removed changes nothing anybody can
-   * observe, and asking every caller to carry a token would put the honesty of
-   * the refund in the hands of code paths that fire from a `catch`.
-   *
-   * Safe to call for a dispatch that was never counted — with the ceilings off
-   * the windows are empty and this does nothing.
-   *
-   * @param subject - The subject whose reservation is being given back.
+   * Refund a public legacy reservation using its existing subject-based semantics.
+   * Pops the newest legacy entry independently from the subject and global windows,
+   * preserving the existing public API. Publisher-owned entries are isolated.
+   * @param subject - The subject whose legacy reservation is being given back.
    */
   release(subject: string): void {
-    const window = this.perAgent.get(subject);
-    if (window?.length) {
-      window.pop();
-      this.store(subject, window);
+    const state = states.get(this)!;
+    const window = state.perAgent.get(subject);
+    if (window) {
+      const index = lastLegacyIndex(window);
+      if (index !== -1) {
+        window.splice(index, 1);
+        store(state, subject, window);
+      }
     }
-    this.globalRuns.pop();
+    const globalIndex = lastLegacyIndex(state.globalRuns);
+    if (globalIndex !== -1) state.globalRuns.splice(globalIndex, 1);
   }
 
   /**
-   * How many turns are still available for a subject, without claiming one.
-   *
-   * A pure read: it prunes its view of both windows to the current window but
-   * writes nothing back and reserves nothing, so calling it can never make a
-   * turn unaffordable.
-   *
-   * **`null` means nothing is counting, never "none left".**
-   *
-   * @param subject - The agent subject being asked about.
+   * Read current headroom without reserving or mutating either rolling window.
+   * Null means that ceiling is unlimited, never that no allowance remains.
+   * @param subject - The subject being asked about.
    */
   remaining(subject: string): { agent: number | null; global: number | null } {
-    const floor = this.now() - this.windowMs;
-    const globalCap = this.limits.global();
-    const agentCap = this.limits.perAgent();
-    const global = this.globalRuns.filter((t) => t > floor).length;
-    const agent = (this.perAgent.get(subject) ?? []).filter((t) => t > floor).length;
+    const state = states.get(this)!;
+    const floor = state.now() - state.windowMs;
+    const globalCap = state.limits.global();
+    const agentCap = state.limits.perAgent();
+    const global = state.globalRuns.filter((entry) => entry.at > floor).length;
+    const agent = (state.perAgent.get(subject) ?? []).filter((entry) => entry.at > floor).length;
     return {
       agent: agentCap === null ? null : Math.max(0, agentCap - agent),
       global: globalCap === null ? null : Math.max(0, globalCap - global),
     };
-  }
-
-  /** Write a subject's pruned window back, re-inserting it as most recently used. */
-  private store(subject: string, window: number[]): void {
-    this.perAgent.delete(subject);
-    this.perAgent.set(subject, window);
-    if (this.perAgent.size > TRACKED_SUBJECTS) {
-      const oldest = this.perAgent.keys().next().value;
-      if (oldest !== undefined) this.perAgent.delete(oldest);
-    }
   }
 }

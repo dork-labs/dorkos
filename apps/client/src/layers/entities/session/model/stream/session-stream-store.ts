@@ -426,6 +426,9 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   // it: the denied call is in a child transcript nobody opens, so if this event
   // does not reach the bubble the reader sees an agent quietly go nowhere.
   'permission_denied',
+  // A turn that ran on another model than its session names (DOR-2636), so the
+  // notice lands in the turn it opened, not only on the next history reload.
+  'model_substituted',
   // A staged-context receipt (spec `persistent-session-runtime` §2.5, task 4.2).
   // Staging is only ever offered while a turn is open, so it rides that turn like
   // a steer does — but the projection renders it as a QUIET note, not a bubble:
@@ -1355,6 +1358,50 @@ export function useSessionUsageArrivedAt(sessionId: string): number | null {
   return useSessionStreamStore(
     useCallback((s) => s.sessions[sessionId]?.usageArrivedAt ?? null, [sessionId])
   );
+}
+
+/** The model a turn last ran on in place of another one the session named. */
+export interface SessionModelSubstitution {
+  /** The model id the session named. */
+  from: string;
+  /** The model id the turn ran on. */
+  to: string;
+}
+
+/**
+ * The latest model substitution in a session's turns (DOR-2636): the open
+ * turn's `model_substituted` event, else the last notice row in its history.
+ * Read as a string key so the selector's answer is stable across renders.
+ */
+function latestSubstitutionKey(state: SessionStreamState | undefined): string | null {
+  if (!state) return null;
+  for (let i = state.inProgressTurn.length - 1; i >= 0; i--) {
+    const event = state.inProgressTurn[i]!;
+    if (event.type === 'model_substituted') return `${event.from}\u0000${event.to}`;
+  }
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const parts = state.messages[i]!.parts ?? [];
+    for (let j = parts.length - 1; j >= 0; j--) {
+      const part = parts[j]!;
+      if (part.type === 'model_substituted') return `${part.from}\u0000${part.to}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Granular selector: the model a session's turns last ran on in place of the
+ * one it named, or `null` (DOR-2636). The status line reads it so it shows the
+ * model that ran from the moment the notice arrives, before the session's own
+ * record is read again.
+ */
+export function useSessionModelSubstitution(sessionId: string): SessionModelSubstitution | null {
+  const key = useSessionStreamStore(
+    useCallback((s) => latestSubstitutionKey(s.sessions[sessionId]), [sessionId])
+  );
+  if (key === null) return null;
+  const [from, to] = key.split('\u0000');
+  return { from: from!, to: to! };
 }
 
 /** Granular selector: the held status for a session. */

@@ -12,6 +12,8 @@ import {
 } from '@/layers/entities/session';
 import { TASKS_KEY } from '@/layers/entities/tasks';
 import { configKeys } from '@/layers/entities/config';
+import { extensionDecisionsKey } from '@/layers/entities/extension';
+import type { ListExtensionDecisionsResponse } from '@dorkos/shared/extension-decision-schemas';
 import type { ActivityItem, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { RecentSessionsResponse, Session, Task } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
@@ -48,6 +50,34 @@ const RECENT_ACTIVITY: ActivityItem[] = [
     metadata: null,
   },
 ];
+
+/**
+ * One decision an extension asked about — it waits in the Inbox, so Pulse names
+ * it in a single line rather than drawing a second card (DOR-2578).
+ */
+const WAITING_DECISIONS: ListExtensionDecisionsResponse = {
+  decisions: [
+    {
+      id: 'dec-pulse-demo',
+      extensionId: 'flow',
+      extensionName: 'Flow',
+      key: 'ship',
+      title: 'Ship the billing worker change?',
+      why: 'Review passed. Saying no keeps it in review.',
+      detail: null,
+      project: null,
+      projectLabel: null,
+      since: null,
+      actions: { kind: 'yes-no', approveLabel: 'Ship', rejectLabel: 'Keep in review' },
+      link: null,
+      raisedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+      needsYou: false,
+      watch: null,
+      revision: 0,
+    },
+  ],
+  offers: [],
+};
 
 /**
  * The session id the wedged-session demo seeds, and the only key this file
@@ -174,6 +204,7 @@ function makeAttentionQueryClient(): QueryClient {
   });
   qc.setQueryData(configKeys.current(), { tasks: { enabled: true } });
   qc.setQueryData(TASKS_KEY, [PARKED_SCHEDULE]);
+  qc.setQueryData(extensionDecisionsKey(), WAITING_DECISIONS);
   const recent: RecentSessionsResponse = {
     sessions: [WEDGED_SESSION],
     agentActivity: {},
@@ -300,8 +331,8 @@ export function PulsePanelShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Needs Attention populated — a schedule an agent parked, and a session that stopped with an
-        error
+        Needs Attention populated — a decision waiting in the Inbox, a schedule an agent parked, and
+        a session that stopped with an error
       </ShowcaseLabel>
       <ShowcaseDemo>
         <PopulatedAttentionDemo />

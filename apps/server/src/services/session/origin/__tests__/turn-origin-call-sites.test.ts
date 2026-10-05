@@ -48,6 +48,8 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/runtimes/claude-code/mcp-tools/session-tools.ts': ['agent-launch'],
   // An extension started work in a new chat (`api.startWork`, `ctx.sessions.start`).
   'services/extensions/start-work.ts': ['extension-start'],
+  // An extension sent one of the person's agents a message (`ctx.agent.send`).
+  'services/extensions/agent-send/agent-send.ts': ['extension-message'],
   // A limited session's work carried over to a new session on another account.
   'services/session/fleet/carry-over.ts': ['account-handoff'],
   // A person chose another model for their limited session and continued it:

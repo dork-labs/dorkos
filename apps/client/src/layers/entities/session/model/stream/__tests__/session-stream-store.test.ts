@@ -474,6 +474,23 @@ describe('useSessionStreamStore', () => {
     });
   });
 
+  it('retains model_substituted in the turn so the notice is drawn live (DOR-2636)', () => {
+    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    const store = useSessionStreamStore.getState();
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, {
+      type: 'model_substituted',
+      seq: 2,
+      from: 'opus',
+      fromName: 'Opus',
+      to: 'md_suggested',
+      toName: 'Suggested',
+      reason: 'credits-not-covered',
+    });
+    const s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['turn_start', 'model_substituted']);
+  });
+
   it('applyEvent advances lastAppliedSeq and folds the event', () => {
     useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     const store = useSessionStreamStore.getState();

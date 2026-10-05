@@ -69,7 +69,7 @@ export function StateShowcases() {
         <ShowcaseDemo>
           <QueryErrorState
             title="Couldn’t load your team"
-            description="The DorkOS server did not answer. Check that it is still running."
+            description="The DorkOS server didn’t answer. Check that it’s running."
             onRetry={() => {}}
           />
         </ShowcaseDemo>
@@ -78,7 +78,7 @@ export function StateShowcases() {
         <ShowcaseDemo>
           <QueryErrorState
             title="Couldn’t load your reports"
-            description="The feedback service is unreachable. Check that you’re online and try again."
+            description="Check that you’re online and try again."
             onRetry={() => {}}
             isRetrying
           />

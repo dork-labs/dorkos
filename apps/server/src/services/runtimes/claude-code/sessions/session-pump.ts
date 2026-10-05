@@ -481,17 +481,36 @@ export class SessionPump {
   }
 
   /**
-   * Is this process holding background work that record eviction must not throw
-   * away (spec `warm-process-lifecycle` D1, the eviction row)?
+   * Is this process doing work that record eviction must not throw away (spec
+   * `warm-process-lifecycle` D1, the eviction row; DOR-2681)?
    *
-   * A narrower question than {@link quietness}: a turn in flight or a person
-   * being waited on are already exempt from eviction by their own rules, so the
-   * two reasons that count here are the ones eviction was blind to. Bounded by
-   * the four-hour ceiling, which is what stops a helper that will never finish
-   * from making a session record immortal.
+   * Every reason {@link quietness} gives except a person-wait, which the store
+   * exempts by its own rule and bounds by its own ceiling. Bounded by the
+   * four-hour ceiling, which is what stops work that will never finish from
+   * making a session record immortal.
    */
-  isHoldingBackgroundWork(): boolean {
-    return this.quiet.isHoldingBackgroundWork();
+  isHoldingWork(): boolean {
+    return this.quiet.isHoldingWork();
+  }
+
+  /**
+   * Has the current busy spell run past the four-hour ceiling (spec
+   * `warm-process-lifecycle` D1)? The same bound the reaper honours; a
+   * consumer that only reports the long wait reads it here.
+   *
+   * @param now - Server epoch ms
+   */
+  isPastCeiling(now: number): boolean {
+    return this.quiet.isPastCeiling(now);
+  }
+
+  /**
+   * Is a helper agent still working on this process, inside the four-hour
+   * ceiling (DOR-2681)? What the stall watchdog asks before calling a silent
+   * turn stalled.
+   */
+  isHelperWorking(): boolean {
+    return this.quiet.isHelperWorking();
   }
 
   /**

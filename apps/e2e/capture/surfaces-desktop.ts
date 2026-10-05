@@ -577,7 +577,7 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
   // With onboarding un-dismissed the wizard replaces the app shell entirely,
   // so the boot signal is the welcome screen itself.
   await page.goto(url('/'));
-  await page.getByText('Get Started', { exact: true }).first().click({ timeout: WAIT_MS });
+  await page.getByText('Get started', { exact: true }).first().click({ timeout: WAIT_MS });
   // The ready-state CTA reads "Meet DorkBot"; its testid predates that copy.
   await page.getByTestId('onboarding-get-started').click({ timeout: WAIT_MS });
   // The power stage (DOR-1431) sits between the readiness check and the DorkBot

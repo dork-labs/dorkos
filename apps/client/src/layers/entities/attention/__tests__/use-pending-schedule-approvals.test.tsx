@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Task } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { useTasks } from '@/layers/entities/tasks';
 import { usePendingScheduleApprovals } from '../model/use-pending-schedule-approvals';
 
 /** A schedule, with everything a case does not care about filled in. */
@@ -190,6 +191,36 @@ describe('usePendingScheduleApprovals', () => {
     await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
     expect(result.current.schedules).toHaveLength(0);
     expect(transport.listTasks).not.toHaveBeenCalled();
+  });
+
+  it('reports no error with Tasks off, even when another reader failed the tasks query', async () => {
+    // With Tasks off the route answers 404. Any observer that reads `['tasks']`
+    // ungated leaves the SHARED query in error, and this hook's disabled
+    // observer still sees it — which made the waiting queue read as "could not
+    // check" forever (DOR-2578). Seeded defect: return the raw `isError`.
+    const { transport, wrapper } = setup([], {
+      version: '1.0.0',
+      port: 4242,
+      uptime: 0,
+      workingDirectory: '/test',
+      nodeVersion: 'v20.0.0',
+      platform: 'linux-x64',
+      runtimes: ['claude-code'],
+      claudeCliPath: null,
+      tasks: { enabled: false },
+    });
+    vi.mocked(transport.listTasks).mockRejectedValue(new Error('404'));
+
+    const { result } = renderHook(
+      () => ({ pending: usePendingScheduleApprovals(), ungated: useTasks() }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.ungated.isError).toBe(true));
+    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.pending.isLoading).toBe(false));
+    expect(result.current.pending.isError).toBe(false);
+    expect(result.current.pending.schedules).toHaveLength(0);
   });
 
   it('stays loading while the CONFIG read has not answered (DOR-1391)', async () => {

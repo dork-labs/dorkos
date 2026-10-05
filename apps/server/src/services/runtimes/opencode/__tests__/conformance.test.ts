@@ -165,11 +165,17 @@ vi.mock('../../../core/cloud/v1-client.js', async (importOriginal) => ({
   captureCloudV1Context: () => null,
 }));
 
-import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { createTestDb } from '@dorkos/test-utils/db';
 import {
-  __setCreditsModelsForTests,
-  __setCreditsStateForTests,
-} from '../../../core/cloud/credits-inference.js';
+  SessionEventStore,
+  disposeProjector,
+  feedProjector,
+  getOrCreateProjector,
+  setSessionEventStore,
+} from '../../../session/index.js';
+import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference.js';
+import { __setCreditsCatalogForTests } from '../../../core/cloud/credits-models.js';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { planOpenCodeTurn } from '../credits-mode.js';
 import { startCreditsRelay, type CreditsRelay } from '../../../core/cloud/credits-relay.js';
@@ -680,10 +686,7 @@ runtimeConformance(
               throw new Error('OpenCode conformance: no mocked client to read the turn off');
             }
             openCodeRunsOnCreditsFlag.value = runsOn === 'credits';
-            __setCreditsModelsForTests({
-              catalogVersion: 'cv_conformance',
-              models: CREDITS_MODELS_FIXTURE.models,
-            });
+            __setCreditsCatalogForTests(CREDITS_MODELS_FIXTURE.models);
             __setCreditsStateForTests({
               token:
                 heldToken === null
@@ -720,7 +723,7 @@ runtimeConformance(
               };
             } finally {
               openCodeRunsOnCreditsFlag.value = false;
-              __setCreditsModelsForTests(null);
+              __setCreditsCatalogForTests(null);
               __setCreditsStateForTests({ token: null });
             }
           },
@@ -1033,3 +1036,132 @@ it.skipIf(LIVE)(
     expect(client.session.create).toHaveBeenCalledTimes(1);
   }
 );
+
+// DOR-2636: an OpenCode turn on credits runs a model credits serve in the chat
+// format, once the service says which formats its models are in; while it says
+// nothing, the session's model stands and the sidecar's own fallback applies.
+describe.skipIf(LIVE)('the model an OpenCode credits turn runs (DOR-2636)', () => {
+  const supports = { tools: true, promptCaching: false, streaming: true, thinking: false };
+  const listed = (id: string, formats: string[] | undefined, recommendedOn: string[] = []) => ({
+    id,
+    displayName: `Name ${id}`,
+    contextWindow: 200_000,
+    maxOutputTokens: 32_000,
+    supports,
+    ...(formats ? { protocols: formats, recommendedOn } : {}),
+  });
+
+  async function creditsTurn(model: string | undefined) {
+    openCodeRunsOnCreditsFlag.value = true;
+    __setCreditsStateForTests({
+      token: InferenceTokenSchema.parse({
+        ...CREDITS_TOKEN_FIXTURE,
+        expiresAt: '2999-01-01T00:00:00.000Z',
+      }),
+    });
+    try {
+      const runtime = new OpenCodeRuntime({ provider: makeMockedProvider() });
+      const client = lastClient!;
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
+      if (model !== undefined) await runtime.updateSession(sessionId, { model });
+      const events: StreamEvent[] = [];
+      for await (const event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
+        cwd: PROJECT_DIR,
+      })) {
+        events.push(event);
+      }
+      const prompts = vi.mocked(client.session.promptAsync).mock.calls as unknown as Array<
+        [{ body: { model?: { providerID: string; modelID: string } } }]
+      >;
+      return { events, models: prompts.map(([request]) => request.body.model) };
+    } finally {
+      openCodeRunsOnCreditsFlag.value = false;
+      __setCreditsStateForTests({ token: null });
+    }
+  }
+
+  afterAll(() => __setCreditsCatalogForTests(null));
+
+  it('runs a model credits do not serve in chat on the suggestion, and says so', async () => {
+    __setCreditsCatalogForTests([
+      listed('claude-only', ['anthropicMessages']),
+      listed('chat-pick', ['openaiChat'], ['openaiChat']),
+    ]);
+    const { events, models } = await creditsTurn('openrouter/some-model');
+    expect(models[0]).toEqual({ providerID: 'dorkos-credits', modelID: 'chat-pick' });
+    expect(events.filter((e) => e.type === 'model_substituted')).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({ from: 'openrouter/some-model', to: 'chat-pick' }),
+      }),
+    ]);
+  });
+
+  it('keeps the swap notice, named from OpenCode’s catalog, in a reopened conversation', async () => {
+    __setCreditsCatalogForTests([listed('chat-pick', ['openaiChat'], ['openaiChat'])]);
+    openCodeRunsOnCreditsFlag.value = true;
+    __setCreditsStateForTests({
+      token: InferenceTokenSchema.parse({
+        ...CREDITS_TOKEN_FIXTURE,
+        expiresAt: '2999-01-01T00:00:00.000Z',
+      }),
+    });
+    const store = new SessionEventStore(createTestDb());
+    setSessionEventStore(store);
+    try {
+      const runtime = new OpenCodeRuntime({ provider: makeMockedProvider() });
+      vi.spyOn(runtime, 'getSupportedModels').mockResolvedValue([
+        { value: 'openrouter/some-model', displayName: 'Some Model', description: '' },
+      ]);
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
+      await runtime.updateSession(sessionId, { model: 'openrouter/some-model' });
+      const projector = getOrCreateProjector(sessionId, PROJECT_DIR, { persist: 'history' });
+      await feedProjector(
+        projector,
+        runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, { cwd: PROJECT_DIR }),
+        { userMessage: CONFORMANCE_PROMPT }
+      );
+      disposeProjector(sessionId);
+      const history = await runtime.getMessageHistory(PROJECT_DIR, sessionId);
+      const notice = history.find((m) => m.id.startsWith('model-substituted-'));
+      expect(notice?.parts).toEqual([
+        expect.objectContaining({
+          type: 'model_substituted',
+          from: 'openrouter/some-model',
+          fromName: 'Some Model',
+          to: 'chat-pick',
+        }),
+      ]);
+    } finally {
+      setSessionEventStore(undefined);
+      openCodeRunsOnCreditsFlag.value = false;
+      __setCreditsStateForTests({ token: null });
+    }
+  });
+
+  it('keeps a credits model it serves', async () => {
+    __setCreditsCatalogForTests([
+      listed('chat-pick', ['openaiChat'], ['openaiChat']),
+      listed('chat-other', ['openaiChat']),
+    ]);
+    const { events, models } = await creditsTurn('dorkos-credits/chat-other');
+    expect(models[0]).toEqual({ providerID: 'dorkos-credits', modelID: 'chat-other' });
+    expect(events.some((e) => e.type === 'model_substituted')).toBe(false);
+  });
+
+  it('refuses plainly when the service lists formats but none in chat', async () => {
+    __setCreditsCatalogForTests([listed('claude-only', ['anthropicMessages'])]);
+    const { events, models } = await creditsTurn('dorkos-credits/anything');
+    expect(models).toHaveLength(0);
+    expect(events[0]).toMatchObject({ type: 'error', data: { reason: 'no-models' } });
+  });
+
+  it('changes nothing while the service says nothing about formats', async () => {
+    __setCreditsCatalogForTests([listed('a', undefined), listed('b', undefined)]);
+    const { events, models } = await creditsTurn('openrouter/some-model');
+    // The sidecar's own fallback, exactly as before: the first that can call tools.
+    expect(models[0]).toEqual({ providerID: 'dorkos-credits', modelID: 'a' });
+    expect(events.some((e) => e.type === 'model_substituted')).toBe(false);
+  });
+});

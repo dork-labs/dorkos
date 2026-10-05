@@ -10,10 +10,12 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import fs from 'node:fs';
 import chokidar, { type FSWatcher } from 'chokidar';
-import { createDb, runMigrations } from '@dorkos/db';
+import { RelayDatabase } from './lib/relay-database.js';
 import { EndpointRegistry } from './endpoint-registry.js';
 import { SubscriptionRegistry } from './subscription-registry.js';
 import { MaildirStore } from './maildir-store.js';
+import type { RelayReceiptReadContext } from './delivery-receipt-store.js';
+import { isDetachedAgentSubject } from './lib/detached-agent-subject.js';
 import { SqliteIndex } from './sqlite-index.js';
 import { DeadLetterQueue } from './dead-letter-queue.js';
 import { AccessControl } from './access-control.js';
@@ -147,6 +149,7 @@ export class RelayCore {
   private readonly deliveryPipeline: DeliveryPipeline;
   private readonly signalEmitter: SignalEmitter;
   private readonly sqliteIndex: SqliteIndex;
+  private readonly database: RelayDatabase;
   private readonly accessControl: AccessControl;
   private readonly configPath: string;
   private configWatcher: FSWatcher | null = null;
@@ -190,14 +193,8 @@ export class RelayCore {
     this.subscriptionRegistry = new SubscriptionRegistry();
     const maildirStore = new MaildirStore({ rootDir: mailboxesDir });
 
-    if (options?.db) {
-      this.sqliteIndex = new SqliteIndex(options.db);
-    } else {
-      const dbPath = path.join(dataDir, 'index.db');
-      const legacyDb = createDb(dbPath);
-      runMigrations(legacyDb);
-      this.sqliteIndex = new SqliteIndex(legacyDb);
-    }
+    this.database = new RelayDatabase(path.join(dataDir, 'index.db'), options);
+    this.sqliteIndex = new SqliteIndex(this.database.db);
 
     const deadLetterQueue = new DeadLetterQueue({
       maildirStore,
@@ -235,7 +232,6 @@ export class RelayCore {
       sqliteIndex: this.sqliteIndex,
       maildirStore,
       deadLetterQueue,
-      refundTurn: (subject) => turnCeiling.release(subject),
       logger: options?.logger,
     });
     const watcherManager = new WatcherManager(
@@ -254,6 +250,7 @@ export class RelayCore {
         subscriptionRegistry: this.subscriptionRegistry,
         maildirStore,
         sqliteIndex: this.sqliteIndex,
+        receiptStore: this.database.receipts,
         accessControl: this.accessControl,
         deadLetterQueue,
         deliveryPipeline: this.deliveryPipeline,
@@ -324,6 +321,7 @@ export class RelayCore {
 
     this.gc = new RelayGc(
       {
+        pruneDeliveryReceipts: () => this.database.receipts.pruneExpiredIfReady(),
         sqliteIndex: this.sqliteIndex,
         maildirStore,
         deadLetterQueue,
@@ -404,8 +402,16 @@ export class RelayCore {
     payload: unknown,
     options: PublishOptions
   ): Promise<PublishResult> {
+    if (options.receiptContext && isDetachedAgentSubject(subject)) {
+      this.database.receipts.assertOutsideTransaction();
+    }
     this.assertOpen();
     return this.publishPipeline.publish(subject, payload, options);
+  }
+
+  /** Read minimized authoritative metadata with a server-resolved ownership policy. */
+  getDeliveryReceipt(messageId: string, context: RelayReceiptReadContext) {
+    return this.database.receipts.get(messageId, context);
   }
 
   /** Deliver one private native notification without Maildir, pending buffers or dead letters. */
@@ -603,37 +609,33 @@ export class RelayCore {
 
   /** Gracefully shut down the relay. */
   async close(): Promise<void> {
-    if (this.closed) return;
     this.closed = true;
-
-    if (this.ttlSweepInterval) {
-      clearInterval(this.ttlSweepInterval);
-      this.ttlSweepInterval = undefined;
-    }
-
-    if (this.gcInterval) {
-      clearInterval(this.gcInterval);
-      this.gcInterval = undefined;
-    }
-
-    this.subscriptionRegistry.shutdown();
-    this.subscriptionRegistry.clear();
-    this.deliveryPipeline.close();
-    await this.endpointDeps.watcherManager.closeAll();
-
-    if (this.configWatcher) {
-      await this.configWatcher.close();
-      this.configWatcher = null;
-    }
-
-    this.accessControl.close();
-    this.signalEmitter.removeAllSubscriptions();
-
-    if (this.adapterRegistry) {
-      await this.adapterRegistry.shutdown();
-    }
-
-    this.sqliteIndex.close();
+    return this.database.close([
+      () => {
+        if (this.ttlSweepInterval) clearInterval(this.ttlSweepInterval);
+        this.ttlSweepInterval = undefined;
+        if (this.gcInterval) clearInterval(this.gcInterval);
+        this.gcInterval = undefined;
+      },
+      () => {
+        this.subscriptionRegistry.shutdown();
+        this.subscriptionRegistry.clear();
+        this.deliveryPipeline.close();
+      },
+      () => this.endpointDeps.watcherManager.closeAll(),
+      async () => {
+        if (this.configWatcher) {
+          await this.configWatcher.close();
+          this.configWatcher = null;
+        }
+      },
+      () => {
+        this.accessControl.close();
+        this.signalEmitter.removeAllSubscriptions();
+      },
+      () => this.adapterRegistry?.shutdown(),
+      () => this.sqliteIndex.close(),
+    ]);
   }
 
   // --- Private Helpers ---

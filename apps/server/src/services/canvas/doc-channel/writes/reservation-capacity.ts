@@ -1,7 +1,11 @@
 /** Fixed original reservation capacity SQL checks; no callbacks, mutation or authority issuance. */
 import { sql, canvasDocBatches, type DbTransaction } from '@dorkos/db';
 import { CanvasChannelDocEventsContextSchema } from '@dorkos/shared/canvas-channel-schemas';
-import { protectedCapacityQuery, DOC_INGEST_LIMITS, type DocIngestLimits } from '../accounting.js';
+import {
+  protectedCapacityQuery,
+  DOC_INGEST_LIMITS,
+  type DocIngestLimits,
+} from '../current/accounting.js';
 import { DOC_EVENTS_PROMPT_BYTES, docEventsPromptBytes } from '../prompt.js';
 import { DocIngestRefusal } from '../ingest-types.js';
 import type { DocWriteIntentRow, DocBatchRow } from '../store.js';

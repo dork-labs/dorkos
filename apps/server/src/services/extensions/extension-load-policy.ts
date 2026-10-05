@@ -157,6 +157,25 @@
  *   core or approved for some other copy (`extension-discovery.ts`), so a project
  *   file cannot take the place of the copy a decision was made about.
  *
+ * ## An approval covers a declared permission set, not just a copy
+ *
+ * The in-process statement above — approving `foo` trusts whoever can write
+ * its files — holds for an extension that runs INSIDE DorkOS, because no edit
+ * can ask for more than the full access it already has. An extension that
+ * runs separately (`serverCapabilities.runtime: "subprocess"`, DOR-2686)
+ * declares what it may reach instead: hosts, programs, agent access. A person
+ * reads those lists on the card, so a same-source update or an edit to an
+ * approved folder must not widen them silently. Each approval therefore also
+ * records the set it was given for (`extensions.approvedPermissions`), and
+ * {@link mayRunExtensionCode} requires what the copy declares now to be
+ * covered by it (`isolation/permission-coverage.ts`). Narrowing keeps running;
+ * widening waits for a person again, through the same approval queue. A
+ * missing entry is the full in-process set, which is exactly what every
+ * approval before this existed was for. A copy that runs because its source
+ * is trusted outright (§9.3) is not held to a set: that yes was to everything
+ * from the source, at full in-process authority, and any declared set is
+ * narrower than that.
+ *
  * ## Not covered, deliberately
  *
  * Relay adapter plugins. `loadAdapters` in `packages/relay/src/adapter-plugin-loader.ts`
@@ -174,20 +193,46 @@ import path from 'path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import type { ExtensionsConfig } from './extension-enable-resolution.js';
+import { declaredSet, isCovered } from './isolation/permission-coverage.js';
 
 /**
  * The fields of an extension record that say which copy of the extension it is,
  * plus where it provably came from when this machine can say (§9.1).
  */
 export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'sourcePlugin'> &
-  Partial<Pick<ExtensionRecord, 'trustedOrigin' | 'originProblem' | 'currentDigest'>>;
+  Partial<Pick<ExtensionRecord, 'trustedOrigin' | 'originProblem' | 'currentDigest' | 'devLink'>>;
 
 /**
  * The stored halves of a person's approvals: the ids, the copy each is for,
  * and the code sources they trust outright (spec `flow-multiproject` §9.3).
  */
 export type ExtensionApprovals = Pick<ExtensionsConfig, 'approvedToRun' | 'approvedSources'> &
-  Partial<Pick<ExtensionsConfig, 'trustedSources'>>;
+  Partial<Pick<ExtensionsConfig, 'trustedSources' | 'approvedPermissions'>>;
+
+// FAIL-OPEN BY DESIGN, so every writer must spread: an absent
+// `approvedPermissions` map (or entry) reads as the full in-process set, which
+// is what every approval before DOR-2686 was for. A write to `extensions`
+// that rebuilds the object without spreading the stored one drops the map and
+// silently widens every approval that runs separately. Pinned by
+// `isolation/__tests__/permission-coverage.test.ts`.
+
+/** A copy with the manifest it declares its permission set in. */
+export type ExtensionDeclaringCopy = ExtensionCopy & Pick<ExtensionRecord, 'manifest'>;
+
+/**
+ * Whether the permission set this copy declares now is covered by the set
+ * stored with its approval (DOR-2686). A missing entry is the full in-process
+ * set, so it covers anything. Pure.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the approval fields of it.
+ */
+export function isWithinApprovedPermissions(
+  copy: ExtensionDeclaringCopy,
+  approvals: ExtensionApprovals
+): boolean {
+  return isCovered(declaredSet(copy.manifest), approvals.approvedPermissions?.[copy.id]);
+}
 
 /**
  * The machine-readable code every refusal to run unapproved extension code
@@ -213,6 +258,9 @@ export function approvedSourceOf(copy: ExtensionCopy): ExtensionApprovedSource {
   // A copy that changed after DorkOS installed it is approved as its files
   // are now, and any further change asks again (security review, DOR-2527).
   if (copy.originProblem === 'changed' && copy.currentDigest) source.digest = copy.currentDigest;
+  // A copy running from a dev link is approved as that dev link, by path
+  // alone, so editing its folder never asks again (DOR-2696).
+  if (copy.devLink) source.devLink = copy.devLink.path;
   return source;
 }
 
@@ -231,6 +279,12 @@ export function isApprovedByPath(copy: ExtensionCopy, approvals: ExtensionApprov
     path.resolve(source.path) === path.resolve(copy.path) &&
     (source.plugin ?? null) === (copy.sourcePlugin ?? null);
   if (!samePath) return false;
+  // A dev link sits at its package's normal folder, so the path alone cannot
+  // tell it from the installed copy. An approval covers only the kind it was
+  // given to: an installed copy's never covers a dev link, a dev link's never
+  // covers the installed copy put back after unlink, and one dev link's never
+  // covers a link to another folder (DOR-2696).
+  if ((source.devLink ?? null) !== (copy.devLink?.path ?? null)) return false;
   // A project copy whose plugin changed after DorkOS installed it never keeps
   // running silently on a path approval: the yes must name its files as they
   // are now (security review of DOR-2527).
@@ -366,15 +420,23 @@ export function isDismissedCopy(
  *   `extension-discovery.ts`, never from its id or its manifest.
  * A copy that provably came from a source in `extensions.trustedSources` may
  * run too (spec `flow-multiproject` §9.3): the person already said yes to
- * everything from there, once.
+ * everything from there, once. A copy approved on its own runs only while
+ * the permission set it declares is covered by the one recorded with that
+ * approval ({@link isWithinApprovedPermissions}, DOR-2686).
  *
  * @param approvals - `config.extensions`: the approved ids, the copy each
  *   approval was given to, and the trusted sources.
  * @returns `true` when DorkOS may execute this extension's code.
  */
-export function mayRunExtensionCode(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+export function mayRunExtensionCode(
+  copy: ExtensionDeclaringCopy,
+  approvals: ExtensionApprovals
+): boolean {
   if (copy.origin === 'core') return true;
-  return isApprovedCopy(copy, approvals) || isFromTrustedSource(copy, approvals);
+  if (isFromTrustedSource(copy, approvals)) return true;
+  // The approval names this copy AND what it declares now fits inside the set
+  // the person approved: a widened manifest waits for them again (DOR-2686).
+  return isApprovedCopy(copy, approvals) && isWithinApprovedPermissions(copy, approvals);
 }
 
 /**

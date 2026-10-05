@@ -89,7 +89,10 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
     count: 1,
     reason: TINTED_SURFACE,
   },
-  'layers/features/chat/ui/message/PermissionDeniedChip.tsx': { count: 2, reason: TINTED_SURFACE },
+  'layers/features/chat/ui/message/rows/PermissionDeniedChip.tsx': {
+    count: 2,
+    reason: TINTED_SURFACE,
+  },
   'layers/features/agent-creation/ui/TemplateReviewNotice.tsx': {
     count: 2,
     reason: TINTED_SURFACE,

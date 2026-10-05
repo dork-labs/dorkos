@@ -90,6 +90,18 @@ export interface RecordedPermissionDenial {
   createdAt: string;
 }
 
+/**
+ * One recorded `model_substituted` row (DOR-2636), with the wall-clock it was
+ * written at. Written the instant it is ingested, at the start of the turn it
+ * opens, so it sorts after the person's message and before the reply.
+ */
+export interface RecordedModelSubstitution {
+  /** The substitution as it was projected, `seq` included. */
+  event: Extract<SessionEvent, { type: 'model_substituted' }>;
+  /** ISO-8601 wall-clock the row was written at. */
+  createdAt: string;
+}
+
 /** The prompt event types, mapped to the interaction kind each one raises. */
 const ASK_KIND_BY_EVENT_TYPE: Readonly<
   Record<BlockingInteractionEventType, PendingInteractionDTO['type']>
@@ -265,6 +277,63 @@ export class SessionEventStore {
       if (event?.type === 'permission_denied') denials.push({ event, createdAt: row.createdAt });
     }
     return denials;
+  }
+
+  /**
+   * A session's `model_substituted` rows only (DOR-2636), filtered in SQLite
+   * the way {@link SessionEventStore.readPermissionDenials} is, because it too
+   * runs on every history read.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readModelSubstitutions(sessionId: string): RecordedModelSubstitution[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"type":"model_substituted"%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const substitutions: RecordedModelSubstitution[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'model_substituted') {
+        substitutions.push({ event, createdAt: row.createdAt });
+      }
+    }
+    return substitutions;
+  }
+
+  /**
+   * A session's `turn_start` rows only, with the person's message each one
+   * carries: what places a turn's notices (DOR-2636) in the turn they opened,
+   * rather than by a clock that the transcript does not share.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readTurnStarts(sessionId: string): { seq: number; userMessage: string | undefined }[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"type":"turn_start"%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const starts: { seq: number; userMessage: string | undefined }[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'turn_start')
+        starts.push({ seq: event.seq, userMessage: event.userMessage });
+    }
+    return starts;
   }
 
   /**

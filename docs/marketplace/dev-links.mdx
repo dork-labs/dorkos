@@ -1,0 +1,90 @@
+---
+title: Develop a package with a dev link
+description: Run a plugin or skill pack straight from your own folder while you build it, and see each edit in DorkOS within seconds.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+# Develop a package with a dev link
+
+When you build a plugin or a skill pack, reinstalling it after every change gets old fast. A **dev link** lets DorkOS run the package straight from the folder you are working in. Save a file, and DorkOS picks up the change within seconds. You approve the folder once, when you link it.
+
+Dev links work for plugins and skill packs. Agents and other package types still install the usual way.
+
+## Link a folder
+
+<Steps>
+<Step>
+
+### Open the Installed list
+
+Go to **Marketplace**, then the **Installed** tab, and choose **Link a folder**.
+
+</Step>
+<Step>
+
+### Pick the folder
+
+Paste the full path to your package's folder, or choose **Browse** to pick it. Then choose where it runs: for all agents, or for one agent's project.
+
+DorkOS checks the folder as soon as you leave the field. If something is wrong, it says so under the path and keeps what you typed. For example, a folder with no package manifest reads "No package found in this folder."
+
+</Step>
+<Step>
+
+### Read the card and link it
+
+The card names the folder in full and lists everything the package runs on its own, like hooks, servers and extensions. Anything in that folder runs in DorkOS right away when you edit it, without asking again. Choose **Link folder** when you are happy with what it runs.
+
+</Step>
+</Steps>
+
+<Callout title="If the folder changes while you read">
+  If the package in the folder changes between the card and your click, nothing is linked. The
+  dialog says "The folder changed. Check it again." and shows the card for what the folder holds
+  now.
+</Callout>
+
+## If you already installed the package
+
+You can link a folder for a package you already installed from a marketplace. DorkOS sets your installed copy aside instead of deleting it, and the card says which version. To go ahead, tick **Use my folder instead of the installed copy**. When you unlink, the installed copy comes back.
+
+## Edit and watch it reload
+
+The Installed row for a linked package shows a **Dev link** tag and the folder it runs from. Under that, it tells you what happened after your last edit:
+
+- **Reloaded 4s ago** means your change is live.
+- **Couldn't reload** means something in your edit didn't build, like an extension with a syntax error. Choose **Details** to see the error. The last version that built keeps running.
+- **Folder missing** means the folder was moved or deleted. Put it back, or unlink the package.
+
+Edits to extensions rebuild them. New skills reach your agents in that project. A new hook, server or extension still asks you first, on its usual card.
+
+The same tag and folder show on the package in **Browse**, on each of its extensions in **Settings → Extensions**, and at the top of any page the package adds to DorkOS.
+
+## Switch back
+
+A linked package has no Update or Uninstall button. Instead, its row offers the way back:
+
+- **Use installed copy** appears when DorkOS set an installed copy aside. It unlinks the folder and brings that copy back.
+- **Install published version** appears when a marketplace lists the package and nothing was set aside. It unlinks the folder, then opens the normal install dialog.
+- **Unlink** stops running the package from your folder. With nothing set aside, the package is removed.
+
+Unlinking never touches your folder or its files.
+
+## From the terminal
+
+Everything here also works from a terminal:
+
+```bash
+dorkos marketplace link ./my-plugin
+dorkos marketplace unlink my-plugin
+```
+
+Add `--project <path>` to link for one project, and `--replace-installed` to set an installed copy aside. `dorkos doctor` lists your dev links and names any that need a look.
+
+<Callout type="warn" title="What a dev link trusts">
+  Whatever can write into a linked folder changes what runs in DorkOS, without asking. Link only
+  folders you control. An agent can ask to link a folder, but only you can approve it, and the card
+  always names the folder.
+</Callout>

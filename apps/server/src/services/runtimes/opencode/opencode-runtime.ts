@@ -69,6 +69,7 @@ import {
   streamGenerationOf,
 } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
+import { overlayModelSubstitutions } from '../../session/overlays/model-substitution-overlay.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
@@ -141,6 +142,11 @@ import {
   asCreditsStopped,
   creditsRefusalEvent,
 } from '../../core/cloud/credits-protocols.js';
+import {
+  catalogNameFor,
+  decideCreditsLaunchModel,
+  type CreditsModelDecision,
+} from '../../core/cloud/credits-models.js';
 import {
   ConnectorTurnLeaseSupervisor,
   type ConnectorTurnLeaseSupervisorHandle,
@@ -294,6 +300,17 @@ export class OpenCodeRuntime implements AgentRuntime {
   }
 
   /**
+   * Whether a session's next turn runs on DorkOS credits: OpenCode's one
+   * sidecar runs on credits or on the person's own providers for every session
+   * at once, so this is its recorded default. Read by the model gate (DOR-2636).
+   *
+   * @param _sessionId - The session; every OpenCode session answers the same.
+   */
+  async sessionRunsOnCredits(_sessionId: string): Promise<boolean> {
+    return openCodeRunsOnCredits();
+  }
+
+  /**
    * @inheritdoc
    *
    * Auto-creates untracked sessions (the PATCH-before-first-message path, and
@@ -351,11 +368,43 @@ export class OpenCodeRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
-    const settings = await this.resolveTurnSettings(sessionId, opts);
+    let settings = await this.resolveTurnSettings(sessionId, opts);
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
     // Who a room turn is for, which every identity decision below is checked
     // against (DOR-2091). Absent on every turn a room did not trigger.
     const forAgent = turnAgentOf(opts);
+    // **Which model a credits turn runs** (DOR-2636), the same decision every
+    // runtime on credits makes: once the service says which formats its models
+    // are in, a model it does not serve in OpenCode's chat format runs on the
+    // service's suggestion, said once and saved only once said, and a list
+    // naming none refuses the turn. While the service says nothing, the
+    // session's model stands and the sidecar's own fallback applies, as before.
+    if (openCodeRunsOnCredits()) {
+      let decided: CreditsModelDecision;
+      try {
+        decided = await decideCreditsLaunchModel({
+          capabilities: this.getCapabilities(),
+          runtimeLabel: OPENCODE_LABEL,
+          sessionId,
+          model: creditsModelIdOf(settings.model),
+          nameOf: async () =>
+            settings.model === undefined ? undefined : catalogNameFor(this, settings.model),
+          remember: async (id) => {
+            await this.updateSession(sessionId, { model: creditsSelection(id) });
+          },
+        });
+      } catch (err) {
+        const refusal = creditsRefusalEvent(err);
+        if (!refusal) throw err;
+        yield refusal;
+        return;
+      }
+      if (decided.model !== undefined && decided.model !== creditsModelIdOf(settings.model)) {
+        settings = { ...settings, model: creditsSelection(decided.model) };
+      }
+      if (decided.swap?.notice) yield decided.swap.notice;
+      await decided.swap?.commit();
+    }
     this.registry.recordMessage(sessionId, content, {
       cwd,
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
@@ -1042,7 +1091,13 @@ export class OpenCodeRuntime implements AgentRuntime {
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
     try {
-      return await this.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId);
+      // The sidecar's store names the model that ran and never one DorkOS
+      // credits put in place of the session's (DOR-2636), so that notice is
+      // put back from the durable event record, as for Claude Code.
+      return overlayModelSubstitutions(
+        sessionId,
+        await this.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId)
+      );
     } catch (err) {
       logger.debug(
         '[OpenCodeRuntime] native history read failed — serving durable EventLog fallback',
@@ -1449,6 +1504,27 @@ export class OpenCodeRuntime implements AgentRuntime {
     if (tracked.model !== undefined) session.model = tracked.model;
     if (tracked.fastMode !== undefined) session.fastMode = tracked.fastMode;
   }
+}
+
+/**
+ * The credits model id a session's OpenCode selection names: the id after the
+ * credits provider's prefix, or the selection as stored when it names another
+ * provider (which credits never serve), or `undefined` for none.
+ *
+ * @param selected - The session's model setting (`provider/model`), if any.
+ */
+function creditsModelIdOf(selected: string | undefined): string | undefined {
+  const prefix = `${OPENCODE_CREDITS_PROVIDER_ID}/`;
+  return selected?.startsWith(prefix) ? selected.slice(prefix.length) : selected;
+}
+
+/**
+ * The OpenCode selection (`provider/model`) for one credits model id.
+ *
+ * @param id - A credits model id.
+ */
+function creditsSelection(id: string): string {
+  return `${OPENCODE_CREDITS_PROVIDER_ID}/${id}`;
 }
 
 /**

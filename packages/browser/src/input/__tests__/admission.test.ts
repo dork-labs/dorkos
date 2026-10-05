@@ -1,5 +1,10 @@
 import { expect, it, vi } from 'vitest';
-import { createTabInput, type InputPorts, type InputResult } from '../index.js';
+import { type InputResult } from '../index.js';
+import {
+  createOwnedFixtureInput as createTabInput,
+  settleFixtureRetirement,
+  type FixtureInputPorts as InputPorts,
+} from '../../__tests__/parent-fixture.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import type { BrowserBinding } from '../../contracts.js';
@@ -34,7 +39,7 @@ function fixture() {
       },
     },
   };
-  const input = createTabInput(ports);
+  const input = createTabInput(ports, () => binding);
   return {
     input,
     ports,
@@ -79,6 +84,7 @@ it('stop from the initial submit observation must settle this unstarted request'
     });
     await tick();
     await vi.advanceTimersByTimeAsync(2000);
+    await settleFixtureRetirement(h.input);
     expect(h.gate.stopped).toBe(true);
     expect(h.calls).toEqual([]);
     expect(result, 'REENTRANT_STOP_ADMISSION_HANG').toMatchObject({
@@ -116,8 +122,11 @@ it('reset actual drain and coalescing block successor until acknowledged', async
   expect(h.input.reset()).toBe(reset);
   expect((await h.input.submit(h.command())).outcome).toBe('rejected');
   ack();
-  expect((await reset!).status).toBe('ready');
+  expect((await reset!).status).toBe('stopped');
   expect(h.calls).toEqual(['text', 'composition', 'drag']);
+  await settleFixtureRetirement(h.input);
+  expect(h.gate.stopped).toBe(true);
+  expect((await h.input.submit(h.command())).outcome).toBe('rejected');
 });
 it('cleanup callback cannot release the remaining held key onto replacement navigation', async () => {
   const h = fixture();
@@ -136,6 +145,7 @@ it('cleanup callback cannot release the remaining held key onto replacement navi
   };
   expect((await h.input.reset()).status).toBe('stopped');
   expect(h.calls, 'CLEANUP_AFTER_TARGET_CHANGE').toEqual(['mouseUp']);
+  await settleFixtureRetirement(h.input);
   expect(h.gate.stopped).toBe(true);
 });
 it('primary native failure remains closed dispatchFailed even when the cleanup observer fails', async () => {
@@ -152,6 +162,7 @@ it('primary native failure remains closed dispatchFailed even when the cleanup o
   });
   expect(result).toMatchObject({ outcome: 'uncertain', reason: 'dispatchFailed' });
   expect(JSON.stringify(result)).not.toContain('PRIVATE_SECRET');
+  await settleFixtureRetirement(h.input);
   expect(h.gate.stopped).toBe(true);
   expect((await h.input.reset()).status).toBe('stopped');
   expect(h.calls).toEqual([]);
@@ -162,6 +173,7 @@ it.each(['epoch', 'inputGeneration'] as const)(
     const h = fixture();
     h.ports.readBinding = () => ({ ...h.binding, [field]: Number.MAX_SAFE_INTEGER });
     expect((await h.input.reset()).status).toBe('stopped');
+    await settleFixtureRetirement(h.input);
     expect(h.gate.stopped).toBe(true);
     expect(h.calls).toEqual([]);
   }
@@ -210,5 +222,6 @@ it('throwing admission observation settles stopped without dispatch or secret ec
   expect(result).toMatchObject({ outcome: 'rejected', reason: 'stopped' });
   expect(JSON.stringify(result)).not.toContain('PRIVATE_ADMISSION_SECRET');
   expect(h.calls).toEqual([]);
+  await settleFixtureRetirement(h.input);
   expect(h.gate.stopped).toBe(true);
 });

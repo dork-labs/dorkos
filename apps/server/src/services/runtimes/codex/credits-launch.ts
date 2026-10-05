@@ -121,15 +121,23 @@ export function codexCreditsProcessEnv(
 }
 
 /**
- * The provider entry that points a turn at the credits endpoint: the base URL
- * (not a secret), the responses wire format, and the NAME of the variable the
- * token is in. `requires_openai_auth = false`, so the CLI never looks for a
- * ChatGPT sign-in.
+ * What a credits turn's config overrides carry: the provider entry that points
+ * the turn at the credits endpoint (the base URL, not a secret; the responses
+ * wire format; the NAME of the variable the token is in;
+ * `requires_openai_auth = false`, so the CLI never looks for a ChatGPT
+ * sign-in), and web search switched off.
+ *
+ * Web search is a tool Codex's own vendor runs and bills per search, so the
+ * credits endpoint cannot carry it and refuses any request that offers it:
+ * left on, every credits turn would be refused. `web_search = "disabled"`
+ * takes it out of the tool list (checked against Codex 0.154). It rides the
+ * command line for this turn only; the person's own `config.toml` and their
+ * own-sign-in turns are untouched.
  *
  * @param launch - The resolved credits launch.
  * @param tokenVar - This turn's token variable.
  */
-export function codexCreditsProviderConfig(
+export function codexCreditsConfig(
   launch: CreditsLaunch,
   tokenVar: string
 ): Record<string, unknown> {
@@ -144,11 +152,12 @@ export function codexCreditsProviderConfig(
         requires_openai_auth: false,
       },
     },
+    web_search: 'disabled',
   };
 }
 
 /**
- * Turn a client's options into a credits turn's: the provider entry merged
+ * Turn a client's options into a credits turn's: the credits config merged
  * into its config (after everything else, so nothing it carried can override
  * it) and the credits environment in place of its own.
  *
@@ -163,7 +172,7 @@ export function withCodexCredits(
 ): CodexOptions {
   return {
     ...options,
-    config: { ...(options.config ?? {}), ...codexCreditsProviderConfig(launch, tokenVar) },
+    config: { ...(options.config ?? {}), ...codexCreditsConfig(launch, tokenVar) },
     env: codexCreditsProcessEnv(options.env ?? {}, launch, tokenVar),
   } as CodexOptions;
 }

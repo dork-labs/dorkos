@@ -105,8 +105,7 @@ export function PlanCard() {
             together rather than giving each its own row. */}
         <div className="space-y-2">
           <p className="text-muted-foreground text-xs">
-            Only an agent you give an address takes a seat. Agents that run just on this machine
-            have no address and take none.
+            Only agents with an address take a seat. Local-only agents take none.
           </p>
           {/* Who can buy, on the card that describes the plan, just below the
               upgrade nudge that suggests another one. */}

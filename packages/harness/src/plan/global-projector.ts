@@ -36,9 +36,16 @@ import {
 } from '../sources/installed.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
 import { planUnreadableSkillWarnings } from './unreadable-skills.js';
+import { labelDevLinkActions } from './dev-link-labels.js';
 import { pluginTokenSkillWarningReason } from './installed-projector.js';
 import type { ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 import { directoryWriteBlock } from '../apply/write-path-occupants.js';
+import {
+  globalExtensionSkillPackages,
+  readRunningExtensionSkillsSync,
+  type ExtensionSkillPackage,
+} from '../sources/running-extension-skills.js';
+import { settleExtensionSkillCollisions } from './extension-skills.js';
 
 /**
  * Where a global plan may write. An absent root is a root the plan does not
@@ -131,6 +138,15 @@ export interface GlobalProjectionPlan extends ProjectionPlan {
    * `apply/global-apply.ts` for the sweep rule the pair drives.
    */
   enumeratedPackages: readonly string[];
+  /**
+   * What the running extensions' skills ledger said when this plan was built
+   * (DOR-2685): `read` makes the plan authoritative about extension links, so
+   * the sweep removes one the plan no longer names; `absent` and `unreadable`
+   * are evidence of nothing, and the sweep keeps every extension link whose
+   * generated plugin root is still there. Omitted (a plan built by hand) reads
+   * as `absent`.
+   */
+  extensionLedger?: 'read' | 'absent' | 'unreadable';
 }
 
 /** Everything a global plan needs. The engine reads no config and resolves no home. */
@@ -149,6 +165,17 @@ export interface GlobalPlanInput {
    * Omitted means every manifest parsed.
    */
   unreadableManifests?: readonly UnreadablePackageManifest[];
+  /**
+   * The running global extensions whose skills every project gets (DOR-2685),
+   * which {@link projectGlobal} reads from the server's ledger. Each is planned
+   * in the same tiers as a global package's skills, through its generated
+   * plugin root; a global package's skill of the same name wins.
+   */
+  extensionPackages?: readonly ExtensionSkillPackage[];
+  /** What reading the ledger had to say. */
+  extensionWarnings?: readonly ProjectionWarning[];
+  /** The ledger's state, carried onto the plan for the sweep. */
+  extensionLedger?: 'read' | 'absent' | 'unreadable';
   /**
    * The agent tools this machine shares global packages with.
    *
@@ -510,7 +537,7 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
         const target = join(tier.dir, namespaced);
         if (planned.has(target)) continue;
         planned.add(target);
-        actions.push({
+        const action: ProjectionAction = {
           kind: 'symlink',
           artifact: 'skill',
           harness: tier.harness,
@@ -521,7 +548,8 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
           source: skill.sourceDir,
           target,
           reason: tier.reason(skill.hasSchedule),
-        });
+        };
+        actions.push(...labelDevLinkActions([action], plugin));
       }
       const tokenReason = pluginTokenSkillWarningReason(skill);
       if (tokenReason !== undefined) {
@@ -537,6 +565,39 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
     }
   }
 
+  // Running global extensions' skills (DOR-2685): the same tiers, one action
+  // per target path, through each extension's generated plugin root. A global
+  // package's skill of the same name wins.
+  warnings.push(...(input.extensionWarnings ?? []));
+  const settled = settleExtensionSkillCollisions({
+    extensions: input.extensionPackages ?? [],
+    plugins: input.packages.filter((plugin) => plugin.location.scope === 'global'),
+  });
+  warnings.push(...settled.warnings);
+  for (const extension of settled.packages) {
+    for (const skill of extension.skills) {
+      const namespaced = `${extension.name}__${skill.name}`;
+      for (const tier of tiers) {
+        const target = join(tier.dir, namespaced);
+        if (planned.has(target)) continue;
+        planned.add(target);
+        const action: ProjectionAction = {
+          kind: 'symlink',
+          artifact: 'skill',
+          harness: tier.harness,
+          ...(tier.harnessAgnostic ? { harnessAgnostic: true } : {}),
+          provenance: 'installed',
+          scope: 'global',
+          name: namespaced,
+          source: skill.sourceDir,
+          target,
+          reason: tier.reason(skill.hasSchedule),
+        };
+        actions.push(...labelDevLinkActions([action], extension));
+      }
+    }
+  }
+
   return {
     actions,
     drops: [],
@@ -545,6 +606,7 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
     enumeratedPackages: input.packages
       .filter((plugin) => plugin.location.scope === 'global')
       .map((plugin) => plugin.name),
+    ...(input.extensionLedger !== undefined ? { extensionLedger: input.extensionLedger } : {}),
   };
 }
 
@@ -605,10 +667,18 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
       rootInTheWay(input.roots.dorkHome) ?? packagesRootByDefault(input.roots.dorkHome)
     );
   }
+  // The running global extensions' skills, from the server's ledger. Read
+  // here, beside the packages, so `dorkos harness sync --global` plans exactly
+  // what the server decided is running.
+  const ledger = readRunningExtensionSkillsSync(input.roots.dorkHome);
+  const extensions = globalExtensionSkillPackages(ledger, input.roots.dorkHome);
   return buildGlobalPlan({
     ...input,
     packages: scan.plugins,
     unreadableManifests: scan.unreadableManifests,
+    extensionPackages: extensions.packages,
+    extensionWarnings: extensions.warnings,
+    extensionLedger: ledger.state,
   });
 }
 

@@ -258,7 +258,7 @@ describe('WorkspacesPage', () => {
 
     // And the prose above it says nothing about a folder — the sentence is the
     // one place the string cannot be contained.
-    const prose = screen.getByText(/A worktree is a second copy/);
+    const prose = screen.getByText(/A worktree is a copy of your project/);
     expect(prose.textContent).not.toContain('.dork/workspaces');
   });
 });

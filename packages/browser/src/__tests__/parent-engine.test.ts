@@ -1,3 +1,4 @@
+import { fakeJPEG } from './parent-fixture.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { BrowserContext } from 'playwright-core';
 import { createBrowserEngine } from '../engine.js';
@@ -200,14 +201,18 @@ it('proxy release pending refuses same-profile reacquisition until exact closure
     engine = createBrowserEngine(h.config),
     opened = await engine.open(command),
     held = deferred<void>();
-  h.release.mockImplementation(() => held.promise);
+  const releaseEntered = deferred<void>();
+  h.release.mockImplementation(() => {
+    releaseEntered.resolve();
+    return held.promise;
+  });
   const closing = engine.close({
     kind: 'close',
     requestId,
     browserId: opened.browserId,
     browserGeneration: 0,
   });
-  await tick();
+  await releaseEntered.promise;
   expect(h.release).toHaveBeenCalledTimes(1);
   await expect(engine.open(command)).rejects.toMatchObject({ code: 'PROFILE_UNCERTAIN' });
   expect(mocks.launch).toHaveBeenCalledTimes(1);
@@ -235,8 +240,18 @@ it('shutdown enters all available closes before waiting for held opening, then r
     (error: unknown) => error
   );
   await tick();
+  const firstEntry = deferred<void>(),
+    secondEntry = deferred<void>();
+  h.proxyClose.mockImplementation(async () => {
+    firstEntry.resolve();
+  });
+  secondProxy.mockImplementation(async () => {
+    secondEntry.resolve();
+  });
   const shutdown = engine.shutdown();
   expect(engine.shutdown()).toBe(shutdown);
+  expect(() => engine.listTabs(opened.browserId, opened.browserGeneration)).toThrow();
+  await Promise.all([firstEntry.promise, secondEntry.promise]);
   expect(h.context.close).toHaveBeenCalledTimes(1);
   expect(h.proxyClose).toHaveBeenCalledTimes(1);
   expect(secondProxy).toHaveBeenCalledTimes(1);
@@ -289,7 +304,7 @@ it('capture deadline does not certify its still-held Page call settled or releas
   });
   expect((await closing).cleanup).toBe('unverified');
   expect(h.release).not.toHaveBeenCalled();
-  image.resolve(new Uint8Array([1, 2, 3]));
+  image.resolve(fakeJPEG(100, 80));
   await tick();
   expect(
     (
@@ -316,13 +331,22 @@ it('shutdown keeps its original end across nonzero earlier synchronous close cal
     vi.advanceTimersByTime(1000);
     await operation;
   });
-  const proxy = deferred<void>();
-  second.proxyClose.mockImplementation(() => proxy.promise);
+  const proxy = deferred<void>(),
+    firstEntry = deferred<void>(),
+    secondEntry = deferred<void>();
+  first.proxyClose.mockImplementation(async () => {
+    firstEntry.resolve();
+  });
+  second.proxyClose.mockImplementation(() => {
+    secondEntry.resolve();
+    return proxy.promise;
+  });
   let settled = false;
   const shutdown = engine.shutdown();
   void shutdown.then(() => {
     settled = true;
   });
+  await Promise.all([firstEntry.promise, secondEntry.promise]);
   expect(first.context.close).toHaveBeenCalledTimes(1);
   expect(second.context.close).toHaveBeenCalledTimes(1);
   expect(first.proxyClose).toHaveBeenCalledTimes(1);
@@ -358,7 +382,7 @@ it('observes screenshot once and refuses its effect after the getter retires thi
   const h = fixture(),
     engine = createBrowserEngine(h.config),
     opened = await engine.open(command);
-  const effect = vi.fn(async () => new Uint8Array([9, 8, 7])),
+  const effect = vi.fn(async () => fakeJPEG(100, 80, 9)),
     getter = vi.fn(() => {
       h.event('close');
       return effect;
@@ -383,14 +407,14 @@ it('invokes a stable captured screenshot method once with its exact Page receive
     opened = await engine.open(command);
   const effect = vi.fn(async function (this: unknown) {
       expect(this).toBe(h.raw);
-      return new Uint8Array([9, 8, 7]);
+      return fakeJPEG(100, 80, 9);
     }),
     getter = vi.fn(() => effect);
   Object.defineProperty(h.raw, 'screenshot', { get: getter });
   const frame = await engine.capture({ kind: 'capture', requestId, binding: opened.tab });
   expect(getter).toHaveBeenCalledTimes(1);
   expect(effect).toHaveBeenCalledTimes(1);
-  expect(frame.bytes).toEqual(new Uint8Array([9, 8, 7]));
+  expect(frame.bytes).toEqual(fakeJPEG(100, 80, 9));
   expect(frame.receipt.binding).toEqual(opened.tab);
   expect(effect).toHaveBeenCalledWith({
     type: 'jpeg',
@@ -405,4 +429,31 @@ it('invokes a stable captured screenshot method once with its exact Page receive
     browserGeneration: 0,
   });
   expect(result.cleanup).toBe('observed');
+});
+it('passes one engine budget to every record before Page registration and isolates another engine', async () => {
+  const registry = await import('../tabs/registry.js');
+  const budgets: unknown[] = [];
+  const original = registry.trackPage;
+  const observed = vi.spyOn(registry, 'trackPage').mockImplementation((record, ...args) => {
+    expect(record.diagnosticsBudget.snapshot().owners).toBe(budgets.length === 1 ? 1 : 0);
+    budgets.push(record.diagnosticsBudget);
+    return original(record, ...args);
+  });
+  const h = fixture(),
+    second = fakePage(),
+    third = fakePage();
+  mocks.launch
+    .mockResolvedValueOnce(h.context)
+    .mockResolvedValueOnce({ ...h.context, pages: () => [second.page] })
+    .mockResolvedValueOnce({ ...h.context, pages: () => [third.page] });
+  const firstEngine = createBrowserEngine(h.config),
+    secondEngine = createBrowserEngine(h.config);
+  await firstEngine.open(command);
+  await firstEngine.open({ ...command, profileId: 'profile_subject_B_000000000000000' });
+  await secondEngine.open(command);
+  expect(observed).toHaveBeenCalledTimes(3);
+  expect(budgets[0]).toBe(budgets[1]);
+  expect(budgets[2]).not.toBe(budgets[0]);
+  await firstEngine.shutdown();
+  await secondEngine.shutdown();
 });

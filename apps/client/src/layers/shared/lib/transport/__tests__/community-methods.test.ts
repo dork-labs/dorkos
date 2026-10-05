@@ -60,7 +60,7 @@ describe('community connection transport', () => {
         url: connection.pinnedOrigin,
         installName: 'Laptop',
       })
-    ).rejects.toThrow('invalid approval');
+    ).rejects.toThrow('approval link DorkOS couldn’t read');
   });
   it('keeps distinct refs on local read and poll requests', async () => {
     const fetch = answer({ connection });

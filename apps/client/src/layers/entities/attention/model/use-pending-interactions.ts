@@ -41,6 +41,11 @@ export interface PendingInteractionsState {
   interactions: readonly InteractionPendingEvent[];
   /** True only on the very first load, before any answer has arrived. */
   isLoading: boolean;
+  /**
+   * True when the last read failed. A failed read is not an empty list: a
+   * surface that draws an all-clear must not draw it over one.
+   */
+  isError: boolean;
 }
 
 /**
@@ -71,7 +76,7 @@ export function usePendingInteractions(): PendingInteractionsState {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: PENDING_INTERACTIONS_QUERY_KEY,
     queryFn: () => transport.listPendingInteractions(),
   });
@@ -152,5 +157,5 @@ export function usePendingInteractions(): PendingInteractionsState {
     });
   }, [cached, attached]);
 
-  return { interactions, isLoading };
+  return { interactions, isLoading, isError };
 }

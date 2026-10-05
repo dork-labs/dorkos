@@ -3,11 +3,13 @@ import { defineConfig } from 'drizzle-kit';
 export default defineConfig({
   schema: [
     './src/schema/a2a.ts',
+    './src/schema/browser/registry.ts',
     './src/schema/activity.ts',
     './src/schema/approvals.ts',
     './src/schema/agent-identity.ts',
     './src/schema/tasks.ts',
-    './src/schema/relay.ts',
+    './src/schema/relay/index.ts',
+    './src/schema/relay-delivery-receipts.ts',
     './src/schema/mesh.ts',
     './src/schema/sessions.ts',
     './src/schema/codex.ts',
@@ -41,6 +43,7 @@ export default defineConfig({
     './src/schema/notifications.ts',
     './src/schema/projects.ts',
     './src/schema/extensions/extension-decisions.ts',
+    './src/schema/extensions/extension-agent-sends.ts',
   ],
   out: './drizzle',
   // Snapshot baselines are sorted by filename; keep future names after the timestamp migration.

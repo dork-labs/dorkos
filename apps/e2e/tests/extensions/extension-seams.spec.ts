@@ -75,7 +75,7 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
       (window as Window & { __pageLoadSeen?: typeof seen }).__pageLoadSeen = seen;
       new MutationObserver(() => {
         if (document.querySelector('[data-testid="extension-page-skeleton"]')) seen.skeleton = true;
-        if (document.body?.textContent?.includes("This page isn't available")) {
+        if (document.body?.textContent?.includes('This page isn’t available')) {
           seen.unavailable = true;
           // What it said, so a failure names which empty state flashed.
           seen.said ||= document.querySelector('[data-slot="empty-state"]')?.textContent ?? '';

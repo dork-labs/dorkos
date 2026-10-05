@@ -56,15 +56,21 @@ export function ModelCardsSkeleton() {
   );
 }
 
-/** Error state with a retry button when model fetching fails. */
-export function ModelLoadError({ onRetry }: { onRetry: () => void }) {
+/**
+ * Error state with a retry button when model fetching fails.
+ *
+ * @param props.onRetry - Ask again.
+ * @param props.message - What could not be loaded, when it is more specific
+ *   than the model list (the models DorkOS credits cover).
+ */
+export function ModelLoadError({ onRetry, message }: { onRetry: () => void; message?: string }) {
   return (
     <div
       className="flex flex-col items-center gap-3 py-6 text-center"
       data-testid="model-load-error"
     >
       <AlertCircle className="text-muted-foreground size-5" />
-      <p className="text-muted-foreground text-xs">Couldn’t load the model list.</p>
+      <p className="text-muted-foreground text-xs">{message ?? 'Couldn’t load the model list.'}</p>
       <button
         onClick={onRetry}
         className="text-foreground hover:bg-accent inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors"
@@ -320,6 +326,8 @@ interface ModelSelectionListProps {
   models: ModelOption[];
   selectedModel: string;
   onChangeModel: (model: string) => void;
+  /** What an empty catalog says, when it is not "couldn't be loaded". */
+  emptyMessage?: string;
 }
 
 /**
@@ -333,6 +341,7 @@ export function ModelSelectionList({
   models,
   selectedModel,
   onChangeModel,
+  emptyMessage,
 }: ModelSelectionListProps) {
   const [query, setQuery] = React.useState('');
   const useSearchableMenu = shouldUseTieredMenu(models);
@@ -364,7 +373,7 @@ export function ModelSelectionList({
         className="border-border text-muted-foreground text-2xs rounded-xl border border-dashed p-3 leading-snug"
         data-testid="model-catalog-unavailable"
       >
-        Couldn’t load models. Check Settings, then try again.
+        {emptyMessage ?? 'Couldn’t load models. Check Settings, then try again.'}
       </div>
     );
   }

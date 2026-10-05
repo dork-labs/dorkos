@@ -207,7 +207,7 @@ test.describe('Browser — an agent uses the page @smoke', () => {
     });
     await writeFile(
       join(agentDir, 'index.html'),
-      '<!doctype html><title>Bridge adversary</title><h1>Bridge adversary</h1>'
+      '<!doctype html><html><head><title>Bridge adversary</title></head><body><h1>Bridge adversary</h1></body></html>'
     );
     await page.request.post('/api/test/scenario', {
       data: { name: 'browser-bridge-evidence', sessionId },

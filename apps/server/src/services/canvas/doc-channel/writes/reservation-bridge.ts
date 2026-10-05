@@ -13,7 +13,7 @@ import {
   type DocBatchRow,
   type DocWriteIntentRow,
 } from '../store.js';
-import { backfillEnvelopeAccounting, type DocIngestLimits } from '../accounting.js';
+import { backfillEnvelopeAccounting, type DocIngestLimits } from '../current/accounting.js';
 import {
   checkCheckboxTerminal,
   sameCheckboxRow as same,

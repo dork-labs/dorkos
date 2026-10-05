@@ -18,10 +18,11 @@ import { UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
 import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { UnreadableEntryNote } from './UnreadableEntryNote';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
-import { PermissionDeniedChip } from './PermissionDeniedChip';
+import { PermissionDeniedChip } from './rows/PermissionDeniedChip';
 import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
 import { McpSigninCard } from './McpSigninCard';
-import { CompactBoundaryRow } from './CompactBoundaryRow';
+import { CompactBoundaryRow } from './rows/CompactBoundaryRow';
+import { ModelSubstitutedRow } from './rows/ModelSubstitutedRow';
 import { MessageImage } from './MessageImage';
 import { CompactPendingRow } from '../primitives';
 import { AutoHideThinking, ToolCallWithApp } from './auto-hiding-parts';
@@ -224,6 +225,15 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           reason={part.reason}
           message={part.message}
           agentId={part.agentId}
+        />
+      );
+    }
+    if (part.type === 'model_substituted') {
+      return (
+        <ModelSubstitutedRow
+          key={`model-substituted-${i}`}
+          fromName={part.fromName}
+          toName={part.toName}
         />
       );
     }

@@ -40,6 +40,7 @@
  *
  * @module shared/lib/execution-config
  */
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { EffortLevel } from '@dorkos/shared/types';
 
@@ -91,6 +92,42 @@ export function knownModelsFrom(
   models: readonly { value: string }[] | undefined
 ): string[] | undefined {
   return models && models.length > 0 ? models.map((m) => m.value) : undefined;
+}
+
+/**
+ * Whether an agent's sessions run on DorkOS credits, as far as its settings
+ * go, by the rule the server applies when it judges the agent's model
+ * (`agentRunsOnCredits`), so the Model row offers exactly the menu the server
+ * will accept (DOR-2636). Only a runtime that declares a credits protocol can
+ * be on credits:
+ *
+ * - Claude Code, through its account ladder: the agent's file names credits
+ *   and a person allowed it, or it names no account while credits are the
+ *   machine default.
+ * - Any other runtime (Codex, OpenCode), which has no per-agent account: its
+ *   recorded default (`GET /api/cloud/credits` `defaults`).
+ *
+ * @param agent - The agent's id, runtime (absent: the default) and account.
+ * @param opts - The default runtime, whether a runtime declares credits, what
+ *   the server says about Claude Code's credits (`config.claudeCode.credits`),
+ *   and each other runtime's recorded default.
+ */
+export function agentRunsOnCredits(
+  agent: { id: string; runtime?: string | null; account?: string | null },
+  opts: {
+    defaultRuntime: string;
+    runtimeDeclaresCredits: (runtime: string) => boolean;
+    credits: { isDefault: boolean; allowedAgents: readonly string[] } | null | undefined;
+    runtimeDefaultsToCredits?: (runtime: string) => boolean;
+  }
+): boolean {
+  const runtime = agent.runtime ?? opts.defaultRuntime;
+  if (!opts.runtimeDeclaresCredits(runtime)) return false;
+  if (runtime !== ACCOUNT_RUNTIME) return opts.runtimeDefaultsToCredits?.(runtime) ?? false;
+  if (!opts.credits) return false;
+  const account = agent.account ?? null;
+  if (account === CREDITS_ACCOUNT_ID) return opts.credits.allowedAgents.includes(agent.id);
+  return account === null && opts.credits.isDefault;
 }
 
 /**
@@ -325,7 +362,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     if (account !== null && knownAccounts !== undefined && !registeredAccount) {
       breakages.push({
         kind: 'account-unregistered',
-        message: `The account “${account}” isn’t registered on this machine, so this agent runs on the default.`,
+        message: `“${account}” isn’t on this computer. This agent runs on your default account.`,
       });
     }
   }
@@ -334,7 +371,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     if (runtimeSupportsEffort === false) {
       breakages.push({
         kind: 'effort-unsupported-runtime',
-        message: `${runtimeLabel(runtime)} has no effort setting, so this one does nothing.`,
+        message: `${runtimeLabel(runtime)} has no effort setting. It’s ignored.`,
       });
     } else if (modelSupportsEffort === false) {
       breakages.push({

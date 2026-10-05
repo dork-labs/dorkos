@@ -11,6 +11,7 @@ import {
 } from '@dorkos/shared/extension-approval-schemas';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
+import { createRefreshLeader } from './refresh-leader';
 
 /**
  * Query keys for the extension entity.
@@ -24,6 +25,9 @@ export const extensionQueryKeys = {
   pendingApprovals: () => [...extensionQueryKeys.all, 'pending-approvals'] as const,
 };
 
+/** Which mounted copy of {@link usePendingExtensionApprovals} answers an event. */
+const useIsApprovalsRefreshLeader = createRefreshLeader();
+
 /** Shared empty list, so an inbox with nothing waiting never mints a fresh array. */
 const NO_APPROVALS: readonly PendingExtensionApproval[] = [];
 
@@ -33,6 +37,11 @@ export interface PendingExtensionApprovalsState {
   approvals: readonly PendingExtensionApproval[];
   /** True while the list is still on its first read. */
   isLoading: boolean;
+  /**
+   * True when the last read failed. A failed read is not an empty list: a
+   * surface that draws an all-clear must not draw it over one.
+   */
+  isError: boolean;
 }
 
 /**
@@ -40,8 +49,8 @@ export interface PendingExtensionApprovalsState {
  *
  * @returns The extensions waiting, oldest first.
  */
-async function fetchPendingApprovals(): Promise<PendingExtensionApproval[]> {
-  const res = await fetch(`${resolveApiBaseUrl()}/extensions/pending-approvals`);
+async function fetchPendingApprovals(signal?: AbortSignal): Promise<PendingExtensionApproval[]> {
+  const res = await fetch(`${resolveApiBaseUrl()}/extensions/pending-approvals`, { signal });
   if (!res.ok) {
     throw new Error(`Couldn’t check for extensions waiting to be turned on (${res.status})`);
   }
@@ -60,19 +69,23 @@ async function fetchPendingApprovals(): Promise<PendingExtensionApproval[]> {
  */
 export function usePendingExtensionApprovals(): PendingExtensionApprovalsState {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({
+  const isRefreshLeader = useIsApprovalsRefreshLeader();
+  const { data, isLoading, isError } = useQuery({
     queryKey: extensionQueryKeys.pendingApprovals(),
-    queryFn: fetchPendingApprovals,
+    queryFn: ({ signal }) => fetchPendingApprovals(signal),
   });
 
   const refresh = (raw: unknown) => {
     const kind = (raw as { kind?: unknown } | null)?.kind;
     if (kind !== undefined && kind !== 'extension.approval') return;
+    // One copy answers each event, with a plain invalidate, so the read that
+    // follows always starts after the latest event (see `refresh-leader`).
+    if (!isRefreshLeader()) return;
     void queryClient.invalidateQueries({ queryKey: extensionQueryKeys.pendingApprovals() });
   };
   useEventSubscription('standing_pending', refresh);
   useEventSubscription('standing_resolved', refresh);
   useEventSubscription('extension_reloaded', () => refresh(null));
 
-  return { approvals: data ?? NO_APPROVALS, isLoading };
+  return { approvals: data ?? NO_APPROVALS, isLoading, isError };
 }

@@ -111,6 +111,16 @@ export type TurnOrigin =
    */
   | { readonly kind: 'extension-start' }
   /**
+   * An extension's server half sent one of the person's agents a message
+   * (`ctx.agent.send`, DOR-2683), opening the chat it keeps with that agent
+   * on the first one. The words are app data, not a person's request, and
+   * the extension is not the person the operator's stop was set for, so the
+   * row seeds no operator stop — like a connector event waking an agent.
+   * Sent into a chat that already exists, it changes nothing: that row was
+   * bound first and keeps its power.
+   */
+  | { readonly kind: 'extension-message' }
+  /**
    * A limited session's work carried over to a new session on another account
    * (spec `claude-account-fleet` D9), by a person or by the account advisor.
    * The new session's settings row is copied from the source session before
@@ -232,7 +242,12 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // A resume after an account's reset goes to a session that is already
     // bound: its row is its power, and the origin must not add to it.
     //
+    // An extension's message to an agent is app data. No extension turns the
+    // operator's stop into a grant of its own, so the chat it opens is born
+    // with nothing seeded, like a connector event's.
+    //
     // The harness is not a surface anybody ships to.
+    case 'extension-message':
     case 'schedule':
     case 'relay-binding':
     case 'agent-dm':

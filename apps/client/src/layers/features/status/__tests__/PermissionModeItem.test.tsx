@@ -427,9 +427,9 @@ describe('PermissionModeItem', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(<PermissionModeItem mode={'dontAsk' as never} onChangeMode={vi.fn()} />);
 
-      expect(screen.getByTestId('popover-trigger')).toHaveTextContent('Don’t Ask');
+      expect(screen.getByTestId('popover-trigger')).toHaveTextContent('Don’t ask');
       // …and the dial admits it has nowhere to point.
-      expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent('Don’t Ask');
+      expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent('Don’t ask');
     });
   });
 
@@ -526,7 +526,7 @@ describe('PermissionModeItem', () => {
         <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="codex" />
       );
 
-      expect(screen.getByText(/covers what an agent does in a session/i)).toBeInTheDocument();
+      expect(screen.getByText(/covers editing files, running commands/i)).toBeInTheDocument();
     });
 
     it('appears for a bounded mode that never asks, too (DOR-816)', () => {
@@ -538,7 +538,7 @@ describe('PermissionModeItem', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
       render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
 
-      expect(screen.getByText(/covers what an agent does in a session/i)).toBeInTheDocument();
+      expect(screen.getByText(/covers editing files, running commands/i)).toBeInTheDocument();
     });
 
     it('stays away from a mode that still stops to ask', () => {
@@ -547,7 +547,7 @@ describe('PermissionModeItem', () => {
         <PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="claude-code" />
       );
 
-      expect(screen.queryByText(/covers what an agent does in a session/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/covers editing files, running commands/i)).not.toBeInTheDocument();
     });
   });
 

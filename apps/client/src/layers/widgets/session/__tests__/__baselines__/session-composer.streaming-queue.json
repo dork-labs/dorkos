@@ -675,8 +675,8 @@
                           "attrs": {
                             "aria-autocomplete": "list",
                             "aria-expanded": "false",
-                            "aria-label": "Compose another — 2 queued",
-                            "placeholder": "Compose another — 2 queued",
+                            "aria-label": "Compose another (2 queued)",
+                            "placeholder": "Compose another (2 queued)",
                             "role": "combobox",
                             "rows": "1"
                           },

@@ -36,8 +36,8 @@ import { SEARCH_MIN_QUERY_LENGTH } from '@dorkos/shared/search-schemas';
  * DOR-688), so one sentence covers them rather than three near-duplicates.
  */
 export const SEARCH_SCOPE_COVERED: readonly string[] = [
-  'Your DorkOS channels and direct messages, the moment they are posted.',
-  'Your Claude Code, Codex and OpenCode conversations, including the ones you ran outside DorkOS. A new message can take up to five minutes to show up here.',
+  'Your channels and direct messages, as soon as they’re posted.',
+  'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.',
 ];
 
 /**
@@ -50,8 +50,8 @@ export const SEARCH_SCOPE_COVERED: readonly string[] = [
  * last because it only bites once you have typed something and got nothing.
  */
 export const SEARCH_SCOPE_GAPS: readonly string[] = [
-  'Tool output is never searched. No error messages, no stack traces, no file contents, no diffs. Search reads what you and your agents said to each other.',
-  'Search matches whole words. Typing "ogs" will not find "dogs". Type "dog*" to match the start of a word instead.',
+  'Tool output is never searched: no errors, stack traces, file contents or diffs.',
+  'Matches whole words: “ogs” won’t find “dogs”. Type “dog*” to match word starts.',
 ];
 
 /**
@@ -65,7 +65,7 @@ export const SEARCH_SCOPE_GAPS: readonly string[] = [
  * as the disclosure that opens the rest.
  */
 export const SEARCH_SCOPE_SUMMARY =
-  'Searches what was said in channels and direct messages, and in Claude Code, Codex and OpenCode conversations. Not tool output.';
+  'Searches channels, direct messages, and Claude Code, Codex and OpenCode conversations. Not tool output.';
 
 /**
  * Stating it is the whole point. A search box that quietly returned less than

@@ -61,7 +61,7 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
   const handleSkipAll = useCallback(async () => {
     await dismiss();
     toast('Setup skipped', {
-      description: 'You can start it again with "Replay setup" in Settings → Preferences.',
+      description: 'Replay it anytime in Settings → Preferences.',
       action: { label: 'Replay setup', onClick: () => openSettingsTab('preferences') },
     });
     onComplete();

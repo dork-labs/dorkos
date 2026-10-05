@@ -47,6 +47,7 @@ import type {
 } from './types.js';
 import type { Workspace, WorktreeScanResult } from './workspace.js';
 import type {
+  RelayDeliveryReceipt,
   AdapterConfig,
   AdapterStatus,
   TraceSpan,
@@ -171,6 +172,13 @@ import type {
   KeepFilesOptions,
   KeepFilesResult,
   HeldBackPackage,
+  DevLinkCreateInput,
+  DevLinkListing,
+  DevLinkPreviewInput,
+  DevLinkPreviewResponse,
+  DevLinkScopeInput,
+  DevLinkStatus,
+  DevUnlinkResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -374,6 +382,15 @@ export interface CapabilityApprovalRequired {
     instructions: string;
   };
 }
+
+/**
+ * Result of {@link Transport.linkDevLink}: the link was made, or the caller is
+ * one the tier gate wants a person to approve first. The app is a trusted
+ * caller, so it expects `linked`; the other branch is handled, not assumed away.
+ */
+export type DevLinkCreateResult =
+  | { status: 'linked'; link: DevLinkStatus }
+  | { status: 'approval_required'; approval: CapabilityApprovalRequired };
 
 /** Input for {@link Transport.addAgentMcpServer}. */
 export interface AddAgentMcpServerInput {
@@ -597,7 +614,7 @@ export interface ClaudePluginTransport {
  * throw.
  */
 export type WriteFileResult =
-  | { ok: true; hash: string }
+  | { ok: true; hash: string; effect: 'changed' | 'no_op' }
   | { ok: false; conflict: { currentHash: string; currentContent: string } };
 
 /** A single progress frame emitted while a runtime binary is being provisioned on demand. */
@@ -655,7 +672,7 @@ export interface TerminalHandle {
 }
 
 /**
- * An untrusted cockpit crash report relayed to the server (DOR-318). Carries
+ * An untrusted app crash report relayed to the server (DOR-318). Carries
  * only the three raw `Error` strings — the server rebuilds and scrubs them, so
  * the client never scrubs and the server never trusts these values. Everything
  * is optional because a given crash may expose only some of them.
@@ -1092,14 +1109,24 @@ export interface Transport
   mediaUrl(cwd: string, filePath: string): string | null;
 
   /** Record a document event; its receipt does not imply a completed agent turn. */
-  ingestCanvasEvent(documentId: string, event: PageEvent): Promise<CanvasChannelEventReceipt>;
+  ingestCanvasEvent(
+    documentId: string,
+    event: PageEvent,
+    condition: { readonly expectedGeneration: string },
+    signal: AbortSignal
+  ): Promise<CanvasChannelEventReceipt>;
   /** Read a bounded document event page and current state. Honor resetRequired before retrying old inputs. */
   getCanvasChannel(
     documentId: string,
     query?: { since?: number; limit?: number }
   ): Promise<CanvasChannelReplayResponse>;
   /** Inspect a retained event receipt without replaying or launching work. */
-  getCanvasEventReceipt(documentId: string, eventId: string): Promise<CanvasChannelEventReceipt>;
+  getCanvasEventReceipt(
+    documentId: string,
+    eventId: string,
+    condition: { readonly expectedGeneration: string },
+    signal: AbortSignal
+  ): Promise<CanvasChannelEventReceipt>;
 
   // --- Session canvas (server-owned; spec `canvas-agent-seat` §1.6) ---
 
@@ -1581,7 +1608,7 @@ export interface Transport
    */
   revealMcpLocalToken(): Promise<{ localToken: string }>;
   /**
-   * Relay a caught cockpit crash to the server's `POST /api/errors` intake
+   * Relay a caught app crash to the server's `POST /api/errors` intake
    * (DOR-318). Fire-and-forget and best-effort: it must never throw or surface
    * to the user. The server rebuilds and scrubs the report and only sends it
    * onward when error reporting is opted in — the client neither scrubs nor
@@ -1601,8 +1628,19 @@ export interface Transport
    *   metadata row exists yet, so `sessionId` would wrongly infer the default.
    *   `sessionId` otherwise scopes the call to the runtime that owns the
    *   session. Omit both for cold-discovery (onboarding, first-run).
+   *   `account` is the account the person picked for a session that has not
+   *   started (or, with no session, `dorkos-credits` to ask for the models
+   *   DorkOS credits serve); `cwd` is the folder such a session runs in. A
+   *   session on credits gets only the models credits serve on its runtime's
+   *   protocol, and the call fails rather than fall back to the runtime's own
+   *   menu when that list cannot be read.
    */
-  getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]>;
+  getModels(opts?: {
+    sessionId?: string;
+    runtime?: string;
+    account?: string;
+    cwd?: string;
+  }): Promise<ModelOption[]>;
   /**
    * List available subagents reported by the resolved runtime.
    *
@@ -1874,7 +1912,14 @@ export interface Transport
     payload: unknown;
     from: string;
     replyTo?: string;
-  }): Promise<{ messageId: string; deliveredTo: number }>;
+  }): Promise<{
+    messageId: string;
+    deliveredTo: number;
+    receipt?: RelayDeliveryReceipt;
+    statusUrl?: string;
+  }>;
+  /** Read the authoritative agent-target observation, using normal request authentication. */
+  getRelayDeliveryReceipt(messageId: string): Promise<RelayDeliveryReceipt>;
   /** List relay endpoints. */
   listRelayEndpoints(): Promise<unknown[]>;
   /** Register a relay endpoint. */
@@ -2400,6 +2445,41 @@ export interface Transport
    * @param name - The held-back package's name.
    */
   reviewHeldBackPackage(name: string): Promise<void>;
+
+  /**
+   * Every dev link and whether it is in force (`GET /api/marketplace/dev-links`,
+   * DOR-2696). `registryUnreadable` is set when the record file can't be read.
+   */
+  listDevLinks(): Promise<DevLinkListing>;
+
+  /**
+   * Say what linking a folder would do, changing nothing
+   * (`POST /api/marketplace/dev-links/preview`). Rejects with the refusal's
+   * `code` and sentence when the folder can't be linked.
+   *
+   * @param input - The folder, where it goes, and the explicit switch.
+   */
+  previewDevLink(input: DevLinkPreviewInput): Promise<DevLinkPreviewResponse>;
+
+  /**
+   * Run a package from a folder (`POST /api/marketplace/dev-links`). The app
+   * sends the preview's `change` back as `expectedChange`, so a folder that
+   * changed since the person read the dialog is refused with `dev_link_changed`.
+   * A caller the tier gate wants a person to approve gets `approval_required`.
+   *
+   * @param input - What the person approved.
+   */
+  linkDevLink(input: DevLinkCreateInput): Promise<DevLinkCreateResult>;
+
+  /**
+   * Stop running a package from a folder
+   * (`POST /api/marketplace/dev-links/:name/unlink`): put the installed copy
+   * back, or remove the package. The person's folder is never touched.
+   *
+   * @param name - The package name. Will be URL-encoded.
+   * @param input - Which dev link: its scope and project.
+   */
+  unlinkDevLink(name: string, input: DevLinkScopeInput): Promise<DevUnlinkResult>;
 
   /**
    * List installed marketplace packages.

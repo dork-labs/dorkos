@@ -1,6 +1,6 @@
 {
   "name": "dorkos",
-  "version": "0.95.0",
+  "version": "0.97.0",
   "description": "You, multiplied. All your agents in one place: Claude Code, Codex, and OpenCode. See every session, approve what your agents do, and run them on a schedule. Self-hosted, MIT.",
   "license": "MIT",
   "author": "Dorian Collier",
@@ -79,6 +79,7 @@
     "esbuild": "^0.28.2",
     "express": "^5.2.1",
     "node-pty": "^1.1.0",
+    "playwright-core": "1.63.0",
     "qrcode-terminal": "^0.12.0",
     "uuid": "^13.0.2",
     "ws": "^8.22.0",
@@ -88,6 +89,7 @@
     "@better-auth/api-key": "1.7.6",
     "@better-auth/core": "1.7.6",
     "@better-fetch/fetch": "1.3.2",
+    "@dorkos/browser": "workspace:*",
     "@dorkos/client": "workspace:*",
     "@dorkos/db": "workspace:*",
     "@dorkos/eslint-config": "workspace:*",

@@ -164,7 +164,7 @@ export function PendingRow({ post, viewerAuthorId }: PendingRowProps) {
               cannot make. Telling somebody to look before re-sending is the
               honest version until the send carries an idempotency key the
               server dedupes on (DOR-786). */}
-          <span>Not sent, or it went through and the confirmation got lost.</span>
+          <span>DorkOS can’t tell if this sent. Check before trying again.</span>
           <button
             type="button"
             onClick={retry}

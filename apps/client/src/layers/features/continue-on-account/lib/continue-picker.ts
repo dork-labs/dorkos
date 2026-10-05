@@ -153,9 +153,9 @@ export function initialChoice(list: ContinueOptionsList, sessionRuntime: string)
  */
 export function keptOutLine(names: readonly string[]): string | null {
   if (names.length === 0) return null;
-  if (names.length === 1) return `${names[0]} is kept out, so it isn't listed.`;
+  if (names.length === 1) return `${names[0]} is kept out, so it isn’t listed.`;
   const joined = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  return `${joined} are kept out, so they aren't listed.`;
+  return `${joined} are kept out, so they aren’t listed.`;
 }
 
 /** The subtitle and carry-over list the picker shows. */
@@ -181,16 +181,16 @@ export interface CarryOverCopy {
 export function carryOverCopy(advised: boolean, hasTrackerItem: boolean): CarryOverCopy {
   if (advised && hasTrackerItem) {
     return {
-      subtitle: "Picks up in the same folder and branch from flow's checkpoint.",
+      subtitle: 'Picks up in the same folder and branch, from the last checkpoint.',
       carries: 'Carries over: files, branch, checkpoint, task',
-      doesnt: "Doesn't: the chat itself",
+      doesnt: 'Doesn’t: the chat itself',
     };
   }
   const base = 'Starts a new chat in the same folder, with a summary of this one.';
   return {
     subtitle: advised ? base : `${base} Sorted by most usage left.`,
     carries: 'Carries over: the folder and a summary of this chat',
-    doesnt: "Doesn't: the chat itself",
+    doesnt: 'Doesn’t: the chat itself',
   };
 }
 

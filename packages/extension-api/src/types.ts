@@ -23,6 +23,101 @@ export interface ExtensionOrigin {
   source: string;
 }
 
+/**
+ * What DorkOS decided about one tool an extension declares, read from its
+ * `extension.json` before any of its code runs (DOR-2685).
+ */
+export interface ExtensionToolCheckSummary {
+  /** The tool's name inside the extension. */
+  name: string;
+  /** The title a person reads. */
+  title: string;
+  /** Its permission tier. */
+  tier: 'observe' | 'act' | 'destructive';
+  /** Whether DorkOS accepted the declaration. */
+  ok: boolean;
+  /** Why it was refused, when it was. */
+  reason?: string;
+}
+
+/**
+ * Where one declared tool stands right now, as `GET /api/extensions` reports it:
+ *
+ * - `active`: agents can use it.
+ * - `inactive`: accepted, but the extension is not running (off, waiting for
+ *   approval, or not started), so agents cannot use it yet.
+ * - `refused`: DorkOS will not offer it; `reason` says why.
+ */
+export interface ExtensionToolStatus {
+  /** The tool's name inside the extension. */
+  name: string;
+  /** The title a person reads. */
+  title: string;
+  /** Its permission tier. */
+  tier: 'observe' | 'act' | 'destructive';
+  /** Where it stands. */
+  status: 'active' | 'inactive' | 'refused';
+  /** Why it was refused, when it was. */
+  reason?: string;
+}
+
+/** One `allow.run` entry and the program it names on this computer. */
+export interface ExtensionResolvedProgram {
+  /** The entry as the manifest wrote it: a bare name (`git`) or an absolute path. */
+  name: string;
+  /**
+   * The absolute path of the program DorkOS found for it when it discovered
+   * the extension: a bare name looked up on the server's `PATH` (absolute
+   * `PATH` folders only, and `PATHEXT` on Windows), an absolute path kept as
+   * written. `null` when no runnable file was found on this computer, or when
+   * the file sits in extension files (its own folder, package, run folder,
+   * dev link, or any extension data folder), which the approval card shows
+   * and the program broker refuses. Found by looking
+   * at the disk only: nothing is run.
+   */
+  path: string | null;
+  /**
+   * Why `path` is `null`, in a plain sentence: not found here, a Windows
+   * script that needs a shell, or a file inside extension files (which an
+   * update could change without asking). Absent when a program was found.
+   */
+  reason?: string;
+}
+
+/**
+ * How an extension that runs separately (`serverCapabilities.runtime:
+ * "subprocess"`, DOR-2686) is limited, normalized from its manifest so every
+ * consumer — the lifecycle, the approval queue, the app — reads one view.
+ */
+export interface ExtensionIsolation {
+  /** Always `subprocess`: an in-process extension has no isolation view. */
+  runtime: 'subprocess';
+  /** The `allow.net` entries, as written. */
+  net: string[];
+  /** The `allow.run` entries, as written. */
+  run: string[];
+  /** Each `allow.run` entry with the program it names here. */
+  resolvedRun: ExtensionResolvedProgram[];
+  /** Whether it may message agents and start agent sessions (`allow.agents`). */
+  agents: boolean;
+  /** Its heap limit in MB (`limits.memoryMb`, default 256). */
+  memoryMb: number;
+}
+
+/**
+ * Whether one skill an extension declares can reach agents, checked against
+ * its `skills/` folder when the extension is found (DOR-2685). `reason` is a
+ * short sentence for a person, with no paths in it.
+ */
+export interface ExtensionSkillStatus {
+  /** The skill's folder name under `skills/`. */
+  name: string;
+  /** Whether it is shipped (`ok`) or left out (`dropped`). */
+  status: 'ok' | 'dropped';
+  /** Why it was left out, when it was. */
+  reason?: string;
+}
+
 /** Server-side record for a discovered extension. */
 export interface ExtensionRecord {
   id: string;
@@ -57,10 +152,18 @@ export interface ExtensionRecord {
    * Why a copy the installer recorded has no trusted origin: `changed` (a
    * project copy whose plugin folder no longer holds what DorkOS installed,
    * or now holds a symbolic link) or `linked` (a global plugin holding a
-   * symbolic link). A `changed` copy runs only while a person's yes names its
-   * files exactly as they are now.
+   * symbolic link) or `dev-link` (its plugin runs from a folder a person
+   * linked, DOR-2696). A `changed` copy runs only while a person's yes names
+   * its files exactly as they are now; a `dev-link` copy only while a yes
+   * given to that dev link names it.
    */
-  originProblem?: 'changed' | 'linked';
+  originProblem?: 'changed' | 'linked' | 'dev-link';
+  /**
+   * Set when the plugin carrying this copy is a dev link (DOR-2696): the real
+   * path of the folder it runs from. Such a copy never has a trusted origin,
+   * and only an approval given to this dev link covers it.
+   */
+  devLink?: { path: string };
   /**
    * The whole plugin folder's digest now, for a `changed` copy: what a
    * person's approval of it is pinned to.
@@ -101,6 +204,12 @@ export interface ExtensionRecord {
    * matches its source. Cleared when a fixed version takes over.
    */
   serverError?: { code: string; message: string; details?: string };
+  /**
+   * When a restart of an extension that runs separately is pending after it
+   * stopped (DOR-2686), as ISO 8601; `null` or absent otherwise. The card says
+   * "Restarting <Name>…" while it is set.
+   */
+  restartingAt?: string | null;
   /** Content hash of the compiled client bundle; changes whenever the served code does. */
   sourceHash?: string;
   /** Whether the compiled bundle is available on the server. */
@@ -111,6 +220,22 @@ export interface ExtensionRecord {
   hasDataProxy: boolean;
   /** Absolute path to the resolved server entry point (if hasServerEntry is true). */
   serverEntryPath?: string;
+  /**
+   * What discovery decided about each tool the manifest declares, before any
+   * code ran (DOR-2685). Absent when the manifest declares none.
+   */
+  toolChecks?: ExtensionToolCheckSummary[];
+  /**
+   * How it is limited when it runs separately (DOR-2686). `null` (or absent,
+   * for a record built before discovery filled it) means it runs inside
+   * DorkOS with full access.
+   */
+  isolation?: ExtensionIsolation | null;
+  /**
+   * What discovery found for each skill the manifest declares (DOR-2685).
+   * Absent when the manifest declares none.
+   */
+  skillChecks?: ExtensionSkillStatus[];
 }
 
 /** The subset of ExtensionRecord sent to the client (excludes server-internal fields). */
@@ -131,6 +256,11 @@ export interface ExtensionRecordPublic {
    * the client bundle keeps loading. See {@link ExtensionRecord.serverError}.
    */
   serverError?: { code: string; message: string; details?: string };
+  /**
+   * When a restart is pending after it stopped (DOR-2686), as ISO 8601, or
+   * `null`. See {@link ExtensionRecord.restartingAt}. Absent from an older server.
+   */
+  restartingAt?: string | null;
   bundleReady: boolean;
   hasServerEntry: boolean;
   hasDataProxy: boolean;
@@ -158,10 +288,28 @@ export interface ExtensionRecordPublic {
    * Why DorkOS can't vouch for where this copy came from, although its
    * installer recorded it: `changed` (its plugin's files changed after DorkOS
    * installed it) or `linked` (its plugin holds a shortcut to files
-   * elsewhere). Settings says so on its card. Absent otherwise. A changed
-   * copy of an id a person approved for another copy is not listed at all.
+   * elsewhere) or `dev-link` (its plugin runs from a folder you linked).
+   * Settings says so on its card. Absent otherwise. A changed copy of an id a
+   * person approved for another copy is not listed at all.
    */
-  originProblem?: 'changed' | 'linked';
+  originProblem?: 'changed' | 'linked' | 'dev-link';
+  /** Set when the copy runs from a dev link: the real path of its folder. */
+  devLink?: { path: string };
+  /**
+   * The tools this extension gives agents and where each stands (DOR-2685).
+   * Absent when its manifest declares none.
+   */
+  tools?: ExtensionToolStatus[];
+  /**
+   * How it is limited when it runs separately (DOR-2686); `null` means it
+   * runs inside DorkOS with full access. See {@link ExtensionRecord.isolation}.
+   */
+  isolation?: ExtensionIsolation | null;
+  /**
+   * The skills this extension ships to agents and whether each made it
+   * (DOR-2685). Absent when its manifest declares none.
+   */
+  skills?: ExtensionSkillStatus[];
 }
 
 /** The interface an extension module must export. */

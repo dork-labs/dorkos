@@ -67,11 +67,11 @@ describe('keptOutLine', () => {
   });
 
   it('names one, two and three accounts', () => {
-    expect(keptOutLine(['Client'])).toBe("Client is kept out, so it isn't listed.");
+    expect(keptOutLine(['Client'])).toBe('Client is kept out, so it isn’t listed.');
     expect(keptOutLine(['Client', 'Acct 5'])).toBe(
-      "Client and Acct 5 are kept out, so they aren't listed."
+      'Client and Acct 5 are kept out, so they aren’t listed.'
     );
-    expect(keptOutLine(['A', 'B', 'C'])).toBe("A, B and C are kept out, so they aren't listed.");
+    expect(keptOutLine(['A', 'B', 'C'])).toBe('A, B and C are kept out, so they aren’t listed.');
   });
 });
 

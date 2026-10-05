@@ -1,6 +1,21 @@
 {
   "version": 1,
   "tests": {
+    "dev-link": {
+      "relatedCode": [
+        "apps/client/src/layers/features/marketplace/ui/LinkFolderDialog.tsx",
+        "apps/client/src/layers/features/marketplace/ui/UnlinkDialog.tsx",
+        "apps/client/src/layers/features/marketplace/ui/DevLinkRow.tsx",
+        "apps/client/src/layers/features/extensions/ui/ExtensionCard.tsx",
+        "apps/server/src/routes/marketplace/dev-links.ts",
+        "apps/server/src/services/marketplace/dev-links/dev-link-service.ts"
+      ],
+      "explorationNotes": [
+        "Runs on the cockpit leg, whose boundary is the checkout: a folder in the system temp dir is refused as outside the boundary, so the fixture folder lives in the gitignored .temp/ of the checkout.",
+        "The server refuses a path that is not its own realpath (dev_link_path_not_real), so the spec types realpathSync of the folder.",
+        "Extension discovery runs after POST /dev-links returns (refreshExtensions is fire-and-forget), so the Settings card gets a long timeout rather than a reload."
+      ]
+    },
     "served-document-isolation": {
       "relatedCode": [
         "apps/server/src/routes/workbench-serve.ts",
@@ -70,7 +85,7 @@
     },
     "compaction": {
       "relatedCode": [
-        "apps/client/src/layers/features/chat/ui/message/CompactBoundaryRow.tsx",
+        "apps/client/src/layers/features/chat/ui/message/rows/CompactBoundaryRow.tsx",
         "apps/client/src/layers/features/chat/ui/message/UserMessageContent.tsx",
         "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts",
         "apps/client/src/layers/entities/session/model/stream/session-stream-store.ts",
@@ -107,7 +122,7 @@
       "explorationNotes": [
         "Put ONE session on the held path (POST /api/test/persistent {sessionId, enabled}), never a process-wide switch: this server is shared by four concurrent Playwright projects, the same reason POST /api/test/step is session-keyed.",
         "Warmth has no product API \u2014 it is invisible to the person by design \u2014 so GET /api/test/persistent?sessionId= is the only way a browser can see it. It reads getSessionWarmth/canSteerSession/canStageSession off the runtime, not the bookkeeping behind them.",
-        "ChatPage.input does NOT match the composer mid-turn: the field renames itself 'Compose next \u2014 will send when ready'. Every case here types into a running turn, so the module matches both names (see GOTCHAS).",
+        "ChatPage.input does NOT match the composer mid-turn: the field renames itself 'Compose next. It sends when ready'. Every case here types into a running turn, so the module matches both names (see GOTCHAS).",
         "The warm-echo scenario names the path in its own answer (HELD-PROCESS-TURN-N vs NO-HELD-PROCESS) and labels staged words by route (staged-native: vs staged-folded:), so a case that quietly ran on the other path fails instead of passing.",
         "warm-echo parks on a step barrier, so every turn needs one releaseStep \u2014 which polls, because a step fired before the scenario reaches the barrier is dropped and the turn then waits forever.",
         "RED-for-the-right-reason: restoring pre-DOR-1326 semantics (nothing held, steer and stage accepted for every session) failed 7 of the 8 cases, including the Steer row OFFERED on a session that cannot cut in (DOR-1268) and Add context taking the native path so the fold never happened (DOR-1307). The eighth \u2014 the resume-path L-11 case \u2014 passed, correctly.",

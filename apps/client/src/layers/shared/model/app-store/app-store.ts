@@ -233,6 +233,7 @@ export const useAppStore = create<AppState>()(
             rightPanelOpen: false,
             activeRightPanelTab: null,
             rightPanelLayoutKey: null,
+            inheritedRightPanelTab: null,
             pipContent: null,
             pipGeometry: null,
             pipMinimized: false,

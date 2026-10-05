@@ -5,6 +5,7 @@ import path from 'path';
 import { DEFAULT_ACCOUNT_COLORS, type AccountUsage } from '@dorkos/shared/account-usage';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
 import { setStartWorkService, type StartWorkService } from '../start-work.js';
+import { setAgentSendService, type AgentSendService } from '../agent-send/agent-send.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import {
   __resetAccountAdvisorForTests,
@@ -71,6 +72,25 @@ describe('createDataProviderContext', () => {
       const { ctx } = buildCtx();
       expect(ctx.extensionId).toBe(extensionId);
       expect(ctx.extensionDir).toBe(extensionDir);
+    });
+  });
+
+  describe('filesDir', () => {
+    // Purpose: one writable folder per extension at the documented place,
+    // existing before register() could use it (DOR-2686 task 4.2).
+    it('is {dorkHome}/extension-data/<id>/files and exists once the ctx is built', async () => {
+      const { ctx } = buildCtx();
+      expect(ctx.filesDir).toBe(path.join(tmpDir, 'extension-data', extensionId, 'files'));
+      const stat = await fs.stat(ctx.filesDir);
+      expect(stat.isDirectory()).toBe(true);
+    });
+
+    // Purpose: no drift from the folder an isolated child is granted write
+    // access to; both read the same helper.
+    it('is the folder the isolated runtime grants', async () => {
+      const { isolatedFilesDir } = await import('../isolation/grants.js');
+      const { ctx } = buildCtx();
+      expect(ctx.filesDir).toBe(isolatedFilesDir(tmpDir, extensionId));
     });
   });
 
@@ -560,6 +580,37 @@ describe('createDataProviderContext', () => {
     });
   });
 
+  describe('agent (ctx.agent.send, DOR-2683)', () => {
+    afterEach(() => setAgentSendService(undefined));
+
+    it('sends as this extension, and removes its listeners when it shuts down', async () => {
+      const remove = vi.fn();
+      const send = vi.fn(async () => ({ messageId: 'm', status: 'started', sessionId: 's' }));
+      const subscribe = vi.fn(() => remove);
+      setAgentSendService({ send, subscribe } as unknown as AgentSendService);
+      const { ctx, releaseListeners } = buildCtx();
+      const input = { to: 's', text: 't', idempotencyKey: 'k' };
+
+      await expect(ctx.agent.send(input)).resolves.toMatchObject({ messageId: 'm' });
+      expect(send).toHaveBeenCalledWith(extensionId, input);
+      ctx.agent.subscribe(() => undefined);
+      expect(subscribe).toHaveBeenCalledWith(extensionId, expect.any(Function));
+
+      releaseListeners();
+      expect(remove).toHaveBeenCalledTimes(1);
+      // A late call from the old instance starts nothing.
+      await expect(ctx.agent.send(input)).rejects.toMatchObject({ code: 'stopped' });
+      expect(() => ctx.agent.subscribe(() => undefined)).toThrow(/shut down or reloaded/);
+    });
+
+    it('says plainly when DorkOS cannot send yet', async () => {
+      const { ctx } = buildCtx();
+      await expect(
+        ctx.agent.send({ to: 's', text: 't', idempotencyKey: 'k' })
+      ).rejects.toMatchObject({ code: 'unavailable' });
+    });
+  });
+
   describe('dispose (a register() DorkOS stopped waiting for, DOR-2527 R3)', () => {
     it('cancels what it scheduled, and makes every later schedule or listener a logged no-op', async () => {
       vi.useFakeTimers();
@@ -595,6 +646,24 @@ describe('createDataProviderContext', () => {
         ).toHaveLength(1);
       } finally {
         vi.useRealTimers();
+      }
+    });
+
+    it('sends no agent message once disposed, and listens to nothing (DOR-2683)', async () => {
+      const send = vi.fn();
+      const subscribe = vi.fn(() => () => undefined);
+      setAgentSendService({ send, subscribe } as unknown as AgentSendService);
+      try {
+        const { ctx, dispose } = buildCtx();
+        dispose();
+        await expect(
+          ctx.agent.send({ to: 's', text: 't', idempotencyKey: 'k' })
+        ).rejects.toMatchObject({ code: 'stopped' });
+        expect(() => ctx.agent.subscribe(() => undefined)()).not.toThrow();
+        expect(send).not.toHaveBeenCalled();
+        expect(subscribe).not.toHaveBeenCalled();
+      } finally {
+        setAgentSendService(undefined);
       }
     });
 

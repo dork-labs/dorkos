@@ -158,6 +158,7 @@ import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
 import {
   creditsRefusalEvent,
+  deliverStatusEvents,
   resolveEffectiveCwd,
   resolveLaunch,
 } from '../messaging/launch-resolver.js';
@@ -166,8 +167,14 @@ import { isPersistentSessionEnabled } from '../persistent-session-optin.js';
 import {
   AccountPinViolationError,
   captureLaunchFingerprint,
+  isExtensionSkillPlugin,
+  withLiveSkillPlugins,
+  withLiveToolSurface,
+  withdrawnPluginPaths,
   type LaunchFingerprint,
 } from './launch-fingerprint.js';
+import { extensionSkillPluginsDir } from '@dorkos/harness';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { createPumpLauncher, decideProcessReuse, type PumpLaunchPlan } from './pump-launch.js';
 import {
   conversationTokens,
@@ -236,6 +243,13 @@ interface SessionBundle {
    * D1). Emptied when the process dies; a replacement process gets a fresh bundle.
    */
   seenTaskTypes: Set<string>;
+  /**
+   * The busy spell (its `busySince`) this process was already warned about for
+   * holding a stale tool list past the four-hour ceiling, so the warning is
+   * said once rather than on every message (DOR-2685). A replacement process
+   * gets a fresh bundle.
+   */
+  staleToolListWarnedFor?: number;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -409,6 +423,16 @@ export class PersistentDispatch {
   }
 
   /**
+   * Is a helper agent still working on this session's held process, inside the
+   * four-hour ceiling (DOR-2681)? False for a session holding no process.
+   *
+   * @param sessionId - The session being asked about, in any id it answers to
+   */
+  isHelperWorking(sessionId: string): boolean {
+    return this.registry.peek(this.sessionKeyOf(sessionId))?.isHelperWorking() === true;
+  }
+
+  /**
    * Should this message run on a held process?
    *
    * The flag is read HERE, immediately before the pump is acquired, which is
@@ -568,6 +592,7 @@ export class PersistentDispatch {
       enrichedContent: resolved.enrichedContent,
       meshAgentId: resolved.meshAgentId,
       statusEvents: resolved.statusEvents,
+      ...(resolved.substitution ? { substitution: resolved.substitution } : {}),
       sdkOptions: resolved.sdkOptions,
       fingerprint: captureLaunchFingerprint(resolved.launch),
     };
@@ -583,7 +608,66 @@ export class PersistentDispatch {
     // dispatch back to ask again, and `onPluginReloadHeld` is what stops that
     // asking going on for ever.
     const contextTokens = conversationTokens(session);
-    const reuse = decideProcessReuse(bundle.fingerprint, plan.fingerprint, {
+    // A changed tool list (an extension started or stopped, a permission that
+    // hides a tool) is moved from outside this session, so it never tears down
+    // a process that is still working: a helper agent, a Monitor, a delivery
+    // owed (DOR-2685; the DOR-2705 class). It waits, and the stored fingerprint
+    // keeps the old list, so the next dispatch asks again. Any other pin that
+    // moved still relaunches as it always did.
+    const live = bundle.fingerprint;
+    // The same for a running extension's skills going away (DOR-2685): its
+    // generated plugin root holds skills only, so a working process keeps it
+    // until it is quiet. A withdrawal that includes any other plugin still
+    // relaunches at once (DOR-2306): that package may run code nobody approves.
+    const withdrawn = live !== undefined ? withdrawnPluginPaths(live, plan.fingerprint) : [];
+    const skillsDir = extensionSkillPluginsDir(resolveDorkHome());
+    const skillWithdrawal =
+      withdrawn.length > 0 &&
+      withdrawn.every((pluginPath) => isExtensionSkillPlugin(pluginPath, skillsDir));
+    const toolSurfaceMoved =
+      live !== undefined && live.pins.toolSurface !== plan.fingerprint.pins.toolSurface;
+    const busy =
+      live !== undefined && (toolSurfaceMoved || skillWithdrawal)
+        ? bundle.pump.quietness()
+        : undefined;
+    const holding = live !== undefined && busy !== undefined && !busy.quiet;
+    let compared = plan.fingerprint;
+    if (holding && toolSurfaceMoved) compared = withLiveToolSurface(live, compared);
+    if (holding && skillWithdrawal) {
+      compared = withLiveSkillPlugins(compared, withdrawn);
+      logger.info(
+        '[persistent-dispatch] holding an extension skills relaunch while the process works',
+        {
+          session: sessionId,
+          because: busy.because,
+        }
+      );
+    }
+    // Deliberately NO ceiling on this hold. The reaper takes a process back at
+    // the four-hour ceiling, but a dispatch is not the reaper: tearing down a
+    // process whose helper or Monitor is still working is exactly the DOR-2705
+    // bug, and a stale tool list costs far less than lost work (the gate still
+    // refuses any call a person blocked). So past the ceiling the hold goes on,
+    // and the only change is one warning per busy spell saying the list is stale.
+    if (busy !== undefined && !busy.quiet && toolSurfaceMoved) {
+      const busyForMs = Date.now() - busy.busySince;
+      logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
+        session: sessionId,
+        because: busy.because,
+        busyForMs,
+      });
+      if (
+        bundle.pump.isPastCeiling(Date.now()) &&
+        bundle.staleToolListWarnedFor !== busy.busySince
+      ) {
+        bundle.staleToolListWarnedFor = busy.busySince;
+        logger.warn(
+          '[persistent-dispatch] tool list is stale until this session’s background work ends',
+          { session: sessionId, because: busy.because, busyForMs }
+        );
+      }
+    }
+    const reuse = decideProcessReuse(bundle.fingerprint, compared, {
       holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),
       sessionId,
       ...(contextTokens !== undefined ? { contextTokens } : {}),
@@ -628,7 +712,8 @@ export class PersistentDispatch {
     }
 
     bundle.plan = plan;
-    for (const event of plan.statusEvents) yield event;
+    // A credits swap is saved only once its notice has gone out (DOR-2636).
+    yield* deliverStatusEvents(plan);
 
     let window: TurnWindow;
     // A turn is booting from here until its window opens — the span in which the
@@ -1148,6 +1233,12 @@ export class PersistentDispatch {
           session.lastQuery = session.activeQuery;
           session.activeQuery = undefined;
         }
+        // A process DorkOS ends on purpose never reaches `onCrash`, so a turn
+        // still open on it is closed here, at the edge, rather than left dark
+        // for the stall watchdog (DOR-2681). Read through the bundle, not
+        // through `this.bundles`: eviction forgets the bundle before it tears
+        // the process down.
+        if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
         bundle.recovery.noteStateChange(change);
       },
       // The map's raw SIZE was the wrong answer, for the same reason it is

@@ -90,6 +90,11 @@ export interface DispatchSessionMessageOpts {
    * `session_start`, an automatic carry-over) gets the card.
    */
   workspaceCaller?: { trusted: boolean; requestedBy?: string };
+  /**
+   * The id the message is accepted under, when the caller minted it before
+   * dispatching. Passed straight through; see `DispatchMessageOpts.messageId`.
+   */
+  messageId?: string;
 }
 
 /**
@@ -577,6 +582,7 @@ async function launchSessionMessage(
       sessionId,
       clientId,
       content,
+      ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
       cwd: effectiveCwd,
       context,
       // Background this turn's opener attached to it. It rides the neutral

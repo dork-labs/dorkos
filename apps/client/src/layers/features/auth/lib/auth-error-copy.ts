@@ -34,11 +34,7 @@ export interface AuthErrorCopy {
  */
 function mismatchedOriginMessage(appOrigin: string | undefined): string {
   const address = appOrigin ?? 'this app’s address';
-  return (
-    'The app and the server disagree about where this request came from, so the server ' +
-    `turned it down and nothing changed. To fix it, add ${address} to the server’s ` +
-    'DORKOS_CORS_ORIGIN setting and restart it.'
-  );
+  return `The server doesn’t trust ${address}, so nothing changed. Add it to DORKOS_CORS_ORIGIN, then restart.`;
 }
 
 /**
@@ -74,9 +70,7 @@ export function describeAuthError(
   // sandboxed frame, or a page opened from a file.
   if (error.code === 'MISSING_OR_NULL_ORIGIN' || error.message === 'Missing or null Origin') {
     return {
-      message:
-        'The app did not tell the server where this request came from, so the server turned ' +
-        'it down and nothing changed. Open DorkOS in its own window or tab and try again.',
+      message: 'Nothing changed: this page has no address. Open DorkOS in its own tab.',
       detail: error.message,
     };
   }

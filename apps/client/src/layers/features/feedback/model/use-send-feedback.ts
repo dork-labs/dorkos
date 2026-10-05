@@ -75,7 +75,7 @@ const DUPLICATE_WINDOW_MS = 60_000;
 const WHEN_WE_WRITE: Record<FeedbackSubmissionKind, string> = {
   bug: 'when it’s fixed',
   idea: 'when it ships',
-  feedback: 'when we act on it',
+  feedback: 'when the team acts on it',
 };
 
 /**
@@ -274,7 +274,7 @@ export function useSendFeedback(): UseSendFeedback {
       ) {
         // Already with the team. Resolving `true` closes the dialog as if it had
         // gone again, which is what the person wanted; filing it twice is not.
-        toast.info('You sent this a moment ago, so we didn’t send it again.');
+        toast.info('Already sent a moment ago.');
         return true;
       }
 
@@ -311,9 +311,9 @@ export function useSendFeedback(): UseSendFeedback {
         });
         if (ok) {
           lastSent.current = { fingerprint: print, at: Date.now() };
-          toast.success('Sent. Thank you!', {
+          toast.success('Sent. Thank you.', {
             ...(draft.notifyEmail
-              ? { description: `We’ll email ${draft.notifyEmail} ${WHEN_WE_WRITE[draft.kind]}.` }
+              ? { description: `DorkOS emails ${draft.notifyEmail} ${WHEN_WE_WRITE[draft.kind]}.` }
               : {}),
             action: {
               label: 'Your reports',
@@ -325,7 +325,7 @@ export function useSendFeedback(): UseSendFeedback {
           });
         } else {
           toast.error(
-            'Couldn’t send. Your words are still here, so try again or open a GitHub issue instead.'
+            'Couldn’t send. Your words are still here. Try again or open a GitHub issue.'
           );
         }
         return ok;

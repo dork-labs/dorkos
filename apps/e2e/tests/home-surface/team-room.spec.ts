@@ -426,8 +426,10 @@ test.describe('The pinned triage header @smoke', () => {
   }) => {
     // Only sound while nothing else is waiting. The queue is server-global, so
     // this reads it first and says so rather than failing as if the header broke.
-    const waiting = await teamRoomApi.pendingApprovalIds();
-    test.skip(waiting.length > 0, 'something else on this server is waiting on a person');
+    // Every kind the Inbox pill counts, not only approvals: Home's quiet line
+    // stands down for any of them (DOR-2578).
+    const waiting = await teamRoomApi.waitingOnPersonCount();
+    test.skip(waiting > 0, 'something else on this server is waiting on a person');
 
     // This file drives real turns for real, earlier in this same serial run —
     // "typing here reaches your default agent", for one — and each one earns a
@@ -557,8 +559,10 @@ test.describe("DorkBot's one quiet suggestion @smoke", () => {
     // Two preconditions about state this test shares with the whole leg, read
     // rather than assumed. Each one is a case where the quiet line is CORRECT to
     // stand down, so failing on them would report a working product as broken.
-    const waiting = await teamRoomApi.pendingApprovalIds();
-    test.skip(waiting.length > 0, 'something else on this server is waiting on a person');
+    // Every kind the Inbox pill counts, not only approvals: Home's quiet line
+    // stands down for any of them (DOR-2578).
+    const waiting = await teamRoomApi.waitingOnPersonCount();
+    test.skip(waiting > 0, 'something else on this server is waiting on a person');
     const unreachable = await teamRoomApi.meshUnreachableCount();
     test.skip(unreachable > 0, 'an agent is unreachable, so the header has something to say');
 

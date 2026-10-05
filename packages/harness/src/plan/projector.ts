@@ -37,9 +37,11 @@ import {
 import { planInstruction } from './instructions.js';
 import { planGlobalInstallDrops, planGlobalUnreadableHookWarnings } from './global-installs.js';
 
+import { absolutePlanPath } from '../apply/link-state.js';
 import {
   isProjectScoped,
   type InstalledPlugin,
+  type ProjectInstalledPlugin,
   type UnreadablePackageManifest,
 } from '../sources/installed.js';
 import {
@@ -57,6 +59,9 @@ import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
 } from './installed-projector.js';
+import { labelDevLinkActions } from './dev-link-labels.js';
+import { settleExtensionSkillCollisions } from './extension-skills.js';
+import type { ExtensionSkillPackage } from '../sources/running-extension-skills.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
 import { planUnreadableSkillWarnings } from './unreadable-skills.js';
@@ -459,6 +464,19 @@ export function buildPlan(input: {
    * looked.
    */
   unreadableManifests?: readonly UnreadablePackageManifest[];
+  /**
+   * The running local extensions whose skills belong in this repository
+   * (DOR-2685), read from the server's ledger by `project()`
+   * (`sources/running-extension-skills.ts`). Each projects its skills exactly
+   * as a project plugin's — `<id>__<skill>` links in `.claude/skills` and
+   * `.agents/skills` — and nothing else. A plugin's or an authored skill's
+   * claim on the same name wins. Omitted means no extension runs here.
+   */
+  extensionPackages?: readonly ExtensionSkillPackage[];
+  /** What reading the ledger had to say: dropped skills, an unreadable file. */
+  extensionWarnings?: readonly ProjectionWarning[];
+  /** The ledger's state, carried onto the plan for the installed sweep. */
+  extensionLedger?: 'read' | 'absent' | 'unreadable';
   allowPluginHooks?: (packageName: string) => boolean;
   /**
    * Everything the repository's source tree holds, by kind — the answer to
@@ -587,6 +605,19 @@ export function buildPlan(input: {
   const projectable = projectScoped.filter((p) => PROJECTABLE_PLUGIN_TYPES.has(p.type));
   const unsupportedType = projectScoped.filter((p) => !PROJECTABLE_PLUGIN_TYPES.has(p.type));
 
+  // Running extensions' skills (DOR-2685): planned beside the plugins, through
+  // the same skill planners, after every name a plugin or the person already
+  // holds is taken out — a plugin's `<pkg>__<skill>` and an authored skill of
+  // the same name both win, deterministically, with a warning naming both.
+  warnings.push(...(input.extensionWarnings ?? []));
+  const extensionSettled = settleExtensionSkillCollisions({
+    extensions: input.extensionPackages ?? [],
+    plugins: projectable,
+    authoredSkillNames: agentsSkillNames,
+  });
+  const extensions = extensionSettled.packages;
+  warnings.push(...extensionSettled.warnings);
+
   // Which packages may contribute shell commands. Applied HERE, before the hooks
   // are folded in, because a package's hooks reach every enabled harness — the
   // generated `.codex/hooks.json` and friends below, as well as the Claude Code
@@ -667,9 +698,15 @@ export function buildPlan(input: {
     warnings.push(...inventoried.warnings);
     for (const plugin of projectable) {
       const skillResult = planInstalledSkills(harness, plugin);
-      all.push(...skillResult.actions);
+      all.push(...labelDevLinkActions(skillResult.actions, plugin));
       warnings.push(...skillResult.warnings);
-      all.push(...planInstalledCommands(harness, plugin, repoRoot));
+      all.push(...labelDevLinkActions(planInstalledCommands(harness, plugin, repoRoot), plugin));
+    }
+    // An extension projects skills and nothing else: no commands, no hooks.
+    for (const extension of extensions) {
+      const skillResult = planInstalledSkills(harness, extension);
+      all.push(...labelDevLinkActions(skillResult.actions, extension));
+      warnings.push(...skillResult.warnings);
     }
   }
 
@@ -710,8 +747,15 @@ export function buildPlan(input: {
     plugins: projectable,
     harnesses: manifest.harnesses,
   });
-  all.push(...canonicalLinks.actions);
+  all.push(...labelCanonicalLinks(canonicalLinks.actions, projectable));
   warnings.push(...canonicalLinks.warnings);
+  // The same `.agents/skills` link for each extension skill, planned per
+  // extension so its dev link labels exactly its own links.
+  for (const extension of extensions) {
+    const links = planCanonicalSkillLinks({ plugins: [extension], harnesses: manifest.harnesses });
+    all.push(...labelDevLinkActions(links.actions, extension));
+    warnings.push(...links.warnings);
+  }
 
   // Account for every `manifest.claudeOnlySkills` entry, including the ones the
   // `.agents/skills` walk above never sees because they live only in
@@ -728,7 +772,7 @@ export function buildPlan(input: {
   warnings.push(
     ...planSkillNameCollisions({
       authoredSkillNames: [...agentsSkillNames],
-      plugins: projectable,
+      plugins: [...projectable, ...extensions],
       harnesses: manifest.harnesses,
     })
   );
@@ -740,7 +784,9 @@ export function buildPlan(input: {
   all.push(...planForeignMcpDrops(inventory));
 
   // Harness-agnostic installed-plugin drops (emitted once, not per harness).
-  for (const plugin of projectable) all.push(...dropNonPortableLayers(plugin));
+  for (const plugin of projectable) {
+    all.push(...labelDevLinkActions(dropNonPortableLayers(plugin), plugin));
+  }
   for (const plugin of unsupportedType) {
     all.push(
       dropWholePlugin(plugin, `package type "${plugin.type}" is not a harness-portable plugin`)
@@ -772,7 +818,33 @@ export function buildPlan(input: {
     warnings,
     notEnabled: notEnabledHarnesses(manifest.harnesses, detectedHarnesses, dorkosHarness),
     ...(unreadableSkillRoots.length > 0 ? { unreadableSkillRoots } : {}),
+    ...(input.extensionLedger !== undefined ? { extensionLedger: input.extensionLedger } : {}),
   };
+}
+
+/**
+ * Label the `.agents/skills` links planned for every package at once
+ * ({@link planCanonicalSkillLinks}) with their package's dev link, when it has
+ * one. Each link's `source` is a path inside its package's install directory,
+ * which is how it is matched back to the package.
+ *
+ * @param actions - The canonical skill links.
+ * @param plugins - The packages they were planned from.
+ * @returns The same actions, labelled where their package runs from a dev link.
+ */
+function labelCanonicalLinks(
+  actions: ProjectionAction[],
+  plugins: readonly ProjectInstalledPlugin[]
+): ProjectionAction[] {
+  for (const plugin of plugins) {
+    if (plugin.devLink === undefined) continue;
+    const prefix = `${plugin.location.relDir}/`;
+    labelDevLinkActions(
+      actions.filter((action) => action.source?.startsWith(prefix) === true),
+      plugin
+    );
+  }
+  return actions;
 }
 
 /**
@@ -885,7 +957,7 @@ function refusedByPermission(repoRoot: string, link: string, source: string): st
  */
 function linkAlreadyReaches(repoRoot: string, link: string, source: string): boolean {
   try {
-    return realpathSync(join(repoRoot, link)) === realpathSync(join(repoRoot, source));
+    return realpathSync(join(repoRoot, link)) === realpathSync(absolutePlanPath(repoRoot, source));
   } catch {
     return false;
   }

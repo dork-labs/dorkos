@@ -27,7 +27,7 @@ export function ServerUnreachableScreen() {
     <BootBlockedScreen
       testId="server-unreachable"
       headline="DorkOS can’t reach its server"
-      detail="It may still be starting up. DorkOS keeps checking, and this screen clears as soon as the server answers."
+      detail="It may still be starting up. DorkOS keeps checking."
     />
   );
 }

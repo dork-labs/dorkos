@@ -235,8 +235,13 @@ function digestFormOf(effects: DisclosedEffects): Omit<DisclosedEffects, 'skillC
   return rest;
 }
 
-/** Whether a stored entry is a global-activation decision for this package. */
-function isEntryFor(name: string): (stored: string) => boolean {
+/**
+ * Whether a stored entry is a global-activation decision for this package.
+ *
+ * @param name - The package's directory name.
+ * @returns A predicate over stored `<name>@global-<digest>` entries.
+ */
+export function isGlobalActivationEntryFor(name: string): (stored: string) => boolean {
   const prefix = `${name}${GLOBAL_ACTIVATION_ENTRY_MARKER}`;
   return (stored) => stored.startsWith(prefix) && !stored.slice(prefix.length).includes('@');
 }
@@ -467,7 +472,7 @@ export async function partitionGlobalPlugins(
         reason: 'unasked',
         effects,
         subject,
-        ...(approved.some(isEntryFor(name)) && { changedSinceApproval: true }),
+        ...(approved.some(isGlobalActivationEntryFor(name)) && { changedSinceApproval: true }),
         ...(keptRunning.length > 0 && { keptRunning }),
       });
     }
@@ -502,7 +507,7 @@ export function recordGlobalActivationApproval(
   recordApprovedEntry(
     globalActivationEntry(name, effects, bindsTo),
     'approving a global package to run in every session',
-    isEntryFor(name)
+    isGlobalActivationEntryFor(name)
   );
 }
 
@@ -581,7 +586,10 @@ export async function recordHeldBackDecision(
  * @param name - The package's directory name.
  */
 export function forgetGlobalActivationApprovals(name: string): void {
-  forgetApprovedEntries(isEntryFor(name), 'a global package was replaced or removed');
+  forgetApprovedEntries(
+    isGlobalActivationEntryFor(name),
+    'a global package was replaced or removed'
+  );
 }
 
 /** What a person approved about an install: what it runs and the bytes they were shown. */

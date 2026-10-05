@@ -3,9 +3,15 @@ import { renderHook, cleanup } from '@testing-library/react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 const mockLoadRightPanelForAgent = vi.fn();
+const mockLoadRightPanelState = vi.fn();
+let mockBelowDesktop = false;
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ loadRightPanelForAgent: mockLoadRightPanelForAgent }),
+    selector({
+      loadRightPanelForAgent: mockLoadRightPanelForAgent,
+      loadRightPanelState: mockLoadRightPanelState,
+    }),
+  useIsBelowDesktop: () => mockBelowDesktop,
 }));
 
 // Mutable per-test resolution of the agent context. `isPending` mirrors the
@@ -20,7 +26,10 @@ vi.mock('@/layers/entities/agent', () => ({
   useCurrentAgent: () => ({ data: mockAgent, isPending: mockIsPending }),
 }));
 
-import { useRightPanelLayoutPersistence } from '../model/use-right-panel-persistence';
+import {
+  useRightPanelLayoutPersistence,
+  useRightPanelPersistence,
+} from '../model/use-right-panel-persistence';
 
 /** Minimal AgentManifest stub — only the id is read by the hook. */
 function agentWithId(id: string): AgentManifest {
@@ -33,6 +42,7 @@ describe('useRightPanelLayoutPersistence', () => {
     mockCwd = null;
     mockAgent = null;
     mockIsPending = false;
+    mockBelowDesktop = false;
   });
 
   afterEach(() => cleanup());
@@ -44,7 +54,9 @@ describe('useRightPanelLayoutPersistence', () => {
     // The directory travels with the key: a pending deep link named a DIRECTORY,
     // and the key may be an agent id, so the store cannot tell on its own
     // whether that link was about the agent binding now (DOR-227 leak).
-    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H', '/Users/dev/proj');
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H', '/Users/dev/proj', {
+      inherit: true,
+    });
   });
 
   it('falls back to the cwd once the lookup settles to no registered agent', () => {
@@ -53,7 +65,10 @@ describe('useRightPanelLayoutPersistence', () => {
     renderHook(() => useRightPanelLayoutPersistence());
     expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(
       '/Users/dev/untracked',
-      '/Users/dev/untracked'
+      '/Users/dev/untracked',
+      {
+        inherit: true,
+      }
     );
   });
 
@@ -79,7 +94,9 @@ describe('useRightPanelLayoutPersistence', () => {
     rerender();
 
     expect(mockLoadRightPanelForAgent).toHaveBeenCalledTimes(1);
-    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H', '/Users/dev/proj');
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H', '/Users/dev/proj', {
+      inherit: true,
+    });
   });
 
   it('binds the cwd when a pending lookup settles to null (no agent registered)', () => {
@@ -95,7 +112,10 @@ describe('useRightPanelLayoutPersistence', () => {
     expect(mockLoadRightPanelForAgent).toHaveBeenCalledTimes(1);
     expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(
       '/Users/dev/untracked',
-      '/Users/dev/untracked'
+      '/Users/dev/untracked',
+      {
+        inherit: true,
+      }
     );
   });
 
@@ -104,7 +124,26 @@ describe('useRightPanelLayoutPersistence', () => {
     mockCwd = null;
     mockIsPending = true;
     renderHook(() => useRightPanelLayoutPersistence());
-    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(null, null);
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(null, null, { inherit: true });
+  });
+
+  it('asks for no inheritance below desktop width, where the panel covers the chat', () => {
+    mockCwd = '/Users/dev/proj';
+    mockAgent = agentWithId('agent-01H');
+    mockBelowDesktop = true;
+    renderHook(() => useRightPanelLayoutPersistence());
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith('agent-01H', '/Users/dev/proj', {
+      inherit: false,
+    });
+  });
+
+  it('does not re-bind when the window crosses the desktop breakpoint', () => {
+    mockCwd = '/Users/dev/proj';
+    mockAgent = agentWithId('agent-01H');
+    const { rerender } = renderHook(() => useRightPanelLayoutPersistence());
+    mockBelowDesktop = true;
+    rerender();
+    expect(mockLoadRightPanelForAgent).toHaveBeenCalledTimes(1);
   });
 
   it('detaches to the global layout (null key) on unmount', () => {
@@ -114,5 +153,32 @@ describe('useRightPanelLayoutPersistence', () => {
     mockLoadRightPanelForAgent.mockClear();
     unmount();
     expect(mockLoadRightPanelForAgent).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('useRightPanelPersistence', () => {
+  beforeEach(() => {
+    mockLoadRightPanelState.mockClear();
+    mockBelowDesktop = false;
+  });
+
+  afterEach(() => cleanup());
+
+  it('restores the open state on desktop', () => {
+    renderHook(() => useRightPanelPersistence());
+    expect(mockLoadRightPanelState).toHaveBeenCalledWith({ restoreOpen: true });
+  });
+
+  it('restores the tab only below desktop width, so a reload never opens the sheet', () => {
+    mockBelowDesktop = true;
+    renderHook(() => useRightPanelPersistence());
+    expect(mockLoadRightPanelState).toHaveBeenCalledWith({ restoreOpen: false });
+  });
+
+  it('hydrates once: crossing the breakpoint later does not hydrate again', () => {
+    const { rerender } = renderHook(() => useRightPanelPersistence());
+    mockBelowDesktop = true;
+    rerender();
+    expect(mockLoadRightPanelState).toHaveBeenCalledTimes(1);
   });
 });

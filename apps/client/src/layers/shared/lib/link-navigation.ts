@@ -519,7 +519,7 @@ export function describeRefusal(
   reason: LinkRefusal,
   href: string
 ): { title: string; detail: string } {
-  const incomplete = 'That address is incomplete, so there is nowhere to send you.';
+  const incomplete = 'The address is incomplete.';
   if (reason === 'unparsable') {
     return { title: 'DorkOS couldn’t open that link', detail: incomplete };
   }
@@ -533,24 +533,24 @@ export function describeRefusal(
     if (!scheme || isWebUrl(href)) {
       return {
         title: 'The desktop app couldn’t open that link',
-        detail: 'The desktop app would not hand this one to your browser.',
+        detail: 'It didn’t reach your browser.',
       };
     }
     return {
       title: `The desktop app can’t open ${scheme} links`,
-      detail: `${scheme} links open in a browser, but not in the desktop app, so nothing would happen.`,
+      detail: 'They open from DorkOS in a browser.',
     };
   }
 
   if (!scheme) {
     return {
       title: 'DorkOS couldn’t open that link',
-      detail: 'Only web, email and phone links open from here.',
+      detail: 'It isn’t a web, email or phone link.',
     };
   }
   return {
     title: `DorkOS doesn’t open ${scheme} links`,
-    detail: `${scheme} links don’t open from DorkOS, so nothing would happen.`,
+    detail: 'Only web, email and phone links open.',
   };
 }
 

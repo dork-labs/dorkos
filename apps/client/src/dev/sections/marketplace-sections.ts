@@ -84,6 +84,13 @@ export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['kept', 'files', 'keep', 'mine', 'unproven', 'local', 'held back', 'installed'],
   },
   {
+    id: 'dev-links',
+    title: 'Dev links',
+    page: 'marketplace',
+    category: 'Marketplace',
+    keywords: ['dev link', 'folder', 'link', 'unlink', 'reload', 'installed copy', 'develop'],
+  },
+  {
     id: 'marketplacesourcesview',
     title: 'MarketplaceSourcesView',
     page: 'marketplace',

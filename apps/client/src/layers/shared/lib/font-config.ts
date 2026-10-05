@@ -27,7 +27,7 @@ export interface FontConfig {
 export const FONT_CONFIGS = [
   {
     key: 'system',
-    displayName: 'System Default',
+    displayName: 'System default',
     description: 'Native platform fonts',
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     mono: "ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace",

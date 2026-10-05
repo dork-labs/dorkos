@@ -1,3 +1,6 @@
+import { createPointerLedger } from './pointer.js';
+import { ordinaryRecord } from '../lifecycle/ownership.js';
+import { createDiagnosticsOwner, unavailableDiagnostics } from './diagnostics.js';
 import { randomBytes } from 'node:crypto';
 import type { Page } from 'playwright-core';
 import { advanceCounter } from '../counters.js';
@@ -5,10 +8,27 @@ import { parseTabId } from '../ids.js';
 import type { BrowserRecord, TabRecord } from '../lifecycle/records.js';
 
 /** Own the canonical record before Page callbacks; parent retirement precedes child listeners. */
-export function trackPage(record: BrowserRecord, page: Page, origin: string): TabRecord {
+export function trackPage(
+  record: BrowserRecord,
+  page: Page,
+  origin: string,
+  now: () => number
+): TabRecord {
+  if (!ordinaryRecord(record)) throw new Error('PAGE_REGISTRATION_REFUSED');
   const prior = [...record.tabs.values()].find((tab) => tab.page === page);
   if (prior) return prior;
+  const currentBinding = () =>
+    tab &&
+    ordinaryRecord(record) &&
+    record.tabs.get(tab.binding.tabId) === tab &&
+    !tab.stopped &&
+    !record.lifetime.gate.stopped
+      ? { ...tab.binding }
+      : null;
+  const pointer = createPointerLedger(currentBinding);
   const tab: TabRecord = {
+    pointer,
+    diagnostics: unavailableDiagnostics,
     page,
     binding: {
       browserId: record.browserId,
@@ -25,19 +45,41 @@ export function trackPage(record: BrowserRecord, page: Page, origin: string): Ta
     pending: 0,
   };
   record.tabs.set(tab.binding.tabId, tab);
+  tab.diagnostics = createDiagnosticsOwner({
+    budget: record.diagnosticsBudget,
+    readBinding: currentBinding,
+    now,
+  });
   const retire = () => {
+    // Local changed-target refusal precedes cohort capture; no shared terminal gate yet.
     tab.stopped = true;
-    record.lifetime.gate.stop();
-    record.lifetime.retire?.();
+    record.lifetime.requestRetirement('engineFault');
+    for (const invalidate of [() => tab.pointer.invalidate(), () => tab.diagnostics.discard()]) {
+      try {
+        invalidate();
+      } catch {
+        record.lifetime.uncertain = true;
+      }
+    }
   };
   record.lifetime.gate.register(tab.binding, () => {
+    tab.pointer.invalidate();
+    tab.diagnostics.discard();
     tab.stopped = true;
-    record.lifetime.retire?.();
+    record.lifetime.requestRetirement('engineFault');
   });
-  if (tab.stopped) return tab;
+  if (tab.stopped || record.lifetime.gate.stopped) {
+    tab.diagnostics.discard();
+    return tab;
+  }
   try {
     const active = () =>
-      record.tabs.get(tab.binding.tabId) === tab && !tab.stopped && !record.lifetime.gate.stopped;
+      ordinaryRecord(record) &&
+      record.tabs.get(tab.binding.tabId) === tab &&
+      !tab.stopped &&
+      !record.lifetime.gate.stopped;
+    tab.diagnostics.install(page);
+    if (!active()) return tab;
     const timeout = page.setDefaultTimeout;
     if (!active()) return tab;
     Reflect.apply(timeout, page, [1500]);
@@ -53,11 +95,16 @@ export function trackPage(record: BrowserRecord, page: Page, origin: string): Ta
       'framenavigated',
       (frame: import('playwright-core').Frame) => {
         if (frame !== page.mainFrame()) return;
-        if (record.tabs.get(tab.binding.tabId) !== tab || record.lifetime.gate.stopped) {
+        if (
+          !ordinaryRecord(record) ||
+          record.tabs.get(tab.binding.tabId) !== tab ||
+          record.lifetime.gate.stopped
+        ) {
           retire();
           return;
         }
         try {
+          tab.pointer.invalidate();
           tab.binding = {
             ...tab.binding,
             navigationGeneration: advanceCounter(tab.binding.navigationGeneration),
@@ -68,6 +115,7 @@ export function trackPage(record: BrowserRecord, page: Page, origin: string): Ta
             (frame.url() !== 'about:blank' && new URL(frame.url()).origin !== origin)
           )
             retire();
+          else tab.diagnostics.replaceEpoch();
         } catch {
           retire();
         }

@@ -412,6 +412,55 @@ export class TeamRoomApi {
   }
 
   /**
+   * How many things the Inbox pill counts as waiting on a person, read from the
+   * same five sources the app's waiting queue (`useWaitingQueue`) reads:
+   * capability approvals, prompts agents are parked on, parked schedules,
+   * extensions waiting to be turned on, and decisions extensions asked about.
+   *
+   * A precondition for the quiet-state test: Home's "All quiet." stands down
+   * whenever any of these waits (DOR-2578), so checking approvals alone would
+   * report a correctly silent line as a broken one.
+   */
+  async waitingOnPersonCount(): Promise<number> {
+    const read = async <T>(path: string, what: string): Promise<T> => {
+      const res = await this.request.get(path);
+      if (!res.ok()) throw new Error(`Could not read ${what}: ${await res.text()}`);
+      return (await res.json()) as T;
+    };
+    const approvals = await this.pendingApprovalIds();
+    const { interactions } = await read<{ interactions: unknown[] }>(
+      '/api/sessions/pending-interactions',
+      'pending prompts'
+    );
+    const { approvals: extensions } = await read<{ approvals: unknown[] }>(
+      '/api/extensions/pending-approvals',
+      'extensions waiting to be turned on'
+    );
+    const { decisions } = await read<{ decisions: unknown[] }>(
+      '/api/extension-decisions',
+      'extension decisions'
+    );
+    // Tasks can be switched off on a server, and then the app reads no
+    // schedules at all — so a refused read here is "none waiting", not an error.
+    const tasksRes = await this.request.get('/api/tasks');
+    const tasks = tasksRes.ok()
+      ? ((await tasksRes.json()) as { status: string; enabled: boolean; origin: string | null }[])
+      : [];
+    // The app's own rule (`isScheduleAwaitingApproval`): a shipped-off file
+    // schedule parked for approval is not asking to run.
+    const schedules = tasks.filter(
+      (task) => task.status === 'pending_approval' && (task.origin !== 'file' || task.enabled)
+    );
+    return (
+      approvals.length +
+      interactions.length +
+      extensions.length +
+      decisions.length +
+      schedules.length
+    );
+  }
+
+  /**
    * Mark every Inbox notification read, on this shared server.
    *
    * A fixture reset, not a product action under test. This file runs its specs

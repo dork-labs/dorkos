@@ -15,14 +15,14 @@ import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 
 // Human-readable descriptions for known detection strategies
 const STRATEGY_DESCRIPTIONS: Record<string, string> = {
-  'claude-code': 'Detected a AGENTS.md file. This is a Claude Code project.',
-  cursor: 'Detected a .cursor/ directory. This is a Cursor project.',
-  codex: 'Detected a .codex/ directory. This is a Codex project.',
-  'dork-manifest': 'Found an existing .dork/agent.json. Already configured as a DorkOS agent.',
+  'claude-code': 'Has an AGENTS.md file, so it’s a Claude Code project.',
+  cursor: 'Has a .cursor folder, so it’s a Cursor project.',
+  codex: 'Has a .codex folder, so it’s a Codex project.',
+  'dork-manifest': 'Has a .dork/agent.json file, so it’s already a DorkOS agent.',
 };
 
 function strategyDescription(strategy: string): string {
-  return STRATEGY_DESCRIPTIONS[strategy] ?? `Detected via "${strategy}" strategy.`;
+  return STRATEGY_DESCRIPTIONS[strategy] ?? `Found by the “${strategy}” check.`;
 }
 
 // Human-readable descriptions for known agent capabilities
@@ -40,7 +40,7 @@ const CAPABILITY_DESCRIPTIONS: Record<string, string> = {
 };
 
 function capabilityDescription(cap: string): string {
-  return CAPABILITY_DESCRIPTIONS[cap] ?? 'Agent capability detected from project structure.';
+  return CAPABILITY_DESCRIPTIONS[cap] ?? 'Found in the project’s files.';
 }
 
 interface CandidateCardProps {
@@ -123,7 +123,7 @@ export function CandidateCard({
               </Badge>
             </HoverCardTrigger>
             <HoverCardContent className="w-56 space-y-1.5 p-3" side="top" align="start">
-              <p className="text-xs font-medium">Detected runtime</p>
+              <p className="text-xs font-medium">How DorkOS knows</p>
               <p className="text-muted-foreground text-xs">{strategyDescription(strategy)}</p>
             </HoverCardContent>
           </HoverCard>

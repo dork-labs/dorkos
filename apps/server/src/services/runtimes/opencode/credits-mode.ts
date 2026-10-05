@@ -1,6 +1,8 @@
 /**
  * The half of OpenCode on DorkOS credits that asks the cloud: the live token
  * and the model list a sidecar boot or a turn runs on (ADR 261001-000811). The
+ * list is the one credits list (`credits-models.ts`), in OpenCode's chat format
+ * once the service says which formats its models are in. The
  * plan it returns is built into a boot by `credits-sidecar.ts`; why credits are
  * a mode of the whole sidecar is told there.
  *
@@ -10,11 +12,8 @@ import {
   CreditsUnavailableError,
   creditsProtocolServed,
 } from '../../core/cloud/credits-protocols.js';
-import {
-  creditsModels,
-  heldCreditsToken,
-  resolveCreditsLaunch,
-} from '../../core/cloud/credits-inference.js';
+import { heldCreditsToken, resolveCreditsLaunch } from '../../core/cloud/credits-inference.js';
+import { creditsModelsFor } from '../../core/cloud/credits-models.js';
 import { OPENCODE_CAPABILITIES } from './runtime-constants.js';
 import {
   OPENCODE_LABEL,
@@ -36,7 +35,7 @@ export async function planOpenCodeSidecar(): Promise<OpenCodeSidecarPlan> {
   if (!openCodeRunsOnCredits()) return OPENCODE_OWN_PLAN;
   const token = heldCreditsToken();
   const served = token !== null && creditsProtocolServed('openai-chat-completions', token);
-  const available = served ? ((await creditsModels())?.models ?? []) : [];
+  const available = served ? await creditsModelsFor('openai-chat-completions') : [];
   return { mode: 'credits', fingerprint: openCodeCreditsFingerprint(available), models: available };
 }
 
@@ -50,7 +49,7 @@ export async function planOpenCodeSidecar(): Promise<OpenCodeSidecarPlan> {
 export async function planOpenCodeTurn(): Promise<OpenCodeSidecarPlan> {
   if (!openCodeRunsOnCredits()) return OPENCODE_OWN_PLAN;
   await resolveCreditsLaunch(OPENCODE_CAPABILITIES, OPENCODE_LABEL);
-  const available = (await creditsModels())?.models ?? [];
+  const available = await creditsModelsFor('openai-chat-completions');
   if (available.length === 0) throw new CreditsUnavailableError('unreachable', OPENCODE_LABEL);
   return { mode: 'credits', fingerprint: openCodeCreditsFingerprint(available), models: available };
 }

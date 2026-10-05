@@ -461,7 +461,7 @@ describe('SettingsDialog — one heading per panel', () => {
     { nav: /^connections$/i, title: 'Connections' },
     { nav: /^dorkos account$/i, title: 'DorkOS account' },
     { nav: /^login & security$/i, title: 'Login & security' },
-    { nav: /privacy & data/i, title: 'Privacy & Data' },
+    { nav: /privacy & data/i, title: 'Privacy & data' },
     { nav: /^server/i, title: 'Server' },
   ];
 
@@ -491,7 +491,7 @@ describe('SettingsDialog — Advanced fold', () => {
     'Connections',
     'Login & security',
     'Remote access',
-    'Privacy & Data',
+    'Privacy & data',
   ];
   const ADVANCED = ['Server', 'Tools', 'Room limits', 'Experiments', 'Danger zone'];
 
@@ -536,7 +536,7 @@ describe('SettingsDialog — Advanced fold', () => {
     ['connections', 'Connections'],
     ['security', 'Login & security'],
     ['remote-access', 'Remote access'],
-    ['privacy', 'Privacy & Data'],
+    ['privacy', 'Privacy & data'],
   ])('lands a ?settings=%s link on its tab and leaves Advanced folded', (id, label) => {
     deepLink.tab = id;
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });

@@ -7,8 +7,16 @@ import { Puzzle } from 'lucide-react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   EXTENSION_TRUST_COPY,
+  ExtensionAgentGifts,
+  ExtensionPermissionLines,
+  agentGiftsFromApproval,
+  agentGiftsLine,
+  approvedSetOf,
   extensionConsentCopy,
+  permissionViewFromApproval,
+  useAddedSinceSeen,
   useExtensionApprovalActions,
+  type ApproveExtensionInput,
   type ExtensionAnswerInput,
 } from '@/layers/entities/extension';
 import { InboxDecisionRow } from '@/layers/features/inbox';
@@ -27,6 +35,37 @@ function copyOf(approval: PendingExtensionApproval): ExtensionAnswerInput {
     version: approval.version,
     plugin: approval.plugin,
   };
+}
+
+/**
+ * The copy a row shows plus the permission set it lists, sent with "Turn it
+ * on" so a widening while the row was on screen is refused as stale rather
+ * than approved on a yes given to the old lists (DOR-2686).
+ *
+ * @param approval - The waiting extension.
+ */
+function approvalOf(approval: PendingExtensionApproval): ApproveExtensionInput {
+  const permissions = approvedSetOf(permissionViewFromApproval(approval));
+  return { ...copyOf(approval), ...(permissions ? { permissions } : {}) };
+}
+
+/**
+ * What a waiting extension can reach, leading with what is new: since the
+ * person's last approval (the server's `added`), or, on a first ask whose yes
+ * was just refused as stale, since the card they saw (DOR-2686).
+ *
+ * @param props - The waiting extension.
+ */
+function ApprovalPermissionLines({ approval }: { approval: PendingExtensionApproval }) {
+  const view = permissionViewFromApproval(approval);
+  const sinceSeen = useAddedSinceSeen(approval.id, approvedSetOf(view));
+  return (
+    <ExtensionPermissionLines
+      permissions={view}
+      added={approval.added ?? sinceSeen}
+      data-testid={`extension-permissions-${approval.id}`}
+    />
+  );
 }
 
 /** Props for {@link ExtensionApprovalList}. */
@@ -55,44 +94,65 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
 
   return (
     <div data-slot="extension-approval-list" className="mt-2 flex flex-col gap-1">
-      {approvals.map((approval) => (
-        <InboxDecisionRow
-          key={`${approval.id}:${approval.path}:${approval.version}`}
-          icon={Puzzle}
-          title={`Turn on ${approval.name}?`}
-          why={approval.why}
-          sourceLine={approval.sourceLabel}
-          more={
-            <>
-              <p>{extensionConsentCopy(approval.runsInServer)}</p>
-              <p>{EXTENSION_TRUST_COPY}</p>
-              <p>
-                <button
-                  type="button"
-                  onClick={onOpenSettings}
-                  className="text-foreground underline underline-offset-2"
-                >
-                  See it in Settings → Extensions
-                </button>
-              </p>
-            </>
-          }
-          actions={{
-            kind: 'yes-no',
-            approveLabel: 'Turn it on',
-            rejectLabel: 'Not now',
-            onApprove: () => approve(copyOf(approval)),
-            onReject: () => dismiss(copyOf(approval)),
-          }}
-          pending={
-            pending?.id === approval.id
-              ? pending.action === 'approve'
-                ? 'approve'
-                : 'reject'
-              : null
-          }
-        />
-      ))}
+      {approvals.map((approval) => {
+        const gifts = agentGiftsFromApproval(approval);
+        const giftsLine = agentGiftsLine(gifts);
+        return (
+          <InboxDecisionRow
+            key={`${approval.id}:${approval.path}:${approval.version}`}
+            icon={Puzzle}
+            title={`Turn on ${approval.name}?`}
+            why={approval.why}
+            // What it gives agents, on the row itself, so it is read before the
+            // yes; each tool and its tier is in the ⓘ panel (DOR-2685).
+            {...(giftsLine ? { meta: giftsLine } : {})}
+            // Where it runs and what it may reach, on the row itself, so the
+            // yes is given to what it lists; a re-ask leads with what is new.
+            // Nothing extra when the server sent no set (one version behind).
+            {...(approval.permissions
+              ? {
+                  details: <ApprovalPermissionLines approval={approval} />,
+                }
+              : {})}
+            sourceLine={approval.sourceLabel}
+            more={
+              <>
+                <ExtensionAgentGifts gifts={gifts} variant="list" />
+                <p>
+                  {extensionConsentCopy(
+                    approval.runsInServer,
+                    approval.permissions?.runtime === 'subprocess'
+                  )}
+                </p>
+                <p>{EXTENSION_TRUST_COPY}</p>
+                <p>
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="text-foreground underline underline-offset-2"
+                  >
+                    See it in Settings → Extensions
+                  </button>
+                </p>
+              </>
+            }
+            actions={{
+              kind: 'yes-no',
+              approveLabel: 'Turn it on',
+              rejectLabel: 'Not now',
+              onApprove: () => approve(approvalOf(approval)),
+              onReject: () => dismiss(copyOf(approval)),
+            }}
+            pending={
+              pending?.id === approval.id
+                ? pending.action === 'approve'
+                  ? 'approve'
+                  : 'reject'
+                : null
+            }
+          />
+        );
+      })}
     </div>
   );
 }

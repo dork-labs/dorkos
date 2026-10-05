@@ -2,6 +2,42 @@
   "version": 1,
   "specs": [
     {
+      "id": "261003-204731",
+      "slug": "isolated-extension-backends",
+      "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",
+      "created": "2026-10-03",
+      "status": "specified",
+      "project": "extensibility-platform",
+      "linearIssue": "DOR-2686"
+    },
+    {
+      "id": "261003-200014",
+      "slug": "extension-agent-tools-and-skills",
+      "title": "Extensions give agents tools and skills, registered at extension load",
+      "created": "2026-10-03",
+      "status": "specified",
+      "project": "extensibility-platform",
+      "linearIssue": "DOR-2685"
+    },
+    {
+      "id": "261003-184400",
+      "slug": "marketplace-dev-link",
+      "title": "Dev link: run a marketplace package from a working folder, owner-only, hot-reloaded",
+      "created": "2026-10-03",
+      "status": "specified",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2696"
+    },
+    {
+      "id": "261001-201020",
+      "slug": "relay-delivery-receipts",
+      "title": "Durable Relay HTTP delivery receipts",
+      "created": "2026-10-01",
+      "status": "specified",
+      "project": "Relay",
+      "linearIssue": "DOR-2666"
+    },
+    {
       "id": "261001-213235",
       "slug": "relay-signed-json",
       "title": "Preserve signed Relay JSON through the full application",
@@ -3511,6 +3547,14 @@
       "created": "2026-10-01",
       "status": "specified",
       "linearIssue": "DOR-2662"
+    },
+    {
+      "id": "261004-192008",
+      "slug": "desktop-tab-history",
+      "title": "Back, forward and history for each desktop tab",
+      "created": "2026-10-04",
+      "status": "specified",
+      "linearIssue": "DOR-2107"
     }
   ]
 }

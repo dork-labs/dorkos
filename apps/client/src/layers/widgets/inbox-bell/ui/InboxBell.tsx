@@ -11,9 +11,16 @@ import {
 } from '@/layers/shared/ui';
 import { internalRoutePath, listWaitingKinds, toSession } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
-import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
+import {
+  describeWaitingQueue,
+  useAskAgentNames,
+  useSettlingAsks,
+  useWaitingQueue,
+} from '@/layers/entities/attention';
 import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
+  INBOX_REQUEST_TTL_MS,
+  settleInboxRequest,
   useInboxRequest,
   useMarkAllRead,
   useNotifications,
@@ -102,53 +109,6 @@ function waitingLabel(
       : `${asks} questions need your answer. Open to answer them.`;
   }
   return `${listWaitingKinds(asks, approvals, schedules)} are waiting on you. Open to answer them.`;
-}
-
-/**
- * The one-line summary inside the pinned section, under the same rule.
- *
- * @param approvals - Capability approvals waiting.
- * @param schedules - Parked schedules waiting.
- * @param asks - Prompts agents are parked on.
- * @param extensions - Installed extensions waiting to be turned on.
- * @param decisions - Decisions extensions are asking a person about.
- */
-function waitingSummary(
-  approvals: number,
-  schedules: number,
-  asks: number,
-  extensions: number,
-  decisions: number
-): string {
-  if (approvals === 0 && schedules === 0 && asks === 0 && extensions === 0 && decisions > 0) {
-    const subject = decisions === 1 ? '1 decision is' : `${decisions} decisions are`;
-    return `${subject} waiting on you.`;
-  }
-  if (decisions > 0) {
-    return `${listWaitingKinds(asks, approvals, schedules, extensions, decisions)} are waiting on you.`;
-  }
-  if (approvals === 0 && schedules === 0 && asks === 0 && extensions > 0) {
-    const subject = extensions === 1 ? '1 extension is' : `${extensions} extensions are`;
-    return `${subject} waiting to be turned on. None of it runs until you decide.`;
-  }
-  if (extensions > 0) {
-    return `${listWaitingKinds(asks, approvals, schedules, extensions)} are waiting on you. Nothing runs until you decide.`;
-  }
-  if (schedules === 0 && asks === 0 && approvals > 0) {
-    const subject = approvals === 1 ? '1 request is' : `${approvals} requests are`;
-    return `${subject} waiting for your approval. Nothing runs until you decide.`;
-  }
-  if (approvals === 0 && asks === 0 && schedules > 0) {
-    const subject = schedules === 1 ? '1 schedule wants' : `${schedules} schedules want`;
-    return `${subject} your approval. Nothing runs until you decide.`;
-  }
-  if (approvals === 0 && schedules === 0 && asks > 0) {
-    // Same noun as the pill above and the mixed sentence below — one prompt is
-    // one question, however many agents raised them.
-    const subject = asks === 1 ? '1 question is' : `${asks} questions are`;
-    return `${subject} waiting on your answer. Nothing carries on until you answer.`;
-  }
-  return `${listWaitingKinds(asks, approvals, schedules)} are waiting on you. Nothing runs until you decide.`;
 }
 
 /**
@@ -280,6 +240,10 @@ export function InboxBell() {
   // a filtered Inbox (a session's menu), and dropped when the panel closes —
   // a filter nobody can see is a filter that makes the next open look broken.
   const [lens, setLens] = useState<NotificationLens | undefined>(undefined);
+  // The one waiting item a link asked to single out (`?inbox=<id>`, DOR-2577):
+  // its row takes focus and a ring. Dropped when focus leaves that row, and on
+  // close for the same reason as the lens.
+  const [focusId, setFocusId] = useState<string | undefined>(undefined);
 
   // Somebody pressed the shortcut, or a session asked for its own notifications,
   // with nothing on screen to jump to. Opening here is the whole of "opens
@@ -294,18 +258,33 @@ export function InboxBell() {
   if (seenRequest !== trayRequest) {
     setSeenRequest(trayRequest);
     setLens(undefined);
+    setFocusId(undefined);
     setOpen(true);
   }
-  const [seenInboxRequest, setSeenInboxRequest] = useState(inboxRequest.openRequest);
+  // A request still pending when this bell mounts was made before it existed
+  // (a cold-load `?inbox=` link read while the shell was loading), so it starts
+  // out unseen and opens on the first render. One already answered by an
+  // earlier bell, or older than the TTL, starts out seen.
+  const [seenInboxRequest, setSeenInboxRequest] = useState<number | null>(() =>
+    inboxRequest.pending && Date.now() - inboxRequest.requestedAt < INBOX_REQUEST_TTL_MS
+      ? null
+      : inboxRequest.openRequest
+  );
   if (seenInboxRequest !== inboxRequest.openRequest) {
     setSeenInboxRequest(inboxRequest.openRequest);
     setLens(inboxRequest.lens);
+    setFocusId(inboxRequest.focus);
     setOpen(true);
   }
 
+  // Opened for it: tell the store, so a bell mounted later does not open again.
+  useEffect(() => {
+    if (seenInboxRequest !== null) settleInboxRequest();
+  }, [seenInboxRequest]);
+
   // A parked schedule counts toward the number on the badge — it is a
   // request for a decision just like a capability approval — but the SENTENCE
-  // no longer calls it one; `waitingLabel`/`waitingSummary` below name a
+  // no longer calls it one; `waitingLabel` and `describeWaitingQueue` below name a
   // schedule as a schedule. The count itself comes from `useWaitingQueue`'s
   // `items`, and `resolvePill` below is handed this SAME number rather than
   // re-summing the three lengths itself — one variable, not two arithmetic
@@ -370,6 +349,7 @@ export function InboxBell() {
             setOpen(next);
             if (!next) {
               setLens(undefined);
+              setFocusId(undefined);
               // A one-time "Next time, trust …?" offer ends with the bell
               // (spec `flow-multiproject` §9.3): it never waits for later.
               withdrawTrustOffers();
@@ -405,10 +385,10 @@ export function InboxBell() {
                     tabIndex={-1}
                     className="text-status-warning-fg sr-only text-xs font-medium tracking-widest uppercase outline-none md:not-sr-only"
                   >
-                    Needs You
+                    Needs you
                   </h2>
                   {/* While only a receipt is left the count is zero, and
-                      `waitingSummary(0, 0, 0)` has nothing to report. It says
+                      `describeWaitingQueue` has nothing to report. It says
                       what just happened instead of counting nothing.
                       (`listWaitingKinds` answers `''` for the all-zero case
                       rather than the ", and undefined are waiting on you" it
@@ -419,13 +399,13 @@ export function InboxBell() {
                       <p className="text-muted-foreground text-xs md:mt-1">Answered.</p>
                     ) : (
                       <p className="text-muted-foreground text-xs md:mt-1">
-                        {waitingSummary(
-                          approvals.length,
-                          schedules.length,
-                          asks.length,
-                          extensionApprovals.length,
-                          extensionDecisions.length
-                        )}
+                        {describeWaitingQueue({
+                          approvals,
+                          schedules,
+                          asks,
+                          extensionApprovals,
+                          extensionDecisions,
+                        })}
                       </p>
                     ))}
                   {/* Shown alongside the cards when a refresh failed but earlier
@@ -453,6 +433,8 @@ export function InboxBell() {
                     approvals={shownApprovals}
                     decisions={extensionDecisions}
                     schedules={shownSchedules}
+                    focusId={focusId}
+                    onFocusSpent={() => setFocusId(undefined)}
                     agentNames={agentNames}
                     onOpenSession={(sessionId) => {
                       setOpen(false);
@@ -593,7 +575,7 @@ function resolvePill(counts: {
       tone: 'waiting',
       glyph: 'waiting',
       text: 'can’t check approvals',
-      label: 'DorkOS could not check for approvals. Open for details.',
+      label: 'DorkOS couldn’t check approvals. Open for details.',
     };
   }
   if (counts.unreadCount > 0) {
@@ -611,6 +593,6 @@ function resolvePill(counts: {
     tone: 'neutral',
     glyph: 'unread',
     text: 'Inbox',
-    label: 'Your Inbox. Nothing is waiting and nothing is unread.',
+    label: 'Inbox. Nothing waiting, nothing unread.',
   };
 }

@@ -7,10 +7,10 @@ interface BulkAddBarProps {
 }
 
 /**
- * Inline bar showing the count of new projects with an "Add All" action.
+ * Inline bar showing the count of new projects with an "Add all" action.
  *
  * @param count - Number of pending (unacted) candidates
- * @param onAddAll - Called when the user clicks "Add All"
+ * @param onAddAll - Called when the user clicks "Add all"
  * @param disabled - Disables the button during bulk registration
  */
 export function BulkAddBar({ count, onAddAll, disabled }: BulkAddBarProps) {
@@ -22,7 +22,7 @@ export function BulkAddBar({ count, onAddAll, disabled }: BulkAddBarProps) {
         {count} new project{count === 1 ? '' : 's'}
       </span>
       <Button variant="outline" size="sm" onClick={onAddAll} disabled={disabled}>
-        Add All
+        Add all
       </Button>
     </div>
   );

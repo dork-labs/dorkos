@@ -56,7 +56,7 @@ export const UNREADABLE_MESSAGE_TEXT = 'This part of the conversation couldn’t
 
 /** What an unreadable question, approval or elicitation shows while the agent waits. */
 export const UNREADABLE_PROMPT_TEXT =
-  'The agent asked you something here, but it couldn’t be shown. You can stop the agent and ask it again.';
+  'Your agent asked something that couldn’t be shown. Stop it and ask again.';
 
 /** The live event types that pause the turn until the operator answers. */
 const BLOCKING_PROMPT_TYPES: ReadonlySet<string> = new Set([

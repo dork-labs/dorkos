@@ -1,3 +1,6 @@
+import type { DiagnosticsBudget } from '../tabs/diagnostics-budget.js';
+import type { DiagnosticsOwner } from '../tabs/diagnostics.js';
+import type { PointerLedger } from '../tabs/pointer.js';
 import type { BrowserLifetime } from './ownership.js';
 import type { BrowserContext, Page } from 'playwright-core';
 import type { BrowserBinding, BrowserCommand, BrowserResult } from '../contracts.js';
@@ -9,6 +12,7 @@ import type { FixtureProxy } from '../network/fixture-proxy.js';
 
 /** Internal acquisition ledger, allocated before any owned browser can launch. */
 export interface BrowserRecord {
+  diagnosticsBudget: DiagnosticsBudget;
   lifetime: BrowserLifetime;
   browserId: BrowserId;
   browserGeneration: number;
@@ -18,8 +22,24 @@ export interface BrowserRecord {
   directory?: OwnedDirectory;
   dataRoot?: OwnedDirectory;
   reservation?: ProfileReservation;
+  journal?: import('../runtime/darwin-engine-journal.js').DarwinEngineJournal;
+  supervisor?: Awaited<
+    ReturnType<typeof import('../runtime/darwin-supervisor-client.js').startDarwinSupervisorClient>
+  >;
+  supervisorStopBarrier?: Promise<void>;
+  controllerBrowser?: import('playwright-core').Browser;
   context?: BrowserContext;
   proxy?: FixtureProxy;
+  verifiedRuntime?: Readonly<{ runtimeIdentity: string; policyRevision: number }>;
+  networkPeer?: import('../engine.js').PrivateBrowserNetworkPeer;
+  networkEndpoint?: Readonly<{
+    url: string;
+    credentials: Readonly<{ username: string; password: string }>;
+  }>;
+  networkCustody?: () => boolean;
+  networkClose?: () => Promise<void>;
+  networkClosePromise?: Promise<void>;
+  networkReturned?: boolean;
   manager: ProcessIdentity;
   root?: ProcessIdentity;
   rootAttributed: boolean;
@@ -33,6 +53,8 @@ export interface BrowserRecord {
 }
 /** Private canonical Page and immutable-lifetime capture sequencing. */
 export interface TabRecord {
+  pointer: PointerLedger;
+  diagnostics: DiagnosticsOwner;
   page: Page;
   binding: BrowserBinding;
   stopped: boolean;

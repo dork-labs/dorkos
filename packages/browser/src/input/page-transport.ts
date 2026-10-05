@@ -1,8 +1,10 @@
+import type { PointerLedger } from '../tabs/pointer.js';
 import type { CDPSession, Page } from 'playwright-core';
 import type { BrowserBinding } from '../contracts.js';
 import { sameBinding } from './binding.js';
 import { INPUT_BUDGET_MS, within } from './budget.js';
-import type { NativeInputStep, NativeInputTransport } from './types.js';
+import type { NativeInputStep, NativeInputTransport, InputCleanupRoute } from './types.js';
+import type { CleanupPermit, CleanupAttempt } from '../lifecycle/ownership.js';
 
 /** Session custody only; neither detach nor these counts certify browser process closure. */
 export interface PageInputCustody {
@@ -14,6 +16,8 @@ export interface PageInputCustody {
 }
 /** Private canonical Page port, never accepted from an input command. */
 export interface PageTransportOptions {
+  readonly cleanup: InputCleanupRoute;
+  readonly pointer: PointerLedger;
   readonly page: Page;
   current(): boolean;
   readBinding(): BrowserBinding | null;
@@ -23,17 +27,21 @@ export interface PageTransportOptions {
 export interface OwnedPageTransport {
   readonly native: NativeInputTransport;
   readonly ready: Promise<void>;
+  /** Original session attribution; pending calls may be known, without authorizing effects. */
+  isCustodyKnown(): boolean;
   custody(): PageInputCustody;
   close(deadline?: number): Promise<PageInputCustody>;
 }
 
 /** Own exactly one public Page CDPSession; expose only fixed composition/drag cancellation. */
 export function createPageTransport(options: PageTransportOptions): OwnedPageTransport {
+  if (!options.pointer) throw new Error('POINTER_OBSERVER_UNAVAILABLE');
   const owner = new PageTransportOwner(options);
   owner.acquire();
   return Object.freeze({
     native: owner.native,
     ready: owner.ready,
+    isCustodyKnown: () => owner.isCustodyKnown(),
     custody: () => owner.custody(),
     close: (deadline?: number) => owner.close(deadline),
   });
@@ -44,6 +52,7 @@ class PageTransportOwner {
   readonly native: NativeInputTransport;
   private resolve!: () => void;
   private reject!: (error: unknown) => void;
+  private readonly page: Page;
   private session?: CDPSession;
   private acquisition?: Promise<void>;
   private acquisitionPending = true;
@@ -59,6 +68,7 @@ class PageTransportOwner {
   private end?: number;
 
   constructor(private readonly options: PageTransportOptions) {
+    this.page = options.page;
     this.ready = new Promise<void>((resolve, reject) => {
       this.resolve = resolve;
       this.reject = reject;
@@ -67,11 +77,26 @@ class PageTransportOwner {
     void this.ready.catch(() => {});
     this.native = Object.freeze({
       dispatch: (step: NativeInputStep, signal: AbortSignal) =>
-        this.call((guard) => this.dispatch(step, guard), signal),
+        this.call((guard, settle) => this.dispatch(step, guard, settle), signal, step),
       cancelComposition: (signal: AbortSignal) =>
         this.call((guard) => this.sendCancel('Input.imeSetComposition', guard), signal),
       cancelDrag: (signal: AbortSignal) =>
         this.call((guard) => this.sendCancel('Input.cancelDragging', guard), signal),
+      cleanup: (permit: CleanupPermit, attempt: CleanupAttempt, signal: AbortSignal) => {
+        const step = attempt.step;
+        return this.call(
+          (guard, settle) => {
+            if (step.kind === 'cancelComposition')
+              return this.sendCancel('Input.imeSetComposition', guard);
+            if (step.kind === 'cancelDrag') return this.sendCancel('Input.cancelDragging', guard);
+            return this.dispatch(step, guard, settle);
+          },
+          signal,
+          undefined,
+          permit,
+          attempt
+        );
+      },
     });
   }
 
@@ -83,10 +108,19 @@ class PageTransportOwner {
       complete = resolve;
     });
     const accept = (session: CDPSession) => {
+      // Possession is retained even when producer registration refuses or reenters retirement.
       this.session = session;
-      this.acquisitionPending = false;
-      complete();
-      if (this.retired) this.detach();
+      try {
+        this.options.cleanup.registerTarget(this.page, this, session);
+      } catch (error) {
+        this.uncertain = true;
+        this.reject(error);
+        this.retire();
+      } finally {
+        this.acquisitionPending = false;
+        complete();
+        if (this.retired) void this.detach().catch(() => {});
+      }
     };
     const fail = (error: unknown) => {
       this.acquisitionPending = false;
@@ -96,10 +130,10 @@ class PageTransportOwner {
     };
     try {
       if (!this.current()) throw new Error('INPUT_TARGET_REFUSED');
-      const context = this.options.page.context();
+      const context = this.page.context();
       const create = context.newCDPSession;
       if (!this.current()) throw new Error('INPUT_TARGET_REFUSED');
-      void Promise.resolve(create.call(context, this.options.page)).then(accept, fail);
+      void Promise.resolve(create.call(context, this.page)).then(accept, fail);
     } catch (error) {
       fail(error);
     }
@@ -112,8 +146,22 @@ class PageTransportOwner {
         this.uncertain ||= this.acquisitionPending;
         this.reject(error);
         this.retire();
-        void this.close();
+        // The parent driver enters terminal detach after eligible sibling cleanup.
+        // Possession/session uncertainty remains retained meanwhile.
       });
+  }
+
+  isCustodyKnown(): boolean {
+    return (
+      this.session !== undefined &&
+      !this.acquisitionPending &&
+      !this.retired &&
+      !this.uncertain &&
+      !this.detachPending &&
+      !this.detached &&
+      this.detachPromise === undefined &&
+      this.closePromise === undefined
+    );
   }
 
   custody(): PageInputCustody {
@@ -128,6 +176,10 @@ class PageTransportOwner {
   }
 
   close(deadline?: number): Promise<PageInputCustody> {
+    if (!this.options.cleanup.terminal()) {
+      this.options.cleanup.requestRetirement('explicitStop');
+      throw new Error('INPUT_TERMINAL_ONLY_CLOSE');
+    }
     if (this.closePromise) return this.closePromise;
     this.end = Math.min(performance.now() + INPUT_BUDGET_MS, deadline ?? Infinity);
     let resolve!: (custody: PageInputCustody) => void;
@@ -135,7 +187,8 @@ class PageTransportOwner {
       resolve = done;
     });
     this.uncertain ||= this.heldKeys.size > 0 || this.heldButtons.size > 0;
-    this.retire();
+    // Genuine terminal owner already fenced ordinary admission; this is deliberate local teardown.
+    this.retire(false);
     void this.finishClose().then(resolve);
     return this.closePromise;
   }
@@ -153,11 +206,17 @@ class PageTransportOwner {
     return this.custody();
   }
 
-  private retire(): void {
+  private retire(notifyFault = true): void {
     if (this.retired) return;
     this.retired = true;
+    // Admission/first cause is fenced before externally observable pointer invalidation.
     try {
-      this.options.retire();
+      if (notifyFault) this.options.retire();
+    } catch {
+      this.uncertain = true;
+    }
+    try {
+      this.pointerInvalidate();
     } catch {
       this.uncertain = true;
     }
@@ -166,8 +225,12 @@ class PageTransportOwner {
   private current(): boolean {
     if (this.retired) return false;
     try {
-      const current = this.options.current() && !this.options.page.isClosed();
-      return current && !this.retired;
+      const current = this.options.current() && this.options.cleanup.ordinary();
+      const page = this.page;
+      const isClosed = page.isClosed;
+      if (!current || this.retired || !this.options.cleanup.ordinary()) return false;
+      const closed = Reflect.apply(isClosed, page, []);
+      return !closed && !this.retired && this.options.current() && this.options.cleanup.ordinary();
     } catch {
       return false;
     }
@@ -223,21 +286,80 @@ class PageTransportOwner {
     return send.call(session, method).then(() => {});
   }
 
-  private call(start: (guard: () => void) => Promise<void>, signal: AbortSignal): Promise<void> {
-    this.nativePending++;
-    let binding: BrowserBinding | null;
+  private pointerInvalidate(): void {
     try {
-      binding = this.options.readBinding();
+      if (this.options.pointer?.invalidate() !== undefined) this.options.pointer?.unavailable();
     } catch {
-      this.nativePending--;
-      return Promise.reject(new Error('INPUT_TARGET_REFUSED'));
+      this.options.pointer?.unavailable();
     }
-    const guard = () => {
+  }
+
+  private call(
+    start: (guard: () => void, settle: () => void) => Promise<void>,
+    signal: AbortSignal,
+    step?: NativeInputStep,
+    permit?: CleanupPermit,
+    attempt?: CleanupAttempt
+  ): Promise<void> {
+    this.nativePending++;
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const operation = new Promise<void>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    let binding: BrowserBinding | null = null;
+    let ticket: object | null = null;
+    const fail = (error: unknown) => {
+      this.pointerInvalidate();
+      this.nativePending--;
+      this.uncertain = true;
+      reject(error);
+    };
+    const exactSettlement = () => {
+      const session = this.session;
+      if (!session || !binding || this.retired) return false;
+      const observed = this.options.cleanup.binding();
+      const page = this.page;
+      const isClosed = page.isClosed;
       if (
-        !this.session ||
-        signal.aborted ||
+        !sameBinding(observed, binding) ||
+        this.retired ||
+        !this.options.cleanup.settlement(binding, this, session, this.page)
+      )
+        return false;
+      const closed = Reflect.apply(isClosed, page, []);
+      return (
+        !closed &&
+        !this.retired &&
+        sameBinding(this.options.cleanup.binding(), binding) &&
+        this.options.cleanup.settlement(binding, this, session, this.page) &&
+        !this.retired
+      );
+    };
+    const settle = () => {
+      if (!exactSettlement()) throw new Error('INPUT_ACK_TARGET_REFUSED');
+    };
+    const guard = () => {
+      const session = this.session;
+      if (!session || !binding || this.retired || signal.aborted)
+        throw new Error('INPUT_TARGET_REFUSED');
+      if (permit) {
+        if (
+          !attempt ||
+          !this.options.cleanup.allows(permit, binding, this, session, this.page) ||
+          !exactSettlement() ||
+          !sameBinding(this.options.readBinding(), binding) ||
+          !exactSettlement() ||
+          !this.options.cleanup.retiring() ||
+          this.retired ||
+          signal.aborted ||
+          // Fallible canonical/Page observations precede the producer's final clock/private fence.
+          !this.options.cleanup.allows(permit, binding, this, session, this.page)
+        )
+          throw new Error('INPUT_CLEANUP_TARGET_REFUSED');
+      } else if (
         !this.current() ||
-        !binding ||
         !sameBinding(this.options.readBinding(), binding) ||
         !this.current() ||
         this.retired ||
@@ -245,23 +367,40 @@ class PageTransportOwner {
       )
         throw new Error('INPUT_TARGET_REFUSED');
     };
-    let resolve!: () => void;
-    let reject!: (error: unknown) => void;
-    const operation = new Promise<void>((done, fail) => {
-      resolve = done;
-      reject = fail;
-    });
-    // Preregister before binding/current/API getters, which may synchronously reenter teardown.
-    const fail = (error: unknown) => {
-      this.nativePending--;
-      this.uncertain = true;
-      reject(error);
-    };
     try {
+      if (permit && (!attempt || !this.options.cleanup.enter(permit, attempt)))
+        throw new Error('INPUT_CLEANUP_PERMIT_REFUSED');
+      binding = permit ? this.options.cleanup.binding() : this.options.readBinding();
       guard();
-      void Promise.resolve(start(guard)).then(() => {
-        this.nativePending--;
-        resolve();
+      if (step?.kind === 'mouseMove' && this.options.pointer) {
+        try {
+          ticket = this.options.pointer.beginMove(step.x, step.y);
+          if (ticket !== null && this.options.pointer.accepts(ticket) !== true) {
+            this.options.pointer.unavailable();
+            ticket = null;
+          }
+        } catch {
+          this.options.pointer.unavailable();
+        }
+      }
+      guard();
+      void Promise.resolve(start(guard, settle)).then(() => {
+        try {
+          settle();
+          if (step?.kind === 'mouseMove' && this.options.pointer && this.current()) {
+            try {
+              if (this.options.pointer.success(ticket) !== undefined)
+                this.options.pointer.unavailable();
+            } catch {
+              this.options.pointer.unavailable();
+            }
+            guard();
+          } else if (!this.current()) this.pointerInvalidate();
+          this.nativePending--;
+          resolve();
+        } catch (error) {
+          fail(error);
+        }
       }, fail);
     } catch (error) {
       fail(error);
@@ -269,8 +408,8 @@ class PageTransportOwner {
     return operation;
   }
 
-  private dispatch(step: NativeInputStep, guard: () => void): Promise<void> {
-    const page = this.options.page;
+  private dispatch(step: NativeInputStep, guard: () => void, settle: () => void): Promise<void> {
+    const page = this.page;
     const mouse = page.mouse;
     const keyboard = page.keyboard;
     let run: () => Promise<void>;
@@ -318,7 +457,7 @@ class PageTransportOwner {
     if (step.kind === 'keyDown') this.heldKeys.add(step.key);
     if (step.kind === 'mouseDown') this.heldButtons.add(step.button);
     return run().then(() => {
-      guard();
+      settle();
       if (step.kind === 'keyUp') this.heldKeys.delete(step.key);
       if (step.kind === 'mouseUp') this.heldButtons.delete(step.button);
     });

@@ -303,6 +303,9 @@ const PLAIN_LANGUAGE: Record<string, string> = {
   // four above, and gated because every schedule that follows the agent runs
   // differently; the docs say both.
   'operator.update_agent_execution': 'changing what an agent runs on',
+  // A dev link (DOR-2696): reversible by unlink, and gated on every call
+  // because the folder's code then runs unreviewed on every edit.
+  'marketplace.link': 'running a package from a folder',
 };
 
 /**

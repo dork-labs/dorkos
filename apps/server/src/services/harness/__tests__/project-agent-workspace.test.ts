@@ -355,6 +355,56 @@ describe('projectAgentWorkspace', () => {
       expect.objectContaining({ agentDir })
     );
   });
+
+  it("projects a dev link registered for the agent's own folder (DOR-2696)", () => {
+    // Purpose: the agent pass keeps the global scope out, but a dev link made
+    // for this folder is the folder's own package and projects like an
+    // install. Seeded defect that reds it: drop `devLinks` from the call.
+    const agentDir = realpathSync(buildAgentWorkspace('dev-linked'));
+    const home = join(tmpRoot, 'dev-link-home');
+    const folder = join(tmpRoot, 'dev-link-work');
+    mkdirSync(join(folder, '.dork'), { recursive: true });
+    writeFileSync(
+      join(folder, '.dork', 'manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        name: 'flow',
+        version: '0.0.1',
+        type: 'plugin',
+        description: 't',
+      })
+    );
+    mkdirSync(join(folder, 'skills', 'greet'), { recursive: true });
+    writeFileSync(join(folder, 'skills', 'greet', 'SKILL.md'), '# greet\n');
+    const slot = join(agentDir, '.dork', 'plugins', 'flow');
+    mkdirSync(join(agentDir, '.dork', 'plugins'), { recursive: true });
+    symlinkSync(realpathSync(folder), slot, 'dir');
+    mkdirSync(join(home, 'marketplace'), { recursive: true });
+    writeFileSync(
+      join(home, 'marketplace', 'dev-links.json'),
+      JSON.stringify({
+        version: 1,
+        links: [
+          {
+            name: 'flow',
+            type: 'plugin',
+            scope: 'project',
+            projectPath: agentDir,
+            slot,
+            target: realpathSync(folder),
+            linkedAt: '2026-10-03T00:00:00.000Z',
+            linkedVia: 'app',
+          },
+        ],
+      })
+    );
+
+    expect(projectAgentWorkspace(agentDir, home).status).toBe('projected');
+
+    expect(lstatSync(join(agentDir, '.claude', 'skills', 'flow__greet')).isSymbolicLink()).toBe(
+      true
+    );
+  });
 });
 
 describe('backfillAgentWorkspaceSkills', () => {

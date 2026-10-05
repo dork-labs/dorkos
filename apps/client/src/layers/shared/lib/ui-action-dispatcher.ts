@@ -384,8 +384,8 @@ export function executeUiCommand(
       break;
     case 'open_terminal': {
       if (ctx.supportsTerminal === false) {
-        toast.info('Terminal is not available here', {
-          description: 'Open this session in the DorkOS web app to use the terminal.',
+        toast.info('The terminal isn’t available here', {
+          description: 'Open this session in the web app.',
         });
         break;
       }
@@ -426,7 +426,7 @@ export function executeUiCommand(
       // it live.
       if (ctx.sessionId === undefined) {
         toast.info('Picture-in-picture needs an active session', {
-          description: 'Open a chat session, then pop its widget out.',
+          description: 'Open a chat, then pop out its widget.',
         });
         break;
       }

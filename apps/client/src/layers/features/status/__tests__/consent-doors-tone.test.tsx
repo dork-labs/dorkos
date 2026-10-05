@@ -144,7 +144,7 @@ describe('what the consent doors look like', () => {
     for (const [, open] of bothDoors(WORKSPACE_WRITE)) {
       open();
       expect(screen.getByTestId('consent-asks-note')).toHaveTextContent(
-        'This stop never pauses to ask. Whatever it decides to do, it does.'
+        'This stop never pauses to ask. It acts without checking with you.'
       );
       cleanup();
     }

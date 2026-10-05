@@ -2,12 +2,12 @@ import { ExternalLinkAnchor } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 /**
- * Who DorkOS Cloud is for, word for word as the pricing page says it. Kept here
+ * Who DorkOS Cloud is for, word for word as the pricing page's first sentence says it. Kept here
  * once so the Settings plan section and the hosted-community dialogs cannot say
  * it two different ways.
  */
 export const CLOUD_ELIGIBILITY_TEXT =
-  'Paid plans, and spaces that run on DorkOS for you, are for people in the United States who are 18 or older.';
+  'Paid plans and hosted spaces are for people in the United States, 18 or older.';
 
 /**
  * Where the full answer lives: the pricing page's questions, which include

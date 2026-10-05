@@ -141,6 +141,13 @@ export interface AgentSession {
   lastAssistantUuid?: string;
   /** Active SDK query object — used for mid-stream control (setPermissionMode, setModel) */
   activeQuery?: Query;
+  /**
+   * How many helper agents the running resume-path turn has live, read off that
+   * turn's own liveness tracker; undefined between turns and on the warm path,
+   * whose pump answers instead. What `isHelperWorking` asks on this path
+   * (DOR-2681). A getter, not a count, so the answer is never stale.
+   */
+  liveHelperCount?: () => number;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */
   lastQuery?: Query;
   /**

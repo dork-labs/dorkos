@@ -12,7 +12,11 @@ import {
   useCloudPlan,
   useOpenBillingPage,
 } from '@/layers/features/cloud-plan';
-import { creditsWiredFor, getRuntimeDescriptor } from '@/layers/entities/runtime';
+import {
+  creditsWiredFor,
+  getRuntimeDescriptor,
+  useCreditsCaveats,
+} from '@/layers/entities/runtime';
 import { cn } from '@/layers/shared/lib';
 import {
   useCloudCredits,
@@ -83,6 +87,8 @@ export function CreditsOfferCard({
   const billing = useOpenBillingPage();
   const { data: credits } = useCloudCredits();
   const setDefault = useSetCreditsDefault();
+  // What this runtime does not get on credits, said wherever it is moved there.
+  const caveats = useCreditsCaveats([runtime]);
   const [choosing, setChoosing] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -166,7 +172,7 @@ export function CreditsOfferCard({
   if (done && chosen) {
     return (
       <p className="text-sm" role="status" data-testid={`credits-offer-${runtime}`}>
-        {chosen}
+        {[chosen, ...caveats].join(' ')}
       </p>
     );
   }
@@ -215,6 +221,17 @@ export function CreditsOfferCard({
       {!waiting && !confirming && !nothingLeft && note && (
         <p className="text-muted-foreground text-xs">{note}</p>
       )}
+      {!waiting &&
+        !nothingLeft &&
+        caveats.map((caveat) => (
+          <p
+            key={caveat}
+            className="text-muted-foreground text-xs"
+            data-testid="credits-offer-caveat"
+          >
+            {caveat}
+          </p>
+        ))}
       {intent === 'start' && covers && !waiting && !confirming && !nothingLeft && (
         <p className="text-muted-foreground text-xs">One account for {covers}.</p>
       )}

@@ -9,7 +9,13 @@ import {
   useDisableExtension,
   useReloadExtensions,
   useSetExtensionRunApproval,
+  RunApprovalError,
 } from '../api/queries';
+import {
+  approvedSetOf,
+  permissionViewFromRecord,
+  useSeenBeforeStaleStore,
+} from '@/layers/entities/extension';
 import { ExtensionCard } from './ExtensionCard';
 import { TrustedSourcesSection } from './TrustedSourcesSection';
 
@@ -39,14 +45,30 @@ export function ExtensionsSettingsTab() {
     const shown = extensions.find((ext) => ext.id === id);
     if (!shown) return;
 
+    // Turning it on echoes the permission set the card lists (DOR-2686).
+    const permissions = approve ? approvedSetOf(permissionViewFromRecord(shown)) : undefined;
     mutation.mutate(
-      { id, version: shown.manifest.version, plugin: shown.sourcePlugin ?? null },
+      {
+        id,
+        version: shown.manifest.version,
+        plugin: shown.sourcePlugin ?? null,
+        ...(permissions ? { permissions } : {}),
+      },
       {
         onSuccess: (result) => {
+          if (approve) useSeenBeforeStaleStore.getState().forget(id);
           const name = result.extension.manifest.name;
-          toast.success(approve ? `${name} can now run inside DorkOS` : `${name} stopped running`);
+          // "inside DorkOS" only for one that does run inside (DOR-2686).
+          const where = result.extension.isolation ? '' : ' inside DorkOS';
+          toast.success(approve ? `${name} can now run${where}` : `${name} stopped running`);
         },
         onError: (err) => {
+          if (err instanceof RunApprovalError && err.stale) {
+            // The redrawn card leads with what this one did not list.
+            if (permissions) useSeenBeforeStaleStore.getState().remember(id, permissions);
+            toast.error(`${shown.manifest.name} changed since you saw it. Check it again.`);
+            return;
+          }
           toast.error(approve ? 'Couldn’t let it run.' : 'Couldn’t stop it running.', {
             description: err.message,
           });
@@ -107,6 +129,8 @@ export function ExtensionsSettingsTab() {
       isToggling={togglingIds.has(ext.id)}
       onSetRunApproval={handleSetRunApproval}
       isSettingApproval={approvingIds.has(ext.id)}
+      onReload={handleReload}
+      isReloading={reloadMutation.isPending}
     />
   );
 

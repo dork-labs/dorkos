@@ -42,6 +42,7 @@ import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
 import { updateAgentManifest, AgentUpdateError } from '../services/core/operator/agent-updater.js';
+import { creditsAgentModelRefusal } from '../services/core/cloud/credits-model-gate.js';
 import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
@@ -478,6 +479,19 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       // the existing-folder check and the template gate, which only the
       // installer's staged copy may do. Never taken from a request.
       const { skipTemplateDownload: _internalOnly, ...options } = req.body ?? {};
+      // A new agent that will run on DorkOS credits names a model credits serve
+      // (DOR-2636). Nobody has allowed it onto credits yet, so only credits as
+      // the machine default can put it there.
+      if (typeof options.model === 'string') {
+        const refusal = await creditsAgentModelRefusal({
+          agentId: undefined,
+          runtime: typeof options.runtime === 'string' ? options.runtime : undefined,
+          account: typeof options.account === 'string' ? options.account : null,
+          model: options.model,
+          accountNamedNow: false,
+        });
+        if (refusal) return res.status(400).json({ error: refusal, code: 'UNSUPPORTED_MODEL' });
+      }
       const result = await createAgentWorkspace(
         options,
         meshCore,
@@ -580,6 +594,8 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
           case 'SYSTEM_PROTECTED':
           case 'OPERATOR_ONLY':
             return res.status(403).json({ error: err.message });
+          case 'UNSUPPORTED_MODEL':
+            return res.status(400).json({ error: err.message, code: err.code });
         }
       }
       logger.error('[agents] PATCH /current failed', { err });

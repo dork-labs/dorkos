@@ -45,8 +45,10 @@ import {
   listQueuedMessages,
   noteSessionOrphaned,
   noteTurnBoundary,
+  onDispatchLifecycle,
   resetMessageDispatcher,
   sweepOrphanedMessageQueues,
+  type DispatchLifecycleEvent,
 } from '../message-dispatcher.js';
 import {
   StagedContextStore,
@@ -2326,6 +2328,30 @@ describe('the dispatcher asks the runtime to settle an open turn first (DOR-1295
   });
 });
 
+// The wiring for DOR-2681, for the reason the block above gives: `turnDeps`
+// reaches the runtime's helper answer through one spread, and the stall
+// watchdog only honours it if that spread is there.
+describe('the dispatcher lets a working helper excuse a silent turn (DOR-2681)', () => {
+  it('holds the stall watchdog off while the runtime says a helper is working', async () => {
+    let helperWorking = true;
+    runtime.isHelperWorking.mockImplementation(() => helperWorking);
+    runtime.sendMessage.mockImplementation(async function* () {
+      yield { type: 'text_delta', data: { text: 'Starting a helper.' } } as StreamEvent;
+      await new Promise<void>(() => {});
+    });
+
+    await send('build it', { stallTimeoutMs: 50 });
+    // A bounded window for a NEGATIVE assertion — nothing to wait on — several
+    // times the 50 ms bound, so a guard that ignored the helper would have fired.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(runtime.isHelperWorking).toHaveBeenCalledWith(session);
+    expect(runtime.interruptQuery).not.toHaveBeenCalled();
+
+    helperWorking = false;
+    await vi.waitFor(() => expect(runtime.interruptQuery).toHaveBeenCalledTimes(1));
+  });
+});
+
 describe('systemPromptAppend reaches the runtime, or is absent entirely', () => {
   // Both layers in one path, deliberately: `dispatchMessage` picks the field
   // onto its plan and `triggerTurn` forwards it to `sendMessage`, and either one
@@ -2660,5 +2686,150 @@ describe('a queued room turn across a restart (spec `agent-home-desk` §5.10)', 
     // Only the turn that was already running ever reached the runtime.
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
     expect(prepareLaunch).not.toHaveBeenCalled();
+  });
+});
+
+describe('onDispatchLifecycle — what became of a message, by its id (DOR-2683)', () => {
+  let seen: DispatchLifecycleEvent[];
+  let stop: () => void;
+  beforeEach(() => {
+    seen = [];
+    stop = onDispatchLifecycle((event) => seen.push(event));
+  });
+  afterEach(() => stop());
+
+  it('accepts a message under the id its sender minted, and reports it start and settle', async () => {
+    runtime.withScenarios([quickTurn()]);
+
+    const result = await send('hello', { messageId: 'minted-by-sender' });
+    await settle();
+
+    expect(result.outcome.messageId).toBe('minted-by-sender');
+    expect(runtime.sendMessage).toHaveBeenCalledWith(
+      session,
+      'hello',
+      expect.objectContaining({ messageId: 'minted-by-sender' })
+    );
+    expect(seen).toEqual([
+      { phase: 'started', messageId: 'minted-by-sender', sessionId: session },
+      { phase: 'settled', messageId: 'minted-by-sender', sessionId: session, outcome: 'ok' },
+    ]);
+  });
+
+  it('queues a busy session’s message under the minted id, and reports a removal as dropped', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await send('waits', { messageId: 'waiting-one', clientId: 'extension:x' });
+    await settle();
+    expect(store.list(session).map((row) => row.id)).toEqual(['waiting-one']);
+
+    cancelQueuedMessage(session, 'waiting-one');
+    first.open();
+    await settle();
+
+    expect(seen.filter((e) => e.messageId === 'waiting-one')).toEqual([
+      { phase: 'dropped', messageId: 'waiting-one', reason: 'removed' },
+    ]);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles a removed message’s caller, so nothing it held until the turn settles leaks', async () => {
+    const first = gate();
+    const onSettled = vi.fn();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await send('waits', { messageId: 'waiting-one', onSettled });
+    await settle();
+
+    cancelQueuedMessage(session, 'waiting-one');
+
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('failed');
+  });
+
+  it('does not report a message removed while its launch is under way, since its turn still starts', async () => {
+    // The launch is parked assembling its context; the row is still on the
+    // queue (it leaves at turn_start) when a person removes it.
+    let release!: () => void;
+    vi.mocked(assembleAdditionalContext).mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve([])))
+    );
+    runtime.withScenarios([quickTurn()]);
+    const sent = send('runs anyway', { messageId: 'launching-one' });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+
+    cancelQueuedMessage(session, 'launching-one');
+    release();
+    await sent;
+    await settle();
+
+    expect(seen.filter((e) => e.messageId === 'launching-one').map((e) => e.phase)).toEqual([
+      'started',
+      'settled',
+    ]);
+  });
+
+  it('settles a swept message’s caller too', async () => {
+    // Parked with no turn open (a report the runtime owes is on its way), so
+    // the sweep may take the session.
+    Object.assign(runtime, { isSegmentPending: () => true });
+    const onSettled = vi.fn();
+    await send('waits', { messageId: 'swept-waiting', onSettled });
+
+    noteSessionOrphaned(session);
+    sweepOrphanedMessageQueues({ isLive: () => false });
+
+    expect(onSettled).toHaveBeenCalledExactlyOnceWith('failed');
+    expect(seen).toEqual([
+      { phase: 'dropped', messageId: 'swept-waiting', reason: 'session_gone' },
+    ]);
+  });
+
+  it('reports a mid-launch message the sweep deleted as session_gone when it never starts', async () => {
+    // The runtime knows this chat by another id, so its open turn is filed
+    // under that one and the sweep can take the chat while the launch is
+    // still assembling its context. The launch then fails before any turn.
+    runtime.getInternalSessionId.mockReturnValue(`${session}-internal`);
+    let fail: (() => void) | undefined;
+    vi.mocked(assembleAdditionalContext).mockImplementationOnce(
+      () => new Promise((_resolve, reject) => (fail = () => reject(new Error('no context'))))
+    );
+    runtime.withScenarios([quickTurn()]);
+    const sent = send('never starts', { messageId: 'swept-launching' });
+    await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+
+    noteSessionOrphaned(session);
+    sweepOrphanedMessageQueues({ isLive: () => false });
+    fail!();
+    await sent.catch(() => undefined);
+    await settle();
+
+    expect(seen.filter((e) => e.messageId === 'swept-launching')).toEqual([
+      { phase: 'dropped', messageId: 'swept-launching', reason: 'session_gone' },
+    ]);
+  });
+
+  it('reports the rows a vanished session’s sweep deletes', () => {
+    const gone = `${session}-gone`;
+    store.enqueue({ id: 'swept-one', sessionId: gone, content: 'gone', clientId: TAB });
+
+    noteSessionOrphaned(gone);
+    sweepOrphanedMessageQueues();
+
+    expect(seen).toEqual([{ phase: 'dropped', messageId: 'swept-one', reason: 'session_gone' }]);
+  });
+
+  it('keeps a listener that throws from breaking the dispatch', async () => {
+    const off = onDispatchLifecycle(() => {
+      throw new Error('a bad listener');
+    });
+    runtime.withScenarios([quickTurn()]);
+    try {
+      await send('still runs');
+      await settle();
+    } finally {
+      off();
+    }
+    expect(seen.map((e) => e.phase)).toEqual(['started', 'settled']);
   });
 });

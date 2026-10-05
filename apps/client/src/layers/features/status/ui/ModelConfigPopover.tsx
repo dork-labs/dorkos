@@ -162,6 +162,12 @@ export interface ModelConfigPopoverProps {
   /** Resolved runtime (e.g. `'codex'`) so a not-yet-started session still shows the right models. */
   runtime?: string | null;
   /**
+   * The session runs on DorkOS credits. When the server answers with the
+   * models credits serve (`paidFromCredits`), the popover says so; its error
+   * line names the credits list.
+   */
+  onCredits?: boolean;
+  /**
    * Say it in as few pixels as possible — set below the status line's widest
    * tier. Keeps the model name and drops the effort and Fast badges, which the
    * Session panel and this popover both still report.
@@ -184,6 +190,7 @@ export function ModelConfigPopover({
   disabled,
   sessionId,
   runtime,
+  onCredits,
   compact,
 }: ModelConfigPopoverProps) {
   const {
@@ -272,14 +279,38 @@ export function ModelConfigPopover({
         data-testid="model-config-popover"
       >
         <ResponsivePopoverTitle>Model</ResponsivePopoverTitle>
+        {modelList.some((m) => m.paidFromCredits) && (
+          // Who pays decides the menu: on credits, once the service says which
+          // formats its models are in, it is the service's list (DOR-2636),
+          // whatever the runtime. Until then the runtime's own menu shows, and
+          // says nothing new. The rows say so themselves, so a Codex or
+          // OpenCode session on credits reads the same as a Claude Code one.
+          <p className="text-muted-foreground text-2xs mb-2" data-testid="model-credits-note">
+            {modelList.some((m) => m.creditsListOutOfDate)
+              ? 'Models your DorkOS credits cover. This list may be out of date.'
+              : 'Models your DorkOS credits cover'}
+          </p>
+        )}
 
         {isLoading && <ModelCardsSkeleton />}
-        {isError && <ModelLoadError onRetry={() => refetch()} />}
+        {isError && (
+          <ModelLoadError
+            onRetry={() => refetch()}
+            message={
+              onCredits
+                ? 'Couldn’t load the models DorkOS credits cover. Your model stays as it is.'
+                : undefined
+            }
+          />
+        )}
         {!isLoading && !isError && (
           <ModelSelectionList
             models={modelList}
             selectedModel={model}
             onChangeModel={onChangeModel}
+            emptyMessage={
+              onCredits ? 'DorkOS credits don’t cover a model for this runtime yet.' : undefined
+            }
           />
         )}
 

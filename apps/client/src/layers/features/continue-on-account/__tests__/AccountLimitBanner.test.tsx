@@ -736,7 +736,7 @@ describe('flow unreachable (Q1)', () => {
       transport: { waitForReset: vi.fn().mockRejectedValue(new Error('')) },
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Wait for reset' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't do that. Try again.");
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t do that. Try again.');
   });
 
   it('a refused Move now shows inline too, and nothing is retried', async () => {

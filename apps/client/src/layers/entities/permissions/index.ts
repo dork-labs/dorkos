@@ -12,6 +12,7 @@
  */
 export { permissionKeys } from './model/permission-keys';
 export { usePermissions } from './model/use-permissions';
+export { useCapabilitiesSync } from './model/use-capabilities-sync';
 export { useAgentPermissions } from './model/use-agent-permissions';
 export { useOverridingAgents } from './model/use-overriding-agents';
 export { usePermissionHistory } from './model/use-permission-history';

@@ -373,6 +373,12 @@ yet never rejects a token; a caller reads the names it knows and ignores the res
 every service before the field served, so an old service never starts another format by
 omission. A client one release behind ignores both fields and loses nothing.
 
+Each model in `GET /v1/inference/models` may say, with the same `InferenceFormatSchema` names,
+which formats a caller should offer it in (`protocols`) and in which it is the service's suggested
+first pick (`recommendedOn`). Both are optional and both are plain strings, read the way `served`
+is: a caller uses the names it knows and ignores the rest, never an error. A caller that finds a
+list naming formats offers a model only in a format the model lists.
+
 ### Where amounts appear, and where they do not
 
 Five routes carry prices or charges, and it is worth being precise about which, because "no

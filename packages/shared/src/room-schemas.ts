@@ -19,7 +19,10 @@
  * @module shared/room-schemas
  */
 import { z } from 'zod';
-import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
+import {
+  CanvasChannelDeclarationSchema,
+  CanvasChannelNotificationSchema,
+} from './canvas-channel-schemas.js';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ROOM_TURN_LIMIT_BOUNDS } from './config-schema.js';
 import { ResponseModeSchema } from './mesh-schemas.js';
@@ -305,7 +308,7 @@ const NAMED_PARTICIPANTS = 3;
  * and two DMs can share a name without confusing anything but a person.
  *
  * **It lives on the wire contract because both ends compute it**
- * (`sidebar-simplification` spec D2). The cockpit names a group message when it
+ * (`sidebar-simplification` spec D2). The app names a group message when it
  * opens one; the server re-derives the same string when an agent is added, so a
  * title nobody typed keeps up with the roster it was made from
  * (`RoomService.addMember`). Two copies of this rule would be two spellings of
@@ -317,7 +320,7 @@ const NAMED_PARTICIPANTS = 3;
  */
 export function directMessageTitle(names: readonly string[]): string {
   if (names.length === 0) return '';
-  if (names.length === 1) return names[0];
+  if (names.length === 1) return names[0] ?? '';
   if (names.length <= NAMED_PARTICIPANTS) {
     return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   }
@@ -2564,6 +2567,7 @@ export const RoomEventSchema = z
     RoomSignalEventSchema,
     RoomReactionEventSchema,
     RoomCanvasEventSchema,
+    ...CanvasChannelNotificationSchema.options,
     RoomRevisionEventSchema,
   ])
   .openapi('RoomEvent');

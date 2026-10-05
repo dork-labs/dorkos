@@ -34,7 +34,7 @@ export function CloudPlanPanel() {
   if (isError) {
     return (
       <p className="text-muted-foreground text-sm">
-        Couldn’t reach your DorkOS account just now. Your local agents are unaffected.
+        Couldn’t reach your DorkOS account. Local agents still work.
       </p>
     );
   }
@@ -51,9 +51,7 @@ export function CloudPlanPanel() {
         </>
       ) : (
         // Linked, but the service has no plan to describe for this account.
-        <p className="text-muted-foreground text-sm">
-          Your DorkOS account has no plan details to show yet.
-        </p>
+        <p className="text-muted-foreground text-sm">No plan details to show yet.</p>
       )}
       <UseCreditsFor />
       <AccountContents />

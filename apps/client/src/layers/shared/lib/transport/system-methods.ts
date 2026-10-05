@@ -325,8 +325,22 @@ export function createSystemMethods(baseUrl: string) {
         err.status = res.status;
         throw err;
       }
-      const data = (await res.json()) as { hash: string };
-      return { ok: true, hash: data.hash };
+      const data: unknown = await res.json();
+      if (
+        typeof data !== 'object' ||
+        data === null ||
+        Array.isArray(data) ||
+        !('ok' in data) ||
+        data.ok !== true ||
+        !('hash' in data) ||
+        typeof data.hash !== 'string' ||
+        data.hash.length === 0 ||
+        !('effect' in data) ||
+        (data.effect !== 'changed' && data.effect !== 'no_op')
+      ) {
+        throw new Error('Invalid file save response');
+      }
+      return { ok: true, hash: data.hash, effect: data.effect };
     },
 
     getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError> {
@@ -395,8 +409,18 @@ export function createSystemMethods(baseUrl: string) {
       }
     },
 
-    getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]> {
-      const qs = buildQueryString({ sessionId: opts?.sessionId, runtime: opts?.runtime });
+    getModels(opts?: {
+      sessionId?: string;
+      runtime?: string;
+      account?: string;
+      cwd?: string;
+    }): Promise<ModelOption[]> {
+      const qs = buildQueryString({
+        sessionId: opts?.sessionId,
+        runtime: opts?.runtime,
+        account: opts?.account,
+        cwd: opts?.cwd,
+      });
       return fetchJSON<{ models: ModelOption[] }>(baseUrl, `/models${qs}`).then((r) => r.models);
     },
 

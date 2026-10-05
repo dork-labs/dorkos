@@ -109,9 +109,14 @@ export interface ContinueLaunchDeps extends CarryOverLaunchDeps {
   clientId: string;
   /**
    * Whether the session's runtime offers the model: `null` when it does, else
-   * the sentence to refuse with. The model picker's own gate.
+   * the sentence to refuse with. The model picker's own gate; `onCredits`
+   * judges against the models DorkOS credits serve instead.
    */
-  checkModel: (runtime: AgentRuntime, model: string) => Promise<string | null>;
+  checkModel: (
+    runtime: AgentRuntime,
+    model: string,
+    options?: { onCredits?: boolean }
+  ) => Promise<string | null>;
 }
 
 let activity: ActivityService | undefined;
@@ -246,7 +251,11 @@ async function continueOnModel(
   deps: ContinueLaunchDeps
 ): Promise<ContinueSessionResponse> {
   const runtime = await runtimeRegistry.resolveForSession(stored.sessionId);
-  const refusal = await deps.checkModel(runtime, model);
+  // The same session keeps the account it ran on, so a session on credits
+  // stays on what credits serve.
+  const refusal = await deps.checkModel(runtime, model, {
+    onCredits: stored.limit.accountId === CREDITS_ACCOUNT_ID,
+  });
   if (refusal) throw new ContinueError(400, 'UNSUPPORTED_MODEL', refusal);
   const internalId = runtime.getInternalSessionId(stored.sessionId) ?? stored.sessionId;
   await runtime.updateSession(internalId, { model });
@@ -411,7 +420,7 @@ export async function continueSession(
         const runtime = crossRuntime
           ? runtimeRegistry.get(targetRuntime)
           : await runtimeRegistry.resolveForSession(stored.sessionId);
-        const refusal = await deps.checkModel(runtime, body.model);
+        const refusal = await deps.checkModel(runtime, body.model, { onCredits: toCredits });
         if (refusal) throw new ContinueError(400, 'UNSUPPORTED_MODEL', refusal);
       }
       const sessionId = await carryOverSession({

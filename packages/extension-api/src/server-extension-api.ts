@@ -3,17 +3,31 @@
  *
  * Defines the contract for server-side extension entry points, including
  * the encrypted secret store, scoped storage, lifecycle hooks, read access to
- * the agent accounts DorkOS knows, and the account advisor seam.
+ * the agent accounts DorkOS knows, the account advisor seam, and sending the
+ * person's agents a message.
  *
  * @module @dorkos/extension-api/server
  */
 import type { AccountUsage as CoreAccountUsage } from '@dorkos/shared/account-usage';
 import type { DecisionActions, ProjectRef } from './extension-api.js';
 import type { StartWorkInput } from './start-work.js';
+import type { AgentApi } from './agent-messaging.js';
+import type { ToolsApi } from './extension-tools.js';
 
 export type { DecisionActions, ProjectRef } from './extension-api.js';
 export type { StartWorkInput } from './start-work.js';
 export { StartWorkError } from './start-work.js';
+export type {
+  AgentApi,
+  AgentDeliveryEvent,
+  AgentDeliveryFailureReason,
+  AgentSendErrorCode,
+  AgentSendInput,
+  AgentSendReceipt,
+  AgentSendWaitReason,
+} from './agent-messaging.js';
+export { AgentSendError } from './agent-messaging.js';
+export type { ToolsApi, ExtensionToolHandler, ExtensionToolCall } from './extension-tools.js';
 
 /**
  * One account's usage as an extension sees it: identity, resolved color, the
@@ -276,6 +290,12 @@ export interface DataProviderContext {
    * can keep a file other tools also read, such as `<dorkHome>/flow/fleet.json`.
    */
   readonly dorkHome: string;
+  /**
+   * A folder only this extension writes to: `{dorkHome}/extension-data/<id>/files`.
+   * DorkOS creates it before the extension starts. In an isolated extension
+   * (`serverCapabilities.runtime: "subprocess"`) it is the only place it can write.
+   */
+  readonly filesDir: string;
   /** The agent accounts DorkOS knows, their usage, and the account advisor seam. */
   readonly accounts: AccountsApi;
   /**
@@ -308,6 +328,18 @@ export interface DataProviderContext {
    * §7.7). Probe with `ctx.sessions !== undefined`.
    */
   readonly sessions: SessionsApi;
+  /**
+   * Send one of the person's agents a message, held while the agent is busy,
+   * with a receipt at once and delivery events after (DOR-2683). Probe with
+   * `ctx.agent !== undefined`.
+   */
+  readonly agent: AgentApi;
+  /**
+   * Bind the handlers for the tools `extension.json` declares under `tools`,
+   * which DorkOS then offers to the person's agents while this extension runs
+   * (DOR-2685). Probe with `ctx.tools !== undefined`.
+   */
+  readonly tools: ToolsApi;
 }
 
 /** `ctx.sessions`: starting work in a new chat without a person (spec §7.7). */

@@ -84,6 +84,11 @@ vi.mock('../ui/CodeMirrorEditor', () => ({
     return (
       <div data-testid="codemirror" data-editable={String(editable)} data-theme={theme}>
         <span data-testid="cm-value">{value}</span>
+        <input
+          data-testid="cm-edit-input"
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
+        />
         <button data-testid="cm-fire-change" onClick={() => onChange?.('edited body')}>
           change
         </button>
@@ -115,7 +120,10 @@ describe('CanvasFileContent', () => {
     mockFileSave.status = 'idle';
     mockFileSave.conflict = null;
     // Default: a save lands cleanly and the confirmed base advances to the draft.
-    mockFileSave.save.mockResolvedValue('saved');
+    mockFileSave.save.mockImplementation(async (content: string) => ({
+      status: 'changed',
+      confirmed: { hash: 'h2', content },
+    }));
     mockFileSave.getConfirmedBase.mockReturnValue({ hash: 'h1', content: 'const x = 1;' });
     readFileContent.mockResolvedValue({ content: 'const x = 1;', hash: 'h1', encoding: 'utf-8' });
   });
@@ -187,13 +195,15 @@ describe('CanvasFileContent', () => {
   });
 
   it('stays in edit mode when the flush conflicts (409 owns reconciliation)', async () => {
-    mockFileSave.save.mockResolvedValue('conflict');
+    mockFileSave.save.mockResolvedValue({ status: 'conflict' });
     renderFile();
     await screen.findByTestId('codemirror');
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
     fireEvent.click(screen.getByTestId('cm-fire-change'));
-    fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+    });
 
     await waitFor(() => expect(mockFileSave.save).toHaveBeenLastCalledWith('edited body'));
     // A conflicting flush must not exit edit mode or clobber the draft.
@@ -205,18 +215,151 @@ describe('CanvasFileContent', () => {
     // A failed write (network/disk/permission) must NOT silently drop the draft
     // behind a stale view — the checkmark refuses and "Couldn't save" stays up.
     mockFileSave.status = 'error';
-    mockFileSave.save.mockResolvedValue('error');
+    mockFileSave.save.mockResolvedValue({ status: 'error' });
     renderFile();
     await screen.findByTestId('codemirror');
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
     fireEvent.click(screen.getByTestId('cm-fire-change'));
-    fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+    });
 
     await waitFor(() => expect(mockFileSave.save).toHaveBeenLastCalledWith('edited body'));
     expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
     expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
     expect(screen.getByText('Couldn’t save')).toBeInTheDocument();
+  });
+
+  it('keeps the draft in edit mode when a finish request is idle', async () => {
+    mockFileSave.save.mockResolvedValue({ status: 'idle' });
+    renderFile();
+    await screen.findByTestId('codemirror');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+    });
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
+  });
+
+  it.each(['changed', 'no_op'] as const)(
+    'exits on a server %s using that request’s confirmed bytes',
+    async (status) => {
+      mockFileSave.save.mockResolvedValue({
+        status,
+        confirmed: { hash: 'request-hash', content: 'edited body' },
+      });
+      // A later mutable base is deliberately different: the request outcome owns this exit.
+      mockFileSave.getConfirmedBase.mockReturnValue({ hash: 'later-hash', content: 'unrelated' });
+      renderFile();
+      await screen.findByTestId('codemirror');
+      fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+      fireEvent.click(screen.getByTestId('cm-fire-change'));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+      });
+      expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'false');
+      expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
+      expect(mockFileSave.getConfirmedBase).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([false, true])(
+    'retains a newer edit after an older finish acknowledgement (away/back: %s)',
+    async (awayBack) => {
+      let acknowledge!: (value: {
+        status: 'changed';
+        confirmed: { hash: string; content: string };
+      }) => void;
+      mockFileSave.save.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            acknowledge = resolve;
+          })
+      );
+      renderFile();
+      await screen.findByTestId('codemirror');
+      vi.useFakeTimers();
+      try {
+        fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+        fireEvent.click(screen.getByTestId('cm-fire-change'));
+        fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+        expect(mockFileSave.save).toHaveBeenCalledTimes(1);
+        fireEvent.change(screen.getByTestId('cm-edit-input'), { target: { value: 'newer draft' } });
+        if (awayBack)
+          fireEvent.change(screen.getByTestId('cm-edit-input'), {
+            target: { value: 'edited body' },
+          });
+        await act(async () => {
+          acknowledge({
+            status: 'changed',
+            confirmed: { hash: 'old-request', content: 'edited body' },
+          });
+        });
+        expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+        const newer = awayBack ? 'edited body' : 'newer draft';
+        expect(screen.getByTestId('cm-value')).toHaveTextContent(newer);
+        // Advance the actual debounce: the newer save must survive the old finish.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(500);
+        });
+        expect(mockFileSave.save).toHaveBeenNthCalledWith(2, newer);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('submits the latest keystroke when change and finish share one render boundary', async () => {
+    renderFile();
+    await screen.findByTestId('codemirror');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    await act(async () => {
+      fireEvent.change(screen.getByTestId('cm-edit-input'), {
+        target: { value: 'synchronous draft' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+    });
+    expect(mockFileSave.save).toHaveBeenLastCalledWith('synchronous draft');
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'false');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('synchronous draft');
+  });
+
+  it('lets only the newest duplicate finish request close the editor', async () => {
+    type Ack = { status: 'changed'; confirmed: { hash: string; content: string } };
+    let first!: (value: Ack) => void;
+    let second!: (value: Ack) => void;
+    mockFileSave.save
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            first = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            second = resolve;
+          })
+      );
+    renderFile();
+    await screen.findByTestId('codemirror');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    fireEvent.click(screen.getByTestId('cm-fire-change'));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+    expect(mockFileSave.save).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      first({ status: 'changed', confirmed: { hash: 'first', content: 'edited body' } });
+    });
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
+    await act(async () => {
+      second({ status: 'changed', confirmed: { hash: 'second', content: 'edited body' } });
+    });
+    expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'false');
+    expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
   });
 
   it('a refetch landing mid-edit does not remount the editor (refresh, then edit)', async () => {

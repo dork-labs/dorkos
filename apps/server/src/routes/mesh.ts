@@ -51,6 +51,7 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaults.js';
+import { creditsAgentPatchRefusal } from '../services/core/cloud/credits-model-gate.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { writeAgentManifest } from '../services/core/agent-observation/agent-execution-writes.js';
 
@@ -617,6 +618,16 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
         .filter(([k]) => k in req.body)
         .map(([k, v]) => [k, v === null ? undefined : v])
     ) as Partial<AgentManifest>;
+    // An agent on DorkOS credits may be set only to a model credits serve on
+    // its runtime's protocol, the same menu its Model row offers (DOR-2636).
+    const modelRefusal = await creditsAgentPatchRefusal(
+      req.params.id,
+      explicitFields,
+      Object.hasOwn(req.body as object, 'account'),
+      meshCore.get(req.params.id)
+    );
+    if (modelRefusal)
+      return res.status(400).json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' });
     // ADR-0043: update() is async — writes to disk first, then DB.
     //
     // It REFUSES when the manifest is present but unreadable, rather than

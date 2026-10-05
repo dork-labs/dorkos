@@ -15,7 +15,7 @@ export function FeedbackRequestsPage() {
             `nav` landmark, not a heading. */}
         <PageHeading>Your reports</PageHeading>
         <p className="text-muted-foreground text-sm">
-          What you’ve sent the DorkOS team, and where it stands.
+          What you sent DorkOS, and where each stands.
         </p>
       </header>
       <div className="min-h-0 flex-1">

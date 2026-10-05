@@ -23,6 +23,14 @@ const runtimes = vi.hoisted(() => new Map<string, unknown>());
 /** The folders the mocked boundary lets through. */
 const boundaryRoots = vi.hoisted(() => ['/work']);
 
+// Whether the new session runs on DorkOS credits, and what they cover (DOR-2636).
+const credits = vi.hoisted(() => ({ onCredits: false }));
+vi.mock('../../../../core/cloud/credits-model-gate.js', () => ({
+  sessionRunsOnCredits: vi.fn(async () => credits.onCredits),
+  creditsModelRefusal: vi.fn(async (_runtime: unknown, model: string) =>
+    model === 'opus' ? 'DorkOS credits don’t cover that model. Pick one from the model menu.' : null
+  ),
+}));
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     has: vi.fn((type: string) => runtimes.has(type)),
@@ -323,6 +331,17 @@ describe('session_start', () => {
       expect(claude.updateSession).not.toHaveBeenCalled();
       return payloadOf(result);
     }
+
+    it('a model DorkOS credits do not cover, for a session that will run on them (DOR-2636)', async () => {
+      credits.onCredits = true;
+      try {
+        expect(await expectRefused({ ...BASE, model: 'opus' })).toMatchObject({
+          code: 'UNSUPPORTED_MODEL',
+        });
+      } finally {
+        credits.onCredits = false;
+      }
+    });
 
     it('a caller with no agent identity', async () => {
       const noCaller = createSessionStartHandler(makeDeps(), () => undefined);

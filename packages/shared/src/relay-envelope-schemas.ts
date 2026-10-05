@@ -10,6 +10,92 @@ import { EffortLevelSchema, PermissionModeSchema, TaskRunTriggerSchema } from '.
 
 extendZodWithOpenApiOnce();
 
+/** Canonical route locator for receipt-observed Relay messages. */
+export const RelayMessageIdSchema = z
+  .string()
+  .regex(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/)
+  .openapi('RelayMessageId');
+
+/** Closed reasons for target-delivery refusal or lost observation. */
+export const RelayDeliveryFailureCodeSchema = z
+  .enum([
+    'at_capacity',
+    'chat_unavailable',
+    'rate_limited',
+    'budget_exceeded',
+    'initiate_denied',
+    'untrusted_bridge_principal',
+    'turn_ceiling',
+    'adapter_unavailable',
+    'not_dispatched',
+    'adapter_failed',
+    'observation_lost',
+  ])
+  .openapi('RelayDeliveryFailureCode');
+
+/** Machine-readable delivery observation reason, never inferred from error prose. */
+export type RelayDeliveryFailureCode = z.infer<typeof RelayDeliveryFailureCodeSchema>;
+
+/** Fixed public text prevents adapter errors or payload secrets reaching receipt storage. */
+export const RELAY_DELIVERY_FAILURE_MESSAGES = {
+  at_capacity: 'The agent was busy and did not take this message.',
+  chat_unavailable: 'The destination chat was unavailable.',
+  rate_limited: 'The sender reached its message limit.',
+  budget_exceeded: 'The message reached its delivery budget.',
+  initiate_denied: 'This message was not allowed to start the delivery.',
+  untrusted_bridge_principal: 'The sender was not allowed to start this delivery.',
+  turn_ceiling: 'The agent reached its hourly turn limit.',
+  adapter_unavailable: 'No connection was available for this agent delivery.',
+  not_dispatched: 'This agent delivery was skipped.',
+  adapter_failed: 'The agent delivery reported a failure.',
+  observation_lost: 'DorkOS could not confirm how this delivery ended.',
+} as const satisfies Record<RelayDeliveryFailureCode, string>;
+
+/** Safe failure details contain fixed text only. */
+export const RelayDeliveryFailureSchema = z
+  .object({ code: RelayDeliveryFailureCodeSchema, message: z.string().max(200) })
+  .strict()
+  .superRefine((failure, context) => {
+    if (failure.message !== RELAY_DELIVERY_FAILURE_MESSAGES[failure.code]) {
+      context.addIssue({
+        code: 'custom',
+        path: ['message'],
+        message: 'Expected fixed failure text',
+      });
+    }
+  })
+  .openapi('RelayDeliveryFailure');
+
+/** Minimized authoritative observation of one HTTP agent-target delivery. */
+export const RelayDeliveryReceiptSchema = z
+  .object({
+    messageId: RelayMessageIdSchema,
+    scope: z.literal('agent_delivery'),
+    state: z.enum(['accepted', 'delivered', 'failed', 'outcome_unknown']),
+    acceptedAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    settledAt: z.string().datetime().optional(),
+    expiresAt: z.string().datetime(),
+    failure: RelayDeliveryFailureSchema.optional(),
+  })
+  .strict()
+  .superRefine((receipt, context) => {
+    const settled = receipt.settledAt !== undefined;
+    const failure = receipt.failure;
+    const valid =
+      (receipt.state === 'accepted' && !settled && !failure) ||
+      (receipt.state === 'delivered' && settled && !failure) ||
+      (receipt.state === 'failed' && settled && failure && failure.code !== 'observation_lost') ||
+      (receipt.state === 'outcome_unknown' && settled && failure?.code === 'observation_lost');
+    if (!valid) {
+      context.addIssue({ code: 'custom', message: 'Receipt state and settlement must agree' });
+    }
+  })
+  .openapi('RelayDeliveryReceipt');
+
+/** Public receipt excludes subject, ownership, observer token and message content. */
+export type RelayDeliveryReceipt = z.infer<typeof RelayDeliveryReceiptSchema>;
+
 // === Subject grammar (documentation) ===
 
 /**

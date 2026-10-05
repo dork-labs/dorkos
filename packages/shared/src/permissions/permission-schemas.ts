@@ -208,9 +208,10 @@ export const PermissionChangedMetadataSchema = z.object({
   /**
    * What made the change, when it was not a write anyone asked for:
    * `arrival-screen` is DorkOS declining the settings a new agent's own folder
-   * brought. Such a line has no Undo.
+   * brought. `extension-removed` is DorkOS clearing the tool settings of an
+   * extension that was uninstalled (DOR-2685). Such a line has no Undo.
    */
-  origin: z.enum(['arrival-screen']).optional(),
+  origin: z.enum(['arrival-screen', 'extension-removed']).optional(),
   /**
    * One plain sentence the history shows beside the change, when the change
    * alone would mislead: an upgrade that Blocked every area of an agent that

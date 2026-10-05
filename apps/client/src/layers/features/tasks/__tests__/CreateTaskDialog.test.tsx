@@ -1160,10 +1160,10 @@ describe('CreateTaskDialog', () => {
       await openAdvanced();
 
       const note = await screen.findByTestId('trust-dial-unavailable');
-      expect(note).toHaveTextContent(/Bypass All/);
+      expect(note).toHaveTextContent(/Bypass all/);
       expect(note).toHaveTextContent(/Saving keeps it\./);
       expect(screen.queryByRole('radiogroup', { name: /how much/i })).toBeNull();
-      expect(screen.queryByText(/This covers what an agent does in a session/)).toBeNull();
+      expect(screen.queryByText(/This covers editing files, running commands/)).toBeNull();
     });
 
     it('asks before it turns on full autonomy, and says what an unattended run does', async () => {

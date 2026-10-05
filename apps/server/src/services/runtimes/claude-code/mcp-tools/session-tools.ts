@@ -53,6 +53,10 @@ import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
 import { logError, logger } from '../../../../lib/logger.js';
 import { isInsideRoomsDir, resolveAgentHome } from '../../../core/agent-identity/index.js';
+import {
+  creditsModelRefusal,
+  sessionRunsOnCredits,
+} from '../../../core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
@@ -388,6 +392,18 @@ export function createSessionStartHandler(
     if (isAgentLaunchCapFull()) return refuse(AGENT_LAUNCH_CAP_MESSAGE, 'LAUNCH_CAP_FULL');
 
     const sessionId = crypto.randomUUID();
+    // A session that will run on DorkOS credits names a model credits serve
+    // (DOR-2636), the same rule the session picker applies. Asked before the
+    // settings write, so a refused start leaves nothing behind.
+    if (args.model !== undefined) {
+      const onCredits = await sessionRunsOnCredits(runtime, sessionId, {
+        accountHint: account?.id,
+        cwd,
+      });
+      const refusal = onCredits ? await creditsModelRefusal(runtime, args.model) : null;
+      if (refusal) return refuse(refusal, 'UNSUPPORTED_MODEL');
+    }
+
     // Who started it, and the start limits of the extension at the root of the
     // calling chat's chain: asked before the settings write, so a refused start
     // leaves nothing behind.

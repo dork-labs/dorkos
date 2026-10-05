@@ -29,13 +29,8 @@ vi.mock('@dorkos/marketplace/package-size', async (importOriginal) => ({
 }));
 
 import { fetchTree, GitFetchError } from '../git/git-tree.js';
-import {
-  GIT_OUTPUT_LIMITS,
-  killProcessTree,
-  pastByteLimit,
-  stopAllGit,
-  trackGit,
-} from '../git/git-runner.js';
+import { GIT_OUTPUT_LIMITS, pastByteLimit, stopAllGit, trackGit } from '../git/git-runner.js';
+import { killProcessTree } from '../../../../lib/process/kill-tree.js';
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();

@@ -12,7 +12,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { RelayCore } from '../relay-core.js';
-import { RelayTurnCeiling } from '../turn-ceiling.js';
+import { dispatchTurnAccounting, RelayTurnCeiling } from '../turn-ceiling.js';
 import { TASK_SCHEDULER_PRINCIPAL, type RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type {
   AdapterRegistryLike,
@@ -278,6 +278,39 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
     expect(registry.delivered).toHaveLength(1);
   });
 
+  it.each(['awaited', 'detached'] as const)(
+    'preserves %s skipped-delivery refund eligibility',
+    async (mode) => {
+      relay = await makeRelay({ perAgent: () => 1, global: () => 1 });
+      vi.spyOn(registry, 'deliver').mockResolvedValue({
+        success: true,
+        skipped: true,
+        durationMs: 0,
+      });
+      const internals = relay as unknown as {
+        publishPipeline: {
+          deps: { adapterDelivery: { finishDetached: (...args: unknown[]) => Promise<void> } };
+        };
+      };
+      const adapter = internals.publishPipeline.deps.adapterDelivery;
+      const actualFinish = adapter.finishDetached.bind(adapter);
+      let completion: Promise<void> | undefined;
+      const finished = vi.spyOn(adapter, 'finishDetached').mockImplementation((...args) => {
+        completion = actualFinish(...args);
+        return completion;
+      });
+      const subject = mode === 'awaited' ? TASKS_SUBJECT : AGENT_SUBJECT;
+      const opts = { from: mode === 'awaited' ? SCHEDULER : 'relay.test.a' };
+      await relay.publish(subject, { text: 'skipped' }, opts);
+      if (mode === 'detached') {
+        await vi.waitFor(() => expect(finished).toHaveBeenCalledOnce());
+        await completion;
+      }
+      const next = await relay.publish(subject, { text: 'next' }, opts);
+      expect(next.rejected?.[0]?.reason).toBe(mode === 'detached' ? 'turn_ceiling' : undefined);
+    }
+  );
+
   it('gives the allowance back when a DETACHED dispatch is refused a slot', async () => {
     // `relay.agent.*` is accepted immediately and settles in the background, so
     // the refund is the delivery layer's rather than the pipeline's. An agent
@@ -368,6 +401,70 @@ describe('the turn ceiling at the adapter dispatch (DOR-791)', () => {
   });
 });
 
+describe('dispatch reservation survives an older delivery refund', () => {
+  it.each(['same subject', 'different subjects'] as const)(
+    'keeps the newer successful charge through its real hour: %s',
+    async (mode) => {
+      const hour = 3_600_000;
+      const start = Date.parse('2026-10-03T00:00:00Z');
+      let now = start;
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+      let failOlder!: (result: DeliveryResult) => void;
+      const older = new Promise<DeliveryResult>((resolve) => (failOlder = resolve));
+      try {
+        relay = await makeRelay({
+          perAgent: () => (mode === 'same subject' ? 2 : null),
+          global: () => (mode === 'same subject' ? null : 2),
+        });
+        vi.spyOn(registry, 'deliver').mockImplementationOnce(() => older);
+        const first = await relay.publish(
+          AGENT_SUBJECT,
+          { text: 'older A' },
+          { from: 'relay.test.a' }
+        );
+        expect(first.deliveredTo).toBe(1);
+        now = start + 59 * 60_000;
+        const newerSubject = mode === 'same subject' ? AGENT_SUBJECT : 'relay.agent.demo.agent-2';
+        const newer = await relay.publish(
+          newerSubject,
+          { text: 'successful B' },
+          { from: 'relay.test.a' }
+        );
+        expect(newer.rejected).toBeUndefined();
+        failOlder({ success: false, error: 'older delivery refused', durationMs: 0 });
+        await vi.waitFor(async () => expect(await relay.getDeadLetters()).toHaveLength(1));
+        now = start + hour + 1;
+        if (mode === 'same subject') {
+          // The installed real counter must retain B, not the older A timestamp.
+          const counter = (
+            relay as unknown as {
+              publishPipeline: { turnCeiling: RelayTurnCeiling };
+            }
+          ).publishPipeline.turnCeiling;
+          expect(counter.remaining(newerSubject)).toEqual({ agent: 1, global: null });
+        } else {
+          // One replacement turn fits beside B; a second would exceed the real bus cap.
+          const third = await relay.publish(
+            'relay.agent.demo.agent-3',
+            { text: 'C' },
+            { from: 'relay.test.a' }
+          );
+          expect(third.rejected).toBeUndefined();
+          const fourth = await relay.publish(
+            'relay.agent.demo.agent-4',
+            { text: 'D' },
+            { from: 'relay.test.a' }
+          );
+          expect(fourth.rejected?.[0]?.reason).toBe('turn_ceiling');
+          expect(registry.delivered).toHaveLength(2);
+        }
+      } finally {
+        clock.mockRestore();
+      }
+    }
+  );
+});
+
 describe('RelayTurnCeiling — the counter itself', () => {
   it('rolls the window, so an hour spent an hour ago is not spent now', () => {
     let now = 1_000_000;
@@ -436,4 +533,119 @@ describe('RelayTurnCeiling — the counter itself', () => {
     const ceiling = new RelayTurnCeiling();
     expect(ceiling.remaining(AGENT_SUBJECT)).toEqual({ agent: 1000, global: 5000 });
   });
+});
+
+describe('publisher-owned reservation identity', () => {
+  function counter(now = () => 0) {
+    return new RelayTurnCeiling({
+      limits: { perAgent: () => 2, global: () => 2 },
+      now,
+      windowMs: 100,
+    });
+  }
+
+  it('isolates public legacy release while sharing both ceilings', () => {
+    const ceiling = counter();
+    const owned = dispatchTurnAccounting(ceiling).reserve('agent');
+    ceiling.release('agent');
+    expect(ceiling.remaining('agent')).toEqual({ agent: 1, global: 1 });
+    expect(ceiling.tryReserve('agent').allowed).toBe(true);
+    expect(dispatchTurnAccounting(ceiling).reserve('agent').allowed).toBe(false);
+    ceiling.release('agent');
+    expect(ceiling.remaining('agent')).toEqual({ agent: 1, global: 1 });
+    owned.refund!();
+    expect(ceiling.remaining('agent')).toEqual({ agent: 2, global: 2 });
+  });
+
+  it('copied and repeated refund closures cannot remove another reservation or counter', () => {
+    const ceiling = counter();
+    const foreign = counter();
+    dispatchTurnAccounting(foreign).reserve('agent');
+    const first = dispatchTurnAccounting(ceiling).reserve('agent');
+    dispatchTurnAccounting(ceiling).reserve('agent');
+    const copied = { ...first };
+    copied.refund!();
+    first.refund!();
+    expect(ceiling.remaining('agent')).toEqual({ agent: 1, global: 1 });
+    expect(foreign.remaining('agent')).toEqual({ agent: 1, global: 1 });
+  });
+
+  it('refunds a pruned entry without erasing a later charge at the strict boundary', () => {
+    let now = 0;
+    const ceiling = counter(() => now);
+    const first = dispatchTurnAccounting(ceiling).reserve('agent');
+    now = 100;
+    expect(ceiling.remaining('agent')).toEqual({ agent: 2, global: 2 });
+    dispatchTurnAccounting(ceiling).reserve('agent');
+    first.refund!();
+    expect(ceiling.remaining('agent')).toEqual({ agent: 1, global: 1 });
+  });
+
+  it('an unlimited dispatch has no refund authority after live limits change', () => {
+    let cap: number | null = null;
+    const ceiling = new RelayTurnCeiling({ limits: { perAgent: () => cap, global: () => cap } });
+    const uncounted = dispatchTurnAccounting(ceiling).reserve('agent');
+    cap = 1;
+    dispatchTurnAccounting(ceiling).reserve('agent');
+    expect(uncounted.refund).toBeUndefined();
+    expect(ceiling.remaining('agent')).toEqual({ agent: 0, global: 0 });
+  });
+
+  it('an evicted subject refund preserves newer global debt', () => {
+    const ceiling = new RelayTurnCeiling({ limits: { perAgent: () => null, global: () => 300 } });
+    const old = dispatchTurnAccounting(ceiling).reserve('old');
+    for (let index = 0; index < 256; index++)
+      dispatchTurnAccounting(ceiling).reserve(`agent-${index}`);
+    dispatchTurnAccounting(ceiling).reserve('old');
+    old.refund!();
+    expect(ceiling.remaining('old')).toEqual({ agent: null, global: 43 });
+  });
+});
+
+describe('expired owned refund preserves subject eviction order', () => {
+  it.each([false, true])(
+    'preserves newer B debt after another admission, stale refund=%s',
+    (refundExpired) => {
+      let now = 0;
+      const ceiling = new RelayTurnCeiling({
+        limits: { perAgent: () => 1, global: () => null },
+        now: () => now,
+        windowMs: 100,
+      });
+      const accounting = dispatchTurnAccounting(ceiling);
+      const expired = accounting.reserve('A');
+      now = 100;
+      accounting.reserve('A');
+      accounting.reserve('B');
+      for (let index = 0; index < 254; index++) accounting.reserve(`other-${index}`);
+      if (refundExpired) expired.refund!();
+      accounting.reserve('C');
+      expect(ceiling.remaining('B')).toEqual({ agent: 0, global: null });
+      expect(accounting.reserve('B')).toEqual({ allowed: false, scope: 'agent', counted: false });
+    }
+  );
+});
+
+describe('expired unpruned refund preserves subject eviction order', () => {
+  it.each([false, true])(
+    'preserves live B debt when expired A stays stored, stale refund=%s',
+    (refundExpired) => {
+      let now = 0;
+      const ceiling = new RelayTurnCeiling({
+        limits: { perAgent: () => 1, global: () => null },
+        now: () => now,
+        windowMs: 100,
+      });
+      const accounting = dispatchTurnAccounting(ceiling);
+      const expired = accounting.reserve('A');
+      now = 50;
+      accounting.reserve('B');
+      for (let index = 0; index < 254; index++) accounting.reserve(`other-${index}`);
+      now = 100;
+      if (refundExpired) expired.refund!();
+      accounting.reserve('C');
+      expect(ceiling.remaining('B')).toEqual({ agent: 0, global: null });
+      expect(accounting.reserve('B')).toEqual({ allowed: false, scope: 'agent', counted: false });
+    }
+  );
 });

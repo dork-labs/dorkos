@@ -89,7 +89,7 @@ function TasksPageBody() {
       <FeatureDisabledState
         icon={icons.tasks}
         name="Scheduling"
-        description="Scheduled tasks let your agents work on a timer, even when you’re not here."
+        description="Agents run tasks on a schedule, even while you’re away."
         command="dorkos --tasks"
       />
     );
@@ -100,7 +100,7 @@ function TasksPageBody() {
       <QueryErrorState
         className="h-full"
         title="Couldn’t load your scheduled tasks"
-        description="The scheduler is unreachable. Check that the server is running correctly."
+        description="The DorkOS server didn’t answer. Check that it’s running."
         onRetry={() => void refetch()}
       />
     );

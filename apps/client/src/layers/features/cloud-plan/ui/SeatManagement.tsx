@@ -44,7 +44,9 @@ export function SeatManagement() {
   if (!orgs?.available) return null;
   if (isLoading && !seats) return <Skeleton className="h-24 w-full" />;
   if (isError) {
-    return <p className="text-muted-foreground text-sm">Couldn’t read your seats just now.</p>;
+    return (
+      <p className="text-muted-foreground text-sm">Couldn’t load your seats. Try again later.</p>
+    );
   }
   if (!seats?.available) return null;
   // Seats are shown only when the account holds some: an empty "Seats" card on

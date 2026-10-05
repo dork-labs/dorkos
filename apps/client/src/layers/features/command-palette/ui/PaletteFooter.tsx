@@ -59,7 +59,7 @@ export function PaletteFooter({ page, hasAgentSelected, canScope, isScoped }: Pa
       {((!page && hasAgentSelected) || page === 'agent-actions') && (
         <span className="inline-flex items-center gap-1">
           <kbd className={KBD_CLASS}>{modKey}Enter</kbd>
-          New Tab
+          New tab
         </span>
       )}
       {page === 'agent-actions' && (

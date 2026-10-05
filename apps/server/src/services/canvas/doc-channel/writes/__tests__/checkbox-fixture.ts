@@ -5,7 +5,7 @@ import { canvasDocGrants, canvasDocWriteIntents, eq, sql } from '@dorkos/db';
 import { CanonicalFileWriteCoordinator } from '../canonical-writer.js';
 import { DocCheckboxWriteService, type CheckboxServiceOptions } from '../checkbox-service.js';
 import { authorityFixture } from './authority-fixtures.js';
-import { DOC_INGEST_LIMITS } from '../../accounting.js';
+import { DOC_INGEST_LIMITS } from '../../current/accounting.js';
 import { rawByteHash } from '../checkbox-bytes.js';
 import { DocCheckboxAuthority } from '../authority.js';
 import { DocChannelGrants } from '../../grants.js';

@@ -56,9 +56,7 @@ export function PreviewRefusedNotice({ error }: { error: unknown }) {
         DorkOS won’t install this package
       </p>
       <p className="text-muted-foreground text-xs">
-        {checked
-          ? 'It checked the package and found this:'
-          : 'It couldn’t check what this package does, so it won’t install it.'}
+        {checked ? 'What it found:' : 'It couldn’t check what this package does.'}
       </p>
       {reasons.length > 0 && (
         <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-xs [overflow-wrap:anywhere]">

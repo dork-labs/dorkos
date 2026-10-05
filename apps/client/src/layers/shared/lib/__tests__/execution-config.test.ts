@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { describeAgentExecution, effortLabel, knownModelsFrom } from '../execution-config';
+import {
+  agentRunsOnCredits,
+  describeAgentExecution,
+  effortLabel,
+  knownModelsFrom,
+} from '../execution-config';
 
 describe('knownModelsFrom', () => {
   it('reads an EMPTY catalog as no evidence, not as "nothing is offered"', () => {
@@ -102,9 +107,7 @@ describe('describeAgentExecution', () => {
       runtimeSupportsEffort: false,
     });
     expect(report.breakages.map((b) => b.kind)).toEqual(['effort-unsupported-runtime']);
-    expect(report.breakages[0].message).toBe(
-      'OpenCode has no effort setting, so this one does nothing.'
-    );
+    expect(report.breakages[0].message).toBe('OpenCode has no effort setting. It’s ignored.');
   });
 
   it('says nothing about a runtime that declares it does take an effort', () => {
@@ -242,7 +245,7 @@ describe('describeAgentExecution — the billing account', () => {
       {
         kind: 'account-unregistered',
         message:
-          'The account “retired-client” isn’t registered on this machine, so this agent runs on the default.',
+          '“retired-client” isn’t on this computer. This agent runs on your default account.',
       },
     ]);
     // The row a person has to fix must still name the thing to fix.
@@ -335,5 +338,57 @@ describe('describeAgentExecution — the billing account', () => {
       knownAccounts: REGISTRY,
     });
     expect(report.breakages.map((b) => b.kind)).toEqual(['runtime-not-connected']);
+  });
+});
+
+describe('agentRunsOnCredits', () => {
+  const credits = { isDefault: false, allowedAgents: ['allowed'] };
+  const opts = {
+    defaultRuntime: 'claude-code',
+    runtimeDeclaresCredits: (type: string) => type === 'claude-code',
+    credits,
+  };
+
+  it('is on credits when its file names them and a person allowed it', () => {
+    expect(agentRunsOnCredits({ id: 'allowed', account: 'dorkos-credits' }, opts)).toBe(true);
+    // A file naming credits nobody allowed runs on the next rule instead.
+    expect(agentRunsOnCredits({ id: 'stranger', account: 'dorkos-credits' }, opts)).toBe(false);
+  });
+
+  it('is on credits when it names no account and credits are the machine default', () => {
+    const asDefault = { ...opts, credits: { ...credits, isDefault: true } };
+    expect(agentRunsOnCredits({ id: 'a', account: null }, asDefault)).toBe(true);
+    expect(agentRunsOnCredits({ id: 'a', account: 'work' }, asDefault)).toBe(false);
+    expect(agentRunsOnCredits({ id: 'a', account: null }, opts)).toBe(false);
+  });
+
+  it('follows the recorded default for a runtime with no per-agent account (Codex, OpenCode)', () => {
+    const everyDeclares = { ...opts, runtimeDeclaresCredits: () => true };
+    const codexOnCredits = {
+      ...everyDeclares,
+      runtimeDefaultsToCredits: (runtime: string) => runtime === 'codex',
+    };
+    expect(agentRunsOnCredits({ id: 'a', runtime: 'codex' }, codexOnCredits)).toBe(true);
+    expect(agentRunsOnCredits({ id: 'a', runtime: 'opencode' }, codexOnCredits)).toBe(false);
+    // With nothing said about the default, never.
+    expect(agentRunsOnCredits({ id: 'a', runtime: 'codex' }, everyDeclares)).toBe(false);
+    // And never for a runtime that declares no credits, whatever its default.
+    expect(
+      agentRunsOnCredits(
+        { id: 'a', runtime: 'codex' },
+        { ...codexOnCredits, runtimeDeclaresCredits: () => false }
+      )
+    ).toBe(false);
+  });
+
+  it('is never on credits on a runtime that declares none, or before the server says', () => {
+    const asDefault = { ...opts, credits: { ...credits, isDefault: true } };
+    expect(agentRunsOnCredits({ id: 'a', runtime: 'codex' }, asDefault)).toBe(false);
+    expect(
+      agentRunsOnCredits({ id: 'a' }, { ...asDefault, runtimeDeclaresCredits: () => false })
+    ).toBe(false);
+    expect(
+      agentRunsOnCredits({ id: 'allowed', account: 'dorkos-credits' }, { ...opts, credits: null })
+    ).toBe(false);
   });
 });

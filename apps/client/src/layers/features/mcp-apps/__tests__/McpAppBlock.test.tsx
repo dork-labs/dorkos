@@ -40,7 +40,7 @@ describe('McpAppBlock first-use consent gate', () => {
 
   it('shows a consent card naming the server and does not fetch until consented', () => {
     const { transport, container } = renderBlock();
-    expect(screen.getByText(/Interactive app provided by fixture-app/i)).toBeInTheDocument();
+    expect(screen.getByText(/Interactive app from fixture-app/i)).toBeInTheDocument();
     expect(container.querySelector('iframe')).toBeNull();
     expect(transport.fetchMcpAppResource).not.toHaveBeenCalled();
   });
@@ -49,7 +49,7 @@ describe('McpAppBlock first-use consent gate', () => {
     const user = userEvent.setup();
     const { transport, container } = renderBlock();
 
-    await user.click(screen.getByRole('button', { name: /render app/i }));
+    await user.click(screen.getByRole('button', { name: /show app/i }));
 
     await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull());
     expect(transport.fetchMcpAppResource).toHaveBeenCalledWith('s1', {

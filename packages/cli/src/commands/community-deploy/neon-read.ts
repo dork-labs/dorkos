@@ -10,7 +10,7 @@ import {
   parseExternalJson,
   requireUniqueExternalIds,
 } from './provider-contract.js';
-import { runProviderCommand } from './provider-process.js';
+import { ProviderCommandError, runProviderCommand } from './provider-process.js';
 
 const NeonOrganizationSchema = z
   .object({ id: ExternalIdentifierSchema, name: ExternalLabelSchema })
@@ -308,6 +308,70 @@ export async function readNeonRegions(options: NeonReadOptions): Promise<NeonReg
     latitude: coordinate(region.geo_lat),
     longitude: coordinate(region.geo_long),
   }));
+}
+
+/** The day {@link NEON_REGIONS_SNAPSHOT} was taken. Pinned by a test so its age stays visible. */
+export const NEON_REGIONS_SNAPSHOT_DATE = '2026-10-03';
+
+/**
+ * Neon's region list as `neonctl api /regions` returned it on {@link NEON_REGIONS_SNAPSHOT_DATE},
+ * read with a personal sign-in (DOR-2700). Used only when Neon won't let the key read the live
+ * list, which is the case for every organization key. A region missing here is refused before
+ * consent, never guessed at; refresh this from a live read when Neon adds one.
+ */
+export const NEON_REGIONS_SNAPSHOT = [
+  'aws-us-east-1',
+  'aws-us-east-2',
+  'aws-us-west-2',
+  'aws-eu-central-1',
+  'aws-eu-west-2',
+  'aws-ap-southeast-1',
+  'aws-ap-southeast-2',
+  'aws-sa-east-1',
+  'azure-eastus2',
+  'azure-westus3',
+  'azure-gwc',
+] as const;
+
+/** Neon's default region in {@link NEON_REGIONS_SNAPSHOT}, as the live read marked it. */
+const NEON_REGIONS_SNAPSHOT_DEFAULT = 'aws-us-east-1';
+
+/** The region list setup checks against, and whether it is the saved one. */
+export interface NeonRegionsForKey {
+  /** The regions to check the chosen region against. */
+  regions: NeonRegion[];
+  /** True when the key could not read the live list, so `regions` is the saved snapshot. */
+  savedList: boolean;
+}
+
+/**
+ * Read the region list, or, when Neon answers that this kind of key may not read it at all, the
+ * saved snapshot ({@link NEON_REGIONS_SNAPSHOT}).
+ *
+ * `GET /regions` serves only a personal key or sign-in; an organization key gets "not allowed
+ * for organization API keys" (DOR-2700, and the neonctl README's note on org-scoped keys). The
+ * other reads setup makes before consent accept that key, so without this the key the docs
+ * recommend could never pass preflight. Any other failure is still thrown.
+ *
+ * @param options - Neon CLI process boundary.
+ * @returns The live list, or the snapshot when this kind of key cannot read it.
+ */
+export async function readNeonRegionsForKey(options: NeonReadOptions): Promise<NeonRegionsForKey> {
+  try {
+    return { regions: await readNeonRegions(options), savedList: false };
+  } catch (error) {
+    if (!(error instanceof ProviderCommandError) || !error.keyKindLimited) throw error;
+    return {
+      regions: NEON_REGIONS_SNAPSHOT.map((id) => ({
+        id,
+        name: id,
+        isDefault: id === NEON_REGIONS_SNAPSHOT_DEFAULT,
+        latitude: null,
+        longitude: null,
+      })),
+      savedList: true,
+    };
+  }
 }
 
 /** Read projects only inside one explicitly selected organization. */

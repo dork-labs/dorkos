@@ -7,7 +7,12 @@ export const STORAGE_KEYS = {
   PICKER_VIEW: 'dorkos-picker-view',
   PLACEHOLDER_HINT_CYCLES: 'dorkos-placeholder-hint-cycles',
   RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
-  RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
+  /**
+   * Per-agent right panel layouts. `-v2` since DOR-2579: before it, switching to
+   * a project with no layout closed the panel and stored that as its layout, so
+   * the old map is mostly a record of that bug and is dropped, not migrated.
+   */
+  RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts-v2',
   PIP_PANEL_STATE: 'dorkos-pip-panel-state',
   ROOM_THREAD_WIDTH: 'dorkos-room-thread-width',
   /** Whether Settings' folded Advanced group is open (DOR-2629). */
@@ -210,7 +215,7 @@ export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
   // The local half of what was the Access tab (DOR-2628).
   { id: 'security', label: 'Login & security', group: 'This computer' },
   { id: 'remote-access', label: 'Remote access', group: 'This computer' },
-  { id: 'privacy', label: 'Privacy & Data', group: 'This computer' },
+  { id: 'privacy', label: 'Privacy & data', group: 'This computer' },
   { id: 'server', label: 'Server', group: SETTINGS_ADVANCED_GROUP },
   { id: 'tools', label: 'Tools', group: SETTINGS_ADVANCED_GROUP },
   // Only the DEFAULTS every room follows: each room keeps its own limits in

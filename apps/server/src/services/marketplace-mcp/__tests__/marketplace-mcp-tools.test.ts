@@ -57,6 +57,7 @@ const EXPECTED_TOOLS = [
   'marketplace_update',
   'marketplace_uninstall',
   'marketplace_create_package',
+  'marketplace_link',
 ] as const;
 
 describe('registerMarketplaceTools', () => {

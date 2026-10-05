@@ -1,3 +1,8 @@
+import { createMockTransport } from '@dorkos/test-utils';
+const transportOwner = createMockTransport();
+import { CanvasChannelNotificationSchema } from '@dorkos/shared/canvas-channel-schemas';
+import { subscribeDocChannelNotifications } from '../doc-channel-notifications';
+import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectionState } from '@dorkos/shared/types';
 import {
@@ -53,6 +58,7 @@ function setup() {
     return conn;
   };
   const manager = new StreamManager({ createConnection });
+  manager.useHttpSource('/api', transportOwner);
   return { manager, connections };
 }
 
@@ -345,9 +351,11 @@ describe('StreamManager', () => {
         `no handler registered for '${type}' — it would be silently dropped`
       ).toContain(type);
     }
-    // Exactly the schema's discriminants plus the hydration 'snapshot' frame —
-    // a stale extra name here means the array outlived a schema removal.
-    expect(new Set(registered).size).toBe(discriminants.length + 1);
+    // Document notifications are a separate wire family, never transcript events.
+    const documentTypes = CanvasChannelNotificationSchema.options.map(
+      (option) => option.shape.type.value
+    );
+    expect([...registered].sort()).toEqual([...discriminants, ...documentTypes, 'snapshot'].sort());
   });
 
   it('registers a frame handler for EVERY SessionListEventSchema discriminant (schema-drift pin)', () => {
@@ -472,6 +480,20 @@ describe('StreamManager', () => {
         agentId: 'agent_child_7',
       } as SessionEvent,
     ],
+    // A turn that ran on another model than the session names (DOR-2636): a
+    // dropped frame here would be the silent switch the notice exists to end.
+    [
+      'model_substituted',
+      {
+        type: 'model_substituted',
+        seq: 2,
+        from: 'opus',
+        fromName: 'Opus',
+        to: 'md_suggested',
+        toName: 'Suggested',
+        reason: 'credits-not-covered',
+      } as SessionEvent,
+    ],
     // The in-session capability hold (DOR-939) and its resolution. Same failure
     // mode as the four above and the reason DOR-963 exists: the pair shipped
     // with a server emitter, a store fold, and an inline card — and no entry in
@@ -539,7 +561,7 @@ describe('StreamManager — HTTP source (baseUrl)', () => {
     // Real failure mode: a file:// renderer cannot resolve a relative /api —
     // the streams must use the same absolute origin as HttpTransport.
     const { manager, connections } = setup();
-    manager.useHttpSource('http://localhost:4242/api');
+    manager.useHttpSource('http://localhost:4242/api', transportOwner);
     manager.attachSession('sess-a', '/proj');
     manager.connectList();
     expect(connections[0]!.url).toBe(
@@ -554,7 +576,7 @@ describe('StreamManager — HTTP source (baseUrl)', () => {
     const { manager, connections } = setup();
     manager.attachSession('sess-a');
     manager.connectList();
-    manager.useHttpSource('http://localhost:9999/api');
+    manager.useHttpSource('http://localhost:9999/api', transportOwner);
     expect(connections[0]!.destroy).toHaveBeenCalled();
     expect(connections[1]!.destroy).toHaveBeenCalled();
     const urls = connections.slice(2).map((c) => c.url);
@@ -700,7 +722,7 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
     manager.attachSession('sess-a');
     expect(handler).toHaveBeenCalledTimes(1);
 
-    manager.useHttpSource('http://localhost:4242/api');
+    manager.useHttpSource('http://localhost:4242/api', transportOwner);
 
     // The session stays attached, a fresh connection opened against the new
     // source, and no extra transition fired.
@@ -915,7 +937,7 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
     manager.attachSession('A', '/pa'); // connections[0] active A
     manager.pinSession('B', '/pb'); // connections[1] pinned B
 
-    manager.useHttpSource('http://localhost:9999/api');
+    manager.useHttpSource('http://localhost:9999/api', transportOwner);
 
     // Both old connections torn down, both slots rebuilt against the new origin.
     expect(connections[0]!.destroy).toHaveBeenCalledTimes(1);
@@ -937,7 +959,7 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
     manager.attachSession('A'); // connections[0] shared active+pin
     manager.pinSession('A');
 
-    manager.useHttpSource('http://localhost:9999/api');
+    manager.useHttpSource('http://localhost:9999/api', transportOwner);
 
     expect(manager.getAttachedSessionId()).toBe('A');
     expect(manager.getPinnedSessionId()).toBe('A');
@@ -964,7 +986,7 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
 
     // Observable proof pinnedCwd carried the CONNECTION's truth (/proj), not
     // the caller's: a source rebuild re-opens the pinned slot from pinnedCwd.
-    manager.useHttpSource('http://localhost:9999/api');
+    manager.useHttpSource('http://localhost:9999/api', transportOwner);
     const rebuilt = connections.map((c) => c.url);
     expect(rebuilt).toContain('http://localhost:9999/api/sessions/A/events?cwd=%2Fproj');
     expect(rebuilt.join(' ')).not.toContain('stale-metadata-cwd');
@@ -987,4 +1009,94 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
     expect(manager.getAttachedSessionId()).toBe('A');
     expect(manager.getPinnedSessionId()).toBe('A'); // shared again
   });
+});
+
+it('routes document frames separately from transcript taps without opening another connection', () => {
+  const { manager, connections } = setup();
+  const transcript = vi.fn();
+  const tap = vi.fn();
+  const docs = vi.fn();
+  const stop = subscribeDocChannelNotifications(undefined, docs);
+  manager.setListeners({ onSessionEvent: transcript });
+  manager.subscribeSessionEvent(tap);
+  manager.attachSession('request-alias');
+  try {
+    connections[0]!.push('canvas_event', DOC_EVENT);
+    connections[0]!.push('canvas_channel_snapshot', DOC_SNAPSHOT);
+    connections[0]!.push('canvas_event', { ...DOC_EVENT, docSeq: -1 });
+    expect(docs.mock.calls.map(([frame]) => frame)).toEqual([DOC_EVENT, DOC_SNAPSHOT]);
+    expect(transcript).not.toHaveBeenCalled();
+    expect(tap).not.toHaveBeenCalled();
+    connections[0]!.push('turn_start', TURN_START_EVENT);
+    expect(transcript).toHaveBeenCalledWith('request-alias', TURN_START_EVENT);
+    expect(connections).toHaveLength(1);
+  } finally {
+    stop();
+    manager.detachSession();
+  }
+});
+
+it('changes owner even at the same URL and refuses the retired connection after callback reentry', () => {
+  const { manager, connections } = setup();
+  manager.attachSession('A');
+  const old = connections[0]!;
+  const first = vi.fn();
+  const later = vi.fn();
+  const replacement = createMockTransport();
+  const stops = [
+    subscribeDocChannelNotifications(
+      undefined,
+      () => {
+        first();
+        manager.useHttpSource('/api', replacement);
+      },
+      transportOwner
+    ),
+    subscribeDocChannelNotifications(undefined, later, transportOwner),
+  ];
+  try {
+    old.push('canvas_event', DOC_EVENT);
+    expect(first).toHaveBeenCalledOnce();
+    expect(later).not.toHaveBeenCalled();
+    expect(old.destroy).toHaveBeenCalledOnce();
+    expect(connections).toHaveLength(2);
+    old.push('canvas_event', DOC_EVENT);
+    expect(first).toHaveBeenCalledOnce();
+    const current = vi.fn();
+    const stop = subscribeDocChannelNotifications(undefined, current, replacement);
+    try {
+      connections[1]!.push('canvas_event', DOC_EVENT);
+      expect(current).toHaveBeenCalledOnce();
+    } finally {
+      stop();
+    }
+  } finally {
+    stops.forEach((stop) => stop());
+    manager.detachSession();
+  }
+});
+
+it('physically destroys a genuine session connection and drains retirement after a subscriber throws', () => {
+  const { manager, connections } = setup();
+  manager.attachSession('A');
+  const old = connections[0]!;
+  const sibling = vi.fn();
+  const events = vi.fn();
+  const stops = [
+    subscribeDocChannelNotifications(undefined, vi.fn(), transportOwner, () => {
+      throw new Error('Retirement subscriber');
+    }),
+    subscribeDocChannelNotifications(undefined, events, transportOwner, sibling),
+  ];
+  try {
+    manager.detachSession();
+    expect(sibling).toHaveBeenCalledOnce();
+    expect(old.destroy).toHaveBeenCalledOnce();
+    old.push('canvas_event', DOC_EVENT);
+    expect(events).not.toHaveBeenCalled();
+    expect(manager.getAttachedSessionId()).toBeNull();
+  } finally {
+    stops.forEach((stop) => stop());
+    manager.detachSession();
+  }
 });

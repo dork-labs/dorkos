@@ -133,22 +133,29 @@ describe('uncertain-create removal', () => {
     );
   });
 
-  it('offers the removal command only for a create with no recorded id', () => {
+  // DOR-2701: the table printed "Resume with:" for a run --resume could never continue, so the
+  // printed command looped. A run that cannot be resumed gets the command that moves it forward.
+  it('offers the removal command, never a resume, for a create with no recorded id', () => {
     const runId = randomUUID();
-    const line = `Check whether DorkOS can prove this run made it and remove it: dorkos community deploy --remove-uncertain ${runId}`;
-    expect(formatCommunityRecovery(shapeA(runId))).toContain(line);
-    expect(
-      formatCommunityRecovery({
-        ...shapeA(runId),
-        resources: { flyAppId: 'dorkos-community-test' },
-      })
-    ).not.toContain('--remove-uncertain');
+    const next = `Next: check whether that create landed with:\n  dorkos community deploy --remove-uncertain ${runId}`;
+    const stuck = formatCommunityRecovery(shapeA(runId));
+    expect(stuck).toContain(next);
+    expect(stuck).not.toContain('Resume with:');
+    expect(stuck).not.toContain('--resume');
+    const recorded = formatCommunityRecovery({
+      ...shapeA(runId),
+      resources: { flyAppId: 'dorkos-community-test' },
+    });
+    expect(recorded).not.toContain('--remove-uncertain');
+    expect(recorded).toContain('Resume with:');
     expect(formatCommunityRecovery({ ...shapeA(runId), pendingIntent: null })).not.toContain(
       '--remove-uncertain'
     );
-    expect(formatCommunityRecovery({ ...shapeA(runId), pendingRemoval })).toContain(
-      `A removal is in progress. Finish it with: dorkos community deploy --remove-uncertain ${runId}`
+    const removing = formatCommunityRecovery({ ...shapeA(runId), pendingRemoval });
+    expect(removing).toContain(
+      `Next: finish the removal that is in progress with:\n  dorkos community deploy --remove-uncertain ${runId}`
     );
+    expect(removing).not.toContain('Resume with:');
   });
 
   it('lists a run with a removal in flight as removal pending', () => {

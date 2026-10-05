@@ -258,7 +258,7 @@ describe('TasksView', () => {
 
   it('Open Schedules button opens via tasks deep-link in empty state', () => {
     render(<TasksView available agentId={null} />, { wrapper: Wrapper });
-    const btn = screen.getByText(/Open Schedules/);
+    const btn = screen.getByText(/Open schedules/);
     fireEvent.click(btn);
     expect(mockOpenTasksDeepLink).toHaveBeenCalled();
   });

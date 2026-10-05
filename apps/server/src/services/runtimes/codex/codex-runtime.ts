@@ -89,6 +89,11 @@ import { ensureCreditsCodexHome, threadRunsOnCredits, withCodexCredits } from '.
 import { creditsCodexHome } from './codex-home.js';
 import { resolveCreditsLaunch } from '../../core/cloud/credits-inference.js';
 import {
+  catalogNameFor,
+  decideCreditsLaunchModel,
+  type CreditsModelDecision,
+} from '../../core/cloud/credits-models.js';
+import {
   asCreditsStopped,
   creditsRefusalEvent,
   type CreditsLaunch,
@@ -323,6 +328,21 @@ export class CodexRuntime implements AgentRuntime {
    */
   stopCreditsTurns(): void {
     for (const controller of this.creditsTurns) controller.abort();
+  }
+
+  /**
+   * Whether a session's next turn runs on DorkOS credits, by the rule its turn
+   * uses (`creditsLaunchFor`): an existing thread by the home its rollout is
+   * in, a new one by Codex's recorded default. Read by the model gate, so a
+   * model credits do not serve is refused before it is stored (DOR-2636).
+   *
+   * @param sessionId - The session.
+   */
+  async sessionRunsOnCredits(sessionId: string): Promise<boolean> {
+    const boundThreadId = this.threadMap.get(sessionId)?.threadId;
+    return boundThreadId !== undefined
+      ? threadRunsOnCredits(boundThreadId)
+      : creditsIsDefaultFor(this.type);
   }
 
   /**
@@ -611,7 +631,7 @@ export class CodexRuntime implements AgentRuntime {
     // title-if-blank derivation must see the persisted title, not a fresh
     // blank entry it would fill with an auto-preview (see seedFromDurable).
     await this.seedFromDurable(sessionId);
-    const settings = await this.resolveTurnSettings(sessionId, opts);
+    let settings = await this.resolveTurnSettings(sessionId, opts);
     const binding = this.threadMap.get(sessionId);
     const boundThreadId = binding?.threadId;
     // Resolution order (post-restart safe): per-send override → in-memory
@@ -658,14 +678,39 @@ export class CodexRuntime implements AgentRuntime {
     // when that is Codex's recorded default. A credits turn with no live token
     // is REFUSED here, and nothing is spawned.
     let credits: CreditsLaunch | null;
+    let creditsSwap: CreditsModelDecision['swap'];
     try {
       credits = await this.creditsLaunchFor(boundThreadId);
+      // **Which model a credits turn runs** (DOR-2636), the same decision every
+      // runtime on credits makes: once the service says which formats its
+      // models are in, a model it does not serve in Codex's format runs on the
+      // service's suggestion instead, and a list naming none refuses the turn.
+      // While the service says nothing, the session's model stands.
+      if (credits) {
+        const decided = await decideCreditsLaunchModel({
+          capabilities: this.getCapabilities(),
+          runtimeLabel: 'Codex',
+          sessionId,
+          model: settings.model,
+          nameOf: async () =>
+            settings.model === undefined ? undefined : catalogNameFor(this, settings.model),
+          remember: async (model) => {
+            await this.updateSession(sessionId, { model });
+          },
+        });
+        if (decided.model !== undefined) settings = { ...settings, model: decided.model };
+        creditsSwap = decided.swap;
+      }
     } catch (err) {
       const refusal = creditsRefusalEvent(err);
       if (!refusal) throw err;
       yield refusal;
       return;
     }
+    // Said before anything is spawned, and saved only once it has been said: a
+    // swap's notice and its save are one step (`CreditsModelDecision.swap`).
+    if (creditsSwap?.notice) yield creditsSwap.notice;
+    await creditsSwap?.commit();
 
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);

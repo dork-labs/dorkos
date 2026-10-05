@@ -218,6 +218,9 @@ export function renderTraits(traits: Record<TraitName, number>): string {
   const lines = TRAIT_ORDER.map((name) => {
     const level = traits[name] ?? 3;
     const entry = TRAIT_LEVELS[name][level];
+    if (entry === undefined) {
+      throw new RangeError(`Invalid ${name} trait level: ${level}`);
+    }
     return `- **${capitalize(name)}** (${entry.label}): ${entry.directive}`;
   });
   return lines.join('\n');

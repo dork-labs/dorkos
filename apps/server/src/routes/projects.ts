@@ -12,6 +12,19 @@
  *   seen: only a real session, agent, workspace or install folder does, so a
  *   folder looked up here stays out of `GET /api/projects` until then.
  *
+ *   A lookup records the root (as `reported`), so the name it answers stays
+ *   that root's name; that is why it runs the person bar
+ *   (`refuseIfNotAPerson`) even though it is a GET. The app asks it for the
+ *   folder a person picked; an agent has no reason to, and an agent that could
+ *   would hold names forever. The bar's `Origin` check alone does not cover a
+ *   GET: a cross-site page can fire one with no `Origin` at all (an `<img>`
+ *   or a no-cors `fetch`), so the route also refuses `Sec-Fetch-Site:
+ *   cross-site`, which browsers send on exactly those requests. The bar's
+ *   documented residual applies: with login off, a local caller without
+ *   `X-DorkOS-Agent` (and not a browser) passes. The registry's cap on
+ *   lookup-only roots (`MAX_LOOKUP_ROOTS`, least recently used forgotten)
+ *   bounds what such a caller can record.
+ *
  * @module routes/projects
  */
 import { Router } from 'express';
@@ -21,6 +34,18 @@ import { ProjectResolveQuerySchema } from '@dorkos/shared/project-schemas';
 import { BoundaryError, validateBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
+import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+
+/** What `GET /api/projects/resolve` says when the caller is not a person. */
+const PROJECT_LOOKUP_BAR: PersonBarCopy = {
+  error: 'Only a person can look up a project.',
+  code: 'project_lookup_person_required',
+  subject: 'the projects DorkOS remembers',
+  crossSite: (origin) =>
+    `DorkOS looked nothing up. This request came from ${origin}, which is not DorkOS. ` +
+    `Only a person using DorkOS can look up a project.`,
+  agent: 'DorkOS looked nothing up. Only a person can look up a project by folder.',
+};
 
 const router = Router();
 
@@ -34,6 +59,15 @@ router.get('/', async (_req, res) => {
 });
 
 router.get('/resolve', async (req, res) => {
+  if (req.headers['sec-fetch-site'] === 'cross-site') {
+    const from = req.headers.origin ?? req.headers.referer ?? 'another site';
+    return res.status(403).json({
+      error: PROJECT_LOOKUP_BAR.error,
+      code: PROJECT_LOOKUP_BAR.code,
+      message: PROJECT_LOOKUP_BAR.crossSite(from),
+    });
+  }
+  if (refuseIfNotAPerson(req, res, PROJECT_LOOKUP_BAR)) return undefined;
   const parsed = ProjectResolveQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });

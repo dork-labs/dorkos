@@ -90,6 +90,124 @@ async function refuseSends(page: Page | BrowserContext): Promise<void> {
   });
 }
 
+/**
+ * One fake DorkOS link server for every tab in a browser context: it waits on
+ * one code at a time, a new start replaces the last one, and it records which
+ * page made each credits choice. Nothing reaches the real cloud.
+ */
+async function fakeLinkServer(context: BrowserContext) {
+  // One server for both tabs: it waits on one code at a time, and a new
+  // start replaces the last one, as the real one does.
+  const codes = ['CODE1111', 'CODE2222'];
+  let state: 'idle' | 'pending' | 'linked' = 'idle';
+  let waitingOn: string | null = null;
+  let approved: string | null = null;
+  const choicesFrom: Page[] = [];
+  const codeFor = (userCode: string) => ({
+    userCode,
+    verificationUri: 'https://dorkos.ai/activate',
+    expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+  });
+  await context.route(/\/api\/cloud\/credits(\?|$)/, (route: Route) =>
+    route.fulfill({
+      json: {
+        enabled: state === 'linked',
+        killed: false,
+        linked: state === 'linked',
+        ready: state === 'linked',
+        runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
+        defaults: {},
+        notices: [],
+      },
+    })
+  );
+  await context.route(/\/api\/cloud\/credits\/default(\?|$)/, (route: Route) => {
+    choicesFrom.push(route.request().frame().page());
+    return route.fulfill({
+      json: {
+        enabled: true,
+        killed: false,
+        linked: true,
+        ready: true,
+        runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
+        defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } },
+        notices: [],
+      },
+    });
+  });
+  await context.route(/\/api\/cloud\/status(\?|$)/, (route: Route) =>
+    route.fulfill({
+      json: {
+        linked: state === 'linked',
+        accountLabel: state === 'linked' ? 'kai@dork.dev' : null,
+        lastHeartbeatAt: null,
+      },
+    })
+  );
+  await context.route(/\/api\/cloud\/plan(\?|$)/, (route: Route) =>
+    route.fulfill({ json: { available: false } })
+  );
+  await context.route(/\/api\/cloud\/link\/start(\?|$)/, (route: Route) => {
+    waitingOn = codes.shift() ?? 'CODE9999';
+    state = 'pending';
+    return route.fulfill({ json: codeFor(waitingOn) });
+  });
+  // Tab B stops the code it was shown and starts its own. The server is told
+  // to stop, answers idle, and starts waiting on the next code at once.
+  await context.route(/\/api\/cloud\/link\/cancel(\?|$)/, (route: Route) => {
+    waitingOn = null;
+    return route.fulfill({ json: { state: 'idle' } });
+  });
+  await context.route(/\/api\/cloud\/link\/status(\?|$)/, (route: Route) =>
+    route.fulfill({
+      json:
+        state === 'pending' && waitingOn
+          ? { state, pending: codeFor(waitingOn) }
+          : state === 'pending'
+            ? { state }
+            : state === 'linked'
+              ? { state, accountLabel: 'kai@dork.dev', approvedCode: approved }
+              : { state },
+    })
+  );
+  return {
+    choicesFrom,
+    approve(userCode: string) {
+      approved = userCode;
+      state = 'linked';
+    },
+  };
+}
+
+/**
+ * Bring a tab back to the front the way a person returning to it does: the
+ * page is shown, and it hears the `visibilitychange` that comes with that.
+ * Firing the event here is what makes the step deterministic on a loaded
+ * runner, where a background page's own visibility change may never arrive.
+ */
+async function showTab(tab: Page): Promise<void> {
+  await tab.bringToFront();
+  await tab.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+}
+
+/** The next link-status answer `tab` reads that matches `match`. */
+function statusReply(tab: Page, match: (body: Record<string, unknown> | null) => boolean) {
+  return tab.waitForResponse(
+    async (response) =>
+      /\/api\/cloud\/link\/status(\?|$)/.test(response.url()) &&
+      match(await response.json().catch(() => null)),
+    { timeout: 30_000 }
+  );
+}
+
+/** The next link-status answer `tab` reads that names `userCode` as waiting. */
+function statusNaming(tab: Page, userCode: string) {
+  return statusReply(
+    tab,
+    (body) => (body?.pending as { userCode?: string } | undefined)?.userCode === userCode
+  );
+}
+
 test.describe('DorkOS credits first where nothing works yet @smoke', () => {
   test.afterEach(async ({ page }) => {
     await page.unrouteAll({ behavior: 'ignoreErrors' });
@@ -184,120 +302,98 @@ test.describe('DorkOS credits first where nothing works yet @smoke', () => {
     await noClaudeSignIn(context);
     await refuseSends(context);
 
-    // One server for both tabs: it waits on one code at a time, and a new
-    // start replaces the last one, as the real one does.
-    const codes = ['CODE1111', 'CODE2222'];
-    let state: 'idle' | 'pending' | 'linked' = 'idle';
-    let waitingOn: string | null = null;
-    let approved: string | null = null;
-    const choicesFrom: Page[] = [];
-    const codeFor = (userCode: string) => ({
-      userCode,
-      verificationUri: 'https://dorkos.ai/activate',
-      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-    });
-    await context.route(/\/api\/cloud\/credits(\?|$)/, (route: Route) =>
-      route.fulfill({
-        json: {
-          enabled: state === 'linked',
-          killed: false,
-          linked: state === 'linked',
-          ready: state === 'linked',
-          runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
-          defaults: {},
-          notices: [],
-        },
-      })
-    );
-    await context.route(/\/api\/cloud\/credits\/default(\?|$)/, (route: Route) => {
-      choicesFrom.push(route.request().frame().page());
-      return route.fulfill({
-        json: {
-          enabled: true,
-          killed: false,
-          linked: true,
-          ready: true,
-          runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
-          defaults: { 'claude-code': { runsOn: 'credits', chosenBy: 'user' } },
-          notices: [],
-        },
-      });
-    });
-    await context.route(/\/api\/cloud\/status(\?|$)/, (route: Route) =>
-      route.fulfill({
-        json: {
-          linked: state === 'linked',
-          accountLabel: state === 'linked' ? 'kai@dork.dev' : null,
-          lastHeartbeatAt: null,
-        },
-      })
-    );
-    await context.route(/\/api\/cloud\/plan(\?|$)/, (route: Route) =>
-      route.fulfill({ json: { available: false } })
-    );
-    await context.route(/\/api\/cloud\/link\/start(\?|$)/, (route: Route) => {
-      waitingOn = codes.shift() ?? 'CODE9999';
-      state = 'pending';
-      return route.fulfill({ json: codeFor(waitingOn) });
-    });
-    // Tab B stops the code it was shown and starts its own. The server is told
-    // to stop, answers idle, and starts waiting on the next code at once.
-    await context.route(/\/api\/cloud\/link\/cancel(\?|$)/, (route: Route) => {
-      waitingOn = null;
-      return route.fulfill({ json: { state: 'idle' } });
-    });
-    await context.route(/\/api\/cloud\/link\/status(\?|$)/, (route: Route) =>
-      route.fulfill({
-        json:
-          state === 'pending' && waitingOn
-            ? { state, pending: codeFor(waitingOn) }
-            : state === 'pending'
-              ? { state }
-              : state === 'linked'
-                ? { state, accountLabel: 'kai@dork.dev', approvedCode: approved }
-                : { state },
-      })
-    );
+    const server = await fakeLinkServer(context);
 
     const tabA = page;
-    const tabB = await context.newPage();
-    for (const tab of [tabA, tabB]) {
-      await tab.goto('/?settings=runtimes');
-      await tab.waitForSelector('[data-testid="app-shell"]', { timeout: 30_000 });
-    }
+    await tabA.goto('/?settings=runtimes');
     await basePage.waitForAppReady();
     const offerIn = (tab: Page) =>
       tab
         .getByTestId('default-first-claude-code')
         .getByRole('button', { name: 'Use DorkOS credits' });
-
-    // Tab A starts the first code. Tab B shows that same code rather than
-    // offering a second start; it stops it and starts its own instead.
+    // Tab A starts the first code.
     await offerIn(tabA).click();
     await expect(tabA.getByText('CODE1111')).toBeVisible();
-    await tabB.bringToFront();
-    // Soft, so a tab that cannot see the shared code still goes on to show
+
+    // Tab B opens Settings while that code waits. Opening reads the link state
+    // at once, so it shows the same code rather than offering a second start.
+    // Driven by that read, not by a poll interval, so a loaded runner waits
+    // for the answer instead of a clock.
+    const tabB = await context.newPage();
+    const tabBRead = statusNaming(tabB, 'CODE1111');
+    await tabB.goto('/?settings=runtimes');
+    await tabB.waitForSelector('[data-testid="app-shell"]', { timeout: 30_000 });
+    await tabBRead;
+    // Soft, so a tab that cannot show the shared code still goes on to show
     // the failure this test exists for: carrying on for a code it did not start.
     const shared = tabB.getByText('CODE1111');
-    await expect.soft(shared).toBeVisible({ timeout: 10_000 });
+    await expect.soft(shared).toBeVisible();
     if (await shared.isVisible()) {
       await tabB
         .getByTestId('default-first-claude-code')
         .getByRole('button', { name: 'Cancel' })
         .click();
     }
+
+    // Tab B starts its own code, which replaces the first on the server.
+    const tabARead = statusNaming(tabA, 'CODE2222');
     await offerIn(tabB).click();
     await expect(tabB.getByText('CODE2222')).toBeVisible();
-    // Tab A follows the server to the one code it waits on.
-    await expect.soft(tabA.getByText('CODE2222')).toBeVisible({ timeout: 10_000 });
+    // Tab A, still waiting on its code, reads the server's answer and follows
+    // it to the one code it waits on.
+    await tabARead;
+    await expect.soft(tabA.getByText('CODE2222')).toBeVisible();
 
     // The code tab B started is approved.
-    approved = 'CODE2222';
-    state = 'linked';
-    await expect.poll(() => choicesFrom.length, { timeout: 15_000 }).toBe(1);
-    // Give tab A every chance to (wrongly) act on it too.
-    await tabA.waitForTimeout(4_000);
-    expect(choicesFrom).toEqual([tabB]);
+    server.approve('CODE2222');
+    await expect.poll(() => server.choicesFrom.length, { timeout: 15_000 }).toBe(1);
+    // Tab A must read that the computer is linked too, and still not act: it
+    // is shown again (so it reads at once), its own reply says linked, and
+    // only then is the record checked, after a moment for anything it would
+    // (wrongly) do on that reply.
+    const tabALinked = statusReply(tabA, (body) => body?.state === 'linked');
+    await showTab(tabA);
+    await tabALinked;
+    await tabA.waitForTimeout(500);
+    expect(server.choicesFrom).toEqual([tabB]);
+    await tabB.close();
+  });
+
+  test('a tab already open shows the code another tab started once it is shown again', async ({
+    page,
+    basePage,
+  }) => {
+    test.setTimeout(150_000);
+    const context = page.context();
+    await noClaudeSignIn(context);
+    await refuseSends(context);
+    await fakeLinkServer(context);
+
+    // Both tabs are open and idle before any code exists.
+    const tabA = page;
+    await tabA.goto('/?settings=runtimes');
+    await basePage.waitForAppReady();
+    const tabB = await context.newPage();
+    await tabB.goto('/?settings=runtimes');
+    await tabB.waitForSelector('[data-testid="app-shell"]', { timeout: 30_000 });
+    const offerIn = (tab: Page) =>
+      tab
+        .getByTestId('default-first-claude-code')
+        .getByRole('button', { name: 'Use DorkOS credits' });
+    await expect(offerIn(tabB)).toBeVisible();
+
+    // Tab A starts a code while tab B sits in the background.
+    await showTab(tabA);
+    await offerIn(tabA).click();
+    await expect(tabA.getByText('CODE1111')).toBeVisible();
+
+    // The person goes back to tab B: it reads the link state at once, even
+    // though it read it moments ago, and shows that code, not a second start.
+    const tabBRead = statusNaming(tabB, 'CODE1111');
+    await showTab(tabB);
+    await tabBRead;
+    await expect(tabB.getByText('CODE1111')).toBeVisible();
+    await expect(offerIn(tabB)).toBeHidden();
     await tabB.close();
   });
 });
