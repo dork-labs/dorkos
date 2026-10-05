@@ -293,6 +293,7 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'cloud.previousLinkProof',
       'connectors.rawMcpServers[].url',
       // Not a secret: absolute paths on this machine that no agent needs (DOR-2383).
+      'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.dismissedApprovals',
       'extensions.trustedSources[].source',

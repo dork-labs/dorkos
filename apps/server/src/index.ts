@@ -8,6 +8,8 @@ import { createDocChannelHttpComposition } from './services/canvas/doc-channel/h
 import { startMainListener } from './services/core/lifecycle/main-listener.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import path from 'path';
+import { existsSync } from 'node:fs';
+import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
@@ -3226,7 +3228,14 @@ async function start() {
     projectForFolder: (cwd) => projectRegistry.peek(cwd),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
-      if (capability) return { title: capability.title, tier: capability.tier };
+      if (capability) {
+        return {
+          title: capability.title,
+          tier: capability.tier,
+          // An extension's tool names its extension, so its card can say so.
+          ...(capability.source ? { source: capability.source } : {}),
+        };
+      }
       // Two ids that are not capabilities anyone can invoke: the card raised when
       // an installed package wants to write shell commands into a coding agent's
       // hook files (DOR-522), and the one a global package raises before its
@@ -5353,6 +5362,28 @@ async function start() {
       }
     };
 
+    // Running extensions' skills (DOR-2685): when the set of extension skills
+    // agents should see changes, project each affected project again (the same
+    // consent seam and `harness.autoSync` gate a plugin install goes through)
+    // and refresh the plugins Claude Code sessions load for global ones. A
+    // project an extension only LEFT and that has no harness manifest has
+    // nothing projected to sweep, so it is not scaffolded one.
+    extensionManager?.attachSkillDelivery({
+      projectChanged: async ({ root, ids, remaining }) => {
+        if (!remaining && !existsSync(path.join(root, HARNESS_MANIFEST_PATH))) return;
+        await runAutoProjection(
+          {
+            projectPath: root,
+            packageName: ids.join(', '),
+            action: remaining ? 'install' : 'uninstall',
+          },
+          { dorkHome, approvals: approvalService }
+        );
+        claudeRuntime?.refreshProjectCommands(root);
+      },
+      globalChanged: () => claudeRuntime?.refreshActivatedPlugins(),
+    });
+
     // Dev links (DOR-2696): run a plugin or skill pack from a folder. One
     // service for the routes and the `marketplace_link` capability. A link's
     // yes for the extensions it carries is written beside every other
@@ -5386,6 +5417,7 @@ async function start() {
           return {
             approvedToRun: extensions.approvedToRun,
             approvedSources: extensions.approvedSources ?? {},
+            approvedPermissions: extensions.approvedPermissions ?? {},
           };
         },
         write: (next) => {

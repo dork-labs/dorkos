@@ -159,7 +159,12 @@ const OBSERVABLE_BUNDLE =
 
 describe('mayRunExtensionCode', () => {
   /** The copy of `my-ext` installed directly, and an approval of exactly it. */
-  const direct = { id: 'my-ext', origin: 'user' as const, path: '/home/.dork/extensions/my-ext' };
+  const direct = {
+    id: 'my-ext',
+    origin: 'user' as const,
+    path: '/home/.dork/extensions/my-ext',
+    manifest: { id: 'my-ext', name: 'My ext', version: '1.0.0' },
+  };
   const approvedDirect = {
     approvedToRun: ['my-ext'],
     approvedSources: { 'my-ext': { path: '/home/.dork/extensions/my-ext' } },
@@ -180,7 +185,12 @@ describe('mayRunExtensionCode', () => {
     // `linear-issues` data proxy on every install.
     expect(
       mayRunExtensionCode(
-        { id: 'linear-issues', origin: 'core', path: '/home/.dork/extensions/linear-issues' },
+        {
+          id: 'linear-issues',
+          origin: 'core',
+          path: '/home/.dork/extensions/linear-issues',
+          manifest: { id: 'linear-issues', name: 'Linear', version: '1.0.0' },
+        },
         { approvedToRun: [] }
       )
     ).toBe(true);
@@ -191,7 +201,12 @@ describe('mayRunExtensionCode', () => {
     // the extension says about itself, so an extension cannot declare itself core.
     expect(
       mayRunExtensionCode(
-        { id: 'pretender', origin: 'user', path: '/x/pretender' },
+        {
+          id: 'pretender',
+          origin: 'user',
+          path: '/x/pretender',
+          manifest: { id: 'pretender', name: 'Pretender', version: '1.0.0' },
+        },
         { approvedToRun: ['a-different-id'] }
       )
     ).toBe(false);
@@ -218,6 +233,7 @@ describe('mayRunExtensionCode', () => {
         origin: 'user' as const,
         path: '/home/.dork/plugins/flow/.dork/extensions/flow',
         sourcePlugin: 'flow',
+        manifest: { id: 'flow', name: 'Flow', version: '1.0.0' },
       };
       const second = {
         ...first,
@@ -399,6 +415,11 @@ describe('the dev loop stays free after one approval', () => {
       disabled: [],
       approvedToRun: ['my-ext'],
       approvedSources: MY_EXT_SOURCE,
+      // The yes covers what it declares: an in-process extension, so full
+      // access (DOR-2686).
+      approvedPermissions: {
+        'my-ext': { runtime: 'in-process', net: [], run: [], agents: false },
+      },
     });
     // The approve route is what makes one click enough: the extension is running
     // now, without a restart.
@@ -487,6 +508,7 @@ describe('the dev loop stays free after one approval', () => {
       disabled: [],
       approvedToRun: [],
       approvedSources: {},
+      approvedPermissions: {},
       dismissedApprovals: {
         'my-ext': {
           path: '/fake/dork-home/extensions/my-ext',
@@ -715,6 +737,7 @@ describe('approval by trusted origin, and trusted sources (spec flow-multiprojec
     origin: 'user' as const,
     path: '/work/b/.dork/plugins/flow/.dork/extensions/flow',
     sourcePlugin: 'flow',
+    manifest: { id: 'flow', name: 'Flow', version: '1.0.0' },
   };
 
   it('approves another copy that provably shares the approved origin', () => {

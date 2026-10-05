@@ -768,6 +768,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
     const before = this.activatedPlugins.map((plugin) => plugin.path);
+    // Built into locals and assigned ONCE, after every await: two refreshes can
+    // overlap (boot, plus a change delivered right after it), and one that read
+    // or appended to the shared list between another's awaits loaded a root
+    // twice, or mistook an extension's own root for a same-named plugin.
+    let packages: Array<{ type: 'local'; path: string }>;
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
       const { listConsentedPluginNames } =
@@ -778,21 +783,37 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // Only packages a person approved (or that run nothing on their own):
       // a global package's hooks and servers start in every session (DOR-2306).
       const enabledNames = await listConsentedPluginNames(dorkHome);
-      if (enabledNames.length === 0) {
-        this.activatedPlugins = [];
-      } else {
-        this.activatedPlugins = await buildClaudeAgentSdkPluginsArray({
-          dorkHome,
-          enabledPluginNames: enabledNames,
-          logger,
-        });
-      }
+      packages =
+        enabledNames.length === 0
+          ? []
+          : await buildClaudeAgentSdkPluginsArray({
+              dorkHome,
+              enabledPluginNames: enabledNames,
+              logger,
+            });
     } catch {
       // Fail closed (DOR-2306): a refresh that cannot say which global packages
       // a person approved loads none of them, rather than keeping a list that
       // may hold one nobody approves any more.
-      this.activatedPlugins = [];
+      packages = [];
     }
+    // Running global extensions' skills (DOR-2685), each from its generated
+    // plugin root. Already consented: the extension's approval to run is the
+    // consent, and the root holds skills only. Asked separately, so a ledger
+    // that cannot be read loads no extension skills and leaves the packages
+    // above as they are.
+    let skillRoots: Array<{ type: 'local'; path: string }> = [];
+    try {
+      const { resolveDorkHome } = await import('../../../lib/dork-home.js');
+      const { extensionSkillPluginRoots } =
+        await import('../../extensions/agent-skills/running-skills-ledger.js');
+      const loaded = new Set(packages.map((plugin) => path.basename(plugin.path)));
+      const roots = await extensionSkillPluginRoots(resolveDorkHome(), loaded);
+      skillRoots = roots.map((root) => ({ type: 'local' as const, path: root }));
+    } catch {
+      // Best-effort: no extension skills this time; the next refresh asks again.
+    }
+    this.activatedPlugins = [...packages, ...skillRoots];
 
     // Hot-reload every live session so its cached command list reflects the
     // new plugin set instantly, then tell clients to re-fetch. Isolated from

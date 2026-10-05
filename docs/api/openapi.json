@@ -3112,6 +3112,28 @@
           "roomId": {
             "type": "string"
           },
+          "source": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "extension"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ]
+          },
           "requestedAt": {
             "type": "string"
           },
@@ -10873,6 +10895,26 @@
           },
           "why": {
             "type": "string"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/ExtensionApprovalPermissions"
+          },
+          "added": {
+            "$ref": "#/components/schemas/ExtensionApprovalAdditions"
+          },
+          "agentTools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentToolSummary"
+            },
+            "default": []
+          },
+          "agentSkills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
+            },
+            "default": []
           }
         },
         "required": [
@@ -10885,6 +10927,139 @@
           "adds",
           "since",
           "why"
+        ]
+      },
+      "ExtensionApprovalPermissions": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "in-process",
+              "subprocess"
+            ]
+          },
+          "net": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "found": {
+                  "type": "boolean"
+                },
+                "refusedReason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "found"
+              ]
+            }
+          },
+          "agents": {
+            "type": "boolean"
+          },
+          "hasPage": {
+            "type": "boolean"
+          }
+        },
+        "default": null,
+        "required": [
+          "runtime",
+          "net",
+          "run",
+          "agents",
+          "hasPage"
+        ]
+      },
+      "ExtensionApprovalAdditions": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "net": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agents": {
+            "type": "boolean"
+          },
+          "runtime": {
+            "type": "boolean"
+          }
+        },
+        "default": null,
+        "required": [
+          "net",
+          "run",
+          "agents",
+          "runtime"
+        ]
+      },
+      "ExtensionAgentToolSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "refusedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "tier"
+        ]
+      },
+      "ExtensionAgentSkillSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "droppedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ]
       },
       "ExtensionTrustOffer": {
@@ -10916,6 +11091,41 @@
               "null"
             ],
             "minLength": 1
+          },
+          "permissions": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "in-process",
+                  "subprocess"
+                ]
+              },
+              "net": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 64
+              },
+              "run": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 16
+              },
+              "agents": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "runtime",
+              "net",
+              "run",
+              "agents"
+            ]
           }
         },
         "required": [
@@ -25288,6 +25498,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [
@@ -26312,6 +26556,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [
@@ -27470,6 +27748,40 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "isolation": {
+                                "type": "object",
+                                "properties": {
+                                  "runtime": {
+                                    "type": "string",
+                                    "enum": [
+                                      "in-process",
+                                      "subprocess"
+                                    ]
+                                  },
+                                  "net": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "run": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "agents": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "runtime",
+                                  "net",
+                                  "run",
+                                  "agents"
+                                ],
+                                "description": "Where the extension runs and what it may reach: in-process is inside DorkOS with full access (empty lists); subprocess is limited to the lists."
                               }
                             },
                             "required": [

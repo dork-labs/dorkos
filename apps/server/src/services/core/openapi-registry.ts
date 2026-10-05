@@ -393,7 +393,24 @@ const LocalPermissionPreviewSchema = z.object({
       action: z.enum(['create', 'modify', 'delete']),
     })
   ),
-  extensions: z.array(z.object({ id: z.string(), slots: z.array(z.string()) })),
+  extensions: z.array(
+    z.object({
+      id: z.string(),
+      slots: z.array(z.string()),
+      isolation: z
+        .object({
+          runtime: z.enum(['in-process', 'subprocess']),
+          net: z.array(z.string()),
+          run: z.array(z.string()),
+          agents: z.boolean(),
+        })
+        .optional()
+        .describe(
+          'Where the extension runs and what it may reach: in-process is inside DorkOS ' +
+            'with full access (empty lists); subprocess is limited to the lists.'
+        ),
+    })
+  ),
   hooks: z.array(
     z.object({
       event: z.string(),

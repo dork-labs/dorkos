@@ -498,9 +498,13 @@ describe('trusted nofork physical cleanup fixture', () => {
       assertWork();
       let frozen = true;
       config.clock.monotonicNow = () => (frozen ? 0 : 10000);
+      let observations = 0;
       config.processes = {
         descendants: async () => ({ status: 'complete', identities: [child.identity] }),
-        observe: async () => ({ status: 'alive' }),
+        observe: async () => {
+          observations++;
+          return { status: 'alive' };
+        },
       };
       const operation = closeRecord(
         config,
@@ -511,10 +515,14 @@ describe('trusted nofork physical cleanup fixture', () => {
         const bounded = new Promise((_, reject) => {
           timer = setTimeout(() => reject(Error('TEARDOWN_NOT_BOUNDED')), 2600);
         });
-        expect(await Promise.race([operation, bounded])).toEqual({
-          cleanup: 'failed',
-          reason: 'processesRemain',
-        });
+        const outcome = await Promise.race([operation, bounded]);
+        // The last observation can cross the absolute host deadline after loop admission.
+        // Both outcomes refuse disappearance proof and retain the directory.
+        expect(observations).toBeGreaterThan(0);
+        expect([
+          { cleanup: 'failed', reason: 'processesRemain' },
+          { cleanup: 'unverified', reason: 'observationUnavailable' },
+        ]).toContainEqual(outcome);
         assertWork();
         await expect(access(root)).resolves.toBeUndefined();
       } finally {

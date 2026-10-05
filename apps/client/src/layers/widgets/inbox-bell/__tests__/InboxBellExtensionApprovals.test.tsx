@@ -53,12 +53,17 @@ const FLOW: PendingExtensionApproval = {
   adds: 'It adds a Flow tab',
   since: '2026-09-28T12:00:00.000Z',
   why: 'You installed the flow plugin. This adds a Flow tab that shows what your agents are working on. It runs as you.',
+  permissions: { runtime: 'in-process', net: [], run: [], agents: false, hasPage: true },
+  added: null,
+  agentTools: [],
+  agentSkills: [],
 };
 
 /** What the fake server holds and what it was asked. */
 let waiting: PendingExtensionApproval[];
 let approveStatus: number;
 let posts: Array<{ url: string; body: unknown }>;
+let staleReplacement: PendingExtensionApproval | null;
 
 /** A fake of the four extension routes the bell reaches. */
 async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -68,6 +73,14 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
   if (init?.method === 'POST') {
     posts.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
     if (url.endsWith('/extensions/flow/approve')) {
+      if (approveStatus === 409) {
+        // The extension widened while the row was on screen.
+        if (staleReplacement) waiting = [staleReplacement];
+        return json(
+          { error: 'This extension changed since you saw it.', code: 'stale_approval' },
+          409
+        );
+      }
       if (approveStatus !== 200) return json({ error: 'Nope' }, approveStatus);
       waiting = [];
       return json({ extension: { id: 'flow' } });
@@ -131,6 +144,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     waiting = [FLOW];
     approveStatus = 200;
     posts = [];
+    staleReplacement = null;
     vi.stubGlobal('fetch', vi.fn(fakeFetch));
   });
 
@@ -180,6 +194,61 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/', search: { settings: 'extensions' } });
   });
 
+  describe('what it would give agents (DOR-2685)', () => {
+    // A person says yes on this row, so each tool and its tier must be
+    // readable here, before the extension has run once.
+    const WITH_TOOLS: PendingExtensionApproval = {
+      ...FLOW,
+      agentTools: [
+        { name: 'list_items', title: 'List work items', tier: 'observe' },
+        { name: 'close_item', title: 'Close a work item', tier: 'destructive' },
+        {
+          name: 'open_ended',
+          title: 'Take anything',
+          tier: 'act',
+          refusedReason: 'Its input must list every field.',
+        },
+      ],
+      agentSkills: [{ name: 'triage-board' }],
+    };
+
+    it('sums it up on the row itself', async () => {
+      waiting = [WITH_TOOLS];
+      renderBell();
+      const { row } = await openRow();
+
+      // Nothing runs before the yes, so the row says what it WOULD give.
+      expect(within(row).getByText('Would give agents 2 tools and 1 skill')).toBeInTheDocument();
+    });
+
+    it('lists each tool with its tier, each skill, and any refusal in ⓘ', async () => {
+      waiting = [WITH_TOOLS];
+      renderBell();
+      const { user, row } = await openRow();
+
+      await user.click(within(row).getByRole('button', { name: 'More about this' }));
+
+      // The ⓘ panel's gift rows, not the permission lines drawn on the row.
+      const gifts = row.querySelector('[data-slot="extension-agent-gift-rows"]') as HTMLElement;
+      const items = within(gifts)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent);
+      expect(items).toEqual([
+        'List work itemsReads',
+        'Close a work itemAsks you first',
+        'open_endedLeft out: Its input must list every field.',
+        'triage-boardSkill',
+      ]);
+    });
+
+    it('adds no line for an extension that gives agents nothing', async () => {
+      renderBell();
+      const { row } = await openRow();
+
+      expect(within(row).queryByText(/give agents|Gives agents/)).not.toBeInTheDocument();
+    });
+  });
+
   it('turns it on from 👍, and the row leaves', async () => {
     renderBell();
     const { user, row } = await openRow();
@@ -191,7 +260,13 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(posts).toEqual([
       {
         url: '/api/extensions/flow/approve',
-        body: { path: FLOW.path, version: '1.2.0', plugin: 'flow' },
+        body: {
+          path: FLOW.path,
+          version: '1.2.0',
+          plugin: 'flow',
+          // The permission set the row listed, so a widening is refused as stale.
+          permissions: { runtime: 'in-process', net: [], run: [], agents: false },
+        },
       },
     ]);
   });
@@ -224,5 +299,105 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       })
     );
     expect(await screen.findByText('Turn on Flow?')).toBeInTheDocument();
+  });
+  describe('what it can reach (DOR-2686)', () => {
+    const MAIL: PendingExtensionApproval = {
+      ...FLOW,
+      id: 'flow',
+      permissions: {
+        runtime: 'subprocess',
+        net: ['imap.fastmail.com', 'smtp.fastmail.com'],
+        run: [{ name: 'git', found: true }],
+        agents: false,
+        hasPage: false,
+      },
+    };
+
+    // Purpose: the row states the access level before the yes; an in-process
+    // extension says it runs inside DorkOS with full access.
+    it('states full access for an extension that runs inside DorkOS', async () => {
+      renderBell();
+      const { row } = await openRow();
+      expect(
+        within(row).getByText('Runs inside DorkOS with full access to this computer.')
+      ).toBeInTheDocument();
+    });
+
+    // Purpose: an isolated extension lists its hosts on the row, not behind ⓘ,
+    // and the yes echoes exactly that set.
+    it('lists hosts on the row and sends that set with the yes', async () => {
+      waiting = [MAIL];
+      renderBell();
+      const { user, row } = await openRow();
+      const lines = within(row).getByTestId('extension-permissions-flow');
+      // Said before the yes: its server part does not run in this version yet.
+      expect(lines.querySelector('li')).toHaveTextContent(
+        'Its server part can’t run in this version yet.'
+      );
+      expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+      expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com, smtp.fastmail.com');
+
+      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+      await waitFor(() => expect(posts).toHaveLength(1));
+      expect((posts[0]!.body as { permissions: unknown }).permissions).toEqual({
+        runtime: 'subprocess',
+        net: ['imap.fastmail.com', 'smtp.fastmail.com'],
+        run: ['git'],
+        agents: false,
+      });
+    });
+
+    // Purpose: a re-ask leads with what is new since the last yes.
+    it('leads a re-ask with the new host', async () => {
+      waiting = [
+        { ...MAIL, added: { net: ['api.example.com'], run: [], agents: false, runtime: false } },
+      ];
+      renderBell();
+      const { row } = await openRow();
+      const lines = within(row).getByTestId('extension-permissions-flow');
+      const first = lines.querySelector('li');
+      expect(first).toHaveTextContent('Now also wants to connect to: api.example.com');
+    });
+
+    // Purpose: a yes to a row that widened while on screen is refused, says so
+    // plainly, and the row comes back showing what it asks for now.
+    it('says so plainly and redraws the row when the yes is stale', async () => {
+      waiting = [MAIL];
+      approveStatus = 409;
+      staleReplacement = {
+        ...MAIL,
+        permissions: { ...MAIL.permissions!, net: [...MAIL.permissions!.net, 'api.example.com'] },
+      };
+      renderBell();
+      const { user, row } = await openRow();
+
+      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('Flow changed since you saw it. Check it again.')
+      );
+      // A first ask has no earlier approval, yet the redrawn row still leads
+      // with the host the refused card did not list.
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('extension-permissions-flow').querySelector('li')
+        ).toHaveTextContent('Now also wants to connect to: api.example.com')
+      );
+      expect(screen.getByTestId('extension-permissions-flow')).toHaveTextContent(
+        'Can connect to: imap.fastmail.com, smtp.fastmail.com, api.example.com'
+      );
+    });
+
+    // Purpose: a server one version behind sends no set; the row adds nothing
+    // and the yes compares nothing.
+    it('adds nothing and echoes nothing when the server sent no set', async () => {
+      waiting = [{ ...FLOW, permissions: null }];
+      renderBell();
+      const { user, row } = await openRow();
+      expect(within(row).queryByText(/Runs (inside|separately)/)).not.toBeInTheDocument();
+      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+      await waitFor(() => expect(posts).toHaveLength(1));
+      expect(posts[0]!.body).not.toHaveProperty('permissions');
+    });
   });
 });

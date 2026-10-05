@@ -9,6 +9,8 @@ This file is the single source of truth for documentation coverage mapping and m
 
 ## Retirement maintenance
 
+2026-10-04: Reconciled architecture credits payer scopes, managed compatibility forwarding, executable contributions and document/browser implementation boundaries. The dated assessment and roadmap rank lifecycle proof, recovery evidence and remaining migration ownership.
+
 2026-09-25: Removed the retired plugin development guide and updated active architecture, state, authentication, design, data-fetching, runtime-tool and installation guidance. The old public plugin guide remains the migration and source-recovery page. Historical changelogs and maintenance entries remain historical.
 
 ## Guide Coverage Map

@@ -261,6 +261,11 @@ asarUnpack:
   # http://localhost:<port> (see window-manager.ts) rather than file://, so
   # these files must be real files on disk, not virtual asar entries.
   - 'dist/renderer/**'
+  # The extension child (DOR-2686): forked with Node's permission model on and
+  # read access granted to this one file by its real path. A path inside
+  # app.asar is an archive entry, not a file the model can grant, so it must be
+  # a real file on disk. `isolation/child-entry.ts` prefers this unpacked twin.
+  - 'dist/server/extension-child.cjs'
   # ensureCoreExtensions's fs.cp() (staging bundled extensions into
   # DORK_HOME) can't read this source tree from inside app.asar either —
   # same class of read limitation as dist/renderer above.

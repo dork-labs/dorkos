@@ -167,9 +167,14 @@ import { isPersistentSessionEnabled } from '../persistent-session-optin.js';
 import {
   AccountPinViolationError,
   captureLaunchFingerprint,
+  isExtensionSkillPlugin,
+  withLiveSkillPlugins,
   withLiveToolSurface,
+  withdrawnPluginPaths,
   type LaunchFingerprint,
 } from './launch-fingerprint.js';
+import { extensionSkillPluginsDir } from '@dorkos/harness';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { createPumpLauncher, decideProcessReuse, type PumpLaunchPlan } from './pump-launch.js';
 import {
   conversationTokens,
@@ -610,21 +615,41 @@ export class PersistentDispatch {
     // keeps the old list, so the next dispatch asks again. Any other pin that
     // moved still relaunches as it always did.
     const live = bundle.fingerprint;
+    // The same for a running extension's skills going away (DOR-2685): its
+    // generated plugin root holds skills only, so a working process keeps it
+    // until it is quiet. A withdrawal that includes any other plugin still
+    // relaunches at once (DOR-2306): that package may run code nobody approves.
+    const withdrawn = live !== undefined ? withdrawnPluginPaths(live, plan.fingerprint) : [];
+    const skillsDir = extensionSkillPluginsDir(resolveDorkHome());
+    const skillWithdrawal =
+      withdrawn.length > 0 &&
+      withdrawn.every((pluginPath) => isExtensionSkillPlugin(pluginPath, skillsDir));
+    const toolSurfaceMoved =
+      live !== undefined && live.pins.toolSurface !== plan.fingerprint.pins.toolSurface;
     const busy =
-      live !== undefined && live.pins.toolSurface !== plan.fingerprint.pins.toolSurface
+      live !== undefined && (toolSurfaceMoved || skillWithdrawal)
         ? bundle.pump.quietness()
         : undefined;
-    const compared =
-      live !== undefined && busy !== undefined && !busy.quiet
-        ? withLiveToolSurface(live, plan.fingerprint)
-        : plan.fingerprint;
+    const holding = live !== undefined && busy !== undefined && !busy.quiet;
+    let compared = plan.fingerprint;
+    if (holding && toolSurfaceMoved) compared = withLiveToolSurface(live, compared);
+    if (holding && skillWithdrawal) {
+      compared = withLiveSkillPlugins(compared, withdrawn);
+      logger.info(
+        '[persistent-dispatch] holding an extension skills relaunch while the process works',
+        {
+          session: sessionId,
+          because: busy.because,
+        }
+      );
+    }
     // Deliberately NO ceiling on this hold. The reaper takes a process back at
     // the four-hour ceiling, but a dispatch is not the reaper: tearing down a
     // process whose helper or Monitor is still working is exactly the DOR-2705
     // bug, and a stale tool list costs far less than lost work (the gate still
     // refuses any call a person blocked). So past the ceiling the hold goes on,
     // and the only change is one warning per busy spell saying the list is stale.
-    if (busy !== undefined && !busy.quiet) {
+    if (busy !== undefined && !busy.quiet && toolSurfaceMoved) {
       const busyForMs = Date.now() - busy.busySince;
       logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
         session: sessionId,

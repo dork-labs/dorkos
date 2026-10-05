@@ -591,6 +591,10 @@ export const CONFIG_WRITE_POLICY = {
   // the same record: a caller that could point an approved id at another copy
   // would move a person's decision onto code they never saw.
   'extensions.approvedSources': 'operator-only',
+  // The permission set each of those approvals covers (DOR-2686). The third
+  // half of the record: a caller that could widen an entry would let an
+  // extension reach hosts, programs or agents a person never saw on its card.
+  'extensions.approvedPermissions': 'operator-only',
   // The copies a person said "Not now" to in the Activity inbox (DOR-2517).
   // Their answer to a consent question: a caller that could write it could
   // hide the question from them.
@@ -1004,6 +1008,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.disabled',
       'extensions.approvedToRun',
       'extensions.approvedSources',
+      'extensions.approvedPermissions',
       'extensions.dismissedApprovals',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',

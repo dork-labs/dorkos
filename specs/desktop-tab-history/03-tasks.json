@@ -1,0 +1,74 @@
+{
+  "spec": "specs/desktop-tab-history/02-specification.md",
+  "slug": "desktop-tab-history",
+  "generatedAt": "2026-10-04T19:40:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Per-tab history",
+      "subject": "[desktop-tab-history] [P1] Give each tab its own history stack in the tab store",
+      "description": "File: apps/client/src/layers/shared/model/app-tabs/app-tabs-store.ts. Add `history: string[]` (oldest first) and `cursor: number` to `AppTab`, with the invariant `history[cursor] === href` for every tab after every action. Add `MAX_TAB_HISTORY = 50` (exported for tests): pushing past it drops the oldest entry and shifts the cursor. `openTab(href)` and the first-paint seed mint `{ history: [href], cursor: 0 }`. `readPersistedTabs` accepts the old `{ id, href }` shape and any entry whose history is not a string array, whose cursor is out of range or not an integer, or whose `history[cursor] !== href`, and repairs it to `{ history: [href], cursor: 0 }` — never drops a tab for bad history. Extend `syncLocation(href, { traversal, replace })`: rules 1 (already there) and 2 (traversal focuses a sibling) never touch history; rule 3 (active tab adopts) either pushes (truncate entries after cursor, append, cursor = last) or, when `replace: true`, overwrites `history[cursor]` and sets href. Rule 4 (no tabs) mints a fresh stack. Add action `goToHistoryIndex(index)`: on the active tab, when 0 <= index < history.length and index !== cursor, set cursor = index and href = history[index]; otherwise a no-op that returns the same state object. Keep `selectTab`/`closeTab` history-neutral. Update the module doc: replace the paragraph about 'two consequences of every tab sharing one history stack' with a short explanation of per-tab history (DOR-2107) and the push/replace/traversal rules. TSDoc every export. Tests in the store's existing __tests__ location (find it; create `shared/model/app-tabs/__tests__/app-tabs-store.test.ts` if none): push truncates forward; replace rewrites in place without growing; cap drops oldest and keeps the invariant; goToHistoryIndex bounds and no-op identity; rule 1 and rule 2 leave history alone; switching tabs leaves both stacks alone; openTab starts fresh; persistence round-trip; repair of old and corrupt shapes; a seeded random-action loop (deterministic PRNG, ~500 steps) asserting the invariant after every step. Each test has a one-line purpose comment.",
+      "activeForm": "Adding per-tab history to the tab store",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Per-tab history",
+      "subject": "[desktop-tab-history] [P1] Record replaces and add back/forward/jump actions",
+      "description": "In apps/client/src/layers/features/app-tabs/model/use-app-tabs-sync.ts, the history subscriber already sets `traversed`; also set a `replaced` ref to `action.type === 'REPLACE'` (assigned, never OR-ed, on every notification) and pass `{ traversal, replace }` to `syncLocation`. New file apps/client/src/layers/features/app-tabs/model/tab-history.ts exporting `goBack(router)`, `goForward(router)` and `goToHistoryEntry(router, index)`: each calls `useAppTabsStore.getState().goToHistoryIndex(target)` and, only if the active tab's cursor actually changed, `goToActiveTab(router)` from ./tab-navigation (store first, then navigate, so syncLocation hits rule 1 and records nothing). Add a selector hook `useActiveTabHistory()` (in shared/model beside the store, exported through the barrel) returning `{ entries, cursor, canGoBack, canGoForward }` for the active tab using `useShallow` or stable selectors so other tabs' changes do not re-render. Export the new functions through the features/app-tabs barrel. Tests: sync hook passes replace:true for a REPLACE, push for PUSH, traversal unchanged (use the existing sync test approach or a memory-history router); goBack/goForward/goToHistoryEntry move the cursor and navigate to the right href, are no-ops at the ends, and do not create a new history entry after navigation completes; a loader-style REPLACE after a jump rewrites the jumped-to entry.",
+      "activeForm": "Wiring back, forward and jump",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Per-tab history",
+      "subject": "[desktop-tab-history] [P1] Add Back, Forward and History controls to the desktop header",
+      "description": "Extract the href -> { label, icon } resolution currently inside apps/client/src/layers/features/app-tabs/ui/AppTabItem.tsx into one hook `useTabTarget(href)` in features/app-tabs/model (AppTabItem then uses it; behaviour unchanged, its tests stay green). New component features/app-tabs/ui/TabHistoryControls.tsx: returns null unless `isDesktopShell()`. Three ghost icon buttons in a tight cluster (match SidebarTrigger's size and style): Back (lucide ArrowLeft), Forward (ArrowRight), History (lucide History) opening a shadcn DropdownMenu. Back/Forward are `disabled` when they cannot move; aria-labels 'Back', 'Forward', 'History'; tooltips show the label plus the key via `formatShortcutKey` of the new HISTORY_BACK / HISTORY_FORWARD registry entries (task 1.4 adds them; if 1.4 is not merged yet, add them here). The History menu lists the active tab's entries newest first; each row is its own small component calling `useTabTarget(entryHref)` and shows icon + truncated label; the current entry shows a Check icon, is aria-current and not selectable; selecting another row calls `goToHistoryEntry(router, index)`. Mount it in apps/client/src/AppShell.tsx in the header row right after `<SidebarTrigger />` and before its `<Separator />` (non-mobile branch). Copy follows the writing-app-copy skill. Component tests: null outside the desktop shell (mock isDesktopShell); disabled states at both ends; menu order newest-first with current checked; clicking a row moves the active tab and Forward becomes enabled. Consider a Dev Playground showcase only if similar header controls have one (maintaining-dev-playground skill).",
+      "activeForm": "Building the header controls",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.2"],
+      "parallelWith": ["1.4"],
+      "issue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Per-tab history",
+      "subject": "[desktop-tab-history] [P1] Back/forward keys and mouse side buttons",
+      "description": "In apps/client/src/layers/shared/lib/shortcuts.ts add HISTORY_BACK { id: 'history-back', key: 'mod+[', label: 'Go back', group: 'navigation', desktopOnly: true } and HISTORY_FORWARD { id: 'history-forward', key: 'mod+]', label: 'Go forward', group: 'navigation', desktopOnly: true }, near the tab entries. Check formatShortcutKey renders '[' and ']' sensibly. New hook features/app-tabs/model/use-tab-history-shortcuts.ts, mounted by the shell beside useAppTabShortcuts, desktop only (`isDesktopShell()` gate inside the effect). keydown on document, bubble phase: return if `event.defaultPrevented` (an editor such as CodeMirror's Mod-[ outdent keeps its key). Back = (isMac ? metaKey : ctrlKey) && code === 'BracketLeft' && !shiftKey && !altKey; Forward the same with BracketRight. On non-Mac also Alt+ArrowLeft / Alt+ArrowRight with no other modifier, but not when the event target is an input, textarea, select or contenteditable. Key repeat allowed. preventDefault when handled. Mouse: on mousedown and mouseup with button 3 or 4, preventDefault; on mouseup, 3 = back, 4 = forward. Uses goBack/goForward from tab-history.ts with `useRouter()`. Tests: Cmd+[ goes back on Mac (mock isMac), Ctrl+[ on non-Mac; a defaultPrevented event does nothing; Shift+Cmd+[ does nothing here (tab switching owns it); Alt+Left inside a textarea does nothing, outside it goes back on non-Mac; mouse 3/4 navigate; nothing is registered when not in the desktop shell. The ? panel lists them only on desktop (existing desktopOnly filter — add an assertion if the panel has tests).",
+      "activeForm": "Wiring the keys and mouse buttons",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.2"],
+      "parallelWith": ["1.3"],
+      "issue": null
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — Per-tab history",
+      "subject": "[desktop-tab-history] [P1] Changelog, docs and a real desktop drive",
+      "description": "Add a changelog fragment in changelog/unreleased/ (read changelog/README.md for the format and the covers: block; id from .claude/scripts/id.ts) written for humans: the desktop app now has Back, Forward and History for each tab, with Cmd+[ / Cmd+] and the mouse side buttons. If docs/ has a desktop or keyboard-shortcuts page, add one short line. Run `pnpm --filter @dorkos/client typecheck`, `pnpm --filter @dorkos/client lint`, the touched test files, and the vocab/banned-word/copy-length checks. Then drive the real app (desktop build or the client in the Electron shell; at minimum the client with isDesktopShell true) and capture a screenshot of the controls and the open History menu for the PR.",
+      "activeForm": "Writing the changelog and proving it in the app",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.3", "1.4"],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}

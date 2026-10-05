@@ -24,6 +24,18 @@ describe('shortcuts registry', () => {
       expect(formatShortcutKey('mod+k')).toBe('CTRL+K');
     });
 
+    it('renders the history chords with their bracket intact (DOR-2107)', async () => {
+      // Back/Forward tooltips read these; a mangled bracket would hide the key.
+      vi.doMock('../platform', () => ({ isMac: true }));
+      const mac = await import('../shortcuts');
+      expect(mac.formatShortcutKey(mac.SHORTCUTS.HISTORY_BACK)).toBe('\u2318[');
+      expect(mac.formatShortcutKey(mac.SHORTCUTS.HISTORY_FORWARD)).toBe('\u2318]');
+      vi.resetModules();
+      vi.doMock('../platform', () => ({ isMac: false }));
+      const other = await import('../shortcuts');
+      expect(other.formatShortcutKey(other.SHORTCUTS.HISTORY_BACK)).toBe('CTRL+[');
+    });
+
     it('accepts a ShortcutDef object', async () => {
       vi.doMock('../platform', () => ({ isMac: true }));
       const { formatShortcutKey, SHORTCUTS } = await import('../shortcuts');

@@ -31,6 +31,12 @@
  * Clauses 1-3 decide ownership. Clause 4 decides orphanhood.
  * ```
  *
+ * A running extension's skill (DOR-2685) is ours by the same three clauses
+ * with a second root in clause 3, the generated extension plugin roots under
+ * `<dorkHome>/cache/extensions/skill-plugins`. Its clause 4 is the extension's:
+ * the root is gone (the server removed it when the extension stopped), or the
+ * plan read the running-skills ledger and does not name the target.
+ *
  * **Clause 4 is not "the plan does not name it", and the difference is a
  * measured data-loss bug.** The plan is evidence only about packages the scan
  * could read: a package whose `.dork/manifest.json` a person broke half an hour
@@ -91,6 +97,7 @@ import {
 } from '../plan/global-projector.js';
 import type { DriftResult, ProjectionAction, SweptPath } from '../plan/types.js';
 import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
+import { extensionSkillPluginsDir } from '../sources/running-extension-skills.js';
 import { listDir, occupantKind, pathExists } from './link-state.js';
 import { directoryWriteBlock, writePathDirs, writePathReason } from './write-path-occupants.js';
 import { SWEEP_REASONS } from './sweep-reasons.js';
@@ -200,6 +207,24 @@ function isInside(child: string, root: string): boolean {
  *   ours or names no package.
  */
 function globalLinkPackage(abs: string, pluginsRoot: string): string | undefined {
+  return linkOwnerUnder(abs, pluginsRoot);
+}
+
+/**
+ * The folder directly under `root` a candidate link's own text points into —
+ * clauses 1 to 3 of the predicate for one owning root.
+ *
+ * Shared by the two roots a global link can be ours through: `<dorkHome>/plugins`
+ * (a package's skill) and the generated extension plugin roots (a running
+ * extension's skill, DOR-2685). Never follows the link, for the reason
+ * {@link globalLinkPackage} gives.
+ *
+ * @param abs - the absolute candidate path, directly inside a swept directory.
+ * @param root - the resolved owning root.
+ * @returns the folder name under `root`, or `undefined` when this is not one of
+ *   ours or names no folder.
+ */
+function linkOwnerUnder(abs: string, root: string): string | undefined {
   if (!basename(abs).includes(INSTALLED_PROJECTION_MARKER)) return undefined;
   let stats;
   try {
@@ -215,8 +240,8 @@ function globalLinkPackage(abs: string, pluginsRoot: string): string | undefined
     return undefined;
   }
   const resolved = resolve(dirname(abs), text);
-  if (!isInside(resolved, pluginsRoot)) return undefined;
-  const [first] = relative(pluginsRoot, resolved).split(sep);
+  if (!isInside(resolved, root)) return undefined;
+  const [first] = relative(root, resolved).split(sep);
   return first === undefined || first === '' || first === '..' ? undefined : first;
 }
 
@@ -251,6 +276,7 @@ function globalOrphanCandidates(
   if (plan.unreadableRoot !== undefined) return new Map();
 
   const pluginsRoot = resolve(globalPluginsDir(roots.dorkHome));
+  const extensionRoot = resolve(extensionSkillPluginsDir(roots.dorkHome));
   const planned = plannedTargets(plan);
   const enumerated = new Set(plan.enumeratedPackages);
   const orphans = new Map<string, string>();
@@ -268,7 +294,19 @@ function globalOrphanCandidates(
     for (const entry of listDir(dir)) {
       const abs = resolve(dir, entry);
       const pkg = globalLinkPackage(abs, pluginsRoot);
-      if (pkg === undefined) continue; // not ours, or unattributable
+      if (pkg === undefined) {
+        // A running extension's skill links through its generated plugin root
+        // (DOR-2685). Ours by the same three clauses; orphaned when the root is
+        // gone (the server removes it the moment the extension stops), or when
+        // a ledger that was READ no longer plans it. A ledger nobody could read
+        // is evidence of nothing, so then a live root keeps its links.
+        const extension = linkOwnerUnder(abs, extensionRoot);
+        if (extension === undefined || planned.has(abs)) continue;
+        if (!existsSync(join(extensionRoot, extension)) || plan.extensionLedger === 'read') {
+          orphans.set(abs, SWEEP_REASONS['global-extension-stopped']);
+        }
+        continue;
+      }
       if (planned.has(abs)) continue; // still projected — keep
       // The package is gone from disk: this link came from an uninstall.
       if (!existsSync(join(pluginsRoot, pkg))) {

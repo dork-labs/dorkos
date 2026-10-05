@@ -522,6 +522,34 @@ describe('ExtensionsSettingsTab', () => {
     expect(screen.queryByText(/couldn’t build:/i)).not.toBeInTheDocument();
   });
 
+  /**
+   * An extension that asks to run separately does not run yet (DOR-2686), and
+   * DorkOS stopped any older version, so "the last version still runs" would
+   * be false. Its own sentence is shown, once, with no doubled period.
+   */
+  it('says plainly that an extension waiting on isolation does not run', async () => {
+    const ext = makeExtension({
+      id: 'iso-ext',
+      status: 'compiled',
+      hasServerEntry: true,
+      serverError: {
+        code: 'isolation_not_ready',
+        message: 'Mail needs a newer DorkOS to run its server part.',
+      },
+    });
+    mockFetch({ '/api/extensions': [ext] });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-card-iso-ext')).toBeInTheDocument();
+    });
+    const line = screen.getByText('Mail needs a newer DorkOS to run its server part.');
+    expect(line.textContent).not.toMatch(/\.\./);
+    expect(screen.queryByText(/last version still runs/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t rebuild/i)).not.toBeInTheDocument();
+  });
+
   it('shows global badge for global-scoped extensions', async () => {
     mockFetch({ '/api/extensions': [makeExtension({ scope: 'global' })] });
 
@@ -847,5 +875,133 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
         })
       );
     });
+  });
+});
+
+describe('what an extension can reach, on its card (DOR-2686)', () => {
+  const ISOLATION: NonNullable<ExtensionRecordPublic['isolation']> = {
+    runtime: 'subprocess',
+    net: ['imap.fastmail.com'],
+    run: ['git', 'bash'],
+    resolvedRun: [
+      { name: 'git', path: '/usr/bin/git' },
+      { name: 'bash', path: '/bin/bash' },
+    ],
+    agents: false,
+    memoryMb: 256,
+  };
+
+  // Purpose: a waiting isolated extension lists what it can reach above the
+  // yes, makes no "anything DorkOS can" claim, and warns about an interpreter.
+  it('lists what a waiting isolated extension can reach', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'mail',
+          hasServerEntry: true,
+          approvedToRun: false,
+          bundleReady: false,
+          isolation: ISOLATION,
+        }),
+      ],
+    });
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    const box = await screen.findByTestId('extension-needs-approval-mail');
+    const lines = within(box).getByTestId('extension-permissions-mail');
+    expect(lines).toHaveTextContent('Its server part can’t run in this version yet.');
+    expect(lines).toHaveTextContent('Will run separately from DorkOS.');
+    expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com');
+    expect(lines).toHaveTextContent('Can run bash, which can run any program.');
+    expect(within(box).queryByText(/anything DorkOS can/)).not.toBeInTheDocument();
+  });
+
+  // Purpose: an in-process waiting extension states full access.
+  it('states full access for a waiting extension that runs inside DorkOS', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({ id: 'plain', hasServerEntry: true, approvedToRun: false, isolation: null }),
+      ],
+    });
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    const box = await screen.findByTestId('extension-needs-approval-plain');
+    expect(
+      within(box).getByText('Runs inside DorkOS with full access to this computer.')
+    ).toBeInTheDocument();
+  });
+
+  // Purpose: "Turn it on" echoes the set the card listed.
+  it('sends the listed set with the yes', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'mail',
+          hasServerEntry: true,
+          approvedToRun: false,
+          isolation: ISOLATION,
+        }),
+      ],
+      '/api/extensions/mail/approve': {
+        extension: makeExtension({ id: 'mail', approvedToRun: true, isolation: ISOLATION }),
+      },
+    });
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    fireEvent.click(await screen.findByTestId('extension-approve-run-mail'));
+    await waitFor(() =>
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Test Extension can now run')
+    );
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).endsWith('/api/extensions/mail/approve'));
+    expect(JSON.parse(String((call?.[1] as RequestInit).body))).toEqual({
+      version: '1.0.0',
+      plugin: null,
+      permissions: {
+        runtime: 'subprocess',
+        net: ['imap.fastmail.com'],
+        run: ['git', 'bash'],
+        agents: false,
+      },
+    });
+  });
+
+  // Purpose: a stale yes says so in plain words, not the server's sentence.
+  it('says plainly when the extension changed since the card was drawn', async () => {
+    let current = ISOLATION;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.includes('/approve')) {
+          // It widened while the card was on screen.
+          current = { ...ISOLATION, net: [...ISOLATION.net, 'api.example.com'] };
+          return Promise.resolve({
+            ok: false,
+            status: 409,
+            json: () =>
+              Promise.resolve({ error: 'This extension changed.', code: 'stale_approval' }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve([
+              makeExtension({ id: 'mail', approvedToRun: false, isolation: current }),
+            ]),
+        });
+      })
+    );
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    fireEvent.click(await screen.findByTestId('extension-approve-run-mail'));
+    await waitFor(() =>
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        'Test Extension changed since you saw it. Check it again.'
+      )
+    );
+    // The list is read again, so the card redraws with what it asks for now,
+    // leading with the host the refused card did not list.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('extension-permissions-mail').querySelector('li')
+      ).toHaveTextContent('Now also wants to connect to: api.example.com')
+    );
   });
 });

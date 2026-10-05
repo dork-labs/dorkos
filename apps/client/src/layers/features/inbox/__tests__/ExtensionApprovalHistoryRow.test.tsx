@@ -195,4 +195,35 @@ describe('an answered extension approval in the Activity list', () => {
     expect(posts).toEqual([]);
     expect(navigate).toHaveBeenCalledWith({ to: '/', search: { settings: 'extensions' } });
   });
+  // Purpose: "Turn it on" in place sits beside what it would cover and sends
+  // that set, so a widening since the "Not now" is refused, never approved
+  // unseen (DOR-2686).
+  it('shows what turning it on covers, and sends that set', async () => {
+    extensions = [
+      flowRecord({
+        isolation: {
+          runtime: 'subprocess',
+          net: ['api.linear.app'],
+          run: [],
+          resolvedRun: [],
+          agents: true,
+          memoryMb: 256,
+        },
+      }),
+    ];
+    const user = userEvent.setup();
+    renderList(dismissed());
+    expect(await screen.findByText('api.linear.app')).toBeInTheDocument();
+    expect(screen.getByText('Can message your agents and start chats.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Turn it on' }));
+
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]!.body).toEqual({
+      path: FLOW_PATH,
+      version: '1.2.0',
+      plugin: 'flow',
+      permissions: { runtime: 'subprocess', net: ['api.linear.app'], run: [], agents: true },
+    });
+  });
 });

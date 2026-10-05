@@ -1,11 +1,11 @@
 flowchart TB
   accTitle: The public boundary of DorkOS Cloud
-  accDescr: Optional local Cloud clients use HTTPS. Legacy app-side paths coexist with the versioned public contract. The versioned client resolves authenticated instance identity before minting scoped inference credentials under the same current link. Claude Code may use the returned inference endpoint when explicitly enabled. The existing tunnel is a separate route to the local server.
+  accDescr: Optional local Cloud clients use HTTPS. Legacy app-side paths coexist with the versioned public contract. The versioned client resolves authenticated instance identity before minting scoped inference credentials under the same current link. A Runs on choice selects credits. Claude Code uses session launch configuration, Codex a separate conversation home, and OpenCode a sidecar-wide local relay. The token served list gates request formats; the environment variable only disables credits. The existing tunnel is a separate route to the local server.
   subgraph app["Open-source app · local machine"]
     local["Local DorkOS server<br/>Runs without a Cloud link"]
     legacy["Cloud link + managed services client<br/>Existing /api/auth and /api/instances calls"]
     versioned["Versioned client<br/>@dork-labs/cloud-api/client"]
-    runtime["Claude Code inference configuration<br/>Explicit credits opt-in + current link"]
+    runtime["Runs on: credits + current link<br/>Claude Code: session · Codex: conversation<br/>OpenCode: sidecar via local credits relay<br/>Format gated by token served list"]
     tunnel["Existing tunnel manager<br/>ngrok SDK · optional"]
     local --> legacy
     local --> versioned
@@ -22,7 +22,7 @@ flowchart TB
   legacy -->|"HTTPS: device link, heartbeat,<br/>managed actions + event pull/ack"| control
   versioned -->|"HTTPS /v1 · bearer auth<br/>Session identity → inference mint<br/>Same credential / origin / generation"| control
   contract -.->|"Contract describes wire;<br/>not a deployment guarantee"| control
-  runtime -->|"Inference protocol over HTTPS<br/>when enabled"| inference
+  runtime -->|"Inference protocol over HTTPS<br/>when chosen and available"| inference
   tunnel -->|"Outbound tunnel connection"| edge
   browser -->|"HTTPS / WSS"| edge
   edge -->|"Forward app traffic through tunnel"| local

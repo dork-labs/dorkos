@@ -9,7 +9,10 @@ import { Puzzle } from 'lucide-react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { formatResetTime } from '@/layers/shared/lib';
 import {
+  ExtensionPermissionLines,
+  approvedSetOf,
   canTurnOnInPlace,
+  permissionViewFromRecord,
   parseExtensionApprovalSubject,
   useExtensionApprovalActions,
   useExtensionList,
@@ -54,10 +57,23 @@ export function ExtensionApprovalHistoryRow({
   // this window's own approval just left (spec `flow-multiproject` §9.3).
   const offered = useTrustOfferFor(subject?.id, notification.createdAt);
   const trustOffer = notification.outcome === 'approved' ? offered : null;
+  // What "Turn it on" right here would cover (DOR-2686): drawn beside it and
+  // sent with it, so the yes is given to what is listed now and a widening
+  // since is refused as stale rather than approved unseen.
+  let details: ReactNode = null;
 
   if (notification.outcome === 'dismissed') {
     const record = extensions?.find((extension) => extension.id === subject?.id);
     const inPlace = subject !== null && canTurnOnInPlace(subject, extensions);
+    const view = inPlace && record ? permissionViewFromRecord(record) : null;
+    if (view) {
+      details = (
+        <ExtensionPermissionLines
+          permissions={view}
+          data-testid={`extension-history-permissions-${subject?.id}`}
+        />
+      );
+    }
     trail.push(
       <button
         key="turn-on"
@@ -66,7 +82,12 @@ export function ExtensionApprovalHistoryRow({
         disabled={pending?.id === subject?.id}
         onClick={() => {
           if (inPlace && subject && record) {
-            approve({ ...subject, name: record.manifest.name });
+            const permissions = approvedSetOf(view);
+            approve({
+              ...subject,
+              name: record.manifest.name,
+              ...(permissions ? { permissions } : {}),
+            });
           } else {
             onOpen();
           }
@@ -81,7 +102,13 @@ export function ExtensionApprovalHistoryRow({
   }
 
   const row = (
-    <InboxDecisionRow icon={Puzzle} title={notification.title} trail={trail} onOpen={onOpen} />
+    <InboxDecisionRow
+      icon={Puzzle}
+      title={notification.title}
+      trail={trail}
+      {...(details ? { details } : {})}
+      onOpen={onOpen}
+    />
   );
   if (!trustOffer) return row;
   return (

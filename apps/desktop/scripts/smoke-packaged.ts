@@ -1159,6 +1159,12 @@ async function main(): Promise<void> {
       `${resigned ? '; re-signed ad-hoc so an unsigned build can load its own framework' : ''}.`
   );
 
+  // DOR-2686: the packaged helper binary runs the packaged extension child with
+  // Node's permission model on. Imported here, not at the top, so the unit
+  // tests of this file never load server source.
+  const { assertExtensionIsolation } = await import('./smoke-isolation');
+  console.log(`      Isolated extensions: ${await assertExtensionIsolation(appPath)}`);
+
   const home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-home-'));
   const fixtures = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-shell-'));
   const loginShell = createFakeLoginShell(fixtures);

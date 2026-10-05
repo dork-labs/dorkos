@@ -491,6 +491,92 @@ describe('POST /api/extensions/:id/approve', () => {
     });
   });
 
+  // DOR-2686: the card echoes the permission set it showed; a manifest that
+  // changed what it asks for while the card was on screen is refused as stale.
+  describe('the permission set the card showed', () => {
+    const MAIL_MANIFEST = {
+      id: 'my-ext',
+      name: 'My Extension',
+      version: '1.0.0',
+      serverCapabilities: {
+        serverEntry: './server.ts',
+        runtime: 'subprocess',
+        allow: { net: ['a.example.com', 'b.example.com'], run: ['git'], agents: false },
+      },
+    } as unknown as ExtensionRecord['manifest'];
+    const SHOWN = {
+      runtime: 'subprocess',
+      net: ['b.example.com', 'a.example.com'],
+      run: ['git'],
+      agents: false,
+    };
+
+    // Purpose: the same set (in any order) approves.
+    it('approves when the echo matches what it declares now', async () => {
+      manager.get.mockReturnValue(stubRecord({ manifest: MAIL_MANIFEST }));
+      const res = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send({ version: '1.0.0', permissions: SHOWN });
+      expect(res.status).toBe(200);
+      expect(manager.approveToRun).toHaveBeenCalledWith('my-ext');
+    });
+
+    // Purpose: a host added since the card was drawn makes the yes stale, and
+    // nothing is approved.
+    it('refuses as stale when it declares a host the card did not show', async () => {
+      manager.get.mockReturnValue(
+        stubRecord({
+          manifest: {
+            ...MAIL_MANIFEST,
+            serverCapabilities: {
+              ...MAIL_MANIFEST.serverCapabilities!,
+              allow: { net: ['a.example.com', 'b.example.com', 'c.example.com'], run: ['git'] },
+            },
+          } as ExtensionRecord['manifest'],
+        })
+      );
+      const res = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send({ version: '1.0.0', permissions: SHOWN });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('stale_approval');
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+    });
+
+    // Purpose: a copy that narrowed since the card asks for nothing the person
+    // did not see, so the yes stands (the approval records what it declares
+    // now). Fails if the echo is compared for equality instead of coverage.
+    it('approves a copy that narrowed since the card', async () => {
+      manager.get.mockReturnValue(
+        stubRecord({
+          manifest: {
+            ...MAIL_MANIFEST,
+            serverCapabilities: {
+              ...MAIL_MANIFEST.serverCapabilities!,
+              allow: { net: ['a.example.com'] },
+            },
+          } as ExtensionRecord['manifest'],
+        })
+      );
+      const res = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send({ version: '1.0.0', permissions: SHOWN });
+      expect(res.status).toBe(200);
+      expect(manager.approveToRun).toHaveBeenCalledWith('my-ext');
+    });
+
+    // Purpose: a card that showed "runs separately" cannot approve a copy that
+    // now runs inside DorkOS.
+    it('refuses as stale when it moved back inside DorkOS', async () => {
+      manager.get.mockReturnValue(stubRecord());
+      const res = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send({ version: '1.0.0', permissions: SHOWN });
+      expect(res.status).toBe(409);
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+    });
+  });
+
   describe('inputs that are not an approvable extension', () => {
     it('rejects an id that is not a valid extension id', async () => {
       const res = await request(fixtureServer).post('/api/extensions/..%2Fetc/approve').send({});

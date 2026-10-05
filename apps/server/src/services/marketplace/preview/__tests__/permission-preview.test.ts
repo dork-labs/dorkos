@@ -34,6 +34,9 @@ interface ExtensionFixture {
   id: string;
   contributions?: Record<string, boolean>;
   externalHosts?: string[];
+  /** `serverCapabilities.runtime` and `allow` (DOR-2686). */
+  runtime?: 'in-process' | 'subprocess';
+  allow?: { net?: string[]; run?: string[]; agents?: boolean };
   secrets?: Array<{ key: string; label: string; required?: boolean; description?: string }>;
 }
 
@@ -180,6 +183,8 @@ async function createFixturePackage(
     const serverCapabilities: Record<string, unknown> = {};
     if (ext.externalHosts) serverCapabilities.externalHosts = ext.externalHosts;
     if (ext.secrets) serverCapabilities.secrets = ext.secrets;
+    if (ext.runtime) serverCapabilities.runtime = ext.runtime;
+    if (ext.allow) serverCapabilities.allow = ext.allow;
     if (Object.keys(serverCapabilities).length > 0) {
       extManifest.serverCapabilities = serverCapabilities;
     }
@@ -1478,6 +1483,58 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.externalHosts).toEqual(
         expect.arrayContaining(['https://api.openai.com', 'https://api.cohere.ai'])
       );
+    });
+  });
+
+  describe('isolation (DOR-2686)', () => {
+    it('lists where each extension runs and folds allow.net into externalHosts', async () => {
+      // Purpose: the install card can say what an isolated extension reaches,
+      // and its hosts are listed with the in-process extensions' hosts, once.
+      const manifest = pluginManifest('mail');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        extensions: [
+          {
+            id: 'mail-app',
+            runtime: 'subprocess',
+            allow: { net: ['imap.example.com:993', 'api.openai.com'], run: ['git'], agents: true },
+          },
+          { id: 'plain', externalHosts: ['https://api.openai.com'] },
+        ],
+      });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      const byId = Object.fromEntries(preview.extensions.map((ext) => [ext.id, ext.isolation]));
+      expect(byId['mail-app']).toEqual({
+        runtime: 'subprocess',
+        net: ['imap.example.com:993', 'api.openai.com'],
+        run: ['git'],
+        agents: true,
+      });
+      // An in-process extension: inside DorkOS, full access, empty lists.
+      expect(byId.plain).toEqual({ runtime: 'in-process', net: [], run: [], agents: false });
+      expect([...preview.externalHosts].sort()).toEqual(
+        ['api.openai.com', 'https://api.openai.com', 'imap.example.com:993'].sort()
+      );
+    });
+  });
+
+  describe('server half (DOR-2686)', () => {
+    it('says which extensions have a server half, so screens only never reads as full access', async () => {
+      // Purpose: the install card tells a screens-only extension from one whose
+      // server half runs inside DorkOS. Fails if every in-process extension is
+      // reported as having a server half.
+      const manifest = pluginManifest('halves');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        extensions: [{ id: 'panel' }, { id: 'backend' }],
+      });
+      await writeFile(join(pkgPath, '.dork', 'extensions', 'backend', 'server.ts'), 'export {}');
+      await rm(join(pkgPath, '.dork', 'extensions', 'panel', 'server.ts'), { force: true });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      const byId = Object.fromEntries(preview.extensions.map((ext) => [ext.id, ext.hasServer]));
+      expect(byId).toEqual({ panel: false, backend: true });
     });
   });
 

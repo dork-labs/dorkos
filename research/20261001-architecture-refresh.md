@@ -29,7 +29,7 @@ Local execution remains in Express with interchangeable runtimes. Browser, phone
 4. Finish existing Cloud work: explicit payer choice under DOR-2623, remote enrollment/ingress under DOR-2086, managed migration under DOR-1798 and gated website retirement under DOR-2442.
 5. Align project/extension lifetime with recovery enumeration. Seen projects and cross-project orchestration now reach beyond the older Mesh-derived janitor census. Extension-reported roots must not become discovery authority to widen cleanup.
 
-These priorities are reflected in the [roadmap](../plans/architecture-improvement-roadmap.md#current-disposition-2026-10-01). They propose bounded next outcomes, not new readiness or implementation claims.
+These priorities are reflected in the [roadmap](../plans/architecture-improvement-roadmap.md#disposition-snapshot-2026-10-01). They propose bounded next outcomes, not new readiness or implementation claims.
 
 ## Evidence limits
 

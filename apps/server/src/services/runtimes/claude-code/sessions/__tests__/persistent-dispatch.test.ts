@@ -131,6 +131,14 @@ const approvedGlobals = vi.hoisted(() => ({ names: [] as string[] }));
 vi.mock('../../../../marketplace/consent/global-plugin-consent.js', () => ({
   listConsentedPluginNames: vi.fn(async () => [...approvedGlobals.names]),
 }));
+// The running global extensions' skill roots (DOR-2685); the extension-skills
+// cases move this between refreshes.
+const extensionRoots = vi.hoisted(() => ({ paths: [] as string[] }));
+vi.mock('../../../../extensions/agent-skills/running-skills-ledger.js', () => ({
+  extensionSkillPluginRoots: vi.fn(async (_dorkHome: string, _loaded?: ReadonlySet<string>) => [
+    ...extensionRoots.paths,
+  ]),
+}));
 vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
 }));
@@ -156,6 +164,7 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
+import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
@@ -1098,6 +1107,127 @@ describe('a global plugin withdrawn from a warm process (DOR-2306, I-2)', () => 
         (opts) => (opts as { holdOnCacheImpact?: boolean } | undefined)?.holdOnCacheImpact !== true
       )
     ).toBe(true);
+  });
+});
+
+describe("a running extension's skills root on a warm process (DOR-2685)", () => {
+  const ROOT = '/tmp/dorkos-pump/cache/extensions/skill-plugins';
+
+  beforeEach(() => {
+    optIn.persistentSession = true;
+    vi.mocked(extensionSkillPluginRoots).mockClear();
+    vi.mocked(buildClaudeAgentSdkPluginsArray).mockImplementation(async ({ enabledPluginNames }) =>
+      enabledPluginNames.map((name) => ({ type: 'local' as const, path: `/h/plugins/${name}` }))
+    );
+  });
+
+  afterEach(() => {
+    approvedGlobals.names = [];
+    extensionRoots.paths = [];
+    vi.mocked(buildClaudeAgentSdkPluginsArray).mockResolvedValue([]);
+  });
+
+  it('hands a session the root of every running global extension with skills', async () => {
+    // Purpose: the extension's approval is the consent; its skills reach
+    // DorkOS's Claude Code sessions as a plugin, beside approved packages.
+    approvedGlobals.names = ['kept'];
+    extensionRoots.paths = [`${ROOT}/mail`];
+    await runtime.refreshActivatedPlugins();
+    const sessionId = nextSession();
+    await turn(sessionId);
+    expect(cli.processes[0]!.options.plugins).toEqual([
+      { type: 'local', path: '/h/plugins/kept' },
+      { type: 'local', path: `${ROOT}/mail` },
+    ]);
+  });
+
+  it('loads each root once when two refreshes overlap, and never mistakes it for a same-named plugin', async () => {
+    // Purpose: boot refreshes and a change delivered right after it can run at
+    // once; each must build its own list and assign it whole.
+    approvedGlobals.names = ['kept'];
+    extensionRoots.paths = [`${ROOT}/mail`];
+    // The first refresh is slow to read the ledger, so the second runs whole
+    // inside it.
+    vi.mocked(extensionSkillPluginRoots).mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return [...extensionRoots.paths];
+    });
+    await Promise.all([runtime.refreshActivatedPlugins(), runtime.refreshActivatedPlugins()]);
+    const sessionId = nextSession();
+    await turn(sessionId);
+    expect(cli.processes[0]!.options.plugins).toEqual([
+      { type: 'local', path: '/h/plugins/kept' },
+      { type: 'local', path: `${ROOT}/mail` },
+    ]);
+    for (const [, loaded] of vi.mocked(extensionSkillPluginRoots).mock.calls) {
+      expect([...(loaded ?? [])]).toEqual(['kept']);
+    }
+  });
+
+  it('rides the warm process when an extension starts, and relaunches without its root once it stops', async () => {
+    // Purpose: growing the set is a live reload; a stopped extension's root is
+    // gone from the next launch (reloadPlugins cannot unload a plugin).
+    const sessionId = nextSession();
+    await turn(sessionId);
+    extensionRoots.paths = [`${ROOT}/mail`];
+    await runtime.refreshActivatedPlugins();
+    await turn(sessionId, 'after it started');
+    expect(cli.launches).toBe(1);
+    expect(cli.processes[0]!.liveSets).toContain('reloadPlugins');
+
+    extensionRoots.paths = [];
+    await runtime.refreshActivatedPlugins();
+    await turn(sessionId, 'after it stopped');
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[0]!.ended).toBe(true);
+    expect(cli.processes[1]!.options.plugins ?? []).toEqual([]);
+  });
+
+  it("holds a stopped extension's relaunch while a helper works, then relaunches once quiet", async () => {
+    // Purpose: an extension stopping is moved from outside the session, so it
+    // must not tear down a process whose helper is still working (the DOR-2705
+    // class). Its root holds skills only, so it waits.
+    extensionRoots.paths = [`${ROOT}/mail`];
+    await runtime.refreshActivatedPlugins();
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    extensionRoots.paths = [];
+    await runtime.refreshActivatedPlugins();
+    await turn(sessionId, 'while the helper works');
+    expect(cli.launches).toBe(1);
+    expect(process.ended).toBe(false);
+    await turn(sessionId, 'still working');
+    expect(cli.launches).toBe(1);
+
+    process.reportTasks([]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
+    await turn(sessionId, 'after the helper finished');
+    expect(cli.launches).toBe(2);
+    expect(process.ended).toBe(true);
+    expect(cli.processes[1]!.options.plugins ?? []).toEqual([]);
+  });
+
+  it('still relaunches a working process when a package is withdrawn with the extension', async () => {
+    // Purpose: the hold is for skills only. A withdrawn package may run code
+    // nobody approves any more (DOR-2306), so it never waits.
+    approvedGlobals.names = ['withdrawn'];
+    extensionRoots.paths = [`${ROOT}/mail`];
+    await runtime.refreshActivatedPlugins();
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    approvedGlobals.names = [];
+    extensionRoots.paths = [];
+    await runtime.refreshActivatedPlugins();
+    await turn(sessionId, 'after both went');
+    expect(cli.launches).toBe(2);
   });
 });
 

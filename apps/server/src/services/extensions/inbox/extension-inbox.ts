@@ -108,7 +108,7 @@ import { projectSettingsStore } from './extension-project-settings.js';
 const nextId = monotonicFactory();
 
 /** How long an action handler has to answer. */
-const HANDLER_TIMEOUT_MS = 5_000;
+export const HANDLER_TIMEOUT_MS = 5_000;
 
 /** When a failed deadline call is tried again: one minute, then five. */
 const DEADLINE_RETRY_DELAYS_MS = [60_000, 5 * 60_000] as const;

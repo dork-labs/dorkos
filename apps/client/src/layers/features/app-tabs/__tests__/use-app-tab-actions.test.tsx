@@ -49,7 +49,12 @@ import { useAppTabsSync } from '../model/use-app-tabs-sync';
 import { openTabAt } from '../model/tab-navigation';
 
 function setTabs(hrefs: string[], activeIndex = 0): AppTab[] {
-  const tabs = hrefs.map((href, index) => ({ id: `tab-${index}`, href }));
+  const tabs = hrefs.map((href, index) => ({
+    id: `tab-${index}`,
+    href,
+    history: [href],
+    cursor: 0,
+  }));
   useAppTabsStore.setState({ tabs, activeTabId: tabs[activeIndex]?.id ?? null });
   return tabs;
 }
