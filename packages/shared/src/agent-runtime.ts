@@ -1625,8 +1625,9 @@ export interface AgentRuntime {
   onDispatchGateChange?(listener: (sessionId: string) => void): () => void;
 
   /**
-   * Whether a helper the agent launched is still working in this session
-   * (DOR-2681).
+   * Whether background work the agent launched — a helper, a Monitor, a
+   * Workflow, a backgrounded MCP task or a shell — is still working in this
+   * session (DOR-2681, widened to every task type by DOR-2717).
    *
    * A helper can be silent for as long as one of its steps takes — a background
    * helper running a twelve-minute build sends nothing for twelve minutes — and

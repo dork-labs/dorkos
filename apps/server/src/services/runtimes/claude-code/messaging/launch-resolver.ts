@@ -787,6 +787,28 @@ export async function resolveLaunch(args: {
         hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],
       },
     ],
+    // Which session timers are still pending (DOR-2717). CronCreate,
+    // ScheduleWakeup and /loop live inside the CLI and are no background task,
+    // so the stream never names them; the Stop hook's input does, at every turn
+    // end. The warm process is held while any is pending (`ProcessQuiet`), so
+    // the idle reaper cannot take the timer with it. Observe-only: the empty
+    // answer lets the turn end exactly as it would have.
+    Stop: [
+      {
+        hooks: [
+          async (hookInput) => {
+            if (hookInput.hook_event_name === 'Stop') {
+              // A Stop hook does not run after an interrupt, so a fired timer
+              // can stay counted until the next turn ends; the four-hour
+              // ceiling bounds that, as it bounds every hold.
+              const crons = hookInput.session_crons;
+              session.pendingTimers = Array.isArray(crons) ? crons.length : 0;
+            }
+            return {};
+          },
+        ],
+      },
+    ],
   };
   sdkOptions.onElicitation = (request, { signal }) => {
     logger.debug('[sendMessage] elicitation request', {
