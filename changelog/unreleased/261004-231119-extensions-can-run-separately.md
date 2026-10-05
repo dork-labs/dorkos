@@ -4,6 +4,7 @@ covers:
   - 'feat(extensions): start isolated extensions through the real lifecycle, with restarts (DOR-2686)'
   - 'docs(extensions): document extensions that run separately (DOR-2686)'
   - 'fix(extensions): isolated replies keep only allowed headers, connections have flow control, new code starts fresh (DOR-2686)'
+  - 'test(extensions): make the isolated go-live suite deterministic under load (DOR-2686)'
 ---
 
 ### Added

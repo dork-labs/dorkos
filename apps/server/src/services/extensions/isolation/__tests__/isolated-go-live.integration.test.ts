@@ -80,6 +80,12 @@ let manager: ExtensionManager;
 let server: http.Server;
 let base: string;
 let announced: string[];
+/**
+ * The card as it read at each broadcast, so a state that lasts only until
+ * the 10 ms test backoff fires ("Restarting") is still seen, without racing
+ * a poll against it.
+ */
+let shownAtBroadcast: { restartingAt: string | null; serverError?: { code: string } }[];
 
 /** What the fake agent-send service was told, and the message it holds. */
 const sends = {
@@ -110,27 +116,71 @@ async function install(version = 'v1', net: string[] = []): Promise<void> {
   await fs.writeFile(path.join(extDir, 'server.ts'), serverSource(version));
 }
 
-/** Boot the manager the way `index.ts` does, with short restart and watchdog timings. */
-async function boot(budget = 3): Promise<void> {
+/**
+ * How long any one wait may take. Generous on purpose: the merge queue runs
+ * this beside other heavy shards, where forking and compiling a child can
+ * take seconds. A wait that passes returns as soon as its condition holds.
+ */
+const WAIT_MS = 60_000;
+
+/** A test's own timeout: room for several waits on a loaded runner. */
+const TEST_MS = 240_000;
+
+/**
+ * Boot the manager the way `index.ts` does. The restart backoff is a
+ * test-only 10/20/40 ms (the production 1 s / 5 s / 30 s is unchanged), so a
+ * test never waits on real backoff. The watchdog keeps a long pong timeout,
+ * so a loaded runner can't turn a crash test's exits into "unresponsive"
+ * ones; only the hang test shortens it.
+ */
+async function boot(
+  budget = 3,
+  watchdog: { pingIntervalMs: number; pongTimeoutMs: number } = {
+    pingIntervalMs: 1_000,
+    pongTimeoutMs: 30_000,
+  }
+): Promise<void> {
   manager = new ExtensionManager(dorkHome, [], {
     dorkosPort: 1,
-    restartPolicy: { delays: [300, 300, 300], budget },
-    isolatedTimings: { pingIntervalMs: 200, pongTimeoutMs: 1_500 },
+    restartPolicy: { delays: [10, 20, 40], budget },
+    isolatedTimings: watchdog,
   });
   manager.followProjects(
     { roots: async () => [], onChange: () => () => undefined },
-    { announce: (ids) => announced.push(...ids) }
+    {
+      announce: (ids) => {
+        announced.push(...ids);
+        const shown = manager.listPublic().find((r) => r.id === ID);
+        shownAtBroadcast.push({
+          restartingAt: shown?.restartingAt ?? null,
+          serverError: shown?.serverError,
+        });
+      },
+    }
   );
   await manager.initialize(null);
 }
 
-/** Wait until `check` is true, or fail after `ms`. */
-async function until(check: () => boolean | Promise<boolean>, ms = 10_000): Promise<void> {
+/** Wait until `check` is true, or fail after `ms`, saying what the card showed. */
+async function until(check: () => boolean | Promise<boolean>, ms = WAIT_MS): Promise<void> {
   const began = Date.now();
   while (!(await check())) {
-    if (Date.now() - began > ms) throw new Error('timed out waiting');
+    if (Date.now() - began > ms) {
+      const shown = manager?.listPublic().find((r) => r.id === ID);
+      throw new Error(
+        `timed out waiting; card: ${JSON.stringify({
+          serverError: shown?.serverError,
+          restartingAt: shown?.restartingAt,
+        })}`
+      );
+    }
     await new Promise((r) => setTimeout(r, 50));
   }
+}
+
+/** How many times the extension stopped on its own so far (each broadcasts its card). */
+function unexpectedStops(): number {
+  return shownAtBroadcast.filter((c) => c.restartingAt !== null || c.serverError).length;
 }
 
 /** The public record, as the app reads it. */
@@ -168,6 +218,7 @@ beforeEach(async () => {
   dorkHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dor-2686-live-')));
   extDir = path.join(dorkHome, 'extensions', ID);
   announced = [];
+  shownAtBroadcast = [];
   sends.held = [];
   sends.stopped = [];
   sends.started = [];
@@ -226,182 +277,222 @@ afterEach(async () => {
 describe('an isolated extension goes live through the real lifecycle', () => {
   // Purpose: approved and started, it answers through DorkOS from its own
   // process (not this one), and ctx crosses the boundary to the real store.
-  it('serves its router from its own process and uses ctx', async () => {
-    await install();
-    await boot();
-    const ping = await get(`/api/ext/${ID}/ping`);
-    expect(ping.status).toBe(200);
-    expect(ping.body.version).toBe('v1');
-    expect(ping.body.pid).not.toBe(process.pid);
-    expect(manager.getServerRouter(ID)).not.toBeNull();
-    const pid = ping.body.pid as number;
-    expect(alive(pid)).toBe(true);
+  it(
+    'serves its router from its own process and uses ctx',
+    async () => {
+      await install();
+      await boot();
+      const ping = await get(`/api/ext/${ID}/ping`);
+      expect(ping.status).toBe(200);
+      expect(ping.body.version).toBe('v1');
+      expect(ping.body.pid).not.toBe(process.pid);
+      expect(manager.getServerRouter(ID)).not.toBeNull();
+      const pid = ping.body.pid as number;
+      expect(alive(pid)).toBe(true);
 
-    const storedBack = await post(`/api/ext/${ID}/store`, { n: 7 });
-    expect(storedBack.body).toEqual({ n: 7 });
-    // The real ctx wrote it, under DorkOS's data directory, not the child's.
-    const files = await fs.readdir(path.join(dorkHome, 'extension-data', ID));
-    expect(files.length).toBeGreaterThan(0);
-    expect(inbox.running).toContain(ID);
-    expect(card().serverError).toBeUndefined();
+      const storedBack = await post(`/api/ext/${ID}/store`, { n: 7 });
+      expect(storedBack.body).toEqual({ n: 7 });
+      // The real ctx wrote it, under DorkOS's data directory, not the child's.
+      const files = await fs.readdir(path.join(dorkHome, 'extension-data', ID));
+      expect(files.length).toBeGreaterThan(0);
+      expect(inbox.running).toContain(ID);
+      expect(card().serverError).toBeUndefined();
 
-    // A clean stop ends its process and leaves nothing to restart.
-    await manager.shutdownServer(ID);
-    expect(alive(pid)).toBe(false);
-    expect(manager.getServerRouter(ID)).toBeNull();
-    await new Promise((r) => setTimeout(r, 600));
-    expect(manager.getServerRouter(ID)).toBeNull();
-  }, 60_000);
+      // A clean stop ends its process and leaves nothing to restart.
+      await manager.shutdownServer(ID);
+      expect(alive(pid)).toBe(false);
+      expect(manager.getServerRouter(ID)).toBeNull();
+      await new Promise((r) => setTimeout(r, 600));
+      expect(manager.getServerRouter(ID)).toBeNull();
+    },
+    TEST_MS
+  );
 
   // Purpose: a crash leaves DorkOS serving, runs the stop bookkeeping (the
   // message it was holding is failed, never delivered), shows "Restarting",
   // and a fresh process takes over on the backoff.
-  it('restarts after a crash, failing the message it was holding', async () => {
-    await install();
-    await boot();
-    const first = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
-    await post(`/api/ext/${ID}/send`);
-    await until(() => sends.held.length === 1);
-    expect(sends.held[0]!.failed).toBeNull();
+  it(
+    'restarts after a crash, failing the message it was holding',
+    async () => {
+      await install();
+      await boot();
+      const first = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+      await post(`/api/ext/${ID}/send`);
+      await until(() => sends.held.length === 1);
+      expect(sends.held[0]!.failed).toBeNull();
 
-    await post(`/api/ext/${ID}/crash`);
-    await until(() => !alive(first));
-    expect((await get('/api/health')).body).toEqual({ ok: true });
-    await until(() => sends.stopped.includes(ID) && inbox.stopped.includes(ID));
-    expect(sends.held[0]!.failed).toBe('stopped');
-    expect(card().restartingAt).toEqual(expect.any(String));
-    expect(announced).toContain(ID);
+      await post(`/api/ext/${ID}/crash`);
+      await until(() => !alive(first));
+      expect((await get('/api/health')).body).toEqual({ ok: true });
+      await until(() => sends.stopped.includes(ID) && inbox.stopped.includes(ID));
+      expect(sends.held[0]!.failed).toBe('stopped');
+      await until(() => unexpectedStops() === 1);
+      expect(announced).toContain(ID);
+      expect(shownAtBroadcast.find((c) => c.restartingAt)).toEqual({
+        restartingAt: expect.any(String),
+        serverError: undefined,
+      });
 
-    await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
-    const second = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
-    expect(second).not.toBe(first);
-    expect(card().restartingAt).toBeNull();
-    expect(card().serverError).toBeUndefined();
-  }, 60_000);
+      await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+      const second = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+      expect(second).not.toBe(first);
+      expect(card().restartingAt).toBeNull();
+      expect(card().serverError).toBeUndefined();
+    },
+    TEST_MS
+  );
 
   // Purpose: the third crash inside the window leaves it stopped with the
   // card's words; a page load's init does not start it again; a reload
   // does, with a fresh crash budget.
-  it('stays stopped after three crashes until it is reloaded', async () => {
-    await install();
-    await boot();
-    for (let crash = 1; crash <= 3; crash++) {
-      await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
-      const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
-      await post(`/api/ext/${ID}/crash`);
-      await until(() => !alive(pid));
-      await until(() => manager.getServerRouter(ID) === null);
-    }
-    await until(() => card().serverError?.code === 'server_crashed');
-    expect(card().serverError?.message).toBe(
-      `${NAME} stopped unexpectedly 3 times. Reload it to try again.`
-    );
-    await new Promise((r) => setTimeout(r, 700));
-    expect(manager.getServerRouter(ID)).toBeNull();
-    expect((await get(`/api/ext/${ID}/ping`)).status).toBe(404);
+  it(
+    'stays stopped after three crashes until it is reloaded',
+    async () => {
+      await install();
+      await boot();
+      for (let crash = 1; crash <= 3; crash++) {
+        await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+        const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+        await post(`/api/ext/${ID}/crash`);
+        await until(() => !alive(pid));
+        await until(() => unexpectedStops() === crash);
+      }
+      await until(() => card().serverError?.code === 'server_crashed');
+      expect(card().serverError?.message).toBe(
+        `${NAME} stopped unexpectedly 3 times. Reload it to try again.`
+      );
+      await new Promise((r) => setTimeout(r, 700));
+      expect(manager.getServerRouter(ID)).toBeNull();
+      expect((await get(`/api/ext/${ID}/ping`)).status).toBe(404);
 
-    // What every page load asks for: refused, still stopped.
-    const init = await manager.initializeServer(ID);
-    expect(init.ok).toBe(false);
-    expect(manager.getServerRouter(ID)).toBeNull();
+      // What every page load asks for: refused, still stopped.
+      const init = await manager.initializeServer(ID);
+      expect(init.ok).toBe(false);
+      expect(manager.getServerRouter(ID)).toBeNull();
 
-    await manager.reloadExtension(ID);
-    expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
-    expect(card().serverError).toBeUndefined();
-  }, 90_000);
+      await manager.reloadExtension(ID);
+      expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
+      expect(card().serverError).toBeUndefined();
+    },
+    TEST_MS
+  );
 
   // Purpose: new code is a fresh start however it arrives. Two crashes,
   // then a new server.ts reached through a plain page-load init (no
   // reload, no reset): its first crash restarts it instead of being the
   // third strike.
-  it('gives new code a fresh crash budget', async () => {
-    await install('v1');
-    await boot();
-    for (let crash = 1; crash <= 2; crash++) {
+  it(
+    'gives new code a fresh crash budget',
+    async () => {
+      await install('v1');
+      await boot();
+      for (let crash = 1; crash <= 2; crash++) {
+        await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+        const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+        await post(`/api/ext/${ID}/crash`);
+        await until(() => !alive(pid));
+        await until(() => unexpectedStops() === crash);
+      }
       await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
-      const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
-      await post(`/api/ext/${ID}/crash`);
-      await until(() => !alive(pid));
-    }
-    await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
 
-    await install('v2');
-    expect((await manager.initializeServer(ID)).ok).toBe(true);
-    const v2 = await get(`/api/ext/${ID}/ping`);
-    expect(v2.body.version).toBe('v2');
-    await post(`/api/ext/${ID}/crash`);
-    await until(() => !alive(v2.body.pid as number));
-    await until(() => manager.getServerRouter(ID) === null);
-    expect(card().serverError).toBeUndefined();
-    expect(card().restartingAt).toEqual(expect.any(String));
-    await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
-  }, 60_000);
+      await install('v2');
+      expect((await manager.initializeServer(ID)).ok).toBe(true);
+      const v2 = await get(`/api/ext/${ID}/ping`);
+      expect(v2.body.version).toBe('v2');
+      await post(`/api/ext/${ID}/crash`);
+      await until(() => !alive(v2.body.pid as number));
+      await until(() => unexpectedStops() === 3);
+      // The third stop overall, but the first of the new code: a restart, not a give-up.
+      const third = shownAtBroadcast.filter((c) => c.restartingAt !== null || c.serverError).at(-1);
+      expect(third?.serverError).toBeUndefined();
+      expect(third?.restartingAt).toEqual(expect.any(String));
+      await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+      expect(card().serverError).toBeUndefined();
+    },
+    TEST_MS
+  );
 
   // Purpose: a stop someone asked for (here: turning it off after it gave
   // up) clears the crash history, so the card never keeps an old "stopped 3
   // times" and the next start is fresh.
-  it('forgets the crash history when it is turned off', async () => {
-    await install();
-    await boot(1);
-    const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
-    await post(`/api/ext/${ID}/crash`);
-    await until(() => !alive(pid));
-    await until(() => card().serverError?.code === 'server_crashed');
-    await manager.disable(ID);
-    expect(card().serverError).toBeUndefined();
-    await manager.enable(ID);
-    expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
-  }, 60_000);
+  it(
+    'forgets the crash history when it is turned off',
+    async () => {
+      await install();
+      await boot(1);
+      const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+      await post(`/api/ext/${ID}/crash`);
+      await until(() => !alive(pid));
+      await until(() => card().serverError?.code === 'server_crashed');
+      await manager.disable(ID);
+      expect(card().serverError).toBeUndefined();
+      await manager.enable(ID);
+      expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
+    },
+    TEST_MS
+  );
 
   // Purpose: a stuck event loop is stopped by the watchdog and reported as
   // unresponsive (budget 1 here, so the first stop is the last).
-  it('stops a hung extension as unresponsive', async () => {
-    await install();
-    await boot(1);
-    const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
-    await post(`/api/ext/${ID}/hang`);
-    await until(() => card().serverError?.code === 'server_unresponsive', 15_000);
-    expect(card().serverError?.message).toBe(`${NAME} stopped responding, so DorkOS stopped it.`);
-    expect(alive(pid)).toBe(false);
-    expect((await get('/api/health')).status).toBe(200);
-  }, 30_000);
+  it(
+    'stops a hung extension as unresponsive',
+    async () => {
+      await install();
+      await boot(1, { pingIntervalMs: 200, pongTimeoutMs: 1_500 });
+      const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+      await post(`/api/ext/${ID}/hang`);
+      await until(() => card().serverError?.code === 'server_unresponsive');
+      expect(card().serverError?.message).toBe(`${NAME} stopped responding, so DorkOS stopped it.`);
+      expect(alive(pid)).toBe(false);
+      expect((await get('/api/health')).status).toBe(200);
+    },
+    TEST_MS
+  );
 
   // Purpose: turning it off ends its process, and nothing restarts it.
-  it('ends its process when it is turned off', async () => {
-    await install();
-    await boot();
-    const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
-    await manager.disable(ID);
-    expect(alive(pid)).toBe(false);
-    await new Promise((r) => setTimeout(r, 600));
-    expect(manager.getServerRouter(ID)).toBeNull();
-    expect(sends.stopped).toContain(ID);
-  }, 60_000);
+  it(
+    'ends its process when it is turned off',
+    async () => {
+      await install();
+      await boot();
+      const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+      await manager.disable(ID);
+      expect(alive(pid)).toBe(false);
+      await new Promise((r) => setTimeout(r, 600));
+      expect(manager.getServerRouter(ID)).toBeNull();
+      expect(sends.stopped).toContain(ID);
+    },
+    TEST_MS
+  );
 
   // Purpose: the dev loop. A new server.ts is served by a new process after
   // a reload (what a dev link's save calls); a manifest that asks for a new
   // host waits for a person, and one that asks for less runs without asking.
-  it('serves new code after a reload, and waits for a person when it asks for more', async () => {
-    await install('v1');
-    await boot();
-    const first = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+  it(
+    'serves new code after a reload, and waits for a person when it asks for more',
+    async () => {
+      await install('v1');
+      await boot();
+      const first = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
 
-    await install('v2');
-    await manager.reloadExtension(ID);
-    const v2 = await get(`/api/ext/${ID}/ping`);
-    expect(v2.body.version).toBe('v2');
-    expect(v2.body.pid).not.toBe(first);
-    expect(alive(first)).toBe(false);
+      await install('v2');
+      await manager.reloadExtension(ID);
+      const v2 = await get(`/api/ext/${ID}/ping`);
+      expect(v2.body.version).toBe('v2');
+      expect(v2.body.pid).not.toBe(first);
+      expect(alive(first)).toBe(false);
 
-    await install('v2', ['api.example.com']);
-    await manager.reload();
-    expect(manager.getServerRouter(ID)).toBeNull();
-    expect(card().approvedToRun).toBe(false);
-    expect(alive(v2.body.pid as number)).toBe(false);
+      await install('v2', ['api.example.com']);
+      await manager.reload();
+      expect(manager.getServerRouter(ID)).toBeNull();
+      expect(card().approvedToRun).toBe(false);
+      expect(alive(v2.body.pid as number)).toBe(false);
 
-    await install('v2', []);
-    await manager.reload();
-    expect(card().approvedToRun).toBe(true);
-    expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
-  }, 90_000);
+      await install('v2', []);
+      await manager.reload();
+      expect(card().approvedToRun).toBe(true);
+      expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
+    },
+    TEST_MS
+  );
 });
