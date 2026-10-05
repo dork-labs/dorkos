@@ -232,6 +232,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         enabled: true,
         binaryPath: '/opt/homebrew/bin/codex',
         credentialRef: 'file:LEAK-6-codex-key-file',
+        transport: 'app-server',
         defaultModel: 'gpt-5.3-codex',
         defaultEffort: 'medium',
         defaultTrustStop: 'ask',

@@ -897,6 +897,38 @@ export function seedExtensionsApprovedPermissions(store: {
 }
 
 /**
+ * Migration body: seed `runtimes.codex.transport: 'auto'` for configs persisted
+ * before DorkOS could run Codex on `codex app-server` (ADR 261005-113107).
+ *
+ * `auto` is the only honest seed: it means "whatever DorkOS runs by default",
+ * which is exactly what a config that predates the choice was getting. The
+ * value is resolved by the server (`resolveCodexTransport`), never here, so a
+ * later change of default reaches this config without another migration.
+ * Additive and idempotent: writes only when `transport` is not already one of
+ * the known values, and never touches the other `runtimes.codex` members. A
+ * config with no `runtimes.codex` object is skipped (the schema default
+ * supplies it on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedCodexTransport(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const codex = (runtimes as { codex?: unknown }).codex;
+  if (!codex || typeof codex !== 'object' || Array.isArray(codex)) return;
+  const current = (codex as { transport?: unknown }).transport;
+  if (current === 'auto' || current === 'app-server' || current === 'exec') return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    codex: { ...(codex as Record<string, unknown>), transport: 'auto' },
+  });
+}
+
+/**
  * Migration body: seed `extensions.trustedSources: []` for configs persisted
  * before a person could trust a code source outright (spec `flow-multiproject`
  * §9.3).
@@ -4789,6 +4821,20 @@ export const CONFIG_MIGRATIONS = {
     // `extensions.approvedPermissions` — the permission set each extension
     // approval covers (DOR-2686). See `seedExtensionsApprovedPermissions`.
     seedExtensionsApprovedPermissions(store);
+  },
+  // 0.98.0 has merged and v0.97.0 is the newest tag, so 0.99.0 is the next
+  // key. Frozen from merge, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.100.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `runtimes.codex`, beside the fields it preserves.
+  '0.99.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.codex.transport` — how DorkOS runs Codex (ADR 261005-113107).
+    // See `seedCodexTransport`.
+    seedCodexTransport(store);
   },
 } as const;
 

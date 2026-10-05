@@ -175,6 +175,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.codex.binaryPath',
       'runtimes.codex.credentialRef',
       'runtimes.codex.defaultTrustStop',
+      'runtimes.codex.transport',
       'runtimes.defaultTrustStop',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',

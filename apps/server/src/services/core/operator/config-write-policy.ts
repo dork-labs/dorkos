@@ -780,6 +780,9 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.codex.enabled': 'agent-writable',
   // An executable the server spawns.
   'runtimes.codex.binaryPath': 'operator-only',
+  // Which Codex process the server spawns, and whether Codex can stop to ask
+  // a person at all. An agent must not choose how it is supervised.
+  'runtimes.codex.transport': 'operator-only',
   // A credential reference (ADR-0315).
   'runtimes.codex.credentialRef': 'operator-only',
 
@@ -1016,6 +1019,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',
       'runtimes.codex.binaryPath',
+      'runtimes.codex.transport',
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].url',
