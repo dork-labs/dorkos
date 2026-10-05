@@ -190,6 +190,41 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     );
   });
 
+  it('still says create when retrying a first send that failed (DOR-2712)', async () => {
+    // The failed send left a placeholder row in the list, so the list alone
+    // would call the retry an existing session and the server would 404 it.
+    const postMessage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('HTTP 503'))
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+
+    const { result } = renderHook(() => useChatSession('s-retry'), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    for (const word of ['first', 'retry']) {
+      act(() => {
+        result.current.setInput(word);
+      });
+      await waitFor(() => expect(result.current.input).toBe(word));
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+    }
+
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(
+      queryClient
+        .getQueryData<{ id: string }[]>(sessionKeys.list('/test/cwd'))
+        ?.some((row) => row.id === 's-retry')
+    ).toBe(true);
+    expect(postMessage.mock.calls[1]![3]).toMatchObject({ create: true });
+  });
+
   it('does not say create on a session the list already has (DOR-2712)', async () => {
     const postMessage = vi
       .fn()

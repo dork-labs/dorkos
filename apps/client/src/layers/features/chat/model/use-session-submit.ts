@@ -55,6 +55,18 @@ import type { ChatSessionOptions, ChatStatus } from './chat-types';
 type PostMessageOptions = NonNullable<Parameters<Transport['postMessage']>[3]>;
 
 /**
+ * Sessions whose creating send has not been accepted yet (DOR-2712).
+ *
+ * The server answers 404 to an id it does not know unless the send says
+ * `create: true`. The list cache cannot answer "is this still new?" once the
+ * first send ran: it gains a placeholder row the moment the send starts. So a
+ * retry after a failed first send, or a second message sent before the first
+ * one's 202, would otherwise go out without `create` and be refused. An id
+ * stays here until a send for it is accepted.
+ */
+const unacceptedCreates = new Set<string>();
+
+/**
  * What a Stop concluded — the runtime's own receipt plus the queue it cleared.
  *
  * The receipt replaced an `ok` boolean whose own TSDoc had to spend a paragraph
@@ -269,6 +281,12 @@ export function useSessionSubmit({
       const sessions = queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? [];
       const isNewSession = !sessions.some((s) => s.id === targetSessionId);
       if (isNewSession && (agentLookupPending || agentLookupFailed)) return;
+      // This send may start the session: it is not in the list, or an earlier
+      // send that would have started it was never accepted (the placeholder
+      // row below makes a retry look listed). It carries `create` and the
+      // first-turn hints.
+      const startsSession = isNewSession || unacceptedCreates.has(targetSessionId);
+      if (startsSession) unacceptedCreates.add(targetSessionId);
 
       // **Writing is the strongest thing a person can do to a conversation, so
       // it is recorded like opening one** (DOR-1156). Today's membership and
@@ -419,26 +437,26 @@ export function useSessionSubmit({
         // A send to an id the server does not know starts a chat only when it
         // says so; anything else is a 404 (DOR-2712). Harmless on a session the
         // list simply has not loaded yet: the message feeds it.
-        if (isNewSession) postOptions.create = true;
+        if (startsSession) postOptions.create = true;
         // First-turn runtime hint: only the session-creating send carries the
         // explicit launch selection. No selection → omit entirely, so the
         // server's own resolution (agent manifest, then default) stays in
         // charge (resolveRuntimeTypeForNewSession priority order).
-        if (isNewSession && launchRuntimeRef.current) {
+        if (startsSession && launchRuntimeRef.current) {
           postOptions.runtime = launchRuntimeRef.current;
         }
         // A path is sent only after `useCurrentAgent` confirmed that the
         // selected directory belongs to a registered agent. Arbitrary working
         // directories remain valid sessions, but do not acquire an invented
         // connector owner.
-        if (isNewSession && agentPath) {
+        if (startsSession && agentPath) {
           postOptions.agentPath = agentPath;
         }
         // First-turn billing hint, gated on the SAME signal for the same reason:
         // the account is fixed to the one that created the session (ADR
         // 260801-204127), so only the creating send can name it. No pick → omit
         // entirely, leaving the server's ladder (agent, then default) in charge.
-        if (isNewSession && launchAccountRef.current) {
+        if (startsSession && launchAccountRef.current) {
           postOptions.account = launchAccountRef.current;
         }
         // A one-shot account for this send only: "Use your own sign-in" on a
@@ -464,6 +482,7 @@ export function useSessionSubmit({
           cwd ?? undefined,
           postOptions
         );
+        unacceptedCreates.delete(targetSessionId);
 
         // Record the snapshot as sent (under the canonical id after a rekey) so
         // the next turn only re-sends uiState when it actually changed.
@@ -679,11 +698,17 @@ export function useSessionSubmit({
             ...(disposition === 'queue' ? { queued: true } : {}),
           };
           const context = Object.keys(contextEntries).length > 0 ? contextEntries : undefined;
+          // A message sent before the session's creating send was accepted
+          // may be the one that reaches the server first.
           const { sessionId: canonicalId } = await transport.postMessage(
             targetSessionId,
             finalContent,
             cwd ?? undefined,
-            { context, disposition }
+            {
+              context,
+              disposition,
+              ...(unacceptedCreates.has(targetSessionId) ? { create: true } : {}),
+            }
           );
           commitUiState(canonicalId);
           return true;

@@ -53,9 +53,10 @@ interface Transport {
   subscribeSession(sessionId, sinceCursor?, cwd?, signal?): AsyncIterable<SessionEvent>;
   subscribeSessionList(): AsyncIterable<SessionListEvent>;
   postMessage(sessionId, content, cwd?, options?): Promise<{ sessionId: string }>;
-  // options: { clientMessageId?: string; context?: ClientContext; runtime?: string }
+  // options: { create?: boolean; clientMessageId?: string; context?: ClientContext; runtime?: string }
   // A brand-new session is created implicitly on its first postMessage() call
-  // (pass a client-generated UUID as sessionId): there is no separate createSession.
+  // (pass a client-generated UUID as sessionId and `create: true` in options):
+  // there is no separate createSession.
 
   // Tool interaction
   approveTool(
@@ -145,18 +146,19 @@ Use the REST API directly for any language or platform:
 # List sessions
 GET /api/sessions
 
-# Create a session
-POST /api/sessions
-Content-Type: application/json
-{ "cwd": "/path/to/project" }
-
 # Subscribe to a session's durable event stream (SSE: snapshot → replay → live)
 GET /api/sessions/:id/events
 
-# Trigger a turn (202 with the canonical session id; events arrive on /events)
+# Start a session with its first message: pick a new UUID, send create: true
+# (202 with the session id; events arrive on /events)
 POST /api/sessions/:id/messages
 Content-Type: application/json
-{ "content": "Hello", "cwd": "/path/to/project" }
+{ "content": "Hello", "cwd": "/path/to/project", "create": true }
+
+# Send another message to the same session (an unknown id is a 404)
+POST /api/sessions/:id/messages
+Content-Type: application/json
+{ "content": "And then?" }
 
 # Approve a tool call
 POST /api/sessions/:id/approve

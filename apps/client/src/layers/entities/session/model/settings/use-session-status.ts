@@ -283,11 +283,8 @@ export function useSessionStatus(
         // time the list refreshed. That module's own header names this hazard.
         // A stale caveat is worse than no caveat: it would call a settled
         // runtime a guess, which is the fixed bug pointing the other way.
-        const {
-          permissionModePendingUntilNextTurn,
-          runtimeUnbound: _runtimeUnbound,
-          ...updated
-        } = await transport.updateSession(sessionId, request, selectedCwd ?? undefined);
+        const { permissionModePendingUntilNextTurn, runtimeUnbound, ...updated } =
+          await transport.updateSession(sessionId, request, selectedCwd ?? undefined);
         if (permissionModePendingUntilNextTurn) {
           // The dial moves either way — the choice IS saved, and reverting it
           // would be the bigger lie. What the person is owed is the one thing
@@ -309,6 +306,10 @@ export function useSessionStatus(
             // value the client selected (e.g. "default"), or, for a session no
             // runtime owns yet, come from a runtime other than the one shown.
             ...(opts.model === undefined ? { model: old?.model } : {}),
+            // Nor does it ever say which runtime runs the session. On a session
+            // no runtime owns yet, the answer's `runtime` is the server's guess
+            // (DOR-1693), and a cached guess would read as a started session.
+            ...(runtimeUnbound ? { runtime: old?.runtime } : {}),
           })
         );
         // Optimistic state cleared by convergence effect below, not here.

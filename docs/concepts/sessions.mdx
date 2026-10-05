@@ -68,8 +68,10 @@ everything above.
 
 ### Creating and messaging a session
 
-A session is created with a unique ID, a working directory, and a permission mode (whether tool
-calls need your approval). Sending a message triggers a turn: `POST /api/sessions/:id/messages`
+A session is created by its first message, sent to a new unique ID with `"create": true`, along
+with a working directory and a permission mode (whether tool calls need your approval). Without
+`create`, a message to an ID the server doesn't know answers `404` and starts nothing. Sending a
+message triggers a turn: `POST /api/sessions/:id/messages`
 returns `202 Accepted` immediately, and the actual response streams over the session's durable
 event stream, `GET /api/sessions/:id/events`. That stream carries text deltas, tool calls,
 approval requests, and task-progress updates in real time.

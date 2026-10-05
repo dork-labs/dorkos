@@ -49,6 +49,11 @@ vi.mock('../../../../core/credential-env.js', () => ({
 vi.mock('../../sdk/context-usage.js', () => ({
   fetchContextBreakdown: vi.fn().mockResolvedValue(undefined),
 }));
+const idTaken = vi.hoisted(() => ({ value: false }));
+vi.mock('../../sessions/session-root-index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../sessions/session-root-index.js')>()),
+  transcriptIdTaken: vi.fn(async () => idTaken.value),
+}));
 vi.mock('../../sdk/sdk-event-mapper.js', () => ({
   // eslint-disable-next-line require-yield -- intentional empty async generator
   mapSdkMessage: vi.fn(async function* () {}),
@@ -108,6 +113,7 @@ async function runTurn(
 describe('executeSdkQuery — one id per conversation (DOR-2712)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    idTaken.value = false;
   });
 
   it('launches a new session under the id DorkOS handed out', async () => {
@@ -126,6 +132,15 @@ describe('executeSdkQuery — one id per conversation (DOR-2712)', () => {
 
   it('leaves an id the SDK would refuse to the SDK', async () => {
     const [options] = await runTurn('room-turn-1', makeSession({ sdkSessionId: 'room-turn-1' }));
+
+    expect(options.sessionId).toBeUndefined();
+  });
+
+  it('leaves an id a transcript already has to the SDK', async () => {
+    // The per-folder probe missed it (another folder or account), so the
+    // session looks new; launching under it would give two transcripts one id.
+    idTaken.value = true;
+    const [options] = await runTurn(DORKOS_ID, makeSession());
 
     expect(options.sessionId).toBeUndefined();
   });

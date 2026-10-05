@@ -62,7 +62,10 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
-import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import {
+  runtimeRegistry,
+  RuntimeNotRegisteredError,
+} from '../../services/core/runtime-registry.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 
@@ -128,5 +131,32 @@ describe('POST /api/sessions/:id/messages — unknown ids (DOR-2712)', () => {
       .send({ content: 'next' });
 
     expect(res.status).toBe(202);
+  });
+
+  it('feeds a live session asked for by its older id', async () => {
+    // A session renamed mid-turn: its binding row moved to the new id, so the
+    // old one is unbound, and only the runtime's alias still knows it.
+    const CANONICAL = '11111111-1111-4111-8111-00000000a712';
+    fakeRuntime.getInternalSessionId.mockReturnValue(CANONICAL);
+    fakeRuntime.getSession.mockImplementation(async (_dir, id) =>
+      id === CANONICAL ? ({ id: CANONICAL } as never) : null
+    );
+    const res = await request(server)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'next' });
+
+    expect(res.status).toBe(202);
+  });
+
+  it('does not answer 500 for a session bound to a runtime this server lacks', async () => {
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockRejectedValueOnce(
+      new RuntimeNotRegisteredError('gone', SESSION_ID)
+    );
+    const res = await request(server)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'next' });
+
+    expect(res.status).not.toBe(500);
+    expect(res.status).not.toBe(404);
   });
 });

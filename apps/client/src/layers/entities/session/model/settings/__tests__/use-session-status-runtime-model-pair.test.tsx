@@ -16,6 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../use-session-status';
+import { sessionKeys } from '../../../api/query-keys';
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -34,10 +35,12 @@ const CODEX_MODELS = [
   { value: 'gpt-6-astra', displayName: 'GPT-6-Astra', description: 'Default', isDefault: true },
 ];
 
-function createWrapper(transport: ReturnType<typeof createMockTransport>) {
-  const queryClient = new QueryClient({
+function createWrapper(
+  transport: ReturnType<typeof createMockTransport>,
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+  })
+) {
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>{children}</TransportProvider>
@@ -90,5 +93,30 @@ describe('useSessionStatus — runtime and model go together (DOR-2712)', () => 
 
     await waitFor(() => expect(transport.updateSession).toHaveBeenCalled());
     expect(result.current.model).toBe('gpt-6-astra');
+  });
+
+  it("never caches the server's runtime guess for a session no runtime owns yet", async () => {
+    const transport = createMockTransport({
+      getSession: vi.fn().mockRejectedValue(new Error('Session not found')),
+      getModels: vi.fn().mockResolvedValue(CODEX_MODELS),
+      updateSession: vi.fn().mockResolvedValue({
+        ...createMockSession({ id: SESSION_ID, runtime: 'claude-code', permissionMode: 'plan' }),
+        runtimeUnbound: true,
+      }),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'codex'), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+    await result.current.updateSession({ permissionMode: 'plan' });
+
+    const cached = queryClient.getQueryData<{ runtime?: string; permissionMode?: string }>(
+      sessionKeys.detail(SESSION_ID, '/test/cwd')
+    );
+    expect(cached?.permissionMode).toBe('plan');
+    expect(cached?.runtime).toBeUndefined();
   });
 });
