@@ -204,6 +204,8 @@ export function createInstallationTransaction(
       const reuse =
         existing !== null && before.status.state === 'installed-files' && !options.repair;
       require(before.status.state !== 'invalid' || options.repair === true, 'INSTALLATION_INVALID');
+      // Startup verification cannot stage/install/repair a missing or uncertain current runtime.
+      require(options.existingOnly !== true || reuse, 'VERIFICATION_UNAVAILABLE');
       binding = Object.freeze(
         AttemptBindingSchema.parse({
           transactionId: id(),

@@ -46,6 +46,7 @@ const installed: RuntimeInstallationStatus = {
 };
 function fixture() {
   const runtime: RuntimeInstallation = {
+    verifyExisting: vi.fn<RuntimeInstallation['verifyExisting']>().mockResolvedValue(successful),
     install: vi.fn<RuntimeInstallation['install']>().mockResolvedValue(successful),
     inspectExisting: vi.fn<RuntimeInstallation['inspectExisting']>().mockResolvedValue(installed),
   };
