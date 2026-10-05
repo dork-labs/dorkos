@@ -133,6 +133,27 @@ export const ConnectionListResponseSchema = pageOf(
   'A page of the caller`s managed connections.'
 );
 
+/** The longest `returnTo` a request may carry, in characters. */
+export const RETURN_TO_MAX_LENGTH = 2048;
+
+/**
+ * Where in the DorkOS app a person started connecting, so the page that
+ * finishes the connection can offer them a way back.
+ *
+ * Either a `dorkos://` link into the desktop app (`dorkos://connections`) or
+ * the address the person reached the app at, with its route
+ * (`https://app.example.invalid/connections`: this machine's own address, or a
+ * tunnel address). The app only sends a value it serves itself; the service
+ * still checks it before showing it, and never sends the person there on its
+ * own.
+ */
+export const ConnectionReturnToSchema = z
+  .url({ protocol: /^(https?|dorkos)$/ })
+  .max(RETURN_TO_MAX_LENGTH)
+  .describe(
+    'Where in the DorkOS app the person started: a dorkos: link or the app`s own http(s) address. Offered as the way back once the connection finishes; never followed automatically.'
+  );
+
 /** `POST /v1/connections/authentication-flows` — begin connecting a toolkit. */
 export const AuthenticationFlowRequestSchema = z
   .object({
@@ -143,6 +164,9 @@ export const AuthenticationFlowRequestSchema = z
       .url()
       .optional()
       .describe('Where to send the person after the hosted flow completes.'),
+    returnTo: ConnectionReturnToSchema.optional().describe(
+      'Where in the DorkOS app the person started. The finishing page offers it as the way back. Optional: a service that predates it ignores it.'
+    ),
   })
   .describe(
     'Begin connecting a toolkit. The hosted page is a runtime value; no origin is baked into this package.'

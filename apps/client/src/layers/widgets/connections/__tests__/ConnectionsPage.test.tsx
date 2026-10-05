@@ -124,6 +124,7 @@ describe('ConnectionsPage', () => {
     await waitFor(() =>
       expect(transport.reconnectConnectorConnection).toHaveBeenCalledWith('c-notion', {
         idempotencyKey: expect.any(String),
+        returnTo: `${window.location.origin}/connections`,
       })
     );
     await waitFor(() => expect(nextSearch()).toMatchObject({ flow: 'flow-1' }));

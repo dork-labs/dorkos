@@ -4,7 +4,11 @@
  *
  * @module features/chat/lib/queue-chips
  */
-import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
+import type {
+  MessageDeliveryOutcome,
+  QueuedMessage,
+  QueuedWaitingOn,
+} from '@dorkos/shared/schemas';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 
 /**
@@ -44,7 +48,82 @@ export function selectWaitingQueue(
   lifecycle: SessionLifecycle | undefined
 ): QueuedMessage[] {
   if (queue.length === 0) return queue;
+  // A head held for the agent's background work is genuinely waiting, turn or
+  // no turn (DOR-2065): it is the one row that says why the line is not moving.
+  if (queue[0]!.waitingOn !== undefined) return queue;
   return lifecycle && TURN_IS_OPEN.has(lifecycle) ? queue : queue.slice(1);
+}
+
+/** What a held row says, and what Switch now would cost. */
+export interface QueueWaiting {
+  /** Why the message is waiting, in one line. */
+  line: string;
+  /** What Switch now stops, for its tooltip. */
+  switchHint: string;
+}
+
+/** `2 helpers`, `1 command`: a count with its noun. */
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/** What holds a message when nothing is running in the background. */
+const HELD_FOR: Record<string, string> = {
+  'delivery-owed': 'a helper’s report',
+  'waiting-on-person': 'your answer',
+  // A session timer the agent set (DOR-2717): it fires into this process.
+  'timer-pending': 'a reminder the agent set',
+};
+
+/** What Switch now ends when nothing is running in the background. */
+const SWITCH_STOPS: Record<string, string> = {
+  'timer-pending': 'Switching now cancels the reminder.',
+};
+
+/**
+ * Say why a queued message is held, and what Switch now would stop
+ * (DOR-2065). Never names the machinery: no process, no restart, no pin. A
+ * Monitor or unknown task is a "background job", never a "task", which is the
+ * Tasks product's word.
+ *
+ * @param waitingOn - What the server says the message waits on.
+ */
+export function describeWaitingOn(waitingOn: QueuedWaitingOn): QueueWaiting {
+  const { agents, shells, other } = waitingOn.holding;
+  const parts = [
+    agents > 0 ? counted(agents, 'helper', 'helpers') : undefined,
+    shells > 0 ? counted(shells, 'command', 'commands') : undefined,
+    other > 0 ? counted(other, 'background job', 'background jobs') : undefined,
+  ].filter((part): part is string => part !== undefined);
+  const work =
+    parts.length === 0
+      ? undefined
+      : parts.length === 1
+        ? parts[0]!
+        : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)!}`;
+  const pins = waitingOn.pins;
+  const change =
+    pins.includes('cwd') && waitingOn.targetFolderName
+      ? `moves to ${waitingOn.targetFolderName}`
+      : pins.includes('agentIdentity')
+        ? 'switches agents'
+        : pins.includes('systemPromptAppend')
+          ? 'loads new instructions'
+          : 'applies new settings';
+  const reason =
+    work !== undefined
+      ? `Held for ${work}.`
+      : waitingOn.because !== undefined && HELD_FOR[waitingOn.because] !== undefined
+        ? `Held for ${HELD_FOR[waitingOn.because]}.`
+        : 'Held until the agent is free.';
+  return {
+    line: `${reason} Sending it ${change}.`,
+    switchHint:
+      work !== undefined
+        ? `Switching now stops ${work}.`
+        : ((waitingOn.because !== undefined ? SWITCH_STOPS[waitingOn.because] : undefined) ??
+          'Switching now stops what the agent is doing.'),
+  };
 }
 
 /** What each downgrade reason means, in words a chip can say. */

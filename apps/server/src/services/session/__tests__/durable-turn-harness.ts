@@ -31,7 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
-import type { HistoryMessage, StreamEvent } from '@dorkos/shared/types';
+import type { ApprovalEvent, HistoryMessage, StreamEvent } from '@dorkos/shared/types';
 import {
   SessionEventStore,
   setSessionEventStore,
@@ -237,6 +237,69 @@ export async function drivePresenceTurn(
       { userMessage: content }
     );
     await probes.afterTurn();
+  } finally {
+    disposeProjector(sessionId);
+  }
+}
+
+/**
+ * Drive ONE turn that stops for a tool approval through the trigger path's
+ * projector — the harness behind `RuntimeConformanceOpts.approvalTurn`.
+ *
+ * The projector takes each event before anything answers it, and the probe
+ * runs BESIDE the stream rather than inside it: a runtime may still have work
+ * to do after emitting its card before it is ready for an answer (test-mode's
+ * scenario parks a step later), and that work needs the stream to keep
+ * moving. `awaitAsk` is that per-runtime readiness, when there is one. If the
+ * probe throws, the turn is stopped so the failure surfaces instead of a hang.
+ * `afterTurn` runs with the projector still alive, so the suite can read the
+ * snapshot's pending interactions.
+ *
+ * @param runtime - The runtime under test (its real `sendMessage`).
+ * @param sessionId - A unique session id for this turn.
+ * @param content - The user message that leads the runtime to ask.
+ * @param cwd - The working directory for the turn.
+ * @param probes - Called at the first approval card, and after the turn.
+ * @param awaitAsk - Resolves once the runtime is ready for an answer.
+ * @returns Every event the turn produced.
+ */
+export async function driveApprovalTurn(
+  runtime: AgentRuntime,
+  sessionId: string,
+  content: string,
+  cwd: string,
+  probes: {
+    atApproval: (approval: ApprovalEvent) => Promise<void>;
+    afterTurn: () => Promise<void>;
+  },
+  awaitAsk?: (approval: ApprovalEvent) => Promise<void>
+): Promise<StreamEvent[]> {
+  const events: StreamEvent[] = [];
+  let probe: Promise<unknown> | undefined;
+  let failure: { error: unknown } | undefined;
+  async function* watched(): AsyncGenerator<StreamEvent> {
+    for await (const event of runtime.sendMessage(sessionId, content, { cwd })) {
+      events.push(event);
+      yield event;
+      if (probe === undefined && event.type === 'approval_required') {
+        const approval = event.data as ApprovalEvent;
+        probe = (async () => {
+          await awaitAsk?.(approval);
+          await probes.atApproval(approval);
+        })().catch(async (error: unknown) => {
+          failure = { error };
+          await runtime.interruptQuery(sessionId);
+        });
+      }
+    }
+  }
+  const projector = getOrCreateProjector(sessionId, cwd);
+  try {
+    await feedProjector(projector, watched(), { userMessage: content });
+    await probe;
+    if (failure) throw failure.error;
+    await probes.afterTurn();
+    return events;
   } finally {
     disposeProjector(sessionId);
   }

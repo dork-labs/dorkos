@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e483626e-e91f-4af1-934c-700232a9f973",
-  "prevId": "8aa8ff92-fa4a-4e6c-8f7a-1c914c26055e",
+  "id": "dedb24fb-5a68-4324-b704-219b3b103c21",
+  "prevId": "16921561-7e1b-4041-b1b1-c041096bbbcf",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -7242,6 +7242,13 @@
         },
         "failure_reason": {
           "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failure_code": {
+          "name": "failure_code",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
 import { FakeAppServerHost } from '../../__tests__/fake-app-server.js';
 import { CodexAppServerPool } from '../process-pool.js';
+import { approvalPolicyFor } from '../turn-parts.js';
 import {
   CodexThreadLoader,
   THREAD_STARTS_FRESH_NOTICE,
@@ -149,7 +150,7 @@ describe('load config (§9)', () => {
     expect(params).toMatchObject({
       cwd: '/project',
       model: 'gpt-x',
-      approvalPolicy: 'never',
+      approvalPolicy: 'on-request',
       approvalsReviewer: 'user',
       sandbox: 'workspace-write',
     });
@@ -292,5 +293,15 @@ describe('review fixes: fingerprint and identity', () => {
     ).toEqual({
       set: { DORKOS_AGENT_TOKEN: 'token-1' },
     });
+  });
+});
+
+describe('approval policy by mode (§10)', () => {
+  it('asks on request in every mode but full access, and for any mode it does not know', () => {
+    expect(approvalPolicyFor({ permissionMode: 'default' })).toBe('on-request');
+    expect(approvalPolicyFor({ permissionMode: 'acceptEdits' })).toBe('on-request');
+    expect(approvalPolicyFor({ permissionMode: 'bypassPermissions' })).toBe('never');
+    expect(approvalPolicyFor({ permissionMode: 'plan' })).toBe('on-request');
+    expect(approvalPolicyFor({})).toBe('on-request');
   });
 });

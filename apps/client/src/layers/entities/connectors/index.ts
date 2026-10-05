@@ -99,6 +99,7 @@ export type {
 
 export { serviceName } from './lib/access-copy';
 export { cloudFailure, type CloudFailureCopy } from './lib/cloud-failure';
+export { connectReturnTo } from './lib/connect-return-to';
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
 export { ServiceMark } from './ui/ServiceMark';
 export { serviceLogo, type ServiceLogo } from './lib/service-logo';

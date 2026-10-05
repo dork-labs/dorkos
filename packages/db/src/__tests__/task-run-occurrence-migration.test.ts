@@ -27,7 +27,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
 
 /** The migration under test, found in the journal by its tag rather than its position. */
-const TAG = '20261005200104_task_run_occurrence';
+const TAG = '20261005230915_task_run_occurrence';
 
 type Raw = Database.Database;
 

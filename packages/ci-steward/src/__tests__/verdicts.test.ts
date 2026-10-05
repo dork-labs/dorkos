@@ -17,7 +17,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emptySnapshot, gateKey, type Snapshot } from '../data.ts';
+import { emptySnapshot, gateKey, type DesktopReleaseRun, type Snapshot } from '../data.ts';
 import { readLedger } from '../ledger.ts';
 import { loadHandFiles } from '../load.ts';
 import { addDays, dayOf, daysBetween, secondOfDay } from '../time.ts';
@@ -436,5 +436,152 @@ describe('tracked.repeat-ejections: queue builds spent re-learning a failure', (
     const v = verdictOn(days(() => undefined));
     expect(v.after.value).toBeNull();
     expect(v.verdict).toBe('inconclusive');
+  });
+});
+
+describe('tracked.desktop-release-wall-clock: tag push to published release', () => {
+  const entry: LedgerEntry = {
+    id: '260901-000002',
+    title: 'desktop release on one runner',
+    kind: 'experiment',
+    status: 'active',
+    actor: 'agent',
+    gates: [],
+    prs: [902],
+    hypothesis: {
+      metric: 'tracked.desktop-release-wall-clock',
+      baseline: 45,
+      target: 15,
+      after_days: 7,
+    },
+    'ratchet-release': [],
+    'floor-release': [],
+    'field-changes': [],
+  };
+  const plus = (iso: string, minutes: number) =>
+    new Date(Date.parse(iso) + minutes * 60_000).toISOString().replace('.000Z', 'Z');
+  /** A run; `minutes` after it the ref's release was published, or null for none at collect time. */
+  const push = (
+    ref: string,
+    started: string,
+    minutes: number | null,
+    event = 'push'
+  ): DesktopReleaseRun => ({
+    ref,
+    event,
+    started,
+    published_at: minutes === null ? null : plus(started, minutes),
+  });
+
+  /**
+   * Snapshots 2026-08-24 to 2026-09-09, each holding the runs that started on
+   * it. The merge is 2026-09-01T00:00Z, so the before-window is 08-25..08-31
+   * and the after-window 09-01..09-07.
+   */
+  function days(
+    runs: DesktopReleaseRun[],
+    opts: {
+      measured?: (date: string) => boolean;
+      releases?: { tag: string; published_at: string }[];
+    } = {}
+  ): Snapshot[] {
+    return daysBetween('2026-08-24', '2026-09-09').map((date) => {
+      const s = emptySnapshot(date, `${addDays(date, 1)}T05:00:00Z`, 700);
+      s.complete = true;
+      s.healthy = true;
+      s.health.ok = true;
+      if (opts.measured?.(date) ?? true)
+        s.desktop_release_runs = runs.filter((r) => r.started.startsWith(date));
+      s.releases = (opts.releases ?? []).filter((r) => r.published_at.startsWith(date));
+      return s;
+    });
+  }
+
+  const verdictOn = (snapshots: Snapshot[]) =>
+    computeVerdict({
+      entry,
+      mergedAt: new Map([[902, '2026-09-01T00:00:00Z']]),
+      ledger: [entry],
+      files: files!,
+      series: seriesFrom(
+        (d) => snapshots.filter((s) => d.includes(s.date)),
+        () => []
+      ),
+      now: new Date('2026-09-20T05:00:00Z'),
+    })!;
+
+  it('reads p50 minutes over the tags pushed inside the window, cut at the merge instant', () => {
+    // Eleven tags in the after-window at 10, 12, ... 30 minutes: p50 is 20.
+    const after = Array.from({ length: 11 }, (_, i) =>
+      push(`v1.1.${i}`, `2026-09-0${1 + (i % 7)}T1${i % 10}:00:00Z`, 10 + 2 * i)
+    );
+    const v = verdictOn(
+      days([
+        ...after,
+        // One minute before the merge: the before-window's, not the after-window's.
+        push('v1.0.9', '2026-08-31T23:59:00Z', 100),
+        // Past the after-window's end.
+        push('v1.2.0', '2026-09-08T12:00:00Z', 500),
+      ])
+    );
+    expect(v.after).toMatchObject({ n: 11, value: 20 });
+    expect(v.before).toMatchObject({ n: 1, value: 100 });
+    // Before-window is under min_n, so the ledger's 45 is the baseline; 20 is past halfway to 15.
+    expect(v.baseline).toEqual({ value: 45, source: 'ledger' });
+    expect(v.verdict).toBe('partial');
+  });
+
+  it('times a tag from its EARLIEST push run, once, even across the merge instant', () => {
+    const v = verdictOn(
+      days([
+        push('v1.3.0', '2026-09-03T10:00:00Z', 90),
+        push('v1.3.0', '2026-09-03T11:00:00Z', 30),
+        // First pushed before the merge and re-run after it: it belongs to the before-window only.
+        push('v1.4.0', '2026-08-31T23:30:00Z', 75),
+        push('v1.4.0', '2026-09-01T00:30:00Z', 15),
+      ])
+    );
+    expect(v.after).toMatchObject({ n: 1, value: 90 });
+    expect(v.before).toMatchObject({ n: 1, value: 75 });
+  });
+
+  it('leaves out a release published more than 24 hours after its run started', () => {
+    const v = verdictOn(
+      days([
+        push('v0.95.0', '2026-09-02T10:00:00Z', 1588),
+        push('v0.94.0', '2026-09-04T10:00:00Z', 45.4),
+      ])
+    );
+    expect(v.after).toMatchObject({ n: 1, value: 45.4 });
+  });
+
+  it('never counts a dispatch, a draft, or a push that is not a release tag', () => {
+    const v = verdictOn(
+      days([
+        push('v2.0.0', '2026-09-02T10:00:00Z', 5, 'workflow_dispatch'),
+        push('v2.1.0', '2026-09-03T10:00:00Z', null),
+        push('main', '2026-09-04T10:00:00Z', 5),
+        push('v2.2.0', '2026-09-05T10:00:00Z', 20),
+      ])
+    );
+    expect(v.after).toMatchObject({ n: 1, value: 20 });
+  });
+
+  it('finds a release published after its run s day was collected in the next day s releases', () => {
+    const v = verdictOn(
+      days([push('v2.3.0', '2026-09-02T23:00:00Z', null)], {
+        releases: [{ tag: 'v2.3.0', published_at: '2026-09-03T01:00:00Z' }],
+      })
+    );
+    expect(v.after).toMatchObject({ n: 1, value: 120 });
+  });
+
+  it('reads a window of days collected before it existed as not measured, never as 0', () => {
+    const v = verdictOn(days([], { measured: (d) => d >= '2026-09-01' }));
+    expect(v.before).toMatchObject({ n: 0, value: null });
+    expect(v.after).toMatchObject({ n: 0, value: null });
+    const none = verdictOn(days([], { measured: () => false }));
+    expect(none.after).toMatchObject({ n: 0, value: null });
+    expect(none.verdict).toBe('inconclusive');
   });
 });

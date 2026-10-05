@@ -359,7 +359,7 @@ function assertTrayImagesPackaged(appPath: string): void {
  *
  * macOS/arm64 because this smoke only ever runs against a `.app` bundle (see
  * `main`). The Windows counterpart (`…-win32-x64-msvc/ngrok.win32-x64-msvc.node`)
- * is NOT checked anywhere: `desktop-release.yml`'s `verify-windows` job only
+ * is NOT checked anywhere: `desktop-release.yml`'s "Verify the Windows installer" step only
  * silent-installs the `.exe` and confirms `DorkOS.exe` landed, and never looks
  * in `app.asar.unpacked`.
  */
@@ -435,7 +435,7 @@ function assertTunnelBinaryUnpacked(appPath: string): void {
  * *code identity*, not about the packaged layout, the asar reads, the native
  * `dlopen`s or the server boot — the things under test here. The shipped build
  * keeps `hardenedRuntime: true` (with the entitlements that make it work), and
- * `desktop-release.yml`'s verify-macos job is what asserts its signature.
+ * `desktop-release.yml`'s "Verify the macOS app bundle" step is what asserts its signature.
  *
  * Conditional, not unconditional, because it is not always needed — a local
  * pack hit this; the same pack on a GitHub macOS runner did not (electron-
@@ -1131,7 +1131,7 @@ async function main(): Promise<void> {
   if (process.platform !== 'darwin') {
     throw new Error(
       `This smoke is macOS-only (it drives a .app bundle); got ${process.platform}. The Windows ` +
-        `installer is verified separately by desktop-release.yml's verify-windows job.`
+        `installer is verified separately by desktop-release.yml's build-windows job.`
     );
   }
 

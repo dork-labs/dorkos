@@ -13,6 +13,7 @@ import { collect } from '../collect.ts';
 import { LatestSchema, readData, snapshotPath, SnapshotSchema } from '../data.ts';
 import { repeatEjections } from '../ejection-facts.ts';
 import { refreshOlderDays } from '../refresh.ts';
+import { desktopReleaseRuns, trimRun } from '../series.ts';
 import { normaliseQuery, replayGh, type Recording } from '../gh.ts';
 import { timelinePageQuery } from '../prs.ts';
 import { loadHandFiles } from '../load.ts';
@@ -355,6 +356,88 @@ describe('collect on a recorded day', () => {
       },
     ]);
     expect(snap.flaky_builds).toEqual([{ sha: 'ccc', runner: 'vitest' }]);
+  });
+});
+
+describe('desktopReleaseRuns (tracked.desktop-release-wall-clock)', () => {
+  const run = (id: number, file: string, event: string, branch: string, created: string) =>
+    trimRun({
+      id,
+      path: `.github/workflows/${file}`,
+      event,
+      status: 'completed',
+      conclusion: 'success',
+      created_at: `${DAY}T${created}Z`,
+      updated_at: `${DAY}T${created}Z`,
+      head_branch: branch,
+      head_sha: `s${id}`,
+    });
+  const releases = [
+    { tag: 'v1.2.0', published_at: `${DAY}T10:45:24Z` },
+    { tag: 'v1.1.0', published_at: `${DAY}T09:00:00Z` },
+  ];
+
+  it('keeps every Desktop Release run, joined to its ref s published release, and nothing else', () => {
+    const runs = [
+      run(1, 'desktop-release.yml', 'push', 'v1.2.0', '10:00:00'),
+      run(2, 'desktop-release.yml', 'workflow_dispatch', 'v1.1.0', '08:00:00'),
+      run(3, 'desktop-release.yml', 'push', 'v1.3.0', '20:00:00'),
+      run(4, 'test.yml', 'push', 'v1.2.0', '10:00:01'),
+    ];
+    expect(desktopReleaseRuns(runs, releases)).toEqual([
+      // The dispatch is kept with its event; the reader is what refuses it.
+      {
+        ref: 'v1.1.0',
+        event: 'workflow_dispatch',
+        started: `${DAY}T08:00:00Z`,
+        published_at: `${DAY}T09:00:00Z`,
+      },
+      {
+        ref: 'v1.2.0',
+        event: 'push',
+        started: `${DAY}T10:00:00Z`,
+        published_at: `${DAY}T10:45:24Z`,
+      },
+      // No published release yet (a draft, or not out when collected): null, never a guess.
+      { ref: 'v1.3.0', event: 'push', started: `${DAY}T20:00:00Z`, published_at: null },
+    ]);
+  });
+
+  it('is recorded on a collected day, and an unpublished tag push is said out loud', () => {
+    const rec = dayRecording();
+    const extra = {
+      id: 901,
+      name: 'Desktop Release',
+      path: '.github/workflows/desktop-release.yml',
+      event: 'push',
+      status: 'completed',
+      conclusion: 'success',
+      created_at: `${DAY}T16:00:00Z`,
+      updated_at: `${DAY}T16:40:00Z`,
+      run_attempt: 1,
+      head_branch: 'v2.0.0',
+      head_sha: 'ddd',
+    };
+    rec.rest[`${RUNS_PATH}&page=1`] = {
+      total_count: RUNS.length + 1,
+      workflow_runs: [...RUNS, extra],
+    };
+    rec.rest[`repos/o/r/commits/ddd/check-runs?filter=all&per_page=100&page=1`] = {
+      total_count: 0,
+      check_runs: [],
+    };
+    const { r, snap } = runCollect(rec);
+    expect(r.healthy).toBe(true);
+    expect(snap.desktop_release_runs).toEqual([
+      { ref: 'v2.0.0', event: 'push', started: `${DAY}T16:00:00Z`, published_at: null },
+    ]);
+    expect(snap.health.warnings.join('\n')).toContain(
+      'Desktop Release: no published release yet for v2.0.0'
+    );
+  });
+
+  it('records a day with no release as measured and empty, not as absent', () => {
+    expect(runCollect(dayRecording()).snap.desktop_release_runs).toEqual([]);
   });
 });
 

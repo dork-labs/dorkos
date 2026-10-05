@@ -25,6 +25,8 @@ export interface AppServerHarnessOptions {
   relay?: CreditsRelay;
   /** Stop-ack bound. */
   stopAckMs?: number;
+  /** When an unanswered request is declined. */
+  interactionExpireMs?: number;
 }
 
 /**
@@ -55,6 +57,9 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
     },
     realpath: (path) => `/real${path}`,
     stopAckMs: options.stopAckMs ?? 300,
+    ...(options.interactionExpireMs !== undefined
+      ? { interactionExpireMs: options.interactionExpireMs }
+      : {}),
   });
   const bindings: Array<{ sessionId: string; threadId: string; replaces?: string }> = [];
 

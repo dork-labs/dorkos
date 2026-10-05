@@ -15,15 +15,7 @@ import {
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
-import {
-  ApiError,
-  JSON_BODY_MS,
-  UPLOAD_IDLE_MS,
-  handleError,
-  json,
-  RateLimited,
-  readJson,
-} from './http.js';
+import { ApiError, JSON_BODY_MS, UPLOAD_IDLE_MS, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/community/channels.js';
@@ -46,6 +38,7 @@ import { registerHostErasureJournalRoutes } from './routes/host/host-erasure-jou
 import { registerHostLifecycleRoutes } from './routes/host/host-lifecycle.js';
 import { registerShortNameRoutes } from './routes/host/short-names.js';
 import { callerAddress } from './caller-address.js';
+import { createAttemptLimiter } from './limits/attempt-limiter.js';
 import { registerOwnerClaimRoutes } from './routes/host/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host/host-keys.js';
 import { registerHostTakedownRoutes } from './routes/host/host-takedowns.js';
@@ -82,6 +75,10 @@ import {
 } from './routes/account/account-password.js';
 import { registerSignInLinkRoutes } from './routes/account/sign-in-link.js';
 import { withRequestStart } from './sign-in/request-start.js';
+import { callerLimitKey, EmailLinkLimiter } from './email-links/limiter.js';
+import { EMAIL_LINK_CAPS, emailLinksOn } from './email-links/model.js';
+import { queueEmailConfirmation, registerEmailLinkRequestRoutes } from './email-links/requests.js';
+import { registerEmailLinkUseRoutes } from './email-links/confirm.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -133,37 +130,21 @@ export function createCommunityApp({
   // A notice is queued only where mail is set up and the worker can compose its kind.
   const canSendNotice = (kind: NoticeKind) =>
     config.mail !== null && noticeComposers[kind] !== undefined;
+  // Mailed reset, sign-in and confirmation links exist exactly when mail is on and the worker
+  // can compose all three; there is no separate switch.
+  const linksOn = emailLinksOn(config, noticeComposers);
   const auth = createCommunityAuth(pool, config, {
     now: hooks?.now,
     canSendNotice,
+    emailLinksOn: linksOn,
     beforeSessionInsert: hooks?.beforeSessionInsert,
   });
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
-  const attemptTimes = new Map<string, number[]>();
-  const limitAttempts = (key: string, ceiling: number) => {
-    const now = Date.now();
-    if (attemptTimes.size > 10_000) {
-      for (const [address, times] of attemptTimes) {
-        if (times.at(-1)! < now - 60_000) attemptTimes.delete(address);
-      }
-      if (attemptTimes.size > 10_000) attemptTimes.delete(attemptTimes.keys().next().value!);
-    }
-    const current = (attemptTimes.get(key) ?? []).filter((time) => now - time < 60_000);
-    if (current.length >= ceiling)
-      // The oldest attempt still in the window is the next one to free a slot.
-      throw new RateLimited(
-        'Too many attempts. Try again soon.',
-        Math.max(1, Math.ceil((current[0] + 60_000 - now) / 1000))
-      );
-    current.push(now);
-    attemptTimes.set(key, current);
-  };
-  /** Give back the most recent attempt spent under `key`, as for a confirmed password. */
-  const refundAttempt = (key: string) => {
-    attemptTimes.get(key)?.pop();
-  };
+  const { limitAttempts, refundAttempt } = createAttemptLimiter();
+  // Mailed links keep their own limits, apart from the shared map above (email-links/limiter.ts).
+  const emailLinkLimiter = new EmailLinkLimiter();
   // The socket peer, or the address a configured trusted proxy names; see `callerAddress`.
   const peer = (c: Parameters<typeof getConnInfo>[0]) =>
     callerAddress(c, config.trustedProxyHeader);
@@ -256,6 +237,21 @@ export function createCommunityApp({
   };
   app.use('/api/v1/*', recordStart);
   app.use('/api/auth/*', recordStart);
+  // Using a mailed link spends from a per-caller budget: tokens are 256-bit, so this caps load,
+  // not guessing.
+  const limitEmailLinkUse = (c: Context) =>
+    emailLinkLimiter.spend(`email-link-use:${callerLimitKey(peer(c))}`, {
+      perMinute: config.limits.emailLinkRequestsPerMinute * EMAIL_LINK_CAPS.useMultiplier,
+    });
+  app.use('/api/auth/email-link/*', async (c, next) => {
+    limitEmailLinkUse(c);
+    await next();
+  });
+  // Better Auth's own reset link (`GET /reset-password/:token`) is off. `disabledPaths` matches
+  // exact paths only, so the token path is refused here, before Better Auth sees it.
+  app.all('/api/auth/reset-password/*', () => {
+    throw new ApiError(404, 'NOT_FOUND', 'Not found.');
+  });
   app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
 
   const now = hooks?.now ?? (() => new Date());
@@ -384,6 +380,9 @@ export function createCommunityApp({
         [communityId]
       );
       await client.query('UPDATE bootstrap_grants SET consumed_at=now() WHERE id=$1', [grantId]);
+      // The first owner's email is not confirmed yet either; mail them a link, as any sign-up.
+      if (linksOn)
+        await queueEmailConfirmation(client, { userId, email, authSecret: config.authSecret });
       return {
         community: {
           id: communityId,
@@ -480,6 +479,24 @@ export function createCommunityApp({
   });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
+  registerEmailLinkRequestRoutes(hostApi, {
+    pool,
+    auth,
+    config,
+    now,
+    on: linksOn,
+    limiter: emailLinkLimiter,
+    peer,
+  });
+  hostApi.use('/email-links/peek', async (c, next) => {
+    limitEmailLinkUse(c);
+    await next();
+  });
+  hostApi.use('/account/email-confirmation/confirm', async (c, next) => {
+    limitEmailLinkUse(c);
+    await next();
+  });
+  registerEmailLinkUseRoutes(hostApi, { pool, auth, config, on: linksOn });
   registerSignInLinkRoutes(hostApi, {
     pool,
     auth,
@@ -539,6 +556,7 @@ export function createCommunityApp({
       github: Boolean(config.oauth.github),
       oidc: config.oidc ? { label: config.oidc.label, mark: config.oidc.mark } : null,
       minimumAge: config.minimumAge,
+      emailLinks: linksOn,
     })
   );
 

@@ -79,6 +79,12 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
     effort: 'high',
     summary: 'auto',
   },
+  'turn/steer': {
+    threadId: 't',
+    expectedTurnId: 'u',
+    input: [{ type: 'text', text: 'also this', text_elements: [] }],
+    clientUserMessageId: 'm2',
+  },
   'turn/interrupt': { threadId: 't', turnId: 'u' },
   'thread/backgroundTerminals/list': { threadId: 't' },
   'thread/fork': {

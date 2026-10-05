@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import type { MessageDeliveryOutcome } from '@dorkos/shared/schemas';
-import { queueDowngradeNotice } from '../queue-chips';
+import type {
+  MessageDeliveryOutcome,
+  QueuedMessage,
+  QueuedWaitingOn,
+} from '@dorkos/shared/schemas';
+import { describeWaitingOn, queueDowngradeNotice, selectWaitingQueue } from '../queue-chips';
 
 /** A delivery outcome that was downgraded for `reason`. */
 function downgraded(reason: MessageDeliveryOutcome['degradedBecause']): MessageDeliveryOutcome {
@@ -85,5 +89,81 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     for (const reason of reasons) {
       expect(queueDowngradeNotice(downgraded(reason))).not.toContain('—');
     }
+  });
+});
+
+describe('a message held for background work (DOR-2065)', () => {
+  const held = (over: Partial<QueuedWaitingOn> = {}): QueuedWaitingOn => ({
+    reason: 'background-work',
+    holding: { agents: 2, shells: 0, other: 0 },
+    pins: ['cwd'],
+    targetFolderName: 'dorkos-cloud',
+    since: 1,
+    releaseAt: 2,
+    ...over,
+  });
+  const row = (id: string, waitingOn?: QueuedWaitingOn): QueuedMessage => ({
+    id,
+    content: id,
+    disposition: 'queue',
+    enqueuedAt: 1,
+    enqueuedBy: 'me',
+    ...(waitingOn ? { waitingOn } : {}),
+  });
+
+  it('says what it waits on and what sending it changes', () => {
+    expect(describeWaitingOn(held())).toEqual({
+      line: 'Held for 2 helpers. Sending it moves to dorkos-cloud.',
+      switchHint: 'Switching now stops 2 helpers.',
+    });
+    expect(
+      describeWaitingOn(
+        held({ holding: { agents: 1, shells: 2, other: 1 }, pins: ['systemPromptAppend'] })
+      ).line
+    ).toBe(
+      'Held for 1 helper, 2 commands and 1 background job. Sending it loads new instructions.'
+    );
+    expect(describeWaitingOn(held({ pins: ['agentIdentity'] })).line).toBe(
+      'Held for 2 helpers. Sending it switches agents.'
+    );
+    expect(describeWaitingOn(held({ pins: ['effort'] })).line).toBe(
+      'Held for 2 helpers. Sending it applies new settings.'
+    );
+  });
+
+  it('never calls a Monitor a task, the name of the Tasks product', () => {
+    const { line } = describeWaitingOn(held({ holding: { agents: 0, shells: 0, other: 2 } }));
+    expect(line).toBe('Held for 2 background jobs. Sending it moves to dorkos-cloud.');
+    expect(line).not.toMatch(/task/i);
+  });
+
+  it('says what it is when nothing is running in the background', () => {
+    const none = { agents: 0, shells: 0, other: 0 };
+    expect(describeWaitingOn(held({ holding: none, because: 'delivery-owed' })).line).toBe(
+      'Held for a helper’s report. Sending it moves to dorkos-cloud.'
+    );
+    expect(describeWaitingOn(held({ holding: none, because: 'waiting-on-person' })).line).toBe(
+      'Held for your answer. Sending it moves to dorkos-cloud.'
+    );
+    const timer = describeWaitingOn(held({ holding: none, because: 'timer-pending' }));
+    expect(timer.line).toBe('Held for a reminder the agent set. Sending it moves to dorkos-cloud.');
+    expect(timer.switchHint).toBe('Switching now cancels the reminder.');
+    const busy = describeWaitingOn(held({ holding: none, because: 'turn-open' }));
+    expect(busy.line).toBe('Held until the agent is free. Sending it moves to dorkos-cloud.');
+    expect(busy.line).not.toMatch(/background/);
+    expect(busy.switchHint).toBe('Switching now stops what the agent is doing.');
+  });
+
+  it('keeps every line within the app’s word limit', () => {
+    for (const pins of [['cwd'], ['agentIdentity'], ['systemPromptAppend'], ['effort']]) {
+      const worst = describeWaitingOn(held({ holding: { agents: 12, shells: 3, other: 2 }, pins }));
+      expect(worst.line.split(/\s+/).length, pins[0]).toBeLessThanOrEqual(15);
+    }
+  });
+
+  it('shows a held head even with no turn running', () => {
+    const queue = [row('a', held()), row('b')];
+    expect(selectWaitingQueue(queue, 'idle')).toEqual(queue);
+    expect(selectWaitingQueue([row('a'), row('b')], 'idle')).toEqual([row('b')]);
   });
 });

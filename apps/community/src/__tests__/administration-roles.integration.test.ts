@@ -2387,6 +2387,15 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
     "the waiting sign-in's cookie plus the matched account's password; sign-in-link.integration.test.ts",
   'DELETE /sign-in-link': "cancels this browser's own waiting sign-in",
   'GET /sign-in-link/notice': "what this browser's own sign-in page should say about linking",
+  'POST /account/password-reset':
+    'anyone asks for a reset link; the same answer for every address; email-links.integration.test.ts',
+  'POST /sign-in-link/email':
+    "mails this browser's own held sign-in a sign-in link; email-links.integration.test.ts",
+  'POST /account/email-confirmation': 'the caller mails their own account a confirmation link',
+  'POST /email-links/peek':
+    'whoever holds a mailed link looks at it; email-links.integration.test.ts',
+  'POST /account/email-confirmation/confirm':
+    "the caller confirms their own account's email with its mailed link; email-links.integration.test.ts",
   'GET /owner/erasures':
     'completed self-erasures only; member-erasure.integration.test.ts covers who may read it',
   'GET /takedowns':

@@ -8,6 +8,7 @@ import type {
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '../api/query-keys';
+import { connectReturnTo } from '../lib/connect-return-to';
 
 /**
  * How long catalog pages are reused before they are fetched again. The server
@@ -165,7 +166,10 @@ export function useConnectorUsage(connectionId: string | null) {
   });
 }
 
-/** Start one durable owner authentication flow. */
+/**
+ * Start one durable owner authentication flow. The way back into the app
+ * (`returnTo`) is filled in here unless the caller names one.
+ */
 export function useStartConnectorAuthentication() {
   const transport = useTransport();
   return useMutation<
@@ -173,7 +177,8 @@ export function useStartConnectorAuthentication() {
     Error,
     ConnectorAuthenticationFlowCreateRequest
   >({
-    mutationFn: (input) => transport.startConnectorAuthentication(input),
+    mutationFn: (input) =>
+      transport.startConnectorAuthentication({ returnTo: connectReturnTo(), ...input }),
     meta: { suppressErrorToast: true },
   });
 }
@@ -233,6 +238,7 @@ export function useReconnectConnectorConnection() {
     mutationFn: ({ connectionId }: { connectionId: string }) =>
       transport.reconnectConnectorConnection(connectionId, {
         idempotencyKey: crypto.randomUUID(),
+        returnTo: connectReturnTo(),
       }),
     meta: { suppressErrorToast: true },
     onSettled: (_data, _error, { connectionId }) => {

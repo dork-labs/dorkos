@@ -5,6 +5,23 @@ export function hashSecret(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+/**
+ * A keyed hash of an email address, for counting and matching mailed-link requests without
+ * storing the address.
+ *
+ * A token is 256 random bits, so its plain SHA-256 ({@link hashSecret}) cannot be reversed. An
+ * address can be guessed, and a plain hash of a guess would confirm it, so a leaked table would
+ * show who asked. Keyed with the auth secret, the stored value is useless without that secret.
+ * The `email-link:` prefix keeps this use of the secret apart from every other HMAC made with it.
+ *
+ * @param value - The address, already trimmed and lower-cased by the caller.
+ * @param secret - The deployment's auth secret.
+ * @returns 64 lower-case hex characters.
+ */
+export function hmacSecret(value: string, secret: string): string {
+  return createHmac('sha256', secret).update(`email-link:${value}`).digest('hex');
+}
+
 /** Compare deployment secrets without a value-dependent prefix check. */
 export function equalSecret(a: string, b: string): boolean {
   const ah = Buffer.from(hashSecret(a), 'hex');

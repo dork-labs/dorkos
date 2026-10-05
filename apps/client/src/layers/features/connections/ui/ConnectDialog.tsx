@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, ExternalLink, RefreshCw, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, ExternalLink, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
 import type {
   ConnectorAuthenticationFlowState,
   ConnectorCatalogProviderRoute,
@@ -15,6 +15,7 @@ import {
 } from '@/layers/entities/connectors';
 import {
   Button,
+  EmptyState,
   ExternalLinkAnchor,
   Input,
   Label,
@@ -37,8 +38,14 @@ import {
   signInLine,
   wayName,
 } from '../lib/connect-route';
+import {
+  connectRefusalCopy,
+  startErrorCopy,
+  type ConnectFailureCopy,
+} from '../lib/connect-failure';
 import { AppActions } from './AppActions';
 import { FirstConnectStep } from './FirstConnectStep';
+import { RelinkButton } from './LoadFailedState';
 import { ConnectionAccessCard } from './access/ConnectionAccessCard';
 
 interface ConnectDialogProps {
@@ -91,6 +98,53 @@ function authenticationAction(
   if (route?.authenticationSetup?.source === 'configured') return 'Continue';
   if (stage === 'authorize') return 'Open sign-in';
   return route?.authKind === 'none' ? 'Check connection' : 'Continue';
+}
+
+/**
+ * A connection that couldn't start: a retry when one could work, otherwise
+ * what it means and, for a link problem, the one action that fixes it.
+ */
+function ConnectFailure({
+  copy,
+  onRetry,
+  isRetrying = false,
+  onClose,
+}: {
+  copy: ConnectFailureCopy;
+  /** Start again. Offered only when the copy says trying again could work. */
+  onRetry?: () => void;
+  isRetrying?: boolean;
+  /** Leave the dialog, when the failure is the end of the flow. */
+  onClose?: () => void;
+}) {
+  if (copy.canRetry && onRetry) {
+    return (
+      <QueryErrorState
+        title={copy.title}
+        description={copy.description}
+        onRetry={onRetry}
+        isRetrying={isRetrying}
+      />
+    );
+  }
+  return (
+    <div data-testid="connect-refusal" className="space-y-2">
+      <EmptyState
+        icon={TriangleAlert}
+        tone="destructive"
+        headline={copy.title}
+        description={copy.description}
+      />
+      <div className="flex flex-wrap gap-2">
+        {copy.action === 'relink' && <RelinkButton variant="outline" size="sm" />}
+        {onClose && (
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -300,9 +354,8 @@ export function ConnectDialog({
                 )}
 
                 {start.isError && (
-                  <QueryErrorState
-                    title="Couldn’t start the connection"
-                    description="Nothing was connected. Try again in a moment."
+                  <ConnectFailure
+                    copy={startErrorCopy(start.error, serviceName)}
                     onRetry={begin}
                     isRetrying={start.isPending}
                   />
@@ -332,7 +385,15 @@ export function ConnectDialog({
                         clears the app's scheme allowlist before the browser is
                         handed anything (DOR-924). */}
                     <Button asChild className="w-full">
-                      <ExternalLinkAnchor href={activeFlow.authorizeUrl}>
+                      {/* A DorkOS-account connection opens DorkOS's own page,
+                          which closes its tab once the account is connected,
+                          and only a tab with its opener can do that. Every
+                          other route keeps the opener cut. The trade-off is in
+                          OpenExternalLinkOptions.keepOpener. */}
+                      <ExternalLinkAnchor
+                        href={activeFlow.authorizeUrl}
+                        keepOpener={route?.mode === 'managed'}
+                      >
                         {authenticationAction(route, 'authorize')}
                         <ExternalLink className="size-4" aria-hidden />
                       </ExternalLinkAnchor>
@@ -383,6 +444,24 @@ export function ConnectDialog({
                   }}
                 />
               </div>
+            ) : activeFlow.state === 'failed' && activeFlow.failureCode ? (
+              (() => {
+                const refusalCopy = connectRefusalCopy(activeFlow.failureCode, serviceName);
+                return (
+                  <ConnectFailure
+                    copy={refusalCopy}
+                    onRetry={
+                      refusalCopy.canRetry
+                        ? () => {
+                            onFlowIdChange(null);
+                            start.reset();
+                          }
+                        : undefined
+                    }
+                    onClose={finish}
+                  />
+                );
+              })()
             ) : (
               <div className="space-y-3">
                 <p role="alert" className="text-destructive text-sm font-medium">

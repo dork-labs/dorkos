@@ -16,11 +16,11 @@ import { ApiError, json, readJson } from '../../http.js';
 import type { CheckAccountPassword } from '../../password-confirmation.js';
 import type { NoticeKind } from '../../mail/outbox.js';
 import { hashSecret, readCookie, verifyValue } from '../../security.js';
-import { LINK_NOTICE_COOKIE, PENDING_LINK_COOKIE } from '../../sign-in/link-gate.js';
+import { LINK_NOTICE_COOKIE, linkCookieName, signInHoldOnly } from '../../sign-in/link-gate.js';
 import { recordSignInLinked, signInName } from '../../sign-in/linked.js';
 
 /** One sign-in waiting for the matched account's password. */
-interface PendingLink {
+export interface PendingLink {
   token_hash: string;
   user_id: string;
   provider_id: string;
@@ -31,7 +31,7 @@ const expired = () =>
   new ApiError(410, 'LINK_EXPIRED', 'This sign-in link expired. Sign in again.');
 
 /** Forget a cookie this browser holds. */
-function clearCookie(c: Context, config: CommunityConfig, name: string) {
+export function clearCookie(c: Context, config: CommunityConfig, name: string) {
   setCookie(c, name, '', {
     httpOnly: true,
     sameSite: 'Lax',
@@ -41,17 +41,20 @@ function clearCookie(c: Context, config: CommunityConfig, name: string) {
   });
 }
 
-/** The hash of the pending-link token this browser holds, or null when it holds no valid one. */
-function pendingTokenHash(c: Context, config: CommunityConfig): string | null {
-  const token = verifyValue(
-    readCookie(c.req.header('cookie') ?? null, PENDING_LINK_COOKIE),
-    config.authSecret
-  );
+/**
+ * The hash of the pending-link token this browser holds, or null when it holds no valid one.
+ * Read only under {@link linkCookieName}: on HTTPS, the `__Host-` cookie and never the plain one.
+ */
+export function pendingTokenHash(
+  cookieHeader: string | null,
+  config: Pick<CommunityConfig, 'publicUrl' | 'authSecret'>
+): string | null {
+  const token = verifyValue(readCookie(cookieHeader, linkCookieName(config)), config.authSecret);
   return token ? hashSecret(token) : null;
 }
 
 /** The live pending link this browser holds: signed, unexpired and unused. */
-async function livePendingLink(
+export async function livePendingLink(
   client: Pick<Pool | PoolClient, 'query'>,
   tokenHash: string | null,
   now: Date,
@@ -60,7 +63,7 @@ async function livePendingLink(
   if (!tokenHash) return null;
   const row = await client.query<PendingLink>(
     `SELECT token_hash,user_id,provider_id,account_id FROM pending_sign_in_links
-     WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>$2
+     WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>$2 AND ${signInHoldOnly}
      ${lock ? 'FOR UPDATE' : ''}`,
     [tokenHash, now]
   );
@@ -113,7 +116,7 @@ export function registerSignInLinkRoutes(
 
   app.post('/sign-in-link', async (c) => {
     c.header('Cache-Control', 'no-store');
-    const tokenHash = pendingTokenHash(c, config);
+    const tokenHash = pendingTokenHash(c.req.header('cookie') ?? null, config);
     const pending = await livePendingLink(pool, tokenHash, now());
     if (!pending) throw expired();
     const body = await readJson(c, CommunityWireSignInLinkRequestSchema);
@@ -135,7 +138,7 @@ export function registerSignInLinkRoutes(
           'UPDATE pending_sign_in_links SET consumed_at=now() WHERE token_hash=$1 AND consumed_at IS NULL',
           [pending.token_hash]
         );
-        clearCookie(c, config, PENDING_LINK_COOKIE);
+        clearCookie(c, config, linkCookieName(config));
       },
     });
     await deps.hooks?.afterPasswordCheck?.();
@@ -183,7 +186,7 @@ export function registerSignInLinkRoutes(
       });
       return user.rows[0].email;
     });
-    clearCookie(c, config, PENDING_LINK_COOKIE);
+    clearCookie(c, config, linkCookieName(config));
     await deps.hooks?.afterLinked?.();
 
     // Signed in exactly as a password sign-in is: Better Auth's own session hooks and cookie.
@@ -204,13 +207,13 @@ export function registerSignInLinkRoutes(
   });
 
   app.delete('/sign-in-link', async (c) => {
-    const tokenHash = pendingTokenHash(c, config);
+    const tokenHash = pendingTokenHash(c.req.header('cookie') ?? null, config);
     if (tokenHash)
       await pool.query(
         'UPDATE pending_sign_in_links SET consumed_at=now() WHERE token_hash=$1 AND consumed_at IS NULL',
         [tokenHash]
       );
-    clearCookie(c, config, PENDING_LINK_COOKIE);
+    clearCookie(c, config, linkCookieName(config));
     return c.body(null, 204);
   });
 
@@ -228,7 +231,11 @@ export function registerSignInLinkRoutes(
         provider: signInName('oidc', config),
       };
     } else {
-      const pending = await livePendingLink(pool, pendingTokenHash(c, config), now());
+      const pending = await livePendingLink(
+        pool,
+        pendingTokenHash(c.req.header('cookie') ?? null, config),
+        now()
+      );
       if (pending) notice = { state: 'pending', provider: signInName(pending.provider_id, config) };
     }
     return json(c, CommunityWireSignInLinkNoticeSchema, notice);

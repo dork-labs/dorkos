@@ -402,6 +402,14 @@ const schema = z.object({
     100
   ),
   COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: integer('COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE', 5, 20),
+  // Mailed links: requests one address (an IPv6 /64) may make a minute, and mails the whole
+  // host may queue an hour, which protects the sender's reputation from a many-address flood.
+  COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE: integer(
+    'COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE',
+    5,
+    100
+  ),
+  COMMUNITY_EMAIL_LINKS_PER_HOUR: integer('COMMUNITY_EMAIL_LINKS_PER_HOUR', 300, 10_000),
   // A notice shorter than a week would not give an owner a fair chance to export.
   COMMUNITY_HOST_DELETION_NOTICE_DAYS: z.coerce.number().int().min(7).max(365).default(14),
   COMMUNITY_SHORT_NAME_COOLOFF_DAYS: z.coerce.number().int().min(0).max(365).default(90),
@@ -740,6 +748,10 @@ export function parseConfig(env: Record<string, unknown>) {
       pairingAttemptsPerMinute: value.COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE,
       hostKeyAttemptsPerMinute: value.COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE,
       reauthAttemptsPerMinute: value.COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE,
+      /** Requests for a mailed link one caller address (an IPv6 /64) may make a minute. */
+      emailLinkRequestsPerMinute: value.COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE,
+      /** Mailed links the whole host may queue in an hour. */
+      emailLinksPerHour: value.COMMUNITY_EMAIL_LINKS_PER_HOUR,
       hostDeletionNoticeDays: value.COMMUNITY_HOST_DELETION_NOTICE_DAYS,
       shortNameCooloffDays: value.COMMUNITY_SHORT_NAME_COOLOFF_DAYS,
       nameLookupsPerMinute: value.COMMUNITY_NAME_LOOKUPS_PER_MINUTE,

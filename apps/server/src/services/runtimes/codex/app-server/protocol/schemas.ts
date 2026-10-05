@@ -79,6 +79,13 @@ const TurnStartParamsSchema = z.strictObject({
 
 const TurnInterruptParamsSchema = z.strictObject({ threadId: z.string(), turnId: z.string() });
 
+const TurnSteerParamsSchema = z.strictObject({
+  threadId: z.string(),
+  expectedTurnId: z.string(),
+  input: z.array(TextUserInputSchema),
+  clientUserMessageId: z.string().optional(),
+});
+
 const ModelListParamsSchema = z.strictObject({
   cursor: z.string().nullable(),
   includeHidden: z.boolean(),
@@ -100,6 +107,9 @@ export const OUTBOUND_PARAMS: Record<ClientMethod, z.ZodType | null> = {
   'thread/resume': ThreadResumeParamsSchema,
   'turn/start': TurnStartParamsSchema,
   'turn/interrupt': TurnInterruptParamsSchema,
+  // Input for the open turn (spec §11); `expectedTurnId` makes a stale steer
+  // a refusal instead of input for whatever turn is running now.
+  'turn/steer': TurnSteerParamsSchema,
   // Experimental (DorkOS opts in at initialize): whether a thread still has
   // background terminals running, so the reaper never kills one (spec §5).
   'thread/backgroundTerminals/list': z.strictObject({ threadId: z.string() }),

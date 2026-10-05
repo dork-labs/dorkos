@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ManagedConnectorAccountListResponseSchema,
+  ManagedConnectorAuthenticationCreateRequestSchema,
   ManagedConnectorAuthenticationStateSchema,
   ManagedConnectorCatalogPageSchema,
   ManagedConnectorCatalogRequestSchema,
@@ -10,6 +11,22 @@ import {
 } from '../connector-managed-discovery-schemas.js';
 
 describe('managed connector discovery wire', () => {
+  it('lets an authentication start say where in the app the person started', () => {
+    const base = { version: 1, requestId: 'req_1', toolkit: 'slack' } as const;
+    expect(ManagedConnectorAuthenticationCreateRequestSchema.parse(base)).toEqual(base);
+    for (const returnTo of ['dorkos://connections', 'http://localhost:4242/connections']) {
+      expect(
+        ManagedConnectorAuthenticationCreateRequestSchema.parse({ ...base, returnTo })
+      ).toEqual({ ...base, returnTo });
+    }
+    for (const returnTo of ['javascript:alert(1)', '//evil.example/x', 'not a url']) {
+      expect(
+        ManagedConnectorAuthenticationCreateRequestSchema.safeParse({ ...base, returnTo }).success,
+        returnTo
+      ).toBe(false);
+    }
+  });
+
   it('bounds catalog requests and rejects caller-selected authority', () => {
     expect(
       ManagedConnectorCatalogRequestSchema.parse({

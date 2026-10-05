@@ -14,7 +14,11 @@ import {
   ConnectorProviderInstanceIdSchema,
   SIGN_IN_COPY,
 } from '@dorkos/shared/connector-schemas';
-import type { ConnectPoll, ConnectStart } from '@dorkos/shared/connector-provider';
+import {
+  ConnectStartRefusedError,
+  type ConnectPoll,
+  type ConnectStart,
+} from '@dorkos/shared/connector-provider';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import {
   ConnectorAuthenticationFlowError,
@@ -230,6 +234,45 @@ describe('ConnectorAuthenticationFlowService', () => {
       expect(start).toHaveBeenCalledTimes(1);
     }
   );
+
+  it.each([
+    ['service_not_ready', SIGN_IN_COPY.serviceNotReady],
+    ['account_link_required', SIGN_IN_COPY.accountLinkRequired],
+    ['service_unavailable', SIGN_IN_COPY.serviceUnavailable],
+  ] as const)(
+    'ends a start the service refused for good (%s) as failed, with its code',
+    async (refusal, reason) => {
+      vi.spyOn(provider, 'startConnect').mockRejectedValue(new ConnectStartRefusedError(refusal));
+      const started = await service.start(OWNER, {
+        providerInstanceId: PROVIDER_ID,
+        toolkit: 'gmail',
+        idempotencyKey: `refused-${refusal}`,
+      });
+
+      expect(started).toMatchObject({ state: 'failed', reason, failureCode: refusal });
+      // The code survives a reload: the poll reads the stored flow.
+      expect(await service.poll(OWNER, started.flowId)).toEqual(started);
+    }
+  );
+
+  it('hands the provider the way back, and keeps it out of the request identity', async () => {
+    const start = vi.spyOn(provider, 'startConnect');
+    const input = {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Work',
+      idempotencyKey: 'with-return-to',
+    };
+    const first = await service.start(OWNER, { ...input, returnTo: 'dorkos://connections' });
+    const repeated = await service.start(OWNER, input);
+
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledWith('gmail', {
+      label: 'Work',
+      returnTo: 'dorkos://connections',
+    });
+    expect(repeated).toEqual(first);
+  });
 
   it('invalidates only interrupted start claims during boot recovery', () => {
     db.insert(connectorAuthenticationFlows)

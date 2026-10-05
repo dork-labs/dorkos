@@ -24,6 +24,8 @@
     "connections/events-ack.json": "ConnectionEventAckResponseSchema",
     "connections/execution.json": "ExecutionSchema",
     "connections/usage.json": "ConnectionUsageResponseSchema",
+    "connections/authentication-flow-request.json": "AuthenticationFlowRequestSchema",
+    "connections/authentication-flow-request-desktop.json": "AuthenticationFlowRequestSchema",
     "billing/entitlements-free.json": "EntitlementsSchema",
     "billing/entitlements-denominated.json": "EntitlementsSchema",
     "billing/balance.json": "BalanceSchema",

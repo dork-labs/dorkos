@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DorkOS Space</title>
+    <!-- No page sends where it came from: a link's token must never leave in a Referer. -->
+    <meta name="referrer" content="no-referrer" />
   </head>
   <body>
     <div id="root"></div>
@@ -15,20 +17,26 @@
         const claimPage = path === '/claim';
         // The owner's keep-ownership link and the new owner's claim link carry the bare token.
         const replacementPage = path === '/keep-ownership' || path === '/owner-replacement';
+        // A mailed reset, sign-in or confirmation link carries the bare token too.
+        const emailLinkPage =
+          path === '/reset-password' || path === '/email-sign-in' || path === '/confirm-email';
+        const barePage = replacementPage || emailLinkPage;
         const fragment = new URLSearchParams(window.location.hash.slice(1));
-        let secret = replacementPage
+        let secret = barePage
           ? window.location.hash.slice(1) || null
           : claimPage
             ? fragment.get('claim')
             : (fragment.get('invite') ?? fragment.get('token'));
-        if ((claimPage || replacementPage) && window.location.hash)
+        if ((claimPage || barePage) && window.location.hash)
           window.history.replaceState(null, '', path + window.location.search);
         if (!secret) return;
-        const [read, clear] = replacementPage
-          ? ['__readDorkosOwnerReplacementFragment', '__clearDorkosOwnerReplacementFragment']
-          : claimPage
-            ? ['__readDorkosOwnerClaimFragment', '__clearDorkosOwnerClaimFragment']
-            : ['__readDorkosInviteFragment', '__clearDorkosInviteFragment'];
+        const [read, clear] = emailLinkPage
+          ? ['__readDorkosEmailLinkFragment', '__clearDorkosEmailLinkFragment']
+          : replacementPage
+            ? ['__readDorkosOwnerReplacementFragment', '__clearDorkosOwnerReplacementFragment']
+            : claimPage
+              ? ['__readDorkosOwnerClaimFragment', '__clearDorkosOwnerClaimFragment']
+              : ['__readDorkosInviteFragment', '__clearDorkosInviteFragment'];
         Object.defineProperties(window, {
           [read]: { value: () => secret, configurable: true, enumerable: false, writable: false },
           [clear]: {
@@ -42,7 +50,7 @@
             writable: false,
           },
         });
-        if (claimPage || replacementPage) return;
+        if (claimPage || barePage) return;
         const tenant = window.location.pathname.match(/^\/c\/[^/]+/u)?.[0];
         const cleanPath = tenant ? `${tenant}/join` : window.location.pathname;
         window.history.replaceState(null, '', cleanPath + window.location.search);

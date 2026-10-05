@@ -214,6 +214,17 @@ export const ManagedConnectorAuthenticationCreateRequestSchema = z
     requestId: ManagedWireIdSchema,
     toolkit: ManagedWireIdSchema,
     label: z.string().min(1).max(200).optional(),
+    /**
+     * Where in the DorkOS app the person started: a `dorkos://` link into the
+     * desktop app, or the app's own http(s) address with its route. The page
+     * that finishes the connection offers it as the way back and never follows
+     * it on its own. A service that predates this field refuses the request
+     * (this object is strict), so the instance sends it again without it.
+     */
+    returnTo: z
+      .url({ protocol: /^(https?|dorkos)$/ })
+      .max(2048)
+      .optional(),
   })
   .strict();
 /** Idempotent instance-owned request to start provider authentication. */

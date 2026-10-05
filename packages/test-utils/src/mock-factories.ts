@@ -491,6 +491,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       })
     ),
     removeQueuedMessage: vi.fn().mockResolvedValue({ queue: [] }),
+    switchSessionProcess: vi.fn().mockResolvedValue({ switched: true }),
     runCommandIntent: vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),

@@ -570,6 +570,23 @@
         "title": "TurnStartResponse",
         "type": "object"
       }
+    },
+    "turn/steer": {
+      "params": {
+        "$ref": "#/definitions/TurnSteerParams"
+      },
+      "result": {
+        "properties": {
+          "turnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "turnId"
+        ],
+        "title": "TurnSteerResponse",
+        "type": "object"
+      }
     }
   },
   "definitions": {
@@ -9507,6 +9524,55 @@
         "inProgress"
       ],
       "type": "string"
+    },
+    "TurnSteerParams": {
+      "properties": {
+        "additionalContext": {
+          "additionalProperties": {
+            "$ref": "#/definitions/AdditionalContextEntry"
+          },
+          "description": "Optional client-provided context fragments keyed by an opaque source identifier.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "clientUserMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expectedTurnId": {
+          "description": "Required active turn id precondition. The request fails when it does not match the currently active turn.",
+          "type": "string"
+        },
+        "input": {
+          "items": {
+            "$ref": "#/definitions/UserInput"
+          },
+          "type": "array"
+        },
+        "responsesapiClientMetadata": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional metadata to enrich Codex's ResponsesAPI turn metadata.\n\nEntries are flattened into the JSON string sent as `client_metadata[\"x-codex-turn-metadata\"]` on ResponsesAPI HTTP and websocket requests.\n\nThey are not sent as top-level ResponsesAPI `client_metadata` keys, and reserved keys such as `session_id`, `thread_id`, `turn_id`, and `window_id` cannot be overridden.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expectedTurnId",
+        "input",
+        "threadId"
+      ],
+      "type": "object"
     },
     "TurnToolOutput": {
       "properties": {

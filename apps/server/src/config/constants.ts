@@ -368,6 +368,17 @@ export const SESSIONS = {
    */
   BACKGROUND_WORK_PARK_CEILING_MS: 4 * 60 * 60 * 1000,
   /**
+   * How long a warm process must have said nothing before a message may restart
+   * it (spec `warm-process-lifecycle` D2, `COMMIT_SETTLE_MS`).
+   *
+   * A tool call that starts a helper and the frame naming that helper arrive in
+   * one output burst, milliseconds apart, and so do the trailing frames after a
+   * `result`. Two seconds of silence is far past any gap inside a burst, so a
+   * process still flushing its last segment is never read as quiet. Only a
+   * restart waits for it, and only a caller that can wait (DOR-2065).
+   */
+  RESTART_SETTLE_MS: 2_000,
+  /**
    * Inactivity window before a detached turn is declared stalled: the watchdog
    * interrupts the runtime and closes the turn with a typed error. Resets on
    * every StreamEvent; suspended while the session holds a live pending

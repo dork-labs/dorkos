@@ -61,6 +61,14 @@ export type ExternalLinkAnchorProps = Omit<
    * `openExternalLink`'s return value exists to prevent.
    */
   onOpened?: () => void;
+  /**
+   * Let the opened tab keep `window.opener` on a plain click (web only). For a
+   * DorkOS-owned page that closes its own tab when it is done; read
+   * `OpenExternalLinkOptions.keepOpener` for the trade-off before passing it.
+   * A modified click still opens with `rel="noopener"`: that tab is the
+   * reader's own request, not ours.
+   */
+  keepOpener?: boolean;
 };
 
 /**
@@ -73,7 +81,13 @@ export type ExternalLinkAnchorProps = Omit<
  * caller-configurable — the prop type omits them, so that is a compile error
  * rather than an argument silently dropped: every one of these leaves the app.
  */
-export function ExternalLinkAnchor({ href, onOpened, children, ...rest }: ExternalLinkAnchorProps) {
+export function ExternalLinkAnchor({
+  href,
+  onOpened,
+  keepOpener = false,
+  children,
+  ...rest
+}: ExternalLinkAnchorProps) {
   const refusal = linkRefusalHere(href);
 
   const handleClick = useCallback(
@@ -89,9 +103,9 @@ export function ExternalLinkAnchor({ href, onOpened, children, ...rest }: Extern
         return;
       }
       event.preventDefault();
-      if (openExternalLink(href)) onOpened?.();
+      if (openExternalLink(href, { keepOpener })) onOpened?.();
     },
-    [href, onOpened, refusal]
+    [href, onOpened, refusal, keepOpener]
   );
 
   const handleKeyDown = useCallback(
@@ -101,9 +115,9 @@ export function ExternalLinkAnchor({ href, onOpened, children, ...rest }: Extern
       // keyboard user gets no explanation at all.
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      if (openExternalLink(href)) onOpened?.();
+      if (openExternalLink(href, { keepOpener })) onOpened?.();
     },
-    [href, onOpened]
+    [href, onOpened, keepOpener]
   );
 
   return (

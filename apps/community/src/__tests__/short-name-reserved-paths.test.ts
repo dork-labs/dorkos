@@ -4,6 +4,7 @@ import {
   COMMUNITY_RESERVED_SHORT_NAMES,
   CommunityShortNameSchema,
 } from '@dorkos/shared/community-admin-wire';
+import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { OWNER_CLAIM_PATH } from '../browser/owner-claim.js';
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -49,6 +50,8 @@ describe('reserved short names', () => {
       ...topLevelPaths(source('../main.ts')),
       ...topLevelPaths(source('../browser/BrowserRoot.tsx')),
       OWNER_CLAIM_PATH.slice(1),
+      // The pages a mailed link opens; main.ts serves them from this one list.
+      ...Object.values(COMMUNITY_EMAIL_LINK_PAGES).map((page) => page.slice(1)),
     ];
     // The scanner itself must find the paths each file really routes on.
     expect(paths).toEqual(
