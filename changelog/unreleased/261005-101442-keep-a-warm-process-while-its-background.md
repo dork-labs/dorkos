@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(claude-code): keep a warm process while its background shell runs, and pin a new chat's account once it has a transcript"
+  - 'fix(claude-code): retry a missed account probe, drop day-old wake records'
 ---
 
 ### Fixed
