@@ -60,7 +60,6 @@ import {
   CANVAS_EDIT_HEARTBEAT_MS,
   CANVAS_EDIT_TTL_MS,
   CANVAS_VERBS,
-  MAX_CANVAS_DOCUMENTS,
   OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
   NO_DEFAULT_DOCUMENT_MESSAGE,
   canvasSourcePath,
@@ -72,6 +71,7 @@ import {
   type CanvasService,
   type CanvasTreePlacement,
 } from '../../canvas/index.js';
+import { MAX_CANVAS_DOCUMENTS } from '../../canvas/canvas-limits.js';
 import { RoomError } from '../room-errors.js';
 import type { RoomBroadcaster } from '../room-stream.js';
 import type { RoomVisibility } from '../service/room-visibility.js';

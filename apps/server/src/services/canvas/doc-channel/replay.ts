@@ -4,7 +4,7 @@ import type {
   CanvasChannelFrame,
   CanvasChannelJsonValue,
 } from '@dorkos/shared/canvas-channel-schemas';
-import { protectedEventSql } from './accounting.js';
+import { protectedEventSql } from './current/accounting.js';
 import { DocChannelStore, DocChannelClosedError, DocChannelCorruptionError } from './store.js';
 import type { DocIngestAuthority } from './ingest-types.js';
 

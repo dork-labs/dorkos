@@ -891,6 +891,21 @@ importers:
       giget:
         specifier: ^3.3.1
         version: 3.3.1
+      mdast-util-from-markdown:
+        specifier: 2.0.3
+        version: 2.0.3
+      mdast-util-frontmatter:
+        specifier: 2.0.1
+        version: 2.0.1
+      mdast-util-gfm-task-list-item:
+        specifier: 2.0.0
+        version: 2.0.0
+      micromark-extension-frontmatter:
+        specifier: 2.0.0
+        version: 2.0.0
+      micromark-extension-gfm-task-list-item:
+        specifier: 2.1.0
+        version: 2.1.0
       multer:
         specifier: ^2.4.0
         version: 2.4.0
