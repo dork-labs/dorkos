@@ -685,11 +685,11 @@ describe('asking for a reset link', () => {
     expect((await askGenerous()).status).toBe(429);
   });
 
-  it('throttles the 4th mail an hour and the 11th a day to one address, and at the host cap (T7)', async () => {
+  it('throttles the 4th mail of a kind an hour and the 21st a day to one address, and at the host cap (T7)', async () => {
     // Purpose: fails if one address can be mail-bombed past its caps, or the host past its
     // hourly total; the request still answers 202 each time.
     await account('t7-day@example.com', { confirmed: true });
-    for (let i = 0; i < 10; i++)
+    for (let i = 0; i < 20; i++)
       await pool.query(
         `INSERT INTO email_link_requests(kind,email_hash,state,resolved_at,created_at)
          VALUES('password_reset',$1,'queued',now()-interval '2 hours',now()-interval '2 hours')`,
@@ -726,6 +726,47 @@ describe('asking for a reset link', () => {
       [hmacSecret('t7-host@example.com', SECRET)]
     );
     expect(host.rows[0].state).toBe('throttled');
+  });
+
+  it("never lets a stranger block a person's reset for longer than the hour (T7)", async () => {
+    // Purpose: fails if someone asking for resets on another person's address can use up that
+    // address's allowance for a day, so the owner's own reset is quietly throttled.
+    await account('t7-victim@example.com', { confirmed: true });
+    const hash = hmacSecret('t7-victim@example.com', SECRET);
+    // Over the last few hours a stranger got the most the hourly cap allows each hour.
+    for (let i = 0; i < 12; i++)
+      await pool.query(
+        `INSERT INTO email_link_requests(kind,email_hash,state,resolved_at,created_at)
+         VALUES('password_reset',$1,'queued',now()-$2::interval,now()-$2::interval)`,
+        [hash, `${61 + i * 15} minutes`]
+      );
+    // And has just spent this hour's allowance too: the owner's reset now waits for the hour.
+    for (let i = 0; i < 3; i++)
+      await pool.query(
+        `INSERT INTO email_link_requests(kind,email_hash,state,resolved_at,created_at)
+         VALUES('password_reset',$1,'queued',now()-interval '5 minutes',now()-interval '5 minutes')`,
+        [hash]
+      );
+    const latest = async () =>
+      (
+        await pool.query<{ state: string }>(
+          `SELECT state FROM email_link_requests WHERE email_hash=$1 ORDER BY created_at DESC LIMIT 1`,
+          [hash]
+        )
+      ).rows[0].state;
+    await call(on, '/api/v1/account/password-reset', 'POST', { email: 't7-victim@example.com' });
+    await deliverAll();
+    expect(await latest()).toBe('throttled');
+    // An hour later the owner asks again, and gets their link.
+    await pool.query(
+      `UPDATE email_link_requests SET resolved_at=resolved_at-interval '1 hour',
+         created_at=created_at-interval '1 hour' WHERE email_hash=$1`,
+      [hash]
+    );
+    await call(on, '/api/v1/account/password-reset', 'POST', { email: 't7-victim@example.com' });
+    await deliverAll();
+    expect(await latest()).toBe('queued');
+    expect(lastMailTo('t7-victim@example.com')?.page).toBe('/reset-password');
   });
 
   it('keeps the typed address only until it is resolved, and only hashes of links (T15)', async () => {
@@ -1232,6 +1273,27 @@ describe('a sign-in link', () => {
     expect(await whoIs(squatter)).toBe('t12@example.com');
     expect(await providersOf(userId)).toEqual(['credential']);
     expect(await verified(userId)).toBe(false);
+  });
+
+  it('refuses, changing nothing, when another account linked the held sign-in meanwhile', async () => {
+    // Purpose: fails if a never-confirmed account is cleared first and only then finds its held
+    // sign-in taken, which would leave it with no password, no sign-ins and no way back in.
+    const { userId, memberId } = await account('taken-hold@example.com');
+    const { cookie, token } = await signInToken('taken-hold@example.com', 'taken-hold-sub');
+    const other = await account('taken-hold-other@example.com', { confirmed: true });
+    await pool.query(
+      `INSERT INTO account(id,"accountId","providerId","userId")
+       VALUES($1,'taken-hold-sub','oidc',$2)`,
+      [randomUUID(), other.userId]
+    );
+    const used = await emailSignIn(token, cookie);
+    expect(used.status).toBe(409);
+    expect(await codeOf(used)).toBe('ALREADY_LINKED');
+    expect(used.headers.getSetCookie().join(';')).not.toContain('session_token=');
+    expect(await providersOf(userId)).toEqual(['credential']);
+    expect((await passwordSignIn('taken-hold@example.com')).status).toBe(200);
+    expect(await verified(userId)).toBe(false);
+    expect(await audit(memberId, 'member.email_confirmed')).toEqual([]);
   });
 
   it('cannot be asked for without a held sign-in, and never makes an account (T13)', async () => {

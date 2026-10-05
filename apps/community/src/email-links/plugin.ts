@@ -53,6 +53,13 @@ function gone(message = EXPIRED) {
   return new APIError('GONE', { code: 'LINK_EXPIRED', message });
 }
 
+function alreadyLinked() {
+  return new APIError('CONFLICT', {
+    code: 'ALREADY_LINKED',
+    message: 'That sign-in is already linked to another account here. Nothing was changed.',
+  });
+}
+
 function refused(message: string) {
   return new APIError('FORBIDDEN', { code: 'SIGN_IN_REFUSED', message });
 }
@@ -203,6 +210,13 @@ export function communityEmailLinks(deps: EmailLinkPluginDeps): BetterAuthPlugin
             async (client, link, memberIds) => {
               const userId = link.account.id;
               const hold = link.hold!;
+              // Checked before anything changes: a held identity some other account has linked
+              // since can never join this one, and clearing first would leave it with no way in.
+              const taken = await client.query(
+                `SELECT 1 FROM account WHERE "providerId"=$1 AND "accountId"=$2`,
+                [hold.providerId, hold.accountId]
+              );
+              if (taken.rowCount) throw alreadyLinked();
               await client.query(
                 'UPDATE pending_sign_in_links SET consumed_at=now() WHERE token_hash=$1',
                 [hold.pendingHash]
@@ -221,30 +235,27 @@ export function communityEmailLinks(deps: EmailLinkPluginDeps): BetterAuthPlugin
                 await client.query('UPDATE "user" SET "emailVerified"=true WHERE id=$1', [userId]);
                 await auditAccount(client, memberIds, 'member.email_confirmed', ['sign_in']);
               }
-              // The held identity joins the account, unless another account linked it first.
-              await client.query('SAVEPOINT link_hold');
-              let linked = true;
+              // The held identity joins the account. Another account linked it meanwhile: refuse,
+              // and the whole transaction (the clean-out with it) rolls back.
               try {
                 await client.query(
                   `INSERT INTO account(id,"accountId","providerId","userId") VALUES($1,$2,$3,$4)`,
                   [randomUUID(), hold.accountId, hold.providerId, userId]
                 );
               } catch (cause) {
-                if ((cause as { code?: string }).code !== '23505') throw cause;
-                await client.query('ROLLBACK TO SAVEPOINT link_hold');
-                linked = false;
+                if ((cause as { code?: string }).code === '23505') throw alreadyLinked();
+                throw cause;
               }
-              if (linked)
-                await recordSignInLinked(client, {
-                  userId,
-                  memberIds,
-                  changedFields: cleared
-                    ? [hold.providerId, 'email', 'cleared']
-                    : [hold.providerId, 'email'],
-                  notice: deps.canSendNotice('account.sign_in_linked'),
-                  now: new Date(),
-                });
-              return { userId, xid, cleared, provider: linked ? hold.providerId : null };
+              await recordSignInLinked(client, {
+                userId,
+                memberIds,
+                changedFields: cleared
+                  ? [hold.providerId, 'email', 'cleared']
+                  : [hold.providerId, 'email'],
+                notice: deps.canSendNotice('account.sign_in_linked'),
+                now: new Date(),
+              });
+              return { userId, xid, cleared, provider: hold.providerId };
             }
           );
           if (result.xid) markAccessCleared(result.userId, result.xid);

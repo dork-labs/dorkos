@@ -69,7 +69,10 @@ export function useEmailLink() {
 /** What a failed look or use means for the page. */
 export function failure(cause: unknown): EmailLinkState {
   if (cause instanceof RequestError && cause.code === 'LINK_EXPIRED') return { kind: 'expired' };
-  if (cause instanceof RequestError && cause.code === 'SIGN_IN_REFUSED')
+  if (
+    cause instanceof RequestError &&
+    (cause.code === 'SIGN_IN_REFUSED' || cause.code === 'ALREADY_LINKED')
+  )
     return { kind: 'refused', message: cause.message };
   return { kind: 'retry', message: describeError(cause) };
 }

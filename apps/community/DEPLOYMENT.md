@@ -64,7 +64,7 @@ Most people can keep the default limits. Restart the service after changing one.
 
 `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE` also counts every use of the links for replacing an owner: keeping ownership, and checking or redeeming a claim.
 
-`COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE` limits how often one address can ask for a password reset, sign-in or confirmation link; one address can also ask at most 20 times an hour. `COMMUNITY_EMAIL_LINKS_PER_HOUR` limits how many such links your whole server emails in an hour, so a flood of requests cannot hurt your sender's reputation. Separately, one email address gets at most 3 links an hour and 10 a day. Both settings matter only with [mail](#optional-mail) set up.
+`COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE` limits how often one address can ask for a password reset, sign-in or confirmation link; one address can also ask at most 20 times an hour. `COMMUNITY_EMAIL_LINKS_PER_HOUR` limits how many such links your whole server emails in an hour, so a flood of requests cannot hurt your sender's reputation. Separately, one email address gets at most 3 links of each kind an hour and 20 a day, so a stranger asking on someone's behalf can delay their link by an hour at most. Both settings matter only with [mail](#optional-mail) set up.
 
 Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
 

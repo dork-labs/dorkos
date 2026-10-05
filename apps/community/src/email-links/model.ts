@@ -36,10 +36,14 @@ export const EMAIL_LINK_SEND_WINDOW_MS: Record<EmailLinkKind, number> = {
 
 /** Fixed caps, not settings. */
 export const EMAIL_LINK_CAPS = {
-  /** Mails queued to one address in any hour, across every kind. */
+  /** Mails of one kind queued to one address in any hour. */
   perAddressPerHour: 3,
-  /** Mails queued to one address in any 24 hours, across every kind. */
-  perAddressPerDay: 10,
+  /**
+   * Mails queued to one address in any 24 hours, across every kind: only a flood stops here. Kept
+   * well above what the hourly cap lets a stranger spend on someone else's address in a few
+   * hours, so nobody can block a person's reset for a day by asking for it on their behalf.
+   */
+  perAddressPerDay: 20,
   /** Sign-in or confirmation requests one account may make in an hour, per kind. */
   perAccountPerHour: 3,
   /** Requests one caller address (an IPv6 /64) may make in an hour, beside the minute setting. */

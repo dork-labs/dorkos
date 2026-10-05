@@ -67,16 +67,19 @@ async function eligibleAccount(
  */
 async function overCap(
   client: PoolClient,
-  emailHash: string,
+  request: PendingRequest,
   now: Date,
   hostPerHour: number
 ): Promise<boolean> {
+  // The hourly cap is per kind, so a stranger's reset requests never use up the owner's sign-in
+  // or confirmation mail, and it clears within the hour.
   const address = await client.query<{ hour: number; day: number }>(
-    `SELECT count(*) FILTER (WHERE resolved_at > $2::timestamptz - interval '1 hour')::int AS hour,
+    `SELECT count(*) FILTER (
+              WHERE kind=$3 AND resolved_at > $2::timestamptz - interval '1 hour')::int AS hour,
             count(*)::int AS day
      FROM email_link_requests
      WHERE email_hash=$1 AND state='queued' AND resolved_at > $2::timestamptz - interval '24 hours'`,
-    [emailHash, now]
+    [request.email_hash, now, request.kind]
   );
   const { hour, day } = address.rows[0];
   if (hour >= EMAIL_LINK_CAPS.perAddressPerHour || day >= EMAIL_LINK_CAPS.perAddressPerDay)
@@ -114,7 +117,7 @@ export async function resolveNextEmailLinkRequest(
     let outcome: RequestOutcome = 'dropped';
     let outboxId: string | null = null;
     if (userId) {
-      if (await overCap(client, request.email_hash, now, config.limits.emailLinksPerHour))
+      if (await overCap(client, request, now, config.limits.emailLinksPerHour))
         outcome = 'throttled';
       else {
         outcome = 'queued';
