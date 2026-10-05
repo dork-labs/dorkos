@@ -1,4 +1,5 @@
 /** Fixed checkbox row policies return data; private scoped authority remains in the owning factory. */
+import { readPreparedPhysicalDocument } from '../readers/prepared-readers.js';
 import { types as utilTypes } from 'node:util';
 import { and, eq, isNull, authors, canvasDocuments, type Db, type DbTransaction } from '@dorkos/db';
 import { matchesCanvasChannelEvent } from '@dorkos/shared/canvas-channel-schemas';
@@ -102,11 +103,7 @@ export function requireCheckboxEditor(
 ): void {
   const time = options.time;
   const grantId = options.grantId;
-  const physical = tx
-    .select()
-    .from(canvasDocuments)
-    .where(eq(canvasDocuments.id, documentId))
-    .get();
+  const physical = readPreparedPhysicalDocument(tx, documentId);
   if (!physical) throw new CheckboxAuthorityRefusal('DOCUMENT_CLOSED');
   const scope = parseScope(
     checkboxAuthoritySync(deps.documents.lifecycle.resolveScope(physical.scope))
@@ -183,11 +180,7 @@ export function readCheckboxCurrentRows(
   const source = checkboxAuthoritySync(readDocSourceDescriptor(deps, documentId, tx));
   if (JSON.stringify(source) !== JSON.stringify(observation.descriptor))
     throw new CheckboxAuthorityRefusal('SOURCE_DESCRIPTOR_CHANGED');
-  const physical = tx
-    .select()
-    .from(canvasDocuments)
-    .where(eq(canvasDocuments.id, documentId))
-    .get();
+  const physical = readPreparedPhysicalDocument(tx, documentId);
   const channel = deps.store.getChannel(documentId, tx);
   if (
     !physical ||

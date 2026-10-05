@@ -1,13 +1,9 @@
 /** Current source and owner row policies without HTTP or room orchestration initialization. */
+import { agents, authors, eq, type Db, type DbTransaction } from '@dorkos/db';
 import {
-  agents,
-  canvasDocuments,
-  authors,
-  sessionMetadata,
-  eq,
-  type Db,
-  type DbTransaction,
-} from '@dorkos/db';
+  readPreparedPhysicalDocument,
+  readPreparedSourceSession,
+} from './readers/prepared-readers.js';
 import { UiCanvasContentSchema } from '@dorkos/shared/schemas';
 import { readOwnerAccount } from '../../core/auth/index.js';
 import type { ConnectorOwnerAuthority } from '../../connectors/principal/server-principal.js';
@@ -67,11 +63,7 @@ export function readDocSourceDescriptor(
   tx?: DbTransaction
 ): DocSourceDescriptor {
   const executor = tx ?? deps.db;
-  const physical = executor
-    .select()
-    .from(canvasDocuments)
-    .where(eq(canvasDocuments.id, documentId))
-    .get();
+  const physical = readPreparedPhysicalDocument(executor, documentId);
   if (!physical) throw new DocChannelNotFoundError();
   const scope = synchronousSource(deps.documents.lifecycle.resolveScope(physical.scope));
   const content = UiCanvasContentSchema.parse(physical.content);
@@ -99,11 +91,7 @@ export function readDocSourceDescriptor(
   if (!sourcePath) return result;
   const parsed = parseScope(scope);
   if (parsed.kind === 'session') {
-    const session = executor
-      .select()
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, parsed.id))
-      .get();
+    const session = readPreparedSourceSession(executor, parsed.id);
     if (!session?.agentPath) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
     result.rootCandidate = session.agentPath;
     result.matchRoot = physical.resolvedCwd;

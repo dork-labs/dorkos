@@ -5,6 +5,8 @@ import {
   gt,
   eq,
   sql,
+  canvasDocuments,
+  sessionMetadata,
   canvasDocChannels,
   canvasDocEvents,
   canvasDocGrants,
@@ -14,6 +16,43 @@ import {
 } from '@dorkos/db';
 
 type Executor = Db | DbTransaction;
+
+function preparePhysicalDocument(executor: Executor) {
+  return executor
+    .select()
+    .from(canvasDocuments)
+    .where(eq(canvasDocuments.id, sql.placeholder('documentId')))
+    .prepare();
+}
+function prepareSourceSession(executor: Executor) {
+  return executor
+    .select()
+    .from(sessionMetadata)
+    .where(eq(sessionMetadata.sessionId, sql.placeholder('sessionId')))
+    .prepare();
+}
+const physicalDocuments = new WeakMap<Executor, ReturnType<typeof preparePhysicalDocument>>();
+const sourceSessions = new WeakMap<Executor, ReturnType<typeof prepareSourceSession>>();
+
+/** Reuse full-row compilation only; each current physical/incarnation check executes SQL. */
+export function readPreparedPhysicalDocument(executor: Executor, documentId: string) {
+  let query = physicalDocuments.get(executor);
+  if (!query) {
+    query = preparePhysicalDocument(executor);
+    physicalDocuments.set(executor, query);
+  }
+  return query.get({ documentId });
+}
+/** Every source descriptor reads the current session row through its exact scoped executor. */
+export function readPreparedSourceSession(executor: Executor, sessionId: string) {
+  let query = sourceSessions.get(executor);
+  if (!query) {
+    query = prepareSourceSession(executor);
+    sourceSessions.set(executor, query);
+  }
+  return query.get({ sessionId });
+}
+
 function prepareChannel(executor: Executor) {
   return executor
     .select()

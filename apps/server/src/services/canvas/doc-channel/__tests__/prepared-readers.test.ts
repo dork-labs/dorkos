@@ -7,6 +7,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
 import {
+  canvasDocuments,
+  sessionMetadata,
   createDb,
   runMigrations,
   canvasDocChannels,
@@ -18,6 +20,8 @@ import {
 } from '@dorkos/db';
 import { DocChannelStore, DocChannelCorruptionError } from '../store.js';
 import {
+  readPreparedPhysicalDocument,
+  readPreparedSourceSession,
   readPreparedIntentPage,
   readPreparedUnresolvedIntentPage,
 } from '../readers/prepared-readers.js';
@@ -390,4 +394,42 @@ it('isolates compiled ALL plans for foreign FILE and same-native wrapper while o
   first.db.$client.close();
   expect(() => readPreparedIntentPage(first.db)).toThrow();
   expect(() => readPreparedIntentPage(wrapper)).toThrow();
+});
+
+it('reuses physical/source session compilation while seeing mutations and retiring original scope', async () => {
+  const h = await changed();
+  const document = readPreparedPhysicalDocument(h.db, h.documentId)!;
+  const sessionId = document.scope.slice('session:'.length);
+  const prepared = vi.spyOn(h.db.$client, 'prepare');
+  let escaped: DbTransaction | undefined;
+  h.authority.transaction((tx) => {
+    escaped = tx;
+    const physical = readPreparedPhysicalDocument(tx, h.documentId)!;
+    const session = readPreparedSourceSession(tx, sessionId)!;
+    const count = prepared.mock.calls.length;
+    expect(readPreparedPhysicalDocument(tx, h.documentId)).toEqual(physical);
+    expect(readPreparedSourceSession(tx, sessionId)).toEqual(session);
+    expect(prepared.mock.calls.length).toBe(count);
+    tx.update(canvasDocuments)
+      .set({ content: { type: 'markdown', content: 'fresh physical source' } })
+      .where(eq(canvasDocuments.id, h.documentId))
+      .run();
+    tx.update(sessionMetadata)
+      .set({ agentPath: 'fresh-original-session-path' })
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .run();
+    expect(readPreparedPhysicalDocument(tx, h.documentId)?.content).toEqual({
+      type: 'markdown',
+      content: 'fresh physical source',
+    });
+    expect(readPreparedSourceSession(tx, sessionId)?.agentPath).toBe('fresh-original-session-path');
+    expect(readPreparedPhysicalDocument(tx, 'absent')).toBeUndefined();
+    expect(readPreparedSourceSession(tx, 'absent')).toBeUndefined();
+  });
+  expect(() => readPreparedPhysicalDocument(escaped!, h.documentId)).toThrow(
+    'transaction is no longer active'
+  );
+  expect(() => readPreparedSourceSession(escaped!, sessionId)).toThrow(
+    'transaction is no longer active'
+  );
 });

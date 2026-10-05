@@ -839,11 +839,68 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     h.service.validate(h.store.getWriteIntent(intentId)!);
   }
   phase('seeded', 101);
+  // Temporary diagnostics delegate the exact methods used dynamically by recover().
+  // Timings are inclusive: prepareRecovery contains refreshRecoveryCurrent.
+  const totals = {
+    prepare: { calls: 0, ms: 0 },
+    refresh: { calls: 0, ms: 0 },
+    require: { calls: 0, ms: 0 },
+    fence: { calls: 0, ms: 0 },
+  };
+  const prepare = h.authority.prepareRecovery.bind(h.authority);
+  const refresh = h.authority.refreshRecoveryCurrent.bind(h.authority);
+  const requireCurrent = h.authority.requireRecoveryCurrent.bind(h.authority);
+  const fence = h.service.writeFence.assertRecoveryRead.bind(h.service.writeFence);
+  const probes = [
+    vi.spyOn(h.authority, 'prepareRecovery').mockImplementation(async (...args) => {
+      const start = performance.now();
+      totals.prepare.calls++;
+      try {
+        return await prepare(...args);
+      } finally {
+        totals.prepare.ms += performance.now() - start;
+      }
+    }),
+    vi.spyOn(h.authority, 'refreshRecoveryCurrent').mockImplementation(async (...args) => {
+      const start = performance.now();
+      totals.refresh.calls++;
+      try {
+        return await refresh(...args);
+      } finally {
+        totals.refresh.ms += performance.now() - start;
+      }
+    }),
+    vi.spyOn(h.authority, 'requireRecoveryCurrent').mockImplementation((...args) => {
+      const start = performance.now();
+      totals.require.calls++;
+      try {
+        return requireCurrent(...args);
+      } finally {
+        totals.require.ms += performance.now() - start;
+      }
+    }),
+    vi.spyOn(h.service.writeFence, 'assertRecoveryRead').mockImplementation((...args) => {
+      const start = performance.now();
+      totals.fence.calls++;
+      try {
+        return fence(...args);
+      } finally {
+        totals.fence.ms += performance.now() - start;
+      }
+    }),
+  ];
+  cleanups.push(async () => {
+    await h.service.stop();
+    for (const probe of probes) probe.mockRestore();
+  });
+  const reportTotals = () => process.stderr.write(`checkbox-101-cost ${JSON.stringify(totals)}\n`);
   const one = await recoverCheckboxPage(h.service);
+  reportTotals();
   phase('page-one', one.selected);
   expect(one).toMatchObject({ selected: 100, verified: 0, retryableFailures: 0, hasMore: true });
   const two = await recoverCheckboxPage(h.service, one.cursor);
   phase('page-two', two.selected);
+  reportTotals();
   expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
   expect(one.cursor).not.toEqual(two.cursor);
   expect(await readFile(h.path)).toEqual(before);
