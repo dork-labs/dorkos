@@ -5,7 +5,7 @@ import type { BrokerIssuer, RunHandle } from './issuer.js';
 import { BrokerError } from './errors.js';
 import type { Charge } from './ledger.js';
 /** Transport scope is bound to trusted issuance, never inferred from CONNECT TLS contents. */
-export type LocalTransport = 'http' | 'websocket' | 'opaque-connect';
+export type LocalTransport = 'http' | 'websocket' | 'websocket-connect' | 'opaque-connect';
 /** Principal-scoped local adapter; permanent denies remain enforced by the original policy. */
 export function brokerLocalGrants(
   issuer: BrokerIssuer,
@@ -50,7 +50,7 @@ export function brokerLocalGrants(
         i = issuer.inventory();
       covered(i.revision);
       if (
-        !['http', 'websocket', 'opaque-connect'].includes(transport) ||
+        !['http', 'websocket', 'websocket-connect', 'opaque-connect'].includes(transport) ||
         i.revision !== state.inventory ||
         !i.localCoverageComplete ||
         !['127.0.0.1', '::1'].includes(target.hostname) ||
@@ -59,7 +59,8 @@ export function brokerLocalGrants(
         ttl > 300000 ||
         i.protectedEndpoints.some((e) => e.address === target.hostname && e.port === target.port) ||
         (transport === 'http' && target.scheme !== 'http') ||
-        (transport === 'websocket' && target.scheme !== 'ws') ||
+        ((transport === 'websocket' || transport === 'websocket-connect') &&
+          target.scheme !== 'ws') ||
         (transport === 'opaque-connect' && target.scheme !== 'https')
       )
         throw new BrokerError('AUTHORITY_REFUSED');

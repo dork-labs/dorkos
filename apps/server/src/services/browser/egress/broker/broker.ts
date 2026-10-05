@@ -8,6 +8,7 @@ import { BrokerError } from './errors.js';
 import { bounded } from './clock.js';
 import { parseDestination } from '../destination.js';
 import { frameRequest, validateProxyChallenge } from './framing.js';
+import { readWebSocketConnectHandshake } from './websocket-connect.js';
 import { brokerCredential } from './credential.js';
 import { brokerLocalGrants } from './local-grants.js';
 import { createIntake } from './intake.js';
@@ -80,6 +81,7 @@ export function createPrivateBroker(options: {
     schedule,
   });
   const clients = intake.clients;
+
   const dispatch = async (request: AcceptedRequest) => {
     const record = clients.get(request.client.identity);
     if (!record) return;
@@ -149,7 +151,9 @@ export function createPrivateBroker(options: {
         guardedCall(request.client, 'end', check);
         return;
       }
-      const framed = frameRequest(request.raw, issuer.limits);
+
+      let framed = frameRequest(request.raw, issuer.limits);
+
       if (!credential.verify(framed.credential, issuer.limits.credentialBytes))
         throw new BrokerError('CREDENTIAL_REFUSED');
       if (
@@ -157,20 +161,29 @@ export function createPrivateBroker(options: {
         request.raw.head.byteLength > issuer.limits.duplexBytes
       )
         throw new BrokerError('BYTE_LIMIT');
+
       issuer.ledger.transfer(record.charge, run);
       await issuer.current(run);
       check();
-      const grant = local.get(
-        framed.url,
-        framed.kind === 'websocket'
-          ? 'websocket'
-          : framed.kind === 'opaque-connect'
-            ? 'opaque-connect'
-            : 'http'
-      );
+      // A distinct trusted capability certifies only a later validated plaintext
+      // WebSocket handshake, never arbitrary opaque CONNECT bytes or TLS.
+      const websocketURL = `ws://${framed.destination.authority}/`;
+      const websocketConnectGrant =
+        framed.kind === 'opaque-connect' ? local.get(websocketURL, 'websocket-connect') : undefined;
+      const grant =
+        websocketConnectGrant ??
+        local.get(
+          framed.url,
+          framed.kind === 'websocket'
+            ? 'websocket'
+            : framed.kind === 'opaque-connect'
+              ? 'opaque-connect'
+              : 'http'
+        );
       record.local = grant !== undefined;
+
       const decision = await policyPort.authorize(record.custody, {
-        url: framed.url,
+        url: websocketConnectGrant ? websocketURL : framed.url,
         hostHeader: framed.destination.authority,
         context: issuer.snapshot(run).binding,
         grant,
@@ -195,6 +208,25 @@ export function createPrivateBroker(options: {
           throw new BrokerError('AUTHORITY_REFUSED');
       };
       fence();
+      if (websocketConnectGrant) {
+        guardedWrite(
+          request.client,
+          Buffer.from('HTTP/1.1 200 Connection Established\r\n\r\n'),
+          fence,
+          issuer.limits.queueBytes
+        );
+        const settled = record.custody.pending();
+        const originalHandshake = readWebSocketConnectHandshake({
+          client: request.client,
+          head: request.raw.head,
+          outer: framed,
+          limits: issuer.limits,
+          check: fence,
+        });
+        void originalHandshake.then(settled, settled);
+        framed = await bounded(originalHandshake, issuer.limits.headerMs);
+        fence();
+      }
       const selected = decision.endpoints[0];
       if (!selected) throw new BrokerError('PEER_REFUSED');
       const dialDone = record.custody.pending();
@@ -247,6 +279,7 @@ export function createPrivateBroker(options: {
           dialDone();
         }
       );
+
       const connected = await bounded(dial, issuer.limits.dialMs);
       socket = connected.socket;
       if (connected.outcome !== 'connected') throw new BrokerError('PEER_REFUSED');
@@ -292,6 +325,7 @@ export function createPrivateBroker(options: {
       } else {
         const exchange = transport.exchange;
         fence();
+
         const response = await bounded(
           Reflect.apply(exchange, transport, [
             socket,
@@ -313,7 +347,7 @@ export function createPrivateBroker(options: {
           forwardDuplex({
             client: request.client,
             origin: socket,
-            head: request.raw.head,
+            head: websocketConnectGrant ? new Uint8Array() : request.raw.head,
             responseHead: Buffer.concat([
               renderResponse(response, true, issuer.limits),
               response.head,
