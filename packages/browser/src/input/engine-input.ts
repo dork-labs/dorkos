@@ -29,6 +29,8 @@ export interface EngineTabInput {
   reset(): Promise<ResetResult>;
   retire(end: number): Promise<CleanupObservation>;
   close(deadline?: number): Promise<PageInputCustody>;
+  /** Original input/session attribution, not a settled-cleanup or action permission. */
+  isCustodyKnown(): boolean;
   custody(): PageInputCustody;
 }
 
@@ -42,6 +44,7 @@ export function createEngineInput(options: EngineInputOptions): EngineTabInput {
     reset: () => owner.reset(),
     retire: (end: number) => owner.retire(end),
     close: (deadline?: number) => owner.close(deadline),
+    isCustodyKnown: () => owner.isCustodyKnown(),
     custody: () => owner.custody(),
   });
 }
@@ -329,6 +332,19 @@ class EngineInputOwner {
       void this.transport.close(this.closeEnd).then(() => resolve(this.custody()));
     else resolve(this.custody());
     return this.closePromise;
+  }
+
+  isCustodyKnown(): boolean {
+    return (
+      this.queue !== undefined &&
+      this.transport !== undefined &&
+      !this.acquiring &&
+      !this.retired &&
+      !this.cleanupUncertain &&
+      this.closePromise === undefined &&
+      this.retirement === undefined &&
+      this.transport.isCustodyKnown()
+    );
   }
 
   custody(): PageInputCustody {
