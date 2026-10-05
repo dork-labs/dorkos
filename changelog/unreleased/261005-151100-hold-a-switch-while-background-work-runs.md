@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(claude-code): hold a message that would restart the agent while its background work runs'
+  - 'fix(claude-code): close the gaps review found in holding a restart for background work'
 ---
 
 ### Fixed
