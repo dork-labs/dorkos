@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "260927-170236",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-10-04T18:04:02Z; the verdict is computed on 2026-10-05.",
- "computed_at": "2026-10-04T11:02:56.539Z",
+ "verdict": "verified",
+ "reason": "queue-build reached 24.1 against a target of 29.7 (baseline 29.7).",
+ "computed_at": "2026-10-05T12:14:43.618Z",
  "hypothesis_hash": "3776078025afb452",
  "metric": "queue-build",
  "anchor": "2026-09-27T18:04:02Z",

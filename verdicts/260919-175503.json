@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "260919-175503",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-10-04T18:04:02Z; the verdict is computed on 2026-10-05.",
- "computed_at": "2026-10-04T11:02:56.539Z",
+ "verdict": "partial",
+ "reason": "headroom moved from 1.159 to 0.908, 70% of the way to the target of 0.8, but did not reach it.",
+ "computed_at": "2026-10-05T12:14:43.618Z",
  "hypothesis_hash": "30885ee73438c39a",
  "metric": "headroom",
  "anchor": "2026-09-27T18:04:02Z",
