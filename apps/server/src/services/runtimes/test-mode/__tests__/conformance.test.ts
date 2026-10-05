@@ -16,6 +16,7 @@ import {
   driveRoomCanvasTurn,
   drivePresenceTurn,
   driveDispositionTurn,
+  driveApprovalTurn,
   driveTerminalOnce,
   driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
@@ -112,6 +113,18 @@ runtimeConformance(() => new TestModeRuntime(), {
     scenarioStore.setForSession(sessionId, 'question-expires');
     return driveExpiredQuestionTurn(runtime, sessionId, content, '/projects/conformance', () =>
       vi.waitFor(() => expect(interactionGate.step(sessionId)).toBe(true))
+    );
+  },
+  // A card answered, denied or stopped (spec `codex-app-server-transport`
+  // §17): the `approval-gated` scenario parks on its approval and runs its
+  // tool only when approved, ending it `error` when denied.
+  approvalTurn: (runtime, sessionId, content, probes) => {
+    scenarioStore.setForSession(sessionId, 'approval-gated');
+    // Answerable once the scenario has parked on the card, a step after it.
+    return driveApprovalTurn(runtime, sessionId, content, '/projects/conformance', probes, (card) =>
+      vi.waitFor(() =>
+        expect(interactionGate.pendingInteractionIds(sessionId)).toContain(card.toolCallId)
+      )
     );
   },
   // Presence is only assertable against a turn that really runs: drive one

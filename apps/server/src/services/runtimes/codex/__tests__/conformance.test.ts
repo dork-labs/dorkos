@@ -265,6 +265,7 @@ import {
   appServerCreditsTurn,
   appServerDirectoryGrantTurns,
   appServerDispositionTurn,
+  appServerApprovalTurn,
   appServerMediaTurn,
   appServerSystemPromptAppendTurns,
   hangAppServerInterrupt,
@@ -722,6 +723,10 @@ runtimeConformance(
           // other Codex chat in the home).
           hangingInterrupt: (runtime, sessionId) =>
             hangAppServerInterrupt(runtime, sessionId, projectDir),
+          // Approvals (spec §10): a card answered, denied or stopped. Live, a
+          // real model cannot be made to ask on demand, so the case skips by name.
+          approvalTurn: (runtime, sessionId, content, probes) =>
+            appServerApprovalTurn(runtime, sessionId, content, projectDir, probes),
           creditsTurn: (runtime, scenario) =>
             appServerCreditsTurn(runtime, scenario, projectDir, arrangeCredits),
           ...(ATTACHMENT_HOME
