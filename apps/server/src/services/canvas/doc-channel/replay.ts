@@ -74,9 +74,15 @@ export function replayDocChannel(
     const failed =
       !!tx.get(sql`SELECT 1 FROM canvas_doc_deliveries WHERE document_id=${access.documentId}
       AND status IN ('failed','expired','unavailable') LIMIT 1`);
+    const retainedEvents = new Map<string, ReturnType<DocChannelStore['getEvent']>>();
+    const readRetainedEvent = (eventId: string) => {
+      if (!retainedEvents.has(eventId))
+        retainedEvents.set(eventId, store.getEvent(access.documentId, eventId, tx));
+      return retainedEvents.get(eventId)!;
+    };
     return {
       events: rows.map(({ eventId }) => {
-        const row = store.getEvent(access.documentId, eventId, tx)!;
+        const row = readRetainedEvent(eventId);
         return {
           type: 'canvas_event' as const,
           documentId: row.documentId,
@@ -98,7 +104,7 @@ export function replayDocChannel(
       receiptRetentionFloor: channel.receiptRetentionFloor,
       resetRequired,
       receipts: receipts.map(({ eventId }) => {
-        const row = store.getEvent(access.documentId, eventId, tx)!;
+        const row = readRetainedEvent(eventId);
         return {
           id: row.eventId,
           docSeq: row.docSeq,

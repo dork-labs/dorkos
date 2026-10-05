@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(canvas): stream document updates and native widget actions'
+  - 'fix(canvas): reuse retained event rows within each replay page'
 ---
 
 ### Added
