@@ -9,6 +9,7 @@ export default defineConfig({
   server: {
     port: Number(process.env.COMMUNITY_VITE_PORT ?? 6482),
     strictPort: true,
-    proxy: { '/api': `http://localhost:${Number(process.env.COMMUNITY_PORT ?? 6481)}` },
+    // '/api/', not '/api': the bare prefix also catches Vite's own request for `src/browser/api.ts`.
+    proxy: { '/api/': `http://localhost:${Number(process.env.COMMUNITY_PORT ?? 6481)}` },
   },
 });
