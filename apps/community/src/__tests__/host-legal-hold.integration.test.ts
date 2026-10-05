@@ -576,8 +576,8 @@ it('stops a purge already under way before its next file when a legal hold is pl
   const sweeping = sweepCommunityDeletions(h.pool, barrier.store, 100);
   await barrier.inside;
   const placing = legalHold('PUT', c.id);
-  // The hold waits for the file deletion in progress, which holds the row FOR SHARE.
-  await waitForLockWaiters(h, 1, 'legal_hold_at');
+  // The hold queues behind the file in progress before the worker may start another file.
+  await waitForLockWaiters(h, 1, 'pg_advisory_xact_lock');
   barrier.release();
   const [swept, placed] = await Promise.all([sweeping, placing]);
   expect(placed.status).toBe(200);
@@ -604,7 +604,7 @@ it('keeps the community’s rows when a hold lands during the last file deletion
   const sweeping = sweepCommunityDeletions(h.pool, barrier.store, 100);
   await barrier.inside;
   const placing = legalHold('PUT', c.id);
-  await waitForLockWaiters(h, 1, 'legal_hold_at');
+  await waitForLockWaiters(h, 1, 'pg_advisory_xact_lock');
   barrier.release();
   const [swept, placed] = await Promise.all([sweeping, placing]);
   expect(placed.status).toBe(200);

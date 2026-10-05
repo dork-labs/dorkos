@@ -167,14 +167,18 @@ export async function sweepCommunityDeletions(
   let failed = 0;
   for (const candidate of candidates.rows) {
     try {
-      // Each blob is deleted while the community row is held FOR SHARE, after checking for a
-      // legal hold. Placing a legal hold takes that row FOR UPDATE, so once it commits no
-      // further byte is removed; one already being deleted finishes first.
+      // Queue each file behind any legal hold already being placed. A shared row lock alone
+      // can overtake a waiting exclusive row locker, so both paths first take the same
+      // exclusive transaction advisory lock. The row check then protects the actual delete.
       // Both halves are bounded so one slow file never holds the row, and with it a legal hold
       // being placed, for long: the lock read by a statement timeout, the storage call by an
       // abort signal. Either failing counts as a failed attempt and is retried with backoff.
       const legallyHeld = await transaction(pool, async (client) => {
         await client.query(`SET LOCAL statement_timeout = '${BLOB_LOCK_TIMEOUT_MS}'`);
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('dorkos:legal-hold:' || $1::text,0))",
+          [job.community_id]
+        );
         const current = await client.query<{ legal_hold_at: Date | null }>(
           'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
           [job.community_id]
@@ -249,6 +253,11 @@ export async function sweepCommunityDeletions(
   if (failed) return { claimed: 1, deletedBlobs, completed: 0, failed };
 
   const completed = await transaction(pool, async (client) => {
+    // A hold queued during the last file must also precede removal of the community rows.
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('dorkos:legal-hold:' || $1::text,0))",
+      [job.community_id]
+    );
     const community = await client.query<{
       lifecycle: string;
       lifecycle_version: number;

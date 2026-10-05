@@ -1055,6 +1055,7 @@ describe('an item takedown with an evidence store', () => {
       )
     ).takedown;
     expect(retried.evidence.state).toBe('pending');
+    await onlyDue(h, t.id);
     expect(await copyEvidence(h)).toEqual({ claimed: true, stored: true });
     expect(await takedownRow(h, t.id)).toMatchObject({
       evidence_state: 'stored',
@@ -1125,6 +1126,7 @@ describe('an item takedown with an evidence store', () => {
         )
       ).rows
     ).toEqual([{ withheld: true }]);
+    await onlyDue(h, t.id);
     expect(await copyEvidence(h)).toEqual({ claimed: true, stored: true });
     expect(await evidenceFile(`takedowns/${t.id}/attempt-1/icon`)).toEqual(png);
     const record = CommunityEvidenceRecordV1Schema.parse(
@@ -1821,6 +1823,12 @@ describe('after review', () => {
     const c = await canary(h, operator.cookie, 'claimrace');
     const key = await fileKeyOf(h, c.attachmentId);
     await ownerDeletionDue(h, c.s);
+    // This race must reach this community's original claim, not another test's due job.
+    await h.pool.query(
+      `UPDATE community_deletion_jobs SET next_attempt_at=now()+interval '1 day'
+       WHERE community_id<>$1`,
+      [c.s.communityId]
+    );
     let raced = false;
     const result = await sweepCommunityDeletions(h.pool, h.blobStore, 100, {
       afterCandidate: async (communityId) => {
