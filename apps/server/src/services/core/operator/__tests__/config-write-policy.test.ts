@@ -95,6 +95,11 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'harness.global.askedAt',
       'harness.global.harnesses',
       'harness.refusedHooks',
+      // Whether this computer sleeps while agents work, and whether it may be
+      // woken for a schedule: the person's battery and the person's machine
+      // (spec `keep-awake`).
+      'keepAwake.wakeForScheduledTasks',
+      'keepAwake.whileAgentsWork',
       'mcp.apiKey',
       'mcp.enabled',
       'mcp.rateLimit.enabled',

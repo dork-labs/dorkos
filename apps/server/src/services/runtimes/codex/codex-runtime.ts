@@ -115,7 +115,7 @@ import {
   resolveDorkosMcpInjection,
   type DorkosMcpInjection,
 } from '../shared/dorkos-mcp-injection.js';
-import { buildCodexOptions } from './codex-options.js';
+import { buildCodexOptions, codexKeepAwakeConfig } from './codex-options.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import {
@@ -412,7 +412,9 @@ export class CodexRuntime implements AgentRuntime {
     if (hasToken || hasManaged || dorkosTools || connectorTools) {
       return new Codex(buildCodexOptions(binary, tokenEnv, managed, dorkosTools, connectorTools));
     }
-    const policy = JSON.stringify(runtimeInheritedNames('codex'));
+    // The keep-awake setting is part of the key: the shared client's options
+    // carry Codex's own sleep inhibitor, so a toggle must rebuild it.
+    const policy = JSON.stringify([runtimeInheritedNames('codex'), codexKeepAwakeConfig()]);
     if (this.sharedClient?.binary !== binary || this.sharedClient.policy !== policy) {
       this.sharedClient = {
         binary,

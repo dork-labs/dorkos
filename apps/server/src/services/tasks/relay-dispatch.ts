@@ -37,6 +37,11 @@ export interface RelayDispatchDeps {
   resolveCwd: (task: Task) => Promise<string>;
   /** The home of the task's agent, resolved with the cwd; absent for an agent-less task. */
   forAgent?: string;
+  /**
+   * Told which session the run's turn runs under, once it is decided, so
+   * keep-awake counts that turn as this run (spec `keep-awake`).
+   */
+  onSession?: (sessionId: string) => void;
 }
 
 /** Fallback deadline for a dispatch envelope when the task sets none. */
@@ -133,6 +138,7 @@ export async function dispatchRunViaRelay(
   const { sessionId, hasStarted } = resolveRunSession(deps.store, task, {
     runtimeType: execution.runtimeType,
   });
+  deps.onSession?.(sessionId);
 
   const payload: TaskDispatchPayload = {
     type: 'task_dispatch',

@@ -25,6 +25,7 @@ import {
 } from '../connector-tools.js';
 import { connectorHeaderEnv, connectorHeaderEnvNames } from './connector-header-env.js';
 import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
+import { keepAwakeService } from '../../core/keep-awake/index.js';
 
 /**
  * Build the {@link CodexOptions} for the SDK `Codex` client.
@@ -40,7 +41,9 @@ import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-se
  * setting; spec `tool-only-room-replies`), plus the
  * turn-bound connector server — see {@link buildMcpServersConfig} for the merge
  * and the shadowing guarantee.
- * `config` is omitted entirely when no source contributes a server.
+ * `config` also carries Codex's own sleep inhibitor while keep-awake is on (see
+ * {@link codexKeepAwakeConfig}), and is omitted entirely when nothing
+ * contributes.
  *
  * `CodexOptions.env` starts with the projected OS/runtime environment. Four
  * additional credential sources must travel only through environment values:
@@ -92,11 +95,29 @@ export function buildCodexOptions(
     ...connectorHeaderEnv(connectorTools),
   };
   const mcpServers = buildMcpServersConfig(managed?.servers, dorkosTools, connectorTools);
+  const config = {
+    ...(mcpServers ? { mcp_servers: mcpServers } : {}),
+    ...codexKeepAwakeConfig(),
+  };
   return {
     ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
-    ...(mcpServers ? { config: { mcp_servers: mcpServers } } : {}),
+    ...(Object.keys(config).length > 0 ? { config } : {}),
     env,
   };
+}
+
+/**
+ * Codex's own sleep inhibitor, as a second layer under DorkOS's hold (spec
+ * `keep-awake`): `features.prevent_idle_sleep` while "Keep this computer awake
+ * while agents work" is on and this computer can be held awake at all.
+ *
+ * Experimental in Codex 0.154.0 and off by default there. An unknown
+ * `features.*` key is accepted silently, so a future rename degrades to "no
+ * second layer" rather than a failed turn. It applies to Codex clients built
+ * after the setting changes; the DorkOS hold covers every turn either way.
+ */
+export function codexKeepAwakeConfig(): { features?: { prevent_idle_sleep: true } } {
+  return keepAwakeService.preventsIdleSleep() ? { features: { prevent_idle_sleep: true } } : {};
 }
 
 /**

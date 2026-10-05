@@ -996,6 +996,14 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
     }),
     getUnattendedAutonomy: vi.fn().mockResolvedValue({ drivers: [] }),
+    getKeepAwake: vi.fn().mockResolvedValue({
+      enabled: true,
+      supported: true,
+      reason: null,
+      asserted: false,
+      working: { chats: 0, rooms: 0, tasks: 0, waking: false },
+      wake: { enabled: false, setup: 'unsupported', nextWakeAt: null, setupCommand: null },
+    }),
     getMemoryProviderStatus: vi.fn().mockResolvedValue({
       configuredId: BUILTIN_MEMORY_PROVIDER_ID,
       activeId: BUILTIN_MEMORY_PROVIDER_ID,

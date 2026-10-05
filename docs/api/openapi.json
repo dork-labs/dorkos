@@ -1555,6 +1555,114 @@
           "projects"
         ]
       },
+      "KeepAwakeStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "The `keepAwake.whileAgentsWork` setting."
+          },
+          "supported": {
+            "type": "boolean",
+            "description": "Whether this computer can be held awake at all."
+          },
+          "reason": {
+            "$ref": "#/components/schemas/KeepAwakeUnsupportedReason"
+          },
+          "asserted": {
+            "type": "boolean",
+            "description": "Whether the operating system is being told to stay awake right now."
+          },
+          "working": {
+            "type": "object",
+            "properties": {
+              "chats": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Agent turns in flight that are not room replies or task runs."
+              },
+              "rooms": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Room replies in flight."
+              },
+              "tasks": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Task runs in flight. A run counts once, including its turn."
+              },
+              "waking": {
+                "type": "boolean",
+                "description": "Awake for a scheduled run that is about to start."
+              }
+            },
+            "required": [
+              "chats",
+              "rooms",
+              "tasks",
+              "waking"
+            ],
+            "description": "What is keeping the computer awake. Each piece of work counts once."
+          },
+          "wake": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "setup": {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "needed",
+                  "unsupported"
+                ]
+              },
+              "nextWakeAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "setupCommand": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "enabled",
+              "setup",
+              "nextWakeAt",
+              "setupCommand"
+            ],
+            "description": "Waking the computer for scheduled runs. Not built yet: always disabled, `unsupported`, with no next wake and no setup command."
+          }
+        },
+        "required": [
+          "enabled",
+          "supported",
+          "reason",
+          "asserted",
+          "working",
+          "wake"
+        ]
+      },
+      "KeepAwakeUnsupportedReason": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "container",
+          "tool-missing",
+          "denied",
+          "platform",
+          null
+        ],
+        "description": "Why not, when `supported` is false; null otherwise."
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -18767,6 +18875,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/keep-awake": {
+      "get": {
+        "tags": [
+          "Keep awake"
+        ],
+        "summary": "Whether this computer is being kept awake",
+        "description": "Whether DorkOS is keeping this computer from idle-sleeping right now, what is keeping it awake (chats, room replies and task runs, each counted once), the setting, and why it cannot when it cannot (a container, a missing tool, or a refusal). The same payload is pushed as `keep_awake_status` on `GET /api/events` whenever it changes.",
+        "responses": {
+          "200": {
+            "description": "The keep-awake status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeepAwakeStatus"
                 }
               }
             }

@@ -120,6 +120,7 @@ import type {
   QueueMoveTarget,
   QueuedMessage,
   InterruptReceipt,
+  KeepAwakeStatus,
   UiCanvasContent,
 } from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
@@ -1853,6 +1854,12 @@ export interface Transport
    * of the page instead of asking per route.
    */
   getUnattendedAutonomy(): Promise<UnattendedAutonomyState>;
+  /**
+   * Whether DorkOS is keeping this computer awake right now, and for what
+   * (spec `keep-awake`). Kept current afterwards by the `keep_awake_status`
+   * event on the global stream.
+   */
+  getKeepAwake(): Promise<KeepAwakeStatus>;
   /**
    * Which memory backend is configured, which one is actually serving agent
    * calls right now, and why they differ — the one read behind the standing

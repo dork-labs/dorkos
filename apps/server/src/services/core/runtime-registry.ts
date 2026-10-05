@@ -42,6 +42,7 @@ import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
+import { holdAwakeDuringTurns } from './keep-awake/hold-during-turn.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
 type SettingsRow = {
@@ -245,7 +246,14 @@ export class RuntimeRegistry {
     // on. This is the one seam every turn passes through — the interactive
     // composer, a room reply, a scheduled run and a relay delivery all resolve
     // their runtime from here (DOR-1654).
-    this.runtimes.set(runtime.type, watchRuntimeSignin(traceRuntime(runtime)));
+    //
+    // Keep-awake wraps OUTERMOST so its hold spans everything inside it: the
+    // computer stays awake for as long as the caller is consuming the turn,
+    // whoever the caller is (spec `keep-awake`).
+    this.runtimes.set(
+      runtime.type,
+      holdAwakeDuringTurns(watchRuntimeSignin(traceRuntime(runtime)))
+    );
   }
 
   /**
