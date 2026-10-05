@@ -59,6 +59,17 @@ const communityMigrationId = communityMigrationCompatibilityId();
 // index.ts`), and it stays correct as packages add or rename subpaths.
 // ---------------------------------------------------------------------------
 
+/**
+ * Workspace packages published to npm under `@dork-labs/` that the bundles
+ * still inline from SOURCE. `@dork-labs/connector-providers` holds the connector
+ * schemas `@dorkos/shared` used to own, and the server reaches it both directly
+ * and through those shared re-exports, so it keeps the vintage-consistency
+ * invariant above. A published package's `types` condition points at built
+ * `dist/*.d.ts`, so its source path is derived from `default` instead
+ * (`./dist/x.js` -> `./src/x.ts`).
+ */
+const PUBLISHED_SOURCE_PACKAGES = new Set(['@dork-labs/connector-providers']);
+
 /** A workspace package indexed for source resolution. */
 interface WorkspacePackage {
   /** Absolute path to the package directory. */
@@ -86,7 +97,8 @@ function loadWorkspacePackages(): Map<string, WorkspacePackage> {
     } catch {
       continue; // Directory without a readable package.json (e.g. a build dir).
     }
-    if (!pkg.name?.startsWith('@dorkos/') || !pkg.exports) continue;
+    if (!pkg.name || !pkg.exports) continue;
+    if (!pkg.name.startsWith('@dorkos/') && !PUBLISHED_SOURCE_PACKAGES.has(pkg.name)) continue;
     registry.set(pkg.name, { dir, exports: pkg.exports });
   }
   return registry;
@@ -97,7 +109,8 @@ function loadWorkspacePackages(): Map<string, WorkspacePackage> {
  * entries (`{ types, default }`) colocate `types` at the `.ts` source while
  * `default` points at compiled `dist`; we deliberately pick `types` so the
  * bundle embeds source (see the vintage-consistency invariant above). String
- * entries already point at source and are used as-is.
+ * entries already point at source and are used as-is. A published package's
+ * `types` is a built `.d.ts`, so its source is derived from `default`.
  *
  * @param entry - The value of an `exports` subpath key.
  * @returns The package-relative source path, or undefined if unresolvable.
@@ -106,6 +119,12 @@ function sourcePathFromExportsEntry(entry: unknown): string | undefined {
   if (typeof entry === 'string') return entry;
   if (entry && typeof entry === 'object') {
     const conditions = entry as Record<string, unknown>;
+    if (typeof conditions.types === 'string' && conditions.types.endsWith('.d.ts')) {
+      // A published package: map its compiled entry back to the source file.
+      const built = conditions.default;
+      if (typeof built !== 'string' || !/^\.\/dist\/.+\.js$/.test(built)) return undefined;
+      return built.replace(/^\.\/dist\//, './src/').replace(/\.js$/, '.ts');
+    }
     const source = conditions.types ?? conditions.default;
     if (typeof source === 'string') return source;
   }
@@ -113,8 +132,8 @@ function sourcePathFromExportsEntry(entry: unknown): string | undefined {
 }
 
 /**
- * esbuild plugin that resolves every `@dorkos/*` workspace import (root and
- * subpath) to the package's TypeScript source instead of its compiled dist,
+ * esbuild plugin that resolves every `@dorkos/*` workspace import, and those
+ * of {@link PUBLISHED_SOURCE_PACKAGES}, (root and subpath) to the package's TypeScript source instead of its compiled dist,
  * enforcing the vintage-consistency invariant documented above. Applied to
  * BOTH the server and CLI bundles.
  *
@@ -129,18 +148,21 @@ function dorkosSourcePlugin(): Plugin {
   return {
     name: 'resolve-dorkos-source',
     setup(build) {
-      build.onResolve({ filter: /^@dorkos\// }, (args) => {
-        // `@dorkos/<pkg>` (scope + name), then an optional subpath remainder.
-        const segments = args.path.split('/');
-        const pkgName = `${segments[0]}/${segments[1]}`;
-        const pkg = registry.get(pkgName);
-        if (!pkg) return undefined;
-        const remainder = segments.slice(2).join('/');
-        const subpathKey = remainder ? `./${remainder}` : '.';
-        const relativeSource = sourcePathFromExportsEntry(pkg.exports[subpathKey]);
-        if (!relativeSource) return undefined;
-        return { path: path.resolve(pkg.dir, relativeSource) };
-      });
+      build.onResolve(
+        { filter: /^@(?:dorkos\/|dork-labs\/connector-providers(?:\/|$))/ },
+        (args) => {
+          // `@<scope>/<pkg>` (scope + name), then an optional subpath remainder.
+          const segments = args.path.split('/');
+          const pkgName = `${segments[0]}/${segments[1]}`;
+          const pkg = registry.get(pkgName);
+          if (!pkg) return undefined;
+          const remainder = segments.slice(2).join('/');
+          const subpathKey = remainder ? `./${remainder}` : '.';
+          const relativeSource = sourcePathFromExportsEntry(pkg.exports[subpathKey]);
+          if (!relativeSource) return undefined;
+          return { path: path.resolve(pkg.dir, relativeSource) };
+        }
+      );
     },
   };
 }

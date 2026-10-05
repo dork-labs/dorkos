@@ -245,7 +245,7 @@ import type {
   StartLinkResult,
 } from './cloud-schemas.js';
 import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js';
-import type { ConnectorProviderStatus } from './connector-provider.js';
+import type { ConnectorProviderStatus } from '@dork-labs/connector-providers/connector-provider';
 import type {
   ConnectorAgentRequestAuthenticationInput,
   ConnectorAgentRequestDecisionInput,
@@ -267,7 +267,7 @@ import type {
   ConnectorReconciliationPreview,
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
-} from './connector-schemas.js';
+} from '@dork-labs/connector-providers/connector-schemas';
 import type { SearchQuery, SearchResponse } from './search-schemas.js';
 import type { ProjectInfo, ProjectRef } from './project-schemas.js';
 import type {
@@ -294,7 +294,7 @@ import type {
   ConnectionEventSubscription,
   ConnectionEventSubscriptionPage,
   CreateConnectionEventSubscription,
-} from './connector-event-schemas.js';
+} from '@dork-labs/connector-providers/connector-event-schemas';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {

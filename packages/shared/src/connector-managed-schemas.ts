@@ -9,12 +9,12 @@
  */
 import { ConnectionGrantSubjectSchema } from '@dork-labs/cloud-api';
 import { z } from 'zod';
-import { ConnectorEventDestinationSchema } from './connector-event-schemas.js';
+import { ConnectorEventDestinationSchema } from '@dork-labs/connector-providers/connector-event-schemas';
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
   ConnectorJsonObjectSchema,
   ConnectorProviderExecuteResultSchema,
-} from './connector-schemas.js';
+} from '@dork-labs/connector-providers/connector-schemas';
 
 /** Known legacy managed-connector refusal codes the control plane sends in `error`. */
 export const MANAGED_CONNECTOR_ERROR_CODES = {

@@ -15,7 +15,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { ConnectorEventPayloadProtector } from '@dorkos/connector-providers';
+import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ConnectorEventDefinition } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorEventCapability } from '@dorkos/shared/connector-events';

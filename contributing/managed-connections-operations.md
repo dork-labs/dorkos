@@ -20,7 +20,7 @@ Paths below are relative to the repository root.
 | Hosted event intake, capacity, buffer and cleanup                | `apps/site/src/lib/connectors/managed/{event-capacity-service,event-ingress-service,event-delivery-service,event-cleanup-service,event-protection}.ts`                                    |
 | Local event setup, recovery and delivery                         | `apps/server/src/services/connectors/events/`; `apps/server/src/services/connectors/event-inbox-store.ts`; `apps/server/src/index.ts`                                                     |
 | Private session acceptance and dispatch                          | `apps/server/src/services/session/private-messages/acceptance.ts`; `apps/server/src/services/session/{message-dispatcher,trigger-turn}.ts`                                                |
-| Delivery and metadata retention policy                           | `packages/shared/src/connector-event-schemas.ts`                                                                                                                                          |
+| Delivery and metadata retention policy                           | `packages/connector-providers/src/connector-event-schemas.ts`                                                                                                                             |
 | Hosted usage receipts                                            | `apps/site/src/lib/connectors/managed/usage-service.ts`                                                                                                                                   |
 
 See [Environment Variables](./environment-variables.md), [Adding a Connector](./adding-a-connector.md) and [API Reference](./api-reference.md) for their existing reference material.

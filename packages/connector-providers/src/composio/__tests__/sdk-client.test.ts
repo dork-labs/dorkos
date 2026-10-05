@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   ConnectorOperationRevision,
   ConnectorProviderInstanceId,
-} from '@dorkos/shared/connector-schemas';
+} from '../../connector-schemas.js';
 import { createComposioHostedClients } from '../hosted-client-factory.js';
 import { ComposioSdkClient, normalizeComposioCatalogAuthentication } from '../sdk-client.js';
 

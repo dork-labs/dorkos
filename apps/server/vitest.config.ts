@@ -218,9 +218,12 @@ export default defineConfig({
         ),
       },
       {
-        find: '@dorkos/shared/connector-schemas',
+        // The module lives in `@dork-labs/connector-providers`; the shared
+        // subpath only re-exports its built dist, so alias straight to the
+        // source both names reach.
+        find: /^@(?:dorkos\/shared|dork-labs\/connector-providers)\/connector-schemas$/,
         replacement: fileURLToPath(
-          new URL('../../packages/shared/src/connector-schemas.ts', import.meta.url)
+          new URL('../../packages/connector-providers/src/connector-schemas.ts', import.meta.url)
         ),
       },
       {

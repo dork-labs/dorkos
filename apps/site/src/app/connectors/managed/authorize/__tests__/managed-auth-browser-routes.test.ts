@@ -35,7 +35,7 @@ vi.mock('@/lib/connectors/managed/config', () => ({
   }),
   managedCapabilityAvailability: () => ({ status: 'available' }),
 }));
-vi.mock('@dorkos/connector-providers/composio', () => ({
+vi.mock('@dork-labs/connector-providers/composio', () => ({
   createComposioHostedClients: mocks.createClients,
 }));
 

@@ -1,37 +1,89 @@
 {
-  "name": "@dorkos/connector-providers",
-  "version": "0.0.0",
-  "description": "Confined external connector SDK adapters shared by DorkOS runtimes and hosted services.",
-  "private": true,
+  "name": "@dork-labs/connector-providers",
+  "version": "0.97.0",
+  "description": "Confined external connector SDK adapters and the connector contract shared by DorkOS runtimes and hosted services.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dork-labs/dorkos.git",
+    "directory": "packages/connector-providers"
+  },
+  "homepage": "https://github.com/dork-labs/dorkos/tree/main/packages/connector-providers#readme",
   "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./composio": {
-      "types": "./src/composio/index.ts",
+      "types": "./dist/composio/index.d.ts",
       "default": "./dist/composio/index.js"
-    }
+    },
+    "./connector-schemas": {
+      "types": "./dist/connector-schemas.d.ts",
+      "default": "./dist/connector-schemas.js"
+    },
+    "./connector-event-schemas": {
+      "types": "./dist/connector-event-schemas.d.ts",
+      "default": "./dist/connector-event-schemas.js"
+    },
+    "./connector-events": {
+      "types": "./dist/connector-events.d.ts",
+      "default": "./dist/connector-events.js"
+    },
+    "./connector-provider": {
+      "types": "./dist/connector-provider.d.ts",
+      "default": "./dist/connector-provider.js"
+    },
+    "./connector-authentication-setup": {
+      "types": "./dist/connector-authentication-setup.d.ts",
+      "default": "./dist/connector-authentication-setup.js"
+    },
+    "./stable-stringify": {
+      "types": "./dist/stable-stringify.d.ts",
+      "default": "./dist/stable-stringify.js"
+    },
+    "./package.json": "./package.json"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22.22.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run clean && pnpm run build",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@composio/core": "0.21.0",
-    "@dorkos/shared": "workspace:*",
+    "@composio/core": "0.21.0"
+  },
+  "peerDependencies": {
     "zod": "^4.6.2"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
-    "vitest": "^4.1.11"
-  }
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "zod": "^4.6.2"
+  },
+  "keywords": [
+    "dorkos",
+    "connectors",
+    "composio",
+    "zod"
+  ]
 }

@@ -8,13 +8,13 @@
  * @module shared/connector-managed-discovery-schemas
  */
 import { z } from 'zod';
-import { ConnectorAuthenticationSetupSchema } from './connector-authentication-setup.js';
+import { ConnectorAuthenticationSetupSchema } from '@dork-labs/connector-providers/connector-authentication-setup';
 import {
   ConnectorCapabilityAvailabilitySchema,
   ConnectorJsonObjectSchema,
   ConnectorOperationClassificationSchema,
   ConnectorRetryPolicySchema,
-} from './connector-schemas.js';
+} from '@dork-labs/connector-providers/connector-schemas';
 
 const ManagedWireIdSchema = z.string().min(1).max(200);
 const ManagedWireCursorSchema = z.string().min(1).max(500);

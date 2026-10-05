@@ -3,7 +3,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   ConnectorEventPayloadProtector,
   normalizeConnectorEventContent,
-} from '@dorkos/connector-providers';
+} from '@dork-labs/connector-providers';
 import type { ConnectorVerifiedEvent } from '@dorkos/shared/connector-events';
 import {
   ConnectorEventDefinitionSchema,

@@ -74,3 +74,66 @@ describe('managed OAuth policy envelope', () => {
     ).toBeUndefined();
   });
 });
+
+// Composio's managed Slack app carries one more credential key than other
+// managed OAuth apps: Slack's legacy `verification_token`. It is the provider
+// app's own material, like `client_secret`, so it is accepted only for Slack
+// and its value is never retained.
+describe('managed Slack OAuth policy envelope', () => {
+  const slack = () => {
+    const raw = canonical();
+    return {
+      ...raw,
+      toolkit: { slug: 'slack' },
+      credentials: { ...raw.credentials, verification_token: 'SLACK_VERIFICATION_SENTINEL' },
+    };
+  };
+
+  it('accepts the verification token Composio stores for its managed Slack app', () => {
+    const projected = projectComposioAuthenticationConfigPolicy(slack());
+    expect(projected).toEqual({
+      type: 'default',
+      scopes: ['read'],
+      userScopes: [],
+      credentialsEmpty: false,
+      routerEnabled: false,
+    });
+    expect(JSON.stringify(projected)).not.toMatch(
+      /SLACK_VERIFICATION_SENTINEL|verification_token|PRIVATE_SENTINEL/
+    );
+  });
+
+  it('still refuses the verification token for any other toolkit', () => {
+    for (const slug of ['gmail', 'slackbot', 'SLACK', 'discord']) {
+      expect(
+        projectComposioAuthenticationConfigPolicy({ ...slack(), toolkit: { slug } }),
+        slug
+      ).toBeUndefined();
+    }
+  });
+
+  it('refuses the verification token on a Slack config with no toolkit slug', () => {
+    const { toolkit: _toolkit, ...withoutToolkit } = slack();
+    expect(projectComposioAuthenticationConfigPolicy(withoutToolkit)).toBeUndefined();
+  });
+
+  it('refuses a verification token that is not a string', () => {
+    const raw = slack();
+    expect(
+      projectComposioAuthenticationConfigPolicy({
+        ...raw,
+        credentials: { ...raw.credentials, verification_token: { nested: 'SENTINEL' } },
+      })
+    ).toBeUndefined();
+  });
+
+  it('keeps every other unknown credential key refused for Slack', () => {
+    const raw = slack();
+    expect(
+      projectComposioAuthenticationConfigPolicy({
+        ...raw,
+        credentials: { ...raw.credentials, signing_secret: 'PRIVATE_SENTINEL' },
+      })
+    ).toBeUndefined();
+  });
+});

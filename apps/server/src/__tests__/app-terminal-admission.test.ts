@@ -8,7 +8,7 @@ import ts from 'typescript';
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { ComposioEventClient } from '@dorkos/connector-providers/composio';
+import { ComposioEventClient } from '@dork-labs/connector-providers/composio';
 
 const state = vi.hoisted(() => ({ login: false, dist: '', authDispatch: vi.fn() }));
 vi.mock('../env.js', async (original) => {

@@ -7,7 +7,7 @@ import {
 import {
   ConnectorEventPayloadProtector,
   normalizeConnectorEventContent,
-} from '@dorkos/connector-providers';
+} from '@dork-labs/connector-providers';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 import type { ConnectorEventInboxStore } from '../event-inbox-store.js';
 import type { ConnectorSubscriptionStore } from './subscription-store.js';

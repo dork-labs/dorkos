@@ -60,6 +60,7 @@
     "docker:run": "docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY -v dorkos-data:/home/node/.dork dorkos",
     "publish:cli": "pnpm publish --filter=dorkos",
     "publish:cloud-api": "pnpm publish --filter=@dork-labs/cloud-api",
+    "publish:connector-providers": "pnpm publish --filter=@dork-labs/connector-providers",
     "cli:dev": "pnpm --filter=./packages/cli run build && node packages/cli/dist/bin/cli.js"
   },
   "dependencies": {
