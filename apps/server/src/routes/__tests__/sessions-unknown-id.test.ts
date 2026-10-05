@@ -44,7 +44,14 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getSessionSettings: vi.fn(async () => null),
     has: vi.fn(() => true),
   },
-  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
+  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {
+    constructor(
+      public readonly runtime: string,
+      public readonly sessionId: string
+    ) {
+      super(`Session '${sessionId}' is owned by runtime '${runtime}', which is not registered.`);
+    }
+  },
 }));
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -148,15 +155,15 @@ describe('POST /api/sessions/:id/messages — unknown ids (DOR-2712)', () => {
     expect(res.status).toBe(202);
   });
 
-  it('does not answer 500 for a session bound to a runtime this server lacks', async () => {
-    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockRejectedValueOnce(
-      new RuntimeNotRegisteredError('gone', SESSION_ID)
-    );
+  it('says which runtime is missing, not "not found", for a session bound to one this server lacks', async () => {
+    const missing = new RuntimeNotRegisteredError('opencode', SESSION_ID);
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockRejectedValueOnce(missing);
+    vi.mocked(runtimeRegistry.resolveForSession).mockRejectedValueOnce(missing);
     const res = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'next' });
 
-    expect(res.status).not.toBe(500);
-    expect(res.status).not.toBe(404);
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
   });
 });

@@ -280,12 +280,12 @@ export function useSessionSubmit({
       // whether omitting `agentPath` would lose a registered agent forever.
       const sessions = queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? [];
       const isNewSession = !sessions.some((s) => s.id === targetSessionId);
-      if (isNewSession && (agentLookupPending || agentLookupFailed)) return;
       // This send may start the session: it is not in the list, or an earlier
       // send that would have started it was never accepted (the placeholder
       // row below makes a retry look listed). It carries `create` and the
       // first-turn hints.
       const startsSession = isNewSession || unacceptedCreates.has(targetSessionId);
+      if (startsSession && (agentLookupPending || agentLookupFailed)) return;
       if (startsSession) unacceptedCreates.add(targetSessionId);
 
       // **Writing is the strongest thing a person can do to a conversation, so
