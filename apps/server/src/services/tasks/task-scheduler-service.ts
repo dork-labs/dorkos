@@ -49,6 +49,7 @@ import { sweepInterruptedRuns } from './crash-recovery.js';
 import { RefusedScheduleLog } from './refused-schedule-log.js';
 import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
+import { resolveOccurrence, STALE_SKIP_REASON } from './timing/occurrence.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
@@ -116,25 +117,17 @@ export type { CancelRunOutcome } from './run-cancel.js';
 const logger = createTaggedLogger('Tasks');
 
 /**
- * Derive a stable idempotency key for a scheduled occurrence (ADR-285).
+ * One cron fire, as the registration callback saw it (DOR-2718).
  *
- * croner's `currentRun()` is the wall-clock instant the timer fired (a few ms
- * after the scheduled boundary, at ms precision), NOT the schedule-aligned tick —
- * so two processes firing the same occurrence see different millisecond values.
- * Flooring to the cron's resolution collapses both onto one boundary: a 5-field
- * (or alias) cron fires at most once per minute → floor to 60s; a 6-field cron
- * carries seconds → floor to 1s. The leader lock is single-machine (one
- * `dorkHome`), so all co-located processes share one wall clock and agree on the
- * floored value, making the dedup row a true cross-process "fire-once" gate.
- *
- * @param cron - The task's cron expression.
- * @param firedAt - The trigger instant (croner `currentRun()`).
- * @returns The schedule-aligned epoch-ms key.
+ * `firedAt` is the wall-clock instant croner's timer ran out — on time, or late
+ * after the computer slept. `expected` is the occurrence croner was waiting
+ * for, captured at registration and after every fire; null when nothing
+ * captured one (a direct dispatch). {@link resolveOccurrence} turns the pair
+ * into the occurrence the run stands for.
  */
-export function scheduledTickKey(cron: string, firedAt: Date): number {
-  const hasSecondsField = cron.trim().split(/\s+/).length >= 6;
-  const resolutionMs = hasSecondsField ? 1000 : 60_000;
-  return Math.floor(firedAt.getTime() / resolutionMs) * resolutionMs;
+interface ScheduledFire {
+  firedAt: Date;
+  expected: Date | null;
 }
 
 /**
@@ -397,6 +390,13 @@ export interface SchedulerDeps {
 export class TaskSchedulerService {
   private cronJobs = new Map<string, Cron>();
   /**
+   * The occurrence each registered job's croner timer is waiting for — its
+   * `nextRun()` at registration and after every fire. A fire that lands after
+   * a later boundary has passed (the computer slept) counts every boundary
+   * from this one up to the occurrence it fired for as missed (DOR-2718).
+   */
+  private expectedTicks = new Map<string, Date | null>();
+  /**
    * Every run this process is accountable for, on BOTH dispatch paths — see
    * {@link RunAccounting}. One registry, because a relay-dispatched run is
    * exactly as real as a directly-executed one to the concurrency cap, to
@@ -658,6 +658,7 @@ export class TaskSchedulerService {
       cron.stop();
       this.cronJobs.delete(id);
     }
+    this.expectedTicks.clear();
 
     this.runs.abortDirect();
     await this.stopRelayRuns();
@@ -734,9 +735,17 @@ export class TaskSchedulerService {
     let job: Cron;
     try {
       job = new Cron(task.cron, { protect: true, timezone: tz }, (self) => {
-        // Pass the cron's intended tick (not wall-clock) so dispatch idempotency
-        // dedups on a value that's identical across processes (ADR-285).
-        this.dispatch(task, self.currentRun()).catch((err) => {
+        // The wall-clock instant the timer ran out, honestly named: it is NOT
+        // the occurrence (croner's `currentRun()` is this same instant). After a
+        // sleep it is late, and `dispatch` resolves which occurrence it stands
+        // for. What croner was waiting for is read, then moved on to the next
+        // occurrence, synchronously here, before anything awaits.
+        const fire: ScheduledFire = {
+          firedAt: new Date(),
+          expected: this.expectedTicks.get(task.id) ?? null,
+        };
+        this.expectedTicks.set(task.id, self.nextRun());
+        this.dispatch(task, fire).catch((err) => {
           logger.error(`dispatch error for ${task.name}:`, err);
         });
       });
@@ -748,6 +757,7 @@ export class TaskSchedulerService {
     // The schedule reads again, so the next refusal of this task is news.
     this.refusedSchedules.clear(task.id);
     this.cronJobs.set(task.id, job);
+    this.expectedTicks.set(task.id, job.nextRun());
     logger.debug(`registered task "${task.name}" (${task.cron})`);
     return true;
   }
@@ -759,6 +769,7 @@ export class TaskSchedulerService {
       job.stop();
       this.cronJobs.delete(id);
     }
+    this.expectedTicks.delete(id);
   }
 
   /** Manually trigger a run for a task. */
@@ -972,15 +983,22 @@ export class TaskSchedulerService {
    * and dispatch idempotency, then either starts the run or records why it did
    * not.
    *
-   * ## A tick that is missed is missed
+   * ## A missed tick is counted, and a stale one is skipped on the record
    *
-   * There is no catch-up. A schedule that came round while this server was off,
-   * or while it was already at its concurrency cap, is not run later — the
-   * occurrence is gone and the next one is the next one. That is deliberate:
-   * these are agent turns that do real work, and a server starting after a
-   * weekend off would otherwise fire a weekend's worth of them at once, all
-   * acting on a world that has moved on. What a person gets instead is a record
-   * that the occurrence was not run (below), which is the part that was missing.
+   * There is no catch-up. A schedule that came round while this server was off
+   * is not run later, and nothing replays the ticks a sleeping computer slept
+   * through: these are agent turns that do real work, and a server waking after
+   * a weekend would otherwise fire a weekend's worth of them at once, all acting
+   * on a world that has moved on.
+   *
+   * What croner does on wake is fire ONCE, late. That one fire is resolved to
+   * the occurrence it stands for ({@link resolveOccurrence}): the run records
+   * that occurrence as `scheduledFor`, beside a `startedAt` that says how late
+   * it ran, and counts the earlier occurrences that never fired as
+   * `missedTicks`. A fire too late to be worth running (an hour late, or
+   * halfway to the next occurrence) is recorded as a `skipped` run saying the
+   * computer was asleep, through the same claim, so a person finds the
+   * occurrence in the task's own history instead of a run at an odd hour.
    *
    * ## Why the claim comes before the concurrency check
    *
@@ -991,11 +1009,13 @@ export class TaskSchedulerService {
    * decision. Claiming first makes the skip itself idempotent: exactly one
    * process writes exactly one `skipped` run for that occurrence.
    *
-   * @param task - The task whose cron fired.
-   * @param scheduledFireTime - The cron's intended tick (from croner `currentRun()`);
-   *   keys idempotency so a tick fires at most once across processes.
+   * @param task - The task whose cron fired, as it was registered.
+   * @param fire - When croner's timer ran out and which occurrence it was
+   *   waiting for. A bare `Date` is a fire instant with nothing captured.
    */
-  private async dispatch(task: Task, scheduledFireTime?: Date | null): Promise<void> {
+  private async dispatch(task: Task, fire: ScheduledFire | Date): Promise<void> {
+    const { firedAt, expected } = fire instanceof Date ? { firedAt: fire, expected: null } : fire;
+
     // Production gate (ADR-285): suppress firing in non-production environments.
     // Crons still register, so display/next-run is unaffected — only firing stops.
     if (!this.config.mayFire) {
@@ -1022,31 +1042,53 @@ export class TaskSchedulerService {
       return;
     }
 
-    // Two reasons a tick is recorded but not run, in priority order. The global
-    // cap comes first because it is about the whole machine; sticky
-    // single-session serialization is about this one task (DOR-1571). A sticky
-    // task runs everything on one session, so a fire that lands while its
-    // previous run is still going must NOT open a second turn on it — that would
-    // corrupt the very session sticky exists to keep coherent. Checked here, the
-    // same way `atCap` is, so both end in the same `skipped` run row.
+    // Which occurrence this fire stands for (DOR-2718), read off the schedule
+    // that actually FIRED — the registered one — in its own timezone. A paused
+    // evaluator, not the live job: it schedules no timer, and a job stopped
+    // since the fire would answer no next occurrence at all.
+    const fired = task.cron ? task : current;
+    const occurrence = fired.cron
+      ? resolveOccurrence(
+          new Cron(fired.cron, { paused: true, timezone: fired.timezone ?? undefined }),
+          expected,
+          firedAt
+        )
+      : null;
+
+    // Three reasons a tick is recorded but not run, in priority order. Stale
+    // comes first because it is about this occurrence itself: it would not run
+    // whatever else were true. The global cap is about the whole machine;
+    // sticky single-session serialization is about this one task (DOR-1571). A
+    // sticky task runs everything on one session, so a fire that lands while
+    // its previous run is still going must NOT open a second turn on it — that
+    // would corrupt the very session sticky exists to keep coherent. All three
+    // end in the same `skipped` run row.
     const atCap = this.runs.count() >= this.config.maxConcurrentRuns;
     const stickyBusy = !atCap && current.sticky && this.store.hasRunningRunForTask(current.id);
-    const skipReason = atCap ? this.atCapReason() : stickyBusy ? this.stickyBusyReason() : null;
+    const skipReason = occurrence?.stale
+      ? STALE_SKIP_REASON
+      : atCap
+        ? this.atCapReason()
+        : stickyBusy
+          ? this.stickyBusyReason()
+          : null;
 
-    // Idempotency gate (ADR-285): atomically claim this scheduled tick, opening
-    // its run row in the same transaction. If another process (or a duplicate
-    // fire) already claimed it, skip. The leader lock makes this rare; this is
-    // the durable backstop for the handoff/double-fire window. The key is the
-    // trigger time floored to the cron's resolution (see scheduledTickKey) so
-    // co-located processes firing the same occurrence agree.
+    // Idempotency gate (ADR-285): atomically claim this scheduled occurrence,
+    // opening its run row in the same transaction. If another process (or a
+    // duplicate fire) already claimed it, skip. The leader lock makes this
+    // rare; this is the durable backstop for the handoff/double-fire window.
+    // The key is the OCCURRENCE, not the instant the timer fired: two processes
+    // that wake late and fire a few hundred ms apart, either side of a minute
+    // boundary, still agree on it, and an on-time fire keys exactly as the
+    // old floored fire instant did (DOR-2718).
     let run: TaskRun | null;
-    if (current.cron) {
-      const firedAt = scheduledFireTime ?? this.cronJobs.get(task.id)?.currentRun() ?? new Date();
-      const tickKey = scheduledTickKey(current.cron, firedAt);
+    if (occurrence) {
+      const tickKey = occurrence.intendedFor.getTime();
       run = this.store.claimScheduledRun(
         task.id,
         tickKey,
-        skipReason ? { status: 'skipped', reason: skipReason } : { status: 'running' }
+        skipReason ? { status: 'skipped', reason: skipReason } : { status: 'running' },
+        occurrence.missed
       );
       if (!run) {
         logger.debug(

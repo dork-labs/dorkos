@@ -235,6 +235,18 @@ Short answer: yes, once it's live in a real DorkOS install. Scheduled tasks alwa
 
 If you're following this guide in a normal DorkOS install, you're already in the environment where they fire. Nothing extra to do.
 
+## Late and missed runs
+
+A computer that is asleep cannot run anything. When it wakes, DorkOS runs the one scheduled time it missed most recently, if that time is still recent enough. That means under an hour ago, and less than halfway to the next scheduled time. So a daily 9:00 report still runs if you open the laptop at 9:40, but not at 11:00.
+
+The run history tells you what happened:
+
+- **Ran 40m late** sits next to a run that started after its scheduled time.
+- **Skipped: this computer was asleep when it was due.** marks a run that was too late to be worth doing. Nothing ran.
+- **Missed 3 earlier runs while asleep.** counts the other scheduled times that came and went while the computer slept. DorkOS never runs those afterwards, so a night asleep never turns into a pile of runs at breakfast.
+
+Times that pass while DorkOS itself is not running are not run later either, and are not counted.
+
 ## When a run needs your permission
 
 A task on a timer runs while you are somewhere else, so there is nobody to answer if the agent asks for permission to do something. DorkOS does not make it wait. The request is turned down right away, and the agent keeps going without that one tool.
@@ -449,7 +461,7 @@ DorkOS uses standard five-field cron expressions:
     skipped: {
       type: 'status',
       description:
-        'The server was already at its limit of runs at once, so this turn never started. The row says so, and no message is sent',
+        'This turn never started: the server was already at its limit of runs at once, or the computer was asleep until too long after the scheduled time. The row says which, and no message is sent',
     },
   }}
 />

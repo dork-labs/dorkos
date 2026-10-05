@@ -25,6 +25,7 @@ import {
   Spinner,
 } from '@/layers/shared/ui';
 import type { TaskRun, TaskRunStatus } from '@dorkos/shared/types';
+import { missedRunsLine, runLateness } from '../lib/run-lateness';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -89,11 +90,12 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
         </span>
       );
     case 'skipped':
-      // Not a failure and not a cancellation: the schedule came round while
-      // DorkOS was already running as many tasks as it is allowed to, so this
-      // occurrence was recorded and not run. The row's error text says so.
+      // Not a failure and not a cancellation: the occurrence was recorded and
+      // not run — DorkOS was at its limit, the task's previous run was still
+      // going, or the computer was asleep until too late (DOR-2718). The row's
+      // own line says which, so the icon does not guess.
       return (
-        <span title="Skipped: DorkOS was busy" aria-label="Skipped">
+        <span title="Skipped" aria-label="Skipped">
           <SkipForward className="text-muted-foreground size-3.5" />
         </span>
       );
@@ -211,6 +213,8 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
   }
 
   const startedLabel = run.startedAt ? formatAbsoluteTime(run.startedAt) : 'unknown time';
+  const lateness = runLateness(run);
+  const missedLine = missedRunsLine(run);
 
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- role/tabIndex/onKeyDown are conditionally set based on isClickable
@@ -253,6 +257,13 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
           <span className="text-foreground shrink-0">
             {run.startedAt ? <RunTimestamp date={run.startedAt} /> : '-'}
           </span>
+          {/* The occurrence it stood for, against when it actually started: a
+              computer asleep at 09:00 runs the 09:00 occurrence when it wakes,
+              and the row says so rather than passing it off as on time
+              (DOR-2718). */}
+          {lateness && (
+            <span className="text-muted-foreground text-2xs shrink-0">Ran {lateness} late</span>
+          )}
           {/* What this run ACTUALLY ran on, stamped when it was dispatched —
               not what the task says today. Move a task to another runtime next
               week and its old runs still report the truth about themselves
@@ -278,9 +289,10 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
         )}
         {/* Three runs carry a line of explanation, and they read differently. A
             failure is the task's own, in the failure red. A skipped run is
-            DorkOS saying it was too busy to start this one — not the task's
-            fault, so muted — and this row is the only place a person ever
-            learns the occurrence was passed over (DOR-1482). A blocked run
+            DorkOS saying why it did not start this one — too busy, or the
+            computer was asleep until too late — not the task's fault, so muted,
+            and this row is the only place a person ever learns the occurrence
+            was passed over (DOR-1482, DOR-2718). A blocked run
             names the tools it was denied, in the warning amber (DOR-2101). */}
         {(run.status === 'failed' || run.status === 'skipped') && run.error && (
           <span
@@ -294,6 +306,13 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
           </span>
         )}
         {run.status === 'blocked' && <BlockedToolsLine run={run} />}
+        {/* Croner fires one late run on wake and none for the occurrences
+            before it; this is the only record that they came round (DOR-2718). */}
+        {missedLine && (
+          <span className="text-muted-foreground truncate" title={missedLine}>
+            {missedLine}
+          </span>
+        )}
       </span>
 
       {/* No duration for a run that never started — a "< 1s" against a skipped

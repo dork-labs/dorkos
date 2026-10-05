@@ -109,6 +109,8 @@ function makeRun(overrides: Partial<TaskRun> = {}): TaskRun {
     resolvedRuntime: null,
     resolvedModel: null,
     refusedTools: null,
+    scheduledFor: null,
+    missedTicks: null,
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     ...overrides,
   };

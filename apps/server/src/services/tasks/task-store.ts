@@ -799,16 +799,26 @@ export class TaskStore {
    * does, so a crashed dispatch is simply a tick that was never claimed and the
    * next process to see it may take it.
    *
+   * The run row also records WHICH occurrence it was for (`scheduledFor`, the
+   * same instant as the claim key) and how many earlier occurrences never fired
+   * (`missedTicks`), so a run that fired late after the computer slept says so
+   * in its own history (DOR-2718).
+   *
    * @param taskId - The task being dispatched.
-   * @param scheduledFireTime - The cron's intended tick (epoch ms), not wall-clock.
+   * @param scheduledFireTime - The occurrence this run stands for (epoch ms),
+   *   never the wall-clock fire instant — see `resolveOccurrence` in
+   *   `timing/occurrence.ts`. It is the claim key and the run's `scheduledFor`.
    * @param outcome - `running` opens a live run; `skipped` records a tick this
    *   scheduler deliberately did not run, with the reason a person will read.
+   * @param missedTicks - Earlier occurrences that never got a fire of their own
+   *   while croner waited (a sleeping computer); 0 when there were none.
    * @returns The new run, or null when another caller already claimed this tick.
    */
   claimScheduledRun(
     taskId: string,
     scheduledFireTime: number,
-    outcome: { status: 'running' } | { status: 'skipped'; reason: string }
+    outcome: { status: 'running' } | { status: 'skipped'; reason: string },
+    missedTicks = 0
   ): TaskRun | null {
     const now = new Date().toISOString();
     const runId = this.db.transaction((tx) => {
@@ -828,6 +838,8 @@ export class TaskStore {
           startedAt: now,
           trigger: 'scheduled',
           createdAt: now,
+          scheduledFor: new Date(scheduledFireTime).toISOString(),
+          missedTicks,
           // A skipped tick is over the moment it is recorded: it has an ending,
           // it took no time, and the reason is the whole point of writing it.
           ...(outcome.status === 'skipped'

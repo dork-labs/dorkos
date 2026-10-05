@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os';
 import { initBoundary } from '../../../lib/boundary.js';
 import {
   TaskSchedulerService,
-  scheduledTickKey,
   singleRuntimeSource,
   type SchedulerAgentManager,
   type SchedulerRuntimes,
@@ -233,6 +232,17 @@ const DEFAULT_CONFIG = {
   firingReason: 'test',
 };
 
+/**
+ * An on-time fire of an hourly (`0 * * * *`) task: 2023-11-14T22:00:00Z, an
+ * exact hour boundary. `dispatch` resolves every fire to the occurrence it
+ * stands for and skips one that is too late (DOR-2718), so a case about
+ * something else fires on an occurrence rather than at an arbitrary instant.
+ */
+const ON_TIME_HOURLY = new Date(1_699_999_200_000);
+
+/** The scheduler's private cron-fire chokepoint, as a test drives it. */
+type Fireable = { dispatch(t: Task, when: Date): Promise<void> };
+
 describe('TaskSchedulerService', () => {
   let store: TaskStore;
   let db: Db;
@@ -358,7 +368,7 @@ describe('TaskSchedulerService', () => {
       await service.start();
 
       // dispatch() is the scheduled-firing chokepoint; with mayFire=false it must no-op.
-      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(store.listRuns()).toHaveLength(0);
       // Display is unaffected — the cron is still registered and next-run resolves.
@@ -376,7 +386,7 @@ describe('TaskSchedulerService', () => {
       );
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG); // mayFire: true
 
-      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(store.listRuns().length).toBeGreaterThan(0);
 
@@ -409,7 +419,7 @@ describe('TaskSchedulerService', () => {
         leaderLock: followerLock,
       });
 
-      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(store.listRuns()).toHaveLength(0);
       await service.stop();
@@ -429,7 +439,7 @@ describe('TaskSchedulerService', () => {
         leaderLock,
       });
 
-      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(store.listRuns().length).toBeGreaterThan(0);
       await service.stop();
@@ -458,7 +468,7 @@ describe('TaskSchedulerService', () => {
         },
       });
 
-      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(checked).toEqual([task.id]);
       expect(store.getTask(task.id)!.status).toBe('pending_approval');
@@ -482,7 +492,7 @@ describe('TaskSchedulerService', () => {
         beforeScheduledFire: async () => ({ runtime: 'claude-code', model: 'model-the-check-saw' }),
       });
 
-      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(store.listRuns()[0]!.resolvedModel).toBe('model-the-check-saw');
       await service.stop();
@@ -506,7 +516,7 @@ describe('TaskSchedulerService', () => {
         },
       });
 
-      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(checked).toEqual([]);
       expect(store.listRuns().length).toBeGreaterThan(0);
@@ -545,8 +555,10 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
 
-      await dispatch(task, new Date(1_700_000_000_000));
-      await dispatch(task, new Date(1_700_000_060_000));
+      // Two consecutive hourly occurrences. (Two instants inside one hour are
+      // one occurrence of an hourly schedule, and claim once — DOR-2718.)
+      await dispatch(task, ON_TIME_HOURLY);
+      await dispatch(task, new Date(ON_TIME_HOURLY.getTime() + 3_600_000));
 
       expect(store.listRuns()).toHaveLength(2);
       await service.stop();
@@ -601,28 +613,6 @@ describe('TaskSchedulerService', () => {
       expect(store.listRuns()).toHaveLength(1);
       await s1.stop();
       await s2.stop();
-    });
-  });
-
-  describe('scheduledTickKey', () => {
-    it('floors two triggers in the same minute to one key (5-field cron)', () => {
-      const a = scheduledTickKey('* * * * *', new Date(1_700_000_040_002));
-      const b = scheduledTickKey('* * * * *', new Date(1_700_000_040_009));
-      expect(a).toBe(b);
-      expect(a).toBe(1_700_000_040_000);
-    });
-
-    it('distinguishes different scheduled minutes', () => {
-      expect(scheduledTickKey('* * * * *', new Date(1_700_000_040_000))).not.toBe(
-        scheduledTickKey('* * * * *', new Date(1_700_000_100_000))
-      );
-    });
-
-    it('uses 1s resolution for a 6-field (seconds) cron', () => {
-      const a = scheduledTickKey('*/30 * * * * *', new Date(1_700_000_040_300));
-      const b = scheduledTickKey('*/30 * * * * *', new Date(1_700_000_040_800));
-      expect(a).toBe(b);
-      expect(a).toBe(1_700_000_040_000);
     });
   });
 
@@ -717,7 +707,7 @@ describe('TaskSchedulerService', () => {
 
       // The cron's own callback, called directly rather than waited for — the
       // same door the other dispatch cases in this file use.
-      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(vi.mocked(mockAgent.ensureSession).mock.calls[0]?.[1]).toMatchObject({
         unattended: true,
@@ -1452,7 +1442,7 @@ describe('TaskSchedulerService', () => {
       // First fire: no prior run, so it starts fresh under a freshly minted
       // session id — never the run's own id, which is a ULID no session route
       // accepts.
-      const first = await triggerAndPublish(service, task, new Date(1_700_000_040_000));
+      const first = await triggerAndPublish(service, task, ON_TIME_HOURLY);
       const [, firstPayload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
       expect(firstPayload.sessionId).toMatch(SESSION_UUID_RE);
       expect(firstPayload.resumeSession).toBe(false);
@@ -1469,7 +1459,12 @@ describe('TaskSchedulerService', () => {
 
       // A later scheduled fire resumes that REAL id — the one whose transcript
       // exists on disk — so the runtime can rehydrate it cold.
-      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_100_000));
+      // The next hourly occurrence: one inside the same hour is the SAME
+      // occurrence, and claims nothing (DOR-2718).
+      await (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(ON_TIME_HOURLY.getTime() + 3_600_000)
+      );
       const [, secondPayload] = mockRelay.publish.mock.calls[1] as [string, TaskDispatchPayload];
       expect(secondPayload.sessionId).toBe(realId);
       expect(secondPayload.resumeSession).toBe(true);
@@ -2102,7 +2097,9 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      // An on-time fire of its 02:30 occurrence; one hours away from it would
+      // be skipped as stale before anything was published (DOR-2718).
+      await (service as unknown as Dispatchable).dispatch(task, new Date('2023-11-14T02:30:00Z'));
       await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, payload, options] = mockRelay.publish.mock.calls[0];
@@ -3701,6 +3698,8 @@ describe('buildTaskAppend', () => {
       resolvedRuntime: null,
       resolvedModel: null,
       refusedTools: null,
+      scheduledFor: null,
+      missedTicks: null,
       createdAt: '2026-01-01T02:00:00Z',
     };
 
@@ -3789,6 +3788,8 @@ describe('buildTaskAppend', () => {
       resolvedRuntime: null,
       resolvedModel: null,
       refusedTools: null,
+      scheduledFor: null,
+      missedTicks: null,
       createdAt: '2026-01-01T02:00:00Z',
     };
   }

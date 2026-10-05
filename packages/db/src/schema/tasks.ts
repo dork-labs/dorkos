@@ -251,6 +251,23 @@ export const pulseRuns = sqliteTable(
      * answer rather than an absent one.
      */
     refusedTools: text('refused_tools'),
+    /**
+     * The scheduled occurrence this run stood for, ISO 8601 (DOR-2718). Not
+     * when it started: a computer that slept through 09:00 and woke at 09:40
+     * records `scheduled_for` 09:00 and `started_at` 09:40, which is how the
+     * run history says "Ran 40m late". The same instant the dispatch claim was
+     * keyed on. NULL for manual and agent runs, and on every run older than
+     * the column.
+     */
+    scheduledFor: text('scheduled_for'),
+    /**
+     * Earlier occurrences that never fired while croner waited for this one —
+     * a computer asleep through three hourly runs fires once on wake and
+     * counts the rest here, capped at 1000 (DOR-2718). One count on the run
+     * that did fire rather than a row per missed tick. NULL for manual and
+     * agent runs, and on every run older than the column.
+     */
+    missedTicks: integer('missed_ticks'),
     trigger: text('trigger', {
       enum: ['scheduled', 'manual', 'agent'],
     })

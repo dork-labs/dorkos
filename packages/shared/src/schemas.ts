@@ -5306,6 +5306,27 @@ export const TaskRunSchema = z
      * was refused nothing.
      */
     refusedTools: z.array(z.string()).nullable().default(null),
+    /**
+     * The scheduled occurrence this run stood for, ISO 8601 (DOR-2718).
+     *
+     * Not when it started. A computer asleep at 09:00 that wakes at 09:40 runs
+     * the 09:00 occurrence then, and records `scheduledFor` 09:00 beside a
+     * `startedAt` of 09:40 — the gap is how late it ran. A run skipped for
+     * being too late carries it too, so its row says which occurrence it was.
+     *
+     * `null` for manual and agent runs, which stood for no occurrence, and on
+     * every run recorded before this column existed.
+     */
+    scheduledFor: z.string().nullable().default(null),
+    /**
+     * Earlier occurrences that never ran while the computer slept, counted on
+     * the run that did fire (DOR-2718). Capped at 1000: a run history reading
+     * 1000 means "1000 or more".
+     *
+     * `null` for manual and agent runs and on every run recorded before this
+     * column existed; `0` on a scheduled run that missed nothing.
+     */
+    missedTicks: z.number().int().nullable().default(null),
     createdAt: z.string(),
   })
   .openapi('TaskRun');
