@@ -22,15 +22,22 @@
  *   the child. A client-sent copy of that header is stripped with the rest,
  *   so it cannot be forged. The session cookie stays here, which matters
  *   because a cookie that left the machine works through the tunnel.
- * - **Headers coming out.** Stripped: `set-cookie`,
- *   `strict-transport-security`, every `access-control-*` header, and
- *   hop-by-hop headers. Always set: `content-security-policy: sandbox;
- *   default-src 'none'` and `x-content-type-options: nosniff`, so a reply
- *   opened as a page cannot run script on DorkOS's origin.
+ * - **Headers coming out.** An allowlist ({@link OUTBOUND_ALLOWED}): content
+ *   and caching headers, other `x-` headers, and a `location` only back into
+ *   the extension's own mount. Everything else, `set-cookie` and
+ *   `clear-site-data` included, is dropped. Always set:
+ *   `content-security-policy: sandbox; default-src 'none'` and
+ *   `x-content-type-options: nosniff`, so a reply opened as a page cannot
+ *   run script on DorkOS's origin.
  *
  * ## When it goes wrong
  *
- * - 120 s with no bytes either way: 504 "<Name> didn't answer in time.".
+ * - 120 s with no bytes either way: 504 "<Name> didn't answer in time." before
+ *   the reply's headers, cut off after them. A server-sent-events stream that
+ *   is quiet that long is cut off too; authors send a heartbeat.
+ * - A person reading slower than the child writes: the virtual connection
+ *   pauses the child (`virtual-socket.ts`), and a child that ignores the
+ *   pause is cut off once 4 MB sits unread.
  * - The person's request goes away: the virtual connection is dropped, and
  *   the child's request sees its socket close.
  * - The child exits before the reply's headers: 503 "<Name> stopped while
@@ -63,10 +70,72 @@ const HOP_BY_HOP = new Set([
 ]);
 
 /** Request headers that carry the person's or an agent's credentials. */
-const INBOUND_STRIPPED = new Set(['cookie', 'authorization', 'proxy-authorization', 'x-api-key']);
+const INBOUND_STRIPPED = new Set([
+  'cookie',
+  'authorization',
+  'proxy-authorization',
+  'x-api-key',
+  // Not a credential, but it names the person's browser tab to DorkOS, and
+  // nothing in an extension needs it.
+  'x-client-id',
+]);
 
-/** Response headers an extension may not set on DorkOS's origin. */
-const OUTBOUND_STRIPPED = new Set(['set-cookie', 'strict-transport-security']);
+/**
+ * The reply headers an extension may set, by exact name. Everything else is
+ * dropped: an allowlist, because the dangerous ones are an open set
+ * (`set-cookie`, `clear-site-data` signing the person out, `refresh`,
+ * `www-authenticate` raising a password prompt on DorkOS's origin,
+ * `service-worker-allowed`, `strict-transport-security`, CORS and CSP
+ * overrides). `location` is allowed separately, only back into the
+ * extension's own mount ({@link sameMountLocation}); other `x-` headers
+ * (but no `x-dorkos-`) pass, since browsers give none of them a meaning
+ * that crosses the CSP set below.
+ */
+const OUTBOUND_ALLOWED = new Set([
+  'content-type',
+  'content-length',
+  'content-encoding',
+  'content-language',
+  'content-disposition',
+  'content-range',
+  'accept-ranges',
+  'cache-control',
+  'expires',
+  'pragma',
+  'etag',
+  'last-modified',
+  'vary',
+  'retry-after',
+  'date',
+]);
+
+/**
+ * A `location` the reply may carry: one that, resolved against the request,
+ * stays on the same origin and inside the extension's own mount. Anything
+ * else (another site, another DorkOS route, `//host`) is dropped, so an
+ * extension can't make DorkOS's origin an open redirect or send the person's
+ * browser to a DorkOS route with their cookie.
+ *
+ * @param value - The `location` header.
+ * @param mount - The extension's mount, `/api/ext/<id>`.
+ * @returns The header to send, or `null` to drop it.
+ */
+export function sameMountLocation(
+  value: string | string[] | undefined,
+  mount: string
+): string | null {
+  if (typeof value !== 'string' || value.includes('\\')) return null;
+  const base = new URL(`http://dorkos.invalid${mount}/`);
+  let target: URL;
+  try {
+    target = new URL(value, base);
+  } catch {
+    return null;
+  }
+  if (target.origin !== base.origin) return null;
+  if (target.pathname !== mount && !target.pathname.startsWith(`${mount}/`)) return null;
+  return `${target.pathname}${target.search}${target.hash}`;
+}
 
 /** Set on every reply from an isolated extension. */
 export const OUTBOUND_FORCED: Readonly<Record<string, string>> = {
@@ -109,22 +178,28 @@ export function inboundHeaders(headers: http.IncomingHttpHeaders): http.Outgoing
 }
 
 /**
- * The reply headers passed back to the person: everything but cookies,
- * transport policy, CORS and hop-by-hop headers, plus the forced pair.
+ * The reply headers passed back to the person: only {@link OUTBOUND_ALLOWED}
+ * names, other `x-` headers, and a `location` inside the extension's mount,
+ * plus the forced pair.
  *
  * @param headers - The child's reply headers (lower-case names).
+ * @param mount - The extension's mount, `/api/ext/<id>`.
  */
 export function outboundHeaders(
-  headers: http.IncomingHttpHeaders
+  headers: http.IncomingHttpHeaders,
+  mount: string
 ): Record<string, string | string[]> {
-  const listed = connectionListed(headers.connection);
   const out: Record<string, string | string[]> = {};
   for (const [name, value] of Object.entries(headers)) {
     if (value === undefined) continue;
     const key = name.toLowerCase();
-    if (HOP_BY_HOP.has(key) || listed.has(key) || key === 'transfer-encoding') continue;
-    if (OUTBOUND_STRIPPED.has(key) || key.startsWith('access-control-')) continue;
-    out[key] = value;
+    if (key === 'location') {
+      const location = sameMountLocation(value, mount);
+      if (location !== null) out.location = location;
+      continue;
+    }
+    const xHeader = key.startsWith('x-') && !key.startsWith('x-dorkos-');
+    if (OUTBOUND_ALLOWED.has(key) || xHeader) out[key] = value;
   }
   return { ...out, ...OUTBOUND_FORCED };
 }
@@ -185,6 +260,26 @@ export function createIsolatedRouter(options: IsolatedRouterOptions): Router {
       timer.unref();
     };
 
+    // Everything that reads the request is decided before a connection is
+    // opened, so nothing that throws here can leave one counted and open.
+    const headers = inboundHeaders(req.headers);
+    headers[PERSON_VERDICT_HEADER] = JSON.stringify(personVerdict(req, res, name));
+    // One request per virtual connection.
+    headers.connection = 'close';
+
+    let payload: Buffer | null = null;
+    if (req.body !== undefined) {
+      // A body parser already read the stream: send what it produced. JSON
+      // is re-encoded, so its length and encoding are new.
+      payload = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
+      delete headers['transfer-encoding'];
+      delete headers['content-encoding'];
+      headers['content-length'] = String(payload.byteLength);
+    } else if (!hasBody(req)) {
+      delete headers['content-length'];
+    }
+    const mount = req.baseUrl;
+
     const opened = host.openConnection(touch);
     if (!opened.ok) {
       res.status(503).json({
@@ -219,34 +314,23 @@ export function createIsolatedRouter(options: IsolatedRouterOptions): Router {
       finish({ status: 504, error: `${name} didn't answer in time.` });
     }
 
-    const headers = inboundHeaders(req.headers);
-    headers[PERSON_VERDICT_HEADER] = JSON.stringify(personVerdict(req, res, name));
-    // One request per virtual connection.
-    headers.connection = 'close';
-
-    let payload: Buffer | null = null;
-    if (req.body !== undefined) {
-      // A body parser already read the stream: send what it produced. JSON
-      // is re-encoded, so its length and encoding are new.
-      payload = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
-      delete headers['transfer-encoding'];
-      delete headers['content-encoding'];
-      headers['content-length'] = String(payload.byteLength);
-    } else if (!hasBody(req)) {
-      delete headers['content-length'];
+    let upstream: http.ClientRequest;
+    try {
+      upstream = http.request({
+        method: req.method,
+        path: req.originalUrl,
+        headers,
+        createConnection: () => socket,
+      });
+    } catch {
+      finish({ status: 400, error: `${name} couldn't take that request.` });
+      return;
     }
-
-    const upstream = http.request({
-      method: req.method,
-      path: req.originalUrl,
-      headers,
-      createConnection: () => socket,
-    });
 
     upstream.on('response', (reply) => {
       touch();
       res.status(reply.statusCode ?? 502);
-      for (const [key, value] of Object.entries(outboundHeaders(reply.headers))) {
+      for (const [key, value] of Object.entries(outboundHeaders(reply.headers, mount))) {
         res.setHeader(key, value);
       }
       // Headers go now, so a streamed reply (server-sent events) starts

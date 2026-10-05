@@ -217,8 +217,20 @@ export interface ConnDestroyMessage {
   cid: number;
 }
 
+/**
+ * Flow control on a virtual connection, either way: the sender's read buffer
+ * is full (`conn-pause`) or has room again (`conn-resume`). The side told to
+ * pause holds back its writes until it hears `conn-resume`. Cooperative: a
+ * side that ignores it is cut off once the receiver holds more than
+ * {@link ISOLATION_LIMITS} `httpBufferBytes`.
+ */
+export interface ConnFlowMessage {
+  type: 'conn-pause' | 'conn-resume';
+  cid: number;
+}
+
 /** The HTTP byte-stream messages, sent by both sides. */
-export type ConnMessage = ConnDataMessage | ConnEndMessage | ConnDestroyMessage;
+export type ConnMessage = ConnDataMessage | ConnEndMessage | ConnDestroyMessage | ConnFlowMessage;
 
 /** The `ctx` messages a child may send. */
 export type CtxChildMessage =
@@ -444,6 +456,11 @@ export const ISOLATION_LIMITS = {
   maxBacklog: 1_000,
   /** Largest chunk of HTTP bytes in one `conn-data` message. */
   httpFrameBytes: 64 * 1024,
+  /**
+   * Most bytes one end of a virtual connection holds unread before it cuts
+   * the connection (the other side ignored `conn-pause`).
+   */
+  httpBufferBytes: 4 * 1024 * 1024,
   /** Most virtual HTTP connections open to one child at once. */
   maxConnections: 64,
   /** How long a forwarded request may go with no bytes either way. */
@@ -596,6 +613,8 @@ export function isChildMessage(value: unknown): value is ChildMessage {
       );
     case 'conn-end':
     case 'conn-destroy':
+    case 'conn-pause':
+    case 'conn-resume':
       return isId(value.cid);
     case 'probe-result':
       return (

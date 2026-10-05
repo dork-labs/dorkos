@@ -126,7 +126,6 @@ function plain(key: string, text: string, tone: ExtensionPermissionTone = 'plain
 /**
  * The lines for one extension, in reading order: what is new since the last
  * yes first (a re-ask), then where it runs, then what it may reach.
-
  *
  * @param permissions - What it declares.
  * @param added - What its last approval did not cover, or `null`.

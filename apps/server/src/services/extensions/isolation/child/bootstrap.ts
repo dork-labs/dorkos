@@ -63,9 +63,10 @@ const tracked = sendRaw
  * Send one message to the host.
  *
  * @param message - The message.
+ * @param onWritten - Called once it is written to the channel.
  */
-function send(message: ChildMessage): void {
-  tracked?.send(message);
+function send(message: ChildMessage, onWritten?: () => void): void {
+  tracked?.send(message, onWritten);
 }
 
 /**

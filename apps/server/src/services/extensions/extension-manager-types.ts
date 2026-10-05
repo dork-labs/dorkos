@@ -45,6 +45,11 @@ export interface ActiveServerExtension {
   /** Closes the instance's tool binding (an isolated instance, which offers none yet). */
   closeTools?: () => void;
   /**
+   * Makes the instance's real ctx inert, so a call its isolated child left
+   * running does nothing more once the child is gone.
+   */
+  disposeCtx?: () => void;
+  /**
    * The host of an extension that runs in its own process (DOR-2686): its
    * child is stopped (and waited for) on shutdown, in place of `cleanup`.
    */

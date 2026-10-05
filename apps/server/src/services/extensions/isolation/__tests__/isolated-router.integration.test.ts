@@ -231,6 +231,88 @@ describe('the header policy', () => {
   });
 });
 
+describe('the reply header allowlist', () => {
+  // Purpose: a header that could sign the person out, prompt for a
+  // password, redirect, register a service worker or loosen CORS on
+  // DorkOS's origin never reaches the browser; an ordinary one does.
+  it('drops every header outside the allowlist', async () => {
+    await startIsolated('iso');
+    const res = await fetch(`${base}/api/ext/iso/danger`);
+    expect(res.status).toBe(200);
+    for (const name of [
+      'clear-site-data',
+      'refresh',
+      'www-authenticate',
+      'service-worker-allowed',
+      'access-control-allow-credentials',
+      'cross-origin-opener-policy',
+      'link',
+      'x-dorkos-agent',
+    ]) {
+      expect(res.headers.get(name), name).toBeNull();
+    }
+    expect(res.headers.get('etag')).toBe('"v1"');
+  });
+
+  // Purpose: a redirect stays inside the extension's own mount; one to
+  // another site or another DorkOS route is dropped.
+  it.each([
+    ['/api/ext/iso/items/1', '/api/ext/iso/items/1'],
+    ['items/2?x=1', '/api/ext/iso/items/2?x=1'],
+    ['https://evil.example/', null],
+    ['//evil.example/', null],
+    ['/api/config', null],
+    ['/api/ext/iso/../../config', null],
+    ['/api/ext/isomorphic', null],
+  ])('a redirect to %s keeps location %s', async (to, expected) => {
+    await startIsolated('iso');
+    const res = await fetch(`${base}/api/ext/iso/redirect?to=${encodeURIComponent(to)}`, {
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(expected);
+  });
+});
+
+describe('flow control', () => {
+  // Purpose: a child writing faster than the person reads is paused, so
+  // DorkOS holds a bounded amount; reading again resumes it to the end.
+  it('pauses a fast child for a slow reader, then resumes', async () => {
+    const { host } = await startIsolated('iso');
+    // A plain Node client whose response is paused: a reader that stopped.
+    let reply: http.IncomingMessage | null = null;
+    const req = http.get(`${base}/api/ext/iso/flood`, (r) => {
+      reply = r;
+      r.pause();
+    });
+    await until(() => reply !== null);
+    await new Promise((r) => setTimeout(r, 1_500));
+    const { flooded } = (await (await fetch(`${base}/api/ext/iso/flooded`)).json()) as {
+      flooded: number;
+    };
+    expect(flooded).toBeLessThan(16 * 1024 * 1024);
+    expect(host.bufferedBytes).toBeLessThanOrEqual(4 * 1024 * 1024);
+    let total = 0;
+    await new Promise<void>((resolve, reject) => {
+      reply!.on('data', (chunk: Buffer) => (total += chunk.byteLength));
+      reply!.on('end', resolve);
+      reply!.on('error', reject);
+      reply!.resume();
+    });
+    req.destroy();
+    expect(total).toBe(32 * 1024 * 1024);
+  }, 30_000);
+});
+
+/** Wait until `check` is true. */
+async function until(check: () => boolean, ms = 5_000): Promise<void> {
+  const began = Date.now();
+  while (!check()) {
+    if (Date.now() - began > ms) throw new Error('timed out waiting');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 describe('when a request or the child goes away', () => {
   // Purpose: a person abandoning a request closes it in the child too.
   it('carries a client abort to the child', async () => {

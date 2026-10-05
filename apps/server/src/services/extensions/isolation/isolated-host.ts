@@ -756,6 +756,8 @@ export class IsolatedExtensionHost {
       case 'conn-data':
       case 'conn-end':
       case 'conn-destroy':
+      case 'conn-pause':
+      case 'conn-resume':
         // Only connections this host opened; anything else is dropped.
         this.connections.get(message.cid)?.receive(message);
         break;
@@ -783,9 +785,10 @@ export class IsolatedExtensionHost {
    * 1,000 unwritten messages the child is killed as unresponsive.
    *
    * @param message - The message.
+   * @param onWritten - Called once the channel has written it (or failed to).
    * @returns `false` when the channel is backed up (or gone).
    */
-  private send(message: HostMessage): boolean {
+  private send(message: HostMessage, onWritten?: () => void): boolean {
     const child = this.child;
     if (!child || !child.connected) return false;
     this.backlog++;
@@ -800,6 +803,7 @@ export class IsolatedExtensionHost {
     try {
       child.send(message, (err) => {
         this.backlog = Math.max(0, this.backlog - 1);
+        onWritten?.();
         if (err) return;
         if (this.backlog <= DRAIN_LOW_WATER && this.drainWaiters.length > 0) {
           for (const waiter of this.drainWaiters.splice(0)) waiter();
@@ -860,7 +864,7 @@ export class IsolatedExtensionHost {
     const cid = this.nextCid++;
     const socket = new VirtualSocket({
       cid,
-      send: (message) => this.send(message) || this.child !== null,
+      send: (message, onWritten) => this.send(message, onWritten) || this.child !== null,
       onActivity,
       onClose: () => this.connections.delete(cid),
     });
@@ -872,6 +876,13 @@ export class IsolatedExtensionHost {
   /** How many virtual connections are open right now. */
   get openConnections(): number {
     return this.connections.size;
+  }
+
+  /** Bytes the child sent that are not read yet, across every open connection (diagnostics). */
+  get bufferedBytes(): number {
+    let total = 0;
+    for (const socket of this.connections.values()) total += socket.readableLength;
+    return total;
   }
 
   /**

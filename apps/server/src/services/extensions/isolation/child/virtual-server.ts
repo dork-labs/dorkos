@@ -28,8 +28,8 @@ export interface VirtualServerDeps {
   express: typeof express;
   /** The router `register()` filled. */
   router: express.Router;
-  /** Send one message to the host. */
-  send: (message: ChildMessage) => void;
+  /** Send one message to the host; `onWritten` runs once it is written to the channel. */
+  send: (message: ChildMessage, onWritten?: () => void) => void;
 }
 
 /** The virtual server and its controls. */
@@ -81,9 +81,9 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
   server.keepAliveTimeout = 0;
   const sockets = new Map<number, VirtualSocket>();
 
-  const send = (message: ConnMessage): boolean => {
+  const send = (message: ConnMessage, onWritten?: () => void): boolean => {
     try {
-      deps.send(message);
+      deps.send(message, onWritten);
       return true;
     } catch {
       return false;
@@ -107,6 +107,8 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
         case 'conn-data':
         case 'conn-end':
         case 'conn-destroy':
+        case 'conn-pause':
+        case 'conn-resume':
           sockets.get(message.cid)?.receive(message);
           return true;
         default:

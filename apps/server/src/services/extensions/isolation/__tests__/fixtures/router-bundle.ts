@@ -52,6 +52,44 @@ module.exports = function register(router, ctx) {
     res.json({ ok: true });
   });
 
+  router.get('/danger', (req, res) => {
+    res.setHeader('clear-site-data', '"cookies", "storage"');
+    res.setHeader('refresh', '0; url=https://evil.example');
+    res.setHeader('www-authenticate', 'Basic realm="DorkOS"');
+    res.setHeader('service-worker-allowed', '/');
+    res.setHeader('access-control-allow-credentials', 'true');
+    res.setHeader('cross-origin-opener-policy', 'unsafe-none');
+    res.setHeader('link', '</evil.js>; rel=preload');
+    res.setHeader('x-dorkos-agent', 'forged');
+    res.setHeader('etag', '"v1"');
+    res.json({ ok: true });
+  });
+
+  router.get('/redirect', (req, res) => {
+    res.redirect(302, String(req.query.to));
+  });
+
+  // Writes 64 KB chunks as fast as backpressure lets it, up to 32 MB, and
+  // counts what it managed to write.
+  let flooded = 0;
+  router.get('/flood', (req, res) => {
+    flooded = 0;
+    res.writeHead(200, { 'content-type': 'application/octet-stream' });
+    const chunk = Buffer.alloc(64 * 1024, 7);
+    const pump = () => {
+      while (flooded < 32 * 1024 * 1024) {
+        flooded += chunk.length;
+        if (!res.write(chunk)) {
+          res.once('drain', pump);
+          return;
+        }
+      }
+      res.end();
+    };
+    pump();
+  });
+  router.get('/flooded', (req, res) => res.json({ flooded }));
+
   router.get('/hang', (req, res) => {
     aborted = false;
     res.on('close', () => {

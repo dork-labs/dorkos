@@ -9,7 +9,7 @@
  * The properties: an approved isolated extension serves and uses ctx over
  * the boundary; a crash leaves the rest of DorkOS serving and restarts it on
  * the backoff, telling agent-send and the inbox it stopped (so a message it
- * was holding never goes out); too many crashes leave it stopped with its
+ * was holding is failed, never sent); too many crashes leave it stopped with its
  * card's words, which a page load does not undo and a reload does; a hang
  * is stopped as unresponsive; turning it off ends its process; a new
  * `server.ts` is served after a reload; a manifest that asks for more waits
@@ -86,7 +86,6 @@ const sends = {
   held: [] as { extensionId: string; failed: string | null }[],
   stopped: [] as string[],
   started: [] as string[],
-  delivered: 0,
 };
 const inbox = { stopped: [] as string[], running: [] as string[] };
 
@@ -172,7 +171,6 @@ beforeEach(async () => {
   sends.held = [];
   sends.stopped = [];
   sends.started = [];
-  sends.delivered = 0;
   inbox.stopped = [];
   inbox.running = [];
   stored.value = {
@@ -271,7 +269,6 @@ describe('an isolated extension goes live through the real lifecycle', () => {
     expect((await get('/api/health')).body).toEqual({ ok: true });
     await until(() => sends.stopped.includes(ID) && inbox.stopped.includes(ID));
     expect(sends.held[0]!.failed).toBe('stopped');
-    expect(sends.delivered).toBe(0);
     expect(card().restartingAt).toEqual(expect.any(String));
     expect(announced).toContain(ID);
 
@@ -312,6 +309,49 @@ describe('an isolated extension goes live through the real lifecycle', () => {
     expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
     expect(card().serverError).toBeUndefined();
   }, 90_000);
+
+  // Purpose: new code is a fresh start however it arrives. Two crashes,
+  // then a new server.ts reached through a plain page-load init (no
+  // reload, no reset): its first crash restarts it instead of being the
+  // third strike.
+  it('gives new code a fresh crash budget', async () => {
+    await install('v1');
+    await boot();
+    for (let crash = 1; crash <= 2; crash++) {
+      await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+      const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+      await post(`/api/ext/${ID}/crash`);
+      await until(() => !alive(pid));
+    }
+    await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+
+    await install('v2');
+    expect((await manager.initializeServer(ID)).ok).toBe(true);
+    const v2 = await get(`/api/ext/${ID}/ping`);
+    expect(v2.body.version).toBe('v2');
+    await post(`/api/ext/${ID}/crash`);
+    await until(() => !alive(v2.body.pid as number));
+    await until(() => manager.getServerRouter(ID) === null);
+    expect(card().serverError).toBeUndefined();
+    expect(card().restartingAt).toEqual(expect.any(String));
+    await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+  }, 60_000);
+
+  // Purpose: a stop someone asked for (here: turning it off after it gave
+  // up) clears the crash history, so the card never keeps an old "stopped 3
+  // times" and the next start is fresh.
+  it('forgets the crash history when it is turned off', async () => {
+    await install();
+    await boot(1);
+    const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+    await post(`/api/ext/${ID}/crash`);
+    await until(() => !alive(pid));
+    await until(() => card().serverError?.code === 'server_crashed');
+    await manager.disable(ID);
+    expect(card().serverError).toBeUndefined();
+    await manager.enable(ID);
+    expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
+  }, 60_000);
 
   // Purpose: a stuck event loop is stopped by the watchdog and reported as
   // unresponsive (budget 1 here, so the first stop is the last).

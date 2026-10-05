@@ -18,6 +18,15 @@
  *   can still answer).
  * - Destroying it sends `conn-destroy`, unless the other side destroyed it
  *   first.
+ * - **Flow control.** When this end's read buffer is full (whoever reads it
+ *   is slower than the other side writes) it sends `conn-pause`, and
+ *   `conn-resume` once it is read again; the other end holds back its write
+ *   callbacks meanwhile, so an HTTP stack writing into it sees ordinary
+ *   backpressure (`res.write()` returns `false`, `'drain'` waits). The other
+ *   side is untrusted and may ignore the pause, so an end holding more than
+ *   {@link ISOLATION_LIMITS} `httpBufferBytes` unread cuts the connection.
+ *   Bytes that arrive while paused do not count as activity, so a stalled
+ *   reader cannot be kept "busy" forever by a child that keeps sending.
  *
  * Both HTTP stacks treat their socket as a `net.Socket`, so the few socket
  * methods they call (`setTimeout`, `setNoDelay`, `setKeepAlive`, `ref`,
@@ -33,10 +42,18 @@ import { ISOLATION_LIMITS, type ConnMessage } from './ipc-protocol.js';
 export interface VirtualSocketOptions {
   /** The connection id, shared by both ends. */
   cid: number;
-  /** Send one `conn-*` message to the other side. Returns `false` when it could not. */
-  send: (message: ConnMessage) => boolean;
-  /** Called on every frame either way, so an idle timer can be reset. */
+  /**
+   * Send one `conn-*` message to the other side. Returns `false` when it
+   * could not. `onWritten`, when given, runs once the channel has written it.
+   */
+  send: (message: ConnMessage, onWritten?: () => void) => boolean;
+  /**
+   * Called on every frame written, and every frame received while this end
+   * is not paused, so an idle timer can be reset.
+   */
   onActivity?: () => void;
+  /** Unread bytes this end holds before it cuts the connection (tests shorten it). */
+  maxBufferedBytes?: number;
   /** Called once when this end is gone, for whatever reason. */
   onClose?: () => void;
 }
@@ -52,6 +69,11 @@ export class VirtualSocket extends Duplex {
   /** No address: nothing listens, and nothing here is on a network. */
   readonly remoteAddress: string | undefined = undefined;
   private remoteGone = false;
+  /** This end asked the other to pause. */
+  private pausedRemote = false;
+  /** The other end asked this one to pause: the write callback waiting for `conn-resume`. */
+  private heldWrite: (() => void) | null = null;
+  private remotePaused = false;
   private readonly options: VirtualSocketOptions;
 
   /**
@@ -66,8 +88,15 @@ export class VirtualSocket extends Duplex {
     this.once('close', () => options.onClose?.());
   }
 
-  /** Bytes arrive with {@link VirtualSocket.receive}; there is nothing to pull. */
-  override _read(): void {}
+  /**
+   * Bytes arrive with {@link VirtualSocket.receive}; a read only means the
+   * reader has room again, so a paused peer may resume.
+   */
+  override _read(): void {
+    if (!this.pausedRemote) return;
+    this.pausedRemote = false;
+    this.options.send({ type: 'conn-resume', cid: this.cid });
+  }
 
   /**
    * Send a chunk as one or more frames.
@@ -83,16 +112,28 @@ export class VirtualSocket extends Duplex {
   ): void {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
     const frame = ISOLATION_LIMITS.httpFrameBytes;
+    // The write completes once its last frame is written to the channel (so
+    // a fast writer is held to the channel's pace, not queued in memory) and
+    // the other end has room: an end told to pause holds it until resume.
+    const complete = (): void => {
+      if (this.remotePaused) this.heldWrite = () => callback();
+      else callback();
+    };
+    if (bytes.byteLength === 0) {
+      complete();
+      return;
+    }
     for (let at = 0; at < bytes.byteLength; at += frame) {
-      const piece = bytes.subarray(at, Math.min(at + frame, bytes.byteLength));
+      const end = Math.min(at + frame, bytes.byteLength);
+      const piece = bytes.subarray(at, end);
       // A copy: the channel may serialize after the HTTP stack reuses its buffer.
-      if (!this.options.send({ type: 'conn-data', cid: this.cid, chunk: new Uint8Array(piece) })) {
+      const message = { type: 'conn-data' as const, cid: this.cid, chunk: new Uint8Array(piece) };
+      if (!this.options.send(message, end === bytes.byteLength ? complete : undefined)) {
         callback(new Error('The extension connection closed.'));
         return;
       }
     }
     this.options.onActivity?.();
-    callback();
   }
 
   /**
@@ -123,12 +164,34 @@ export class VirtualSocket extends Duplex {
    */
   receive(message: ConnMessage): void {
     switch (message.type) {
-      case 'conn-data':
-        this.options.onActivity?.();
-        this.push(
+      case 'conn-data': {
+        if (this.destroyed) break;
+        if (!this.pausedRemote) this.options.onActivity?.();
+        const room = this.push(
           Buffer.from(message.chunk.buffer, message.chunk.byteOffset, message.chunk.byteLength)
         );
+        const cap = this.options.maxBufferedBytes ?? ISOLATION_LIMITS.httpBufferBytes;
+        if (this.readableLength > cap) {
+          // It ignored the pause: cut the connection rather than hold more.
+          this.destroy(new Error('The other side sent more than this connection can hold.'));
+          break;
+        }
+        if (!room && !this.pausedRemote) {
+          this.pausedRemote = true;
+          this.options.send({ type: 'conn-pause', cid: this.cid });
+        }
         break;
+      }
+      case 'conn-pause':
+        this.remotePaused = true;
+        break;
+      case 'conn-resume': {
+        this.remotePaused = false;
+        const held = this.heldWrite;
+        this.heldWrite = null;
+        held?.();
+        break;
+      }
       case 'conn-end':
         this.push(null);
         break;

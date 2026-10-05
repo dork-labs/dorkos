@@ -165,6 +165,8 @@ export class ExtensionServerLifecycle {
   private readonly registerTimeoutMs: number;
   /** Per isolated extension: its crash budget and backoff. */
   private readonly restartPolicies = new Map<string, RestartPolicy>();
+  /** Per isolated extension: the source its crash count is for. */
+  private readonly policySources = new Map<string, string>();
   /** Per isolated extension: a pending restart. */
   private readonly restartTimers = new Map<string, NodeJS.Timeout>();
   /** Per isolated extension: the source it gave up on, so a page load does not start it again. */
@@ -570,10 +572,18 @@ export class ExtensionServerLifecycle {
    * tasks, call cleanup, remove its account listeners and advisor, remove
    * router.
    *
+   * Someone asked for this stop (turned it off, removed, reloaded or moved
+   * it to another copy), so an isolated extension's crash history goes with
+   * it: what runs next under this id starts fresh, and a card is never left
+   * saying it stopped 3 times.
+   *
    * @param id - Extension identifier
    */
   shutdown(id: string): Promise<void> {
-    return this.exclusive(id, () => this.stop(id));
+    return this.exclusive(id, async () => {
+      await this.stop(id);
+      this.resetRestarts(id);
+    });
   }
 
   /** The body of {@link shutdown}, run inside the id's queue. */
@@ -623,6 +633,7 @@ export class ExtensionServerLifecycle {
     // whatever it left behind goes now.
     active.releaseListeners?.();
     active.closeTools?.();
+    active.disposeCtx?.();
 
     // A pending restart is cancelled by any stop: turning it off, an
     // uninstall or a reload must not be undone a few seconds later.
@@ -658,6 +669,14 @@ export class ExtensionServerLifecycle {
       const message = extensionServerErrorCopy('isolation_unavailable', name)!;
       record.serverError = { code: 'isolation_unavailable', message };
       return { ok: false, error: message };
+    }
+
+    // New code or a new manifest is a fresh start, however it arrived (an
+    // update, a rescan, a page load after an edit): its crash count is for
+    // this source only.
+    if (this.policySources.get(id) !== sourceKey) {
+      this.restartPolicies.get(id)?.reset();
+      this.policySources.set(id, sourceKey);
     }
 
     // Starting again lifts the stop on its messages (DOR-2683).
@@ -751,6 +770,7 @@ export class ExtensionServerLifecycle {
       scheduledCleanups: [],
       releaseListeners: built.releaseListeners,
       closeTools: () => built.tools.close(),
+      disposeCtx: built.dispose,
       sourceKey,
       agentTools,
       isolated: host,
@@ -807,6 +827,8 @@ export class ExtensionServerLifecycle {
     getAgentSendService()?.extensionStopped(id);
     active.releaseListeners?.();
     active.closeTools?.();
+    // Whatever the dead child still had running in the real ctx acts no more.
+    active.disposeCtx?.();
     this.serverExtensions.delete(id);
 
     const record = this.options.recordOf?.(id);
