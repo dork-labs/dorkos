@@ -111,13 +111,18 @@ export function registerEmailLinkRequestRoutes(app: Hono, deps: EmailLinkRequest
     const tokenHash = pendingTokenHash(cookieHeader, config);
     const expired = () =>
       new ApiError(410, 'LINK_EXPIRED', 'This sign-in took too long. Sign in again.');
+    const held = await livePendingLink(pool, tokenHash, now());
+    if (!held) throw expired();
     const expiresAt = await transaction(pool, async (client) => {
-      const pending = await livePendingLink(client, tokenHash, now(), { lock: true });
-      if (!pending) throw expired();
-      const user = await client.query<{ email: string }>('SELECT email FROM "user" WHERE id=$1', [
-        pending.user_id,
-      ]);
+      // The account first, then its held sign-in: the order every clean-out takes them, so this
+      // cannot deadlock with one, and two asks for one account count one after the other.
+      const user = await client.query<{ email: string }>(
+        'SELECT email FROM "user" WHERE id=$1 FOR UPDATE',
+        [held.user_id]
+      );
       if (!user.rows[0]) throw expired();
+      const pending = await livePendingLink(client, held.token_hash, now(), { lock: true });
+      if (!pending || pending.user_id !== held.user_id) throw expired();
       await limitAccount(client, pending.user_id, 'sign_in');
       await client.query(
         `INSERT INTO email_link_requests(kind,email_hash,user_id,pending_link_hash,state)

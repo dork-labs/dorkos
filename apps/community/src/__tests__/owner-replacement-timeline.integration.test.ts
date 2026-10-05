@@ -1105,12 +1105,14 @@ describe('requests are open on a host with mail', () => {
     // mail worker or the timeline. The next test runs the app built the same way.
     const startup = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
     expect(startup).toMatch(
-      /const noticeComposers: NoticeComposers = \{\s*\.\.\.ownerReplacementComposers\(config\),\s*\.\.\.signInLinkComposers\(config\),\s*\};/u
+      /const noticeComposers: NoticeComposers = \{\s*\.\.\.ownerReplacementComposers\(config\),\s*\.\.\.signInLinkComposers\(config\),\s*(?:\/\/[^\n]*\n\s*)?\.\.\.emailLinkComposers\(config\),\s*\};/u
     );
     expect(startup).toMatch(
       /createCommunityApp\(\{\s*config,\s*pool,\s*blobStore,\s*noticeComposers,\s*\}\)/u
     );
-    expect(startup).toContain('startMailDelivery({ config, pool, composers: noticeComposers })');
+    expect(startup).toMatch(
+      /startMailDelivery\(\{\s*config,\s*pool,\s*composers: noticeComposers,\s*beforeEachTick: \(\) => resolveEmailLinkRequests\(pool, config\),\s*\}\)/u
+    );
     expect(startup).toContain('startOwnerReplacementTimeline({ pool, config })');
     expect(startup).not.toContain('ownerReplacementOpen');
   });
