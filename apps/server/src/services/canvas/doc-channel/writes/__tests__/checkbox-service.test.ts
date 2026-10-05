@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
 import {
   readFile,
   realpath,
@@ -14,7 +15,7 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { canvasDocChannels, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
 import { fixture as makeFixture, AuthorityRefused } from './checkbox-fixture.js';
 import { DocCheckboxWriteService } from '../checkbox-service.js';
@@ -33,6 +34,8 @@ import type { DocWriteIntentRow } from '../../store.js';
 import { rawByteHash } from '../checkbox-bytes.js';
 import { recoverCheckboxPage } from '../write-recovery.js';
 import { VerifiedCheckboxAuthoritySchema } from '../checkbox-evidence.js';
+import { observeCheckboxSource } from '../authority-snapshot.js';
+import { readDocSourceDescriptor } from '../../http-composition.js';
 
 const crashTests: { drain(): Promise<void> }[] = [];
 function crashTestOwnership() {
@@ -1405,4 +1408,92 @@ it('keeps every observed and mutation lifecycle hash strict regardless of an opa
   }
   expect(h.row()).toEqual(row);
   expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+it('settles the original held manifest peer before propagating an undefined file-stat failure', async () => {
+  const h = await fixture();
+  const originalStat = fs.stat.bind(fs),
+    originalRealpath = fs.realpath.bind(fs);
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const manifest = join(h.dir, '.dork', 'app.json');
+  const statSpy = vi
+    .spyOn(fs, 'stat')
+    .mockImplementation((...args) =>
+      String(args[0]) === h.path ? Promise.reject(undefined) : originalStat(...args)
+    );
+  const pathSpy = vi.spyOn(fs, 'realpath').mockImplementation(async (...args) => {
+    if (String(args[0]) === manifest) {
+      entered();
+      await held;
+    }
+    return originalRealpath(...args);
+  });
+  let settled = false;
+  const observation = observeCheckboxSource(
+    () =>
+      readDocSourceDescriptor(
+        { db: h.db, documents: h.rooms.canvasDocuments, roomRepos: h.roomRepos },
+        h.documentId
+      ),
+    () => undefined
+  ).then(
+    () => {
+      settled = true;
+      throw new Error('Unexpected observation success');
+    },
+    (cause) => {
+      settled = true;
+      return { cause };
+    }
+  );
+  try {
+    await started;
+    expect(settled).toBe(false);
+    release();
+    expect(await observation).toEqual({ cause: undefined });
+  } finally {
+    release();
+    await Promise.allSettled([observation]);
+    statSpy.mockRestore();
+    pathSpy.mockRestore();
+  }
+});
+it('preserves original non-file refusal before a settled manifest failure', async () => {
+  const h = await fixture();
+  const originalStat = fs.stat.bind(fs),
+    originalRealpath = fs.realpath.bind(fs);
+  const manifestFailure = new Error('Original manifest failure');
+  const statSpy = vi.spyOn(fs, 'stat').mockImplementation(async (...args) => {
+    const info = await originalStat(...args);
+    if (String(args[0]) === h.path) info.isFile = () => false;
+    return info;
+  });
+  const pathSpy = vi
+    .spyOn(fs, 'realpath')
+    .mockImplementation((...args) =>
+      String(args[0]) === join(h.dir, '.dork', 'app.json')
+        ? Promise.reject(manifestFailure)
+        : originalRealpath(...args)
+    );
+  try {
+    await expect(
+      observeCheckboxSource(
+        () =>
+          readDocSourceDescriptor(
+            { db: h.db, documents: h.rooms.canvasDocuments, roomRepos: h.roomRepos },
+            h.documentId
+          ),
+        () => undefined
+      )
+    ).rejects.toThrow('WRITE_SOURCE_UNAVAILABLE');
+  } finally {
+    statSpy.mockRestore();
+    pathSpy.mockRestore();
+  }
 });

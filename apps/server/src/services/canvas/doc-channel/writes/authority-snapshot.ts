@@ -249,6 +249,14 @@ async function manifestHash(root: string): Promise<string | null> {
     await file.close();
   }
 }
+/** Independent readonly peers settle before the original bracket advances. */
+async function fileAndManifest(canonicalPath: string, root: string) {
+  const [file, manifest] = await Promise.allSettled([
+    fs.stat(canonicalPath, { bigint: true }),
+    manifestHash(root),
+  ]);
+  return { file, manifest };
+}
 /** Bracket awaited probes with current descriptor checks and independently repeated physical observations. */
 export async function observeCheckboxSource(
   readCurrent: () => DocSourceDescriptor,
@@ -278,15 +286,21 @@ export async function observeCheckboxSource(
     );
     if (!isContained(canonicalPath, root.canonicalPath))
       throw new CheckboxAuthorityRefusal('SOURCE_PATH_CHANGED');
-    const info = await fs.stat(canonicalPath, { bigint: true });
+    const head = await fileAndManifest(canonicalPath, root.canonicalPath);
+    if (head.file.status === 'rejected') throw head.file.reason;
+    const info = head.file.value;
     if (!info.isFile()) throw new CheckboxAuthorityRefusal('WRITE_SOURCE_UNAVAILABLE');
-    const hash = await manifestHash(root.canonicalPath);
+    if (head.manifest.status === 'rejected') throw head.manifest.reason;
+    const hash = head.manifest.value;
     const tailRoot = await rootIdentity(descriptor.rootCandidate!);
     const tailPath = await fs.realpath(
       path.resolve(tailRoot.canonicalPath, descriptor.sourcePath!)
     );
-    const tailFile = await fs.stat(tailPath, { bigint: true });
-    const tailHash = await manifestHash(tailRoot.canonicalPath);
+    const tail = await fileAndManifest(tailPath, tailRoot.canonicalPath);
+    if (tail.file.status === 'rejected') throw tail.file.reason;
+    if (tail.manifest.status === 'rejected') throw tail.manifest.reason;
+    const tailFile = tail.file.value,
+      tailHash = tail.manifest.value;
     if (
       hash !== tailHash ||
       JSON.stringify(root) !== JSON.stringify(tailRoot) ||
