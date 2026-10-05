@@ -473,7 +473,7 @@ describe('sdk-event-mapper context usage capture', () => {
     expect(events.some((e) => e.type === 'error')).toBe(false);
   });
 
-  it('captures the last main-thread request usage from an assistant message', async () => {
+  it('RT-COST-01: captures the last main-thread request usage from an assistant message', async () => {
     const session = makeSession();
     await collectEvents(
       assistantWithUsage(null, {

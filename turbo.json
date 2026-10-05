@@ -90,6 +90,15 @@
         "$TURBO_ROOT$/apps/e2e/tests/harness/**"
       ]
     },
+    "@dorkos/server#test": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/contributing/runtime-capabilities.md",
+        "$TURBO_ROOT$/scripts/lib/code-only.mjs"
+      ]
+    },
     "@dorkos/site#test": {
       "dependsOn": ["^build", "@dorkos/relay#build", "@dorkos/extension-api#build"],
       "cache": true

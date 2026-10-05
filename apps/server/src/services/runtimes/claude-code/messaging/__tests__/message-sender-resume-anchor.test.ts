@@ -144,7 +144,7 @@ describe('executeSdkQuery — resume anchor (phantom-continue fix)', () => {
     expect(session.lastAssistantUuid).toBe('assistant-1');
   });
 
-  it("anchors the next resume at the prior turn's last assistant uuid", async () => {
+  it("RT-SES-03: anchors the next resume at the prior turn's last assistant uuid", async () => {
     // Turn 1 (fresh) settles and records its assistant uuid.
     const session = makeSession({ hasStarted: false });
     await runTurn(session, [assistantMsg('assistant-1'), resultMsg()]);

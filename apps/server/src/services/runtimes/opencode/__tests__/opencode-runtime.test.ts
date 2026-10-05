@@ -1606,7 +1606,7 @@ describe('OpenCodeRuntime', () => {
       });
     });
 
-    it('forkSession branches natively and adopts the fork under a derived id', async () => {
+    it('RT-SES-07: forkSession branches natively and adopts the fork under a derived id', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
       const sessionId = nextSessionId();
