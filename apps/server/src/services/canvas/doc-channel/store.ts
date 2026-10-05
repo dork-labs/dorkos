@@ -13,6 +13,7 @@ import {
   eq,
   gt,
   isNull,
+  inArray,
   lte,
   or,
   sql,
@@ -195,6 +196,47 @@ export class DocChannelStore {
         )
         .orderBy(asc(canvasDocEvents.docSeq))
         .limit(limit)
+        .all()
+    );
+  }
+
+  /** Read the at most two replay pages' current full event rows in the caller transaction. */
+  readReplayEvents(documentId: string, eventIds: string[], tx: DbTransaction): DocEventRow[] {
+    if (eventIds.length > 400) throw new RangeError('Invalid replay event selection.');
+    if (!eventIds.length) return [];
+    return readChecked('canvas_doc_events', documentId, () =>
+      tx
+        .select()
+        .from(canvasDocEvents)
+        .where(
+          and(
+            eq(canvasDocEvents.documentId, documentId),
+            inArray(canvasDocEvents.eventId, eventIds)
+          )
+        )
+        .all()
+    );
+  }
+
+  /** Read one replay receipt page's current outcomes, retaining every route in original order. */
+  readReplayDeliveries(
+    documentId: string,
+    eventIds: string[],
+    tx: DbTransaction
+  ): DocDeliveryRow[] {
+    if (eventIds.length > 200) throw new RangeError('Invalid replay receipt selection.');
+    if (!eventIds.length) return [];
+    return readChecked('canvas_doc_deliveries', documentId, () =>
+      tx
+        .select()
+        .from(canvasDocDeliveries)
+        .where(
+          and(
+            eq(canvasDocDeliveries.documentId, documentId),
+            inArray(canvasDocDeliveries.eventId, eventIds)
+          )
+        )
+        .orderBy(asc(canvasDocDeliveries.eventId), asc(canvasDocDeliveries.routeId))
         .all()
     );
   }

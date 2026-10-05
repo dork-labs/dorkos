@@ -5,7 +5,7 @@ import type {
   CanvasChannelJsonValue,
 } from '@dorkos/shared/canvas-channel-schemas';
 import { protectedEventSql } from './accounting.js';
-import { DocChannelStore, DocChannelClosedError } from './store.js';
+import { DocChannelStore, DocChannelClosedError, DocChannelCorruptionError } from './store.js';
 import type { DocIngestAuthority } from './ingest-types.js';
 
 /** Snapshot includes separate payload/receipt floors and at most one bounded page of receipt summaries. */
@@ -74,12 +74,27 @@ export function replayDocChannel(
     const failed =
       !!tx.get(sql`SELECT 1 FROM canvas_doc_deliveries WHERE document_id=${access.documentId}
       AND status IN ('failed','expired','unavailable') LIMIT 1`);
-    const retainedEvents = new Map<string, ReturnType<DocChannelStore['getEvent']>>();
+    // Compile/read each bounded selection once. These maps live only inside
+    // this page's original transaction; authority and rows are reread next page.
+    const selectedIds = [...new Set([...rows, ...receipts].map(({ eventId }) => eventId))];
+    const retainedEvents = new Map(
+      store.readReplayEvents(access.documentId, selectedIds, tx).map((row) => [row.eventId, row])
+    );
     const readRetainedEvent = (eventId: string) => {
-      if (!retainedEvents.has(eventId))
-        retainedEvents.set(eventId, store.getEvent(access.documentId, eventId, tx));
-      return retainedEvents.get(eventId)!;
+      const row = retainedEvents.get(eventId);
+      if (!row) throw new DocChannelCorruptionError('canvas_doc_events', eventId);
+      return row;
     };
+    const retainedDeliveries = new Map<string, ReturnType<DocChannelStore['listDeliveries']>>();
+    for (const row of store.readReplayDeliveries(
+      access.documentId,
+      receipts.map(({ eventId }) => eventId),
+      tx
+    )) {
+      const outcomes = retainedDeliveries.get(row.eventId) ?? [];
+      outcomes.push(row);
+      retainedDeliveries.set(row.eventId, outcomes);
+    }
     return {
       events: rows.map(({ eventId }) => {
         const row = readRetainedEvent(eventId);
@@ -109,7 +124,7 @@ export function replayDocChannel(
           id: row.eventId,
           docSeq: row.docSeq,
           payloadAvailable: row.payloadPrunedAt === null,
-          deliveries: store.listDeliveries(access.documentId, row.eventId, tx),
+          deliveries: retainedDeliveries.get(row.eventId) ?? [],
         };
       }),
       health: {
