@@ -182,7 +182,8 @@ describe('a run whose agent reports back after its turn ended', () => {
     }
 
     const output = store.getRun(runId)!.outputSummary!;
-    expect(output.length - settled).toBeLessThanOrEqual(1000 + 2);
+    // Separators included: the bound is on everything added after the summary.
+    expect(output.length - settled).toBe(1000);
     expect(output).toContain('Reported later: x');
   });
 });

@@ -14,6 +14,7 @@ import { getOrCreateProjector } from '../../session-state-projector.js';
 import { subscribeRuntimeTurns } from '../runtime-turn.js';
 import {
   createLateTurnSource,
+  dispatchedTurnMark,
   followLateTurns,
   resetLateTurnFollowers,
   type LateFollowEnd,
@@ -280,6 +281,53 @@ describe('following the turns an agent starts after the work it was given', () =
       await dispatchTurn(runtime, `${sessionId}-other`);
 
       expect(ends).toEqual([]);
+    });
+
+    it('ends a follow at once when work reached the session after the mark it was given', async () => {
+      const ends: LateFollowEnd[] = [];
+      const mark = dispatchedTurnMark(runtime, sessionId);
+      // A person's message lands between the caller's turn ending and its follow.
+      await dispatchTurn(runtime, sessionId);
+      followLateTurns({
+        owner: 'relay',
+        runtime,
+        sessionId,
+        windowMs: 60_000,
+        sinceMark: mark,
+        onTurn: (t) => heard.push(t),
+        onEnd: (reason) => ends.push(reason),
+      });
+      runtime.emitRuntimeTurn(sessionId, turn(sessionId, say('Their helper report.')));
+      await flush();
+
+      expect(ends).toEqual(['superseded']);
+      expect(heard).toEqual([]);
+    });
+
+    it('keeps a follow whose mark is current, under any id the session answers to', async () => {
+      runtime.getInternalSessionId.mockImplementation((id) =>
+        id === 'request-id' || id === sessionId ? sessionId : undefined
+      );
+      await dispatchTurn(runtime, 'request-id');
+      const source = createLateTurnSource({
+        owner: 'relay',
+        runtimeFor: () => runtime,
+        windowMs: 60_000,
+      });
+      const mark = source.dispatchMark({ runtimeType: 'fake', sessionKey: sessionId });
+      const ends: LateFollowEnd[] = [];
+      source.follow({
+        runtimeType: 'fake',
+        sessionKey: 'request-id',
+        sinceMark: mark,
+        onTurn: (t) => heard.push(t),
+        onEnd: (reason) => ends.push(reason),
+      });
+      runtime.emitRuntimeTurn(sessionId, turn(sessionId, say('Report.')));
+      await flush();
+
+      expect(heard.map((t) => t.text)).toEqual(['Report.']);
+      expect(ends).toEqual(['final']);
     });
   });
 });

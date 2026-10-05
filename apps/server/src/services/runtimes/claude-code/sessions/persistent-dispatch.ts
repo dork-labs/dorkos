@@ -315,8 +315,12 @@ export class PersistentDispatch {
    * `undefined` when nothing is listening (spec `warm-process-lifecycle` D1).
    */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;
-  /** Whoever wants to know a dispatched turn opened (DOR-2717), if anybody does. */
-  private dispatchedTurnListener: ((sessionId: string) => void) | undefined;
+  /**
+   * Everyone who wants to know a dispatched turn opened (DOR-2717). A set, not
+   * one slot: unlike a runtime turn, which exactly one projector may own, this
+   * is a notice any number of followers can act on.
+   */
+  private readonly dispatchedTurnListeners = new Set<(sessionId: string) => void>();
   /**
    * Build the dispatcher over a runtime's pump registry.
    *
@@ -406,12 +410,15 @@ export class PersistentDispatch {
    * for a later turn to come from.
    *
    * @param listener - Told which session took a dispatched turn
-   * @returns Unsubscribes the listener
+   * @returns Unsubscribes this listener, and only this one
    */
   onDispatchedTurn(listener: (sessionId: string) => void): () => void {
-    this.dispatchedTurnListener = listener;
+    // Wrapped, so subscribing the same function twice yields two independent
+    // subscriptions rather than one that the first unsubscribe removes.
+    const entry = (sessionId: string): void => listener(sessionId);
+    this.dispatchedTurnListeners.add(entry);
     return () => {
-      if (this.dispatchedTurnListener === listener) this.dispatchedTurnListener = undefined;
+      this.dispatchedTurnListeners.delete(entry);
     };
   }
 
@@ -793,14 +800,17 @@ export class PersistentDispatch {
       bundle.booting = false;
     }
     // Told once the window is open, so a turn the process refused never ends
-    // anybody's follow of the session's later turns. A throw stays out here.
-    try {
-      this.dispatchedTurnListener?.(sessionId);
-    } catch (err) {
-      logger.warn('[PersistentDispatch] a dispatched-turn listener threw', {
-        sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    // anybody's follow of the session's later turns. A throw stays out here, and
+    // never keeps the next listener from hearing.
+    for (const listener of [...this.dispatchedTurnListeners]) {
+      try {
+        listener(sessionId);
+      } catch (err) {
+        logger.warn('[PersistentDispatch] a dispatched-turn listener threw', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     yield* streamTurnWindow({

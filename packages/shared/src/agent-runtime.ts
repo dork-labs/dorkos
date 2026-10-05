@@ -1675,8 +1675,9 @@ export interface AgentRuntime {
    * a caller who never asked for them.
    *
    * Optional, and owed by exactly the runtimes that implement
-   * {@link holdsBackgroundWork}. A throw from the listener must not reach the
-   * runtime's own dispatch.
+   * {@link holdsBackgroundWork}. Any number of listeners may subscribe, each
+   * unsubscribing only itself; a throw from one must neither reach the runtime's
+   * own dispatch nor keep the others from hearing.
    *
    * @param listener - Told which session took a dispatched turn, in any id it
    *   answers to

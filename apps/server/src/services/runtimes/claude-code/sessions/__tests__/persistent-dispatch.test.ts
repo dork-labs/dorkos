@@ -2828,6 +2828,23 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     expect(dispatched).toEqual([sessionId]);
   });
 
+  it('tells every dispatched-turn listener, each unsubscribing only itself (DOR-2717)', async () => {
+    const sessionId = nextSession();
+    const heard: string[] = [];
+    const first = runtime.onDispatchedTurn(() => heard.push('first'));
+    runtime.onDispatchedTurn(() => {
+      throw new Error('a careless listener');
+    });
+    runtime.onDispatchedTurn(() => heard.push('second'));
+
+    await turn(sessionId);
+    expect(heard).toEqual(['first', 'second']);
+
+    first();
+    await turn(sessionId, 'again');
+    expect(heard).toEqual(['first', 'second', 'second']);
+  });
+
   it('is cleared when the ceiling reap takes a process still holding work', async () => {
     const { sessionId } = await warmWithShell();
     await new Promise<void>((resolve) => setImmediate(resolve));

@@ -30,6 +30,7 @@ import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
   ExecutionSettingsResolver,
+  LateFollowEnd,
   LateTurnSource,
   SessionRuntimeBinder,
   TurnDeskCheck,
@@ -258,12 +259,6 @@ function abortText(signal: AbortSignal, started: boolean): string | undefined {
 const QUERY_INBOX_PREFIX = 'relay.inbox.query.';
 
 /**
- * What closes a follow that ended without a final report, so a caller told
- * `continuing` is never left polling for something that will not come.
- */
-const NO_LATER_REPORT = 'No later report will be delivered.';
-
-/**
  * Publish each turn the agent starts on its own, after this message's turn
  * ended, to the same inbox as a result marked `late` (DOR-2717).
  *
@@ -272,13 +267,16 @@ const NO_LATER_REPORT = 'No later report will be delivered.';
  * conversation ends it. The host also ends it: after a turn the agent finishes
  * holding no more work (`final`), when its window passes, or when anyone gives
  * the session new work. Every ending but `final` publishes one closing result
- * saying nothing more is coming. Publishes are chained, so the inbox reads them
- * in the order they happened.
+ * marked `ended` — never `error`, which keeps meaning "the turn failed" — so a
+ * caller told `continuing` is never left polling for something that will not
+ * come. Publishes are chained, so the inbox reads them in the order they
+ * happened.
  *
  * @param deps - The handler's dependencies, for the follower map and runtime type
  * @param lateTurns - Where the later turns come from
  * @param envelope - The message whose inbox hears the later turns
- * @param follow - The session the turn ran under, and the conversation's scope
+ * @param follow - The session the turn ran under, the conversation's scope, and
+ *   the dispatch mark read when the turn ended
  * @param relay - The publisher
  * @param log - Where a failed publish is reported
  */
@@ -286,35 +284,45 @@ function followLateResults(
   deps: AgentHandlerDeps,
   lateTurns: LateTurnSource,
   envelope: RelayEnvelope,
-  follow: { sessionKey: string; scope: string },
+  follow: { sessionKey: string; scope: string; sinceMark: number | undefined },
   relay: RelayPublisher,
   log: Pick<Console, 'warn'>
 ): void {
-  const { sessionKey, scope } = follow;
+  const { sessionKey, scope, sinceMark } = follow;
   const followers = deps.lateFollowers;
   let published: Promise<void> = Promise.resolve();
-  const publishInOrder = (text: string, error: string | undefined, continuing: boolean): void => {
+  const publishInOrder = (
+    text: string,
+    error: string | undefined,
+    marks: { continuing?: boolean; ended?: LateFollowEnd }
+  ): void => {
     published = published
       .then(() =>
-        publishAgentResult(envelope, text, sessionKey, relay, error, { late: true, continuing })
+        publishAgentResult(envelope, text, sessionKey, relay, error, { late: true, ...marks })
       )
       .catch((err: unknown) => {
         log.warn(`[CCA] could not publish a late result for ${sessionKey}:`, describeError(err));
       });
   };
-  // Assigned once `follow` has returned; neither callback can run before.
+  // Assigned once `follow` has returned. `onEnd` CAN run inside `follow` — a
+  // stale mark ends the follow at once — which is what `ended` records.
   let stopFollowing: () => void = () => {};
+  let ended = false;
   const unfollow = lateTurns.follow({
     runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
     sessionKey,
-    onTurn: (turn) => publishInOrder(turn.text, turn.error, turn.continuing),
+    ...(sinceMark !== undefined ? { sinceMark } : {}),
+    onTurn: (turn) => publishInOrder(turn.text, turn.error, { continuing: turn.continuing }),
     onEnd: (reason) => {
+      ended = true;
       if (followers?.get(scope) === stopFollowing) followers.delete(scope);
-      if (reason !== 'final') publishInOrder('', NO_LATER_REPORT, false);
+      if (reason !== 'final') publishInOrder('', undefined, { ended: reason });
     },
   });
   stopFollowing = unfollow;
-  followers?.set(scope, stopFollowing);
+  // A follow the host ended inside `follow` itself (work already reached the
+  // session) is over; registering it would leave a dead entry behind.
+  if (!ended) followers?.set(scope, stopFollowing);
 }
 
 /**
@@ -686,6 +694,11 @@ export async function handleAgentMessage(
   // failure — the message arrived and was processed. What it must change is the
   // ANSWER the caller reads, which is the `agent_result` below (DOR-1337 / F6).
   let inStreamError: string | undefined;
+  // How many turns anyone had dispatched into the session when this one ended
+  // (DOR-2717). Read the instant the stream stops, before any await, so a
+  // person's message landing while this turn's result is still going out ends
+  // the follow it would otherwise leak into.
+  let lateMark: number | undefined;
 
   try {
     for await (const event of eventStream) {
@@ -758,6 +771,10 @@ export async function handleAgentMessage(
       error: streamError,
     });
   } finally {
+    lateMark = deps.lateTurns?.dispatchMark?.({
+      runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
+      sessionKey: ccaSessionKey,
+    });
     if (timeout) clearTimeout(timeout);
     // Released when the QUERY is over, which is not the same instant the
     // iteration stops (DOR-791).
@@ -862,7 +879,7 @@ export async function handleAgentMessage(
         deps,
         deps.lateTurns,
         envelope,
-        { sessionKey: ccaSessionKey, scope: sessionScope },
+        { sessionKey: ccaSessionKey, scope: sessionScope, sinceMark: lateMark },
         relay,
         log
       );

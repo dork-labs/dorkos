@@ -662,7 +662,7 @@ export function getRelayTools(
         'agent turn FAILED, and text is only what it produced before failing — check for error ' +
         'before treating text as an answer. A final payload with continuing:true means the agent ' +
         'is still working in the background: for up to 30 minutes, a later agent_result with ' +
-        'late:true may follow on the same inbox. One with late:true and error instead says no ' +
+        'late:true may follow on the same inbox. One carrying ended (and no text) instead says no ' +
         'later report is coming; a server restart ends the wait without one. Defaults to ' +
         'status="pending" (deliverable, unread ' +
         'messages) so budget-rejected failures never surface silently next to real deliverables. Pass ' +
@@ -772,7 +772,7 @@ export function getRelayTools(
         'to pending/unread messages). When you receive a payload with done:true, call ' +
         'the unregister-endpoint tool on that subject to clean up — unless it also carries ' +
         'continuing:true: the agent is still working in the background, and for up to 30 ' +
-        'minutes an agent_result marked late:true may follow (one carrying error says nothing ' +
+        'minutes an agent_result marked late:true may follow (one carrying ended says nothing ' +
         'more is coming). A done:true payload carrying ' +
         'error means their turn failed — its text is partial work, not an answer.',
       {

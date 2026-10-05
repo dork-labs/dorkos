@@ -39,6 +39,7 @@ function runtimeSaying(text: string, holds: () => boolean): AgentRuntimeLike {
 interface HandFollow {
   runtimeType: string;
   sessionKey: string;
+  sinceMark?: number;
   onTurn: (turn: LateTurn) => void;
   onEnd?: (reason: LateFollowEnd) => void;
   /** How the follow ended, once it has. */
@@ -56,18 +57,35 @@ function handDrivenLateTurns(): LateTurnSource & {
   /** End the newest follow from the host's side. */
   end: (reason: LateFollowEnd) => void;
   readonly stopped: number;
+  /** Count a dispatched turn on the session, as the host does. */
+  dispatched: () => void;
+  /** Run once, the moment the mark is read — where a racing dispatch lands. */
+  onMarkRead?: () => void;
 } {
   const follows: HandFollow[] = [];
+  let mark = 0;
   const finish = (follow: HandFollow, reason: LateFollowEnd): void => {
     if (follow.ended) return;
     follow.ended = reason;
     follow.onEnd?.(reason);
   };
-  return {
+  const source = {
     follows,
-    follow(opts) {
+    onMarkRead: undefined as (() => void) | undefined,
+    dispatched() {
+      mark += 1;
+    },
+    dispatchMark() {
+      const read = mark;
+      source.onMarkRead?.();
+      return read;
+    },
+    follow(opts: Omit<HandFollow, 'ended'>) {
       const follow: HandFollow = { ...opts };
       follows.push(follow);
+      // The host's rule: work that reached the session since the mark ends the
+      // follow at once.
+      if (opts.sinceMark !== undefined && opts.sinceMark !== mark) finish(follow, 'superseded');
       return () => finish(follow, 'stopped');
     },
     deliver(turn) {
@@ -83,16 +101,13 @@ function handDrivenLateTurns(): LateTurnSource & {
       return follows.filter((f) => f.ended === 'stopped').length;
     },
   };
+  return source;
 }
 
 /** The result that closes a follow which ended without a final report. */
-const NOTHING_MORE = {
-  type: 'agent_result',
-  text: '',
-  done: true,
-  late: true,
-  error: 'No later report will be delivered.',
-};
+function nothingMore(ended: 'expired' | 'superseded' | 'stopped'): Record<string, unknown> {
+  return { type: 'agent_result', text: '', done: true, late: true, ended };
+}
 
 function createRelay(): RelayPublisher {
   return {
@@ -276,7 +291,7 @@ describe('a relay turn whose agent keeps working after it ends', () => {
     expect(vi.mocked(runtime.sendMessage).mock.calls[1]![0]).toBe('sdk-session-1');
     expect(lateTurns.follows[0]!.ended).toBe('stopped');
     // And the first caller is told nothing more is coming, not left polling.
-    expect(resultsTo(relay, inbox).at(-1)).toEqual(NOTHING_MORE);
+    expect(resultsTo(relay, inbox).at(-1)).toEqual(nothingMore('stopped'));
     // A later turn now belongs to the second caller alone.
     lateTurns.deliver({ text: 'The build is green.', continuing: false });
     await flush();
@@ -294,8 +309,10 @@ describe('a relay turn whose agent keeps working after it ends', () => {
         lateTurns.end(reason);
         await flush();
 
-        expect(resultsTo(relay, inbox).at(-1)).toEqual(NOTHING_MORE);
-        expect(RelayAgentResultPayloadSchema.parse(NOTHING_MORE)).toBeTruthy();
+        expect(resultsTo(relay, inbox).at(-1)).toEqual(nothingMore(reason));
+        // `error` stays the turn-failed signal; the closing result is not a failure.
+        expect(resultsTo(relay, inbox).at(-1)).not.toHaveProperty('error');
+        expect(RelayAgentResultPayloadSchema.parse(nothingMore(reason))).toBeTruthy();
       }
     );
 
@@ -311,7 +328,7 @@ describe('a relay turn whose agent keeps working after it ends', () => {
       await flush();
 
       expect(lateTurns.follows[0]!.ended).toBe('stopped');
-      expect(resultsTo(relay, inbox).at(-1)).toEqual(NOTHING_MORE);
+      expect(resultsTo(relay, inbox).at(-1)).toEqual(nothingMore('stopped'));
     });
 
     it('adds nothing after a final report', async () => {
@@ -326,5 +343,20 @@ describe('a relay turn whose agent keeps working after it ends', () => {
         'Done.',
       ]);
     });
+  });
+
+  it('ends the follow at once when somebody dispatched into the session while its result was going out', async () => {
+    // The race: the relay turn ends, and before the follow is registered — while
+    // the first result is still being published — a person sends their own
+    // message. The follow must not outlive that, or their helper's report would
+    // reach this caller.
+    const lateTurns = handDrivenLateTurns();
+    lateTurns.onMarkRead = () => lateTurns.dispatched();
+    const { relay } = await deliverOnce({ replyTo: inbox, holds: () => true, lateTurns });
+    await flush();
+
+    expect(lateTurns.follows[0]!.sinceMark).toBe(0);
+    expect(lateTurns.follows[0]!.ended).toBe('superseded');
+    expect(resultsTo(relay, inbox).at(-1)).toEqual(nothingMore('superseded'));
   });
 });

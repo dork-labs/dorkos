@@ -93,9 +93,11 @@ function appendLateOutput(
   const run = store.getRun(settled.id);
   if (!run) return false;
   const before = run.outputSummary ?? '';
-  // Measured from what the run settled with, so the cap is on what was ADDED.
-  const used = before.length - (settled.outputSummary ?? '').length;
-  const room = LATE_OUTPUT_MAX_CHARS - Math.max(0, used);
+  const separator = before === '' ? '' : '\n\n';
+  // Measured from what the run settled with, separators included, so the cap is
+  // exactly on what was ADDED.
+  const used = Math.max(0, before.length - (settled.outputSummary ?? '').length);
+  const room = LATE_OUTPUT_MAX_CHARS - used - separator.length;
   if (room <= 0) return false;
   const added = [
     ...(turn.text.trim() !== '' ? [`Reported later: ${turn.text.trim()}`] : []),
@@ -104,6 +106,6 @@ function appendLateOutput(
     .join('\n\n')
     .slice(0, room);
   if (added === '') return false;
-  store.setRunOutput(settled.id, before === '' ? added : `${before}\n\n${added}`);
+  store.setRunOutput(settled.id, `${before}${separator}${added}`);
   return true;
 }

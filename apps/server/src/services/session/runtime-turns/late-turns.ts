@@ -90,6 +90,13 @@ export interface FollowLateTurnsOptions {
   onTurn: (turn: LateTurn) => void;
   /** Told once, after the last turn, why the follow ended. A throw is logged. */
   onEnd?: (reason: LateFollowEnd) => void;
+  /**
+   * The session's {@link dispatchedTurnMark}, read the moment the caller's own
+   * turn ended. If anyone dispatched into the session since, the follow ends as
+   * `superseded` at once: the gap between a turn ending and its caller getting
+   * round to following is long enough for a person's message to land in.
+   */
+  sinceMark?: number;
 }
 
 const settledListeners = new Set<(turn: SettledRuntimeTurn) => void>();
@@ -102,6 +109,37 @@ interface Follower {
 }
 
 const followers = new Map<string, Follower>();
+
+/**
+ * How many dispatched turns each session has taken, by runtime + resolved id —
+ * the mark {@link FollowLateTurnsOptions.sinceMark} is compared against.
+ * Bounded: the oldest session is forgotten past the cap, which at worst lets a
+ * long-idle session's follow start without the race check.
+ */
+const dispatchCounts = new Map<string, number>();
+const DISPATCH_COUNTS_CAP = 5_000;
+
+/**
+ * The key a session's dispatch count is kept under.
+ *
+ * @param runtime - The runtime that owns the session
+ * @param sessionId - The session, in any id it answers to
+ */
+function countKey(runtime: AgentRuntime, sessionId: string): string {
+  return `${runtime.type}\u0000${resolvedKey(runtime, sessionId)}`;
+}
+
+/**
+ * How many dispatched turns this session has taken, as an opaque mark. Read it
+ * when a turn ends and hand it to {@link followLateTurns} as `sinceMark`.
+ *
+ * @param runtime - The runtime that owns the session
+ * @param sessionId - The session, in any id it answers to
+ * @returns The current mark
+ */
+export function dispatchedTurnMark(runtime: AgentRuntime, sessionId: string): number {
+  return dispatchCounts.get(countKey(runtime, sessionId)) ?? 0;
+}
 
 /**
  * Announce that a turn the agent started on its own has ended.
@@ -195,6 +233,10 @@ export function followLateTurns(opts: FollowLateTurnsOptions): () => void {
 
   settledListeners.add(listener);
   followers.set(followerKey, { runtime, sessionId, end });
+  // Work reached the session between the caller's turn ending and this call.
+  if (opts.sinceMark !== undefined && opts.sinceMark !== dispatchedTurnMark(runtime, sessionId)) {
+    end('superseded');
+  }
   return () => end('stopped');
 }
 
@@ -222,6 +264,14 @@ function sameSession(runtime: AgentRuntime, a: string, b: string): boolean {
  * @param sessionId - The session, in any id it answers to
  */
 export function noteDispatchedTurn(runtime: AgentRuntime, sessionId: string): void {
+  const key = countKey(runtime, sessionId);
+  const count = (dispatchCounts.get(key) ?? 0) + 1;
+  dispatchCounts.delete(key);
+  dispatchCounts.set(key, count);
+  if (dispatchCounts.size > DISPATCH_COUNTS_CAP) {
+    const oldest = dispatchCounts.keys().next().value;
+    if (oldest !== undefined) dispatchCounts.delete(oldest);
+  }
   for (const follower of [...followers.values()]) {
     if (follower.runtime === runtime && sameSession(runtime, follower.sessionId, sessionId)) {
       follower.end('superseded');
@@ -233,6 +283,7 @@ export function noteDispatchedTurn(runtime: AgentRuntime, sessionId: string): vo
 export function resetLateTurnFollowers(): void {
   for (const follower of [...followers.values()]) follower.end('stopped');
   settledListeners.clear();
+  dispatchCounts.clear();
 }
 
 /** A source of later turns, in the shape a dispatching caller asks for one. */
@@ -253,15 +304,21 @@ export interface LateTurnSourceOptions {
  * @returns A source whose `follow` is a no-op for a runtime nobody registered
  */
 export function createLateTurnSource(opts: LateTurnSourceOptions): {
+  dispatchMark: (args: { runtimeType: string; sessionKey: string }) => number;
   follow: (args: {
     runtimeType: string;
     sessionKey: string;
     onTurn: (turn: LateTurn) => void;
     onEnd?: (reason: LateFollowEnd) => void;
+    sinceMark?: number;
   }) => () => void;
 } {
   return {
-    follow: ({ runtimeType, sessionKey, onTurn, onEnd }) => {
+    dispatchMark: ({ runtimeType, sessionKey }) => {
+      const runtime = opts.runtimeFor(runtimeType);
+      return runtime === undefined ? 0 : dispatchedTurnMark(runtime, sessionKey);
+    },
+    follow: ({ runtimeType, sessionKey, onTurn, onEnd, sinceMark }) => {
       const runtime = opts.runtimeFor(runtimeType);
       if (runtime === undefined) {
         // Nothing can be followed, so the follow ends at once — and says so.
@@ -275,6 +332,7 @@ export function createLateTurnSource(opts: LateTurnSourceOptions): {
         windowMs: opts.windowMs,
         onTurn,
         ...(onEnd !== undefined ? { onEnd } : {}),
+        ...(sinceMark !== undefined ? { sinceMark } : {}),
       });
     },
   };

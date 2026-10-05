@@ -319,6 +319,16 @@ export interface LateTurn {
  */
 export interface LateTurnSource {
   /**
+   * How many dispatched turns the session has taken, as an opaque mark. Read
+   * when a relay turn ends and handed back to {@link LateTurnSource.follow} as
+   * `sinceMark`, so work that reached the session in between ends the follow
+   * at once. Optional: a host without it gets no such check.
+   *
+   * @param opts.runtimeType - The runtime the session runs on
+   * @param opts.sessionKey - The session, as the adapter keyed its turn
+   */
+  dispatchMark?(opts: { runtimeType: string; sessionKey: string }): number;
+  /**
    * Follow one session's later turns.
    *
    * @param opts.runtimeType - The runtime the session runs on
@@ -333,6 +343,8 @@ export interface LateTurnSource {
     onTurn: (turn: LateTurn) => void;
     /** Told once, after the last turn, why the follow ended. */
     onEnd?: (reason: LateFollowEnd) => void;
+    /** The {@link LateTurnSource.dispatchMark} read when the relay turn ended. */
+    sinceMark?: number;
   }): () => void;
 }
 

@@ -799,8 +799,8 @@ export const RelayAgentResultPayloadSchema = z
         'Present when the agent is still working in the background after this turn — ' +
           'a helper, a shell, a timer — so it may report again. On an inbox that stays ' +
           'open, that later report may arrive, for up to 30 minutes, as another ' +
-          'agent_result marked `late`; one marked `late` with `error` and no text says ' +
-          'nothing more is coming. A server restart ends the wait without one (DOR-2717).'
+          'agent_result marked `late`; one carrying `ended` says nothing more is coming. ' +
+          'A server restart ends the wait without one (DOR-2717).'
       ),
     late: z
       .literal(true)
@@ -809,6 +809,16 @@ export const RelayAgentResultPayloadSchema = z
         'Present on a result the agent produced in a turn it started on its own, after ' +
           'the turn this message started had already ended — typically a helper it ' +
           'launched reporting back. It answers the same request (DOR-2717).'
+      ),
+    ended: z
+      .enum(['expired', 'superseded', 'stopped'])
+      .optional()
+      .describe(
+        'Present only on the closing result of a wait announced by `continuing`: no later ' +
+          'report will come. `expired` — the 30-minute window passed; `superseded` — someone ' +
+          'gave the agent new work in that conversation; `stopped` — the connection ' +
+          'delivering it was stopped. Carries no text, and is not a failure: `error` keeps ' +
+          'meaning the turn failed (DOR-2717).'
       ),
   })
   .openapi('RelayAgentResultPayload');

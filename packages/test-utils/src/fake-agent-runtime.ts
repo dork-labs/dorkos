@@ -124,7 +124,7 @@ export class FakeAgentRuntime implements AgentRuntime {
     content: string,
     _opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
-    this.dispatchedTurnListener?.(_sessionId);
+    for (const listener of [...this.dispatchedTurnListeners]) listener(_sessionId);
     const scenario = this._scenarios[this._scenarioIndex];
     if (scenario) {
       this._scenarioIndex++;
@@ -205,8 +205,8 @@ export class FakeAgentRuntime implements AgentRuntime {
    */
   holdsBackgroundWork = vi.fn<(sessionId: string) => boolean>(() => false);
 
-  /** The listener {@link onDispatchedTurn} registered, if anything is listening. */
-  private dispatchedTurnListener: ((sessionId: string) => void) | undefined;
+  /** Everything {@link onDispatchedTurn} registered — a set, as a real runtime keeps. */
+  private readonly dispatchedTurnListeners = new Set<(sessionId: string) => void>();
 
   /**
    * Listen for a dispatched turn opening. Every {@link sendMessage} reports one,
@@ -214,9 +214,11 @@ export class FakeAgentRuntime implements AgentRuntime {
    * subscribed.
    */
   onDispatchedTurn = vi.fn<(listener: (sessionId: string) => void) => () => void>((listener) => {
-    this.dispatchedTurnListener = listener;
+    // Wrapped, so each subscription unsubscribes only itself.
+    const entry = (sessionId: string): void => listener(sessionId);
+    this.dispatchedTurnListeners.add(entry);
     return () => {
-      this.dispatchedTurnListener = undefined;
+      this.dispatchedTurnListeners.delete(entry);
     };
   });
 

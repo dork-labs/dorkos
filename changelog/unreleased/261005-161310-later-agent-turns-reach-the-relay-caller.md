@@ -2,6 +2,7 @@
 covers:
   - 'fix(sessions): later agent turns reach the relay caller and the task run that asked (DOR-2717)'
   - 'fix(sessions): end every late-turn follow on new work, and never leave a caller waiting (DOR-2717)'
+  - 'fix(sessions): close the follow-registration race and mark a closed wait plainly (DOR-2717)'
 ---
 
 ### Fixed
