@@ -8,6 +8,11 @@ covers:
   - 'feat(codex): turns on app-server — loader, notification mapper, transport (DOR-2719)'
   - 'refactor(codex): transport seam; exec moves behind it unchanged (DOR-2719)'
   - 'refactor(codex): split rate limits and turn parts out of the app-server mapper and transport (DOR-2719)'
+  - "fix(config): classify runtimes.codex.transport's default as no-risk (DOR-2719)"
+  - 'fix(codex): the pool never orphans or reaps live work, and stays shut after shutdown (DOR-2719)'
+  - 'fix(codex): every app-server turn ends with one done, and no stopped turn is ever joined (DOR-2719)'
+  - 'fix(codex): fingerprint loads without credential values, and mint identity only on load (DOR-2719)'
+  - 'fix(codex): unambiguous thread keys, fuller stderr redaction, and review test gaps (DOR-2719)'
 ---
 
 ### Added
