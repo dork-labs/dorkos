@@ -169,6 +169,61 @@ function repeatEjectionRate(snaps: readonly Snapshot[]): MetricReading {
   };
 }
 
+/** The slowest tag-to-release a sample may be; slower is a person holding the release back. */
+const RELEASE_HELD_MINUTES = 24 * 60;
+
+/**
+ * `tracked.desktop-release-wall-clock`: minutes from a release tag's push to
+ * its GitHub Release being published, p50 over the window.
+ *
+ * Per tag, the EARLIEST push run of the Desktop Release workflow starts the
+ * clock; a re-push or a re-run is the same release, not a second sample.
+ * `workflow_dispatch` runs never count. A tag with no published release (a
+ * draft, or none) gives no sample, and neither does one published more than
+ * 24 hours after its run started: that is a person deciding when to ship, not
+ * the pipeline being slow (v0.95.0, 26 hours).
+ *
+ * A sample sits at its run's start, so the window cuts it at the exact merge
+ * instant. The day before and after the window are read as well: the day
+ * before so a tag first pushed there is not counted again from a later run
+ * inside the window (a run more than a day after the first is past the 24-hour
+ * cut anyway), the day after so a release published once the run's own day had
+ * been collected is still found in that day's `releases`.
+ *
+ * A day collected before the runs were recorded has no `desktop_release_runs`
+ * and adds no sample, so a window of only such days has no value, never 0.
+ *
+ * @param series - The snapshots.
+ * @param touched - The days the window touches.
+ * @param w - The window.
+ */
+function desktopReleaseWallClock(
+  series: Series,
+  touched: readonly string[],
+  w: Window
+): MetricReading {
+  if (touched.length === 0) return { n: 0, value: null };
+  const snaps = series.snapshots(addDays(touched[0]!, -1), addDays(touched.at(-1)!, 1));
+  const published = new Map<string, string>();
+  for (const s of snaps) for (const r of s.releases) published.set(r.tag, r.published_at);
+  const first = new Map<string, string>();
+  for (const r of snaps.flatMap((s) => s.desktop_release_runs ?? [])) {
+    if (r.published_at) published.set(r.ref, r.published_at);
+    if (r.event !== 'push' || !r.ref.startsWith('v')) continue;
+    const cur = first.get(r.ref);
+    if (cur === undefined || r.started < cur) first.set(r.ref, r.started);
+  }
+  const xs: number[] = [];
+  for (const [tag, started] of first) {
+    const t = Date.parse(started);
+    const at = published.get(tag);
+    if (t < Date.parse(w.from) || t >= Date.parse(w.to) || at === undefined) continue;
+    const minutes = minutesBetween(started, at);
+    if (minutes >= 0 && minutes <= RELEASE_HELD_MINUTES) xs.push(minutes);
+  }
+  return { n: xs.length, value: round1(quantile(xs, 0.5)) };
+}
+
 /**
  * Read a catalogue metric over a window.
  *
@@ -265,6 +320,8 @@ function readMetric(id: string, files: HandFiles, series: Series, w: Window): Me
     };
   }
   if (id === 'tracked.repeat-ejections') return repeatEjectionRate(wholeSnaps);
+  if (id === 'tracked.desktop-release-wall-clock')
+    return desktopReleaseWallClock(series, touched, w);
   if (id === 'tracked.job-minutes-per-merged-pr' || id === 'tracked.review-runs-per-merged-pr') {
     const merged = sum(wholeSnaps.map((s) => s.counts.merged_prs));
     const top = sum(

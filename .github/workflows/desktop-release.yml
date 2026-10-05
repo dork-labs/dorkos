@@ -22,30 +22,46 @@ name: Desktop Release
 # release as the latest — and correctly report "up to date" — until a release is
 # published. The two build jobs ATTACH their assets to that draft (attach-only:
 # they never create a release, flip the draft flag, or rewrite the human-written
-# notes). Each attached artifact is then exercised by a verify job
-# (verify-macos, verify-windows) that installs it on a clean runner.
+# notes). Each build job verifies its own installer on its own runner BEFORE
+# attaching it ("Verify the macOS app bundle", "Verify the Windows installer"),
+# so a broken installer is never attached at all.
+#
+# TWO JOBS, ONE RUNNER EACH (DOR-2728). Verification and publishing used to be
+# three more jobs (verify-macos, verify-windows, publish-release). Each needed a
+# fresh runner, and each runner assignment is a place a release can stall: on
+# v0.98.0, during a GitHub runner-assignment incident, verify-macos waited 10.7
+# min for a Mac and publish-release never got a runner at all. The checks were
+# the same commands against the same files, so they now run as steps after the
+# package step, and publishing is the last step of build-macos. Nothing they
+# enforced was dropped; ci/ledger/*-desktop-release-one-runner-per-platform.md
+# records the change and the metric that judges it.
 #
 # ASYMMETRIC gating — macOS gates, Windows does not. macOS is the shipped,
-# signed + notarized surface, so `publish-release` requires build-macos AND
-# verify-macos to succeed. The Windows build is an explicitly-unverified early
-# alpha (AGENTS.md — labeled alpha, behind the demo-claim gate), so build-windows
-# and verify-windows are `continue-on-error: true`: they still run and surface
-# problems in the run, but a Windows failure must never hold back an otherwise-
-# good macOS release. publish-release keeps all four jobs in `needs` (so it waits
-# for the Windows assets to finish uploading before flipping the draft) and gates
-# on the macOS results explicitly via its `if`. On the happy path every asset
-# (installer + latest*.yml) is attached before the release is visible, so an
-# update check can never 404 on a not-yet-uploaded metadata file.
+# signed + notarized surface, so the release is published only by build-macos's
+# last step, which runs only when every earlier step (package, verify, attach)
+# passed. The Windows build is an explicitly-unverified early alpha (AGENTS.md —
+# labeled alpha, behind the demo-claim gate), so build-windows is
+# `continue-on-error: true`: it still runs and surfaces problems in the run, but
+# a Windows failure must never hold back an otherwise-good macOS release. The
+# publish step first waits for build-windows to FINISH, whatever its outcome, so
+# on the happy path every asset (installer + latest*.yml) is attached before the
+# release is visible and an update check can never 404 on a not-yet-uploaded
+# metadata file. If the Windows verify step fails, the Windows assets are
+# never attached (before DOR-2728 a broken installer was attached and shipped),
+# so the release goes out macOS-only and Windows update checks 404 until the
+# next release; dorkos.ai/download/windows falls back to the newest release
+# that has an .exe.
 #
 # A desktop failure never unwinds the CLI/product release (that release is
-# published by /system:release's own npm + changelog path). If the macOS pair
+# published by /system:release's own npm + changelog path). If build-macos
 # fails, the desktop-facing GitHub Release stays an unpublished DRAFT (the safe
 # outcome — electron-updater ignores drafts, so users keep the previous version)
-# until a human re-runs the failed job(s) from the Actions UI; publish-release is
-# idempotent and publishes once its macOS needs are green.
+# until a human re-runs the failed job from the Actions UI; the publish step is
+# idempotent (--draft=false on a published release is a no-op).
 #
-# `workflow_dispatch` (with `dry_run`) still builds both apps (and verifies
-# them) without attaching or publishing, for manual verification.
+# `workflow_dispatch` builds and verifies both apps without attaching or
+# publishing: off a tag (or with `dry_run`), the publish step rehearses (waits
+# for build-windows, then says what it would publish) and changes nothing.
 
 on:
   push:
@@ -74,7 +90,14 @@ jobs:
     timeout-minutes: 56
     permissions:
       contents: write
+      # The publish step reads this run's own jobs list to wait for
+      # build-windows to finish.
+      actions: read
     steps:
+      # The publish step's wait budget is measured from here: see its comment.
+      - name: Record job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
@@ -130,6 +153,64 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
 
+      # The gate that used to be the verify-macos job, unchanged except that it
+      # reads the .dmg where the package step wrote it instead of downloading
+      # the artifact on a second runner. It runs BEFORE upload and attach, so a
+      # .dmg that fails it is never attached to the release.
+      - name: Verify the macOS app bundle
+        # spctl's Gatekeeper assessment only makes sense for a real Developer ID
+        # signature, so it is gated on the SAME repo variable that chooses the
+        # signed vs unsigned package step above (APPLE_DEVELOPER_CONFIGURED).
+        # codesign --verify runs unconditionally: electron-builder ad-hoc-signs
+        # the arm64 app even when unsigned (arm64 binaries must carry at least an
+        # ad-hoc signature to run), and --verify checks structural integrity, not
+        # trust — so it passes for ad-hoc and Developer ID alike. Neither check
+        # reads the signing keychain the package step used: codesign checks the
+        # bundle against itself and spctl against Apple's roots and the
+        # notarization ticket, so this runner gives the same answer a clean one
+        # would.
+        env:
+          APPLE_DEVELOPER_CONFIGURED: ${{ vars.APPLE_DEVELOPER_CONFIGURED }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(apps/desktop/release/*.dmg)
+          if [ ${#dmgs[@]} -eq 0 ]; then
+            echo "::error::No .dmg found in apps/desktop/release." >&2
+            exit 1
+          fi
+          dmg="${dmgs[0]}"
+          echo "Attaching ${dmg}…"
+          mount_dir="$(mktemp -d)"
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
+          cleanup() { hdiutil detach "$mount_dir" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          apps=("$mount_dir"/*.app)
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "::error::No .app bundle found inside ${dmg}." >&2
+            exit 1
+          fi
+          app="${apps[0]}"
+          echo "Found app bundle: ${app}"
+
+          echo "Verifying code signature (structural integrity)…"
+          if ! codesign --verify --deep --strict --verbose=2 "$app"; then
+            echo "::error::codesign --verify --deep --strict failed for ${app}." >&2
+            exit 1
+          fi
+
+          if [ "${APPLE_DEVELOPER_CONFIGURED:-}" = "true" ]; then
+            echo "Signed build — asserting Gatekeeper acceptance…"
+            if ! spctl --assess --type execute --verbose=4 "$app"; then
+              echo "::error::spctl --assess rejected ${app}; a signed build must pass Gatekeeper." >&2
+              exit 1
+            fi
+          else
+            echo "Unsigned build (APPLE_DEVELOPER_CONFIGURED != true) — skipping spctl Gatekeeper assessment."
+          fi
+          echo "macOS artifact verification passed."
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7
         with:
@@ -153,9 +234,9 @@ jobs:
       # step — so the release is normally already present. The poll below only
       # covers a slow operator, and FAILS LOUDLY if the release is still absent
       # (Phase 6.11 skipped): a red run is the correct signal, not a silent bare
-      # release. The release is created as a DRAFT; the separate `publish-release`
-      # job flips it to published once both platform builds finish, which is what
-      # makes dorkos.ai/download/mac resolve the .dmg.
+      # release. The release is created as a DRAFT; the "Publish the release"
+      # step below flips it to published once both platform builds finish, which
+      # is what makes dorkos.ai/download/mac resolve the .dmg.
       #
       # The .zip must ship alongside the .dmg: latest-mac.yml points
       # electron-updater (Squirrel.Mac) at the zip as the update payload, so
@@ -194,12 +275,98 @@ jobs:
             apps/desktop/release/latest-mac.yml \
             --clobber
 
+      # Flip the draft release (created by /system:release Phase 6.11 with
+      # --draft) to published. This is what closes the auto-update window
+      # described in the file header: until it runs, electron-updater sees the
+      # previous release as latest and reports "up to date".
+      #
+      # It was its own ubuntu job until DOR-2728, and on v0.98.0 that job never
+      # got a runner. As the last step here it needs none: reaching it means
+      # the package, verify and attach steps above all passed, which is the
+      # whole macOS gate.
+      #
+      # First it waits for build-windows to FINISH, with any outcome, so the
+      # Windows installer and latest.yml are attached before the release is
+      # visible. The old publish-release job got that from `needs:`, which
+      # waits without limit. A step cannot: it lives inside this job's 56-min
+      # timeout, and `timeout-minutes` counts from when a runner picks a job
+      # up, so a build-windows stuck QUEUED (the v0.98.0 incident) can outlast
+      # any cap. So the wait spends this job's own remaining budget: it keeps
+      # polling until 50 min after this job started (see "Record job start"),
+      # leaving 6 min to publish. Only past that does it publish without the
+      # Windows assets, with a warning, because the Windows alpha must never
+      # hold back the macOS release. Windows update checks then 404 on
+      # latest.yml until build-windows attaches it; re-run build-windows.
+      #
+      # build-windows is found by its job id as the jobs API names it. Give
+      # that job a `name:` and this lookup must change with it: on a first
+      # attempt a missing build-windows is warned about, never silently passed.
+      #
+      # If this step fails, publish by hand (`gh release edit vX.Y.Z
+      # --draft=false`) rather than re-running this job: a re-run repeats the
+      # whole build and notarization.
+      #
+      # Off a tag, or with dry_run, it does the wait and stops before changing
+      # anything, so a workflow_dispatch run rehearses the whole path.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          jobs_api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs"
+          deadline=$(( ${JOB_STARTED_AT:?Record job start must run first} + 50 * 60 ))
+          while :; do
+            # A failed read is retried, never treated as "finished".
+            if ! status="$(gh api "$jobs_api" --jq '[.jobs[] | select(.name == "build-windows") | .status] | first // "absent"' 2>/dev/null)"; then
+              status=unknown
+            fi
+            case "$status" in
+              completed)
+                echo "build-windows finished."
+                break
+                ;;
+              absent)
+                if [ "${GITHUB_RUN_ATTEMPT}" = "1" ]; then
+                  echo "::warning::No job named build-windows in this run; publishing without waiting for it. Was the job renamed?"
+                else
+                  echo "build-windows was not re-run in attempt ${GITHUB_RUN_ATTEMPT}; nothing to wait for."
+                fi
+                break
+                ;;
+            esac
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::warning::build-windows still '${status}' 50 min after this job started; publishing without the Windows assets. Re-run build-windows to attach them."
+              break
+            fi
+            echo "build-windows is '${status}'; checking again in 20s…"
+            sleep 20
+          done
+
+          tag="${GITHUB_REF_NAME}"
+          if [ "$PUBLISH" != "true" ]; then
+            echo "Rehearsal (not a tag push, or dry_run): would publish release '${tag}'. Changed nothing."
+            exit 0
+          fi
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create it (as a draft) before this workflow can publish it." >&2
+            exit 1
+          fi
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+          echo "Published release $tag."
+
   build-windows:
-    # Non-gating (see verify-windows): the Windows alpha must never block a
-    # release. publish-release keeps this in `needs` so it waits for the Windows
-    # assets to finish uploading, but continue-on-error stops a Windows build
-    # failure from skipping the publish of an otherwise-good macOS release.
+    # Non-gating: the Windows build is an explicitly-unverified early alpha
+    # (see AGENTS.md — labeled alpha, behind the demo-claim gate). It runs the
+    # installer check so a failure is visible in the run, but it must never
+    # block publishing an otherwise-good release. build-macos's publish step
+    # waits for this job to finish, whatever its outcome, so the Windows assets
+    # are attached first; continue-on-error keeps a failure here from turning
+    # the run red in a way that reads as a failed release.
     continue-on-error: true
+    # build-macos's publish step finds this job by the name the jobs API
+    # reports, which is this id while no `name:` is set. Keep it that way, or
+    # change that lookup with it.
     # Pinned to windows-2022, NOT windows-latest, on purpose. windows-latest now
     # ships Visual Studio 18 (2026), and node-gyp 11.x — which @electron/rebuild
     # uses to force-compile better-sqlite3 + node-pty against Electron's ABI —
@@ -277,6 +444,54 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The gate that used to be the verify-windows job, unchanged except that
+      # it runs the installer the package step just wrote instead of
+      # downloading the artifact on a second runner (windows-latest then; this
+      # windows-2022 runner now, which matters only for compiling native
+      # modules, and this step compiles nothing). It runs BEFORE upload and
+      # attach, so an installer that fails it is never attached.
+      - name: Verify the Windows installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem -Path apps/desktop/release -Filter *.exe | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error 'No .exe installer found in apps/desktop/release.'
+            exit 1
+          }
+          Write-Host "Running silent install of $($exe.FullName)…"
+          # electron-builder's NSIS installer supports /S for a silent install.
+          # oneClick is false, but /S forces the silent path and installs to the
+          # default location. Note: electron-builder's NSIS defaults include
+          # runAfterFinish=true, so the silent install may auto-launch the app
+          # in the background — harmless on a throwaway runner; this step only
+          # tracks the installer process, never the app.
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList '/S' -PassThru
+          if (-not $proc.WaitForExit(180000)) {
+            $proc.Kill()
+            Write-Error 'Installer did not finish within 180s.'
+            exit 1
+          }
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "Installer exited with code $($proc.ExitCode)."
+            exit 1
+          }
+          # electron-builder NSIS default per-user install dir (perMachine: false
+          # in apps/desktop/electron-builder.yml) is
+          # %LOCALAPPDATA%\Programs\<productName>; productName is DorkOS, so the
+          # launcher is DorkOS.exe there.
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\DorkOS'
+          $appExe = Join-Path $installDir 'DorkOS.exe'
+          if (-not (Test-Path $appExe)) {
+            if (Test-Path $installDir) {
+              Write-Host "Contents of ${installDir}:"
+              Get-ChildItem -Recurse $installDir | Select-Object -First 50 | Format-Table FullName
+            }
+            Write-Error "Expected installed executable not found at $appExe."
+            exit 1
+          }
+          Write-Host "Windows installer verification passed: $appExe exists."
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
         with:
@@ -326,183 +541,3 @@ jobs:
             apps/desktop/release/latest.yml \
             apps/desktop/release/*.blockmap \
             --clobber
-
-  # Post-build verification: install each attached artifact on a clean runner
-  # BEFORE the release is ever published. These jobs gate publish-release, so a
-  # broken installer holds the release as a draft instead of shipping.
-  verify-macos:
-    # Match build-macos's runner so the app is verified on the OS family it was
-    # packaged on.
-    needs: build-macos
-    runs-on: macos-latest
-    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 8 completed
-    # runs over 2026-08-22..09-14, p95 2.42 min, max 2.42. Ceiling =
-    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
-    timeout-minutes: 10
-    steps:
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: DorkOS-macOS-arm64
-          path: artifact
-
-      - name: Verify the macOS app bundle
-        # spctl's Gatekeeper assessment only makes sense for a real Developer ID
-        # signature, so it is gated on the SAME repo variable the build job uses
-        # to choose the signed vs unsigned package step (APPLE_DEVELOPER_CONFIGURED).
-        # codesign --verify runs unconditionally: electron-builder ad-hoc-signs
-        # the arm64 app even when unsigned (arm64 binaries must carry at least an
-        # ad-hoc signature to run), and --verify checks structural integrity, not
-        # trust — so it passes for ad-hoc and Developer ID alike.
-        env:
-          APPLE_DEVELOPER_CONFIGURED: ${{ vars.APPLE_DEVELOPER_CONFIGURED }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          dmgs=(artifact/*.dmg)
-          if [ ${#dmgs[@]} -eq 0 ]; then
-            echo "::error::No .dmg found in the DorkOS-macOS-arm64 artifact." >&2
-            exit 1
-          fi
-          dmg="${dmgs[0]}"
-          echo "Attaching ${dmg}…"
-          mount_dir="$(mktemp -d)"
-          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
-          cleanup() { hdiutil detach "$mount_dir" >/dev/null 2>&1 || true; }
-          trap cleanup EXIT
-
-          apps=("$mount_dir"/*.app)
-          if [ ${#apps[@]} -eq 0 ]; then
-            echo "::error::No .app bundle found inside ${dmg}." >&2
-            exit 1
-          fi
-          app="${apps[0]}"
-          echo "Found app bundle: ${app}"
-
-          echo "Verifying code signature (structural integrity)…"
-          if ! codesign --verify --deep --strict --verbose=2 "$app"; then
-            echo "::error::codesign --verify --deep --strict failed for ${app}." >&2
-            exit 1
-          fi
-
-          if [ "${APPLE_DEVELOPER_CONFIGURED:-}" = "true" ]; then
-            echo "Signed build — asserting Gatekeeper acceptance…"
-            if ! spctl --assess --type execute --verbose=4 "$app"; then
-              echo "::error::spctl --assess rejected ${app}; a signed build must pass Gatekeeper." >&2
-              exit 1
-            fi
-          else
-            echo "Unsigned build (APPLE_DEVELOPER_CONFIGURED != true) — skipping spctl Gatekeeper assessment."
-          fi
-          echo "macOS artifact verification passed."
-
-  verify-windows:
-    needs: build-windows
-    # Non-gating: the Windows build is an explicitly-unverified early alpha
-    # (see AGENTS.md — labeled alpha, behind the demo-claim gate). This job
-    # runs the installer check so a failure is visible in the run, but it must
-    # never block publishing an otherwise-good release (the macOS build, which
-    # IS the shipped/verified surface, is gated by verify-macos). Without this,
-    # a failed Windows silent-install holds the whole release as a draft —
-    # invisible to the macOS auto-updater and the download page.
-    continue-on-error: true
-    # windows-latest is fine here (unlike the build job, which is pinned to
-    # windows-2022 for node-gyp): verification only runs an already-compiled
-    # installer, it does not rebuild native modules.
-    runs-on: windows-latest
-    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 9 completed
-    # runs over 2026-08-22..09-14, p95 1.18 min, max 1.18. Ceiling =
-    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
-    timeout-minutes: 10
-    steps:
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: DorkOS-windows-x64
-          path: artifact
-
-      - name: Verify the Windows installer
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $exe = Get-ChildItem -Path artifact -Filter *.exe | Select-Object -First 1
-          if (-not $exe) {
-            Write-Error 'No .exe installer found in the DorkOS-windows-x64 artifact.'
-            exit 1
-          }
-          Write-Host "Running silent install of $($exe.FullName)…"
-          # electron-builder's NSIS installer supports /S for a silent install.
-          # oneClick is false, but /S forces the silent path and installs to the
-          # default location. Note: electron-builder's NSIS defaults include
-          # runAfterFinish=true, so the silent install may auto-launch the app
-          # in the background — harmless on a throwaway runner; this job only
-          # tracks the installer process, never the app.
-          $proc = Start-Process -FilePath $exe.FullName -ArgumentList '/S' -PassThru
-          if (-not $proc.WaitForExit(180000)) {
-            $proc.Kill()
-            Write-Error 'Installer did not finish within 180s.'
-            exit 1
-          }
-          if ($proc.ExitCode -ne 0) {
-            Write-Error "Installer exited with code $($proc.ExitCode)."
-            exit 1
-          }
-          # electron-builder NSIS default per-user install dir (perMachine: false
-          # in apps/desktop/electron-builder.yml) is
-          # %LOCALAPPDATA%\Programs\<productName>; productName is DorkOS, so the
-          # launcher is DorkOS.exe there.
-          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\DorkOS'
-          $appExe = Join-Path $installDir 'DorkOS.exe'
-          if (-not (Test-Path $appExe)) {
-            if (Test-Path $installDir) {
-              Write-Host "Contents of ${installDir}:"
-              Get-ChildItem -Recurse $installDir | Select-Object -First 50 | Format-Table FullName
-            }
-            Write-Error "Expected installed executable not found at $appExe."
-            exit 1
-          }
-          Write-Host "Windows installer verification passed: $appExe exists."
-
-  publish-release:
-    # Flip the draft release (created by /system:release Phase 6.11 with --draft)
-    # to published, AFTER the platform builds have attached their assets. This is
-    # what closes the auto-update window described in the file header: until this
-    # runs, electron-updater sees the previous release as latest and reports "up
-    # to date"; once it runs, every installer + latest*.yml is already attached,
-    # so no update check can 404 on a not-yet-uploaded metadata file.
-    #
-    # `needs` all four jobs so publish waits for both platforms' uploads before
-    # flipping the draft, but the `if` gates ONLY on the macOS pair: macOS is the
-    # shipped, signed + notarized surface, so its build + verify must succeed.
-    # The Windows alpha (build-windows / verify-windows) is `continue-on-error`
-    # and deliberately excluded from the gate — a Windows failure must not hold
-    # back an otherwise-good macOS release. `always() && !cancelled()` lets this
-    # run after the Windows jobs finish regardless of their outcome, and the
-    # explicit macOS-result checks are the authoritative gate (not the subtle
-    # continue-on-error/needs interaction). If the macOS pair fails, publish is
-    # skipped and the release stays a draft (electron-updater ignores drafts, so
-    # users keep the previous version); re-run the failed job from the Actions UI
-    # — publish-release is idempotent (--draft=false on a published release is a
-    # no-op). Gated to real tag pushes, never dry_run.
-    needs: [build-macos, build-windows, verify-macos, verify-windows]
-    if: ${{ always() && !cancelled() && startsWith(github.ref, 'refs/tags/') && !inputs.dry_run && needs.build-macos.result == 'success' && needs.verify-macos.result == 'success' }}
-    runs-on: ubuntu-latest
-    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 8 completed
-    # runs over 2026-08-22..09-14, p95 0.13 min, max 0.13. Ceiling =
-    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Publish the draft release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create it (as a draft) before this workflow can publish it." >&2
-            exit 1
-          fi
-          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
-          echo "Published release $tag."
