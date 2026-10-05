@@ -6,7 +6,13 @@ import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wi
 import { describeError, hostRequest, RequestError, request } from '../api.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import { HostPolicyLinks } from './HostLinks.js';
-import { singleSignOnLead, takeSignInError, useSignInOptionsState } from '../sign-in-options.js';
+import {
+  returnedSignIn,
+  singleSignOnLead,
+  takeSignInFailure,
+  useSignInOptionsState,
+} from '../sign-in-options.js';
+import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
 
 const authClient = createAuthClient({ baseURL: window.location.origin });
@@ -47,9 +53,14 @@ async function isHeldCommunity(path = window.location.pathname): Promise<boolean
 export function Pairing({ search = location.search }: { search?: string }) {
   const pairingId = new URLSearchParams(search).get('pairingId');
   const [status, setStatus] = useState<PairingStatus | null>(null);
-  const [error, setError] = useState(() =>
-    pairingId ? (takeSignInError({ signInOnly: true }) ?? '') : 'This approval link is incomplete.'
+  const [returned] = useState(() =>
+    pairingId
+      ? returnedSignIn(takeSignInFailure({ signInOnly: true }))
+      : { error: 'This approval link is incomplete.', linking: false }
   );
+  const [error, setError] = useState(returned.error);
+  // A provider sign-in waiting for the matched account's password asks for it here.
+  const [linking, setLinking] = useState(returned.linking);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -184,6 +195,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
         <p className="eyebrow">Connection request</p>
         <h1>Connect a local install</h1>
         <p className="muted mb-7">Review what this install can do before approving.</p>
+        {linking && <LinkWithPassword onCancel={() => setLinking(false)} />}
         {error && (
           <Notice tone="error" role="alert">
             {error}

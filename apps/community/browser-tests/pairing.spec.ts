@@ -124,7 +124,9 @@ test.describe('Community pairing approval @smoke', () => {
     const { pairingId, approvalUrl } = await pairing('Social sign-in install', communityId);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.route('**/auth-options', (route) =>
-      route.fulfill({ json: { google: true, github: true, oidc: { label: 'Team SSO' } } })
+      route.fulfill({
+        json: { google: true, github: true, oidc: { label: 'Team SSO', mark: null } },
+      })
     );
     const handoffs: { provider: string; callbackURL: string; errorCallbackURL: string }[] = [];
     await page.route('**/api/auth/sign-in/social', async (route) => {
@@ -161,7 +163,7 @@ test.describe('Community pairing approval @smoke', () => {
     }
     // A failed provider return keeps the same tenant and request, and explains the refusal.
     await page.goto(`${approvalUrl}&error=account_not_linked`);
-    await expect(page.getByRole('alert')).toContainText('already exists here');
+    await expect(page.getByRole('alert')).toContainText('confirm your email');
     await expect(page).toHaveURL(approvalUrl);
     await expect(page.getByRole('button', { name: 'Sign in and review' })).toBeVisible();
     expect(new URL(page.url()).searchParams.get('pairingId')).toBe(pairingId);

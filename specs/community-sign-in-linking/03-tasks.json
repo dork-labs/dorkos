@@ -1,0 +1,87 @@
+{
+  "spec": "specs/community-sign-in-linking/02-specification.md",
+  "slug": "community-sign-in-linking",
+  "generatedAt": "2026-10-04T20:45:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Buttons and linking (one PR)",
+      "subject": "[community-sign-in-linking] [P1] Give every Continue-with button its provider mark",
+      "description": "In packages/icons/src/logos.tsx add DorkMark (the framed D from apps/site/src/app/icon.svg: rect x=50 y=50 w=699 h=699 stroke-width 100 + the D path, viewBox 0 0 799 799, currentColor), GoogleMark (standard four-colour G) and GitHubMark (currentColor), each with TSDoc and aria-hidden. Add @dorkos/icons as a workspace dependency of apps/community and COPY packages/icons (and its package.json) in apps/community/Dockerfile. Add apps/community/src/browser/sign-up/ProviderButton.tsx: outline Button from @dork-labs/ui, w-full, mark 18px at the start, label 'Continue with <name>'. ProviderButtons.tsx renders one ProviderButton per offered provider stacked full width; SingleSignOnFirst.tsx renders its lead with ProviderButton. Mark per provider: google→GoogleMark, github→GitHubMark, oidc→DorkMark when options.oidc.mark==='dorkos' else lucide KeyRound. Wire: CommunityWireAuthOptionsSchema.oidc becomes strictObject({label, mark: z.enum(['dorkos']).nullable()}); /api/v1/auth-options sends it. Config: COMMUNITY_OIDC_MARK accepts 'dorkos' or unset, anything else or set without the OIDC trio refuses to start. Tests: config parsing, contract test, ProviderButton renders the right mark per provider (fails on the old text-only buttons).",
+      "activeForm": "Giving the sign-in buttons provider marks",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.2"],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Buttons and linking (one PR)",
+      "subject": "[community-sign-in-linking] [P1] Extract one account clean-out shared by recovery and linking",
+      "description": "Move the credential clean-out out of apps/community/src/recover-password.ts into src/account-access.ts as clearAccountAccess(client, userId, memberIds, { keepPassword: boolean }) running inside the caller's transaction under the same row locks: delete every non-credential account row (and the credential row too when keepPassword is false), delete every session, revoke connection grants, agent credentials and pairings of every membership, revoke host API keys the account issued (host_api_keys.issued_by_user_id) and open invites it issued, delete its pending_sign_in_links rows (table from task 1.3; guard so recovery works before/after), audit member.sign_in_links_removed per membership with the removed provider ids. recoverPassword keeps its behaviour (new password, --keep-linked, member.password_recovery audit) by calling it. Existing recover-password tests stay green; add tests for the host-key and invite revocation.",
+      "activeForm": "Extracting the shared account clean-out",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1"],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Buttons and linking (one PR)",
+      "subject": "[community-sign-in-linking] [P1] Gate every implicit link in one account hook",
+      "description": "Migration 0031_sign_in_links.sql: pending_sign_in_links(token_hash text PK, user_id text NOT NULL REFERENCES \"user\"(id) ON DELETE CASCADE, provider_id, account_id, expires_at, consumed_at, created_at) + user index; refuse clearly if duplicate account(providerId,accountId) rows exist, then CREATE UNIQUE INDEX on them; add 'account.sign_in_linked' to the notice_outbox kind constraint and NOTICE_KINDS. Config COMMUNITY_OIDC_LINK_VERIFIED_EMAIL ('1' on, unset/'0' off, else refuse; needs the OIDC trio) → config.oidc.linkVerifiedEmail. auth.ts accountLinking: enabled true, disableImplicitLinking false, requireLocalEmailVerified false, trustedProviders [], allowDifferentEmails false. New src/sign-in-link.ts gate called from databaseHooks.account.create.before, in order: credential → allow; request creating a user (WeakSet<ctx> marked in user.create.before) → allow after the named-claim check; (await getOAuthState())?.link?.userId===account.userId → allow (Settings link); else implicit link: signInRefusal → APIError code sign_in_refused; trusted (providerId 'oidc' && linkVerifiedEmail): transaction locking the user row, re-read emailVerified; never confirmed → clearAccountAccess(keepPassword false); audit member.sign_in_linked per membership (changed_fields ['oidc'] or ['oidc','cleared']); queue one account.sign_in_linked notice on the earliest active membership when mail is configured; set signed cookie community_link_notice ('linked'|'linked_cleared'); return the row. Untrusted (OIDC without trust, Google, GitHub): insert pending row (random token, store sha256 hash, 10 min), set signed httpOnly SameSite=Lax cookie community_pending_link, throw APIError FORBIDDEN code link_needs_password. Session hook refusal throws code sign_in_refused too. Notice composer for account.sign_in_linked. Integration tests (real Postgres + fake-oidc-issuer): trusted+confirmed; trusted+unconfirmed clean-out; squatter scenario; untrusted issuer takeover test still holds (no link, no session); unconfirmed+untrusted → password path; unverified email → account_not_linked; erasure/closure → sign_in_refused; invited provider sign-up still works with no pending row; signed-in browser without link state is still an implicit link; concurrent double link → one wins; Google/GitHub never auto-link.",
+      "activeForm": "Gating implicit links",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["1.2"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Buttons and linking (one PR)",
+      "subject": "[community-sign-in-linking] [P1] Link with the old password on the same page",
+      "description": "Routes in apps/community/src/app.ts with wire schemas in @dorkos/shared/community-wire. POST /api/v1/sign-in-link {password 1..128}: read+verify community_pending_link, row unexpired+unconsumed else 410 LINK_EXPIRED; no credential row → 403 PASSWORD_REQUIRED, nothing spent; spend from the SAME reauth budget key reauth-account:<userId> (spend before verify, refund on success; when spent, consume the pending row and answer 429 with Retry-After); verify with Better Auth's hasher against the credential row, wrong → 403 REAUTH_FAILED; one transaction: lock user FOR UPDATE, re-read credential hash and require it equal to the verified one (else 410), lock pending row, require unconsumed, consume, signInRefusal, insert the account row (unique violation → 409 ALREADY_LINKED), audit member.sign_in_linked [provider,'password'], queue the notice when mail is set; then mint the session via auth.api.signInEmail(asResponse) and forward its Set-Cookie, clear the pending cookie, answer {linked:true}; a refused session leaves the link and returns a clear error. DELETE /api/v1/sign-in-link consumes the row and clears the cookie. GET /api/v1/sign-in-link/notice returns and clears community_link_notice and the pending link's provider label. Tests for every status above plus replay, forged cookie, expiry, password changed between check and link.",
+      "activeForm": "Building the password link route",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.3"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — Buttons and linking (one PR)",
+      "subject": "[community-sign-in-linking] [P1] Show the link panel and notices in the browser",
+      "description": "sign-in-options.ts exposes the raw error code alongside the message. New LinkWithPassword panel rendered by Admission, OwnerClaim, OwnerReplacementClaim and Pairing when the code is link_needs_password: heading 'This email already has an account here.', text 'Enter its password to link <provider> sign-in.', password field, 'Link and sign in', 'Cancel'. PASSWORD_REQUIRED → 'This account has no password. Ask the space's owner for help.' LINK_EXPIRED → 'This took too long. Sign in again.' REAUTH_FAILED → 'That password is not right.' account_not_linked copy becomes 'That sign-in did not confirm your email, so it was not linked. Sign in with your password.' sign_in_refused maps to its server message. After a trusted link show 'DorkOS sign-in is now linked to this account.' or 'DorkOS sign-in is linked. The old password and other sign-ins were removed.' (provider label from the notice route). Copy obeys writing-app-copy and pnpm check:copy-length. Component tests for each state.",
+      "activeForm": "Building the link panel",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1", "1.4"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.6",
+      "phase": 1,
+      "phaseName": "P1 — Buttons and linking (one PR)",
+      "subject": "[community-sign-in-linking] [P1] Document the settings and the routes",
+      "description": "apps/community README/DEPLOYMENT.md: COMMUNITY_OIDC_MARK and COMMUNITY_OIDC_LINK_VERIFIED_EMAIL, what trusting an issuer grants, the clean-out of never-confirmed accounts and what the verified person inherits. API.md: the sign-in-link routes. A changelog fragment in changelog/unreleased/ written for humans. Run the vocab and banned-word gates.",
+      "activeForm": "Documenting the change",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.4"],
+      "parallelWith": ["1.5"],
+      "issue": null
+    }
+  ]
+}

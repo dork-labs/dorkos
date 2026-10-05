@@ -3,9 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { hashPassword } from 'better-auth/crypto';
 import { Pool } from 'pg';
 import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
+import { clearAccountAccess } from './sign-in/account-access.js';
 
 /**
- * Reset one host account and revoke credentials derived from every membership.
+ * Reset one host account and end every other way into it (see `clearAccountAccess`): sessions,
+ * credentials derived from every membership, the host API keys and invitation links it issued.
  *
  * By default this also removes the account's Google, GitHub and single sign-on links: recovery
  * usually follows a lost or taken-over account, and a link left behind would let whoever holds
@@ -62,34 +64,12 @@ export async function recoverPassword(
         [randomUUID(), userId, hashed]
       );
     }
-    if (!keepLinked) {
-      const unlinked = await client.query<{ providerId: string }>(
-        `DELETE FROM account WHERE "userId"=$1 AND "providerId"<>'credential' RETURNING "providerId"`,
-        [userId]
-      );
-      if (unlinked.rowCount)
-        await client.query(
-          `INSERT INTO audit_events(community_id,action,subject_id,changed_fields)
-           SELECT community_id,'member.sign_in_links_removed',id,$2::text[] FROM members
-           WHERE id=ANY($1::uuid[]) ORDER BY community_id,id`,
-          [memberIds, [...new Set(unlinked.rows.map((row) => row.providerId))].sort()]
-        );
-    }
-    await client.query('DELETE FROM session WHERE "userId"=$1', [userId]);
-    await client.query(
-      `UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now())
-       WHERE member_id=ANY($1::uuid[])`,
-      [memberIds]
-    );
-    await client.query(
-      `UPDATE agent_credentials SET revoked_at=COALESCE(revoked_at,now())
-       WHERE agent_id IN (SELECT id FROM agents WHERE owner_member_id=ANY($1::uuid[]))`,
-      [memberIds]
-    );
-    await client.query(
-      `UPDATE connection_pairings SET cancelled_at=COALESCE(cancelled_at,now())
-       WHERE member_id=ANY($1::uuid[])`,
-      [memberIds]
+    await clearAccountAccess(
+      client,
+      userId,
+      memberIds,
+      { password: true, links: keepLinked },
+      'offline'
     );
     await client.query(
       `INSERT INTO audit_events(community_id,action,subject_id)
@@ -141,8 +121,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       });
       process.stdout.write(
         keepLinked
-          ? 'Password changed. Existing sessions, local connections, and agent credentials have been revoked.\n'
-          : 'Password changed. Existing sessions, local connections, agent credentials, and Google, GitHub or single sign-on links have been removed.\n'
+          ? 'Password changed. Existing sessions, local connections, agent credentials, server API keys and invitation links have been revoked.\n'
+          : 'Password changed. Existing sessions, local connections, agent credentials, server API keys, invitation links, and Google, GitHub or single sign-on links have been removed.\n'
       );
     } catch {
       // Database errors can carry connection details. Report no secret or raw error.
