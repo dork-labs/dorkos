@@ -1,21 +1,12 @@
 import { createHash, X509Certificate } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import https from 'node:https';
-import {
-  mkdtemp,
-  readFile,
-  writeFile,
-  chmod,
-  realpath,
-  open,
-  lstat,
-  type FileHandle,
-} from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { mkdtemp, readFile, writeFile, chmod, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium, type BrowserContext } from 'playwright-core';
 import { expect, it, onTestFinished } from 'vitest';
+import { verifiedFixtureRuntime } from './fixture-runtime.js';
 import { createFixtureContextCustody } from './fixture-custody.js';
 import { z } from 'zod';
 import {
@@ -27,72 +18,8 @@ import {
 // Explicit private-fixture input only. This never activates an identity mode.
 // eslint-disable-next-line no-restricted-syntax -- This private fixture has no app env dependency.
 const runtimeInput = process.env.DORKOS_BROWSER_IDENTITY_RUNTIME;
-const retainedExecutableReads = new Set<FileHandle>();
 const retainedServers = new Set<https.Server>();
 const retainedServerCloses = new Map<https.Server, Promise<void>>();
-let executableCloseUncertain = false;
-async function hashExecutable(path: string): Promise<string> {
-  if (executableCloseUncertain) throw new Error('EXECUTABLE_READ_CLOSE_UNCERTAIN');
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  retainedExecutableReads.add(file);
-  let failed = false,
-    primary: unknown,
-    digest = '';
-  try {
-    const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.size > 2147483648n)
-      throw new Error('EXECUTABLE_READ_UNAVAILABLE');
-    const hash = createHash('sha256'),
-      buffer = Buffer.alloc(65536);
-    let total = 0;
-    for (;;) {
-      const result = await file.read(buffer, 0, Math.min(buffer.length, 2147483649 - total), total);
-      if (!result.bytesRead) break;
-      total += result.bytesRead;
-      if (total > 2147483648) throw new Error('EXECUTABLE_READ_OVERFLOW');
-      hash.update(buffer.subarray(0, result.bytesRead));
-    }
-    const after = await file.stat({ bigint: true }),
-      named = await lstat(path, { bigint: true });
-    if (
-      BigInt(total) !== before.size ||
-      !named.isFile() ||
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      before.size !== after.size ||
-      before.mtimeNs !== after.mtimeNs ||
-      before.ctimeNs !== after.ctimeNs ||
-      named.dev !== after.dev ||
-      named.ino !== after.ino ||
-      named.size !== after.size ||
-      named.mtimeNs !== after.mtimeNs ||
-      named.ctimeNs !== after.ctimeNs
-    )
-      throw new Error('EXECUTABLE_READ_CHANGED');
-    digest = hash.digest('hex');
-  } catch (error) {
-    failed = true;
-    primary = error;
-  }
-  try {
-    await file.close();
-    retainedExecutableReads.delete(file);
-  } catch (error) {
-    executableCloseUncertain = true;
-    if (!failed) primary = error;
-    failed = true;
-  }
-  if (failed) throw primary;
-  return digest;
-}
-
-const runtimeSchema = z
-  .object({
-    executablePath: z.string(),
-    executableSHA256: z.string().regex(/^[a-f0-9]{64}$/),
-    observedVersion: z.literal('153.0.8010.12'),
-  })
-  .strict();
 const identitySource = `async function readIdentity() {
  const data = navigator.userAgentData;
  const metadata = data ? {...data.toJSON(), ...await data.getHighEntropyValues([
@@ -104,9 +31,7 @@ const identitySource = `async function readIdentity() {
 it.skipIf(!runtimeInput || process.platform !== 'darwin' || process.arch !== 'arm64')(
   'observes unchanged native identity across persistent reopen and real service-worker update',
   async () => {
-    const runtime = runtimeSchema.parse(JSON.parse(await readFile(runtimeInput!, 'utf8')));
-    expect(await realpath(runtime.executablePath)).toBe(runtime.executablePath);
-    expect(await hashExecutable(runtime.executablePath)).toBe(runtime.executableSHA256);
+    const runtime = await verifiedFixtureRuntime(runtimeInput!);
     const directory = await realpath(await mkdtemp(join(tmpdir(), 'native-identity-lifetimes-')));
     const key = join(directory, 'key.pem'),
       cert = join(directory, 'cert.pem');
