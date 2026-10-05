@@ -23,6 +23,9 @@
  *
  * ## Each record wakes at most once — but survives a boot that dies
  *
+ * A record more than {@link STALE_BACKGROUND_WORK_MS} old is dropped without a
+ * wake: the work it describes is long stale, and it bounds the retries below.
+ *
  * A record is removed only once its chat has been settled: woken, refused as
  * busy, found gone, or skipped as not a person's chat. A dispatch that throws
  * leaves it for the next boot. A second wake for the same chat is refused by
@@ -58,6 +61,13 @@ import { getOrCreateProjector } from '../session-state-projector.js';
 export const CUT_SHORT_WAKE_MESSAGE =
   "DorkOS restarted while this chat's background work was still running, so that work " +
   'was stopped. Check what you were waiting on and carry on.';
+
+/**
+ * How old a record may be and still wake its chat: one day. A record from a
+ * server quit days ago describes work nobody is waiting on any more, and the
+ * bound also ends the retries of a record whose wake keeps failing.
+ */
+export const STALE_BACKGROUND_WORK_MS = 24 * 60 * 60 * 1000;
 
 /** How one wake ended. Every outcome but `failed` settles the record. */
 export type WakeOutcome = 'woken' | 'busy' | 'gone' | 'failed';
@@ -152,7 +162,16 @@ export async function wakeChatsCutShort(
     // cheaper than one a person did need and never got.
     logger.warn('[background-work-wake] could not tell room and task chats apart', logError(err));
   }
+  const now = Date.now();
   for (const record of records) {
+    if (now - record.since > STALE_BACKGROUND_WORK_MS) {
+      logger.info('[background-work-wake] not waking a chat whose record is over a day old', {
+        sessionId: record.sessionId,
+        since: new Date(record.since).toISOString(),
+      });
+      opts.release(record);
+      continue;
+    }
     if (elsewhere.has(record.sessionId) || elsewhere.has(record.key)) {
       logger.info('[background-work-wake] not waking a room or scheduled-task chat', {
         sessionId: record.sessionId,

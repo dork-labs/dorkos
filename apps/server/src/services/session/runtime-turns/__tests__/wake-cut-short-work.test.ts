@@ -37,7 +37,14 @@ import {
   BackgroundWorkLedger,
   type BackgroundWorkRecord,
 } from '../../../runtimes/claude-code/messaging/background-work-ledger.js';
-import { CUT_SHORT_WAKE_MESSAGE, wakeChatsCutShort } from '../wake-cut-short-work.js';
+import {
+  CUT_SHORT_WAKE_MESSAGE,
+  STALE_BACKGROUND_WORK_MS,
+  wakeChatsCutShort,
+} from '../wake-cut-short-work.js';
+
+/** A record written moments ago, well inside the staleness bound. */
+const RECENT = Date.now();
 
 let dorkHome: string;
 let ledger: BackgroundWorkLedger;
@@ -64,7 +71,7 @@ afterEach(() => {
 
 describe('a boot with background work a previous run left behind', () => {
   it('wakes that chat exactly once and removes the record', async () => {
-    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: 1 });
+    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: RECENT });
 
     await boot();
 
@@ -83,7 +90,7 @@ describe('a boot with background work a previous run left behind', () => {
   });
 
   it('keeps the record for the next boot when the dispatch throws', async () => {
-    ledger.hold({ key: 'k-err', sessionId: 'sess-err', cwd: '/projects/err', since: 1 });
+    ledger.hold({ key: 'k-err', sessionId: 'sess-err', cwd: '/projects/err', since: RECENT });
     dispatchMessage.mockRejectedValueOnce(new Error('boom'));
 
     await expect(boot()).resolves.toBeUndefined();
@@ -95,7 +102,7 @@ describe('a boot with background work a previous run left behind', () => {
   });
 
   it('removes the record of a busy chat without queueing a wake behind its turn', async () => {
-    ledger.hold({ key: 'k-busy', sessionId: 'sess-busy', cwd: '/projects/busy', since: 1 });
+    ledger.hold({ key: 'k-busy', sessionId: 'sess-busy', cwd: '/projects/busy', since: RECENT });
     dispatchMessage.mockResolvedValue({ accepted: false });
 
     await boot();
@@ -106,7 +113,7 @@ describe('a boot with background work a previous run left behind', () => {
   });
 
   it('removes the record of a chat that no longer exists anywhere, waking nothing', async () => {
-    ledger.hold({ key: 'k-gone', sessionId: 'sess-gone', cwd: '/projects/gone', since: 1 });
+    ledger.hold({ key: 'k-gone', sessionId: 'sess-gone', cwd: '/projects/gone', since: RECENT });
     runtime.hasSession.mockReturnValue(false);
     runtime.getSession.mockResolvedValueOnce(null as never);
 
@@ -117,8 +124,8 @@ describe('a boot with background work a previous run left behind', () => {
   });
 
   it('does not wake a room or scheduled-task chat, and removes its record', async () => {
-    ledger.hold({ key: 'k-room', sessionId: 'sess-room', cwd: '/projects/room', since: 1 });
-    ledger.hold({ key: 'k-mine', sessionId: 'sess-mine', cwd: '/projects/mine', since: 1 });
+    ledger.hold({ key: 'k-room', sessionId: 'sess-room', cwd: '/projects/room', since: RECENT });
+    ledger.hold({ key: 'k-mine', sessionId: 'sess-mine', cwd: '/projects/mine', since: RECENT });
 
     await boot((ids) => new Set(ids.filter((id) => id === 'sess-room')));
 
@@ -127,16 +134,33 @@ describe('a boot with background work a previous run left behind', () => {
     expect(ledger.read()).toEqual([]);
   });
 
+  it('drops a record older than a day without waking its chat', async () => {
+    const now = Date.now();
+    ledger.hold({
+      key: 'k-old',
+      sessionId: 'sess-old',
+      cwd: '/projects/old',
+      since: now - STALE_BACKGROUND_WORK_MS - 1,
+    });
+    ledger.hold({ key: 'k-new', sessionId: 'sess-new', cwd: '/projects/new', since: now - 1 });
+
+    await boot();
+
+    expect(dispatchMessage).toHaveBeenCalledTimes(1);
+    expect(dispatchMessage.mock.calls[0]![0].sessionId).toBe('sess-new');
+    expect(ledger.read()).toEqual([]);
+  });
+
   it('does not remove a record this run has written for the same chat since', async () => {
-    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: 1 });
+    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: RECENT });
     const records = ledger.read();
     // The chat's process starts holding work again before its wake settles.
-    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: 2 });
+    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: RECENT + 1 });
 
     await wakeChatsCutShort(records, {
       release: (record) => ledger.release(record.key, record.since),
     });
 
-    expect(ledger.read()).toEqual([expect.objectContaining({ since: 2 })]);
+    expect(ledger.read()).toEqual([expect.objectContaining({ since: RECENT + 1 })]);
   });
 });

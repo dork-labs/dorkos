@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SessionStore } from '../sessions/session-store.js';
+import { ACCOUNT_ROOT_PROBE_LIMIT, SessionStore } from '../sessions/session-store.js';
 import type { TranscriptReader } from '../sessions/transcript-reader.js';
 
 /**
@@ -94,23 +94,38 @@ describe('SessionStore.accountRoot', () => {
     expect(next.accountRoot).toBe(ACCOUNT_B);
   });
 
-  it('probes a started session for its account at most once', async () => {
-    // A transcript that is never found must not cost a disk scan per message.
-    await store.ensureForMessage('s-once', fakeTranscript({ exists: false }).reader, '/work');
+  it('tries again after a miss, so a transcript written late is still found', async () => {
+    // A message queued behind the first turn can land after `system/init` but
+    // before the CLI has written the transcript. That miss must not be final.
     const session = await store.ensureForMessage(
-      's-once',
+      's-late',
       fakeTranscript({ exists: false }).reader,
       '/work'
     );
     session.hasStarted = true;
-    const first = fakeTranscript({ exists: false });
-    await store.ensureForMessage('s-once', first.reader, '/work');
-    expect(first.hasTranscript).toHaveBeenCalledTimes(1);
+    const miss = fakeTranscript({ exists: false });
+    await store.ensureForMessage('s-late', miss.reader, '/work');
+    expect(miss.hasTranscript).toHaveBeenCalledTimes(1);
 
-    const second = fakeTranscript({ exists: true, root: ACCOUNT_B });
-    const next = await store.ensureForMessage('s-once', second.reader, '/work');
-    expect(second.hasTranscript).not.toHaveBeenCalled();
-    expect(next.accountRoot).toBeUndefined();
+    const found = fakeTranscript({ exists: true, root: ACCOUNT_B });
+    const next = await store.ensureForMessage('s-late', found.reader, '/work');
+    expect(found.hasTranscript).toHaveBeenCalledTimes(1);
+    expect(next.accountRoot).toBe(ACCOUNT_B);
+  });
+
+  it('stops probing a started session after a bounded number of misses', async () => {
+    // A transcript that is never found must not cost a disk scan per message.
+    const session = await store.ensureForMessage(
+      's-never',
+      fakeTranscript({ exists: false }).reader,
+      '/work'
+    );
+    session.hasStarted = true;
+    const misses = fakeTranscript({ exists: false });
+    for (let i = 0; i < 10; i += 1) {
+      await store.ensureForMessage('s-never', misses.reader, '/work');
+    }
+    expect(misses.hasTranscript).toHaveBeenCalledTimes(ACCOUNT_ROOT_PROBE_LIMIT);
   });
 
   it('does not probe again for a session that has not started yet', async () => {

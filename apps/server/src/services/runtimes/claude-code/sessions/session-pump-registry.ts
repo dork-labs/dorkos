@@ -89,7 +89,6 @@ import {
   PumpRefusedError,
   SessionPump,
   type PumpState,
-  type PumpTeardownReason,
   type SessionPumpOptions,
 } from './session-pump.js';
 import { WarmSlotBook } from './warm-slot-book.js';
@@ -248,14 +247,12 @@ export class SessionPumpRegistry {
    * private `replaceProcess`, always with an already-resolved key.
    *
    * @param sessionId - Session going away, in any id it answers to
-   * @param reason - Why, for whoever decides what survives it; defaults to
-   *   `evict`
    */
-  async evict(sessionId: string, reason: PumpTeardownReason = 'evict'): Promise<void> {
+  async evict(sessionId: string): Promise<void> {
     const key = this.sessionKeyOf(sessionId);
     const entry = this.entries.get(key);
     if (!entry) return;
-    await entry.pump.teardown(reason);
+    await entry.pump.teardown();
     this.drop(key);
   }
 
