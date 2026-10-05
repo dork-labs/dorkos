@@ -23,6 +23,15 @@ export interface BrokerLeaseBinding {
   readonly leaseId: string;
   readonly policyRevision: number;
 }
+/** Private recorded-history check; its result cannot authorize profile deletion or reuse. */
+export type RecordedProfileRecovery = (
+  selector: Readonly<{
+    profileId: string;
+    reservationNonce: string;
+    manager: ProcessIdentity;
+    browser?: ProcessIdentity;
+  }>
+) => Promise<'live-recorded' | 'matching-recorded-gone' | 'unknown'>;
 /** Mandatory clocks are injected; validation does not call them or infer host time. */
 export interface EngineClock {
   monotonicNow(): number;
@@ -84,6 +93,18 @@ const ConfigurationSchema = z
         descendants: z.custom<ProcessObserver['descendants']>(callback),
       })
       .strict(),
+    nativeJournal: z
+      .object({
+        workerPath: AbsolutePathSchema,
+        artifact: z
+          .object({ path: AbsolutePathSchema, sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+          .strict(),
+        duration: z.number().int().min(100).max(600000),
+        maxGap: z.number().int().min(1).max(10000),
+      })
+      .strict()
+      .optional(),
+    recordedRecovery: z.custom<RecordedProfileRecovery>(callback).optional(),
     policy: z
       .object({
         authorizeAction: z.custom<EnginePolicy['authorizeAction']>(callback),

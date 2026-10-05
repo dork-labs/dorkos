@@ -22,6 +22,7 @@ export interface BrowserRecord {
   directory?: OwnedDirectory;
   dataRoot?: OwnedDirectory;
   reservation?: ProfileReservation;
+  journal?: import('../runtime/darwin-engine-journal.js').DarwinEngineJournal;
   context?: BrowserContext;
   proxy?: FixtureProxy;
   manager: ProcessIdentity;

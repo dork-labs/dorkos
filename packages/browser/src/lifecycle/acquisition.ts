@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { createDarwinEngineProcesses } from '../runtime/darwin-engine-processes.js';
+import { startDarwinEngineJournal } from '../runtime/darwin-engine-journal.js';
+import { privateDirectory } from '../profiles/paths.js';
 import { ordinaryRecord } from './ownership.js';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -22,18 +27,25 @@ async function attributeRoot(
   stopped: () => boolean
 ): Promise<void> {
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
-  const root = await ownOperation(record, () => nativeHolder(record.profileDir!));
+  const native = config.nativeJournal
+    ? createDarwinEngineProcesses(config.nativeJournal.artifact)
+    : null;
+  const root = await ownOperation(record, () =>
+    native ? native.holder(record.profileDir!) : nativeHolder(record.profileDir!)
+  );
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   if (!root) throw new BrowserLifecycleError('PROCESS_OBSERVATION_UNAVAILABLE');
   record.root = root;
   const abort = new AbortController();
   try {
+    if (native && !(await ownOperation(record, () => native.attributeRoot(record.manager, root))))
+      throw new BrowserLifecycleError('PROCESS_ATTRIBUTION_UNAVAILABLE');
     const tree = await deadline(
       ownOperation(record, () => {
         const observe = config.processes.descendants;
         if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
         return Reflect.apply(observe, config.processes, [
-          record.manager,
+          native ? root : record.manager,
           abort.signal,
         ]) as ReturnType<typeof observe>;
       }),
@@ -54,6 +66,8 @@ async function attributeRoot(
     );
     if (observed.status !== 'alive')
       throw new BrowserLifecycleError('PROCESS_OBSERVATION_UNAVAILABLE');
+    if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+    if (record.journal) await ownOperation(record, () => record.journal!.attributeRoot(root));
     if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
     record.rootAttributed = true;
     await ownOperation(record, () => {
@@ -151,6 +165,36 @@ export async function acquireBrowser(
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   assertDirectory(record.dataRoot!);
   assertDirectory(record.directory!);
+  if (config.nativeJournal) {
+    const journals = join(root, 'journals');
+    await ownOperation(record, () => privateDirectory(journals));
+    if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+    await ownOperation(
+      record,
+      () =>
+        startDarwinEngineJournal({
+          ...config.nativeJournal!,
+          parentDirectory: journals,
+          binding: {
+            journalId: randomUUID(),
+            browserId: record.browserId,
+            browserGeneration: record.browserGeneration,
+            reservationNonce: record.reservation?.nonce ?? randomUUID(),
+            profile: record.profileId
+              ? { kind: 'persistent', profileId: record.profileId }
+              : { kind: 'ephemeral' },
+            manager: record.manager,
+            runtimeIdentityDigest: createHash('sha256')
+              .update(JSON.stringify(config.runtime))
+              .digest('hex'),
+          },
+        }),
+      (journal) => {
+        record.journal = journal;
+      }
+    );
+    if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+  }
   const begin = record.reservation?.beginLaunch;
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   if (record.reservation) Reflect.apply(begin!, record.reservation, []);

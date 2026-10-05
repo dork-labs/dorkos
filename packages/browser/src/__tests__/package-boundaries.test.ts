@@ -94,7 +94,7 @@ const importCounts = new Map<string, number>();
 const byteCounts = new Map<string, number>();
 
 describe('private browser package boundaries', () => {
-  it('keeps real acquisition outside default tests and includes all three explicit fixture files', () => {
+  it('keeps real acquisition outside default tests and enumerates explicit browser and Node observer fixture files', () => {
     const portable = portableConfig as { test: { include: string[]; exclude: string[] } };
     const native = nativeConfig as {
       test: { include: string[]; fileParallelism: boolean; retry: number };
@@ -108,6 +108,7 @@ describe('private browser package boundaries', () => {
       .filter((name) => name.endsWith('.fixture.test.ts'))
       .sort();
     expect(actual).toEqual([
+      'default-crash-recovery.fixture.test.ts',
       'lifecycle-exclusion.fixture.test.ts',
       'lifecycle-negative.fixture.test.ts',
       'lifecycle.fixture.test.ts',
@@ -116,10 +117,19 @@ describe('private browser package boundaries', () => {
     expect(manifest.scripts['test:fixture']).toBe(
       'pnpm build && vitest run --config vitest.fixture.config.ts'
     );
-    for (const file of actual)
+    // Chromium campaigns require their browser preflight; the read-only Node
+    // observer campaign has separate explicit helper/worker arms and no Chrome.
+    for (const file of actual.filter((name) => name.startsWith('lifecycle')))
       expect(readFileSync(path.join(packageRoot, 'src/__tests__', file), 'utf8')).toContain(
         "import './native-fixture-preflight.js'"
       );
+    const observer = readFileSync(
+      path.join(packageRoot, 'src/__tests__/default-crash-recovery.fixture.test.ts'),
+      'utf8'
+    );
+    expect(observer).toContain('DORKOS_DARWIN_OBSERVER_FIXTURE');
+    expect(observer).toContain('DORKOS_DARWIN_JOURNAL_WORKER_FIXTURE');
+    expect(observer).not.toMatch(/from ['"]playwright-core/);
   });
 
   it('resolves the public pinned production library and its real relative assets without acquisition', () => {
@@ -189,9 +199,15 @@ describe('private browser package boundaries', () => {
           true
         );
       else {
-        const module = path.relative(path.join(packageRoot, 'src'), file);
+        const module = path.relative(path.join(packageRoot, 'src'), file).split(path.sep).join('/');
         const allowed: Record<string, readonly string[]> = {
           zod: [
+            // Private bounded journal records and native supervisor protocol.
+            'lifecycle/process-journal.ts',
+            'lifecycle/process-reconciliation.ts',
+            'runtime/darwin-process-observer.ts',
+            'runtime/darwin-journal-worker.ts',
+            'runtime/darwin-packaged-observer.ts',
             'configuration.ts',
             'runtime-descriptor.ts',
             'contracts.ts',
@@ -203,10 +219,12 @@ describe('private browser package boundaries', () => {
             // Private envelope schemas/correlation; no installer backend or SDK imports.
             'runtime/installation-envelope/records.ts',
             'runtime/installation-envelope/correlation.ts',
+            'runtime/identity/native-observation.ts',
             'runtime/installation/contracts.ts',
             'runtime/installation/filesystem.ts',
           ],
           'node:path': [
+            'lifecycle/process-journal.ts',
             'runtime-descriptor.ts',
             'runtime/host-identity.ts',
             'runtime/public-library.ts',
@@ -219,6 +237,11 @@ describe('private browser package boundaries', () => {
             'runtime/installation/transaction.ts',
           ],
           'node:crypto': [
+            'lifecycle/acquisition.ts',
+            'lifecycle/process-journal.ts',
+            'runtime/darwin-process-observer.ts',
+            'runtime/darwin-engine-journal.ts',
+            'runtime/darwin-packaged-observer.ts',
             'engine.ts',
             'runtime/public-library.ts',
             'runtime/inspection/inspector.ts',
@@ -233,8 +256,17 @@ describe('private browser package boundaries', () => {
             'runtime/installation/fresh-verifier.ts',
             'runtime/installation/index.ts',
           ],
-          'node:child_process': ['runtime/host-identity.ts', 'runtime/installation/jobs.ts'],
+          'node:child_process': [
+            'runtime/host-identity.ts',
+            'runtime/installation/jobs.ts',
+            'runtime/darwin-process-observer.ts',
+            'runtime/darwin-journal-worker.ts',
+            'runtime/darwin-owned-child.ts',
+          ],
           'node:fs': [
+            'runtime/darwin-packaged-observer.ts',
+            'lifecycle/process-journal.ts',
+            'runtime/darwin-process-observer.ts',
             'runtime/host-identity.ts',
             'runtime/public-library.ts',
             'profiles/paths.ts',
@@ -245,6 +277,9 @@ describe('private browser package boundaries', () => {
             'runtime/installation/fresh-verifier.ts',
           ],
           'node:fs/promises': [
+            'runtime/darwin-packaged-observer.ts',
+            'lifecycle/process-journal.ts',
+            'runtime/darwin-process-observer.ts',
             'runtime/public-library.ts',
             'lifecycle/acquisition.ts',
             'lifecycle/close.ts',
@@ -252,10 +287,13 @@ describe('private browser package boundaries', () => {
             'runtime/installation/jobs.ts',
             'runtime/installation/fresh-verifier.ts',
           ],
-          'node:stream': ['runtime/installation/jobs.ts'],
-          'node:url': ['runtime/installation/fresh-verifier.ts'],
+          'node:stream': ['runtime/installation/jobs.ts', 'runtime/darwin-owned-child.ts'],
+          'node:url': [
+            'runtime/installation/fresh-verifier.ts',
+            'runtime/darwin-packaged-observer.ts',
+          ],
           // Exact native Proxy rejection for owner-private final binding checks.
-          'node:util': ['lifecycle/input-owner.ts'],
+          'node:util': ['lifecycle/input-owner.ts', 'runtime/darwin-generation-return.ts'],
           'node:os': ['runtime/host-identity.ts'],
           'node:module': ['runtime/public-library.ts'],
           'node:http': ['network/fixture-proxy.ts'],
