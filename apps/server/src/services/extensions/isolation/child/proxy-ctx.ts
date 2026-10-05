@@ -20,7 +20,6 @@
  *   runs on stop) and `requirePerson`, which reads the verdict the host put
  *   in a header (`isolated-router.ts`) and refuses when there is none: fail
  *   closed.
- * - `refused`: throws the table's reason.
  *
  * Nothing here enforces anything: the extension shares this process, and
  * could send any message itself. The host checks every message
@@ -434,13 +433,6 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
           if (!(path in locals)) throw new Error(`No local implementation of ctx.${path}.`);
           out[name] = locals[path];
           break;
-        case 'refused': {
-          const reason = kind.reason;
-          out[name] = () => {
-            throw new Error(reason);
-          };
-          break;
-        }
         default: {
           const never: never = kind;
           throw new Error(`Unknown ctx kind ${String(never)}`);

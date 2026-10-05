@@ -14,7 +14,6 @@
  * | `subscribe` | a listener the host registers on the real ctx; events go to the child |
  * | `reverse`   | the host calls a function the child holds and awaits its answer     |
  * | `local`     | implemented in the child, never sent (`schedule`, `requirePerson`)  |
- * | `refused`   | not available to an isolated extension; the child throws, the host refuses |
  * | `object`    | a namespace whose members each have their own kind                  |
  *
  * `gate: 'agents'` marks a member an isolated extension may use only when its
@@ -75,13 +74,6 @@ export interface LocalKind {
   readonly kind: 'local';
 }
 
-/** Not available to an isolated extension (yet). */
-export interface RefusedKind {
-  readonly kind: 'refused';
-  /** What the extension is told, in plain words. */
-  readonly reason: string;
-}
-
 /** A namespace whose members each have their own kind. */
 export interface ObjectKind {
   readonly kind: 'object';
@@ -90,18 +82,10 @@ export interface ObjectKind {
 
 /** How one ctx member crosses the boundary. */
 export type Kind =
-  | ConstKind
-  | CallKind
-  | EmitKind
-  | SubscribeKind
-  | ReverseKind
-  | LocalKind
-  | RefusedKind
-  | ObjectKind;
+  ConstKind | CallKind | EmitKind | SubscribeKind | ReverseKind | LocalKind | ObjectKind;
 
 /** The kinds a function-valued member may have. */
-export type FunctionKind =
-  CallKind | EmitKind | SubscribeKind | ReverseKind | LocalKind | RefusedKind;
+export type FunctionKind = CallKind | EmitKind | SubscribeKind | ReverseKind | LocalKind;
 
 /** A leaf: any kind but a namespace. */
 export type LeafKind = Exclude<Kind, ObjectKind>;
@@ -117,9 +101,7 @@ export type ProtocolFor<T> = {
   readonly [K in keyof T]-?: NonNullable<T[K]> extends (...args: never[]) => unknown
     ? FunctionKind
     : NonNullable<T[K]> extends object
-      ? | { readonly kind: 'object'; readonly members: ProtocolFor<NonNullable<T[K]>> }
-        | LocalKind
-        | RefusedKind
+      ? { readonly kind: 'object'; readonly members: ProtocolFor<NonNullable<T[K]>> } | LocalKind
       : ConstKind;
 };
 

@@ -54,6 +54,24 @@ interface PermissionApi {
 /** `process.send`, captured before any extension code could replace it. */
 const sendRaw = process.send?.bind(process);
 
+/**
+ * Replace `process.send` with a locked, missing value, so extension code
+ * loaded after this has no public way to post raw IPC messages.
+ *
+ * Node's internal `process._send` stays: the captured `send` calls it through
+ * `this`, so removing it would cut the bootstrap's own channel. Code that
+ * digs into Node internals can still reach it, which is why the host, not
+ * this lock, is what refuses a forged message.
+ */
+function lockRawChannel(): void {
+  Object.defineProperty(process, 'send', {
+    value: undefined,
+    writable: false,
+    configurable: false,
+    enumerable: false,
+  });
+}
+
 /** Counted, so a stop exits only once everything sent has been written. */
 const tracked = sendRaw
   ? createTrackedSend((message, callback) => sendRaw(message as never, callback))
@@ -182,6 +200,13 @@ function main(): void {
       },
       __filename
     );
+    // Extension code shares this process: take the raw channel away from it,
+    // so it can only speak through ctx (the bootstrap keeps its own captured
+    // copy). The host still treats every message as untrusted; this removes
+    // the easy way to forge one. The test seam keeps it, because the
+    // isolation suites forge messages on purpose to prove the host refuses
+    // them.
+    if (!init.testSeams) lockRawChannel();
     let exported: Record<string, unknown> | null;
     try {
       exported = loadBundle(init.bundlePath, injected) as Record<string, unknown> | null;

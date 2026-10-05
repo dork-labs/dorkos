@@ -58,6 +58,7 @@ import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import { createDataProviderContext } from '../../extension-server-api-factory.js';
 import { cleanup, createHarness, makeHost, startOk, type Harness } from './isolation-harness.js';
+import { CtxDispatcher } from '../ctx-dispatcher.js';
 
 const ID = 'iso-tools';
 const NAME = 'Iso Tools';
@@ -96,7 +97,14 @@ export default function register(_router: any, ctx: any) {
     stats.calls++;
     return { message: input.message, pid: process.pid, agentId: call.agentId };
   });
-  ctx.tools.handle('stats', () => ({ ...stats, pid: process.pid }));
+  ctx.tools.handle('stats', () => ({ ...stats, pid: process.pid, sendType: typeof process.send }));
+  // Forge a binding for a declared tool after register() returned, on the
+  // raw channel if this code can still reach it.
+  setImmediate(() => {
+    try {
+      (process as any).send({ type: 'expose', id: 9001, path: 'tools.handle', name: 'late' });
+    } catch {}
+  });
   ctx.tools.handle('wait_for_abort', (_input: any, call: any) => {
     stats.calls++;
     return new Promise((_resolve, reject) => {
@@ -158,6 +166,7 @@ async function install(): Promise<void> {
         tool('crash_mid_call', { timeoutSeconds: 60 }),
         tool('hang', { timeoutSeconds: 60 }),
         tool('delete_note', { tier: 'destructive', approvalDisplayFields: ['message'] }),
+        tool('late'),
       ],
     })
   );
@@ -194,12 +203,14 @@ async function childStats(): Promise<{
   aborts: number;
   deleted: number;
   pid: number;
+  sendType: string;
 }> {
   const stats = (await call('stats')) as {
     calls: number;
     aborts: number;
     deleted: number;
     pid: number;
+    sendType: string;
   };
   pids.push(stats.pid);
   return stats;
@@ -323,6 +334,18 @@ describe('agent tools from an isolated extension (real child)', () => {
     expect(registry.capabilities.filter((c) => c.id.startsWith(`${DOMAIN}.`))).toHaveLength(7);
   }, 60_000);
 
+  // Purpose: extension code has no public raw channel (process.send is
+  // locked away before the bundle loads), and a binding it tries to forge
+  // after register() returned never becomes a tool.
+  it('gives extension code no raw channel, and never offers a tool bound late', async () => {
+    await boot();
+    expect((await childStats()).sendType).toBe('undefined');
+    await new Promise((r) => setTimeout(r, 200));
+    expect(registry.get(`${DOMAIN}.late`)).toBeUndefined();
+    const card = manager.listPublic().find((r) => r.id === ID);
+    expect(card?.tools?.find((t) => t.name === 'late')).toMatchObject({ status: 'refused' });
+  }, 60_000);
+
   // Purpose: the gate runs in DorkOS, unchanged, BEFORE anything reaches the
   // child: a Blocked Extension tools area refuses the call, and a
   // destructive tool waits for a person even under Full; the child counts
@@ -377,6 +400,17 @@ describe('agent tools from an isolated extension (real child)', () => {
   it('fails a call as stopped when the child dies, then offers the tools again', async () => {
     await boot();
     const first = await childPid();
+    // What the registry held when the host released the dead child and
+    // rejected its waiting calls: the lifecycle's onGone must have removed
+    // the tool by then, whatever the microtask order.
+    const atClose: boolean[] = [];
+    const close = CtxDispatcher.prototype.close;
+    const spy = vi.spyOn(CtxDispatcher.prototype, 'close').mockImplementation(function (
+      this: CtxDispatcher
+    ) {
+      atClose.push(registry.get(`${DOMAIN}.crash_mid_call`) !== undefined);
+      return close.call(this);
+    });
     let goneWhenRejected: boolean | null = null;
     const pending = call('crash_mid_call').catch((err: unknown) => {
       goneWhenRejected = registry.get(`${DOMAIN}.echo`) === undefined;
@@ -387,6 +421,9 @@ describe('agent tools from an isolated extension (real child)', () => {
       code: 'EXTENSION_TOOL_STOPPED',
     });
     expect(goneWhenRejected).toBe(true);
+    await vi.waitFor(() => expect(atClose).toHaveLength(1), { timeout: 5_000 });
+    expect(atClose).toEqual([false]);
+    spy.mockRestore();
     expect(registry.get(`${DOMAIN}.crash_mid_call`)).toBeUndefined();
     await until(() => !alive(first));
 
@@ -424,6 +461,58 @@ describe('the isolated host on a child exit (real child)', () => {
   afterEach(async () => {
     await cleanup(h);
   });
+
+  // Purpose: the host closes tool binding the moment `registered` arrives.
+  // Code in the child posting its own binding right after register()
+  // returned (here on the raw channel the test seam keeps) is refused with
+  // the in-process words, and the host's real binding never holds it.
+  it('refuses a tool binding that arrives after registered', async () => {
+    const bundle = path.join(h.tmp, 'bundles', 'late.js');
+    await fs.writeFile(
+      bundle,
+      String.raw`
+'use strict';
+module.exports = function register(_router, ctx) {
+  ctx.tools.handle('wait', () => 1);
+  setImmediate(() => process.send({ type: 'expose', id: 9001, path: 'tools.handle', name: 'late' }));
+};
+module.exports.probes = {};
+`
+    );
+    const manifest = ExtensionManifestSchema.parse({
+      id: 'late-bind',
+      name: 'Late Bind',
+      version: '1.0.0',
+      serverCapabilities: { serverEntry: './server.ts', runtime: 'subprocess' },
+      tools: ['wait', 'late'].map((name) => ({
+        name,
+        title: name,
+        description: 'A test tool.',
+        tier: 'observe',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      })),
+    });
+    const toolChecks = checkDeclaredTools(manifest);
+    const built = createDataProviderContext({
+      extensionId: 'late-bind',
+      extensionDir: path.join(h.tmp, 'ext', 'late-bind'),
+      dorkHome: h.dorkHome,
+      extensionName: 'Late Bind',
+      toolChecks,
+    });
+    const host = makeHost(h, {
+      id: 'late-bind',
+      bundle,
+      overrides: { ctx: built.ctx, tools: toolChecks },
+    });
+    await startOk(host);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(h.logs.some((l) => l.message.includes('refused a tool binding after register()'))).toBe(
+      true
+    );
+    expect(built.tools.seal().handled.map((x) => x.tool.name)).toEqual(['wait']);
+    built.dispose();
+  }, 30_000);
 
   /** A bundle that binds one tool that never answers, and can crash on cue. */
   const BUNDLE = String.raw`

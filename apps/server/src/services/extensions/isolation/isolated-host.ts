@@ -461,20 +461,29 @@ export class IsolatedExtensionHost {
     }, this.timings.helloTimeoutMs);
     let loadTimer: NodeJS.Timeout | null = null;
 
+    // Tell the lifecycle the running child is gone, once: on 'exit' (the
+    // moment the process ended, so its tools are unlisted at once) or, at the
+    // latest, first thing on 'close'.
+    let goneTold = false;
+    const tellGone = (): void => {
+      if (goneTold || phase !== 'running') return;
+      goneTold = true;
+      try {
+        this.options.onGone?.();
+      } catch (err) {
+        this.options.logger.error(
+          `[Extensions] ${this.options.extensionId}: removing its tools failed: ${String(err)}`
+        );
+      }
+    };
+    child.once('exit', tellGone);
+
     this.exitPromise = new Promise<void>((resolve) => {
       // 'close', not 'exit': stderr is fully read by then, so the OOM marker is seen.
       child.once('close', (code, signal) => {
         // First of all: its tools leave the registry, before the calls
         // waiting on the child are rejected below.
-        if (phase === 'running') {
-          try {
-            this.options.onGone?.();
-          } catch (err) {
-            this.options.logger.error(
-              `[Extensions] ${this.options.extensionId}: removing its tools failed: ${String(err)}`
-            );
-          }
-        }
+        tellGone();
         // Then: nothing the child registered on the real ctx outlives it.
         if (this.dispatcher) {
           this.lastDispatchCounts = this.dispatcher.dispatchCounts();
@@ -639,6 +648,9 @@ export class IsolatedExtensionHost {
           return;
         }
         this.registeredCleanup = message.hasCleanup;
+        // register() finished: from here no tool binds, whatever the child
+        // (or code inside it posting its own messages) sends next.
+        this.dispatcher?.closeTools();
         phase = 'running';
         this.serving = true;
         this.startWatchdog();

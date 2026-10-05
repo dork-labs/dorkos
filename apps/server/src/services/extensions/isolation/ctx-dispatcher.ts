@@ -32,20 +32,11 @@
  *
  * @module services/extensions/isolation/ctx-dispatcher
  */
-import {
-  AgentSendError,
-  type AccountAdvisor,
-  type DataProviderContext,
-  type DecisionActionEvent,
-} from '@dorkos/extension-api/server';
+import { AgentSendError, type DataProviderContext } from '@dorkos/extension-api/server';
 import { redactPaths } from '../agent-tools/tool-binding.js';
-import {
-  ADVISOR_METHODS,
-  lookup,
-  splitPath,
-  type AdvisorMethodName,
-  type Kind,
-} from './ctx-protocol.js';
+import { toolHandleProblem } from '../agent-tools/tool-handle-rules.js';
+import { lookup, splitPath, type Kind } from './ctx-protocol.js';
+import { REVERSE_BINDERS } from './reverse-binders.js';
 import { wireDataProblem } from './ctx-wire.js';
 import type {
   CallMessage,
@@ -207,79 +198,6 @@ function gateRefusal(path: string): Error {
     : new Error(AGENTS_REFUSAL);
 }
 
-/** What an `expose` message said about the function, beyond its path. Untrusted. */
-export interface ExposeDetail {
-  /** An advisor's methods. */
-  methods?: unknown;
-  /** A tool's name. */
-  name?: unknown;
-}
-
-/**
- * Binds a child's exposed function onto the real ctx. Each returns the
- * unregister function the real ctx hands back.
- */
-type ReverseBinder = (
-  dispatcher: CtxDispatcher,
-  ctx: DataProviderContext,
-  exposeId: number,
-  boundMs: number,
-  detail: ExposeDetail
-) => (() => void) | WireError;
-
-/**
- * How each `reverse` table entry is bound. A test asserts every `reverse`
- * leaf of the table has a binder here, so a reverse member cannot be added to
- * the table without deciding how the host carries it.
- */
-export const REVERSE_BINDERS: Readonly<Record<string, ReverseBinder>> = Object.freeze({
-  'accounts.registerAdvisor': (dispatcher, ctx, exposeId, boundMs, { methods }) => {
-    if (
-      !Array.isArray(methods) ||
-      methods.length === 0 ||
-      methods.length > ADVISOR_METHODS.length ||
-      !methods.every(
-        (m): m is AdvisorMethodName =>
-          typeof m === 'string' && (ADVISOR_METHODS as readonly string[]).includes(m)
-      ) ||
-      new Set(methods).size !== methods.length ||
-      !methods.includes('rank')
-    ) {
-      return refusal('An account advisor needs a rank method, and only advisor methods.');
-    }
-    // Exactly the methods the child's advisor has: core treats a missing
-    // method as "use the default", so a proxy must not invent one.
-    const advisor: Partial<Record<AdvisorMethodName, (...args: unknown[]) => Promise<unknown>>> =
-      Object.create(null);
-    for (const method of methods) {
-      advisor[method] = (...args: unknown[]) => dispatcher.rcall(exposeId, method, args, boundMs);
-    }
-    return ctx.accounts.registerAdvisor(advisor as unknown as AccountAdvisor);
-  },
-  'inbox.onAction': (dispatcher, ctx, exposeId, boundMs) =>
-    ctx.inbox.onAction(
-      (event: DecisionActionEvent) =>
-        dispatcher.rcall(exposeId, 'onAction', [event], boundMs) as ReturnType<
-          Parameters<DataProviderContext['inbox']['onAction']>[0]
-        >
-    ),
-  // A tool (spec §8): bound through the REAL ctx.tools.handle, so the host's
-  // own copy of the manifest decides (undeclared, refused, twice, after
-  // register() finished all throw the in-process words), and only a tool the
-  // host bound can ever be contributed. The stub carries no deadline of its
-  // own: the host wrapper's per-tool deadline, cancellation and stop abort
-  // `call.signal`, which cancels the child's call and settles at once.
-  'tools.handle': (dispatcher, ctx, exposeId, boundMs, { name }) => {
-    if (typeof name !== 'string') return refusal("A tool binding needs the tool's name.");
-    ctx.tools.handle(name, (input, call) =>
-      dispatcher.rcall(exposeId, 'tool', [input, { agentId: call.agentId }], boundMs, call.signal)
-    );
-    // A bound tool is never unbound: it ends with this instance (the
-    // lifecycle removes it from the registry first on every stop).
-    return () => undefined;
-  },
-});
-
 /**
  * Dispatches one isolated child's ctx messages into its real ctx. One per
  * child process: a restart gets a fresh dispatcher.
@@ -296,6 +214,8 @@ export class CtxDispatcher {
    * tool binds once, and only while `register()` runs).
    */
   private readonly toolExposes = new Set<number>();
+  /** Set once the child reported `registered`: no tool binds after that. */
+  private toolsClosed = false;
   private readonly rcalls = new Map<number, PendingRcall>();
   private nextRcallId = 1;
   private readonly counts = new Map<string, number>();
@@ -314,6 +234,17 @@ export class CtxDispatcher {
    */
   dispatchCounts(): Record<string, number> {
     return Object.fromEntries(this.counts);
+  }
+
+  /**
+   * The child's `register()` finished: refuse every later tool binding, as
+   * the in-process binding does. Called by the host the moment `registered`
+   * arrives, before anything else of the child is handled, so extension code
+   * that posts its own binding afterwards (it shares the child's process and
+   * channel) can never add a tool.
+   */
+  closeTools(): void {
+    this.toolsClosed = true;
   }
 
   /** How many listeners and reverse handlers the child holds on the real ctx right now. */
@@ -496,19 +427,15 @@ export class CtxDispatcher {
   ): Extract<Kind, { kind: K }> | null {
     const found = lookup(path);
     if (!found || found.kind !== kind) {
-      if (found?.kind === 'refused') {
-        this.refuse(id, refusal(found.reason, 'ERR_EXTENSION_CTX_REFUSED'));
-      } else {
-        // The path is not echoed back: it is whatever the child sent.
-        this.refuse(
-          id,
-          refusal(
-            "That isn't something an isolated extension's ctx can do.",
-            'ERR_EXTENSION_CTX_UNKNOWN'
-          ),
-          `refused a ${kind} for an unknown ctx member`
-        );
-      }
+      // The path is not echoed back: it is whatever the child sent.
+      this.refuse(
+        id,
+        refusal(
+          "That isn't something an isolated extension's ctx can do.",
+          'ERR_EXTENSION_CTX_UNKNOWN'
+        ),
+        `refused a ${kind} for an unknown ctx member`
+      );
       return null;
     }
     return found as Extract<Kind, { kind: K }>;
@@ -662,6 +589,16 @@ export class CtxDispatcher {
     const kind = this.expect(id, path, 'reverse');
     const isTool = path === 'tools.handle';
     if (!kind || !this.roomFor(id, !isTool)) return;
+    if (isTool && this.toolsClosed) {
+      const closed = toolHandleProblem(
+        this.options.extensionId,
+        { open: false, checks: new Map(), handled: new Set() },
+        name,
+        () => undefined
+      );
+      this.refuse(id, toWireError(closed), 'refused a tool binding after register() finished');
+      return;
+    }
     const binder = Object.prototype.hasOwnProperty.call(REVERSE_BINDERS, path)
       ? REVERSE_BINDERS[path]
       : undefined;

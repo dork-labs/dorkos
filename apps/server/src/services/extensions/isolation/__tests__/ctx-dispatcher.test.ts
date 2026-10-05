@@ -13,10 +13,10 @@ import {
   AGENTS_REFUSAL,
   CtxDispatcher,
   MAX_CHILD_REGISTRATIONS,
-  REVERSE_BINDERS,
   toWireError,
 } from '../ctx-dispatcher.js';
 import type { CtxChildMessage, HostMessage, RetMessage } from '../ipc-protocol.js';
+import { REVERSE_BINDERS } from '../reverse-binders.js';
 import { createToolBinding } from '../../agent-tools/tool-binding.js';
 
 /** A ctx whose every member records its calls; listeners and handlers are kept. */
