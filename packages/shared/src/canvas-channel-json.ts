@@ -1,5 +1,8 @@
 /** Strict, transport-independent document channel contracts. No transport is enabled here. */
 import { z } from 'zod';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+
+extendZodWithOpenApiOnce();
 
 /** Maximum serialized UTF-8 bytes in an event or state-patch envelope. */
 export const CANVAS_CHANNEL_ENVELOPE_BYTES = 16 * 1024;
@@ -89,16 +92,18 @@ export function inspectCanvasChannelJson(
 }
 
 /** Recursive JSON shape used only behind an iterative preflight. @internal */
-export const RecursiveJsonSchema: z.ZodType<CanvasChannelJsonValue> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.number().finite(),
-    z.boolean(),
-    z.null(),
-    z.array(RecursiveJsonSchema),
-    z.object({}).catchall(RecursiveJsonSchema),
-  ])
-);
+export const RecursiveJsonSchema: z.ZodType<CanvasChannelJsonValue> = z
+  .lazy(() =>
+    z.union([
+      z.string(),
+      z.number().finite(),
+      z.boolean(),
+      z.null(),
+      z.array(RecursiveJsonSchema),
+      z.object({}).catchall(RecursiveJsonSchema),
+    ])
+  )
+  .openapi('CanvasChannelJson');
 
 /** Place a raw iterative preflight before recursive schema parsing. @internal */
 export function boundedJson<S extends z.ZodType>(

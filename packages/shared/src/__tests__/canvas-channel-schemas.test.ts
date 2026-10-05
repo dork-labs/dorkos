@@ -307,7 +307,15 @@ describe('leaf and tool-schema compatibility', () => {
       /from ['"]\.\/(?:canvas-schemas|room-schemas|session-stream|schemas)\.js/u
     );
     const helper = await readFile(new URL('../canvas-channel-json.ts', import.meta.url), 'utf8');
-    expect(helper.match(/^import .*$/gmu)).toEqual(["import { z } from 'zod';"]);
+    expect(helper.match(/^import .*$/gmu)).toEqual([
+      "import { z } from 'zod';",
+      "import { extendZodWithOpenApiOnce } from './zod-openapi.js';",
+    ]);
+    const openApiHelper = await readFile(new URL('../zod-openapi.ts', import.meta.url), 'utf8');
+    expect(openApiHelper.match(/^import .*$/gmu)).toEqual([
+      "import { z } from 'zod';",
+      "import { extendZodWithOpenApi, zodToOpenAPIRegistry } from '@asteasolutions/zod-to-openapi';",
+    ]);
     const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     expect(pkg.exports['./canvas-channel-schemas']).toEqual({
       types: './src/canvas-channel-schemas.ts',
