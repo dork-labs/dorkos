@@ -4,6 +4,12 @@ Draft decision records seeded at SPECIFY (spec `isolated-extension-backends`, DO
 here, not in `decisions/`, until the spec is implemented; `/adr:from-spec` promotes the ones that
 still hold, applying the significance rubric. Each follows the `/flow` draft-ADR shape.
 
+**Promoted (2026-10-05).** All seven still hold and are accepted ADRs in `decisions/`: D1
+`261005-105209` (amends 0213), D2 `261005-105210`, D3 `261005-105211`, D4 `261005-105212`, D5
+`261005-105213`, D6 `261005-105214`, D7 `261005-105215`. The ADRs record what shipped where it
+moved from these drafts (two read grants on a staged run folder; an allowlist of reply headers;
+tool handlers as `reverse` members). These drafts are kept as the history.
+
 ---
 
 ## D1. Isolated server halves run as one Node subprocess per extension under the permission model

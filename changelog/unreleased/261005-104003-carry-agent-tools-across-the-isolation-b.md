@@ -1,6 +1,9 @@
 ---
 covers:
   - 'feat(extensions): carry agent tools across the isolation boundary (DOR-2686)'
+  - 'test(extensions): prove agent tools from an isolated extension with a real child (DOR-2686)'
+  - 'docs(extensions): tools work from extensions that run separately (DOR-2686)'
+  - 'docs(decisions): promote the isolated extension backend decisions and mark the spec implemented (DOR-2686)'
 ---
 
 ### Added
