@@ -1,6 +1,7 @@
 import { build, formatMessages, type Message, type Plugin } from 'esbuild';
 import { execSync } from 'child_process';
 import { createHash } from 'node:crypto';
+import { builtinModules } from 'node:module';
 import fs from 'fs/promises';
 import { cpSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
@@ -75,11 +76,11 @@ interface WorkspacePackage {
  *
  * @returns Map from package name (e.g. `@dorkos/harness`) to its dir + exports.
  */
-function loadWorkspacePackages(): Map<string, WorkspacePackage> {
+function loadWorkspacePackages(packagesDirectory = PACKAGES_DIR): Map<string, WorkspacePackage> {
   const registry = new Map<string, WorkspacePackage>();
-  for (const entry of readdirSync(PACKAGES_DIR, { withFileTypes: true })) {
+  for (const entry of readdirSync(packagesDirectory, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    const dir = path.join(PACKAGES_DIR, entry.name);
+    const dir = path.join(packagesDirectory, entry.name);
     let pkg: { name?: string; exports?: Record<string, unknown> };
     try {
       pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf-8'));
@@ -124,8 +125,8 @@ function sourcePathFromExportsEntry(entry: unknown): string | undefined {
  *
  * @returns The configured esbuild plugin.
  */
-function dorkosSourcePlugin(): Plugin {
-  const registry = loadWorkspacePackages();
+function dorkosSourcePlugin(root = ROOT): Plugin {
+  const registry = loadWorkspacePackages(path.join(root, 'packages'));
   return {
     name: 'resolve-dorkos-source',
     setup(build) {
@@ -228,6 +229,59 @@ async function assertNoUnexpectedWarnings(label: string, warnings: Message[]): P
       `refusing to publish a bundle nobody has looked at.\n\n${rendered.join('\n')}\n` +
       `Fix the cause, or — if the warning is genuinely safe here — add it to ` +
       `ALLOWED_WARNING_TEXTS in this file with a comment saying why.`
+  );
+}
+
+/** Compile the fresh verifier from this checkout and bind it to the actual CLI output. */
+export async function buildBrowserRuntimeAssets(root = ROOT, output = OUT): Promise<void> {
+  const controller = path.join(output, 'bin/cli.js');
+  const controllerBytes = await fs.readFile(controller);
+  const verifier = path.join(output, 'browser/fresh-verifier.mjs');
+  const result = await build({
+    absWorkingDir: root,
+    entryPoints: [path.join(root, 'packages/browser/src/runtime/installation/fresh-verifier.ts')],
+    outfile: verifier,
+    bundle: true,
+    platform: 'node',
+    target: 'node22.22',
+    format: 'esm',
+    external: ['zod'],
+    plugins: [dorkosSourcePlugin(root)],
+    write: false,
+    metafile: true,
+    logLevel: 'silent',
+  });
+  await assertNoUnexpectedWarnings('browser verifier', result.warnings);
+  const allowed = new Set([
+    ...builtinModules,
+    ...builtinModules.map((name) => `node:${name}`),
+    'zod',
+  ]);
+  for (const record of [
+    ...Object.values(result.metafile!.inputs),
+    ...Object.values(result.metafile!.outputs),
+  ]) {
+    for (const dependency of record.imports) {
+      if (dependency.external && !allowed.has(dependency.path))
+        throw new Error(`Browser verifier dependency is not packaged: ${dependency.path}`);
+    }
+  }
+  if (
+    result.outputFiles.length !== 1 ||
+    path.resolve(result.outputFiles[0].path) !== path.resolve(verifier)
+  )
+    throw new Error('Browser verifier output is missing or unexpected.');
+  const verifierBytes = result.outputFiles[0].contents;
+  const manifest = {
+    schemaVersion: 1,
+    controllerSHA256: createHash('sha256').update(controllerBytes).digest('hex'),
+    verifierSHA256: createHash('sha256').update(verifierBytes).digest('hex'),
+  };
+  await fs.mkdir(path.dirname(verifier), { recursive: true });
+  await fs.writeFile(verifier, verifierBytes);
+  await fs.writeFile(
+    path.join(output, 'browser/source-manifest.json'),
+    JSON.stringify(manifest) + '\n'
   );
 }
 
@@ -399,6 +453,7 @@ async function buildCLI() {
   });
 
   await assertNoUnexpectedWarnings('CLI', cliBundle.warnings);
+  await buildBrowserRuntimeAssets();
 
   // Make executable
   await fs.chmod(path.join(OUT, 'bin/cli.js'), 0o755);
@@ -420,14 +475,16 @@ async function buildCLI() {
 // to replace the diagnosis with a stack about the removal — which is the exact
 // outcome this handler exists to prevent. Belt and braces: the removal is also
 // caught, so it can only ever add a line, never take one away.
-buildCLI().catch(async (err: unknown) => {
-  console.error(`\n[cli-build] Build FAILED:\n`);
-  console.error(err instanceof Error ? (err.stack ?? err.message) : err);
-  await fs.rm(OUT, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
-    console.error(
-      `\n[cli-build] Could not remove the rejected output at ${OUT} — delete it by hand ` +
-        `before packing, it is what \`pnpm pack\` publishes:\n${String(cleanupErr)}`
-    );
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  void buildCLI().catch(async (err: unknown) => {
+    console.error(`\n[cli-build] Build FAILED:\n`);
+    console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+    await fs.rm(OUT, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
+      console.error(
+        `\n[cli-build] Could not remove the rejected output at ${OUT} — delete it by hand ` +
+          `before packing, it is what \`pnpm pack\` publishes:\n${String(cleanupErr)}`
+      );
+    });
+    process.exit(1);
   });
-  process.exit(1);
-});
+}
