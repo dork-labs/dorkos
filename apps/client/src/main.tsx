@@ -300,14 +300,14 @@ const transport = new HttpTransport(apiBaseUrl);
 // (`http://localhost:<port>`), but it also has a `file://` last resort
 // (`window-manager.ts`), and there a relative `/api` reaches nothing — so both
 // are built from one resolved base rather than each guessing.
-streamManager.useHttpSource(apiBaseUrl);
+streamManager.useHttpSource(apiBaseUrl, transport);
 
 /**
  * The sidebar's local memory (spec `sidebar-simplification` D6), or none.
  *
  * `null` on any surface that must not keep one — see `createBootCache` — and
  * also on any surface where building one FAILS. Nothing on this line is worth a
- * blank cockpit: everything below runs at module scope, before React exists and
+ * blank window: everything below runs at module scope, before React exists and
  * outside every error boundary, so a throw here is a window that never paints
  * rather than a panel that starts cold. v0.63.0 was exactly that, from a
  * `__APP_VERSION__` the desktop bundle had never substituted (DOR-1448).
@@ -344,7 +344,7 @@ if (bootCache !== null) {
 // opens on.
 const router = createAppRouter(queryClient, transport);
 
-// Give the link seam its router. Every internal link in the cockpit — palette
+// Give the link seam its router. Every internal link in the app — palette
 // actions, promo cards, deep links into the Settings dialog — dispatches
 // through here instead of a document load, so the desktop shell never hands one
 // of our own URLs to the system browser (DOR-534).

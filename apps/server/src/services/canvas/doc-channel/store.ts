@@ -13,6 +13,7 @@ import {
   eq,
   gt,
   isNull,
+  inArray,
   lte,
   or,
   sql,
@@ -34,6 +35,11 @@ import { assertJson, assertRowJson, readChecked, DocChannelCorruptionError } fro
 export { DocChannelCorruptionError } from './store-json.js';
 import { documentTransaction, type SynchronousResult } from './store-transaction.js';
 import { markDocWaitingWarning, markAcceptedDocWaitingWarning } from './store-warnings.js';
+import {
+  queueCommittedDocChannel,
+  queueCommittedDocEvent,
+  queueCommittedDocGrant,
+} from './committed-events.js';
 
 /** A stored channel, independent of the physical canvas document. */
 export type DocChannelRow = typeof canvasDocChannels.$inferSelect;
@@ -70,7 +76,7 @@ export class DocChannelStateConflictError extends Error {
   }
 }
 
-/** Transaction-capable document channel storage with no publication side effects. */
+/** Transaction-capable storage; payload-free observers verify rows after the actual commit. */
 export class DocChannelStore {
   /** Build a store over the production SQLite connection. */
   constructor(private readonly db: Db) {}
@@ -84,8 +90,18 @@ export class DocChannelStore {
   initialize(input: typeof canvasDocChannels.$inferInsert, tx?: DbTransaction): DocChannelRow {
     assertRowJson(input);
     const executor = tx ?? this.db;
-    executor.insert(canvasDocChannels).values(input).onConflictDoNothing().run();
-    return this.getChannel(input.documentId, tx)!;
+    const inserted = executor
+      .insert(canvasDocChannels)
+      .values(input)
+      .onConflictDoNothing()
+      .run().changes;
+    const channel = this.getChannel(input.documentId, tx)!;
+    if (inserted)
+      queueCommittedDocChannel(this.db, {
+        documentId: channel.documentId,
+        createdAt: channel.createdAt,
+      });
+    return channel;
   }
 
   /** Read one channel; a physical document can be gone while its tombstone remains. */
@@ -134,7 +150,9 @@ export class DocChannelStore {
         provenance: input.provenance === null ? sql`'null'` : input.provenance,
       })
       .run();
-    return this.getEvent(input.documentId, input.eventId, tx)!;
+    const event = this.getEvent(input.documentId, input.eventId, tx)!;
+    queueCommittedDocEvent(this.db, event);
+    return event;
   }
 
   /** Read the original input by its document-local idempotency key. */
@@ -182,10 +200,52 @@ export class DocChannelStore {
     );
   }
 
+  /** Read the at most two replay pages' current full event rows in the caller transaction. */
+  readReplayEvents(documentId: string, eventIds: string[], tx: DbTransaction): DocEventRow[] {
+    if (eventIds.length > 400) throw new RangeError('Invalid replay event selection.');
+    if (!eventIds.length) return [];
+    return readChecked('canvas_doc_events', documentId, () =>
+      tx
+        .select()
+        .from(canvasDocEvents)
+        .where(
+          and(
+            eq(canvasDocEvents.documentId, documentId),
+            inArray(canvasDocEvents.eventId, eventIds)
+          )
+        )
+        .all()
+    );
+  }
+
+  /** Read one replay receipt page's current outcomes, retaining every route in original order. */
+  readReplayDeliveries(
+    documentId: string,
+    eventIds: string[],
+    tx: DbTransaction
+  ): DocDeliveryRow[] {
+    if (eventIds.length > 200) throw new RangeError('Invalid replay receipt selection.');
+    if (!eventIds.length) return [];
+    return readChecked('canvas_doc_deliveries', documentId, () =>
+      tx
+        .select()
+        .from(canvasDocDeliveries)
+        .where(
+          and(
+            eq(canvasDocDeliveries.documentId, documentId),
+            inArray(canvasDocDeliveries.eventId, eventIds)
+          )
+        )
+        .orderBy(asc(canvasDocDeliveries.eventId), asc(canvasDocDeliveries.routeId))
+        .all()
+    );
+  }
+
   /** Persist route evidence in an existing source transaction. */
   insertGrant(input: typeof canvasDocGrants.$inferInsert, tx?: DbTransaction): void {
     assertRowJson(input);
     (tx ?? this.db).insert(canvasDocGrants).values(input).run();
+    queueCommittedDocGrant(this.db, this.getGrant(input.grantId, tx)!);
   }
 
   /** Read one exact authority record. */
@@ -488,7 +548,7 @@ export class DocChannelStore {
 
   /** Revoke an unchanged route revision without replacing its immutable approval evidence. */
   revokeGrant(grantId: string, revision: number, revokedAt: string, tx?: DbTransaction): boolean {
-    return (
+    const changed =
       (tx ?? this.db)
         .update(canvasDocGrants)
         .set({ revokedAt })
@@ -499,8 +559,9 @@ export class DocChannelStore {
             isNull(canvasDocGrants.revokedAt)
           )
         )
-        .run().changes === 1
-    );
+        .run().changes === 1;
+    if (changed) queueCommittedDocGrant(this.db, this.getGrant(grantId, tx)!);
+    return changed;
   }
 
   /** Advance an ownership intent only from the observed recovery state. */

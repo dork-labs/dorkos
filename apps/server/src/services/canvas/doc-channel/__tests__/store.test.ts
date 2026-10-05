@@ -547,3 +547,73 @@ it('retires a rolled-back savepoint handle before its outer transaction exits', 
   });
   expect(store.getChannel('document-1')?.nextDocSeq).toBe(1);
 });
+
+describe('bounded current replay row selections', () => {
+  it('keeps document isolation, route order and fresh committed outcomes', () => {
+    const { db, store } = open();
+    channel(store);
+    channel(store, 'document-2');
+    store.appendEvent(event());
+    store.appendEvent(event('document-2'));
+    store.insertDelivery({
+      documentId: 'document-1',
+      eventId: 'event-1',
+      routeId: 'z',
+      status: 'pending',
+      updatedAt: NOW,
+    });
+    store.insertDelivery({
+      documentId: 'document-1',
+      eventId: 'event-1',
+      routeId: 'a',
+      status: 'saved',
+      updatedAt: NOW,
+    });
+    store.insertDelivery({
+      documentId: 'document-2',
+      eventId: 'event-1',
+      routeId: 'foreign',
+      status: 'saved',
+      updatedAt: NOW,
+    });
+    store.transaction((tx) => {
+      expect(store.readReplayEvents('document-1', ['event-1'], tx)).toEqual([
+        store.getEvent('document-1', 'event-1', tx),
+      ]);
+      expect(store.readReplayDeliveries('document-1', ['event-1'], tx)).toEqual(
+        store.listDeliveries('document-1', 'event-1', tx)
+      );
+      expect(
+        store.readReplayDeliveries('document-1', ['event-1'], tx).map((row) => row.routeId)
+      ).toEqual(['a', 'z']);
+      expect(() => store.readReplayEvents('document-1', Array(401).fill('event-1'), tx)).toThrow(
+        RangeError
+      );
+      expect(() =>
+        store.readReplayDeliveries('document-1', Array(201).fill('event-1'), tx)
+      ).toThrow(RangeError);
+    });
+    store.updateDelivery({
+      documentId: 'document-1',
+      eventId: 'event-1',
+      routeId: 'z',
+      expectedStatus: 'pending',
+      changes: { status: 'superseded', updatedAt: LATER },
+    });
+    store.transaction((tx) => {
+      expect(
+        store
+          .readReplayDeliveries('document-1', ['event-1'], tx)
+          .find((row) => row.routeId === 'z')!.status
+      ).toBe('superseded');
+      expect(store.readReplayEvents('document-1', [], tx)).toEqual([]);
+      expect(store.readReplayDeliveries('document-1', [], tx)).toEqual([]);
+    });
+    db.$client
+      .prepare('UPDATE canvas_doc_events SET payload=? WHERE document_id=? AND event_id=?')
+      .run('{invalid', 'document-1', 'event-1');
+    expect(() =>
+      store.transaction((tx) => store.readReplayEvents('document-1', ['event-1'], tx))
+    ).toThrow(DocChannelCorruptionError);
+  });
+});

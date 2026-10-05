@@ -1,5 +1,11 @@
 /** Strict, transport-independent document channel contracts. No transport is enabled here. */
 import { z } from 'zod';
+import { CanvasDocIncarnationSchema } from './canvas-doc-incarnation.js';
+export {
+  CanvasDocIncarnationSchema,
+  sameCanvasDocIncarnation,
+  type CanvasDocIncarnation,
+} from './canvas-doc-incarnation.js';
 import {
   CANVAS_CHANNEL_ENVELOPE_BYTES,
   CanvasChannelJsonValueSchema,
@@ -100,9 +106,14 @@ export const CanvasChannelFrameSchema = z
     scope: IdentifierSchema,
     documentId: IdentifierSchema,
     docSeq: CanvasChannelSequenceSchema,
+    incarnation: CanvasDocIncarnationSchema.optional(),
     event: CanvasChannelEventSchema,
   })
-  .strict();
+  .strict()
+  .refine((value) => !Object.hasOwn(value, 'incarnation') || value.incarnation !== undefined, {
+    message: 'A supplied document incarnation must be complete',
+    path: ['incarnation'],
+  });
 /** One channel frame. */
 export type CanvasChannelFrame = z.infer<typeof CanvasChannelFrameSchema>;
 
@@ -341,9 +352,25 @@ export const CanvasChannelHealthSchema = z
   })
   .strict();
 /** Replay and reset projection; state is not document content. */
-export const CanvasChannelReplayResponseSchema = z
+/** Current server-verified route readiness, never inferred from declarations or page data. */
+export const CanvasChannelRoutingSchema = z
   .object({
+    enabled: z.boolean(),
+    approvedEventTypes: z.array(CanvasChannelEventPatternSchema).max(2048),
+    destinationLabel: z.string().max(500),
+  })
+  .strict();
+export type CanvasChannelRouting = z.infer<typeof CanvasChannelRoutingSchema>;
+/** Own undefined is a malformed supplied birth, not genuine legacy absence. */
+function hasCompleteSuppliedIncarnation(value: { incarnation?: unknown }): boolean {
+  return !Object.hasOwn(value, 'incarnation') || value.incarnation !== undefined;
+}
+/** Unrefined base allows snapshot projection before applying the identical birth check. */
+const canvasChannelReplayBaseSchema = z
+  .object({
+    routing: CanvasChannelRoutingSchema.optional(),
     events: z.array(CanvasChannelFrameSchema).max(200),
+    incarnation: CanvasDocIncarnationSchema.optional(),
     state: CanvasChannelStateSchema,
     stateRev: CanvasChannelSequenceSchema,
     highWatermark: CanvasChannelSequenceSchema,
@@ -354,6 +381,13 @@ export const CanvasChannelReplayResponseSchema = z
     receipts: z.array(CanvasChannelEventReceiptSchema).max(200),
   })
   .strict();
+export const CanvasChannelReplayResponseSchema = canvasChannelReplayBaseSchema.refine(
+  hasCompleteSuppliedIncarnation,
+  {
+    message: 'A supplied document incarnation must be complete',
+    path: ['incarnation'],
+  }
+);
 /** Replay projection. */
 export type CanvasChannelReplayResponse = z.infer<typeof CanvasChannelReplayResponseSchema>;
 
@@ -636,3 +670,24 @@ export const CanvasChannelCheckboxReceiptSchema = z.discriminatedUnion('status',
     })
     .strict(),
 ]);
+
+/** Current document state on a scope stream; it carries no transcript or room-entry cursor. */
+export const CanvasChannelSnapshotFrameSchema = z
+  .object({
+    type: z.literal('canvas_channel_snapshot'),
+    scope: IdentifierSchema,
+    documentId: IdentifierSchema,
+    snapshot: canvasChannelReplayBaseSchema
+      .omit({ events: true })
+      .refine(hasCompleteSuppliedIncarnation, {
+        message: 'A supplied document incarnation must be complete',
+        path: ['incarnation'],
+      }),
+  })
+  .strict();
+/** Document notification union shared by both scope protocols. */
+export const CanvasChannelNotificationSchema = z.union([
+  CanvasChannelFrameSchema,
+  CanvasChannelSnapshotFrameSchema,
+]);
+export type CanvasChannelNotification = z.infer<typeof CanvasChannelNotificationSchema>;
