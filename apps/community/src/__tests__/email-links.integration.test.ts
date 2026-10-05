@@ -685,11 +685,11 @@ describe('asking for a reset link', () => {
     expect((await askGenerous()).status).toBe(429);
   });
 
-  it('throttles the 4th mail of a kind an hour and the 21st a day to one address, and at the host cap (T7)', async () => {
+  it('throttles the 4th mail of a kind an hour and the 73rd a day to one address, and at the host cap (T7)', async () => {
     // Purpose: fails if one address can be mail-bombed past its caps, or the host past its
     // hourly total; the request still answers 202 each time.
     await account('t7-day@example.com', { confirmed: true });
-    for (let i = 0; i < 20; i++)
+    for (let i = 0; i < 72; i++)
       await pool.query(
         `INSERT INTO email_link_requests(kind,email_hash,state,resolved_at,created_at)
          VALUES('password_reset',$1,'queued',now()-interval '2 hours',now()-interval '2 hours')`,
@@ -726,6 +726,30 @@ describe('asking for a reset link', () => {
       [hmacSecret('t7-host@example.com', SECRET)]
     );
     expect(host.rows[0].state).toBe('throttled');
+  });
+
+  it("never lets a stranger's resets use up a person's confirmation or sign-in mail (T7)", async () => {
+    // Purpose: fails if anonymous reset requests on someone's address count against the mail
+    // that address gets for its own confirmation or sign-in link.
+    const { userId } = await account('t7-kinds@example.com');
+    const hash = hmacSecret('t7-kinds@example.com', SECRET);
+    // A day of resets a stranger asked for, the hourly cap spent every hour, and this hour's too.
+    for (let i = 0; i < 75; i++)
+      await pool.query(
+        `INSERT INTO email_link_requests(kind,email_hash,state,resolved_at,created_at)
+         VALUES('password_reset',$1,'queued',now()-$2::interval,now()-$2::interval)`,
+        [hash, `${i * 19} minutes`]
+      );
+    const session = cookieOf(await passwordSignIn('t7-kinds@example.com'));
+    expect(
+      (await call(on, '/api/v1/account/email-confirmation', 'POST', undefined, session)).status
+    ).toBe(202);
+    await deliverAll();
+    const latest = await pool.query<{ state: string }>(
+      `SELECT state FROM email_link_requests WHERE user_id=$1 AND kind='email_confirmation'`,
+      [userId]
+    );
+    expect(latest.rows).toEqual([{ state: 'queued' }]);
   });
 
   it("never lets a stranger block a person's reset for longer than the hour (T7)", async () => {
@@ -1378,6 +1402,10 @@ describe('a confirmation link', () => {
     // password, connection or agent key working, or confirms without replacing a password the
     // squatter knows.
     const { userId, memberId } = await account('t2b@example.com');
+    await pool.query(
+      `INSERT INTO account(id,"accountId","providerId","userId") VALUES($1,'gh-t2b','github',$2)`,
+      [randomUUID(), userId]
+    );
     const squatter = cookieOf(await passwordSignIn('t2b@example.com'));
     const access = await derivedAccess(userId, memberId);
     const { session, token } = await confirmationToken('t2b@example.com');
@@ -1395,6 +1423,8 @@ describe('a confirmation link', () => {
         'pairings',
         'invites',
         'host_api_keys',
+        'password',
+        'sign_in_links',
       ],
     });
     const missing = await confirm(token, session);
@@ -1408,10 +1438,44 @@ describe('a confirmation link', () => {
     expect(await whoIs(session)).toBe('t2b@example.com');
     expect((await passwordSignIn('t2b@example.com')).status).toBe(401);
     expect((await passwordSignIn('t2b@example.com', NEW_PASSWORD)).status).toBe(200);
+    // The squatter's GitHub sign-in goes too: it was made with an address that wasn't theirs.
+    expect(await providersOf(userId)).toEqual(['credential']);
     expect(await access.revoked()).toMatchObject({ grant: true, agent: true });
     expect(await verified(userId)).toBe(true);
     expect(await audit(memberId, 'member.email_confirmed')).toEqual([['link']]);
     expect(await audit(memberId, 'member.password_reset')).toEqual([['password', 'confirm']]);
+  });
+
+  it('asks a provider-made account for a password too, so it never ends with no way in (T2b)', async () => {
+    // Purpose: fails if a never-confirmed account with no password (made through a sign-in
+    // service) confirms while keeping that sign-in, or is confirmed into having no way in.
+    const { userId } = await account('t2b-provider@example.com', { password: null });
+    await pool.query(
+      `INSERT INTO account(id,"accountId","providerId","userId") VALUES($1,'gh-t2bp','github',$2)`,
+      [randomUUID(), userId]
+    );
+    // The owner was handed a session (a password set just for that, then dropped below).
+    await pool.query(
+      `INSERT INTO account(id,"accountId","providerId","userId",password)
+       VALUES($1,$2,'credential',$2,$3)`,
+      [randomUUID(), userId, await hashPassword(PASSWORD)]
+    );
+    const { session, token } = await confirmationToken('t2b-provider@example.com');
+    await pool.query(`DELETE FROM account WHERE "userId"=$1 AND "providerId"='credential'`, [
+      userId,
+    ]);
+    const peek = await (
+      await call(on, '/api/v1/email-links/peek', 'POST', { token }, session)
+    ).json();
+    expect(peek.needsPassword).toBe(true);
+    const missing = await confirm(token, session);
+    expect(missing.status).toBe(400);
+    expect(await codeOf(missing)).toBe('PASSWORD_REQUIRED');
+    expect(await verified(userId)).toBe(false);
+    const confirmed = await confirm(token, session, NEW_PASSWORD);
+    expect(confirmed.status).toBe(200);
+    expect(await providersOf(userId)).toEqual(['credential']);
+    expect((await passwordSignIn('t2b-provider@example.com', NEW_PASSWORD)).status).toBe(200);
   });
 
   it('on an already confirmed account confirms nothing new and clears nothing', async () => {
@@ -1427,6 +1491,27 @@ describe('a confirmation link', () => {
 });
 
 describe('Better Auth', () => {
+  it('refuses a provider sign-up whose email the provider did not verify', async () => {
+    // Purpose: the squat by provider. Fails if someone holding an invitation can make an account
+    // through GitHub or Google with an address the provider never verified, which leaves a
+    // sign-in that is theirs on an account with someone else's address.
+    github = { id: 9001, email: 'unverified-signup@example.com', verified: false };
+    const issued = await call(on, '/api/v1/invites', 'POST', { seats: 1 }, ownerCookie);
+    const { token } = (await issued.json()) as { token: string };
+    const preflight = await call(on, '/api/v1/invites/preflight', 'POST', { token });
+    const result = await providerSignIn(on, 'github', cookieOf(preflight));
+    expect(result.error).toBe('email_not_verified');
+    expect(await whoIs(result.cookie)).toBeNull();
+    const made = await pool.query(
+      `SELECT 1 FROM "user" WHERE email='unverified-signup@example.com'`
+    );
+    expect(made.rowCount).toBe(0);
+    // The same person, once GitHub vouches for the address, can join.
+    github = { id: 9001, email: 'unverified-signup@example.com', verified: true };
+    const again = await providerSignIn(on, 'github', cookieOf(preflight));
+    expect(again.location.pathname).toBe('/signed-in');
+  });
+
   it('cannot confirm an email on a provider sign-in (T21)', async () => {
     // Purpose: fails if Better Auth's own "verified provider email" update confirms a squatted
     // account with no clean-out, so the next reset would keep the squatter's provider link.

@@ -82,6 +82,8 @@ const MESSAGES: Record<string, string> = {
   account_not_linked:
     "That sign-in didn't confirm your email, so it wasn't linked. Sign in with your password.",
   link_needs_password: 'This email already has an account here.',
+  email_not_verified:
+    "That sign-in service hasn't confirmed your email. Confirm it there, then try again.",
   sign_in_refused: "This account can't sign in right now.",
   unable_to_get_user_info:
     'Single sign-on could not confirm who you are, so you were not signed in. Try again, or sign in with your password.',

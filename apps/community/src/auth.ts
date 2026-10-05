@@ -222,6 +222,15 @@ export function createCommunityAuth(
       user: {
         create: {
           before: async (user, ctx) => {
+            // A Google, GitHub or single sign-on sign-up must come with an email its provider
+            // verified. Otherwise anyone could make an account here, with a sign-in that outlives
+            // every reset, using an address that isn't theirs. (Linking an identity to an
+            // existing account already needs a verified email; this closes the sign-up.)
+            if (isProviderCallback(ctx) && user.emailVerified !== true)
+              throw new APIError('FORBIDDEN', {
+                code: 'email_not_verified',
+                message: "Your sign-in service hasn't confirmed this email.",
+              });
             const admission = await checkAdmission(ctx?.headers?.get('cookie') ?? null);
             if (!admission) {
               // The code lets an OAuth or OIDC callback redirect with `?error=invitation_required`.
@@ -397,6 +406,14 @@ export function createCommunityAuth(
       ? handler(request)
       : withRequestStart(pool, () => handler(request));
   return auth;
+}
+
+/** Whether this Better Auth request is a provider's redirect back (Google, GitHub, single sign-on). */
+function isProviderCallback(ctx: { path?: string } | null | undefined): boolean {
+  return (
+    ctx?.path?.startsWith('/callback/') === true ||
+    ctx?.path?.startsWith('/oauth2/callback/') === true
+  );
 }
 
 /** The refusal a sign-in gets when the account was cleared while it was under way. */

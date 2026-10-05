@@ -63,6 +63,10 @@ describe('clearsFor', () => {
     expect(clearsFor('sign_in', true)).toEqual([]);
     expect(clearsFor('sign_in', false)).toEqual([...access, 'password', 'sign_in_links']);
     expect(clearsFor('email_confirmation', true)).toEqual([]);
-    expect(clearsFor('email_confirmation', false)).toEqual(access);
+    expect(clearsFor('email_confirmation', false)).toEqual([
+      ...access,
+      'password',
+      'sign_in_links',
+    ]);
   });
 });

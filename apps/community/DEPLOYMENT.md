@@ -64,7 +64,7 @@ Most people can keep the default limits. Restart the service after changing one.
 
 `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE` also counts every use of the links for replacing an owner: keeping ownership, and checking or redeeming a claim.
 
-`COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE` limits how often one address can ask for a password reset, sign-in or confirmation link; one address can also ask at most 20 times an hour. `COMMUNITY_EMAIL_LINKS_PER_HOUR` limits how many such links your whole server emails in an hour, so a flood of requests cannot hurt your sender's reputation. Separately, one email address gets at most 3 links of each kind an hour and 20 a day, so a stranger asking on someone's behalf can delay their link by an hour at most. Both settings matter only with [mail](#optional-mail) set up.
+`COMMUNITY_EMAIL_LINK_REQUESTS_PER_MINUTE` limits how often one address can ask for a password reset, sign-in or confirmation link; one address can also ask at most 20 times an hour. `COMMUNITY_EMAIL_LINKS_PER_HOUR` limits how many such links your whole server emails in an hour, so a flood of requests cannot hurt your sender's reputation. Separately, one email address gets at most 3 links of each kind an hour and 72 a day, so a stranger asking on someone's behalf can delay their link by an hour at most, and their reset requests never use up the address's sign-in or confirmation links. Both settings matter only with [mail](#optional-mail) set up.
 
 Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
 
@@ -134,7 +134,7 @@ https://community.example.com/api/auth/callback/oidc
 
 The service reads `<issuer>/.well-known/openid-configuration` the first time someone uses the button, not at startup, so a provider outage never stops the Community. That document must name exactly the issuer you set, and every address in it must be `https://`. If the provider does not answer within 10 seconds, or the document fails those checks, the button says single sign-on is unavailable, and the service asks again 30 seconds later. Sign-in uses PKCE, and every sign-in needs an ID token signed with the provider's published keys. People sign in only through the provider's own page; the service never accepts an ID token handed to it directly.
 
-Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused.
+Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. The same goes for a new account made through Google or GitHub: one whose email the service has not verified is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused.
 
 ### When the email already has an account here
 

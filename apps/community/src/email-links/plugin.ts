@@ -164,6 +164,9 @@ export function communityEmailLinks(deps: EmailLinkPluginDeps): BetterAuthPlugin
             { token: ctx.body.token, kind: 'password_reset', pendingHash: null },
             async (client, link, memberIds) => {
               const confirmed = link.account.emailVerified;
+              // Used up first and explicitly, as every other use does; the clean-out below then
+              // deletes it with the account's other links.
+              await consumeLink(client, hashSecret(ctx.body.token));
               await writePassword(client, link.account.id, hash);
               const { xid } = await clearAccountAccess(
                 client,

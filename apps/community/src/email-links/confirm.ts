@@ -18,14 +18,7 @@ import { hashSecret } from '../security.js';
 import { clearAccountAccess } from '../sign-in/account-access.js';
 import { markAccessCleared } from '../sign-in/request-start.js';
 import { clearsFor, emailLinksUnavailable } from './model.js';
-import {
-  auditAccount,
-  checkLink,
-  consumeLink,
-  lockLinkAccount,
-  needsNewPassword,
-  writePassword,
-} from './tokens.js';
+import { auditAccount, checkLink, consumeLink, lockLinkAccount, writePassword } from './tokens.js';
 
 const EXPIRED = 'This link expired or was already used.';
 
@@ -73,8 +66,9 @@ async function signedInAs(c: Context, auth: CommunityAuth) {
  * alone is not enough: it must be used by a session of the same account. A squatter who made an
  * account with someone else's address holds a session but not the mailbox; the address's owner
  * holds the mailbox but not the session. Neither can confirm alone. Confirming an email that was
- * never confirmed also ends every other session and every derived credential, and needs a new
- * password when the account has one, because a squatter can simply hand the owner the password.
+ * never confirmed also ends every other session, every provider sign-in and every derived
+ * credential, and always sets a new password: a squatter can hand the owner the password, or
+ * have made the account through a sign-in service in the first place.
  */
 export function registerEmailLinkUseRoutes(app: Hono, deps: EmailLinkUseDeps): void {
   const { pool, auth, config } = deps;
@@ -101,10 +95,9 @@ export function registerEmailLinkUseRoutes(app: Hono, deps: EmailLinkUseDeps): v
       email: check.account.email,
       expiresAt: check.expiresAt.toISOString(),
       clears: clearsFor(kind, confirmed),
-      needsPassword:
-        kind === 'email_confirmation' &&
-        !confirmed &&
-        (await needsNewPassword(pool, check.account.id)),
+      // Confirming a never-confirmed email removes every way in but this session, so it always
+      // sets a new password: the account is never left with none.
+      needsPassword: kind === 'email_confirmation' && !confirmed,
       signedInAs: await signedInAs(c, auth),
     });
   });
@@ -136,9 +129,9 @@ export function registerEmailLinkUseRoutes(app: Hono, deps: EmailLinkUseDeps): v
         await consumeLink(client, tokenHash);
         return { cleared: 'none' as const, xid: null };
       }
-      if (hash === null && (await needsNewPassword(client, userId)))
+      if (hash === null)
         throw new ApiError(400, 'PASSWORD_REQUIRED', 'Choose a new password to confirm.');
-      if (hash !== null) await writePassword(client, userId, hash);
+      await writePassword(client, userId, hash);
       await consumeLink(client, tokenHash);
       await client.query(
         `UPDATE email_link_tokens SET superseded_at=now()
@@ -150,16 +143,16 @@ export function registerEmailLinkUseRoutes(app: Hono, deps: EmailLinkUseDeps): v
         client,
         userId,
         locked.memberIds,
-        { password: true, links: true, sessionId: session.session.id },
+        // Provider sign-ins go too: one made at a squatter's sign-up is not the owner's.
+        { password: true, links: false, sessionId: session.session.id },
         'system'
       );
       await client.query('UPDATE "user" SET "emailVerified"=true WHERE id=$1', [userId]);
       await auditAccount(client, locked.memberIds, 'member.email_confirmed', ['link']);
-      if (hash !== null)
-        await auditAccount(client, locked.memberIds, 'member.password_reset', [
-          'password',
-          'confirm',
-        ]);
+      await auditAccount(client, locked.memberIds, 'member.password_reset', [
+        'password',
+        'confirm',
+      ]);
       return { cleared: 'others' as const, xid };
     });
     if ('refusal' in outcome) throw outcome.refusal;

@@ -71,14 +71,14 @@ async function overCap(
   now: Date,
   hostPerHour: number
 ): Promise<boolean> {
-  // The hourly cap is per kind, so a stranger's reset requests never use up the owner's sign-in
-  // or confirmation mail, and it clears within the hour.
+  // Both caps are per kind, so a stranger's reset requests never use up the owner's sign-in or
+  // confirmation mail, and the daily one is never tighter than the hourly one over a day.
   const address = await client.query<{ hour: number; day: number }>(
-    `SELECT count(*) FILTER (
-              WHERE kind=$3 AND resolved_at > $2::timestamptz - interval '1 hour')::int AS hour,
+    `SELECT count(*) FILTER (WHERE resolved_at > $2::timestamptz - interval '1 hour')::int AS hour,
             count(*)::int AS day
      FROM email_link_requests
-     WHERE email_hash=$1 AND state='queued' AND resolved_at > $2::timestamptz - interval '24 hours'`,
+     WHERE email_hash=$1 AND kind=$3 AND state='queued'
+       AND resolved_at > $2::timestamptz - interval '24 hours'`,
     [request.email_hash, now, request.kind]
   );
   const { hour, day } = address.rows[0];

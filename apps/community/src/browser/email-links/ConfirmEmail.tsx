@@ -95,9 +95,14 @@ export function ConfirmEmail() {
               <p className="muted mb-2">
                 Confirming signs out your other devices and ends DorkOS connections.
               </p>
-              <p className="muted mb-4">
+              <p className="muted mb-2">
                 It also ends agent keys, pairings, invitation links and server API keys.
               </p>
+              {peek.clears.includes('sign_in_links') && (
+                <p className="muted mb-4">
+                  Your old password and Google, GitHub or single sign-on sign-ins end too.
+                </p>
+              )}
             </>
           )}
           {peek.needsPassword && (

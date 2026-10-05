@@ -39,11 +39,11 @@ export const EMAIL_LINK_CAPS = {
   /** Mails of one kind queued to one address in any hour. */
   perAddressPerHour: 3,
   /**
-   * Mails queued to one address in any 24 hours, across every kind: only a flood stops here. Kept
-   * well above what the hourly cap lets a stranger spend on someone else's address in a few
-   * hours, so nobody can block a person's reset for a day by asking for it on their behalf.
+   * Mails of one kind queued to one address in any 24 hours: a backstop no faster than the hourly
+   * cap (3 × 24), so someone staying under that cap never blocks a person for a day. Counted per
+   * kind, so anonymous reset requests never use up a person's sign-in or confirmation mail.
    */
-  perAddressPerDay: 20,
+  perAddressPerDay: 72,
   /** Sign-in or confirmation requests one account may make in an hour, per kind. */
   perAccountPerHour: 3,
   /** Requests one caller address (an IPv6 /64) may make in an hour, beside the minute setting. */
@@ -92,10 +92,10 @@ export const EVERYTHING_CLEARS = [...ACCESS_CLEARS, 'password', 'sign_in_links']
  * What using a link ends, by key, so the page can list it before the person submits. A reset
  * on a confirmed account ends derived access and keeps provider sign-ins; on a never-confirmed
  * account it ends everything. A sign-in link ends nothing on a confirmed account. Confirming a
- * never-confirmed email ends derived access, with `sessions` meaning other devices.
+ * never-confirmed email ends everything too, with `sessions` meaning other devices.
  */
 export function clearsFor(kind: EmailLinkKind, confirmed: boolean): string[] {
   if (kind === 'password_reset') return [...(confirmed ? ACCESS_CLEARS : EVERYTHING_CLEARS)];
   if (confirmed) return [];
-  return [...(kind === 'sign_in' ? EVERYTHING_CLEARS : ACCESS_CLEARS)];
+  return [...EVERYTHING_CLEARS];
 }

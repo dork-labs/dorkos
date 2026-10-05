@@ -36,15 +36,6 @@ export async function passwordFingerprint(client: Queryable, userId: string): Pr
   return hash ? hashSecret(hash) : 'none';
 }
 
-/** Whether the account has a password row at all. */
-async function hasCredential(client: Queryable, userId: string): Promise<boolean> {
-  const row = await client.query(
-    `SELECT 1 FROM account WHERE "userId"=$1 AND "providerId"='credential'`,
-    [userId]
-  );
-  return Boolean(row.rowCount);
-}
-
 /**
  * Whether `pendingHash` names a live sign-in hold for this account: the hold the request named,
  * still unused and unexpired.
@@ -185,11 +176,6 @@ export async function consumeLink(client: PoolClient, tokenHash: string): Promis
     'UPDATE email_link_tokens SET consumed_at=now() WHERE token_hash=$1 AND consumed_at IS NULL',
     [tokenHash]
   );
-}
-
-/** Whether confirming this never-confirmed account must also set a new password. */
-export function needsNewPassword(client: Queryable, userId: string): Promise<boolean> {
-  return hasCredential(client, userId);
 }
 
 /**
