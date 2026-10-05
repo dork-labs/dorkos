@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(sessions): a started session keeps the id it was given, and an unknown id is a 404 (DOR-2712)'
+  - 'fix(sessions): review fixes — retries still create, chip reads the session record, docs (DOR-2712)'
+  - 'fix(sessions): second-round review fixes (DOR-2712)'
 ---
 
 ### Fixed
