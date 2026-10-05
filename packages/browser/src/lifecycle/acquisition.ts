@@ -334,7 +334,7 @@ export async function acquireBrowser(
       record.lifetime.uncertain = true;
       return;
     }
-    const tab = trackPage(record, page, config.network.origin, diagnosticNow);
+    const tab = trackPage(record, page, config.network.origin, diagnosticNow, context);
     if (ordinaryRecord(record) && record.status === 'running' && !record.lifetime.gate.stopped) {
       try {
         composeInput(config, record, tab);

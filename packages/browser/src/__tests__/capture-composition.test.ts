@@ -11,6 +11,19 @@ vi.mock('../runtime/host-identity.js', () => ({
   hostIdentity: () => ({ pid: 41, birth: 'MOCK_ROOT' }),
 }));
 vi.mock('../lifecycle/acquisition.js', () => ({ acquireBrowser: vi.fn() }));
+
+function viewportPopup() {
+  const popup = fakePage();
+  let size: { width: number; height: number } | null = null;
+  Object.assign(popup.raw, {
+    viewportSize: () => size,
+    setViewportSize: vi.fn(async (next: { width: number; height: number }) => {
+      size = next;
+    }),
+  });
+  return popup;
+}
+
 const capture = (h: ReturnType<typeof tabFixture>) =>
   captureTab(configuration(), h.record, {
     kind: 'capture',
@@ -476,3 +489,545 @@ it('a known ordinary fence refuses capture before screenshot observation', async
   ).rejects.toMatchObject({ code: 'STALE_BINDING' });
   expect(h.raw.screenshot).toHaveBeenCalledTimes(0);
 });
+
+it('delayed same-origin popup first commit preserves its exact opener and original capture target', async () => {
+  const { trackPage } = await import('../tabs/registry.js');
+  const h = tabFixture();
+  const popup = viewportPopup();
+  let url = 'about:blank';
+  const frame = { url: () => url };
+  h.record.context = h.page.context();
+  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
+  Object.assign(popup.raw, {
+    context: () => h.record.context,
+    opener: async () => h.page,
+    url: () => url,
+    mainFrame: () => frame,
+  });
+  const original = { ...h.tab.binding };
+  const second = trackPage(
+    h.record,
+    popup.page,
+    configuration().network.origin,
+    () => 0,
+    h.record.context
+  );
+  await composeInput(configuration(), h.record, second).readiness;
+  await tick();
+  expect(second.binding.tabId).not.toBe(original.tabId);
+  const blank = { ...second.binding };
+  await expect(
+    captureTab(configuration(), h.record, {
+      kind: 'capture',
+      requestId: h.command().requestId,
+      binding: blank,
+    })
+  ).rejects.toMatchObject({ code: 'STALE_BINDING' });
+  expect(popup.raw.screenshot).not.toHaveBeenCalled();
+  url = configuration().network.origin + '/popup';
+  popup.event('framenavigated', frame);
+  await tick();
+  expect(h.record.lifetime.ordinary.phase).toBe('ordinary');
+  expect(second.stopped).toBe(false);
+  expect(second.binding.navigationGeneration).toBe(1);
+  expect(h.tab.binding).toEqual(original);
+  expect((await capture(h)).receipt.binding).toEqual(original);
+  expect(popup.raw.screenshot).not.toHaveBeenCalled();
+  expect(
+    (
+      await submitInput(h.record, {
+        ...h.command(blank),
+        steps: [{ kind: 'mouseMove', x: 1, y: 2 }],
+      })
+    ).outcome
+  ).toBe('rejected');
+  expect(
+    (
+      await submitInput(h.record, {
+        ...h.command(second.binding),
+        steps: [{ kind: 'mouseMove', x: 1, y: 2 }],
+      })
+    ).outcome
+  ).toBe('completed');
+  url = configuration().network.origin + '/second';
+  popup.event('framenavigated', frame);
+  await tick();
+  expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
+  await closeRecord(configuration(), h.record);
+});
+
+it.each([
+  'missing-opener',
+  'foreign-context',
+  'enumerated-page',
+  'foreign-origin',
+  'competing-commit',
+] as const)('refuses ambiguous first popup navigation: %s', async (refusal) => {
+  const { trackPage } = await import('../tabs/registry.js');
+  const h = tabFixture(),
+    popup = viewportPopup();
+  let url = 'about:blank';
+  const frame = { url: () => url };
+  h.record.context = h.page.context();
+  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
+  Object.assign(popup.raw, {
+    context: () => (refusal === 'foreign-context' ? popup.context : h.record.context),
+    opener: async () => (refusal === 'missing-opener' ? null : h.page),
+    url: () => url,
+    mainFrame: () => frame,
+  });
+  const second = trackPage(
+    h.record,
+    popup.page,
+    configuration().network.origin,
+    () => 0,
+    refusal === 'enumerated-page' ? undefined : h.record.context
+  );
+  if (h.record.lifetime.ordinary.phase === 'ordinary') {
+    const ready = composeInput(configuration(), h.record, second).readiness;
+    if (refusal === 'missing-opener')
+      await expect(ready).rejects.toMatchObject({ code: 'BROWSER_STOPPED' });
+    else await ready;
+  }
+  url =
+    refusal === 'foreign-origin'
+      ? 'https://foreign.invalid/popup'
+      : configuration().network.origin + '/popup';
+  popup.event('framenavigated', frame);
+  if (refusal === 'competing-commit') popup.event('framenavigated', frame);
+  await tick();
+  expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
+  expect(popup.raw.screenshot).not.toHaveBeenCalled();
+  await closeRecord(configuration(), h.record);
+});
+
+it('first popup commit waits for its original held opener and native input readiness', async () => {
+  const { trackPage } = await import('../tabs/registry.js');
+  const h = tabFixture(),
+    popup = viewportPopup();
+  const opener = deferred<import('playwright-core').Page | null>();
+  const session = deferred<import('playwright-core').CDPSession>();
+  let url = 'about:blank';
+  const frame = { url: () => url };
+  h.record.context = h.page.context();
+  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
+  h.context.newCDPSession.mockImplementation(() => session.promise);
+  Object.assign(popup.raw, {
+    context: () => h.record.context,
+    opener: () => opener.promise,
+    url: () => url,
+    mainFrame: () => frame,
+  });
+  const tab = trackPage(
+    h.record,
+    popup.page,
+    configuration().network.origin,
+    () => 0,
+    h.record.context
+  );
+  const ready = composeInput(configuration(), h.record, tab).readiness;
+  const before = { ...tab.binding };
+  url = configuration().network.origin + '/popup';
+  popup.event('framenavigated', frame);
+  await tick();
+  expect(tab.binding).toEqual(before);
+  expect((await submitInput(h.record, h.command(before))).outcome).toBe('rejected');
+  expect(popup.effects).toEqual([]);
+  opener.resolve(h.page);
+  await tick();
+  expect(tab.binding).toEqual(before);
+  session.resolve(popup.session as unknown as import('playwright-core').CDPSession);
+  await ready;
+  await tick();
+  expect(h.record.lifetime.ordinary.phase).toBe('ordinary');
+  expect(tab.binding.navigationGeneration).toBe(1);
+  expect((await submitInput(h.record, h.command(tab.binding))).outcome).toBe('completed');
+  await closeRecord(configuration(), h.record);
+});
+
+it('popup generation handoff fences actions while preserving original input custody', async () => {
+  const { trackPage } = await import('../tabs/registry.js');
+  const { currentAuthorityCustody } = await import('../lifecycle/live-custody.js');
+  const h = tabFixture(),
+    popup = viewportPopup();
+  let url = 'about:blank';
+  const frame = { url: () => url };
+  h.record.context = h.page.context();
+  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
+  // Controlled acquisition metadata exercises the real custody predicate, not native qualification.
+  h.record.proxy = { url: configuration().network.origin, close: async () => {} };
+  h.record.directory = h.record.dataRoot = { path: 'CONTROLLED_DIRECTORY', dev: 1, ino: 1 };
+  await composeInput(configuration(), h.record, h.tab).readiness;
+  Object.assign(popup.raw, {
+    context: () => h.record.context,
+    opener: async () => h.page,
+    url: () => url,
+    mainFrame: () => frame,
+  });
+  const tab = trackPage(
+    h.record,
+    popup.page,
+    configuration().network.origin,
+    () => 0,
+    h.record.context
+  );
+  const slot = composeInput(configuration(), h.record, tab);
+  await slot.readiness;
+  const old = { ...tab.binding };
+  const observe = () => currentAuthorityCustody(h.record, () => true);
+  expect(observe()).toBe(true);
+  const gap = deferred<{
+    captureCode: string;
+    input: string;
+    known: boolean;
+    ordinary: boolean;
+    nativeEffects: number;
+  }>();
+  const replaceEpoch = tab.diagnostics.replaceEpoch.bind(tab.diagnostics);
+  tab.diagnostics = {
+    ...tab.diagnostics,
+    replaceEpoch: () => {
+      replaceEpoch();
+      // This runs after the registry changes generation, before the input-owner adoption continuation.
+      queueMicrotask(() => {
+        const known = observe();
+        const ordinary = h.record.lifetime.ordinary.phase === 'ordinary';
+        const captureAttempt = captureTab(configuration(), h.record, {
+          kind: 'capture',
+          requestId: h.command().requestId,
+          binding: { ...tab.binding },
+        }).then(
+          () => 'PUBLISHED',
+          (error: { code: string }) => error.code
+        );
+        const inputAttempt = submitInput(h.record, h.command(tab.binding));
+        void Promise.all([captureAttempt, inputAttempt]).then(([captureCode, input]) => {
+          gap.resolve({
+            captureCode,
+            input: input.outcome,
+            known,
+            ordinary,
+            nativeEffects: popup.effects.length,
+          });
+        }, gap.reject);
+      });
+    },
+  };
+  url = configuration().network.origin + '/popup';
+  popup.event('framenavigated', frame);
+  expect(await gap.promise).toEqual({
+    captureCode: 'STALE_BINDING',
+    input: 'rejected',
+    known: true,
+    ordinary: true,
+    nativeEffects: 0,
+  });
+  await tick();
+  expect(observe()).toBe(true);
+  expect(tab.binding.navigationGeneration).toBe(old.navigationGeneration + 1);
+  expect((await submitInput(h.record, h.command(old))).outcome).toBe('rejected');
+  expect((await submitInput(h.record, h.command(tab.binding))).outcome).toBe('completed');
+  expect(
+    (
+      await captureTab(configuration(), h.record, {
+        kind: 'capture',
+        requestId: h.command().requestId,
+        binding: tab.binding,
+      })
+    ).receipt.binding
+  ).toEqual(tab.binding);
+  await closeRecord(configuration(), h.record);
+});
+
+it('original pending popup acquisition preserves authority before session and queue publication', async () => {
+  const { trackPage } = await import('../tabs/registry.js');
+  const { currentAuthorityCustody } = await import('../lifecycle/live-custody.js');
+  const h = tabFixture(),
+    popup = viewportPopup();
+  h.record.context = h.page.context();
+  Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
+  h.record.proxy = { url: configuration().network.origin, close: async () => {} };
+  h.record.directory = h.record.dataRoot = { path: 'CONTROLLED_DIRECTORY', dev: 1, ino: 1 };
+  await composeInput(configuration(), h.record, h.tab).readiness;
+  const session = deferred<import('playwright-core').CDPSession>();
+  h.context.newCDPSession.mockImplementation(() => session.promise);
+  Object.assign(popup.raw, {
+    context: () => h.record.context,
+    opener: async () => h.page,
+    url: () => 'about:blank',
+  });
+  const tab = trackPage(
+    h.record,
+    popup.page,
+    configuration().network.origin,
+    () => 0,
+    h.record.context
+  );
+  const slot = composeInput(configuration(), h.record, tab);
+  const observe = () => currentAuthorityCustody(h.record, () => true);
+  const pending = observe();
+  for (let index = 0; index < 3; index++) {
+    expect(observe()).toBe(true);
+    await tick();
+  }
+  expect((await submitInput(h.record, h.command(tab.binding))).outcome).toBe('rejected');
+  await expect(
+    captureTab(configuration(), h.record, {
+      kind: 'capture',
+      requestId: h.command().requestId,
+      binding: tab.binding,
+    })
+  ).rejects.toMatchObject({ code: 'STALE_BINDING' });
+  let target: typeof slot.registeredTarget;
+  const continuation = deferred<{ known: boolean; ready: boolean; target: boolean }>();
+  Object.defineProperty(slot, 'registeredTarget', {
+    configurable: true,
+    get: () => target,
+    set(value: typeof target) {
+      target = value;
+      queueMicrotask(() =>
+        continuation.resolve({
+          known: observe(),
+          ready: slot.ready,
+          target: !!slot.registeredTarget,
+        })
+      );
+    },
+  });
+  session.resolve(popup.session as unknown as import('playwright-core').CDPSession);
+  const beforeQueue = await continuation.promise;
+  await slot.readiness;
+  expect(pending).toBe(true);
+  expect(beforeQueue).toEqual({ known: true, ready: false, target: true });
+  expect(observe()).toBe(true);
+  expect(popup.effects).toEqual([]);
+  await closeRecord(configuration(), h.record);
+});
+
+it.each([
+  'missing-acquisition',
+  'copied-handle',
+  'unregistered-popup',
+  'failed-acquisition',
+  'wrong-context',
+  'expired',
+] as const)(
+  'pending popup custody refuses %s without adopting unknown originals',
+  async (refusal) => {
+    const { trackPage } = await import('../tabs/registry.js');
+    const { currentAuthorityCustody } = await import('../lifecycle/live-custody.js');
+    const h = tabFixture(),
+      popup = viewportPopup();
+    h.record.context = h.page.context();
+    Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
+    h.record.proxy = { url: configuration().network.origin, close: async () => {} };
+    h.record.directory = h.record.dataRoot = { path: 'CONTROLLED_DIRECTORY', dev: 1, ino: 1 };
+    await composeInput(configuration(), h.record, h.tab).readiness;
+    const native = deferred<import('playwright-core').CDPSession>();
+    h.context.newCDPSession.mockImplementation(() => {
+      if (refusal === 'missing-acquisition') throw Error('ORIGINAL_ACQUISITION_ABSENT');
+      return native.promise;
+    });
+    Object.assign(popup.raw, {
+      context: () => h.record.context,
+      opener: async () => h.page,
+      url: () => 'about:blank',
+    });
+    const tab = trackPage(
+      h.record,
+      popup.page,
+      configuration().network.origin,
+      () => 0,
+      refusal === 'unregistered-popup' ? undefined : h.record.context
+    );
+    const slot = composeInput(configuration(), h.record, tab);
+    const handle = slot.handle!;
+    const observe = () => currentAuthorityCustody(h.record, () => true);
+    let clock: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      if (refusal === 'copied-handle') slot.handle = Object.freeze({ ...handle });
+      if (refusal === 'wrong-context') popup.raw.context = () => popup.context;
+      if (refusal === 'failed-acquisition') {
+        native.reject(Error('ORIGINAL_ACQUISITION_FAILED'));
+        await tick();
+      }
+      if (refusal === 'expired')
+        clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 1600);
+      expect(observe()).toBe(false);
+      expect(popup.effects).toEqual([]);
+    } finally {
+      clock?.mockRestore();
+      slot.handle = handle;
+      popup.raw.context = () => h.context;
+      native.resolve(popup.session as unknown as import('playwright-core').CDPSession);
+      await Promise.allSettled([slot.readiness!]);
+      await tick();
+      if (
+        ['missing-acquisition', 'failed-acquisition', 'wrong-context', 'expired'].includes(refusal)
+      ) {
+        expect(observe()).toBe(false); // Late original return/lowered clock cannot revive the cohort.
+        expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
+      }
+      await closeRecord(configuration(), h.record);
+    }
+  }
+);
+
+it.each([
+  'accepted',
+  'foreign-popup',
+  'changed-url',
+  'changed-binding',
+  'missing-url',
+  'inconsistent-frame',
+  'foreign-context',
+  'removed-parent',
+] as const)('owned aboutblank popup pins the committed original opener: %s', async (variant) => {
+  const { trackPage } = await import('../tabs/registry.js');
+  const h = tabFixture(),
+    popup = viewportPopup(),
+    c = configuration();
+  c.network = { kind: 'owned', origin: 'about:blank', policyRevision: 1 };
+  let parentURL = 'http://127.0.0.1:9001/',
+    popupURL = 'about:blank';
+  const parentFrame = {
+    url: () => (variant === 'inconsistent-frame' ? 'http://different.invalid/' : parentURL),
+  };
+  const popupFrame = { url: () => popupURL };
+  h.record.context = h.page.context();
+  Object.assign(h.raw, {
+    url: () => (variant === 'missing-url' ? 'about:blank' : parentURL),
+    mainFrame: () => parentFrame,
+  });
+  Object.assign(popup.raw, {
+    context: () => h.record.context,
+    opener: async () => h.page,
+    url: () => popupURL,
+    mainFrame: () => popupFrame,
+  });
+  const native = deferred<import('playwright-core').CDPSession>();
+  h.context.newCDPSession.mockImplementation(() => native.promise);
+  const tab = trackPage(h.record, popup.page, c.network.origin, () => 0, h.record.context);
+  const readiness = composeInput(c, h.record, tab).readiness;
+  void readiness?.catch(() => {});
+  await tick();
+  if (variant === 'changed-url') parentURL = 'http://127.0.0.1:9002/';
+  if (variant === 'changed-binding')
+    h.tab.binding = {
+      ...h.tab.binding,
+      navigationGeneration: h.tab.binding.navigationGeneration + 1,
+    };
+  if (variant === 'foreign-context') Object.assign(h.raw, { context: () => popup.context });
+  if (variant === 'removed-parent') h.record.tabs.delete(h.tab.binding.tabId);
+  popupURL =
+    variant === 'foreign-popup' ? 'http://different.invalid/popup' : 'http://127.0.0.1:9001/popup';
+  popup.event('framenavigated', popupFrame);
+  await tick();
+  expect(tab.binding.navigationGeneration).toBe(0);
+  native.resolve(popup.session as unknown as import('playwright-core').CDPSession);
+  await tick();
+  if (variant === 'accepted') {
+    await readiness;
+    expect(tab.binding.navigationGeneration).toBe(1);
+    expect(h.record.lifetime.ordinary.phase).toBe('ordinary');
+    popupURL += '/second';
+    popup.event('framenavigated', popupFrame);
+    await tick();
+    expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
+  } else {
+    expect(tab.binding.navigationGeneration).toBe(0);
+    expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
+  }
+  await closeRecord(c, h.record);
+});
+
+it.each([
+  'returned',
+  'rejected',
+  'late',
+  'mutated',
+  'changed-page',
+  'changed-context',
+  'changed-binding',
+  'retired-while-held',
+] as const)(
+  'original null popup viewport must return exactly before first commit: %s',
+  async (variant) => {
+    const { trackPage } = await import('../tabs/registry.js');
+    const h = tabFixture(),
+      popup = viewportPopup(),
+      c = configuration();
+    c.network = { kind: 'owned', origin: 'about:blank', policyRevision: 1 };
+    h.record.context = h.page.context();
+    Object.assign(h.raw, { url: () => h.page.mainFrame().url() });
+    let url = 'about:blank',
+      size: { width: number; height: number } | null = null;
+    const frame = { url: () => url },
+      held = deferred<void>();
+    let entered = 0;
+    Object.assign(popup.raw, {
+      context: () => h.context,
+      opener: async () => h.page,
+      url: () => url,
+      mainFrame: () => frame,
+      viewportSize: () => size,
+      setViewportSize: async function (this: unknown, next: { width: number; height: number }) {
+        expect(this).toBe(popup.page);
+        entered++;
+        await held.promise;
+        size = variant === 'mutated' ? { width: 1, height: 1 } : next;
+      },
+    });
+    const tab = trackPage(h.record, popup.page, c.network.origin, () => 0, h.record.context);
+    const ready = composeInput(c, h.record, tab).readiness;
+    void ready?.catch(() => {});
+    await tick();
+    expect(entered).toBe(1);
+    expect(h.record.lifetime.pending.size).toBeGreaterThan(0);
+    expect(popup.page.viewportSize()).toBeNull();
+    url = 'http://127.0.0.1:9001/popup';
+    popup.event('framenavigated', frame);
+    await tick();
+    expect(tab.binding.navigationGeneration).toBe(0);
+    expect((await submitInput(h.record, h.command(tab.binding))).outcome).toBe('rejected');
+    expect(popup.effects).toEqual([]);
+    let clock: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      if (variant === 'late')
+        clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 1600);
+      if (variant === 'retired-while-held') {
+        h.record.lifetime.requestRetirement('engineFault');
+        await tick();
+        expect(h.record.lifetime.pending.size).toBeGreaterThan(0);
+        expect(size).toBeNull();
+      }
+      if (variant === 'changed-page') tab.page = fakePage().page;
+      if (variant === 'changed-context') Object.assign(popup.raw, { context: () => popup.context });
+      if (variant === 'changed-binding')
+        tab.binding = { ...tab.binding, epoch: tab.binding.epoch + 1 };
+      if (variant === 'rejected') held.reject(Error('ORIGINAL_VIEWPORT_FAILURE'));
+      else held.resolve();
+      await tick();
+      if (variant === 'returned') {
+        expect(tab.binding.navigationGeneration).toBe(1);
+        expect(popup.page.viewportSize()).toEqual({ width: 1280, height: 720 });
+        expect(
+          (
+            await submitInput(h.record, {
+              ...h.command(tab.binding),
+              steps: [{ kind: 'mouseMove', x: 50, y: 50 }],
+            })
+          ).outcome
+        ).toBe('completed');
+      } else {
+        expect(tab.binding.navigationGeneration).toBe(0);
+        expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
+        expect(popup.effects).toEqual([]);
+      }
+      expect(entered).toBe(1);
+    } finally {
+      clock?.mockRestore();
+      await closeRecord(c, h.record);
+    }
+  }
+);

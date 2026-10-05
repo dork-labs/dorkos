@@ -1,4 +1,5 @@
 import { commitInitialNavigation } from '../lifecycle/initial-navigation-state.js';
+import { observePopup, commitPopup } from './popup-navigation.js';
 import { createPointerLedger } from './pointer.js';
 import { ordinaryRecord } from '../lifecycle/ownership.js';
 import { createDiagnosticsOwner, unavailableDiagnostics } from './diagnostics.js';
@@ -13,7 +14,8 @@ export function trackPage(
   record: BrowserRecord,
   page: Page,
   origin: string,
-  now: () => number
+  now: () => number,
+  observedContext?: import('playwright-core').BrowserContext
 ): TabRecord {
   if (!ordinaryRecord(record)) throw new Error('PAGE_REGISTRATION_REFUSED');
   const prior = [...record.tabs.values()].find((tab) => tab.page === page);
@@ -46,6 +48,7 @@ export function trackPage(
     pending: 0,
   };
   record.tabs.set(tab.binding.tabId, tab);
+  if (observedContext && record.tabs.size > 1) observePopup(record, tab, observedContext);
   tab.diagnostics = createDiagnosticsOwner({
     budget: record.diagnosticsBudget,
     readBinding: currentBinding,
@@ -106,6 +109,13 @@ export function trackPage(
         }
         try {
           tab.pointer.invalidate();
+          const popupCommit = commitPopup(tab, page, frame.url(), origin);
+          if (popupCommit) {
+            void popupCommit.then((accepted) => {
+              if (!accepted) retire();
+            }, retire);
+            return;
+          }
           const initialCommit = commitInitialNavigation(tab, frame.url());
           if (initialCommit !== null) {
             if (!initialCommit) retire();
