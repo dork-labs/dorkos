@@ -9,7 +9,7 @@ import {
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
 import type { ConnectorEventDefinition } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorEventCapability } from '@dorkos/shared/connector-events';
-import { ConnectorEventPayloadProtector } from '@dorkos/connector-providers';
+import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import {
   createRoomHarness,
   agentLookupFor,

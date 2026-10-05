@@ -1,11 +1,11 @@
 /** Confined, no-retry Composio trigger management and raw signature verification. */
 import { createHash } from 'node:crypto';
 import { Composio } from '@composio/core';
-import { stableStringify } from '@dorkos/shared/capabilities';
+import { stableStringify } from '../stable-stringify.js';
 import {
   ConnectorEventDefinitionSchema,
   type ConnectorEventDefinition,
-} from '@dorkos/shared/connector-event-schemas';
+} from '../connector-event-schemas.js';
 import type {
   ConnectorEventCapability,
   ConnectorEventMutationAuthority,
@@ -13,7 +13,7 @@ import type {
   ConnectorEventPageRequest,
   ConnectorPhysicalTriggerScope,
   ConnectorRawWebhook,
-} from '@dorkos/shared/connector-events';
+} from '../connector-events.js';
 import { ComposioCatalogError, type ComposioSdkClientOpts } from './sdk-client.js';
 import { verifyComposioWebhook } from './webhook-verifier.js';
 

@@ -1,5 +1,5 @@
 /** Raw signed project webhook ingress; no tenant/account lookup occurs before verification. */
-import { ComposioWebhookVerifier } from '@dorkos/connector-providers/composio';
+import { ComposioWebhookVerifier } from '@dork-labs/connector-providers/composio';
 import { CONNECTOR_EVENT_MAX_RAW_BYTES } from '@dorkos/shared/connector-event-schemas';
 import { getTransactionDb } from '@/db/transaction-client';
 import { readManagedConnectorConfig } from '@/lib/connectors/managed/config';

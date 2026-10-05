@@ -8,7 +8,7 @@ import {
   type ComposioAuthenticationConfiguration,
   type ComposioAuthenticationDescriptor,
   type ComposioManagedAccountClient,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 import { schema } from '@/db/client';
 import type { ManagedConnectorDatabase } from './authority-service';
 

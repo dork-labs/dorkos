@@ -14,7 +14,7 @@ import {
   normalizeComposioAuthenticationConfiguration,
   type ComposioAuthenticationConfiguration,
   type ComposioToolkitAuthentication,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 
 const migration = readFileSync(
   fileURLToPath(new URL('../../../../../drizzle/0016_stale_dazzler.sql', import.meta.url)),

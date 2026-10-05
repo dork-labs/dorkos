@@ -29,6 +29,8 @@ export interface OwnedPageTransport {
   readonly ready: Promise<void>;
   /** Original session attribution; pending calls may be known, without authorizing effects. */
   isCustodyKnown(): boolean;
+  /** Private original acquisition attribution; never authorizes native effects. */
+  isAcquisitionCustodyKnown(): boolean;
   custody(): PageInputCustody;
   close(deadline?: number): Promise<PageInputCustody>;
 }
@@ -42,6 +44,7 @@ export function createPageTransport(options: PageTransportOptions): OwnedPageTra
     native: owner.native,
     ready: owner.ready,
     isCustodyKnown: () => owner.isCustodyKnown(),
+    isAcquisitionCustodyKnown: () => owner.isAcquisitionCustodyKnown(),
     custody: () => owner.custody(),
     close: (deadline?: number) => owner.close(deadline),
   });
@@ -55,6 +58,9 @@ class PageTransportOwner {
   private readonly page: Page;
   private session?: CDPSession;
   private acquisition?: Promise<void>;
+  private originalAcquisition?: Promise<CDPSession>;
+  private acquisitionContext?: ReturnType<Page['context']>;
+  private acquisitionEnd?: number;
   private acquisitionPending = true;
   private nativePending = 0;
   private readonly heldKeys = new Set<string>();
@@ -102,6 +108,7 @@ class PageTransportOwner {
 
   acquire(): void {
     const end = performance.now() + INPUT_BUDGET_MS;
+    this.acquisitionEnd = end;
     let complete!: () => void;
     // Install custody before invoking the external, possibly reentrant acquisition port.
     this.acquisition = new Promise<void>((resolve) => {
@@ -131,9 +138,11 @@ class PageTransportOwner {
     try {
       if (!this.current()) throw new Error('INPUT_TARGET_REFUSED');
       const context = this.page.context();
+      this.acquisitionContext = context;
       const create = context.newCDPSession;
       if (!this.current()) throw new Error('INPUT_TARGET_REFUSED');
-      void Promise.resolve(create.call(context, this.page)).then(accept, fail);
+      this.originalAcquisition = Promise.resolve(create.call(context, this.page));
+      void this.originalAcquisition.then(accept, fail);
     } catch (error) {
       fail(error);
     }
@@ -162,6 +171,37 @@ class PageTransportOwner {
       this.detachPromise === undefined &&
       this.closePromise === undefined
     );
+  }
+
+  isAcquisitionCustodyKnown(): boolean {
+    const eligible = () =>
+      this.acquisition !== undefined &&
+      this.originalAcquisition !== undefined &&
+      this.acquisitionPending &&
+      this.acquisitionEnd !== undefined &&
+      !this.retired &&
+      !this.uncertain &&
+      !this.detachPending &&
+      !this.detached &&
+      this.detachPromise === undefined &&
+      this.closePromise === undefined &&
+      this.nativePending === 0;
+    if (!eligible()) return false;
+    try {
+      const context = this.page.context();
+      const current = this.current();
+      const inTime = performance.now() < this.acquisitionEnd!;
+      if (context !== this.acquisitionContext || !inTime) {
+        this.uncertain = true;
+        this.retire();
+        return false;
+      }
+      return context === this.acquisitionContext && current && inTime && eligible();
+    } catch {
+      this.uncertain = true;
+      this.retire();
+      return false;
+    }
   }
 
   custody(): PageInputCustody {

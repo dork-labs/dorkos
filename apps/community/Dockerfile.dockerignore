@@ -14,6 +14,8 @@
 !packages/icons/**
 !packages/cloud-api
 !packages/cloud-api/**
+!packages/connector-providers
+!packages/connector-providers/**
 !packages/eslint-config
 !packages/eslint-config/package.json
 !packages/typescript-config

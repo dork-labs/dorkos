@@ -10,11 +10,8 @@
  */
 import { createHash } from 'node:crypto';
 import { Composio, ComposioRequestCancelledError } from '@composio/core';
-import { stableStringify } from '@dorkos/shared/capabilities';
-import type {
-  ConnectorAuthenticationSetup,
-  ConnectorToolkit,
-} from '@dorkos/shared/connector-provider';
+import { stableStringify } from '../stable-stringify.js';
+import type { ConnectorAuthenticationSetup, ConnectorToolkit } from '../connector-provider.js';
 import type {
   ConnectorCatalogPageRequest,
   ConnectorOperationClassification,
@@ -25,7 +22,7 @@ import type {
   ConnectorProviderInstanceId,
   ConnectorToolkitVersionResult,
   ConnectorUnsupportedResult,
-} from '@dorkos/shared/connector-schemas';
+} from '../connector-schemas.js';
 
 /** Maximum provider-reported operation pages accepted as a complete catalog. */
 const MAX_OPERATION_PAGES = 100;

@@ -62,7 +62,7 @@ try {
     ConnectorAccessibleConnectionsResponseSchema,
     ConnectorAccessibleOperationsResponseSchema,
     ConnectorExecutionTargetSchema,
-  } = await load('packages/shared/src/connector-schemas.ts');
+  } = await load('packages/connector-providers/src/connector-schemas.ts');
   let turn = 0;
   let account = '01JACCOUNT00000000000000001';
   let revision = 'access-1';

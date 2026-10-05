@@ -535,6 +535,7 @@ export function createOwnedFixtureCohort(members: readonly FixtureMember[]) {
       retire: (end: number) => queue.retire(end),
       // Queue-only fixtures do not acquire an original Page transport session.
       isCustodyKnown: () => false,
+      isPopupCustodyKnown: () => false,
       hasNeverEnteredInput: () => false,
       custody,
       close: () => {

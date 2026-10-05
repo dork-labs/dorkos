@@ -1,6 +1,6 @@
 /** Event encryption configuration is independent of provider SDK readiness and signing secrets. */
 import { z } from 'zod';
-import { ConnectorEventPayloadProtector } from '@dorkos/connector-providers';
+import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import { env } from '@/env';
 
 const KeysSchema = z

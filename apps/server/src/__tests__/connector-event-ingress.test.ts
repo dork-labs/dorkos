@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { ComposioEventClient } from '@dorkos/connector-providers/composio';
+import { ComposioEventClient } from '@dork-labs/connector-providers/composio';
 
 const state = vi.hoisted(() => ({ login: false }));
 vi.mock('../services/core/config-manager.js', () => ({

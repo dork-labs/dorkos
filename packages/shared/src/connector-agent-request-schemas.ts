@@ -1,8 +1,11 @@
 /** Durable agent service-request decisions that may include exact event receive scopes. */
 import { z } from 'zod';
-import { ConnectorReceiveScopeSchema } from './connector-event-schemas.js';
-import { ConnectorProviderInstanceIdSchema } from './connector-provider.js';
-import { ConnectionIdSchema, CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT } from './connector-schemas.js';
+import { ConnectorReceiveScopeSchema } from '@dork-labs/connector-providers/connector-event-schemas';
+import { ConnectorProviderInstanceIdSchema } from '@dork-labs/connector-providers/connector-provider';
+import {
+  ConnectionIdSchema,
+  CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT,
+} from '@dork-labs/connector-providers/connector-schemas';
 
 /** Owner input for authentication started in the context of one agent request. */
 export const ConnectorAgentRequestAuthenticationInputSchema = z

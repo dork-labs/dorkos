@@ -10,7 +10,7 @@ import type { ManagedEventCapacityPolicy } from './event-capacity-service';
 import {
   ComposioManagedAccountError,
   type ComposioManagedAccountClient,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 import {
   MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS,
   ManagedConnectorAuthorityCommandSchema,

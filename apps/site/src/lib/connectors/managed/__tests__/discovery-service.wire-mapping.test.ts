@@ -7,7 +7,7 @@
  * extra field fails here instead of taking a live app's discovery down.
  */
 import { PGlite } from '@electric-sql/pglite';
-import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
+import type { ComposioOperationClient } from '@dork-labs/connector-providers/composio';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

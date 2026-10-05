@@ -1,4 +1,5 @@
 import { readJpegRaster } from './raster.js';
+import { popupPending } from './popup-navigation.js';
 import { ordinaryRecord } from '../lifecycle/ownership.js';
 import type { EngineConfiguration } from '../configuration.js';
 import { advanceCounter } from '../counters.js';
@@ -42,6 +43,7 @@ export async function captureTab(
 ): Promise<BrowserCapture> {
   if (!ordinaryRecord(record)) throw new BrowserLifecycleError('STALE_BINDING');
   const tab = record.tabs.get(command.binding.tabId);
+  if (tab && popupPending(tab)) throw new BrowserLifecycleError('STALE_BINDING');
   if (!tab || tab.pending >= 2)
     throw new BrowserLifecycleError(tab ? 'CAPTURE_QUEUE_FULL' : 'STALE_BINDING');
   const page = tab.page;
