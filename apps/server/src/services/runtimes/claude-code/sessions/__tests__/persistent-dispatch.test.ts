@@ -3171,6 +3171,41 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
     expect(process.ended).toBe(true);
   });
 
+  it('keeps a held message held when the server shuts down', async () => {
+    // The row is durable and adopted after the next boot. Releasing it here
+    // would launch it on a fresh process in the middle of the shutdown.
+    const sessionId = nextSession();
+    const released: string[] = [];
+    runtime.onDispatchGateChange((id) => released.push(id));
+    await turn(sessionId);
+    cli.processes[0]!.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
+    await settle();
+    changeInstructions();
+    expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
+    released.length = 0;
+
+    await shutdownSessionPumps();
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(released).toEqual([]);
+  });
+
+  it('releases a held message when the process ends any other way', async () => {
+    const sessionId = nextSession();
+    const released: string[] = [];
+    runtime.onDispatchGateChange((id) => released.push(id));
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await settle();
+    changeInstructions();
+    expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
+    released.length = 0;
+
+    process.crash(new Error('the CLI went away'));
+    await vi.waitFor(() => expect(released).toContain(sessionId));
+  });
+
   it('answers proceed on the first send of a session with no process', async () => {
     const { answers } = await heldTurn(nextSession(), 'first');
     expect(answers).toEqual(['proceed']);

@@ -1431,8 +1431,14 @@ export class PersistentDispatch {
           this.clearBackgroundWork(key, bundle);
         }
         // With the process gone there is nothing left to end: a message held
-        // for its work may run.
-        if (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed') {
+        // for its work may run. Except at a server shutdown: the held row is
+        // durable and is adopted after the next boot, and releasing it now
+        // would launch it on a fresh process in the middle of the shutdown.
+        const shuttingDown = change.to === 'cold' && bundle.pump.teardownReason === 'shutdown';
+        if (
+          !shuttingDown &&
+          (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed')
+        ) {
           this.releaseHeldDispatch(key);
         }
         bundle.recovery.noteStateChange(change);
