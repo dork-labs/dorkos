@@ -451,6 +451,9 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.opencode.baseURL': 'expose',
   'runtimes.codex.enabled': 'expose',
   'runtimes.codex.binaryPath': 'expose',
+  // Which way DorkOS runs Codex. Names no credential; an agent that can see it
+  // can say why a Codex chat can or cannot stop to ask.
+  'runtimes.codex.transport': 'expose',
   // A credential reference: `file:` names a plaintext key file, `env:` names the
   // variable, `keychain:` names the entry. Replaced by a presence flag.
   'runtimes.codex.credentialRef': 'withhold',

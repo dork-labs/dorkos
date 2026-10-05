@@ -12,7 +12,7 @@
         "SDK 0.2.113+ ships a native binary and no longer bundles cli.js: CLI path resolution (sdk-utils.ts) and onboarding assumptions are version-sensitive; verify resolveClaudeCliPath behavior on any bump crossing that line.",
         "The pin lives in SEVEN places and they must all move in one commit: root package.json pnpm.overrides (the only one that actually binds while an override exists), apps/server, apps/desktop and packages/cli dependencies, the two apps/desktop optionalDependencies (-darwin-arm64, -win32-x64), and CLAUDE_SDK_VERSION in services/runtimes/claude-code/tooling/provision.ts. scripts/__tests__/dependabot-lockstep-families.test.ts guards the manifest half; provision.ts's own test guards the seventh.",
         "Never cite a line number in sdk.d.ts. It grew 7429 -> 8978 lines in the 0.3.224 -> 0.3.268 range alone, and every line citation in the codebase pointed at unrelated text afterwards. Cite the symbol (SDKUserMessage.shouldQuery), and in the minified bundle cite the string literal, never the symbol.",
-        "An in-session tool's input schema must contain no z.record() and no z.json() at any depth. SDK 0.3.257+ converts tool schemas through the installed zod's own processor with a context it builds itself, and zod 4.5.3+ record handling (zod #6497) dereferences a `deferred` field that context lacks: one offending schema throws inside tools/list and the model is handed ZERO DorkOS tools, silently. UPSTREAM: anthropics/claude-agent-sdk-typescript#454, still OPEN as of 2026-09-22 with three reporters, and reproduced locally at 0.3.280 with zod 4.6.5 (z.record and z.json both still throw inside tools/list; the catchall form lists the tool). The root cause is the bundled zod-to-json-schema@3.25.2, which is already the latest published version, so no converter bump upstream can fix it (2026-09-21 upstream comment). The workaround is the z.object({}).catchall(...) swap documented in mcp-tools/tool-exposure.ts, across four schemas. ON THE NEXT BUMP: check whether #454 is fixed, and if it is, revert the catchall swap back to z.record()/z.json() \u2014 it is a workaround, not a preference, and it costs the JSON Schema its propertyNames bounds plus two measured value-level differences (see connector-schemas.ts).",
+        "An in-session tool's input schema must contain no z.record() and no z.json() at any depth. SDK 0.3.257+ converts tool schemas through the installed zod's own processor with a context it builds itself, and zod 4.5.3+ record handling (zod #6497) dereferences a `deferred` field that context lacks: one offending schema throws inside tools/list and the model is handed ZERO DorkOS tools, silently. UPSTREAM: anthropics/claude-agent-sdk-typescript#454, still OPEN as of 2026-09-22 with three reporters, and reproduced locally at 0.3.280 with zod 4.6.5 (z.record and z.json both still throw inside tools/list; the catchall form lists the tool). The root cause is the bundled zod-to-json-schema@3.25.2, which is already the latest published version, so no converter bump upstream can fix it (2026-09-21 upstream comment). The workaround is the z.object({}).catchall(...) swap documented in mcp-tools/tool-exposure.ts, across four schemas. ON THE NEXT BUMP: check whether #454 is fixed, and if it is, revert the catchall swap back to z.record()/z.json() — it is a workaround, not a preference, and it costs the JSON Schema its propertyNames bounds plus two measured value-level differences (see connector-schemas.ts).",
         "result.modelUsage and total_cost_usd are RUNNING TOTALS, never one turn's figures: cumulative across warm turns in streaming-input sessions (observed live at 0.3.268 too), and since 0.3.277 carried across a resume or fork when the transcript saved them. sdk/turn-usage.ts differences each result against a per-session ledger for the per-turn gen_ai.* figures; re-check the modelUsage / total_cost_usd docblocks on every bump for a change in lifecycle (a /clear reset, a new carry-over rule).",
         "The model catalog lives in the platform BINARY, not in sdk.mjs or sdk.d.ts, and DorkOS lists models by ALIAS (supportedModels() in messaging/runtime-cache.ts), so a bump can silently move `opus` / `default` to a different model and price (0.3.280: `opus` -> claude-opus-5-5). Read the new binary's alias table on every bump and name any retarget in the changelog. Moving CLAUDE_SDK_VERSION is what invalidates the on-disk model cache.",
         "canUseTool and the tool hooks carry MCP server provenance since 0.3.274 (`mcpServer` / `mcp_server`: { name, source }). Trust keys on source === 'sdk' via isHostServedOrUnattributed in mcp-tools/tool-exposure.ts, never on the mcp__dorkos__ prefix alone; absent provenance must keep passing for non-MCP tools and older CLIs."
@@ -58,17 +58,17 @@
         "getSessionInfo()": "sessions/transcript-reader.ts",
         "renameSession()": "claude-code-runtime.ts",
         "forkSession()": "sessions/session-store.ts",
-        "tool()": "mcp-tools/*.ts (11 files: adapter-tools, agent-tools, binding-tools, capability-mcp-tools, core-tools, extension-tools, index, mesh-tools, relay-tools, task-tools, trace-tools \u2014 the largest SDK surface in the codebase)",
+        "tool()": "mcp-tools/*.ts (11 files: adapter-tools, agent-tools, binding-tools, capability-mcp-tools, core-tools, extension-tools, index, mesh-tools, relay-tools, task-tools, trace-tools — the largest SDK surface in the codebase)",
         "HookCallback, HookJSONOutput": "messaging/classifier-context.ts",
         "createSdkMcpServer()": "mcp-tools/index.ts",
-        "$comment": "27 distinct symbols across 45 non-test files, re-derived by parsing every `import \u2026 from '@anthropic-ai/claude-agent-sdk'` on the 0.3.280 bump (2026-09-22; the 0.3.268 figure of 55 files was not reproducible). Paths are relative to codebase_root."
+        "$comment": "27 distinct symbols across 45 non-test files, re-derived by parsing every `import … from '@anthropic-ai/claude-agent-sdk'` on the 0.3.280 bump (2026-09-22; the 0.3.268 figure of 55 files was not reproducible). Paths are relative to codebase_root."
       },
       "non_import_couplings": [
-        "sessions/project-slug.ts hand-mirrors the SDK's session-slug hash algorithm (incl. the 200-char cap) with no import \u2014 grep/ESLint/surface-map all miss it; re-diff the sdk.mjs hash body on every bump, by STRING not by minified symbol (every symbol it has ever cited was renamed by the next release). Unchanged at 0.3.280 (byte-identical body, 200-char cap).",
-        "messaging/plugin-activation.ts hand-mirrors the Options plugin shape without importing it. The two DIVERGED at 0.3.268: SdkPluginConfig gained an optional skipMcpDiscovery the mirror deliberately does not carry. Still assignable, so nothing breaks \u2014 but re-read both shapes on every bump. Unchanged at 0.3.280.",
+        "sessions/project-slug.ts hand-mirrors the SDK's session-slug hash algorithm (incl. the 200-char cap) with no import — grep/ESLint/surface-map all miss it; re-diff the sdk.mjs hash body on every bump, by STRING not by minified symbol (every symbol it has ever cited was renamed by the next release). Unchanged at 0.3.280 (byte-identical body, 200-char cap).",
+        "messaging/plugin-activation.ts hand-mirrors the Options plugin shape without importing it. The two DIVERGED at 0.3.268: SdkPluginConfig gained an optional skipMcpDiscovery the mirror deliberately does not carry. Still assignable, so nothing breaks — but re-read both shapes on every bump. Unchanged at 0.3.280.",
         "sdk/sdk-utils.ts resolveClaudeCliPath() resolves the SDK's platform optional-dep packages by name (no SDK import); version-sensitive since the 0.2.113 native-binary split. Eight published variants at 0.3.280, unchanged, and none of them -android.",
-        "services/mesh/mcp-revocation.ts (outside the adapter dir) reasons about SDK-internal MCP connect timing with a fixture-pinned test that passes even when stale \u2014 re-observe on every bump. Re-derived statically AND re-run live at 0.3.268 (second fixture committed beside the first). At 0.3.280 the McpServerStatus status union is unchanged (it gained additive source? and tools[]._meta?), but 0.3.274 made the first turn STOP waiting for settings-file and plugin MCP servers whose tools tool search defers, so such a server can again read `pending` in the first system/init frame (tunable with CLAUDE_CODE_MCP_STARTUP_WAIT_MS). `pending` is not evidence, so a revoked server may be caught one turn later; the live re-run of the two-server 401 harness at 0.3.280 is recorded in research/runtime-upgrades/claude-agent-sdk/0.3.268-to-0.3.280/triage-decisions.md.",
-        "sdk/sdk-error-mapping.ts reasons about the CLI's own abort predicate \u2014 its cause collapse and its suppression set \u2014 read out of the shipped binary and quoted in research/20260903_claude-cli-aborted-refusal-shapes.md, which carries the recipe. No import, no grep hit, no failing test. Re-run at 0.3.268: the suppression set GREW to three members and a new `turn-abort` cause collapses into `interrupt`. Re-run at 0.3.280: it grew again, to FOUR \u2014 interrupt, turn-abort, refusal-fallback-edit, permission-stop (raised when a deny decision ends the turn, mapped to turn_teardown). No DorkOS impact by construction: isStoppedTurnResult ANDs the shape with DorkOS's own stop record."
+        "services/mesh/mcp-revocation.ts (outside the adapter dir) reasons about SDK-internal MCP connect timing with a fixture-pinned test that passes even when stale — re-observe on every bump. Re-derived statically AND re-run live at 0.3.268 (second fixture committed beside the first). At 0.3.280 the McpServerStatus status union is unchanged (it gained additive source? and tools[]._meta?), but 0.3.274 made the first turn STOP waiting for settings-file and plugin MCP servers whose tools tool search defers, so such a server can again read `pending` in the first system/init frame (tunable with CLAUDE_CODE_MCP_STARTUP_WAIT_MS). `pending` is not evidence, so a revoked server may be caught one turn later; the live re-run of the two-server 401 harness at 0.3.280 is recorded in research/runtime-upgrades/claude-agent-sdk/0.3.268-to-0.3.280/triage-decisions.md.",
+        "sdk/sdk-error-mapping.ts reasons about the CLI's own abort predicate — its cause collapse and its suppression set — read out of the shipped binary and quoted in research/20260903_claude-cli-aborted-refusal-shapes.md, which carries the recipe. No import, no grep hit, no failing test. Re-run at 0.3.268: the suppression set GREW to three members and a new `turn-abort` cause collapses into `interrupt`. Re-run at 0.3.280: it grew again, to FOUR — interrupt, turn-abort, refusal-fallback-edit, permission-stop (raised when a deny decision ends the turn, mapped to turn_teardown). No DorkOS impact by construction: isStoppedTurnResult ANDs the shape with DorkOS's own stop record."
       ]
     },
     "@openai/codex-sdk": {
@@ -76,8 +76,9 @@
       "github_repo": "openai/codex",
       "codebase_root": "apps/server/src/services/runtimes/codex/",
       "abstraction_boundary": "AgentRuntime interface",
-      "related_adrs": ["0255", "0309", "0310"],
+      "related_adrs": ["0255", "0309", "0310", "261005-113107"],
       "upgrade_notes": [
+        "Exec fallback only (ADR 261005-113107): Codex turns run on `codex app-server` (the `@openai/codex` entry) once `runtimes.codex.transport` resolves to it; this SDK drives the exec transport behind that switch until exec is removed.",
         "Versions track the Codex CLI release train and an active `alpha` dist-tag exists alongside `latest`; a fix may ship in alpha weeks before stable (the 0.143.0 logs_2.sqlite fix did). Check dist-tags when resolving the target, and never pin an alpha without an explicit user decision.",
         "Follow the pinned-SDK bump checklist in contributing/adding-a-runtime.md (section: Bumping a pinned SDK): dist-tag check, .d.ts diff of the ThreadEvent/ThreadItem unions and imported item types, event-mapper exhaustiveness compile, runtime conformance suite, one live smoke turn.",
         "The event mapper's `never` exhaustiveness checks fail compilation when the SDK adds union members; that is the intended upgrade tripwire, not an obstacle to suppress.",
@@ -104,10 +105,52 @@
         }
       ],
       "sdk_surface_map": {
-        "Codex": "codex-runtime.ts",
-        "CodexOptions": "codex-options.ts, mcp-server-config.ts",
+        "Codex": "transport/exec-transport.ts",
+        "CodexOptions": "codex-options.ts, credits-launch.ts, mcp-server-config.ts",
         "ThreadEvent, ThreadItem (+ AgentMessageItem, CommandExecutionItem, FileChangeItem, McpToolCallItem, ReasoningItem, TodoListItem, WebSearchItem)": "event-mapper.ts",
         "ThreadOptions, SandboxMode, ModelReasoningEffort": "turn-input.ts"
+      }
+    },
+    "@openai/codex": {
+      "short_name": "codex-app-server",
+      "github_repo": "openai/codex",
+      "codebase_root": "apps/server/src/services/runtimes/codex/",
+      "abstraction_boundary": "CodexTransport (transport/codex-transport.ts) behind the AgentRuntime interface",
+      "related_adrs": ["0309", "261005-113107"],
+      "upgrade_notes": [
+        "This entry is the Codex CLI binary and its `codex app-server` JSON-RPC protocol, which the app-server transport speaks by hand. No .d.ts diff can see it: the guard is the committed protocol snapshot.",
+        "Regenerate the snapshot from the new vendored binary (`pnpm codex:protocol-snapshot`) and READ the diff before committing it: `protocol-snapshot.binary.test.ts` fails on any drift and names the method and field. Then bump PINNED_CODEX_APP_SERVER_VERSION in app-server/protocol/methods.ts and update the method, notification, server-request and item unions there; `notification-mapper.ts` will not compile until every new notification and item type has a meaning.",
+        "Experimental methods (thread/backgroundTerminals/*, thread/settings/update, the granular approval policy) carry no compatibility promise; DorkOS opts into them with `experimentalApi: true` at initialize.",
+        "Unknown params are DROPPED SILENTLY by the server (spike 1c), never rejected. `protocol-schemas.test.ts` checks every key and enum literal DorkOS sends against the snapshot; keep the strict outbound zod schemas in schemas.ts in step with it.",
+        "Re-run the spike checks when the binary moves (research/20261005_codex-app-server-spikes.md): a loaded thread still ignores new config on thread/resume, and an in-memory `projects.<cwd>.trust_level` still stops the trust write. `app-server.binary.test.ts` covers the trust write, the thread key and Stop for free against a fake local provider.",
+        "Every rejection is -32600; error kinds are classified by message text in app-server/protocol/errors.ts. A reworded message silently becomes `other` — check the table against the new binary."
+      ],
+      "changelog_sources": [
+        {
+          "type": "npm_registry",
+          "priority": 1,
+          "url": "https://registry.npmjs.org/@openai/codex-sdk",
+          "note": "Authoritative version list, publish timestamps (.time), and the latest/alpha dist-tags"
+        },
+        {
+          "type": "github_releases",
+          "priority": 2,
+          "url": "https://api.github.com/repos/openai/codex/releases",
+          "note": "Release tags are prefixed `rust-v` (e.g. rust-v0.142.5): strip the prefix when matching npm versions. Releases cover the whole Codex CLI, not just the SDK; filter notes for SDK/TypeScript relevance."
+        },
+        {
+          "type": "changelog_md",
+          "priority": 3,
+          "url": "https://raw.githubusercontent.com/openai/codex/main/CHANGELOG.md",
+          "note": "CLI-wide changelog; gap fill only"
+        }
+      ],
+      "sdk_surface_map": {
+        "initialize, model/list": "app-server/json-rpc-client.ts, app-server/handshake.ts, model-catalog.ts",
+        "thread/start, thread/resume, config/read": "app-server/thread-loader.ts",
+        "turn/start, turn/interrupt, account/rateLimits/read, notifications": "transport/app-server-transport.ts, app-server/notification-mapper.ts, app-server/thread-channel.ts",
+        "server requests": "app-server/json-rpc-client.ts (refusals in app-server/protocol/methods.ts)",
+        "thread/backgroundTerminals/*": "not yet used (spec phase P3: app-server/background-work.ts)"
       }
     },
     "@opencode-ai/sdk": {

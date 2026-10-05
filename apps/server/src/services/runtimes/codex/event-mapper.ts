@@ -90,7 +90,7 @@ export interface CodexEventContextOptions {
  *   OTHER than the session's own sign-in, which narrows what counts as a
  *   credential signal (see `detectAuthError`'s `unambiguousOnly`).
  */
-function codexErrorCopy(
+export function codexErrorCopy(
   message: string,
   options: { code?: string; diagnostic?: boolean } = {}
 ): RuntimeErrorCopy {

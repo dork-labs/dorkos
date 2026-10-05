@@ -72,6 +72,7 @@ import {
   retireToolOnlyReplies,
   seedCommunityNavigationPrefs,
   seedCloudCreditsChoices,
+  seedCodexTransport,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -126,6 +127,7 @@ const RUNTIMES_DEFAULTS = {
     defaultModel: null,
     defaultEffort: null,
     defaultTrustStop: null,
+    transport: 'auto',
   },
 };
 
@@ -3921,7 +3923,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(42);
+    expect(Object.keys(bodies)).toHaveLength(43);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -6285,5 +6287,82 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
     const store = createMockStore({ server: { port: 4242 } });
     seedCloudCreditsChoices(store);
     expect(store.data.cloud).toBeUndefined();
+  });
+});
+
+describe('seedCodexTransport migration (ADR 261005-113107)', () => {
+  /**
+   * Run the real upgrade to `'0.100.0'` over a file last written at `from`, and
+   * return what is on disk.
+   */
+  function upgrade(
+    runtimes: Record<string, unknown>,
+    from = '0.99.0'
+  ): { runtimes: { codex: Record<string, unknown> } } {
+    const dir = path.join(os.tmpdir(), 'test-dork-codex-transport-' + Date.now() + Math.random());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({ version: 1, runtimes, __internal__: { migrations: { version: from } } }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.100.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        runtimes: { codex: Record<string, unknown> };
+      };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const codex = {
+    enabled: true,
+    binaryPath: '/opt/codex',
+    credentialRef: null,
+    defaultModel: null,
+    defaultEffort: null,
+    defaultTrustStop: null,
+  };
+
+  it('writes `auto` into a stored codex block that predates the choice', () => {
+    // READ THE FILE: `runtimes.codex` is a section every stored config has, so
+    // conf's shallow default merge never adds this leaf. Suppress the body and
+    // this goes red.
+    const onDisk = upgrade({ default: 'claude-code', codex });
+    expect(onDisk.runtimes.codex.transport).toBe('auto');
+    expect(onDisk.runtimes.codex.binaryPath).toBe('/opt/codex');
+  });
+
+  it('keeps a transport a person already chose', () => {
+    const onDisk = upgrade({ default: 'claude-code', codex: { ...codex, transport: 'exec' } });
+    expect(onDisk.runtimes.codex.transport).toBe('exec');
+  });
+
+  it('is idempotent and replaces only an unknown value', () => {
+    const store = createMockStore({ runtimes: { codex: { ...codex, transport: 'app-server' } } });
+    seedCodexTransport(store);
+    seedCodexTransport(store);
+    expect((store.data.runtimes as { codex: { transport: unknown } }).codex.transport).toBe(
+      'app-server'
+    );
+    const stale = createMockStore({ runtimes: { codex: { ...codex, transport: 'sdk' } } });
+    seedCodexTransport(stale);
+    expect((stale.data.runtimes as { codex: { transport: unknown } }).codex.transport).toBe('auto');
+  });
+
+  it('skips a config with no codex block', () => {
+    const store = createMockStore({ runtimes: { default: 'claude-code' } });
+    seedCodexTransport(store);
+    expect((store.data.runtimes as { codex?: unknown }).codex).toBeUndefined();
   });
 });

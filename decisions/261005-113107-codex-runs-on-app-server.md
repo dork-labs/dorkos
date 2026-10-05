@@ -48,5 +48,6 @@ We will run Codex through `codex app-server`, behind a transport seam with `runt
 - The experimental API carries no compatibility promise; a binary bump can change it, and unknown params are dropped silently. The schema check is the only guard, so every bump costs a regenerate and diff.
 - An edit to an agent's managed MCP servers reaches a running Codex chat only after its process goes idle and is recycled.
 - The thread key widens the internal listener's bearer model from "one bearer per turn" to "a thread key resolved to the open turn", a security-sensitive change that needs its own review.
+- Because the thread key is resolved per request, a background command or sub-agent a turn left running that calls the `dorkos` server while a later turn of the same session is open acts with that later turn's binding. Accepted: same session, working directory and agent, and every check a turn bearer gets still runs against that binding; between turns the call is refused.
 - Two transports live side by side until the cleanup, and changing `runtimes.codex.transport` takes effect at the next server start.
 - A late background completion that wakes the chat starts a model turn the person did not type.
