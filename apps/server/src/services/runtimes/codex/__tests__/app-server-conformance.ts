@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
+import type { ApprovalEvent, InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { CreditsTurnObservation, CreditsTurnScenario, HandedGrants } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -22,9 +22,16 @@ import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { CodexAppServerPool } from '../app-server/process-pool.js';
 import { AppServerCodexTransport } from '../transport/app-server-transport.js';
+import { expect, vi } from 'vitest';
 import {
+  driveApprovalTurn,
+  driveDispositionTurn,
+} from '../../../session/__tests__/durable-turn-harness.js';
+import {
+  approvalTurn,
   FakeAppServerHost,
   hangingTurn,
+  heldSteerableTurn,
   pongTurn,
   type FakeTurnScript,
 } from './fake-app-server.js';
@@ -364,4 +371,67 @@ export function makeFailingAppServerRuntime(
       ctx.complete('failed', { message, codexErrorInfo, additionalDetails: null });
     });
   return runtime;
+}
+
+/**
+ * `dispositionTurn` (C1): a turn held open on the fake until it is stopped,
+ * a steer delivered into it mid-flight, then a stop. The fake refuses a steer
+ * whose `expectedTurnId` is not the running turn's and starts no turn for one
+ * (the binary's behaviour, verified on 0.154), so "delivered, same turn" is
+ * observed rather than assumed.
+ *
+ * @param runtime - The runtime.
+ * @param sessionId - The session.
+ * @param content - The message that opens the turn.
+ * @param projectDir - Its working directory.
+ * @param probes - The suite's mid-turn probe.
+ */
+export function appServerDispositionTurn(
+  runtime: AgentRuntime,
+  sessionId: string,
+  content: string,
+  projectDir: string,
+  probes: { midTurn: () => Promise<void> }
+): Promise<void> {
+  const { host } = wiringOf(runtime);
+  host.home(PERSON_HOME).nextTurn(heldSteerableTurn);
+  return driveDispositionTurn(runtime, sessionId, content, projectDir, probes, {
+    awaitOpen: () =>
+      vi.waitFor(async () => {
+        const snapshot = await runtime.getSessionSnapshot(
+          { cwd: projectDir, permissionMode: 'default' },
+          sessionId
+        );
+        expect(snapshot.status.lifecycle).toBe('streaming');
+        expect(host.processes.some((p) => p.requestsOf('turn/start').length > 0)).toBe(true);
+      }),
+    endTurn: async () => {
+      await runtime.interruptQuery(sessionId);
+    },
+  });
+}
+
+/**
+ * `approvalTurn`: Codex asks before running a command, the way 0.154 does
+ * (`item/started`, then the approval request); approved it runs, declined it
+ * is reported declined, cancelled the turn waits for its stop.
+ *
+ * @param runtime - The runtime.
+ * @param sessionId - The session.
+ * @param content - The message that leads Codex to ask.
+ * @param projectDir - Its working directory.
+ * @param probes - The suite's probes.
+ */
+export function appServerApprovalTurn(
+  runtime: AgentRuntime,
+  sessionId: string,
+  content: string,
+  projectDir: string,
+  probes: {
+    atApproval: (approval: ApprovalEvent) => Promise<void>;
+    afterTurn: () => Promise<void>;
+  }
+): Promise<StreamEvent[]> {
+  wiringOf(runtime).host.home(PERSON_HOME).nextTurn(approvalTurn);
+  return driveApprovalTurn(runtime, sessionId, content, projectDir, probes);
 }

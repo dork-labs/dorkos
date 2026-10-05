@@ -334,7 +334,8 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: {
         status: 'planned',
-        reason: 'Its sandbox mode decides up front; app-server can carry approval requests.',
+        reason:
+          'Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default.',
         ticket: 'DOR-2722',
       },
       opencode: yes,
@@ -354,7 +355,8 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: {
         status: 'planned',
-        reason: 'App-server can carry user-input requests; not wired yet.',
+        reason:
+          'Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default.',
         ticket: 'DOR-2722',
       },
       opencode: {
@@ -577,7 +579,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       codex: {
         status: 'planned',
         reason:
-          'A message waits in the queue for the next turn; app-server can take input mid-turn.',
+          'Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default.',
         ticket: 'DOR-2722',
       },
       opencode: {

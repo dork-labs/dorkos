@@ -387,5 +387,62 @@ P1 posture (spec phase P1): `approvalPolicy: 'never'` with exec's sandbox mappin
 request refused (nothing is ever accepted), `supportsPersistentSession: true` the only added
 capability, and `auto` still resolves to exec. Stop on app-server answers `acked` when Codex
 winds the turn down within 3 s and `unconfirmed` when it does not — never a killed process,
-which would end every other Codex chat in that home. The mode table with real approvals arrives
-in P2.
+which would end every other Codex chat in that home. P2 (below) replaced the approval posture.
+
+**A stop Codex never confirms.** When DorkOS gives up waiting (`unconfirmed`), Codex's turn
+is still running: it runs to its own end, and on a credits thread it keeps billing until it
+does. DorkOS asks it to stop again before the next turn on that thread, again before reloading
+the thread for fresh credentials, and once more when it forks away from a thread whose turn
+will not stop. None of those can force it; only the process ending does, and that would end
+every other chat in the home.
+
+### P2 — approvals, questions, elicitations and steer (2026-10-05, codex-cli 0.154.0)
+
+On the app-server transport only (exec is unchanged and keeps Verdict 1):
+
+| id                  | sandbox              | `approvalPolicy` | `asks`       | `reach`      | label           |
+| ------------------- | -------------------- | ---------------- | ------------ | ------------ | --------------- |
+| `default`           | `read-only`          | `on-request`     | `always`     | `workspace`  | Ask first       |
+| `acceptEdits`       | `workspace-write`    | `on-request`     | `when-risky` | `workspace`  | Workspace write |
+| `bypassPermissions` | `danger-full-access` | `never`          | `never`      | `everything` | Full access     |
+
+Any mode id the table does not know asks `on-request`, never `never`. `permissionModes.denyReason`
+is `false` (Codex's decisions carry no reason text). Server requests become cards
+(`app-server/server-requests.ts`); unanswered ones park like the other runtimes' and are declined at
+the park ceiling; a stop cancels them before `turn/interrupt`.
+
+Verified on the vendored binary with a scripted local provider (`app-server.binary.test.ts`,
+free):
+
+- A command the model runs with `sandbox_permissions: "require_escalated"` arrives as
+  `item/commandExecution/requestApproval` AFTER its `item/started`, with the item's id. Approved, it
+  runs; `decline` leaves it `declined` and it never runs.
+- `availableDecisions` on 0.154 lists `accept`, `acceptWithExecpolicyAmendment` and `cancel` — not
+  `acceptForSession` and not `decline`. `decline` is still accepted. DorkOS offers "for this
+  session" only when Codex lists it.
+- The first server request's JSON-RPC id is `0`.
+- `turn/steer` with `expectedTurnId` lands in the running turn: a `userMessage` item carrying the
+  `clientUserMessageId`, the next model request carries the words, and no `turn/started` fires. A
+  stale id answers "expected active turn id …"; no turn answers "no active turn to steer".
+- `thread/fork` of a thread that never ran a turn answers "no rollout found"; the loader starts it
+  again instead.
+
+MCP tools under Ask first (fake MCP server on 127.0.0.1, review item 4): a tool with no
+annotations arrives as `mcpServer/elicitation/request`, `mode: "form"`, an EMPTY `requestedSchema`
+(`{type: object, properties: {}}`), `_meta: {codex_approval_kind: "mcp_tool_call", persist:
+["session","always"], tool_description, tool_params, tool_params_display}`, and the tool named
+only in the message (`run tool "delete_repo"`), after the call's `item/started`. It runs only once
+accepted. A tool its own server marks `readOnlyHint: true` runs WITHOUT asking, even in a read-only
+sandbox, so Ask first's promise says read-only "commands and tools"; the hint is the server's own
+claim. DorkOS trusts the approval label only when the request asks for nothing and the turn has a
+running call of that server and tool; one match gets that call's card, several get a card of their
+own.
+
+A question with an `isSecret` field is not drawn until the client has masked input (DOR-2726):
+Codex gets no answer and the turn gets a status line saying why.
+
+**Starting a Codex chat from another chat (DOR-2714's ceiling).** Every app-server mode reaches
+the workspace, and every Claude Code level below Full access reaches only what it edits, so on
+app-server only a Claude chat at Full access may start a Codex chat (at any of the three levels).
+Default, Plan, Accept edits and Auto are refused: fail-closed, never a climb. On exec, Default
+and Plan could start Codex in Read only. Pinned by `__tests__/start-permission-ceiling.test.ts`.

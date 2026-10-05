@@ -17,7 +17,12 @@ import {
   PERSON_HOME,
   CREDITS_ENV_HOME,
 } from '../../__tests__/app-server-harness.js';
-import { hangingTurn, parkedTurn, type FakeTurnScript } from '../../__tests__/fake-app-server.js';
+import {
+  hangingTurn,
+  parkedTurn,
+  steerableTurn,
+  type FakeTurnScript,
+} from '../../__tests__/fake-app-server.js';
 import { APP_SERVER_ARGS } from '../process-pool.js';
 import { CODEX_STOPPED_COPY } from '../notification-mapper.js';
 import { THREAD_STARTS_FRESH_NOTICE } from '../thread-loader.js';
@@ -87,7 +92,7 @@ describe('a turn', () => {
       input: [{ type: 'text', text: 'hello', text_elements: [] }],
       clientUserMessageId: 'm1',
       cwd: '/project',
-      approvalPolicy: 'never',
+      approvalPolicy: 'on-request',
       sandboxPolicy: { type: 'readOnly', networkAccess: false },
       model: 'gpt-x',
       effort: 'xhigh',
@@ -144,19 +149,16 @@ describe('a turn', () => {
     });
   });
 
-  it('refuses every approval request; nothing is ever accepted', async () => {
+  it('refuses the requests DorkOS takes no part in, at once, inside an open turn', async () => {
     const h = harness();
     const replies: unknown[] = [];
     const script: FakeTurnScript = async (ctx) => {
+      replies.push(await ctx.serverRequest('item/tool/call', { callId: 'c', tool: 'x' }));
       replies.push(
-        await ctx.serverRequest('item/commandExecution/requestApproval', {
-          itemId: 'c',
-          command: 'rm -rf /',
+        await ctx.serverRequest('mcpServer/elicitation/request', {
+          serverName: 'x',
+          mode: 'openai/userVerification',
         })
-      );
-      replies.push(await ctx.serverRequest('item/fileChange/requestApproval', { itemId: 'f' }));
-      replies.push(
-        await ctx.serverRequest('mcpServer/elicitation/request', { serverName: 'x', mode: 'form' })
       );
       ctx.complete('completed');
     };
@@ -164,8 +166,7 @@ describe('a turn', () => {
     const events = await h.run(h.request({ sessionId: 's1' }));
     expect(dones(events)).toHaveLength(1);
     expect(replies).toEqual([
-      { decision: 'decline' },
-      { decision: 'decline' },
+      { contentItems: [], success: false },
       { action: 'cancel', content: null, _meta: null },
     ]);
   });
@@ -558,6 +559,76 @@ describe('re-review fixes', () => {
     expect(h.bindings.at(-1)).toMatchObject({ replaces: bound });
   });
 
+  it('starts a fresh thread when the thread to reload never ran a turn (no rollout to fork)', async () => {
+    const h = harness();
+    // A thread loads, then the turn is stopped before `turn/start`: loaded, unbound, no rollout.
+    const stopped = new AbortController();
+    stopped.abort();
+    await h.run(
+      h.request({ sessionId: 's1', tools: withManaged('Bearer old'), signal: stopped.signal })
+    );
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    const first = fake.requestsOf('thread/start').length;
+    const events = await h.run(h.request({ sessionId: 's1', tools: withManaged('Bearer fresh') }));
+    expect(texts(events)).toBe('pong');
+    expect(fake.requestsOf('thread/start')).toHaveLength(first + 1);
+    expect(JSON.stringify(fake.requestsOf('thread/start').at(-1)!.config)).toContain(
+      'Bearer fresh'
+    );
+    // One stuck first turn must not recycle every chat in the home.
+    expect(h.pool.list()[0]!.stale).toBe(false);
+    expect(h.bindings.at(-1)).toEqual({ sessionId: 's1', threadId: expect.any(String) });
+  });
+
+  it('tries to stop a lingering turn before reloading its thread for fresh credentials', async () => {
+    const h = harness({ stopAckMs: 60 });
+    h.host.home(PERSON_HOME).nextTurn(hangingTurn);
+    const gen = h.transport.runTurn(
+      h.request({ sessionId: 's1', tools: withManaged('Bearer old') })
+    );
+    await until(gen, 'text_delta');
+    await h.transport.interrupt('s1');
+    await rest(gen);
+    const bound = h.bindings[0]!.threadId;
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    const before = fake.received.length;
+    const next = await h.run(
+      h.request({ sessionId: 's1', boundThreadId: bound, tools: withManaged('Bearer fresh') })
+    );
+    expect(texts(next)).toBe('pong');
+    const methods = fake.received.slice(before).map((message) => message.method);
+    expect(methods.indexOf('turn/interrupt')).toBeGreaterThanOrEqual(0);
+    expect(methods.indexOf('turn/interrupt')).toBeLessThan(methods.indexOf('thread/fork'));
+  });
+
+  it('resumes the old thread cold after a restart in the window before a fork binds', async () => {
+    const h = harness();
+    await h.run(h.request({ sessionId: 's1', tools: withManaged('Bearer old') }));
+    const bound = h.bindings[0]!.threadId;
+    // The fork's first turn never starts: the database still names the old thread.
+    h.host.home(PERSON_HOME).processes[0]!.exitOnTurnStart = true;
+    await h.run(
+      h.request({ sessionId: 's1', boundThreadId: bound, tools: withManaged('Bearer fresh') })
+    );
+    expect(h.bindings).toHaveLength(1);
+    // A restart: a new transport and pool on the same home.
+    const restarted = harness();
+    (restarted.host as unknown as { homes: unknown }).homes = (
+      h.host as unknown as { homes: unknown }
+    ).homes;
+    const events = await restarted.run(
+      restarted.request({
+        sessionId: 's1',
+        boundThreadId: bound,
+        tools: withManaged('Bearer fresh'),
+      })
+    );
+    expect(texts(events)).toBe('pong');
+    const resumed = restarted.host.home(PERSON_HOME).processes.at(-1)!.requestsOf('thread/resume');
+    expect(resumed[0]).toMatchObject({ threadId: bound });
+    expect(JSON.stringify(resumed[0]!.config)).toContain('Bearer fresh');
+  });
+
   it('forgets a lingering turn when Codex unloads its thread, and stops watching its process (N3, N4)', async () => {
     const h = harness({ stopAckMs: 60 });
     h.host.home(PERSON_HOME).nextTurn(hangingTurn);
@@ -582,5 +653,58 @@ describe('re-review fixes', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(watching).toBe(0);
     expect(h.transport.getSessionWarmth('s1')).toBe('cold');
+  });
+});
+
+describe('steer (spec §11)', () => {
+  it('delivers into the open turn with its id, and no new turn starts', async () => {
+    const h = harness();
+    h.host.home(PERSON_HOME).nextTurn(steerableTurn);
+    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
+    const seen = await until(gen, 'text_delta');
+    await expect(
+      h.transport.deliverIntoTurn('s1', 'use tabs', {
+        mode: 'steer',
+        messageId: 'steer-1',
+        additionalContext: [{ kind: 'staged', text: 'a note' } as never],
+      })
+    ).resolves.toEqual({ delivered: true });
+    const after = await rest(gen);
+    expect(texts([...seen, ...after])).toContain('steered:');
+    expect(dones(after)).toHaveLength(1);
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    const steer = fake.requestsOf('turn/steer')[0]!;
+    // The fake, like the binary, refuses a steer whose expectedTurnId is not
+    // the running turn's, so `delivered: true` above already proves the match.
+    expect(steer).toMatchObject({
+      clientUserMessageId: 'steer-1',
+      expectedTurnId: expect.any(String),
+    });
+    const text = (steer.input as Array<{ text: string }>)[0]!.text;
+    // The person's words come last, untouched.
+    expect(text.endsWith('use tabs')).toBe(true);
+    expect(fake.requestsOf('turn/start')).toHaveLength(1);
+  });
+
+  it('refuses honestly: no open turn, a stage, or a turn Codex says is gone', async () => {
+    const h = harness();
+    await expect(
+      h.transport.deliverIntoTurn('s1', 'x', { mode: 'steer', messageId: 'm' })
+    ).resolves.toEqual({ delivered: false, reason: 'no-open-turn' });
+    h.host.home(PERSON_HOME).nextTurn(parkedTurn);
+    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
+    await until(gen, 'text_delta');
+    await expect(
+      h.transport.deliverIntoTurn('s1', 'x', { mode: 'stage', messageId: 'm' })
+    ).resolves.toEqual({ delivered: false, reason: 'unsupported' });
+    // The turn ends inside Codex between DorkOS's check and the steer.
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    for (const loaded of fake.loaded.values()) loaded.activeTurn!.done = true;
+    await expect(
+      h.transport.deliverIntoTurn('s1', 'x', { mode: 'steer', messageId: 'm' })
+    ).resolves.toEqual({ delivered: false, reason: 'no-open-turn' });
+    for (const loaded of fake.loaded.values()) loaded.activeTurn!.done = false;
+    await h.transport.interrupt('s1');
+    await rest(gen);
   });
 });
