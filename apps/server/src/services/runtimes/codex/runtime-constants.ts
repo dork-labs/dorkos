@@ -172,7 +172,11 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
  * Codex can now stop and ask, so the first two modes say so.
  *
  * - `default` — read-only sandbox, `on-request`: every change escalates to a
- *   card, so it asks `always`.
+ *   card, so it asks `always`. Declared exactly as Claude Code's `default`
+ *   (`asks: 'always'`, `reach: 'edit'`) because it behaves the same way: it
+ *   asks before any change, and an approved step can go further. That is what
+ *   lets a Claude Code chat in Default start a Codex chat in Ask first under
+ *   DOR-2714's ceiling, and still never in Workspace write or Full access.
  * - `acceptEdits` — Codex's own "Auto" preset: edits and commands inside the
  *   project and temp folders run; reaching outside them or the network asks.
  * - `bypassPermissions` — no sandbox and `never`: nothing is asked.
@@ -193,7 +197,7 @@ export const CODEX_APP_SERVER_PERMISSION_MODES: RuntimeCapabilities['permissionM
         'Codex reads freely and asks before changes. An approved step can reach beyond this project.',
       stop: 'ask',
       asks: 'always',
-      reach: 'workspace',
+      reach: 'edit',
       // "tools": an MCP tool its own server marks read-only runs without a
       // card (verified on 0.154, app-server.binary.test.ts); every other one asks.
       promise:

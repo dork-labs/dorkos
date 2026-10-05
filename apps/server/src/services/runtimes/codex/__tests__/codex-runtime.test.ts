@@ -422,7 +422,7 @@ describe('CodexRuntime', () => {
           reach,
         }))
       ).toEqual([
-        { id: 'default', label: 'Ask first', asks: 'always', reach: 'workspace' },
+        { id: 'default', label: 'Ask first', asks: 'always', reach: 'edit' },
         { id: 'acceptEdits', label: 'Workspace write', asks: 'when-risky', reach: 'workspace' },
         { id: 'bypassPermissions', label: 'Full access', asks: 'never', reach: 'everything' },
       ]);
