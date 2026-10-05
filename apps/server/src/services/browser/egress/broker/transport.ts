@@ -9,6 +9,8 @@ export interface OwnedSocket {
   readonly peer?: PinnedEndpoint;
   readonly observedClosed: boolean;
   readonly writableBytes: number;
+  /** Optional only for injected fixtures; native ownership is observed by its original owner. */
+  isCustodyKnown?(): boolean;
   onClose(callback: () => void): () => void;
   onError(callback: () => void): () => void;
   onData(callback: (bytes: Uint8Array) => void): () => void;
@@ -39,6 +41,7 @@ export interface OwnedListener {
   readonly address: '127.0.0.1';
   readonly port: number;
   readonly identity: object;
+  isCustodyKnown?(): boolean;
   onClose(callback: () => void): () => void;
   close(): void;
 }

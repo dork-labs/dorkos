@@ -1,12 +1,13 @@
 import { verifyPeer } from './transport.js';
 import type { EgressPolicyOptions } from '../settings.js';
 import { custodyPolicy } from './policy-custody.js';
-import type { BrokerIssuer, RunHandle, Permit } from './issuer.js';
+import type { BrokerIssuer, RunHandle, Permit, PreparedRunReceiver } from './issuer.js';
 import type { BrokerTransport, OwnedListener, OwnedSocket, AcceptedRequest } from './transport.js';
 import { validateUpgrade, renderResponse } from './responses.js';
 import { BrokerError } from './errors.js';
 import { bounded } from './clock.js';
-import { frameRequest } from './framing.js';
+import { parseDestination } from '../destination.js';
+import { frameRequest, validateProxyChallenge } from './framing.js';
 import { brokerCredential } from './credential.js';
 import { brokerLocalGrants } from './local-grants.js';
 import { createIntake } from './intake.js';
@@ -19,10 +20,14 @@ export function createPrivateBroker(options: {
   run: RunHandle;
   policy: EgressPolicyOptions;
   transport: BrokerTransport;
+  preparedReceiver?: PreparedRunReceiver;
 }) {
   const { issuer, run, transport } = options;
+  const receiver = options.preparedReceiver;
+  let activated = receiver === undefined;
   let policyPort = custodyPolicy({ ...options.policy, now: issuer.now });
-  issuer.check(run);
+  if (receiver) issuer.checkPrepared(run, receiver);
+  else issuer.check(run);
   if (options.policy.revision !== issuer.snapshot(run).policyRevision)
     throw new BrokerError('AUTHORITY_REFUSED');
   if (
@@ -53,6 +58,11 @@ export function createPrivateBroker(options: {
     if (stopped) throw new BrokerError('CLOSED');
     return state;
   };
+  const checkAdmission = () => {
+    if (stopped) throw new BrokerError('CLOSED');
+    if (receiver && !activated) return issuer.checkPrepared(run, receiver);
+    return check();
+  };
   const schedule = (ms: number, action: () => void) => {
     const timer = setTimeout(() => {
       timers.delete(timer);
@@ -61,7 +71,14 @@ export function createPrivateBroker(options: {
     timers.add(timer);
     return timer;
   };
-  const intake = createIntake({ issuer, run, check, isStopped: () => stopped, timers, schedule });
+  const intake = createIntake({
+    issuer,
+    run,
+    check: checkAdmission,
+    isStopped: () => stopped,
+    timers,
+    schedule,
+  });
   const clients = intake.clients;
   const dispatch = async (request: AcceptedRequest) => {
     const record = clients.get(request.client.identity);
@@ -109,6 +126,29 @@ export function createPrivateBroker(options: {
     try {
       guardedCall(request.body, 'pause', check);
       guardedCall(request.client, 'pause', check);
+      if (
+        !request.raw.rawHeaders.some(
+          (name, index) => index % 2 === 0 && name.toLowerCase() === 'proxy-authorization'
+        )
+      ) {
+        validateProxyChallenge(request.raw, issuer.limits);
+        issuer.ledger.transfer(record.charge, run);
+        await issuer.current(run);
+        check();
+        ownedSchedule(issuer.limits.headerMs, () => {
+          void close();
+        });
+        guardedWrite(
+          request.client,
+          Buffer.from(
+            'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="DorkOS"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+          ),
+          check,
+          issuer.limits.queueBytes
+        );
+        guardedCall(request.client, 'end', check);
+        return;
+      }
       const framed = frameRequest(request.raw, issuer.limits);
       if (!credential.verify(framed.credential, issuer.limits.credentialBytes))
         throw new BrokerError('CREDENTIAL_REFUSED');
@@ -373,7 +413,11 @@ export function createPrivateBroker(options: {
           results.every(Boolean) && (!listenerCharge || (listenerSettled && listenerClosed));
         if (observed) {
           unsubscribe();
-          issuer.releaseRun(run);
+          const released = issuer.releaseRun(run);
+          if (receiver && !released) {
+            resolve(false);
+            return;
+          }
         }
         resolve(observed);
       },
@@ -389,23 +433,52 @@ export function createPrivateBroker(options: {
     local.revoke();
     for (const record of intake.prepared.values()) void record.close();
   });
+  let activation: Promise<void> | undefined;
+  let preparationTimer: ReturnType<typeof setTimeout> | undefined;
+  const expirePrepared = () => {
+    if (!receiver || activated || stopped) return;
+    try {
+      issuer.checkPrepared(run, receiver);
+      preparationTimer = schedule(
+        Math.max(1, issuer.snapshot(run).deadline - issuer.now()),
+        expirePrepared
+      );
+    } catch {
+      void close();
+    }
+  };
+  if (receiver)
+    preparationTimer = schedule(
+      Math.max(1, issuer.snapshot(run).deadline - issuer.now()),
+      expirePrepared
+    );
   return Object.freeze({
     start() {
       if (startup) return Promise.reject(new BrokerError('CLOSED'));
-      check(); // Authority observations may synchronously start this exact owner.
+      checkAdmission(); // Authority observations may synchronously start this exact owner.
       if (startup) return Promise.reject(new BrokerError('CLOSED'));
       const settled = issuer.ledger.pending(listenerCharge);
       listenerDiscovery = issuer.ledger.socket(listenerCharge, {});
       const task = Promise.resolve().then(() => {
         const listen = transport.listen;
-        check();
+        checkAdmission();
         return Reflect.apply(listen, transport, [
           {
             maxConnections: issuer.limits.unauthenticated,
             headerBytes: issuer.limits.headerBytes,
             headerMs: issuer.limits.headerMs,
             reserveSocket: intake.reserve,
-            onSocket: intake.register,
+            onSocket: (slot, socket) => {
+              const admitted = intake.register(slot, socket);
+              if (admitted && receiver && !activated) {
+                // No cold connection can become a ready request later. Its exact
+                // original remains charged until the real close receipt arrives.
+                const record = clients.get(socket.identity)!;
+                record.started = true;
+                void record.close();
+              }
+              return admitted;
+            },
             onListener: registerListener,
             onRequest: (r) => {
               void dispatch(r);
@@ -453,7 +526,7 @@ export function createPrivateBroker(options: {
       startup = bounded(task, issuer.limits.dialMs).then((l) => {
         const address = l.address,
           port = l.port;
-        check();
+        checkAdmission();
         const invalidPort = !Number.isInteger(port) || port < 1 || port > 65535;
         if (listenerClosed || listener !== l || address !== '127.0.0.1' || invalidPort)
           throw new BrokerError('UNAVAILABLE');
@@ -461,16 +534,64 @@ export function createPrivateBroker(options: {
       });
       return startup
         .then(({ server, listener: ready }) => {
-          check();
+          checkAdmission();
           if (listenerClosed || listener !== ready) throw new BrokerError('UNAVAILABLE');
-          return { server, credential: credential.take() };
+          const secret = credential.take();
+          return Object.freeze({
+            server,
+            credential: secret,
+            credentials: Object.freeze({ username: 'dorkos', password: secret }),
+          });
         })
         .catch(async () => {
           await close();
           throw new BrokerError('UNAVAILABLE');
         });
     },
+    activate(originalReceiver: PreparedRunReceiver) {
+      if (
+        !receiver ||
+        receiver !== originalReceiver ||
+        activation ||
+        !startup ||
+        !listenerSettled ||
+        listenerClosed ||
+        stopped ||
+        [...intake.prepared.values()].some((record) => !record.custody.isCustodyKnown())
+      ) {
+        if (receiver && !activated) void close();
+        return Promise.reject(new BrokerError('CLOSED'));
+      }
+      activation = issuer
+        .activatePrepared(run, originalReceiver, (policyOptions) => {
+          const next = custodyPolicy({ ...policyOptions, now: issuer.now });
+          const grants = brokerLocalGrants(issuer, run, next.policy, closeLocal);
+          policyPort = next;
+          local = grants;
+        })
+        .then(() => {
+          activated = true;
+          check();
+          if (preparationTimer) {
+            clearTimeout(preparationTimer);
+            timers.delete(preparationTimer);
+            preparationTimer = undefined;
+          }
+        })
+        .catch(async (error) => {
+          await close();
+          throw error;
+        });
+      return activation;
+    },
     grantLocal(...args: Parameters<typeof local.issue>) {
+      const target = parseDestination({ url: args[0] });
+      if (
+        !listener ||
+        listenerClosed ||
+        (target.hostname === listener.address && target.port === listener.port)
+      )
+        throw new BrokerError('AUTHORITY_REFUSED');
       return local.issue(...args);
     },
     revokeLocal() {
@@ -489,9 +610,24 @@ export function createPrivateBroker(options: {
       local = grants;
     },
     close,
+    /** Private original-owner handoff for protected inventory; never a caller endpoint DTO. */
+    ownedListener() {
+      return listener;
+    },
+    isCustodyKnown() {
+      return (
+        !stopped &&
+        listenerSettled &&
+        listener !== undefined &&
+        !listenerClosed &&
+        listener.isCustodyKnown?.() === true &&
+        [...intake.prepared.values()].every((record) => record.custody.isCustodyKnown())
+      );
+    },
     status() {
       return Object.freeze({
         stopped,
+        activated,
         listenerSettled,
         listenerClosed,
         clients: clients.size,
@@ -500,4 +636,13 @@ export function createPrivateBroker(options: {
       });
     },
   });
+}
+
+/** Prelaunch capacity and exact original intake, never a prepared forwarding authority. */
+export function createPreparedPrivateBroker(
+  options: Omit<Parameters<typeof createPrivateBroker>[0], 'preparedReceiver'> & {
+    receiver: PreparedRunReceiver;
+  }
+) {
+  return createPrivateBroker({ ...options, preparedReceiver: options.receiver });
 }

@@ -1,3 +1,5 @@
+import type { PreparedRunReceiver } from './issuer.js';
+import type { EgressPolicyOptions } from '../settings.js';
 import type { EgressBinding } from '../settings.js';
 /** Trusted producer evidence, never supplied by a proxy request or a viewer. */
 export interface AuthorityObservation {
@@ -33,6 +35,11 @@ export interface AuthorityPorts {
     signal: AbortSignal
   ) => Promise<AuthorityObservation>;
   readonly readInventory: () => InventoryObservation;
+  /** One-time original-owner bootstrap seal; never accepted from a request endpoint list. */
+  readonly readPreparedPolicy?: (
+    binding: EgressBinding,
+    receiver: PreparedRunReceiver
+  ) => EgressPolicyOptions;
 }
 /** Complete binding equality includes browser lifetime, never just a profile name. */
 export function sameBinding(a: EgressBinding, b: EgressBinding): boolean {
