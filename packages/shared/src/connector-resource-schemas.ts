@@ -8,8 +8,8 @@
  * @module shared/connector-resource-schemas
  */
 import { z } from 'zod';
-import { ConnectorAuthenticationSetupSchema } from './connector-authentication-setup.js';
-import { ConnectorProviderStatusSchema } from './connector-provider.js';
+import { ConnectorAuthenticationSetupSchema } from '@dork-labs/connector-providers/connector-authentication-setup';
+import { ConnectorProviderStatusSchema } from '@dork-labs/connector-providers/connector-provider';
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
   ConnectionIdSchema,
@@ -20,7 +20,7 @@ import {
   ConnectorProviderCapabilitySetSchema,
   ConnectorProviderInstanceIdSchema,
   ConnectorProviderModeSchema,
-} from './connector-schemas.js';
+} from '@dork-labs/connector-providers/connector-schemas';
 
 /** Secret-free warning carried beside a partial connector result. */
 export const ConnectorPublicWarningSchema = z

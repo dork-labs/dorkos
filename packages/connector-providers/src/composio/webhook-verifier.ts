@@ -3,8 +3,8 @@ import { Composio } from '@composio/core';
 import {
   CONNECTOR_EVENT_MAX_RAW_BYTES,
   CONNECTOR_EVENT_SIGNATURE_TOLERANCE_SECONDS,
-} from '@dorkos/shared/connector-event-schemas';
-import type { ConnectorRawWebhook } from '@dorkos/shared/connector-events';
+} from '../connector-event-schemas.js';
+import type { ConnectorRawWebhook } from '../connector-events.js';
 
 /** Verify a bounded signed envelope without inferring account or tenant ownership. */
 export async function verifyComposioWebhook(

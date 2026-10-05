@@ -1,6 +1,22 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: [
+      {
+        // The connector schema modules live in `@dork-labs/connector-providers`,
+        // whose `exports` point at its built `dist/`. Without this alias every
+        // test here that reaches them (directly or through this package's
+        // re-exports) runs yesterday's compiled copy: a mutation in that
+        // package's `src/` with `dist/` left stale passed this package's whole
+        // connector-schemas suite. Only the flat schema subpaths are mapped;
+        // shared never imports the Composio adapter.
+        find: /^@dork-labs\/connector-providers\/(connector-[a-z-]+|stable-stringify)$/,
+        replacement: fileURLToPath(new URL('../connector-providers/src/$1.ts', import.meta.url)),
+      },
+    ],
+  },
   test: {
     // What `--project <name>` matches from the repo root. Rationale:
     // apps/server/vitest.config.ts. Pinned for every project by

@@ -12,7 +12,7 @@ import {
   createComposioHostedClients,
   normalizeComposioToolkitAuthentication,
   type ComposioOperationClient,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 import {
   ManagedAuthenticationResolutionError,
   resolveManagedAuthenticationConfiguration,

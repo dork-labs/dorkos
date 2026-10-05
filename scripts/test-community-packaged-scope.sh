@@ -68,6 +68,8 @@ for path in \
   packages/shared/src/community-adapter.ts \
   packages/shared/src/community-schemas.ts \
   packages/cloud-api/src/index.ts \
+  packages/connector-providers/src/connector-schemas.ts \
+  packages/connector-providers/package.json \
   packages/cli/scripts/build.ts \
   pnpm-lock.yaml \
   pnpm-workspace.yaml \
@@ -84,6 +86,7 @@ for path in \
   apps/client/package.json \
   packages/shared/src/transport.ts \
   packages/shared/package.json \
+  packages/connector-providersx/package.json \
   packages/shared/src/handle.ts \
   packages/shared/src/room-schemas.ts \
   packages/db/src/schema/rooms.ts \

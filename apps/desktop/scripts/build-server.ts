@@ -37,6 +37,13 @@ const { version } = JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json
 // other consumer and the two build scripts are otherwise unrelated.
 // -----------------------------------------------------------------------------
 
+/**
+ * Published `@dork-labs/*` packages this bundle still inlines from SOURCE; the
+ * CLI build script's set of the same name documents why. Their `types` is a
+ * built `.d.ts`, so the source path is derived from `default` instead.
+ */
+const PUBLISHED_SOURCE_PACKAGES = new Set(['@dork-labs/connector-providers']);
+
 /** A workspace package indexed for source resolution. */
 interface WorkspacePackage {
   /** Absolute path to the package directory. */
@@ -63,7 +70,9 @@ function loadWorkspacePackages(): Map<string, WorkspacePackage> {
     } catch {
       continue; // Directory without a readable package.json (e.g. a build dir).
     }
-    if (!pkg.name?.startsWith('@dorkos/') || !pkg.exports) continue;
+    const sourced =
+      pkg.name?.startsWith('@dorkos/') || PUBLISHED_SOURCE_PACKAGES.has(pkg.name ?? '');
+    if (!sourced || !pkg.name || !pkg.exports) continue;
     registry.set(pkg.name, { dir, exports: pkg.exports });
   }
   return registry;
@@ -83,6 +92,12 @@ function sourcePathFromExportsEntry(entry: unknown): string | undefined {
   if (typeof entry === 'string') return entry;
   if (entry && typeof entry === 'object') {
     const conditions = entry as Record<string, unknown>;
+    if (typeof conditions.types === 'string' && conditions.types.endsWith('.d.ts')) {
+      // A published package: map its compiled entry back to the source file.
+      const built = conditions.default;
+      if (typeof built !== 'string' || !/^\.\/dist\/.+\.js$/.test(built)) return undefined;
+      return built.replace(/^\.\/dist\//, './src/').replace(/\.js$/, '.ts');
+    }
     const source = conditions.types ?? conditions.default;
     if (typeof source === 'string') return source;
   }
@@ -90,8 +105,9 @@ function sourcePathFromExportsEntry(entry: unknown): string | undefined {
 }
 
 /**
- * esbuild plugin that resolves every `@dorkos/*` workspace import (root and
- * subpath) to the package's TypeScript source instead of its compiled dist.
+ * esbuild plugin that resolves every `@dorkos/*` workspace import, and those
+ * of {@link PUBLISHED_SOURCE_PACKAGES}, (root and subpath) to the package's
+ * TypeScript source instead of its compiled dist.
  * `@dorkos/server` itself isn't in this registry (it lives in `apps/`, not
  * `packages/`) — its own `exports` map points straight at source with no
  * `dist` alternative, so esbuild's default resolution already does the right
@@ -104,7 +120,8 @@ function dorkosSourcePlugin(): Plugin {
   return {
     name: 'resolve-dorkos-source',
     setup(build) {
-      build.onResolve({ filter: /^@dorkos\// }, (args) => {
+      // Unregistered `@dork-labs/*` packages fall through to esbuild's own resolution.
+      build.onResolve({ filter: /^@(?:dorkos|dork-labs)\// }, (args) => {
         const segments = args.path.split('/');
         const pkgName = `${segments[0]}/${segments[1]}`;
         const pkg = registry.get(pkgName);

@@ -8,7 +8,7 @@ import { and, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import {
   ComposioEventClient,
   createComposioHostedClients,
-} from '@dorkos/connector-providers/composio';
+} from '@dork-labs/connector-providers/composio';
 import {
   MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS,
   ManagedConnectorAuthorityCommandSchema,
