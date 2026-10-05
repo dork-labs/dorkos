@@ -16,6 +16,7 @@ export type {
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
   TurnExecutionSettings,
+  LateFollowEnd,
   LateTurn,
   LateTurnSource,
 } from './types.js';

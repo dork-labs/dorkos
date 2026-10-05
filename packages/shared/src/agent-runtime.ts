@@ -1663,6 +1663,27 @@ export interface AgentRuntime {
    */
   holdsBackgroundWork?(sessionId: string): boolean;
 
+  /**
+   * Subscribe to "a turn somebody dispatched has opened on this session" — a
+   * person's message, a room turn, a scheduled run or a relay message alike
+   * (DOR-2717).
+   *
+   * The companion to {@link holdsBackgroundWork}. A caller that kept listening
+   * for the agent's later turns after its own turn ended has to stop the moment
+   * anyone else gives the session new work: from then on a turn the agent starts
+   * on its own may be answering that work instead, and its words must not reach
+   * a caller who never asked for them.
+   *
+   * Optional, and owed by exactly the runtimes that implement
+   * {@link holdsBackgroundWork}. A throw from the listener must not reach the
+   * runtime's own dispatch.
+   *
+   * @param listener - Told which session took a dispatched turn, in any id it
+   *   answers to
+   * @returns Unsubscribes the listener
+   */
+  onDispatchedTurn?(listener: (sessionId: string) => void): () => void;
+
   // --- Session queries (storage) ---
 
   /** List all sessions for a project directory. */

@@ -315,6 +315,8 @@ export class PersistentDispatch {
    * `undefined` when nothing is listening (spec `warm-process-lifecycle` D1).
    */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;
+  /** Whoever wants to know a dispatched turn opened (DOR-2717), if anybody does. */
+  private dispatchedTurnListener: ((sessionId: string) => void) | undefined;
   /**
    * Build the dispatcher over a runtime's pump registry.
    *
@@ -395,6 +397,21 @@ export class PersistentDispatch {
     this.dispatchGateListener = listener;
     return () => {
       if (this.dispatchGateListener === listener) this.dispatchGateListener = undefined;
+    };
+  }
+
+  /**
+   * Listen for a dispatched turn opening on a held process (DOR-2717). Only
+   * this path matters: a session without a held process has no background work
+   * for a later turn to come from.
+   *
+   * @param listener - Told which session took a dispatched turn
+   * @returns Unsubscribes the listener
+   */
+  onDispatchedTurn(listener: (sessionId: string) => void): () => void {
+    this.dispatchedTurnListener = listener;
+    return () => {
+      if (this.dispatchedTurnListener === listener) this.dispatchedTurnListener = undefined;
     };
   }
 
@@ -774,6 +791,16 @@ export class PersistentDispatch {
       return;
     } finally {
       bundle.booting = false;
+    }
+    // Told once the window is open, so a turn the process refused never ends
+    // anybody's follow of the session's later turns. A throw stays out here.
+    try {
+      this.dispatchedTurnListener?.(sessionId);
+    } catch (err) {
+      logger.warn('[PersistentDispatch] a dispatched-turn listener threw', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     yield* streamTurnWindow({

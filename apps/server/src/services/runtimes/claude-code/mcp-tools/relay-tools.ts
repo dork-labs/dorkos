@@ -528,7 +528,7 @@ export function createRelayDispatchHandler(
       return jsonContent({
         messageId: result.messageId,
         inboxSubject,
-        note: `Poll relay_inbox(endpoint_subject="${inboxSubject}", ack=true) for progress (defaults to pending/unread messages). Call relay_unregister_endpoint("${inboxSubject}") when a payload with done:true is received, unless it also carries continuing:true — then a later agent_result marked late:true is still coming.`,
+        note: `Poll relay_inbox(endpoint_subject="${inboxSubject}", ack=true) for progress (defaults to pending/unread messages). Call relay_unregister_endpoint("${inboxSubject}") when a payload with done:true is received, unless it also carries continuing:true — then, for up to 30 minutes, a later agent_result marked late:true may still come.`,
       });
     } catch (e) {
       // Clean up inbox on publish error
@@ -661,8 +661,10 @@ export function getRelayTools(
         '{ type: "agent_result", text, done: true }. A final payload may also carry error: the ' +
         'agent turn FAILED, and text is only what it produced before failing — check for error ' +
         'before treating text as an answer. A final payload with continuing:true means the agent ' +
-        'is still working in the background and will report again: a later agent_result with ' +
-        'late:true follows on the same inbox. Defaults to status="pending" (deliverable, unread ' +
+        'is still working in the background: for up to 30 minutes, a later agent_result with ' +
+        'late:true may follow on the same inbox. One with late:true and error instead says no ' +
+        'later report is coming; a server restart ends the wait without one. Defaults to ' +
+        'status="pending" (deliverable, unread ' +
         'messages) so budget-rejected failures never surface silently next to real deliverables. Pass ' +
         'ack=true when polling so each message is returned once — note that ack PERMANENTLY DELETES the ' +
         'message content, so read what you need out of the response before your next call.',
@@ -769,8 +771,9 @@ export function getRelayTools(
         'to the inbox. Poll the inbox tool with that subject and ack=true for updates (defaults ' +
         'to pending/unread messages). When you receive a payload with done:true, call ' +
         'the unregister-endpoint tool on that subject to clean up — unless it also carries ' +
-        'continuing:true: the agent is still working in the background, so keep polling for the ' +
-        'agent_result marked late:true that follows. A done:true payload carrying ' +
+        'continuing:true: the agent is still working in the background, and for up to 30 ' +
+        'minutes an agent_result marked late:true may follow (one carrying error says nothing ' +
+        'more is coming). A done:true payload carrying ' +
         'error means their turn failed — its text is partial work, not an answer.',
       {
         to_subject: z

@@ -798,8 +798,9 @@ export const RelayAgentResultPayloadSchema = z
       .describe(
         'Present when the agent is still working in the background after this turn — ' +
           'a helper, a shell, a timer — so it may report again. On an inbox that stays ' +
-          'open, that later report arrives as another agent_result marked `late`; keep ' +
-          'polling for it rather than closing the inbox (DOR-2717).'
+          'open, that later report may arrive, for up to 30 minutes, as another ' +
+          'agent_result marked `late`; one marked `late` with `error` and no text says ' +
+          'nothing more is coming. A server restart ends the wait without one (DOR-2717).'
       ),
     late: z
       .literal(true)

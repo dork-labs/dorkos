@@ -18,6 +18,7 @@ import { subscribeRuntimeTurns } from '../../../session/runtime-turns/runtime-tu
 import { resetLateTurnFollowers } from '../../../session/runtime-turns/late-turns.js';
 import { resetMessageDispatcher } from '../../../session/message-dispatcher.js';
 import { getOrCreateProjector } from '../../../session/session-state-projector.js';
+import { eventFanOut } from '../../../core/event-fan-out.js';
 
 vi.mock('../../../notifications/emitters/run-completed.js', () => ({
   notifyRunCompleted: vi.fn().mockResolvedValue(undefined),
@@ -137,5 +138,51 @@ describe('a run whose agent reports back after its turn ended', () => {
     await flush();
 
     expect(store.getRun(runId)?.outputSummary).not.toContain('The build is green.');
+  });
+
+  it('credits nothing said after somebody else gave the session new work', async () => {
+    runtime.holdsBackgroundWork.mockReturnValue(true);
+    const runId = finishRun();
+    await flush();
+
+    // A person opens the run's conversation and asks something of their own.
+    for await (const _event of runtime.sendMessage(sessionId, 'a question of my own')) {
+      // drained
+    }
+    runtime.emitRuntimeTurn(sessionId, turnSaying('My answer to that person.', sessionId));
+    await flush();
+
+    expect(store.getRun(runId)?.outputSummary).not.toContain('My answer to that person.');
+  });
+
+  it('tells open apps the run changed, so its list re-reads', async () => {
+    const broadcast = vi.spyOn(eventFanOut, 'broadcast');
+    runtime.holdsBackgroundWork.mockReturnValue(true);
+    const runId = finishRun();
+    await flush();
+    broadcast.mockClear();
+
+    runtime.holdsBackgroundWork.mockReturnValue(false);
+    runtime.emitRuntimeTurn(sessionId, turnSaying('The build is green.', sessionId));
+    await flush();
+
+    expect(broadcast).toHaveBeenCalledWith('task_run_updated', expect.objectContaining({ runId }));
+    broadcast.mockRestore();
+  });
+
+  it('keeps no more than a bounded amount of later output, however much the agent says', async () => {
+    runtime.holdsBackgroundWork.mockReturnValue(true);
+    const runId = finishRun();
+    await flush();
+    const settled = store.getRun(runId)!.outputSummary!.length;
+
+    for (let i = 0; i < 5; i += 1) {
+      runtime.emitRuntimeTurn(sessionId, turnSaying('x'.repeat(800), sessionId));
+      await flush();
+    }
+
+    const output = store.getRun(runId)!.outputSummary!;
+    expect(output.length - settled).toBeLessThanOrEqual(1000 + 2);
+    expect(output).toContain('Reported later: x');
   });
 });

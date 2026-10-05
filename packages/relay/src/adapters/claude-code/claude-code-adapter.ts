@@ -360,8 +360,9 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   /** The agent turns this adapter is executing, so a cancel can reach them. */
   private readonly runningTurns = new AbortRegistry();
   /**
-   * Who is still listening for an agent's later turns, by session key, so the
-   * next message to that session ends the earlier follow (DOR-2717).
+   * Who is still listening for an agent's later turns, by conversation scope,
+   * so the next message to that conversation ends the earlier follow, and a
+   * stopping adapter ends them all (DOR-2717).
    */
   private readonly lateFollowers = new Map<string, () => void>();
   private status: AdapterStatus = {
@@ -480,7 +481,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // is answered with the truth instead of aborting a stranger's run.
     this.runningTasks.clear();
     this.runningTurns.clear();
-    // A stopped adapter publishes nothing more, late results included.
+    // A stopped adapter follows nothing more. Each follow ends by telling its
+    // caller, once, that no later report is coming.
     for (const stopFollowing of [...this.lateFollowers.values()]) stopFollowing();
     this.lateFollowers.clear();
     // A hold is a promise that a turn will run, and this adapter is about to

@@ -324,14 +324,24 @@ export interface LateTurnSource {
    * @param opts.runtimeType - The runtime the session runs on
    * @param opts.sessionKey - The session, as the adapter keyed its turn
    * @param opts.onTurn - Handed each later turn, in order
+   * @param opts.onEnd - Told once why the follow ended; stopping it counts
    * @returns Stops following; safe to call more than once
    */
   follow(opts: {
     runtimeType: string;
     sessionKey: string;
     onTurn: (turn: LateTurn) => void;
+    /** Told once, after the last turn, why the follow ended. */
+    onEnd?: (reason: LateFollowEnd) => void;
   }): () => void;
 }
+
+/**
+ * Why a follow of later turns ended. `final` — the agent ended a turn holding
+ * no more work; `expired` — its window passed; `superseded` — new work reached
+ * the session; `stopped` — the adapter ended it.
+ */
+export type LateFollowEnd = 'final' | 'expired' | 'superseded' | 'stopped';
 
 /**
  * Minimal interface for the persistent agent session store.

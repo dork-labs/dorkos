@@ -126,8 +126,8 @@ export interface AgentHandlerDeps {
    */
   lateTurns?: LateTurnSource;
   /**
-   * The adapter's live follows by session key. This turn ends the one an
-   * earlier message left, and registers its own when it leaves one.
+   * The adapter's live follows by conversation scope. This turn ends the one
+   * an earlier message left, and registers its own when it leaves one.
    */
   lateFollowers?: Map<string, () => void>;
   logger?: import('@dorkos/shared/logger').Logger;
@@ -258,17 +258,27 @@ function abortText(signal: AbortSignal, started: boolean): string | undefined {
 const QUERY_INBOX_PREFIX = 'relay.inbox.query.';
 
 /**
+ * What closes a follow that ended without a final report, so a caller told
+ * `continuing` is never left polling for something that will not come.
+ */
+const NO_LATER_REPORT = 'No later report will be delivered.';
+
+/**
  * Publish each turn the agent starts on its own, after this message's turn
  * ended, to the same inbox as a result marked `late` (DOR-2717).
  *
- * Registered in `lateFollowers` under the session key, so the next message to
- * that session ends it; it also ends itself after a turn the agent finishes
- * holding no more work, and the host bounds it in time.
+ * Registered in `lateFollowers` under the conversation's stable scope — not the
+ * session key, which a first turn renames — so the next message to that
+ * conversation ends it. The host also ends it: after a turn the agent finishes
+ * holding no more work (`final`), when its window passes, or when anyone gives
+ * the session new work. Every ending but `final` publishes one closing result
+ * saying nothing more is coming. Publishes are chained, so the inbox reads them
+ * in the order they happened.
  *
  * @param deps - The handler's dependencies, for the follower map and runtime type
  * @param lateTurns - Where the later turns come from
  * @param envelope - The message whose inbox hears the later turns
- * @param sessionKey - The session the turn ran under
+ * @param follow - The session the turn ran under, and the conversation's scope
  * @param relay - The publisher
  * @param log - Where a failed publish is reported
  */
@@ -276,34 +286,35 @@ function followLateResults(
   deps: AgentHandlerDeps,
   lateTurns: LateTurnSource,
   envelope: RelayEnvelope,
-  sessionKey: string,
+  follow: { sessionKey: string; scope: string },
   relay: RelayPublisher,
   log: Pick<Console, 'warn'>
 ): void {
+  const { sessionKey, scope } = follow;
   const followers = deps.lateFollowers;
-  // Assigned once `follow` has returned; the turn callback cannot run before.
-  let stopFollowing: () => void = () => {};
-  const forget = (): void => {
-    if (followers?.get(sessionKey) === stopFollowing) followers.delete(sessionKey);
+  let published: Promise<void> = Promise.resolve();
+  const publishInOrder = (text: string, error: string | undefined, continuing: boolean): void => {
+    published = published
+      .then(() =>
+        publishAgentResult(envelope, text, sessionKey, relay, error, { late: true, continuing })
+      )
+      .catch((err: unknown) => {
+        log.warn(`[CCA] could not publish a late result for ${sessionKey}:`, describeError(err));
+      });
   };
+  // Assigned once `follow` has returned; neither callback can run before.
+  let stopFollowing: () => void = () => {};
   const unfollow = lateTurns.follow({
     runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
     sessionKey,
-    onTurn: (turn) => {
-      if (!turn.continuing) forget();
-      publishAgentResult(envelope, turn.text, sessionKey, relay, turn.error, {
-        late: true,
-        continuing: turn.continuing,
-      }).catch((err: unknown) => {
-        log.warn(`[CCA] could not publish a late result for ${sessionKey}:`, describeError(err));
-      });
+    onTurn: (turn) => publishInOrder(turn.text, turn.error, turn.continuing),
+    onEnd: (reason) => {
+      if (followers?.get(scope) === stopFollowing) followers.delete(scope);
+      if (reason !== 'final') publishInOrder('', NO_LATER_REPORT, false);
     },
   });
-  stopFollowing = () => {
-    unfollow();
-    forget();
-  };
-  followers?.set(sessionKey, stopFollowing);
+  stopFollowing = unfollow;
+  followers?.set(scope, stopFollowing);
 }
 
 /**
@@ -640,7 +651,7 @@ export async function handleAgentMessage(
 
   // New work on this session: a later turn from here on answers THIS message,
   // so whoever was still listening on behalf of an earlier one stops (DOR-2717).
-  if (!stoppedBeforeStart) deps.lateFollowers?.get(ccaSessionKey)?.();
+  if (!stoppedBeforeStart) deps.lateFollowers?.get(sessionScope)?.();
 
   const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
   const eventStream = stoppedBeforeStart
@@ -847,7 +858,14 @@ export async function handleAgentMessage(
     // late result could only be dead-lettered there. It is TOLD, through
     // `continuing`, and nothing is followed for it.
     if (continuing && deps.lateTurns && !envelope.replyTo.startsWith(QUERY_INBOX_PREFIX)) {
-      followLateResults(deps, deps.lateTurns, envelope, ccaSessionKey, relay, log);
+      followLateResults(
+        deps,
+        deps.lateTurns,
+        envelope,
+        { sessionKey: ccaSessionKey, scope: sessionScope },
+        relay,
+        log
+      );
     }
   }
 

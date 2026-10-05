@@ -193,7 +193,8 @@ Workflow: Dispatch to another agent — LONG tasks (>10 min)
    → a final result may also carry error: "…". That means their turn FAILED; text is
      only what they managed before it did. Check for error before using text as an answer
    → a final result may also carry continuing: true. They are still working in the
-     background; keep polling, and a later agent_result marked late: true brings the rest
+     background; keep polling for up to 30 minutes for a later agent_result marked
+     late: true. One marked late: true with an error means nothing more is coming
    → ack=true DELETES each returned message's content for good, so each poll only returns
      new messages — take what you need from the response, it will not be there next time
 3. When a payload with done:true (and no continuing: true) is received: ${T}relay_unregister_endpoint(subject=inboxSubject)

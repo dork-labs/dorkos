@@ -124,6 +124,7 @@ export class FakeAgentRuntime implements AgentRuntime {
     content: string,
     _opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
+    this.dispatchedTurnListener?.(_sessionId);
     const scenario = this._scenarios[this._scenarioIndex];
     if (scenario) {
       this._scenarioIndex++;
@@ -203,6 +204,21 @@ export class FakeAgentRuntime implements AgentRuntime {
    * spied so a test can stand in for a helper still running (DOR-2717).
    */
   holdsBackgroundWork = vi.fn<(sessionId: string) => boolean>(() => false);
+
+  /** The listener {@link onDispatchedTurn} registered, if anything is listening. */
+  private dispatchedTurnListener: ((sessionId: string) => void) | undefined;
+
+  /**
+   * Listen for a dispatched turn opening. Every {@link sendMessage} reports one,
+   * as a real runtime's dispatch does; spied so a test can assert the server
+   * subscribed.
+   */
+  onDispatchedTurn = vi.fn<(listener: (sessionId: string) => void) => () => void>((listener) => {
+    this.dispatchedTurnListener = listener;
+    return () => {
+      this.dispatchedTurnListener = undefined;
+    };
+  });
 
   /** The listener {@link onDispatchGateChange} registered, if anything is listening. */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;

@@ -809,13 +809,15 @@ describe('a room turn that speaks only through the tool', () => {
     });
   });
 
-  describe('a report the agent posts from a later turn of its own (DOR-2717)', () => {
-    // An agent hands the question to a background helper and ends its turn. The
-    // helper's report wakes it later in a turn nobody dispatched — a runtime
-    // turn, projected into the session and never into the room. Nothing about
-    // the room's late-reply path follows it, and nothing has to: a room turn's
-    // words are never posted anyway, so the agent speaks by calling the tool,
-    // and the tool answers with no claim held. This pins that the report lands.
+  describe('a report the agent posts from a later turn of its own (DOR-2717, existing behaviour)', () => {
+    // Documents why rooms needed no change for DOR-2717, and guards the one
+    // property that conclusion rests on. An agent hands the question to a
+    // background helper and ends its turn; the helper's report wakes it later in
+    // a turn nobody dispatched, which reaches the session and never the room's
+    // late-reply path. That is fine only because a room turn's words are never
+    // posted anyway: the agent speaks by calling the tool, and the tool must
+    // accept a post with no claim held. If a future change ties `post_to_room`
+    // to a live claim, this goes red — and later reports would be lost.
     it('lands in the room though the turn that delegated it is long over', async () => {
       open(outcomeRunner(() => ({ text: 'Started a helper on it; I will report back.' })));
       await seedAndSettle();

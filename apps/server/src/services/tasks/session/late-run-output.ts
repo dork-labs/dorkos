@@ -21,6 +21,7 @@
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { TaskRun } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../config/constants.js';
+import { eventFanOut } from '../../core/event-fan-out.js';
 import { followLateTurns } from '../../session/runtime-turns/late-turns.js';
 import type { TaskStore } from '../task-store.js';
 
@@ -59,33 +60,50 @@ export function followLateRunOutput(deps: LateRunOutputDeps, run: TaskRun): void
     runtime,
     sessionId,
     windowMs: deps.windowMs ?? SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS,
-    onTurn: (turn) => appendLateOutput(deps.store, run.id, turn),
+    onTurn: (turn) => {
+      if (appendLateOutput(deps.store, run, turn)) {
+        // The run list is open in somebody's app more often than not; tell it
+        // to re-read rather than wait for its next poll.
+        eventFanOut.broadcast('task_run_updated', { runId: run.id, scheduleId: run.scheduleId });
+      }
+    },
   });
 }
 
-/** How much of one later turn's words a run keeps — the bound its own summary has. */
-const LATE_OUTPUT_MAX_CHARS = 500;
+/**
+ * How much later output one run keeps in all, across every later turn — the
+ * bound its own summary is collected to, twice over, so a chatty agent cannot
+ * grow a run's row without limit.
+ */
+const LATE_OUTPUT_MAX_CHARS = 1000;
 
 /**
  * Add one later turn's words to the run's output, leaving its outcome alone.
  *
  * @param store - Where the run lives
- * @param runId - The run the turn belongs to
+ * @param settled - The run as it settled, whose output the later words follow
  * @param turn - What the agent said, and why its turn failed when it did
+ * @returns Whether anything was written
  */
 function appendLateOutput(
   store: Pick<TaskStore, 'getRun' | 'setRunOutput'>,
-  runId: string,
+  settled: TaskRun,
   turn: { text: string; error?: string }
-): void {
-  const run = store.getRun(runId);
-  if (!run) return;
-  const said = turn.text.trim().slice(0, LATE_OUTPUT_MAX_CHARS);
-  const added = [
-    ...(said !== '' ? [`Reported later: ${said}`] : []),
-    ...(turn.error !== undefined ? [`The later report failed: ${turn.error}`] : []),
-  ];
-  if (added.length === 0) return;
+): boolean {
+  const run = store.getRun(settled.id);
+  if (!run) return false;
   const before = run.outputSummary ?? '';
-  store.setRunOutput(runId, [...(before !== '' ? [before] : []), ...added].join('\n\n'));
+  // Measured from what the run settled with, so the cap is on what was ADDED.
+  const used = before.length - (settled.outputSummary ?? '').length;
+  const room = LATE_OUTPUT_MAX_CHARS - Math.max(0, used);
+  if (room <= 0) return false;
+  const added = [
+    ...(turn.text.trim() !== '' ? [`Reported later: ${turn.text.trim()}`] : []),
+    ...(turn.error !== undefined ? [`The later report failed: ${turn.error}`] : []),
+  ]
+    .join('\n\n')
+    .slice(0, room);
+  if (added === '') return false;
+  store.setRunOutput(settled.id, before === '' ? added : `${before}\n\n${added}`);
+  return true;
 }

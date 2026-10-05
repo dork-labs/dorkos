@@ -23,15 +23,20 @@
  * nothing more, its window closes, or newer work on the same session takes
  * over.
  *
- * ## Why newer work takes over
+ * ## Why any new work ends every follow
  *
- * A later turn carries no label saying which request it answers. While one
- * caller follows a session nothing else can dispatch into it without the
- * follower noticing, so the honest rule is the simple one: the most recent
- * follower of a session, per kind of caller, is the one a later turn belongs
- * to. A sticky task's next run, or the next relay message to the same agent,
- * replaces the earlier follower rather than splitting the agent's words between
- * two callers.
+ * A later turn carries no label saying which request it answers. Once anyone
+ * dispatches a turn into the session — a person's message, a room turn, a run,
+ * another relay message — a turn the agent starts afterwards may be answering
+ * THAT, and its words must not reach a caller who never asked for them. So the
+ * runtime reports every dispatched turn (`AgentRuntime.onDispatchedTurn`) and
+ * every follow of that session ends there ({@link noteDispatchedTurn}). A
+ * newer follow by the same kind of caller replaces an older one for the same
+ * reason.
+ *
+ * A follow that ends any way but on a final turn says so ({@link
+ * LateFollowEnd}), so a caller that promised more can tell its own caller that
+ * nothing more is coming rather than leave it waiting.
  *
  * @module services/session/runtime-turns/late-turns
  */
@@ -64,6 +69,13 @@ export interface LateTurn {
   continuing: boolean;
 }
 
+/**
+ * Why a follow ended. `final` — the agent ended a turn holding no more work;
+ * `expired` — its window passed; `superseded` — new work reached the session,
+ * or a newer follower of the same kind took it; `stopped` — the caller ended it.
+ */
+export type LateFollowEnd = 'final' | 'expired' | 'superseded' | 'stopped';
+
 /** Options for {@link followLateTurns}. */
 export interface FollowLateTurnsOptions {
   /** Which kind of caller follows — newer work replaces older within a kind. */
@@ -76,12 +88,20 @@ export interface FollowLateTurnsOptions {
   windowMs: number;
   /** Handed each later turn, in order. A throw is logged and swallowed. */
   onTurn: (turn: LateTurn) => void;
+  /** Told once, after the last turn, why the follow ended. A throw is logged. */
+  onEnd?: (reason: LateFollowEnd) => void;
 }
 
 const settledListeners = new Set<(turn: SettledRuntimeTurn) => void>();
 
-/** The live follower per `owner` + resolved session, so newer work replaces it. */
-const followers = new Map<string, () => void>();
+/** One live follow, by `owner` + runtime + resolved session. */
+interface Follower {
+  runtime: AgentRuntime;
+  sessionId: string;
+  end: (reason: LateFollowEnd) => void;
+}
+
+const followers = new Map<string, Follower>();
 
 /**
  * Announce that a turn the agent started on its own has ended.
@@ -121,8 +141,9 @@ function resolvedKey(runtime: AgentRuntime, sessionId: string): string {
  * Call it only once the dispatched turn has ended and
  * `runtime.holdsBackgroundWork` said more may come — it hands over nothing
  * that ended before the call. Ends by itself after the first later turn the
- * agent ends holding nothing, when `windowMs` passes, or when a newer follower
- * of the same `owner` takes the session.
+ * agent ends holding nothing, when `windowMs` passes, when a dispatched turn
+ * opens on the session, or when a newer follower of the same `owner` takes it
+ * — and tells `onEnd` which.
  *
  * @param opts - What to follow, for how long, and who to tell
  * @returns Stops following; safe to call more than once
@@ -130,19 +151,12 @@ function resolvedKey(runtime: AgentRuntime, sessionId: string): string {
 export function followLateTurns(opts: FollowLateTurnsOptions): () => void {
   const { runtime, sessionId, owner } = opts;
   const followerKey = `${owner}\u0000${runtime.type}\u0000${resolvedKey(runtime, sessionId)}`;
-  followers.get(followerKey)?.();
+  followers.get(followerKey)?.end('superseded');
 
-  let stopped = false;
+  let ended = false;
   const listener = (turn: SettledRuntimeTurn): void => {
-    if (turn.runtime !== runtime) return;
-    // Both sides resolved at match time, not at follow time: a first turn's
-    // request id becomes the runtime's own id once the session is renamed.
-    const mine =
-      turn.sessionId === sessionId ||
-      resolvedKey(runtime, turn.sessionId) === resolvedKey(runtime, sessionId);
-    if (!mine) return;
+    if (turn.runtime !== runtime || !sameSession(runtime, turn.sessionId, sessionId)) return;
     const continuing = runtime.holdsBackgroundWork?.(sessionId) === true;
-    if (!continuing) stop();
     try {
       opts.onTurn({
         text: turn.text,
@@ -156,26 +170,68 @@ export function followLateTurns(opts: FollowLateTurnsOptions): () => void {
         ...logError(err),
       });
     }
+    if (!continuing) end('final');
   };
-  const timer = setTimeout(() => stop(), opts.windowMs);
+  const timer = setTimeout(() => end('expired'), opts.windowMs);
   timer.unref?.();
 
-  function stop(): void {
-    if (stopped) return;
-    stopped = true;
+  function end(reason: LateFollowEnd): void {
+    if (ended) return;
+    ended = true;
     clearTimeout(timer);
     settledListeners.delete(listener);
-    if (followers.get(followerKey) === stop) followers.delete(followerKey);
+    if (followers.get(followerKey)?.end === end) followers.delete(followerKey);
+    try {
+      opts.onEnd?.(reason);
+    } catch (err) {
+      logger.warn('[late-turns] a caller could not take the end of a follow', {
+        sessionId,
+        owner,
+        reason,
+        ...logError(err),
+      });
+    }
   }
 
   settledListeners.add(listener);
-  followers.set(followerKey, stop);
-  return stop;
+  followers.set(followerKey, { runtime, sessionId, end });
+  return () => end('stopped');
+}
+
+/**
+ * Whether two ids name the same session, resolved at the moment of asking: a
+ * first turn's request id becomes the runtime's own id once it is renamed.
+ *
+ * @param runtime - The runtime that owns the session
+ * @param a - One id
+ * @param b - The other
+ */
+function sameSession(runtime: AgentRuntime, a: string, b: string): boolean {
+  return a === b || resolvedKey(runtime, a) === resolvedKey(runtime, b);
+}
+
+/**
+ * End every follow of a session because a dispatched turn just opened on it.
+ *
+ * Called from the runtime's `onDispatchedTurn` (wired by
+ * `subscribeRuntimeTurns`), for every kind of dispatch — so a person's private
+ * chat, a room turn or another caller's message can never have its answer
+ * handed to a caller still following from earlier work.
+ *
+ * @param runtime - The runtime the turn opened on
+ * @param sessionId - The session, in any id it answers to
+ */
+export function noteDispatchedTurn(runtime: AgentRuntime, sessionId: string): void {
+  for (const follower of [...followers.values()]) {
+    if (follower.runtime === runtime && sameSession(runtime, follower.sessionId, sessionId)) {
+      follower.end('superseded');
+    }
+  }
 }
 
 /** Drop every follower. Tests only. */
 export function resetLateTurnFollowers(): void {
-  for (const stop of [...followers.values()]) stop();
+  for (const follower of [...followers.values()]) follower.end('stopped');
   settledListeners.clear();
 }
 
@@ -201,18 +257,24 @@ export function createLateTurnSource(opts: LateTurnSourceOptions): {
     runtimeType: string;
     sessionKey: string;
     onTurn: (turn: LateTurn) => void;
+    onEnd?: (reason: LateFollowEnd) => void;
   }) => () => void;
 } {
   return {
-    follow: ({ runtimeType, sessionKey, onTurn }) => {
+    follow: ({ runtimeType, sessionKey, onTurn, onEnd }) => {
       const runtime = opts.runtimeFor(runtimeType);
-      if (runtime === undefined) return () => {};
+      if (runtime === undefined) {
+        // Nothing can be followed, so the follow ends at once — and says so.
+        onEnd?.('stopped');
+        return () => {};
+      }
       return followLateTurns({
         owner: opts.owner,
         runtime,
         sessionId: sessionKey,
         windowMs: opts.windowMs,
         onTurn,
+        ...(onEnd !== undefined ? { onEnd } : {}),
       });
     },
   };

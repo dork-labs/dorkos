@@ -73,7 +73,7 @@ import { feedProjector } from '../session-event-normalizer.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { withStallGuard } from '../stall-guard.js';
 import { DetachedTurnLifecycle, guardTurnErrors, tapEachEvent } from '../trigger-turn.js';
-import { noteRuntimeTurnSettled } from './late-turns.js';
+import { noteDispatchedTurn, noteRuntimeTurnSettled } from './late-turns.js';
 
 /**
  * How long a runtime turn waits for the session's write-lock before giving up
@@ -125,10 +125,16 @@ export function subscribeRuntimeTurns(runtime: AgentRuntime): (() => void) | und
   const gates = runtime.onDispatchGateChange?.((sessionId) => {
     noteTurnBoundary(sessionId);
   });
-  if (turns === undefined && gates === undefined) return undefined;
+  // New work on the session ends every follow of its later turns, whoever
+  // dispatched it — the one place that sees every kind of dispatch (DOR-2717).
+  const dispatched = runtime.onDispatchedTurn?.((sessionId) => {
+    noteDispatchedTurn(runtime, sessionId);
+  });
+  if (turns === undefined && gates === undefined && dispatched === undefined) return undefined;
   return () => {
     turns?.();
     gates?.();
+    dispatched?.();
   };
 }
 
