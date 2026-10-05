@@ -84,7 +84,13 @@ function receipt(outcome: InterruptOutcome, reason?: InterruptReason): Interrupt
  */
 export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
   for (const pending of session.pendingInteractions.values()) {
-    if (now - pending.startedAt < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
+    // On the awake clock when the entry has one (DOR-2717): a laptop asleep
+    // overnight is not a person who never came back.
+    const waited =
+      pending.startedAwake !== undefined
+        ? performance.now() - pending.startedAwake
+        : now - pending.startedAt;
+    if (waited < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
   }
   return false;
 }

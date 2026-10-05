@@ -171,6 +171,12 @@ export interface AgentSession {
    * (DOR-2681). A getter, not a count, so the answer is never stale.
    */
   liveHelperCount?: () => number;
+  /**
+   * When the running resume-path turn started, on the awake clock
+   * (`performance.now()`), which stops while the machine sleeps. What that
+   * path's background-work ceiling is measured from (DOR-2717).
+   */
+  turnStartedAwake?: number;
   /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */
   lastQuery?: Query;
   /**

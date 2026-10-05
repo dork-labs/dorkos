@@ -87,12 +87,6 @@ export interface ProcessQuietOptions {
    * Throws are logged and swallowed.
    */
   onHoldingWorkChange?: (holding: boolean) => void;
-  /**
-   * The awake clock, in milliseconds that stop while the machine sleeps.
-   * Defaults to `performance.now()`, which is monotonic and excludes sleep on
-   * macOS and Linux. Tests only.
-   */
-  awakeNow?: () => number;
   /** Override the owed-delivery wait. Tests only. */
   owedDeliveryTimeoutMs?: number;
 }
@@ -286,9 +280,12 @@ export class ProcessQuiet {
     );
   }
 
-  /** The awake clock: milliseconds that stop while the machine sleeps. */
+  /**
+   * The awake clock: `performance.now()`, monotonic milliseconds that stop
+   * while the machine sleeps on macOS and Linux.
+   */
   private awakeNow(): number {
-    return this.opts.awakeNow?.() ?? performance.now();
+    return performance.now();
   }
 
   /**
