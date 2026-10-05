@@ -4,6 +4,7 @@ covers:
   - "fix(codex): Ask first on app-server declares what Claude Code's Default declares, so a Default chat can start it (DOR-2719)"
   - 'feat(codex): Codex runs on app-server by default (DOR-2719)'
   - 'fix(codex): a wake runs as the turn that left the work, only under the session lock, and at most three times in a row (DOR-2719)'
+  - "fix(codex): a wake runs at the session's current mode and model, and only the wake being read can start a turn (DOR-2719)"
 ---
 
 ### Added
