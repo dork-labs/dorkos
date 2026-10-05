@@ -366,7 +366,6 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
         expect(
           await verifyRequestAuth(req, {
             sessionFreshness: 'server-store',
-            credentialPolicy: 'cookie-only',
           })
         ).toEqual({ userId: ownerId, credential: 'cookie' });
         expect(observer).toHaveBeenLastCalledWith(
@@ -385,20 +384,6 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       } finally {
         observer.mockRestore();
       }
-    });
-
-    it('refuses a real API key for cookie-only observations while the ordinary key still works', async () => {
-      const req = { headers: { authorization: `Bearer ${apiKey}` } } as unknown as express.Request;
-      expect(
-        await verifyRequestAuth(req, {
-          sessionFreshness: 'server-store',
-          credentialPolicy: 'cookie-only',
-        })
-      ).toBeNull();
-      expect(await verifyRequestAuth(req)).toMatchObject({
-        userId: ownerId,
-        credential: 'api-key',
-      });
     });
 
     it('refuses a revoked database session even while its signed cookie cache remains usable', async () => {
@@ -420,7 +405,6 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       expect(
         await verifyRequestAuth(req, {
           sessionFreshness: 'server-store',
-          credentialPolicy: 'cookie-only',
         })
       ).toBeNull();
     });

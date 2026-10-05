@@ -148,8 +148,6 @@ export interface VerifyRequestAuthOptions {
   bearerIsNotAnApiKey?: boolean;
   /** Bypass this deployment's cookie cache for a fresh database observation. */
   sessionFreshness?: 'server-store';
-  /** A browser owner observation cannot be proved by a program API key. */
-  credentialPolicy?: 'cookie-only';
 }
 
 /**
@@ -212,10 +210,7 @@ export async function verifyRequestAuth(
   // 2. Bearer API key — verified via the apiKey plugin, unless the caller has
   //    already established that this bearer is one of its own non-Better-Auth
   //    secrets (see `bearerIsNotAnApiKey`).
-  const token =
-    options.bearerIsNotAnApiKey || options.credentialPolicy === 'cookie-only'
-      ? null
-      : extractBearerToken(req.headers.authorization);
+  const token = options.bearerIsNotAnApiKey ? null : extractBearerToken(req.headers.authorization);
   if (token) {
     try {
       const result = await auth.api.verifyApiKey({ body: { key: token } });
@@ -241,6 +236,8 @@ export async function verifyRequestAuth(
 /**
  * Express middleware that gates `/api/*` and `/mcp` behind a Better Auth session
  * cookie or a per-user API key when `config.auth.enabled` is `true`.
+ * Writes bypass the signed cookie cache and check the current server session
+ * without renewing it; GET/HEAD/OPTIONS retain cached session reads.
  *
  * Registered app-wide (before the API routes) so it also covers the `/mcp` mount
  * added later on the same app. When login is disabled it is a pass-through with
