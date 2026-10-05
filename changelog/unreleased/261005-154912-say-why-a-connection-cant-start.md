@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(connections): offer a way back after connecting, and say why a start failed (DOR-2721, DOR-2713)'
+  - 'fix(connections): retry when the service is briefly unavailable; add connection_setup_missing (DOR-2713)'
 ---
 
 ### Fixed
