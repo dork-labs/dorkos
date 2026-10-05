@@ -58,6 +58,14 @@ export function toStartedBy(
     sessionId: record.startedBySessionId,
     title: titleOf(record.startedBySessionId),
     reason: record.reason,
+    permission: record.permissionMode
+      ? {
+          mode: record.permissionMode,
+          // Decided at the start by declared level, never by comparing ids
+          // here: `acceptEdits` and `auto` are one level under two ids.
+          sameAsStarter: record.permissionSameAsStarter === true,
+        }
+      : null,
   };
 }
 

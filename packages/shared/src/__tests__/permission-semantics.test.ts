@@ -5,6 +5,7 @@ import {
   isAutonomyStop,
   isBypassSemantics,
   isDivergent,
+  isNoLooserThan,
   isSilentReadOnly,
   isTightening,
   isUnattendedAutonomy,
@@ -82,6 +83,52 @@ describe('isTightening', () => {
         descriptor({ id: 'auto', asks: 'when-risky', reach: 'edit' })
       )
     ).toBe(false);
+  });
+});
+
+describe('isNoLooserThan', () => {
+  const bypass = descriptor({ asks: 'never', reach: 'everything' });
+  const acceptEdits = descriptor({ asks: 'when-risky', reach: 'edit' });
+  const askFirst = descriptor({ asks: 'always', reach: 'edit' });
+  const plan = descriptor({ asks: 'always', reach: 'read' });
+
+  it('lets a mode match its ceiling exactly', () => {
+    for (const mode of [bypass, acceptEdits, askFirst, plan]) {
+      expect(isNoLooserThan(mode, mode)).toBe(true);
+    }
+  });
+
+  it('allows anything that asks at least as often and reaches no further', () => {
+    expect(isNoLooserThan(bypass, acceptEdits)).toBe(true);
+    expect(isNoLooserThan(acceptEdits, askFirst)).toBe(true);
+    expect(isNoLooserThan(acceptEdits, plan)).toBe(true);
+  });
+
+  it('refuses a mode that asks less often, at the same reach', () => {
+    expect(isNoLooserThan(askFirst, acceptEdits)).toBe(false);
+    expect(isNoLooserThan(acceptEdits, bypass)).toBe(false);
+  });
+
+  it('refuses a mode that reaches further, even when it asks more', () => {
+    expect(isNoLooserThan(plan, askFirst)).toBe(false);
+    expect(isNoLooserThan(acceptEdits, descriptor({ asks: 'always', reach: 'workspace' }))).toBe(
+      false
+    );
+  });
+
+  it('refuses a mode that never asks inside the workspace under a ceiling that asks when risky', () => {
+    // Codex's workspace-write against Claude's Accept edits: same id, higher level.
+    expect(isNoLooserThan(acceptEdits, descriptor({ asks: 'never', reach: 'workspace' }))).toBe(
+      false
+    );
+  });
+
+  it('judges a read-only mode on reach alone, since it has nothing to ask about', () => {
+    // Codex's read-only sandbox declares `asks: 'never'` because it cannot act.
+    const readOnly = descriptor({ asks: 'never', reach: 'read' });
+    expect(isNoLooserThan(acceptEdits, readOnly)).toBe(true);
+    expect(isNoLooserThan(askFirst, readOnly)).toBe(true);
+    expect(isNoLooserThan(plan, readOnly)).toBe(true);
   });
 });
 

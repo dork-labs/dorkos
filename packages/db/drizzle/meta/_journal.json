@@ -1002,6 +1002,13 @@
       "when": 1791091550411,
       "tag": "20261004052550_browser_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "6",
+      "when": 1791157937962,
+      "tag": "20261004235217_session_started_by_permission",
+      "breakpoints": true
     }
   ]
 }

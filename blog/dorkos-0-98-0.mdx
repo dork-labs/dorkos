@@ -1,0 +1,104 @@
+---
+title: DorkOS 0.98.0
+description: Extensions can give your agents tools and run on their own, you can build a package live from a folder, and agents stop losing background work.
+date: 2026-10-05
+author: DorkOS Team
+category: release
+tags: [release, extensions, marketplace, reliability]
+---
+
+DorkOS 0.98.0 lets extensions give your agents their own tools, and lets an extension run as its own program so a crash can't take DorkOS down. You can now build a plugin or skill pack live from a folder, and agents stop losing background work, reminders and timers.
+
+## Highlights
+
+### Extensions give your agents tools
+
+An extension can now hand your agents new tools and skills. Before you turn it on, you see each tool and whether it reads, acts, or asks you first.
+
+### Extensions can run on their own
+
+An extension can run as its own program, limited to what you approved. If it crashes or freezes, the rest of DorkOS keeps working. This is tested on macOS and Linux, not yet on Windows.
+
+### Build a package live from a folder
+
+Link a plugin or skill pack from a folder on your computer, in the app or with `dorkos marketplace link`. Save an edit and it reloads within seconds, but anything new still asks you first.
+
+### Background work keeps going
+
+An agent that starts a long command, sets a reminder, or waits on a helper now hears back when it finishes. A laptop that slept for hours no longer closes those agents.
+
+## All Changes
+
+### Added
+
+- Extensions can now give your agents tools and skills. An extension you approved offers them while it runs, and they go away when you turn it off, stop it or remove it (DOR-2685)
+- You see what an extension gives your agents before you turn it on. Its Activity inbox row says, for example, "Would give agents 3 tools and 1 skill", and lists each tool as **Reads**, **Acts** or **Asks you first**. Its card in **Settings → Extensions** shows the same list, and says why a tool or skill was left out (DOR-2685)
+- An approval card for an extension's tool says which extension it is from (DOR-2685)
+- Codex and OpenCode chats get new tools the next time they ask DorkOS for its tool list, and a Claude Code chat gets them with your next message (DOR-2685)
+- Skills are short guides that teach an agent when and how to use the extension. They land where a plugin's skills land: in the project for a project's own extension, and in DorkOS's own Claude Code chats for one installed for all your projects. `dorkos harness sync` from a terminal keeps exactly the same skills (DOR-2685)
+- Removing an extension clears any permission you set for its tools, so a choice like Allowed never carries over to something installed later under the same name (DOR-2685)
+- `dorkos marketplace validate` now checks the extensions a package carries, and fails when DorkOS would refuse one of their tools, so an author hears about it before publishing (DOR-2685)
+- Settings → Permissions has a new **Extension tools** area, for tools an installed extension gives your agents. Careful asks first; Balanced and Full power allow them. A tool that deletes or removes something asks every time, even if you set it to Allowed. Each tool's row names the extension it came from (DOR-2685)
+- An extension can now run separately from DorkOS, as its own program, limited to the sites, programs and agent access its card listed when you said yes. If it crashes, freezes or runs out of memory, the rest of DorkOS keeps working. DorkOS starts it again after a second, waiting longer each time it stops again, and after 3 stops in 10 minutes it stays off until you click Reload. Your sign-in never reaches it. Its screens still run with your access, a program it may run has your full access, and its list of sites is a check inside its own program, not a firewall. It has been tested on macOS and Linux. In the desktop app DorkOS has checked that its limits hold, but the extension itself hasn't been run there yet, and it isn't confirmed on Windows yet. (DOR-2686)
+- An extension that runs separately from DorkOS can now give your agents tools, the same way one running inside DorkOS does. Each call still goes through your permissions first, inside DorkOS. If the extension crashes or freezes, its tools disappear until it is running again, and a call that was in progress fails instead of waiting. (DOR-2686)
+- Before you turn on an extension, its card now says what it can reach. One with only screens says its screens run in DorkOS with your access. One whose server part runs inside DorkOS says it has full access to your computer. One built to run separately lists the sites it can connect to, the programs it can start, and whether it can message your agents. The same lines show before you install a package from the Marketplace, and when you link a folder you are working on. If an extension asks for more while the card is open, your yes is not used, and the new card starts with what changed. If it asks for less, your yes still counts.
+- Run a plugin or skill pack from your own folder while you build it, right from the app (DOR-2696). Go to Marketplace, then Installed, and choose Link a folder. The card shows the folder and everything it runs before you link it.
+- A linked package shows a Dev link tag and its folder on the Installed list, in Browse, on its extensions in Settings, and on any page it adds. Its row says when your last edit reloaded, shows the build error when one didn't, and tells you when the folder is missing.
+- Switch back from the same row. Use installed copy brings back the copy you had installed, Install published version gets the one from the marketplace, and Unlink removes it. Your folder is never touched.
+- Run a plugin or skill pack from a folder on your computer with `dorkos marketplace link <path>` (DOR-2696). It shows the package, the folder, everything it runs and what it replaces, then asks before linking. If the folder changes while it asks, nothing is linked.
+- Switch back with `dorkos marketplace unlink <name>`. Your installed copy comes back, or the package is removed. Your folder is never touched.
+- `dorkos marketplace installed` marks each dev link with its folder, and says when the folder is gone. `dorkos doctor` lists your dev links and names any that need a look, with the command that fixes it.
+- A plugin or skill pack you run from a folder now picks up your edits within seconds (DOR-2696). Save a change to one of its extensions and DorkOS rebuilds it, without asking you again. Add a skill and it reaches your agent tools in that project. Changes to other files, like a README or your build output, reload nothing.
+- Edits never approve anything new. A new extension, hook, server or program in the folder still asks you first, on its usual card.
+- If you delete the folder, DorkOS stops reloading it and starts again within a minute of the folder coming back. After you unlink it, edits there do nothing.
+- Go back and forward in the desktop app. Each tab now remembers where it has been. Use the arrows at the top left, `Cmd+[` and `Cmd+]` (`Ctrl+[` / `Ctrl+]` or `Alt+←` / `Alt+→` on Windows), or your mouse's side buttons. The History button lists the tab's pages so you can jump straight back to one. Switching tabs no longer costs you a Back press. (DOR-2107)
+- Keep document actions and their delivery status up to date in sessions and rooms.
+- Submit native widget actions, retry a lost response without duplicating it, and keep typing while accepted work waits.
+- Load long document event histories in pages, while keeping who may see them and their delivery status correct.
+- A new setting, `runtimes.codex.transport`, chooses how DorkOS runs Codex (DOR-2719). Leave it on `auto` and nothing changes: Codex works exactly as before. Setting it to `app-server` tries an early version of a new way, where one Codex process stays running and keeps a chat ready between replies. The change takes effect after you restart DorkOS.
+- Show each sign-in button in a space with its own mark: the Google "G", the GitHub mark, and the DorkOS mark where the host turns it on, so "Continue with …" reads as a sign-in button (DOR-2709)
+- Sign in to a space with Google, GitHub or single sign-on even when your email already has an account there: the page asks for that account's password once, then links the two and signs you in (DOR-2709)
+- Let a host trust its own single sign-on with `COMMUNITY_OIDC_LINK_VERIFIED_EMAIL=1`, so a sign-in with a verified email links to the matching account straight away. If that account's email was never confirmed, its old password, sessions and other sign-ins are removed first, so someone who signed up with your email before you cannot stay in (DOR-2709)
+- `dorkos community deploy --forget <run-id>` stops listing a stopped setup in `--list-incomplete` once you've removed what it made. It checks that each thing is really gone first, and changes nothing in your Fly or Neon accounts. If setup made a storage bucket, it also shows you how to delete the bucket's Tigris access key, which keeps working after the bucket is gone.
+- Download and verify the experimental managed browser on Apple Silicon Macs with `dorkos browser install`. Check its saved files with `dorkos browser status --runtime`, or replace damaged files with `dorkos browser install --repair`.
+- Show Shared browser in Experiments as unavailable while safety checks continue. (DOR-2671)
+- Publish `@dork-labs/connector-providers` for developers who build on DorkOS: the shared definitions and Composio code the app uses to reach outside services. It ships with every release, at the same version as `@dork-labs/cloud-api` (DOR-2715)
+
+### Changed
+
+- A chat an agent starts now runs at the same permission setting as the chat that started it, unless the agent asks for a lower one. Before, a chat at Full autonomy could only start chats that stopped to ask. Asking for a higher setting is turned down with a plain reason instead of being quietly lowered. Full autonomy is never passed on silently: the agent has to ask for it by name, so it shows on the approval card, and it still needs your one-time okay. The new chat's first lines say which setting it got (DOR-2714)
+- Remove the server API keys and working invitation links an account made when its password is recovered, along with its sessions and connections (DOR-2709)
+
+### Fixed
+
+- A chat that starts a command in the background and ends its turn now hears back when the command finishes. Before, the agent was closed five minutes after its turn and the command died with it.
+- A message sent while a chat was busy no longer restarts the chat on the wrong Claude account. That restart lost the chat with "No conversation found".
+- If DorkOS restarts while a chat is waiting on background work, the chat gets a short note as its next turn, so the agent knows the work stopped and can carry on.
+- A reminder an agent sets for itself (a wake-up or a scheduled prompt in the chat) now fires. Before, the agent was closed five minutes after its turn and the reminder was lost.
+- A turn waiting on a Monitor, a workflow or a background tool no longer gets stopped after ten quiet minutes.
+- Waking a laptop that slept for hours no longer closes agents that were still waiting on background work. The four-hour limit, and the wait for an answer to an approval, now count only time the computer was awake.
+- When an agent started a session for you, the id it got back could stop working later. A message sent to that id then started a new, empty chat in your home folder instead of reaching the right one. Now a session keeps the id it was started with, and a message to an id that doesn't exist is refused instead of starting a new chat.
+- A session's header no longer shows a model that belongs to a different runtime, like Codex with Opus. Changing a session's permission mode no longer changes the model it shows.
+- If you call the DorkOS API directly: a message to a session id the server doesn't know now gets a "not found" answer. To start a new session with its first message, add `"create": true` to that message.
+- The right panel now stays open, on the same tab, when you switch to a chat in another project. Before, it closed, so a tab like Flow had to be reopened after every switch. A project where you left the panel a certain way still opens it that way. If the new project doesn't have the tab you had open, the panel shows another tab instead of closing. Reloading the app brings back the panel the way you last saw it. On a phone or narrow window, switching projects or reloading shows the page instead of covering it with the panel. The old behavior saved "closed" for every project it visited, so those saved layouts are cleared once; layouts you left open are kept (DOR-2579)
+- The Pulse panel no longer says "Nothing needs you" while the Inbox shows something waiting. When a decision an extension asked about, an approval, a question from an agent, or an extension waiting to be turned on is in your Inbox, Pulse now says what is waiting, in the same words the Inbox uses, with a button that opens it. If Pulse can't check everything waiting, it says so and offers to try again, instead of saying all is quiet. The "All quiet." line on Home follows the same rules, and stays hidden until it has checked (DOR-2578)
+- A link can now open the Inbox right on the question it is about (DOR-2577). Before, Flow's "Review in Activity" link opened the Activity page, which lists past events but not open questions, so there was nothing there to answer. A link ending in `?inbox=` followed by the question's id now opens the Inbox over the page you are on, with that question highlighted and ready to answer. This works on a phone too. If the question was already answered, the Inbox still opens. Flow will use this in its next update.
+- A dialog added by an extension now opens when the extension asks for it, and goes away when you close it with Escape, a click outside or its own close button. Before, it never opened, and one that ignored its closed state stayed on screen for good (DOR-2576)
+- Keep file edits open when saving fails. Preserve newer edits when an earlier save finishes.
+- Report which agent personality setting has an out-of-range value.
+- Slack connections no longer fail before the sign-in window opens (DOR-2715)
+- Only a person can ask DorkOS which project a folder belongs to (DOR-2547). An agent or another website that asks is turned away, so it can't fill the project list with folders that hold their names forever. Checking which accounts may work in a folder no longer records the folder at all.
+- DorkOS now remembers at most 200 folders that were only looked up. Past that, it forgets the one used longest ago. Projects you work in, ones an extension named, and ones your account settings name are never forgotten this way.
+- Opening many folders at once no longer starts a burst of background `git` checks. DorkOS runs at most four at a time. A folder that isn't in a repository is checked less and less often, up to once every 10 minutes, instead of every minute. If a check fails for another reason, such as a timeout, it is tried again after a minute.
+- A space server setup you stop with Control-C just as it starts creating something can now carry on (DOR-2701). Before, the resume command it printed failed every time, and the setup stayed stuck. Now setup offers `dorkos community deploy --remove-uncertain <run-id>` instead. Once it shows the create never happened, it keeps what setup already made, such as your Fly app, and prints a resume command that works.
+- When `--remove-uncertain` can't finish, it now lists everything that setup made, where each one is, and how to remove it, since those may cost money until you do.
+- Finish only the file already being deleted when a legal hold is placed during a community purge or an import cleanup. Preserve the remaining files and community records.
+
+### Security
+
+- Google and GitHub never link to an existing account without its password, and a sign-in whose email was not verified never links at all. Every link is recorded in the space's audit log, and mailed to the account where the host has mail set up (DOR-2709)
+- Stop a revoked sign-in session from changing data through a cached cookie.
+
+### Note for people upgrading
+
+- The managed browser is still experimental and stays turned off while its safety checks finish. Chrome support for every kind of page, including frames and background workers, is not yet confirmed.

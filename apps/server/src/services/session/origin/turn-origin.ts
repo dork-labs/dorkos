@@ -97,8 +97,9 @@ export type TurnOrigin =
    * An agent started this session through the `session_start` tool. Nobody
    * chose a trust stop for it: the operator's stop is a promise about a person
    * who can answer, and the agent that asked for the session is not that
-   * person. Its power comes only from the tool's own clamped `permissionMode`,
-   * so the row seeds no operator stop.
+   * person. So the row seeds no operator stop. Its power is the mode the tool
+   * grants: the calling chat's own live level or lower, checked against that
+   * ceiling and always written to the row (spec `inherited-start-permission`).
    */
   | { readonly kind: 'agent-launch' }
   /**

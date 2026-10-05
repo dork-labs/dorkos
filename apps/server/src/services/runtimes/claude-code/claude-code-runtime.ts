@@ -1410,6 +1410,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  onDispatchedTurn(listener: (sessionId: string) => void): () => void {
+    return this.persistent.onDispatchedTurn(listener);
+  }
+
+  /** @inheritdoc */
+  holdsBackgroundWork(sessionId: string): boolean {
+    // The warm path only. A resumed turn's process ends with its turn, and the
+    // CLI ends its own background work with it, so nothing can follow.
+    return this.persistent.holdsBackgroundWork(sessionId);
+  }
+
+  /** @inheritdoc */
   isHelperWorking(sessionId: string): boolean {
     if (this.persistent.isHelperWorking(sessionId)) return true;
     // The resume path: the running turn's own tracker. Its ceiling is measured

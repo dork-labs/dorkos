@@ -36,6 +36,7 @@ import type {
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { createLateTurnSource } from '../session/runtime-turns/late-turns.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
@@ -73,6 +74,13 @@ export interface AdapterFactoryDeps {
    */
   inboundBudgets?: InboundTurnBudgets;
 }
+
+/**
+ * How long a relay turn's caller keeps hearing the agent's later turns
+ * (DOR-2717): the relay's default dispatch-inbox lifetime, past which the
+ * inbox a late result would go to has been swept for inactivity.
+ */
+const LATE_RESULT_WINDOW_MS = 30 * 60 * 1000;
 
 /**
  * The runtime the built-in adapter falls back to for a message that NAMES none.
@@ -208,6 +216,14 @@ export async function createAdapter(
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,
         inboundBudgets: deps.inboundBudgets,
+        // An agent that ends its turn while a helper still works reports back in
+        // a turn of its own; this is how that report reaches the inbox of the
+        // agent that asked (DOR-2717).
+        lateTurns: createLateTurnSource({
+          owner: 'relay',
+          runtimeFor: (type) => (runtimeRegistry.has(type) ? runtimeRegistry.get(type) : undefined),
+          windowMs: LATE_RESULT_WINDOW_MS,
+        }),
         logger,
       });
     }

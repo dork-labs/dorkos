@@ -2,8 +2,9 @@
  * `session_start` (spec `claude-account-fleet` D5): an agent starts a session
  * of its own, optionally on a named account. The session always runs as the
  * calling agent; every refusal starts nothing and leaves no settings row; a
- * named account needs the account policy; the mode is clamped; the launch cap
- * holds; and every started session leaves one Activity entry.
+ * named account needs the account policy; the mode is the calling chat's own
+ * level or lower, never higher (spec `inherited-start-permission`); the launch
+ * cap holds; and every started session leaves one Activity entry.
  *
  * The launch service is real here, down to the dispatcher, so what reaches the
  * turn (the account hint, the origin, the cap) is what production sends.
@@ -15,9 +16,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { z } from 'zod';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
+import type { PermissionMode } from '@dorkos/shared/types';
 import type { AccountAdvisor } from '@dorkos/extension-api/server';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../../codex/runtime-constants.js';
 
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
 /** The folders the mocked boundary lets through. */
@@ -31,8 +35,17 @@ vi.mock('../../../../core/cloud/credits-model-gate.js', () => ({
     model === 'opus' ? 'DorkOS credits don’t cover that model. Pick one from the model menu.' : null
   ),
 }));
+// Whether the person has a standing Full autonomy acknowledgement on file.
+const consent = vi.hoisted(() => ({ acknowledged: true }));
+vi.mock('../../../../core/approvals/autonomy-consent.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  hasStandingAutonomyAck: vi.fn(() => consent.acknowledged),
+}));
+/** The stored settings rows `getSessionSettings` answers from, by session id. */
+const storedSettings = vi.hoisted(() => new Map<string, { permissionMode?: string }>());
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getSessionSettings: vi.fn(async (id: string) => storedSettings.get(id) ?? null),
     has: vi.fn((type: string) => runtimes.has(type)),
     get: vi.fn((type: string) => runtimes.get(type)),
     getDefaultType: vi.fn(() => 'claude-code'),
@@ -116,6 +129,7 @@ import {
 } from '../../../../session/origin/session-started-by-store.js';
 import { StartWorkService, setStartWorkService } from '../../../../extensions/start-work.js';
 import { handRegisteredInSessionTools } from '../index.js';
+import { SessionStore } from '../../sessions/session-store.js';
 import {
   NOT_THE_CALLER_MESSAGE,
   OTHER_AGENTS_HOME_MESSAGE,
@@ -250,11 +264,19 @@ beforeEach(() => {
   boundaryRoots.splice(0, boundaryRoots.length, '/work');
   runtimes.clear();
   claude = new FakeAgentRuntime('claude-code');
+  // The real runtimes' declared modes: the ceiling is compared on them.
   claude.getCapabilities.mockReturnValue({
     ...claude.getCapabilities(),
     supportsAccounts: true,
+    permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes,
   });
   codex = new FakeAgentRuntime('codex');
+  codex.getCapabilities.mockReturnValue({
+    ...codex.getCapabilities(),
+    permissionModes: CODEX_CAPABILITIES.permissionModes,
+  });
+  consent.acknowledged = true;
+  storedSettings.clear();
   runtimes.set('claude-code', claude);
   runtimes.set('codex', codex);
   installStore([account('work'), account('client')]);
@@ -560,20 +582,11 @@ describe('session_start', () => {
     expect(vi.mocked(dispatchMessage).mock.calls[0]![0].accountHint).toBeUndefined();
   });
 
-  it('lowers bypassPermissions to acceptEdits on the settings row, before the send', async () => {
-    await asScout()({
-      ...BASE,
-      permissionMode: 'bypassPermissions',
-      model: 'claude-opus',
-      effort: 'high',
-    });
+  it('writes the granted mode on the settings row with the model and effort, before the send', async () => {
+    await asScout()({ ...BASE, permissionMode: 'plan', model: 'claude-opus', effort: 'high' });
     const save = vi.mocked(runtimeRegistry.saveSessionSettings);
     const [sessionId, settings] = save.mock.calls[0]!;
-    expect(settings).toEqual({
-      permissionMode: 'acceptEdits',
-      model: 'claude-opus',
-      effort: 'high',
-    });
+    expect(settings).toEqual({ permissionMode: 'plan', model: 'claude-opus', effort: 'high' });
     expect(vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId).toBe(sessionId);
     expect(save.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(dispatchMessage).mock.invocationCallOrder[0]!
@@ -582,18 +595,19 @@ describe('session_start', () => {
     expect(claude.updateSession).not.toHaveBeenCalled();
   });
 
-  it('clamps in the input schema, so the approval card shows the mode it grants', () => {
+  it('leaves the input schema alone, so the approval card shows the mode asked for', () => {
     const schema = z.object(SessionStartInputShape);
     expect(schema.parse({ ...BASE, permissionMode: 'bypassPermissions' }).permissionMode).toBe(
-      'acceptEdits'
+      'bypassPermissions'
     );
     expect(schema.parse({ ...BASE, permissionMode: 'plan' }).permissionMode).toBe('plan');
   });
 
-  it('writes no permission mode when none was asked for', async () => {
+  it('writes the granted mode even when none was asked for, so the row never seeds another', async () => {
     await asScout()({ ...BASE, model: 'claude-opus' });
     expect(vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[0]![1]).toEqual({
       model: 'claude-opus',
+      permissionMode: 'default',
     });
   });
 
@@ -675,7 +689,12 @@ describe('session_start', () => {
         category: 'agent',
         eventType: 'agent.session_started',
         summary: 'Started a session in /work/project on the account WORK',
-        metadata: { cwd: '/work/project', runtime: 'claude-code', account: 'work' },
+        metadata: {
+          cwd: '/work/project',
+          runtime: 'claude-code',
+          account: 'work',
+          permissionMode: 'default',
+        },
       });
     });
 
@@ -841,5 +860,494 @@ describe('session_start records who started the new session (spec flow-multiproj
     const result = await asScout()(BASE);
     const { sessionId } = payloadOf(result) as { sessionId: string };
     expect(store.get(sessionId)).toBeNull();
+  });
+});
+
+describe("session_start runs at the calling chat's level or lower (spec inherited-start-permission)", () => {
+  /** The handler, called by Scout from inside a chat whose live mode is `mode`. */
+  const fromChatAt = (mode: string | undefined, sessionId = 'parent-chat') =>
+    createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId,
+      runtime: 'claude-code',
+      ...(mode !== undefined ? { permissionMode: mode } : {}),
+    }));
+
+  /** The mode written on the new session's settings row. */
+  const savedMode = () =>
+    vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[0]![1].permissionMode;
+
+  async function expectRefused(
+    handler: ReturnType<typeof createSessionStartHandler>,
+    args: Parameters<ReturnType<typeof createSessionStartHandler>>[0]
+  ) {
+    const result = await handler(args);
+    expect(result.isError).toBe(true);
+    expect(dispatchMessage).not.toHaveBeenCalled();
+    expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
+    return payloadOf(result);
+  }
+
+  it('grants a chat at Bypass permissions a new chat at Bypass permissions', async () => {
+    const result = await fromChatAt('bypassPermissions')({
+      ...BASE,
+      permissionMode: 'bypassPermissions',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(savedMode()).toBe('bypassPermissions');
+    expect(payloadOf(result).permission).toEqual({
+      mode: 'bypassPermissions',
+      label: 'Bypass permissions',
+      callerMode: 'bypassPermissions',
+      sameAsCaller: true,
+    });
+  });
+
+  it('gives a chat its own level when no mode is asked for', async () => {
+    const result = await fromChatAt('acceptEdits')(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(savedMode()).toBe('acceptEdits');
+    expect(payloadOf(result).permission).toMatchObject({
+      mode: 'acceptEdits',
+      callerMode: 'acceptEdits',
+      sameAsCaller: true,
+    });
+  });
+
+  it('never grants Full autonomy silently: it has to be asked for by name', async () => {
+    // An approval card shows only the arguments sent, so an inherited Full
+    // autonomy would be invisible to the person approving it.
+    const body = await expectRefused(fromChatAt('bypassPermissions'), BASE);
+    expect(body).toEqual({
+      error:
+        'A new chat at Bypass permissions has to be asked for by name, so the person ' +
+        'approving can see it. Pass permissionMode "bypassPermissions", or a lower mode.',
+      code: 'NAME_FULL_AUTONOMY',
+    });
+    // Named, it is granted.
+    const named = await fromChatAt('bypassPermissions')({
+      ...BASE,
+      permissionMode: 'bypassPermissions',
+    });
+    expect(payloadOf(named).permission).toMatchObject({ mode: 'bypassPermissions' });
+  });
+
+  it('refuses a mode above the calling chat, naming both levels, and writes nothing', async () => {
+    const body = await expectRefused(fromChatAt('acceptEdits'), {
+      ...BASE,
+      permissionMode: 'bypassPermissions',
+    });
+    expect(body).toEqual({
+      error:
+        'This chat runs at Accept edits, so it cannot start a chat at Bypass permissions. ' +
+        'Ask for Accept edits or lower.',
+      code: 'ABOVE_YOUR_LEVEL',
+    });
+  });
+
+  it('grants a mode at or below the calling chat, and says whether it was the same', async () => {
+    const cases: Array<[PermissionMode, boolean]> = [
+      ['acceptEdits', true],
+      ['default', false],
+      ['plan', false],
+    ];
+    for (const [mode, same] of cases) {
+      vi.mocked(runtimeRegistry.saveSessionSettings).mockClear();
+      const result = await fromChatAt('acceptEdits')({ ...BASE, permissionMode: mode });
+      expect(result.isError).toBeUndefined();
+      expect(savedMode()).toBe(mode);
+      expect(payloadOf(result).permission).toMatchObject({
+        mode,
+        callerMode: 'acceptEdits',
+        sameAsCaller: same,
+      });
+    }
+  });
+
+  describe('Auto', () => {
+    // Auto declares the same asking and reach as Accept edits, but a classifier
+    // approves commands that Accept edits asks a person about.
+    it('is refused under a chat at Accept edits', async () => {
+      expect(
+        await expectRefused(fromChatAt('acceptEdits'), { ...BASE, permissionMode: 'auto' })
+      ).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+    });
+
+    it('is granted under a chat at Auto, or one that never asks', async () => {
+      for (const caller of ['auto', 'bypassPermissions']) {
+        vi.mocked(runtimeRegistry.saveSessionSettings).mockClear();
+        const result = await fromChatAt(caller)({ ...BASE, permissionMode: 'auto' });
+        expect(result.isError).toBeUndefined();
+        expect(savedMode()).toBe('auto');
+      }
+    });
+
+    it('is what a chat at Auto passes on by default', async () => {
+      const result = await fromChatAt('auto')(BASE);
+      expect(payloadOf(result).permission).toMatchObject({ mode: 'auto', sameAsCaller: true });
+    });
+  });
+
+  it('refuses a mode the target runtime does not declare', async () => {
+    // `dontAsk` is a name the input schema knows and Claude Code no longer offers.
+    const body = await expectRefused(fromChatAt('bypassPermissions'), {
+      ...BASE,
+      permissionMode: 'dontAsk',
+    });
+    expect(body).toMatchObject({ code: 'UNKNOWN_PERMISSION_MODE' });
+  });
+
+  describe('the ceiling', () => {
+    it('is the live mode, not the stored row, when the two disagree', async () => {
+      // The row says Bypass, the turn runs at Accept edits (lowered, or a
+      // scheduled run below its row): the live mode is the truth.
+      storedSettings.set('parent-chat', { permissionMode: 'bypassPermissions' });
+      const body = await expectRefused(fromChatAt('acceptEdits'), {
+        ...BASE,
+        permissionMode: 'bypassPermissions',
+      });
+      expect(body).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+    });
+
+    it('falls back to the stored row when the live session has no mode', async () => {
+      storedSettings.set('parent-chat', { permissionMode: 'acceptEdits' });
+      const result = await fromChatAt(undefined)(BASE);
+      expect(savedMode()).toBe('acceptEdits');
+      expect(payloadOf(result).permission).toMatchObject({ callerMode: 'acceptEdits' });
+    });
+
+    it("is the runtime's default when neither the live mode nor a row is known", async () => {
+      const handler = fromChatAt(undefined);
+      expect(
+        await expectRefused(handler, { ...BASE, permissionMode: 'acceptEdits' })
+      ).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+      await handler(BASE);
+      expect(savedMode()).toBe('default');
+    });
+
+    it("is the runtime's default for a live mode it does not declare (fails closed)", async () => {
+      const handler = fromChatAt('retiredMode');
+      expect(
+        await expectRefused(handler, { ...BASE, permissionMode: 'bypassPermissions' })
+      ).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+      const result = await handler(BASE);
+      expect(savedMode()).toBe('default');
+      // The record names the caller's actual mode, never the stand-in.
+      expect(payloadOf(result).permission).toMatchObject({
+        mode: 'default',
+        callerMode: 'retiredMode',
+        sameAsCaller: false,
+      });
+    });
+
+    it("is Read only when the calling chat's runtime declares no modes at all", async () => {
+      const ghost = createSessionStartHandler(makeDeps(), () => ({
+        agentPath: AGENT_HOME,
+        sessionId: 'parent-chat',
+        runtime: 'ghost',
+        permissionMode: 'bypassPermissions',
+      }));
+      expect(await expectRefused(ghost, { ...BASE, permissionMode: 'acceptEdits' })).toEqual({
+        error:
+          'This chat runs at Read only, so it cannot start a chat at Accept edits. ' +
+          'Ask for Read only or lower.',
+        code: 'ABOVE_YOUR_LEVEL',
+      });
+    });
+
+    it('reads a stored Auto as Default, since nothing confirmed Auto for it', async () => {
+      storedSettings.set('parent-chat', { permissionMode: 'auto' });
+      expect(
+        await expectRefused(fromChatAt(undefined), { ...BASE, permissionMode: 'auto' })
+      ).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+    });
+
+    it('cannot be climbed along a chain', async () => {
+      // A (Bypass) starts B at Accept edits; B, running at Accept edits, cannot
+      // start C at Bypass.
+      const b = await fromChatAt('bypassPermissions')({ ...BASE, permissionMode: 'acceptEdits' });
+      expect(savedMode()).toBe('acceptEdits');
+      vi.clearAllMocks();
+      const bId = (payloadOf(b) as { sessionId: string }).sessionId;
+      expect(
+        await expectRefused(fromChatAt('acceptEdits', bId), {
+          ...BASE,
+          permissionMode: 'bypassPermissions',
+        })
+      ).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+    });
+  });
+
+  describe('a caller with no chat (the external /mcp server)', () => {
+    /** Register the tool as the external server does, and return its handler. */
+    function externalHandler() {
+      let handler: ReturnType<typeof createSessionStartHandler> | undefined;
+      const registrar = {
+        registerTool: (_name: string, _config: unknown, fn: typeof handler) => {
+          handler = fn;
+        },
+      } as unknown as ToolRegistrar;
+      registerSessionTools(registrar, makeDeps(), {
+        agentPath: AGENT_HOME,
+        displayName: 'Scout',
+        createdAt: '2026-09-27T00:00:00.000Z',
+      });
+      return handler!;
+    }
+
+    it('is held to Accept edits', async () => {
+      expect(
+        await expectRefused(externalHandler(), { ...BASE, permissionMode: 'bypassPermissions' })
+      ).toEqual({
+        error:
+          'Without a chat of your own, you can start a chat at Accept edits or lower, ' +
+          'not Bypass permissions.',
+        code: 'ABOVE_YOUR_LEVEL',
+      });
+      const result = await externalHandler()({ ...BASE, permissionMode: 'acceptEdits' });
+      expect(savedMode()).toBe('acceptEdits');
+      expect(payloadOf(result).permission).toEqual({
+        mode: 'acceptEdits',
+        label: 'Accept edits',
+        callerMode: null,
+        sameAsCaller: false,
+      });
+    });
+
+    it("gets the runtime's default when it asks for no mode", async () => {
+      await externalHandler()(BASE);
+      expect(savedMode()).toBe('default');
+    });
+  });
+
+  describe('a chat on another runtime is compared by declared level, never by id', () => {
+    it('grants Codex Full access under a chat at Bypass permissions', async () => {
+      const result = await fromChatAt('bypassPermissions')({
+        ...BASE,
+        runtime: 'codex',
+        permissionMode: 'bypassPermissions',
+      });
+      expect(savedMode()).toBe('bypassPermissions');
+      expect(payloadOf(result).permission).toMatchObject({
+        mode: 'bypassPermissions',
+        label: 'Full access',
+        sameAsCaller: true,
+      });
+    });
+
+    it("refuses Codex's acceptEdits under Claude's acceptEdits: one id, a higher level", async () => {
+      // Codex's workspace-write never stops to ask; Claude's Accept edits does.
+      expect(
+        await expectRefused(fromChatAt('acceptEdits'), {
+          ...BASE,
+          runtime: 'codex',
+          permissionMode: 'acceptEdits',
+        })
+      ).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+    });
+
+    it("falls to Codex's read-only default when the caller's own id would be higher there", async () => {
+      const result = await fromChatAt('acceptEdits')({ ...BASE, runtime: 'codex' });
+      expect(savedMode()).toBe('default');
+      expect(payloadOf(result).permission).toMatchObject({
+        mode: 'default',
+        label: 'Read only',
+        callerMode: 'acceptEdits',
+        sameAsCaller: false,
+      });
+    });
+  });
+
+  describe('Full autonomy still needs the standing acknowledgement', () => {
+    it('refuses Bypass permissions, asked for by name, with none on file', async () => {
+      consent.acknowledged = false;
+      expect(
+        await expectRefused(fromChatAt('bypassPermissions'), {
+          ...BASE,
+          permissionMode: 'bypassPermissions',
+        })
+      ).toMatchObject({ code: 'AUTONOMY_ACK_REQUIRED' });
+    });
+
+    it('refuses a never-asking Codex mode too, and grants a lower one', async () => {
+      consent.acknowledged = false;
+      expect(
+        await expectRefused(fromChatAt('bypassPermissions'), {
+          ...BASE,
+          runtime: 'codex',
+          permissionMode: 'acceptEdits',
+        })
+      ).toMatchObject({ code: 'AUTONOMY_ACK_REQUIRED' });
+      const result = await fromChatAt('bypassPermissions')({
+        ...BASE,
+        permissionMode: 'acceptEdits',
+      });
+      expect(result.isError).toBeUndefined();
+    });
+  });
+
+  it('reads the live mode at CALL time through the REAL in-session tool set', async () => {
+    const deps = makeDeps();
+    (deps.meshCore as unknown as { getSubjectByPath: () => undefined }).getSubjectByPath = () =>
+      undefined;
+    const session = {
+      eventQueue: [],
+      cwd: AGENT_HOME,
+      sdkSessionId: 'live-chat',
+      permissionMode: 'bypassPermissions',
+    };
+    const tools = handRegisteredInSessionTools(deps, { session } as never) as unknown as Array<{
+      name: string;
+      handler: (args: unknown, extra: unknown) => Promise<{ content: { text: string }[] }>;
+    }>;
+    const sessionStart = tools.find((t) => t.name === 'session_start')!;
+
+    const first = await sessionStart.handler({ ...BASE, permissionMode: 'bypassPermissions' }, {});
+    expect(payloadOf(first).permission).toMatchObject({
+      mode: 'bypassPermissions',
+      callerMode: 'bypassPermissions',
+    });
+
+    // A person lowers the chat mid-turn: the very next call is held to it.
+    session.permissionMode = 'acceptEdits';
+    const second = await sessionStart.handler({ ...BASE, permissionMode: 'bypassPermissions' }, {});
+    expect(payloadOf(second)).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+  });
+
+  /** `session_start` from the REAL in-session tool set, built over `session`. */
+  function realSessionStart(session: object) {
+    const deps = makeDeps();
+    (deps.meshCore as unknown as { getSubjectByPath: () => undefined }).getSubjectByPath = () =>
+      undefined;
+    const tools = handRegisteredInSessionTools(deps, { session } as never) as unknown as Array<{
+      name: string;
+      handler: (args: unknown, extra: unknown) => Promise<{ content: { text: string }[] }>;
+    }>;
+    return tools.find((t) => t.name === 'session_start')!.handler;
+  }
+
+  describe('an Auto the turn is not really running', () => {
+    const autoChat = (extra: object) => ({
+      eventQueue: [],
+      cwd: AGENT_HOME,
+      sdkSessionId: 'auto-chat',
+      permissionMode: 'auto',
+      model: 'opus',
+      ...extra,
+    });
+
+    it('counts as Default when Auto was never confirmed for the model', async () => {
+      // The launcher ran this turn at Default and left `permissionMode` at Auto.
+      const start = realSessionStart(autoChat({}));
+      expect(payloadOf(await start({ ...BASE, permissionMode: 'auto' }, {}))).toMatchObject({
+        code: 'ABOVE_YOUR_LEVEL',
+      });
+      const inherited = await start(BASE, {});
+      expect(payloadOf(inherited).permission).toMatchObject({
+        mode: 'default',
+        callerMode: 'default',
+      });
+    });
+
+    it('counts as Default when Auto was confirmed for another model', async () => {
+      const start = realSessionStart(autoChat({ autoModeConfirmedFor: 'haiku' }));
+      expect(payloadOf(await start({ ...BASE, permissionMode: 'auto' }, {}))).toMatchObject({
+        code: 'ABOVE_YOUR_LEVEL',
+      });
+    });
+
+    it('counts as Auto when it was confirmed for the model the chat runs', async () => {
+      const start = realSessionStart(autoChat({ autoModeConfirmedFor: 'opus' }));
+      const result = await start({ ...BASE, permissionMode: 'auto' }, {});
+      expect(payloadOf(result).permission).toMatchObject({ mode: 'auto', callerMode: 'auto' });
+    });
+  });
+
+  it('cannot be climbed along a chain whose next link is hydrated the way production does it', async () => {
+    // A, at Bypass permissions, starts B at Accept edits.
+    await fromChatAt('bypassPermissions')({ ...BASE, permissionMode: 'acceptEdits' });
+    const [bId, bRow] = vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[0]!;
+    vi.clearAllMocks();
+
+    // B's live session is built from B's stored row by the session store,
+    // exactly as its first turn builds it: no mode is handed in by the test.
+    const store = new SessionStore();
+    store.configureSettings(
+      {
+        getSessionSettings: async (id: string) => (id === bId ? bRow : null),
+        saveSessionSettings: async () => undefined,
+        rekeySessionSettings: async () => undefined,
+      } as never,
+      'default'
+    );
+    const b = await store.ensureForMessage(
+      bId,
+      { hasTranscript: async () => ({ exists: false }) } as never,
+      AGENT_HOME,
+      { cwd: AGENT_HOME } as never
+    );
+    expect(b.permissionMode).toBe('acceptEdits');
+
+    const start = realSessionStart(b);
+    expect(
+      payloadOf(await start({ ...BASE, permissionMode: 'bypassPermissions' }, {}))
+    ).toMatchObject({ code: 'ABOVE_YOUR_LEVEL' });
+    const inherited = await start(BASE, {});
+    expect(payloadOf(inherited).permission).toMatchObject({
+      mode: 'acceptEdits',
+      callerMode: 'acceptEdits',
+    });
+  });
+
+  describe('records the level on who started it', () => {
+    let store: SessionStartedByStore;
+
+    beforeEach(() => {
+      store = new SessionStartedByStore(createTestDb());
+      setSessionStartedByStore(store);
+      setStartWorkService(
+        new StartWorkService({
+          store,
+          projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
+          extensionName: (id) => id,
+          runningSessionIds: () => [],
+        })
+      );
+    });
+
+    afterEach(() => {
+      setStartWorkService(undefined);
+      setSessionStartedByStore(undefined);
+    });
+
+    it('stores the granted mode, the starter’s mode and whether they were one level', async () => {
+      const same = await fromChatAt('bypassPermissions')({
+        ...BASE,
+        permissionMode: 'bypassPermissions',
+      });
+      const lower = await fromChatAt('bypassPermissions')({ ...BASE, permissionMode: 'plan' });
+      const idOf = (r: typeof same) => (payloadOf(r) as { sessionId: string }).sessionId;
+
+      expect(store.get(idOf(same))).toMatchObject({
+        permissionMode: 'bypassPermissions',
+        starterPermissionMode: 'bypassPermissions',
+        permissionSameAsStarter: true,
+      });
+      expect(store.get(idOf(lower))).toMatchObject({
+        permissionMode: 'plan',
+        starterPermissionMode: 'bypassPermissions',
+        permissionSameAsStarter: false,
+      });
+    });
+
+    it('leaves no reservation behind for a start refused above the ceiling', async () => {
+      const insert = vi.spyOn(store, 'insert');
+      const result = await fromChatAt('acceptEdits')({
+        ...BASE,
+        permissionMode: 'bypassPermissions',
+      });
+      expect(result.isError).toBe(true);
+      expect(insert).not.toHaveBeenCalled();
+    });
   });
 });

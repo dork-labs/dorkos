@@ -16,6 +16,7 @@ import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
+import { SessionStartedBySchema } from '@dorkos/shared/schemas';
 import { StartWorkError } from '@dorkos/extension-api/server';
 import type { ProjectInfo, ProjectRef } from '@dorkos/extension-api/server';
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
@@ -536,12 +537,74 @@ describe('startedBy', () => {
       sessionId: 'parent-1',
       title: 'Plan the launch',
       reason: 'split the work',
+      // A row from before the level was recorded says nothing about it.
+      permission: null,
     });
 
     _forgetTitles();
     const alone = [createMockSession({ id: 'child-1', title: 'Write the post' })];
     applySessionOriginOverlays(alone, { resolveStartedBy: (ids) => store.getMany(ids) });
     expect(alone[0]!.startedBy).toMatchObject({ kind: 'chat', title: null });
+  });
+
+  it('carries the level a chat was started at, and whether it matched the starter', () => {
+    for (const [sessionId, mode, same] of [
+      ['child-same', 'bypassPermissions', true],
+      ['child-lower', 'acceptEdits', false],
+    ] as const) {
+      store.insert({
+        sessionId,
+        kind: 'chat',
+        extensionId: null,
+        startedBySessionId: 'parent-1',
+        originExtensionId: null,
+        reason: null,
+        permissionMode: mode,
+        starterPermissionMode: 'bypassPermissions',
+        permissionSameAsStarter: same,
+        createdAt: new Date(clock).toISOString(),
+      });
+    }
+    const rows = [
+      createMockSession({ id: 'child-same', title: 'A' }),
+      createMockSession({ id: 'child-lower', title: 'B' }),
+    ];
+    applySessionOriginOverlays(rows, { resolveStartedBy: (ids) => store.getMany(ids) });
+    expect(rows[0]!.startedBy).toMatchObject({
+      permission: { mode: 'bypassPermissions', sameAsStarter: true },
+    });
+    expect(rows[1]!.startedBy).toMatchObject({
+      permission: { mode: 'acceptEdits', sameAsStarter: false },
+    });
+    // The wire schema accepts what the overlay writes.
+    for (const row of rows)
+      expect(SessionStartedBySchema.parse(row.startedBy)).toEqual(row.startedBy);
+  });
+
+  it('keeps the recorded level when a started chat is carried to another account', () => {
+    store.insert({
+      sessionId: 'started',
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: 'parent-1',
+      originExtensionId: null,
+      reason: 'split the work',
+      permissionMode: 'plan',
+      starterPermissionMode: 'acceptEdits',
+      permissionSameAsStarter: false,
+      createdAt: new Date(clock).toISOString(),
+    });
+    const claimed = service.reserveFromChat({
+      sessionId: 'carried',
+      parentSessionId: 'started',
+      carry: true,
+    });
+    expect(claimed.ok).toBe(true);
+    expect(store.get('carried')).toMatchObject({
+      permissionMode: 'plan',
+      starterPermissionMode: 'acceptEdits',
+      permissionSameAsStarter: false,
+    });
   });
 });
 
