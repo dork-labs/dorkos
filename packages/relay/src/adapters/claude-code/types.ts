@@ -286,7 +286,74 @@ export interface AgentRuntimeLike {
    *   `not-running` when there was no in-flight turn to abort
    */
   interruptQuery(sessionId: string): Promise<InterruptReceipt>;
+
+  /**
+   * Whether the agent's process still holds work that can wake it after its
+   * turn has ended — a helper, a background shell, a timer. Mirrors
+   * `AgentRuntime.holdsBackgroundWork`; absent reads as "no" (DOR-2717).
+   *
+   * @param sessionId - The session key used in ensureSession/sendMessage
+   */
+  holdsBackgroundWork?(sessionId: string): boolean;
 }
+
+/** One turn the agent started on its own after a relay turn ended (DOR-2717). */
+export interface LateTurn {
+  /** Everything the agent said in it. */
+  text: string;
+  /** Why it failed, when it did. `text` is then whatever came before. */
+  error?: string;
+  /** Whether the agent still holds background work, so more may follow. */
+  continuing: boolean;
+}
+
+/**
+ * Where the adapter learns about the turns an agent starts on its own after a
+ * relay turn has ended, so the caller that asked for the work hears the rest
+ * of it (DOR-2717).
+ *
+ * The host owns this because only the host sees those turns: they never pass
+ * through `sendMessage`, which is the whole of what the adapter drives. The
+ * host bounds how long it follows, and ends the follow by itself after a turn
+ * that reports `continuing: false`.
+ */
+export interface LateTurnSource {
+  /**
+   * How many dispatched turns the session has taken, as an opaque mark. Read
+   * when a relay turn ends and handed back to {@link LateTurnSource.follow} as
+   * `sinceMark`, so work that reached the session in between ends the follow
+   * at once. Optional: a host without it gets no such check.
+   *
+   * @param opts.runtimeType - The runtime the session runs on
+   * @param opts.sessionKey - The session, as the adapter keyed its turn
+   */
+  dispatchMark?(opts: { runtimeType: string; sessionKey: string }): number;
+  /**
+   * Follow one session's later turns.
+   *
+   * @param opts.runtimeType - The runtime the session runs on
+   * @param opts.sessionKey - The session, as the adapter keyed its turn
+   * @param opts.onTurn - Handed each later turn, in order
+   * @param opts.onEnd - Told once why the follow ended; stopping it counts
+   * @returns Stops following; safe to call more than once
+   */
+  follow(opts: {
+    runtimeType: string;
+    sessionKey: string;
+    onTurn: (turn: LateTurn) => void;
+    /** Told once, after the last turn, why the follow ended. */
+    onEnd?: (reason: LateFollowEnd) => void;
+    /** The {@link LateTurnSource.dispatchMark} read when the relay turn ended. */
+    sinceMark?: number;
+  }): () => void;
+}
+
+/**
+ * Why a follow of later turns ended. `final` — the agent ended a turn holding
+ * no more work; `expired` — its window passed; `superseded` — new work reached
+ * the session; `stopped` — the adapter ended it.
+ */
+export type LateFollowEnd = 'final' | 'expired' | 'superseded' | 'stopped';
 
 /**
  * Minimal interface for the persistent agent session store.
@@ -431,6 +498,13 @@ export interface ClaudeCodeAdapterDeps {
    * the adapter behaves exactly as it did before.
    */
   inboundBudgets?: import('../../inbound-turn-budgets.js').InboundTurnBudgets;
+  /**
+   * Where the turns an agent starts on its own, after a relay turn ended, are
+   * learned about — see {@link LateTurnSource}. Absent means a caller hears
+   * only the turn its message started, which is what every host did before
+   * DOR-2717.
+   */
+  lateTurns?: LateTurnSource;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
