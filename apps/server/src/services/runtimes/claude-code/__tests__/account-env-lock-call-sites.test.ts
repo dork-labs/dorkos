@@ -249,7 +249,7 @@ describe('D8 env-lock call sites', () => {
   });
 
   describe('forkSession', () => {
-    it("forks inside the SOURCE session's account, not the active one", async () => {
+    it("RT-SES-07: forks inside the SOURCE session's account, not the active one", async () => {
       const store = new SessionStore();
       const reader = fakeReader(ACCOUNT_B);
 

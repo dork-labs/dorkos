@@ -40,7 +40,7 @@ describe('buildClaudeAgentSdkPluginsArray', () => {
     expect(result).toEqual([]);
   });
 
-  it('returns a single local plugin entry when the directory exists', async () => {
+  it('RT-PLG-01: returns a single local plugin entry when the directory exists', async () => {
     const fs = await import('node:fs/promises');
     vi.mocked(fs.access).mockResolvedValue(undefined);
 

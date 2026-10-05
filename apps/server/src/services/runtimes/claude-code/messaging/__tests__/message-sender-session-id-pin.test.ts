@@ -116,7 +116,7 @@ describe('executeSdkQuery — one id per conversation (DOR-2712)', () => {
     idTaken.value = false;
   });
 
-  it('launches a new session under the id DorkOS handed out', async () => {
+  it('RT-SES-04: launches a new session under the id DorkOS handed out', async () => {
     const [options] = await runTurn(DORKOS_ID, makeSession());
 
     expect(options.sessionId).toBe(DORKOS_ID);

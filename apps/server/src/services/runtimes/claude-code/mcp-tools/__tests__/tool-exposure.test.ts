@@ -184,7 +184,7 @@ function connectorRegistry(access = vi.fn().mockResolvedValue({ connections: [] 
 }
 
 describe('in-session tool exposure', () => {
-  it('adds exactly seven strict connector tools to an authenticated runtime turn', async () => {
+  it('RT-MCP-01: adds exactly seven strict connector tools to an authenticated runtime turn', async () => {
     const resolvePrincipal = vi.fn().mockResolvedValue(runtimePrincipal('binding-a'));
     const registry = connectorRegistry();
     const tools = await advertisedTools(
