@@ -97,6 +97,12 @@ interface TurnRecord {
   isHelperWorking?: () => boolean;
   hold: Hold | null;
   released: boolean;
+  /**
+   * Released by the idle ceiling rather than by the turn ending. A turn that
+   * produces an event after that (a long approval wait that was finally
+   * answered) is still running, so it is held again.
+   */
+  swept: boolean;
 }
 
 interface TaskRecord {
@@ -202,13 +208,21 @@ export class KeepAwakeService {
         ...(turn.isHelperWorking ? { isHelperWorking: turn.isHelperWorking } : {}),
         hold: null,
         released: false,
+        swept: false,
       };
       this.open(record);
       return {
         touch: () => {
           record.lastActivityAt = Date.now();
+          if (!record.swept) return;
+          record.swept = false;
+          record.released = false;
+          this.open(record);
         },
-        release: () => this.close(record),
+        release: () => {
+          record.swept = false;
+          this.close(record);
+        },
       };
     } catch (err) {
       logger.warn('[KeepAwake] could not count a turn', { err: String(err) });
@@ -284,7 +298,9 @@ export class KeepAwakeService {
    * Release every turn that has produced nothing for {@link TURN_IDLE_CEILING_MS}
    * while no helper works in its session. This bounds the one leak the wrapper
    * cannot see: a consumer that abandons a stream without ending it. A release
-   * here is a bug report, not a feature, so it is logged as a warning.
+   * here is a bug report, not a feature, so it is logged as a warning. A
+   * released turn that turns out to be alive (it produces another event) is
+   * held again, and its eventual end releases it once.
    *
    * @param now - The current time; a test seam.
    */
@@ -303,6 +319,7 @@ export class KeepAwakeService {
         sessionId: record.sessionId,
       });
       this.close(record);
+      record.swept = true;
     }
   }
 

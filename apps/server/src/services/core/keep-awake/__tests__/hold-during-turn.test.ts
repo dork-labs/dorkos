@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { holdAwakeDuringTurns } from '../hold-during-turn.js';
-import { KeepAwakeService, keepAwakeService } from '../keep-awake-service.js';
+import { KeepAwakeService, keepAwakeService, TURN_IDLE_CEILING_MS } from '../keep-awake-service.js';
 import { RuntimeRegistry } from '../../runtime-registry.js';
 
 const EVENT: StreamEvent = { type: 'text_delta', data: { text: 'hi' } } as StreamEvent;
@@ -161,6 +161,107 @@ describe('holdAwakeDuringTurns', () => {
     const wrapped = holdAwakeDuringTurns(real, service);
     expect(wrapped.type).toBe('fake-keep-awake');
     expect(wrapped.isHelperWorking?.('s1')).toBe(false);
+  });
+});
+
+describe('every other way a turn can end', () => {
+  const total = (service: KeepAwakeService) => {
+    const w = service.status().working;
+    return w.chats + w.rooms + w.tasks;
+  };
+
+  it('releases when the runtime throws before its first event', async () => {
+    const service = new KeepAwakeService();
+    const runtime = holdAwakeDuringTurns(
+      runtimeWith(async function* () {
+        throw new Error('early');
+      }),
+      service
+    );
+    await expect(runtime.sendMessage('s1', 'hello').next()).rejects.toThrow('early');
+    expect(total(service)).toBe(0);
+  });
+
+  it('releases when a runtime hands back something that is not a stream', async () => {
+    const service = new KeepAwakeService();
+    const runtime = holdAwakeDuringTurns(
+      runtimeWith(() => 42 as unknown as AsyncGenerator<StreamEvent>),
+      service
+    );
+    await expect(runtime.sendMessage('s1', 'hello').next()).rejects.toThrow();
+    expect(total(service)).toBe(0);
+  });
+
+  it('counts overlapping turns on one session separately', async () => {
+    const service = new KeepAwakeService();
+    const runtime = holdAwakeDuringTurns(
+      runtimeWith(() => events(2)),
+      service
+    );
+    const first = runtime.sendMessage('s1', 'one');
+    const second = runtime.sendMessage('s1', 'two');
+    await first.next();
+    await second.next();
+    expect(working(service).chats).toBe(2);
+    await first.return(undefined);
+    expect(working(service).chats).toBe(1);
+    await second.next();
+    await second.next();
+    expect(total(service)).toBe(0);
+  });
+
+  it('holds a turn the idle ceiling released again once it proves alive, and releases it once', async () => {
+    // Purpose: a turn parked on an approval for hours is swept; when the person
+    // answers and it carries on, the computer must stay awake for the rest.
+    const service = new KeepAwakeService();
+    let open = 0;
+    service.start({
+      readSettings: () => ({ whileAgentsWork: true }),
+      onSettingsChange: () => () => {},
+      broadcast: () => {},
+      createKeepAwake: () =>
+        ({
+          hold: () => {
+            open += 1;
+            return { reason: 'chat', release: () => (open -= 1) };
+          },
+          setEnabled: () => {},
+          status: () => ({
+            supported: true,
+            mechanism: 'caffeinate',
+            holds: open,
+            asserted: open > 0,
+            reasons: [],
+          }),
+          onChange: () => () => {},
+          dispose: async () => {},
+        }) as never,
+    });
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    const runtime = holdAwakeDuringTurns(
+      runtimeWith(async function* () {
+        yield EVENT;
+        await answered;
+        yield EVENT;
+      }),
+      service
+    );
+    const stream = runtime.sendMessage('s1', 'hello');
+    const seen: number[] = [];
+
+    await stream.next();
+    seen.push(open);
+    service.sweepIdleTurns(Date.now() + TURN_IDLE_CEILING_MS + 1);
+    seen.push(open);
+    answer();
+    await stream.next();
+    seen.push(open);
+    await stream.next();
+    seen.push(open);
+    await service.stop();
+
+    expect(seen).toEqual([1, 0, 1, 0]);
   });
 });
 
