@@ -440,3 +440,9 @@ own.
 
 A question with an `isSecret` field is not drawn until the client has masked input (DOR-2726):
 Codex gets no answer and the turn gets a status line saying why.
+
+**Starting a Codex chat from another chat (DOR-2714's ceiling).** Every app-server mode reaches
+the workspace, and every Claude Code level below Full access reaches only what it edits, so on
+app-server only a Claude chat at Full access may start a Codex chat (at any of the three levels).
+Default, Plan, Accept edits and Auto are refused: fail-closed, never a climb. On exec, Default
+and Plan could start Codex in Read only. Pinned by `__tests__/start-permission-ceiling.test.ts`.

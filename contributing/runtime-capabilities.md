@@ -205,9 +205,9 @@ Every cell that is not `yes`, `no` or `n/a`, planned work first.
 
 | ID | Runtime | Status | Ticket | Why |
 | --- | --- | --- | --- | --- |
-| RT-TOOL-01 | codex | planned | DOR-2722 | Its sandbox mode decides up front; app-server can carry approval requests. |
-| RT-ASK-01 | codex | planned | DOR-2722 | App-server can carry user-input requests; not wired yet. |
-| RT-DISP-01 | codex | planned | DOR-2722 | A message waits in the queue for the next turn; app-server can take input mid-turn. |
+| RT-TOOL-01 | codex | planned | DOR-2722 | Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default. |
+| RT-ASK-01 | codex | planned | DOR-2722 | Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default. |
+| RT-DISP-01 | codex | planned | DOR-2722 | Built behind the app-server switch; on by default when DOR-2719 phase 3 makes app-server the default. |
 | RT-LIFE-03 | codex | planned | DOR-2717 | Nothing delivers work that finishes after a Codex turn. |
 | RT-LIFE-03 | opencode | planned | DOR-2717 | Nothing delivers work that finishes after an OpenCode turn. |
 | RT-LIFE-03 | claude-code | partial | DOR-2717 | Helpers report back on a warm session; background shells, timers and hooks do not yet. |
