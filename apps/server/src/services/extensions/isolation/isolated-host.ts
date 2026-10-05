@@ -92,6 +92,7 @@ import { boundedMessageSize } from './message-size.js';
 import { RunBroker } from './run-broker.js';
 import { VirtualSocket } from './virtual-socket.js';
 import { requirePersonCopy } from '../inbox/extension-inbox-context.js';
+import type { ToolHandleCheck } from '../agent-tools/tool-handle-rules.js';
 
 /** Why a start was refused, as a record's `serverError.code`. */
 export type IsolatedStartErrorCode =
@@ -148,6 +149,20 @@ export interface IsolatedHostOptions {
   logger: HostLogger;
   /** Called once when a running child exits, for any reason. */
   onExit?: (exit: IsolatedExit) => void;
+  /**
+   * Called first when a running child's process ends, before anything it
+   * registered is released or any call waiting on it is rejected. The
+   * lifecycle takes the extension's agent tools out of the registry here, so
+   * no agent can reach a tool whose process is gone, and a call still running
+   * fails as "stopped" (DOR-2685's stop order).
+   */
+  onGone?: () => void;
+  /**
+   * Discovery's verdict on each tool the manifest declares, copied into the
+   * child so its `ctx.tools.handle` throws the in-process words. The host's
+   * real `ctx.tools.handle` checks again on its own copy.
+   */
+  tools?: readonly ToolHandleCheck[];
   /**
    * The extension's REAL ctx (`createDataProviderContext`), which every ctx
    * message from the child is dispatched into. Without it, every ctx message
@@ -449,7 +464,18 @@ export class IsolatedExtensionHost {
     this.exitPromise = new Promise<void>((resolve) => {
       // 'close', not 'exit': stderr is fully read by then, so the OOM marker is seen.
       child.once('close', (code, signal) => {
-        // First: nothing the child registered on the real ctx outlives it.
+        // First of all: its tools leave the registry, before the calls
+        // waiting on the child are rejected below.
+        if (phase === 'running') {
+          try {
+            this.options.onGone?.();
+          } catch (err) {
+            this.options.logger.error(
+              `[Extensions] ${this.options.extensionId}: removing its tools failed: ${String(err)}`
+            );
+          }
+        }
+        // Then: nothing the child registered on the real ctx outlives it.
         if (this.dispatcher) {
           this.lastDispatchCounts = this.dispatcher.dispatchCounts();
           this.dispatcher.close();
@@ -556,6 +582,12 @@ export class IsolatedExtensionHost {
           },
           displayName: name,
           allowAgents: this.options.isolation.agents,
+          // Plain fields only: a check carries the parsed input schema too.
+          tools: (this.options.tools ?? []).map((check) => ({
+            name: check.name,
+            ok: check.ok,
+            ...(check.reason !== undefined ? { reason: check.reason } : {}),
+          })),
           personRefusal: (() => {
             const copy = requirePersonCopy(name);
             return { error: copy.error, code: copy.code, message: copy.agent };

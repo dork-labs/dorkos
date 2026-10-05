@@ -150,8 +150,13 @@ export const ADVISOR_METHODS = Object.freeze([
 /** One advisor method name. */
 export type AdvisorMethodName = (typeof ADVISOR_METHODS)[number];
 
-/** What a refused tool binding says. Phase 6 (DOR-2686 §8) replaces this entry. */
-export const TOOLS_REFUSAL = "Isolated extensions can't offer tools to agents yet.";
+/**
+ * A tool handler's bound on the reverse leg: none. Each tool's deadline
+ * (`timeoutSeconds`) lives in the host's invoke wrapper
+ * (`agent-tools/tool-binding.ts`), which aborts the call; the abort reaches
+ * the child as a `cancel` (spec §8).
+ */
+export const TOOL_BOUND_MS = 0;
 
 const konst = { kind: 'const' } as const;
 const call = { kind: 'call' } as const;
@@ -161,11 +166,10 @@ const local = { kind: 'local' } as const;
 /**
  * The protocol table: how every `DataProviderContext` member crosses.
  *
- * `tools.handle` is `refused` until tools cross the boundary (spec §8, a later
- * phase); it then becomes a `reverse` member with a host-side, per-tool
- * deadline. Refusing rather than half-supporting it means an isolated
- * extension that binds a tool fails loudly at `register()` instead of
- * declaring tools no agent can ever call.
+ * `tools.handle` is a `reverse` member with no bound of its own
+ * ({@link TOOL_BOUND_MS}): the host binds a stub through the real
+ * `ctx.tools.handle`, and the per-tool deadline, the gate, the result checks
+ * and the stop order are the host wrapper's, exactly as in-process (spec §8).
  */
 export const CTX_PROTOCOL = {
   secrets: {
@@ -219,7 +223,7 @@ export const CTX_PROTOCOL = {
   },
   tools: {
     kind: 'object',
-    members: { handle: { kind: 'refused', reason: TOOLS_REFUSAL } },
+    members: { handle: { kind: 'reverse', boundMs: TOOL_BOUND_MS } },
   },
 } as const satisfies ProtocolFor<DataProviderContext>;
 

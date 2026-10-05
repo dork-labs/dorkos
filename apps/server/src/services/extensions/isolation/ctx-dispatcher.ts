@@ -124,7 +124,8 @@ export interface CtxDispatcherOptions {
 interface PendingRcall {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
-  timer: NodeJS.Timeout;
+  /** Clear its timer and abort listener; called once, whichever way it settles. */
+  settle: () => void;
 }
 
 /** Make the error a child sees for a refusal the dispatcher itself decides. */
@@ -206,6 +207,14 @@ function gateRefusal(path: string): Error {
     : new Error(AGENTS_REFUSAL);
 }
 
+/** What an `expose` message said about the function, beyond its path. Untrusted. */
+export interface ExposeDetail {
+  /** An advisor's methods. */
+  methods?: unknown;
+  /** A tool's name. */
+  name?: unknown;
+}
+
 /**
  * Binds a child's exposed function onto the real ctx. Each returns the
  * unregister function the real ctx hands back.
@@ -215,7 +224,7 @@ type ReverseBinder = (
   ctx: DataProviderContext,
   exposeId: number,
   boundMs: number,
-  methods: unknown
+  detail: ExposeDetail
 ) => (() => void) | WireError;
 
 /**
@@ -224,7 +233,7 @@ type ReverseBinder = (
  * the table without deciding how the host carries it.
  */
 export const REVERSE_BINDERS: Readonly<Record<string, ReverseBinder>> = Object.freeze({
-  'accounts.registerAdvisor': (dispatcher, ctx, exposeId, boundMs, methods) => {
+  'accounts.registerAdvisor': (dispatcher, ctx, exposeId, boundMs, { methods }) => {
     if (
       !Array.isArray(methods) ||
       methods.length === 0 ||
@@ -254,6 +263,21 @@ export const REVERSE_BINDERS: Readonly<Record<string, ReverseBinder>> = Object.f
           Parameters<DataProviderContext['inbox']['onAction']>[0]
         >
     ),
+  // A tool (spec §8): bound through the REAL ctx.tools.handle, so the host's
+  // own copy of the manifest decides (undeclared, refused, twice, after
+  // register() finished all throw the in-process words), and only a tool the
+  // host bound can ever be contributed. The stub carries no deadline of its
+  // own: the host wrapper's per-tool deadline, cancellation and stop abort
+  // `call.signal`, which cancels the child's call and settles at once.
+  'tools.handle': (dispatcher, ctx, exposeId, boundMs, { name }) => {
+    if (typeof name !== 'string') return refusal("A tool binding needs the tool's name.");
+    ctx.tools.handle(name, (input, call) =>
+      dispatcher.rcall(exposeId, 'tool', [input, { agentId: call.agentId }], boundMs, call.signal)
+    );
+    // A bound tool is never unbound: it ends with this instance (the
+    // lifecycle removes it from the registry first on every stop).
+    return () => undefined;
+  },
 });
 
 /**
@@ -266,6 +290,12 @@ export class CtxDispatcher {
   private readonly exposes = new Map<number, () => void>();
   /** Which reverse member each expose id is bound to. */
   private readonly exposePaths = new Map<number, string>();
+  /**
+   * Expose ids that bound a tool. Not counted against
+   * {@link MAX_CHILD_REGISTRATIONS}: the manifest bounds them (each declared
+   * tool binds once, and only while `register()` runs).
+   */
+  private readonly toolExposes = new Set<number>();
   private readonly rcalls = new Map<number, PendingRcall>();
   private nextRcallId = 1;
   private readonly counts = new Map<string, number>();
@@ -350,8 +380,9 @@ export class CtxDispatcher {
       map.clear();
     }
     this.exposePaths.clear();
+    this.toolExposes.clear();
     for (const [, pending] of this.rcalls) {
-      clearTimeout(pending.timer);
+      pending.settle();
       pending.reject(new Error(`${this.options.displayName} stopped.`));
     }
     this.rcalls.clear();
@@ -362,29 +393,60 @@ export class CtxDispatcher {
    * `boundMs` (plus a little slack so the real wrapper's own bound, such as
    * the advisor's, answers first). On timeout the child is told to cancel.
    *
+   * A `boundMs` of 0 sets no timer: the caller bounds the call through
+   * `signal` instead (a tool's deadline lives in the host's invoke wrapper).
+   * When `signal` aborts, the child is told to cancel and the call settles
+   * at once, without waiting for the child; any answer it sends later is
+   * dropped.
+   *
    * @param exposeId - The `expose` id.
    * @param method - The function's name.
    * @param args - Its arguments.
-   * @param boundMs - The member's bound from the table.
+   * @param boundMs - The member's bound from the table (0: none).
+   * @param signal - Aborts the call.
    */
-  rcall(exposeId: number, method: string, args: unknown[], boundMs: number): Promise<unknown> {
+  rcall(
+    exposeId: number,
+    method: string,
+    args: unknown[],
+    boundMs: number,
+    signal?: AbortSignal
+  ): Promise<unknown> {
     const name = this.options.displayName;
     if (this.closed) return Promise.reject(new Error(`${name} stopped.`));
     if (!this.exposes.has(exposeId)) {
       return Promise.reject(new Error(`${name} removed that handler.`));
     }
+    if (signal?.aborted) return Promise.reject(new Error(`${name}: the call was cancelled.`));
     const problem = wireDataProblem(args, { allowBinary: true });
     if (problem)
       return Promise.reject(new Error(`DorkOS couldn't send that to ${name}: ${problem}.`));
     const id = this.nextRcallId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (!this.rcalls.delete(id)) return;
-        this.options.send({ type: 'cancel', id });
-        reject(new Error(`${name} didn't answer in time.`));
-      }, boundMs + REVERSE_SLACK_MS);
-      timer.unref?.();
-      this.rcalls.set(id, { resolve, reject, timer });
+      // Give up on the call: forget it, tell the child, and settle now.
+      const giveUp = (why: string): void => {
+        const pending = this.rcalls.get(id);
+        if (!pending) return;
+        this.rcalls.delete(id);
+        pending.settle();
+        if (!this.closed) this.options.send({ type: 'cancel', id });
+        reject(new Error(why));
+      };
+      const timer =
+        boundMs > 0
+          ? setTimeout(() => giveUp(`${name} didn't answer in time.`), boundMs + REVERSE_SLACK_MS)
+          : null;
+      timer?.unref?.();
+      const onAbort = (): void => giveUp(`${name}: the call was cancelled.`);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      this.rcalls.set(id, {
+        resolve,
+        reject,
+        settle: () => {
+          if (timer) clearTimeout(timer);
+          signal?.removeEventListener('abort', onAbort);
+        },
+      });
       this.options.send({ type: 'rcall', id, handler: exposeId, method, args });
     });
   }
@@ -544,13 +606,18 @@ export class CtxDispatcher {
     }
   }
 
-  /** Room for one more registration under `id`, or a refusal. */
-  private roomFor(id: number): boolean {
+  /**
+   * Room for one more registration under `id`, or a refusal.
+   *
+   * @param counted - Whether it counts against {@link MAX_CHILD_REGISTRATIONS}
+   *   (a tool binding does not; the manifest bounds those).
+   */
+  private roomFor(id: number, counted = true): boolean {
     if (this.subs.has(id) || this.exposes.has(id)) {
       this.refuse(id, refusal('That id is already in use.'), 'refused a reused registration id');
       return false;
     }
-    if (this.registrations >= MAX_CHILD_REGISTRATIONS) {
+    if (counted && this.registrations - this.toolExposes.size >= MAX_CHILD_REGISTRATIONS) {
       this.refuse(id, refusal('Too many listeners at once.'), 'refused a listener over the limit');
       return false;
     }
@@ -591,9 +658,10 @@ export class CtxDispatcher {
 
   /** An `expose`: bind a child-held function onto the real ctx. */
   private onExpose(message: ExposeMessage): void {
-    const { id, path, methods } = message;
+    const { id, path, methods, name } = message;
     const kind = this.expect(id, path, 'reverse');
-    if (!kind || !this.roomFor(id)) return;
+    const isTool = path === 'tools.handle';
+    if (!kind || !this.roomFor(id, !isTool)) return;
     const binder = Object.prototype.hasOwnProperty.call(REVERSE_BINDERS, path)
       ? REVERSE_BINDERS[path]
       : undefined;
@@ -606,7 +674,7 @@ export class CtxDispatcher {
     this.exposes.set(id, () => {});
     let result: (() => void) | WireError;
     try {
-      result = binder(this, this.options.ctx, id, kind.boundMs, methods);
+      result = binder(this, this.options.ctx, id, kind.boundMs, { methods, name });
     } catch (err) {
       result = toWireError(err);
     }
@@ -618,6 +686,11 @@ export class CtxDispatcher {
     this.count(path);
     this.exposes.set(id, result);
     this.exposePaths.set(id, path);
+    if (isTool) {
+      // Each binds its own tool; none replaces another.
+      this.toolExposes.add(id);
+      return;
+    }
     // Both reverse members replace: a second advisor or action handler takes
     // the first one's place on the real ctx. Forget the replaced entries, so
     // re-registering cannot use up the child's registration limit. Their
@@ -633,7 +706,7 @@ export class CtxDispatcher {
     const pending = this.rcalls.get(message.id);
     if (!pending) return;
     this.rcalls.delete(message.id);
-    clearTimeout(pending.timer);
+    pending.settle();
     if (!message.ok) {
       pending.reject(fromChildError(message.error, this.options.displayName));
       return;
@@ -654,7 +727,10 @@ export class CtxDispatcher {
     const unregister = map.get(id);
     if (!unregister) return;
     map.delete(id);
-    if (map === this.exposes) this.exposePaths.delete(id);
+    if (map === this.exposes) {
+      this.exposePaths.delete(id);
+      this.toolExposes.delete(id);
+    }
     try {
       unregister();
     } catch (err) {

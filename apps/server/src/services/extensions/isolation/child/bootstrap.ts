@@ -16,8 +16,8 @@
  *    to itself), and build the `child_process` shim.
  * 4. **Load the bundle** with the injected `require`.
  * 5. **register(router, ctx)** with the proxy ctx (`proxy-ctx.ts`), whose
- *    every member is decided by the protocol table; report `registered`. The
- *    host measures how long it takes.
+ *    every member is decided by the protocol table; report `registered`,
+ *    with the tools it bound. The host measures how long it takes.
  *
  * The router `register()` filled is served by a virtual HTTP server that
  * never listens (`virtual-server.ts`): the host opens connections to it over
@@ -226,21 +226,26 @@ function main(): void {
     // `registered` says it is ready (spec §7).
     virtual = createVirtualServer({ extensionId: init.extensionId, express, router, send });
     const ctx = proxy.ctx;
+    const proxied = proxy;
     Promise.resolve()
       .then(() => (candidate as (r: unknown, c: unknown) => unknown)(router, ctx))
       .then(
         (result) => {
           cleanup = typeof result === 'function' ? (result as () => unknown) : null;
-          send({ type: 'registered', ok: true, hasCleanup: cleanup !== null, handledTools: [] });
+          // register() finished: no more tool handlers, as in-process.
+          const handledTools = proxied.sealTools();
+          send({ type: 'registered', ok: true, hasCleanup: cleanup !== null, handledTools });
         },
-        (err: unknown) =>
+        (err: unknown) => {
+          proxied.sealTools();
           send({
             type: 'registered',
             ok: false,
             hasCleanup: false,
             handledTools: [],
             error: describe(err).message,
-          })
+          });
+        }
       );
   };
 
