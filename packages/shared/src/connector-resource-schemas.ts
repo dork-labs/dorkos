@@ -9,7 +9,10 @@
  */
 import { z } from 'zod';
 import { ConnectorAuthenticationSetupSchema } from '@dork-labs/connector-providers/connector-authentication-setup';
-import { ConnectorProviderStatusSchema } from '@dork-labs/connector-providers/connector-provider';
+import {
+  ConnectStartRefusalSchema,
+  ConnectorProviderStatusSchema,
+} from '@dork-labs/connector-providers/connector-provider';
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
   ConnectionIdSchema,
@@ -389,6 +392,15 @@ export const ConnectorConnectionDetailSchema = z
 /** Owner-visible detail for one stable connection. */
 export type ConnectorConnectionDetail = z.infer<typeof ConnectorConnectionDetailSchema>;
 
+/**
+ * Where in the app a connection was started, as the client saw it: a
+ * `dorkos://` link on the desktop app, or the app's own address plus its
+ * Connections route in a browser. Untrusted and deliberately unbounded here:
+ * the server keeps it only when it is a link it serves itself and otherwise
+ * drops it, so a bad link never refuses the whole start.
+ */
+const ConnectorReturnToInputSchema = z.string().optional();
+
 /** Owner request to start one idempotent durable provider authentication flow. */
 export const ConnectorAuthenticationFlowCreateRequestSchema = z
   .object({
@@ -396,6 +408,7 @@ export const ConnectorAuthenticationFlowCreateRequestSchema = z
     toolkit: z.string().min(1).max(200),
     label: z.string().min(1).max(200).optional(),
     idempotencyKey: z.string().min(1).max(200),
+    returnTo: ConnectorReturnToInputSchema,
   })
   .strict();
 /** Owner request to start one idempotent durable provider authentication flow. */
@@ -439,6 +452,11 @@ export const ConnectorAuthenticationFlowStateSchema = z.discriminatedUnion('stat
       ...ConnectorAuthenticationFlowBaseShape,
       state: z.literal('failed'),
       reason: z.string().min(1).max(1_000),
+      /**
+       * Present when the start was refused for a reason trying again will not
+       * fix. Absent on an ordinary failure, where starting again may work.
+       */
+      failureCode: ConnectStartRefusalSchema.optional(),
       completedAt: z.string().datetime(),
     })
     .strict(),
@@ -472,7 +490,7 @@ export type ConnectorConnectionPatch = z.infer<typeof ConnectorConnectionPatchSc
 
 /** Owner request to start one idempotent reconnect flow. */
 export const ConnectorReconnectRequestSchema = z
-  .object({ idempotencyKey: z.string().min(1).max(200) })
+  .object({ idempotencyKey: z.string().min(1).max(200), returnTo: ConnectorReturnToInputSchema })
   .strict();
 /** Owner request to start one idempotent reconnect flow. */
 export type ConnectorReconnectRequest = z.infer<typeof ConnectorReconnectRequestSchema>;

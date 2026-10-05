@@ -14,15 +14,16 @@ import type {
   ConnectorEventPageRequest,
 } from '@dorkos/shared/connector-events';
 import type { ManagedConnectorEventDefinitionPage } from '@dorkos/shared/connector-event-schemas';
-import type {
-  ConnectorCapabilities,
-  ConnectorExternalAccountRef,
-  ConnectorProvider,
-  ConnectorProviderInstanceId,
-  ConnectorToolkit,
-  ConnectPoll,
-  ConnectStart,
-  ProviderConnectedAccount,
+import {
+  ConnectStartRefusedError,
+  type ConnectorCapabilities,
+  type ConnectorExternalAccountRef,
+  type ConnectorProvider,
+  type ConnectorProviderInstanceId,
+  type ConnectorToolkit,
+  type ConnectPoll,
+  type ConnectStart,
+  type ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import type {
   ManagedConnectorAccount,
@@ -38,6 +39,7 @@ import type {
   ManagedConnectorToolkitVersionResponse,
 } from '@dorkos/shared/connector-managed-discovery-schemas';
 import {
+  MANAGED_CONNECTOR_ERROR_CODES,
   ManagedConnectorExecutionRequestSchema,
   type ManagedConnectorExecutionAttribution,
   type ManagedConnectorExecutionReceipt,
@@ -127,6 +129,46 @@ function providerAccount(account: ManagedConnectorAccount): ProviderConnectedAcc
     status: account.authenticationStatus,
     custody: 'managed',
   };
+}
+
+/**
+ * The service's own refusal codes that mean it will not connect this app from
+ * here EVER, whatever the person does in DorkOS: it has no sign-in setup for
+ * the app (`connection_setup_missing`), or managed connections are switched
+ * off for this account.
+ */
+const SERVICE_NOT_READY_CODES: ReadonlySet<string> = new Set([
+  MANAGED_CONNECTOR_ERROR_CODES.connectionSetupMissing,
+  MANAGED_CONNECTOR_ERROR_CODES.managedConnectorsUnavailable,
+]);
+
+/**
+ * Turn a refusal the service gave for good into the port's typed refusal, or
+ * `undefined` for anything trying again could fix: no answer, a timeout, a
+ * bare 5xx from something in front of the service, an answer that made no sense.
+ *
+ * A bare `unavailable` cloud code (sent with a 503) means the service hit a
+ * transient failure — a network error or timeout — while looking up its own
+ * sign-in setup; that is temporary, so it maps to `service_unavailable`
+ * rather than the permanent `service_not_ready`.
+ *
+ * The service's `reason` text is never passed on. It is written for its own
+ * logs and can be technical, so the person is shown copy chosen by the code.
+ */
+function finalStartRefusal(error: unknown): ConnectStartRefusedError | undefined {
+  if (!(error instanceof ManagedConnectorCloudError)) return undefined;
+  if (error.code === 'unauthorized' || error.code === 'permission_upgrade_required') {
+    return new ConnectStartRefusedError('account_link_required', { cause: error });
+  }
+  if (error.code === 'unavailable' && error.cloudCode !== undefined) {
+    if (SERVICE_NOT_READY_CODES.has(error.cloudCode)) {
+      return new ConnectStartRefusedError('service_not_ready', { cause: error });
+    }
+    if (error.cloudCode === 'unavailable') {
+      return new ConnectStartRefusedError('service_unavailable', { cause: error });
+    }
+  }
+  return undefined;
 }
 
 function terminalUnknown(code: string, message: string): ConnectorProviderExecuteResult {
@@ -376,22 +418,55 @@ export class ManagedCloudConnectorProvider implements ConnectorProvider {
     return page.toolkits;
   }
 
-  async startConnect(toolkit: string, opts?: { label?: string }): Promise<ConnectStart> {
-    const state = await this.#cloud.startManagedConnectorAuthentication(
-      {
-        version: 1,
-        requestId: randomUUID(),
-        toolkit,
-        ...(opts?.label !== undefined && { label: opts.label }),
-      },
-      new AbortController().signal
-    );
+  async startConnect(
+    toolkit: string,
+    opts?: { label?: string; returnTo?: string }
+  ): Promise<ConnectStart> {
+    const request: ManagedConnectorAuthenticationCreateRequest = {
+      version: 1,
+      requestId: randomUUID(),
+      toolkit,
+      ...(opts?.label !== undefined && { label: opts.label }),
+    };
+    let state: ManagedConnectorAuthenticationState;
+    try {
+      state = await this.#startAuthentication(request, opts?.returnTo);
+    } catch (error) {
+      throw finalStartRefusal(error) ?? error;
+    }
     return {
       flowId: state.flowId,
       ...(state.state === 'pending' && state.authorizeUrl
         ? { authorizeUrl: state.authorizeUrl }
         : {}),
     };
+  }
+
+  /**
+   * Ask the service to start, offering the way back into the app when there
+   * is one. A service older than `returnTo` reads this request strictly and
+   * refuses a key it does not know with a 400 before it records anything, so
+   * that refusal is answered by asking once more, with the same request id and
+   * without the field: connecting works exactly as it did before, minus the
+   * way back.
+   */
+  async #startAuthentication(
+    request: ManagedConnectorAuthenticationCreateRequest,
+    returnTo: string | undefined
+  ): Promise<ManagedConnectorAuthenticationState> {
+    if (returnTo === undefined) {
+      return this.#cloud.startManagedConnectorAuthentication(request, new AbortController().signal);
+    }
+    try {
+      return await this.#cloud.startManagedConnectorAuthentication(
+        { ...request, returnTo },
+        new AbortController().signal
+      );
+    } catch (error) {
+      if (!(error instanceof ManagedConnectorCloudError) || error.status !== 400) throw error;
+      logger.info('[Connectors] Managed service declined the way back; starting without it');
+      return this.#cloud.startManagedConnectorAuthentication(request, new AbortController().signal);
+    }
   }
 
   async pollConnect(flowId: string): Promise<ConnectPoll> {

@@ -49,6 +49,9 @@ describe('parseDeepLink', () => {
     ['dorkos://session?id=x', '/session?id=x'],
     ['dorkos://agents?a=1&b=2', '/agents?a=1&b=2'],
     ['dorkos://AGENTS', '/AGENTS'],
+    // The way back a finished account connection offers (DOR-2721): the
+    // server forwards exactly this link, so it must land on Connections.
+    ['dorkos://connections', '/connections'],
   ])('maps %s to %s', (url, expected) => {
     expect(parseDeepLink(url)).toBe(expected);
   });

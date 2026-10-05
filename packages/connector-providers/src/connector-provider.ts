@@ -222,6 +222,41 @@ export const ConnectPollSchema = z.object({
 export type ConnectPoll = z.infer<typeof ConnectPollSchema>;
 
 /**
+ * Why a connect flow can never start from here, in a form a person can act on.
+ *
+ * - `service_not_ready`: the service that handles sign-in is not set up to
+ *   connect this app. Nothing the person does in DorkOS changes that.
+ * - `account_link_required`: this computer has to be linked to its DorkOS
+ *   account (again) before the service will start anything.
+ * - `service_unavailable`: the service couldn't start sign-in right now.
+ *   Trying again later may work.
+ */
+export const ConnectStartRefusalSchema = z.enum([
+  'service_not_ready',
+  'account_link_required',
+  'service_unavailable',
+]);
+/** Why a connect flow can never start from here. See {@link ConnectStartRefusalSchema}. */
+export type ConnectStartRefusal = z.infer<typeof ConnectStartRefusalSchema>;
+
+/**
+ * Thrown by `startConnect` when the backend KNOWS the start was refused for a
+ * reason trying again will not fix. Its message is for logs; people are shown
+ * copy chosen by {@link ConnectStartRefusedError.refusal}.
+ */
+export class ConnectStartRefusedError extends Error {
+  /** Which final refusal this is. */
+  readonly refusal: ConnectStartRefusal;
+
+  /** Construct one final connect-start refusal. */
+  constructor(refusal: ConnectStartRefusal, options?: ErrorOptions) {
+    super(`Connect start refused: ${refusal}`, options);
+    this.name = 'ConnectStartRefusedError';
+    this.refusal = refusal;
+  }
+}
+
+/**
  * Universal connector backend contract — the third swappable seam beside
  * `AgentRuntime` and `Transport`. Composio (managed), Nango (self-host), and a
  * raw-MCP adapter (baseline) each implement it; a shared conformance suite
@@ -276,10 +311,22 @@ export interface ConnectorProvider {
    * duplicate account; it may re-verify the existing connection or reject the
    * repeated request.
    *
+   * A backend that knows a refusal is final (the service is not set up to
+   * connect this app, or this computer has to be linked first) throws a
+   * {@link ConnectStartRefusedError}, so the person is told why and is not
+   * offered a retry that would fail the same way. Anything else it throws is
+   * treated as "did not confirm whether sign-in started".
+   *
    * @param toolkit - Service slug to connect (must appear in `listToolkits`).
-   * @param opts - Optional connect options; `label` disambiguates multiple accounts.
+   * @param opts - Optional connect options; `label` disambiguates multiple
+   *   accounts, and `returnTo` is where in the DorkOS app the person started
+   *   (already checked by the server). A backend whose finishing page cannot
+   *   offer a way back ignores `returnTo`.
    */
-  startConnect(toolkit: string, opts?: { label?: string }): Promise<ConnectStart>;
+  startConnect(
+    toolkit: string,
+    opts?: { label?: string; returnTo?: string }
+  ): Promise<ConnectStart>;
 
   /**
    * Poll a connect flow to completion; resolves to the connected account handle.

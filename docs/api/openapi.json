@@ -35360,6 +35360,9 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
+                  },
+                  "returnTo": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -35554,6 +35557,14 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 1000
+                        },
+                        "failureCode": {
+                          "type": "string",
+                          "enum": [
+                            "service_not_ready",
+                            "account_link_required",
+                            "service_unavailable"
+                          ]
                         },
                         "completedAt": {
                           "type": "string",
@@ -35910,6 +35921,14 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 1000
+                        },
+                        "failureCode": {
+                          "type": "string",
+                          "enum": [
+                            "service_not_ready",
+                            "account_link_required",
+                            "service_unavailable"
+                          ]
                         },
                         "completedAt": {
                           "type": "string",
@@ -37593,6 +37612,9 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200
+                  },
+                  "returnTo": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -37785,6 +37807,14 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 1000
+                        },
+                        "failureCode": {
+                          "type": "string",
+                          "enum": [
+                            "service_not_ready",
+                            "account_link_required",
+                            "service_unavailable"
+                          ]
                         },
                         "completedAt": {
                           "type": "string",

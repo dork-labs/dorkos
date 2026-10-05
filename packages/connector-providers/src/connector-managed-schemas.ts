@@ -21,6 +21,8 @@ export const MANAGED_CONNECTOR_ERROR_CODES = {
   unauthorized: 'unauthorized',
   permissionUpgradeRequired: 'permission_upgrade_required',
   managedConnectorsUnavailable: 'managed_connectors_unavailable',
+  /** The service has no sign-in setup for this app, so starting again won't help. */
+  connectionSetupMissing: 'connection_setup_missing',
   invalidRequest: 'invalid_request',
   internalError: 'internal_error',
   notFound: 'not_found',

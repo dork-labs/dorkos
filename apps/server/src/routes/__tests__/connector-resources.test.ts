@@ -330,6 +330,76 @@ describe('connector resource routes', () => {
     });
   });
 
+  describe('the way back into the app (returnTo)', () => {
+    const start = {
+      providerInstanceId: 'provider-a',
+      toolkit: 'gmail',
+      idempotencyKey: 'connect-gmail',
+    };
+
+    function withOrigins(origins: string[]) {
+      const served = express();
+      served.use(express.json());
+      served.use(
+        '/api/connectors',
+        createConnectorResourcesRouter({ ...deps, servedOrigins: () => origins })
+      );
+      return request(fixtureTarget.mount(served));
+    }
+
+    it.each([
+      ['the app’s own address', 'http://localhost:4242/connections'],
+      ['the live tunnel address', 'https://abc.ngrok.app/connections'],
+      ['a desktop link to Connections', 'dorkos://connections'],
+    ])('forwards %s', async (_label, returnTo) => {
+      await withOrigins(['http://localhost:4242', 'https://abc.ngrok.app'])
+        .post('/api/connectors/connections')
+        .send({ ...start, returnTo })
+        .expect(201);
+      expect(deps.authentication.start).toHaveBeenCalledWith(OWNER, { ...start, returnTo });
+    });
+
+    it.each([
+      ['another site', 'https://evil.example/connections'],
+      ['a javascript: link', 'javascript:alert(1)'],
+      ['a scheme-relative link', '//evil.example/connections'],
+      ['userinfo before another host', 'http://localhost:4242@evil.example/connections'],
+      ['an oversize value', `http://localhost:4242/connections?${'a'.repeat(4096)}`],
+    ])('drops %s and still starts the connection', async (_label, returnTo) => {
+      await withOrigins(['http://localhost:4242'])
+        .post('/api/connectors/connections')
+        .send({ ...start, returnTo })
+        .expect(201);
+      const [, forwarded] = vi.mocked(deps.authentication.start).mock.calls[0]!;
+      expect(forwarded).toEqual(start);
+      expect(forwarded).not.toHaveProperty('returnTo');
+    });
+
+    it('refuses a returnTo that is not text, as it would any malformed field', async () => {
+      await withOrigins(['http://localhost:4242'])
+        .post('/api/connectors/connections')
+        .send({ ...start, returnTo: 42 })
+        .expect(400);
+      expect(deps.authentication.start).not.toHaveBeenCalled();
+    });
+
+    it('checks a reconnect’s way back the same way', async () => {
+      const app = withOrigins(['http://localhost:4242']);
+      await app
+        .post('/api/connectors/connections/connection-a/reconnect')
+        .send({ idempotencyKey: 'again', returnTo: 'http://localhost:4242/connections' })
+        .expect(201);
+      await app
+        .post('/api/connectors/connections/connection-a/reconnect')
+        .send({ idempotencyKey: 'again-2', returnTo: 'https://evil.example/connections' })
+        .expect(201);
+      expect(vi.mocked(deps.authentication.reconnect).mock.calls.map((call) => call[3])).toEqual([
+        { returnTo: 'http://localhost:4242/connections' },
+        {},
+      ]);
+    });
+  });
+
   it('routes lifecycle and canonical agent/session reads through exact resource paths', async () => {
     await api().post('/api/connectors/connections/connection-a/pause').send({}).expect(200);
     await api()
@@ -408,7 +478,8 @@ describe('connector resource routes', () => {
     expect(deps.authentication.reconnect).toHaveBeenCalledWith(
       OWNER,
       'connection-a',
-      'reconnect-valid'
+      'reconnect-valid',
+      {}
     );
 
     vi.mocked(deps.authentication.reconnect).mockRejectedValueOnce(

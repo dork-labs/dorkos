@@ -1009,6 +1009,13 @@
       "when": 1791157937962,
       "tag": "20261004235217_session_started_by_permission",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "6",
+      "when": 1791229304918,
+      "tag": "20261005194144_connector_auth_flow_failure_code",
+      "breakpoints": true
     }
   ]
 }
