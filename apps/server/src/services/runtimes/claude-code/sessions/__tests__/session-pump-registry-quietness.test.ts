@@ -165,19 +165,48 @@ describe('the warm ceiling reclaims only processes that are not working', () => 
     }
   });
 
-  it('refuses a thirteenth session when twelve are waiting on background shells', async () => {
+  it('reclaims a process held only by a background shell, as a last resort', async () => {
     const queries = new Map<string, FakeQuery>();
     const registry = new SessionPumpRegistry(identity);
     for (let i = 0; i < CEILING; i += 1) {
       await warmHolding(registry, queries, `shell-${i}`, 'local_bash');
     }
 
-    // A shell is work its agent is waiting on (DOR-2065): reclaiming the process
-    // kills it, and the wake its result would have brought never comes.
+    // A shell can run forever (a dev server, a `tail -f`), so twelve of them
+    // must not lock every other chat out. The least recently used one goes;
+    // the CLI's own "stopped" notice reaches its agent on its next turn.
     const latecomer = registry.acquire('late', launchOpts(queries, 'late'));
-    await expect(latecomer.warm()).rejects.toThrow(PumpRefusedError);
-    for (let i = 0; i < CEILING; i += 1) {
+    // The reclaimed process gets its drain grace window on the fake clock.
+    const warming = latecomer.warm();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await warming;
+    expect(registry.warmth('late')).toBe('warm');
+    expect(registry.warmth('shell-0')).toBe('cold');
+    for (let i = 1; i < CEILING; i += 1) {
       expect(registry.warmth(`shell-${i}`)).toBe('warm');
+    }
+  });
+
+  it('never reclaims a process a helper or Monitor holds, even when it is the oldest', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    await warmHolding(registry, queries, 'agent-0', 'local_agent');
+    await warmHolding(registry, queries, 'monitor-1', 'monitor');
+    for (let i = 2; i < CEILING - 1; i += 1) {
+      await warmHolding(registry, queries, `monitor-${i}`, 'monitor');
+    }
+    await warmHolding(registry, queries, 'shell-last', 'local_bash');
+
+    const latecomer = registry.acquire('late', launchOpts(queries, 'late'));
+    // The reclaimed process gets its drain grace window on the fake clock.
+    const warming = latecomer.warm();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await warming;
+    expect(registry.warmth('late')).toBe('warm');
+    expect(registry.warmth('shell-last')).toBe('cold');
+    expect(registry.warmth('agent-0')).toBe('warm');
+    for (let i = 1; i < CEILING - 1; i += 1) {
+      expect(registry.warmth(`monitor-${i}`)).toBe('warm');
     }
   });
 });

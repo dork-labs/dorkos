@@ -526,6 +526,14 @@ export class SessionPump {
   }
 
   /**
+   * Is a background shell the only thing this process is doing (DOR-2065)?
+   * See `ProcessQuiet.isHoldingOnlyShells`.
+   */
+  isHoldingOnlyShells(): boolean {
+    return this.quiet.isHoldingOnlyShells();
+  }
+
+  /**
    * Is a helper agent still working on this process, inside the four-hour
    * ceiling (DOR-2681)? What the stall watchdog asks before calling a silent
    * turn stalled.
@@ -612,6 +620,24 @@ export class SessionPump {
     }
     // Before the close, so the stream ending is read as "we asked for this"
     // rather than as a crash.
+    this.setState('reaped');
+    await this.drain();
+    return true;
+  }
+
+  /**
+   * Give the process back although a background shell is still running in it:
+   * `WARM → REAPED` (DOR-2065).
+   *
+   * The warm ceiling's last resort, for when every slot is held and nothing is
+   * quiet. Only a process whose sole work is shells qualifies (see
+   * {@link isHoldingOnlyShells}); one with a helper, a Monitor, an owed
+   * delivery or a person waited on is refused as {@link reap} refuses it.
+   *
+   * @returns True when the process was closed, false when the pump declined
+   */
+  async reapShellsOnly(): Promise<boolean> {
+    if (this.currentState !== 'warm' || !this.quiet.isHoldingOnlyShells()) return false;
     this.setState('reaped');
     await this.drain();
     return true;

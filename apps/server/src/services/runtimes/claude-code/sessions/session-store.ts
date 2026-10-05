@@ -449,7 +449,11 @@ export class SessionStore {
         });
         existing.hasStarted = true;
       }
-    } else if (existing.accountRoot === undefined && existing.hasStarted) {
+    } else if (
+      existing.accountRoot === undefined &&
+      existing.hasStarted &&
+      existing.accountRootProbed !== true
+    ) {
       // A session made before its transcript existed — a new chat started on a
       // chosen account — learns that account once its first turn has written
       // one. Without this the record never learns it, and a later message runs
@@ -457,7 +461,9 @@ export class SessionStore {
       // the warm process somewhere the conversation does not exist, killing its
       // background shells and losing the chat to "No conversation found"
       // (DOR-2065). Only once started, for the reason `launchedAccountRoot`
-      // is a separate field.
+      // is a separate field. Once per record: a transcript that is never found
+      // must not cost a disk scan on every message.
+      existing.accountRootProbed = true;
       const effectiveCwd = opts?.cwd || existing.cwd || defaultCwd;
       const transcript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);
       if (transcript.root) existing.accountRoot = transcript.root;

@@ -190,21 +190,10 @@ import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
 import { recordSessionUsage } from '../accounts/account-usage-feed.js';
-import { sharedBackgroundWorkLedger } from '../messaging/background-work-ledger.js';
-
-/**
- * A chat whose agent process was ended while it still held background work,
- * and so is owed a turn to pick that work back up (DOR-2065).
- */
-export interface CutShortWork {
-  /** The chat to wake, under its transcript id. */
-  sessionId: string;
-  /** The directory it runs in. */
-  cwd: string;
-}
-
-/** How a process holding background work came to an end. */
-type WorkEnding = 'cut-short' | 'released' | 'kept';
+import {
+  sharedBackgroundWorkLedger,
+  type BackgroundWorkLedger,
+} from '../messaging/background-work-ledger.js';
 
 /** One session's pump, its windower, and its crash policy, wired together. */
 interface SessionBundle {
@@ -266,18 +255,11 @@ interface SessionBundle {
    */
   staleToolListWarnedFor?: number;
   /**
-   * The chat and directory this process's background work belongs to, while
-   * the process holds any (DOR-2065). Mirrors the durable record in
-   * `background-work.json`, kept here so ending the process can decide what
-   * the chat is owed without reading the file back.
+   * True while this process holds background work, mirroring its durable
+   * record in `background-work.json` (DOR-2065), so ending the process can
+   * tell whether there is a record to clear without reading the file.
    */
-  heldWork?: CutShortWork;
-  /**
-   * A wake this bundle owes, held until the spent pump has left the registry —
-   * a wake dispatched sooner could find the reaped pump still filed under the
-   * session and be refused by it.
-   */
-  wakeOwed?: CutShortWork;
+  heldWork?: boolean;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -334,12 +316,6 @@ export class PersistentDispatch {
    */
   private dispatchGateListener: ((sessionId: string) => void) | undefined;
   /**
-   * Whoever wakes a chat whose process ended with its background work inside
-   * it, or `undefined` when nothing is listening (DOR-2065).
-   */
-  private cutShortListener: ((work: CutShortWork) => void) | undefined;
-
-  /**
    * Build the dispatcher over a runtime's pump registry.
    *
    * @param registry - The runtime's registry; this never creates its own, so
@@ -361,6 +337,12 @@ export class PersistentDispatch {
         contextTokens: number | undefined
       ) => void)
     | undefined;
+  /**
+   * The durable record of chats holding background work (DOR-2065), asked for
+   * on each use so the runtime can hand over the one for its own data
+   * directory after this is built.
+   */
+  private readonly backgroundWork: () => BackgroundWorkLedger;
 
   constructor(
     registry: SessionPumpRegistry,
@@ -369,11 +351,13 @@ export class PersistentDispatch {
       sessionId: string,
       impact: PluginReloadCacheImpact,
       contextTokens: number | undefined
-    ) => void
+    ) => void,
+    backgroundWork: () => BackgroundWorkLedger = sharedBackgroundWorkLedger
   ) {
     this.registry = registry;
     this.sessionKeyOf = sessionKeyOf;
     this.onPluginReloadHeld = onPluginReloadHeld;
+    this.backgroundWork = backgroundWork;
   }
 
   /**
@@ -411,24 +395,6 @@ export class PersistentDispatch {
     this.dispatchGateListener = listener;
     return () => {
       if (this.dispatchGateListener === listener) this.dispatchGateListener = undefined;
-    };
-  }
-
-  /**
-   * Listen for chats whose agent process was ended while it still held
-   * background work — the four-hour ceiling, an eviction, a crash (DOR-2065).
-   *
-   * Not told about a person's Stop, nor about a process a dispatch replaced
-   * (that dispatch is itself the next turn), nor about a server shutdown, which
-   * leaves the durable record for the next boot to wake instead.
-   *
-   * @param listener - Told about each chat that is owed a turn, once
-   * @returns Unsubscribes the listener
-   */
-  onBackgroundWorkCutShort(listener: (work: CutShortWork) => void): () => void {
-    this.cutShortListener = listener;
-    return () => {
-      if (this.cutShortListener === listener) this.cutShortListener = undefined;
     };
   }
 
@@ -681,7 +647,11 @@ export class PersistentDispatch {
       live !== undefined && (toolSurfaceMoved || skillWithdrawal)
         ? bundle.pump.quietness()
         : undefined;
-    const holding = live !== undefined && busy !== undefined && !busy.quiet;
+    // A background shell alone does not hold it (DOR-2065): a shell can run for
+    // ever (a dev server, a `tail -f`), so it would pin a stale list for good.
+    // It dies with the relaunch, and the CLI's own notice tells the agent.
+    const holding =
+      live !== undefined && busy !== undefined && !busy.quiet && !bundle.pump.isHoldingOnlyShells();
     let compared = plan.fingerprint;
     if (holding && toolSurfaceMoved) compared = withLiveToolSurface(live, compared);
     if (holding && skillWithdrawal) {
@@ -700,7 +670,7 @@ export class PersistentDispatch {
     // bug, and a stale tool list costs far less than lost work (the gate still
     // refuses any call a person blocked). So past the ceiling the hold goes on,
     // and the only change is one warning per busy spell saying the list is stale.
-    if (busy !== undefined && !busy.quiet && toolSurfaceMoved) {
+    if (holding && busy !== undefined && !busy.quiet && toolSurfaceMoved) {
       const busyForMs = Date.now() - busy.busySince;
       logger.info('[persistent-dispatch] holding a tool-list relaunch while the process works', {
         session: sessionId,
@@ -1209,23 +1179,22 @@ export class PersistentDispatch {
     bundle.pump = this.registry.acquire(key, {
       maxWarmSessions: SESSIONS.MAX_WARM_SESSIONS,
       warmIdleMs: SESSIONS.WARM_IDLE_MS,
-      // The spent pump is out of the registry, so a wake dispatched now builds
-      // a fresh process instead of being refused by the old one.
-      onRetired: () => this.fireOwedWake(bundle),
+      // Mirrored into a durable record so a server that goes away while the
+      // work runs can wake the chat at its next boot (DOR-2065).
       onBackgroundWorkChange: (holding) => {
+        bundle.heldWork = holding;
         if (!holding) {
-          bundle.heldWork = undefined;
-          sharedBackgroundWorkLedger().release(key);
+          this.backgroundWork().release(key);
           return;
         }
-        // The transcript id, not the key: a restarted server can still find
-        // the chat by it, while the key may be a first turn's request id.
-        const work: CutShortWork = {
+        this.backgroundWork().hold({
+          key,
+          // The transcript id, not the key: a restarted server can still find
+          // the chat by it, while the key may be a first turn's request id.
           sessionId: session.sdkSessionId || key,
           cwd: bundle.plan?.effectiveCwd ?? session.cwd ?? opts.cwd,
-        };
-        bundle.heldWork = work;
-        sharedBackgroundWorkLedger().hold({ key, ...work, since: Date.now() });
+          since: Date.now(),
+        });
       },
       launch: createPumpLauncher(
         session,
@@ -1279,11 +1248,9 @@ export class PersistentDispatch {
         // The relaunch is a new process, and "once per process" starts over.
         bundle.seenTaskTypes.clear();
         bundle.recovery.handleCrash(stopRequested ? { ...crash, stopRequested } : crash);
-        // A crashed pump stays in the registry and relaunches on the next
-        // dispatch, so the wake can go at once. A person's Stop is not a reason
-        // to start the agent again.
-        this.endBackgroundWork(key, bundle, stopRequested ? 'released' : 'cut-short');
-        this.fireOwedWake(bundle);
+        // Only a restart wakes a chat. The CLI's own "stopped" notice reaches
+        // the agent on its next turn.
+        this.clearBackgroundWork(key, bundle);
       },
       onStateChange: (change) => {
         // `session.activeQuery` means "a turn is in flight", and on the resume
@@ -1313,18 +1280,17 @@ export class PersistentDispatch {
         // through `this.bundles`: eviction forgets the bundle before it tears
         // the process down.
         if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
-        // Work still held when DorkOS ends the process dies with it. A reap
-        // here is the four-hour ceiling (a quiet process holds nothing) and an
-        // eviction is the same; a replace is followed by its own dispatch; a
-        // shutdown keeps the durable record for the next boot.
-        if (change.to === 'reaped') this.endBackgroundWork(key, bundle, 'cut-short');
-        if (change.to === 'cold') {
-          const reason = bundle.pump.teardownReason;
-          this.endBackgroundWork(
-            key,
-            bundle,
-            reason === 'shutdown' ? 'kept' : reason === 'replace' ? 'released' : 'cut-short'
-          );
+        // Work still held when DorkOS ends the process dies with it. Only a
+        // shutdown keeps the record, for the next boot to wake the chat; every
+        // other ending (the ceiling, an eviction, a replace, a slot reclaim)
+        // clears it, and the CLI's own "stopped" notice reaches the agent on
+        // its next turn. Waking for those could loop on a shell that never
+        // ends, every four hours.
+        if (
+          change.to === 'reaped' ||
+          (change.to === 'cold' && bundle.pump.teardownReason !== 'shutdown')
+        ) {
+          this.clearBackgroundWork(key, bundle);
         }
         bundle.recovery.noteStateChange(change);
       },
@@ -1423,59 +1389,21 @@ export class PersistentDispatch {
    * @param key - The resolved map key, exactly as {@link acquire} takes
    */
   private async replaceProcess(key: string): Promise<void> {
-    await this.registry.evict(key, 'replace');
+    await this.registry.evict(key);
     this.forget(key);
   }
 
   /**
-   * Settle the background work a process held as that process ends (DOR-2065).
-   *
-   * - `cut-short` — the work died unheard: the record goes, and a wake is owed.
-   * - `released` — a Stop or a replace: the record goes, and nothing is owed.
-   * - `kept` — a shutdown: the record stays for the next boot to act on.
+   * Clear the durable record of a process's background work as the process
+   * ends, if it held any (DOR-2065).
    *
    * @param key - The resolved key the record is held under
    * @param bundle - The session's wiring
-   * @param ending - How the process ended
    */
-  private endBackgroundWork(key: string, bundle: SessionBundle, ending: WorkEnding): void {
-    const work = bundle.heldWork;
-    if (work === undefined) return;
-    bundle.heldWork = undefined;
-    if (ending === 'kept') return;
-    sharedBackgroundWorkLedger().release(key);
-    if (ending !== 'cut-short') return;
-    logger.info('[persistent-dispatch] background work was cut short; waking the chat', {
-      session: key,
-    });
-    bundle.wakeOwed = work;
-  }
-
-  /**
-   * Hand a wake this bundle owes to its listener, once.
-   *
-   * On the next macrotask rather than inline, so whatever ended the process —
-   * a reap, an eviction — has finished forgetting the old wiring before the
-   * wake's dispatch can look for it.
-   *
-   * @param bundle - The session's wiring
-   */
-  private fireOwedWake(bundle: SessionBundle): void {
-    const work = bundle.wakeOwed;
-    if (work === undefined) return;
-    bundle.wakeOwed = undefined;
-    const listener = this.cutShortListener;
-    if (listener === undefined) return;
-    setImmediate(() => {
-      try {
-        listener(work);
-      } catch (err) {
-        logger.warn('[persistent-dispatch] a background-work wake listener threw', {
-          session: work.sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    });
+  private clearBackgroundWork(key: string, bundle: SessionBundle): void {
+    if (bundle.heldWork !== true) return;
+    bundle.heldWork = false;
+    this.backgroundWork().release(key);
   }
 }
 

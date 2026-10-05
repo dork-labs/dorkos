@@ -50,6 +50,16 @@ describe('BackgroundWorkLedger', () => {
     fs.mkdirSync(path.dirname(ledger.path), { recursive: true });
     fs.writeFileSync(ledger.path, '{"sessions": [');
     expect(ledger.read()).toEqual([]);
-    expect(ledger.takeAll()).toEqual([]);
+  });
+
+  it('releases a record only when it is the one asked about', () => {
+    const ledger = new BackgroundWorkLedger(dorkHome);
+    ledger.hold({ key: 'a', sessionId: 'a', cwd: '/p', since: 2 });
+    // A boot settling the previous run's record (since 1) must not remove the
+    // record this run has written for the same chat since.
+    expect(ledger.release('a', 1)).toBeUndefined();
+    expect(ledger.read()).toHaveLength(1);
+    expect(ledger.release('a', 2)).toMatchObject({ since: 2 });
+    expect(ledger.read()).toEqual([]);
   });
 });

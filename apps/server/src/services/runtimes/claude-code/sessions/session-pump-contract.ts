@@ -285,16 +285,14 @@ export interface PumpCrash {
 }
 
 /**
- * Why a pump was torn down (`SessionPump.teardown`), for whoever has to decide
- * what the person is owed afterwards (DOR-2065).
+ * Why a pump was torn down (`SessionPump.teardown`), for whoever decides what
+ * survives it (DOR-2065).
  *
- * - `evict` — the session record went away, or a caller ended the process for
- *   good. Work the process held was cut short.
- * - `replace` — a dispatch is relaunching the process under new settings; that
- *   dispatch is itself the session's next turn.
+ * - `evict` — the session record went away, a dispatch is relaunching the
+ *   process, or a caller ended it for good.
  * - `shutdown` — the server is stopping; the next boot picks up what is owed.
  */
-export type PumpTeardownReason = 'evict' | 'replace' | 'shutdown';
+export type PumpTeardownReason = 'evict' | 'shutdown';
 
 /** One message being dispatched into the pump. */
 export interface PumpDispatch {

@@ -96,7 +96,8 @@ import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
 import type { McpServerFactory, MessageSenderOpts } from './messaging/message-sender-shared.js';
-import { PersistentDispatch, type CutShortWork } from './sessions/persistent-dispatch.js';
+import { PersistentDispatch } from './sessions/persistent-dispatch.js';
+import { BackgroundWorkLedger } from './messaging/background-work-ledger.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
 import {
   homeOf,
@@ -173,8 +174,15 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.pumps,
     (id) => this.sessionStore.sessionKeyOf(id),
     (sessionId, impact, contextTokens) =>
-      this.notePluginReloadHeld(sessionId, impact, contextTokens)
+      this.notePluginReloadHeld(sessionId, impact, contextTokens),
+    // Read on use: the ledger is built in the constructor, after this field.
+    () => this.backgroundWork
   );
+  /**
+   * The durable record of chats whose warm process holds background work, in
+   * this runtime's data directory (DOR-2065).
+   */
+  private readonly backgroundWork: BackgroundWorkLedger;
   /**
    * Plugin reloads this runtime asked for and the CLI held back, waiting for a
    * moment when applying them is free (spec `plugin-reload-cache-cost`).
@@ -269,6 +277,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.cwd = cwd ?? DEFAULT_CWD;
     this.claudeCliPath = resolveClaudeCliPath();
     this.cache = new RuntimeCache(dorkHome);
+    this.backgroundWork = new BackgroundWorkLedger(dorkHome);
     this.cache.setDefaultCwd(this.cwd);
     // Warm-up spawns the SDK too; give it the same resolved binary path so it
     // works in the packaged desktop app (see setClaudeCliPath's doc).
@@ -1400,20 +1409,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.persistent.onDispatchGateChange(listener);
   }
 
-  /**
-   * Listen for chats whose warm process was ended while it still held
-   * background work — the four-hour ceiling, an eviction, a crash — so the
-   * chat can be given the turn that work would have brought (DOR-2065).
-   *
-   * Claude-code only: no other runtime holds a process between turns.
-   *
-   * @param listener - Told about each chat owed a turn, once
-   * @returns Unsubscribes the listener
-   */
-  onBackgroundWorkCutShort(listener: (work: CutShortWork) => void): () => void {
-    return this.persistent.onBackgroundWorkCutShort(listener);
-  }
-
   /** @inheritdoc */
   isHelperWorking(sessionId: string): boolean {
     if (this.persistent.isHelperWorking(sessionId)) return true;
@@ -1447,7 +1442,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     });
     for (const id of ids) {
       await this.interruptQuery(id).catch(() => undefined);
-      await this.reapSession(id).catch(() => undefined);
+      // Evicted, not reaped: a polite reap declines a process still holding
+      // background work, and a revoked token must not stay live for hours
+      // behind a running shell (DOR-2065).
+      this.persistent.forget(id);
+      await this.pumps.evict(id).catch(() => undefined);
     }
   }
 

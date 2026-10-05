@@ -94,6 +94,25 @@ describe('SessionStore.accountRoot', () => {
     expect(next.accountRoot).toBe(ACCOUNT_B);
   });
 
+  it('probes a started session for its account at most once', async () => {
+    // A transcript that is never found must not cost a disk scan per message.
+    await store.ensureForMessage('s-once', fakeTranscript({ exists: false }).reader, '/work');
+    const session = await store.ensureForMessage(
+      's-once',
+      fakeTranscript({ exists: false }).reader,
+      '/work'
+    );
+    session.hasStarted = true;
+    const first = fakeTranscript({ exists: false });
+    await store.ensureForMessage('s-once', first.reader, '/work');
+    expect(first.hasTranscript).toHaveBeenCalledTimes(1);
+
+    const second = fakeTranscript({ exists: true, root: ACCOUNT_B });
+    const next = await store.ensureForMessage('s-once', second.reader, '/work');
+    expect(second.hasTranscript).not.toHaveBeenCalled();
+    expect(next.accountRoot).toBeUndefined();
+  });
+
   it('does not probe again for a session that has not started yet', async () => {
     // Pinning a session before any transcript exists would keep a launch that
     // died early from being retried on the account a person then picks.

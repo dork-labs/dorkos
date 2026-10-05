@@ -25,9 +25,15 @@
  * A hard kill runs no exit handler, so the record has to exist BEFORE the kill:
  * it is written the moment a process starts holding work, and removed the
  * moment it stops (the work finished and its report was delivered). Writes
- * happen only on those two flips, never per frame. The next boot takes every
- * record left behind ({@link BackgroundWorkLedger.takeAll}) and wakes each
- * chat once.
+ * happen only on those two flips, never per frame. A graceful shutdown leaves
+ * the record in place. The next boot reads every record left behind and
+ * removes each one only once its chat is settled, so a boot that dies midway
+ * wakes the rest next time.
+ *
+ * Only the server going away wakes a chat. Every ending the running server
+ * sees for itself — the ceiling, an eviction, a crash, a Stop — clears the
+ * record instead (`services/session/runtime-turns/wake-cut-short-work.ts`
+ * says why).
  *
  * Lives beside `warm-processes.json` (`sessions/warm-process-ledger.ts`) under
  * the same data directory, and writes the same way: synchronously and
@@ -107,11 +113,16 @@ export class BackgroundWorkLedger {
    * that must not wake it.
    *
    * @param key - The key the record was held under
+   * @param since - When given, remove the record only if it is that one, so a
+   *   boot settling a previous run's record cannot remove the record this run
+   *   has written for the same chat since
    * @returns The record that was removed, or undefined when there was none
    */
-  release(key: string): BackgroundWorkRecord | undefined {
+  release(key: string, since?: number): BackgroundWorkRecord | undefined {
     const sessions = this.read();
-    const found = sessions.find((entry) => entry.key === key);
+    const found = sessions.find(
+      (entry) => entry.key === key && (since === undefined || entry.since === since)
+    );
     if (found === undefined) return undefined;
     this.write(sessions.filter((entry) => entry !== found));
     return found;
@@ -133,25 +144,6 @@ export class BackgroundWorkLedger {
       // by hand. Nothing in it can be trusted to name a chat.
       return [];
     }
-  }
-
-  /**
-   * Take every record a previous run left behind and clear the file, so each
-   * one wakes its chat at most once even if the boot that took it dies too.
-   *
-   * Call once at boot, before anything can warm a process in this run.
-   */
-  takeAll(): BackgroundWorkRecord[] {
-    const sessions = this.read();
-    try {
-      fs.rmSync(this.filePath, { force: true });
-    } catch (error) {
-      logger.warn('[background-work-ledger] could not clear the record', {
-        path: this.filePath,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    return sessions;
   }
 
   /** Persist the records atomically, removing the file when there are none. */

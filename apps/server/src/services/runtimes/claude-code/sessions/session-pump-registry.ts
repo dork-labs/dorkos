@@ -112,13 +112,6 @@ export interface AcquirePumpOptions extends Omit<SessionPumpOptions, 'sessionId'
    * `SESSIONS.WARM_IDLE_MS`.
    */
   warmIdleMs: number;
-  /**
-   * This session's pump has left the registry — reaped, evicted or shut down —
-   * and its process is closed. The one moment a caller may start the session's
-   * next process without finding the spent pump still filed under its key
-   * (DOR-2065). A throw is logged and swallowed.
-   */
-  onRetired?: () => void;
 }
 
 /** A pump plus the two per-session bounds its acquire was held to. */
@@ -126,8 +119,6 @@ interface PumpEntry {
   pump: SessionPump;
   maxWarmSessions: number;
   warmIdleMs: number;
-  /** Told when the pump leaves the registry; see {@link AcquirePumpOptions.onRetired}. */
-  onRetired?: () => void;
   /** The armed idle timer, or undefined when this session is not sitting warm. */
   idleTimer?: ReturnType<typeof setTimeout>;
 }
@@ -182,7 +173,7 @@ export class SessionPumpRegistry {
     const key = this.sessionKeyOf(sessionId);
     const existing = this.entries.get(key);
     if (existing) return existing.pump;
-    const { maxWarmSessions, warmIdleMs, onRetired, ...pumpOpts } = opts;
+    const { maxWarmSessions, warmIdleMs, ...pumpOpts } = opts;
     const pump = new SessionPump({
       ...pumpOpts,
       sessionId: key,
@@ -195,12 +186,7 @@ export class SessionPumpRegistry {
         pumpOpts.onStateChange?.(change);
       },
     });
-    this.entries.set(key, {
-      pump,
-      maxWarmSessions,
-      warmIdleMs,
-      ...(onRetired !== undefined ? { onRetired } : {}),
-    });
+    this.entries.set(key, { pump, maxWarmSessions, warmIdleMs });
     liveRegistries.add(this);
     return pump;
   }
@@ -262,8 +248,8 @@ export class SessionPumpRegistry {
    * private `replaceProcess`, always with an already-resolved key.
    *
    * @param sessionId - Session going away, in any id it answers to
-   * @param reason - Why, for whoever decides what the person is owed after;
-   *   `replace` when a dispatch is relaunching the process itself
+   * @param reason - Why, for whoever decides what survives it; defaults to
+   *   `evict`
    */
   async evict(sessionId: string, reason: PumpTeardownReason = 'evict'): Promise<void> {
     const key = this.sessionKeyOf(sessionId);
@@ -315,15 +301,6 @@ export class SessionPumpRegistry {
     // slot and reaching WARMING cannot shrink the ceiling for good.
     this.slots.forget(sessionId);
     if (this.entries.size === 0) liveRegistries.delete(this);
-    if (entry?.onRetired === undefined) return;
-    try {
-      entry.onRetired();
-    } catch (err) {
-      logger.warn('[SessionPumpRegistry] a retirement observer threw', {
-        session: sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
   }
 
   /**
@@ -499,6 +476,21 @@ export class SessionPumpRegistry {
         logger.info('[SessionPumpRegistry] reclaimed a warm slot', { reaped: sessionId, asking });
         return true;
       }
+    }
+    // The last resort (DOR-2065): a process whose only work is a background
+    // shell. A shell can run for ever (a dev server, a `tail -f`), so twelve of
+    // them must not lock every other chat out. Never a helper, a Monitor or an
+    // owed delivery — those still refuse. No wake follows: the CLI's own
+    // "stopped" notice reaches the agent on its next turn.
+    for (const sessionId of this.slots.leastRecentFirst(candidates)) {
+      const entry = this.entries.get(sessionId);
+      if (entry === undefined || !(await entry.pump.reapShellsOnly())) continue;
+      this.drop(sessionId);
+      logger.info('[SessionPumpRegistry] reclaimed a warm slot from a background shell', {
+        reaped: sessionId,
+        asking,
+      });
+      return true;
     }
     return false;
   }

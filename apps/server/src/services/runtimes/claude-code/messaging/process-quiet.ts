@@ -219,6 +219,23 @@ export class ProcessQuiet {
   }
 
   /**
+   * Is a background shell the ONLY thing this process is doing (DOR-2065)?
+   *
+   * No turn open, no helper or other task, nothing owed, nobody waited on —
+   * just one or more shells. Such a process may be given up where a working
+   * one may not: a shell can run for ever (a dev server, a `tail -f`), and
+   * when its process goes the CLI's own "stopped" notice tells the agent on
+   * its next turn. Helpers and Monitors are never given up this way.
+   */
+  isHoldingOnlyShells(): boolean {
+    if (this.opts.isTurnOpen() || this.opts.hasRuntimeTurnOpen()) return false;
+    if (this.opts.hasPendingInteraction()) return false;
+    if (this.opts.liveness().owedCount() > 0) return false;
+    const counts = this.opts.liveness().liveTaskCounts();
+    return counts.shells > 0 && counts.agents === 0 && counts.other === 0;
+  }
+
+  /**
    * Is a helper agent still working on this process (DOR-2681)?
    *
    * What the stall watchdog asks before it calls a silent turn stalled: a
