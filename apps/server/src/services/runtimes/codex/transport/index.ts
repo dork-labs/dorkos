@@ -13,6 +13,11 @@ export type {
   CodexLaunch,
 } from './codex-transport.js';
 export { ExecCodexTransport } from './exec-transport.js';
+export {
+  AppServerCodexTransport,
+  createAppServerTransport,
+  type AppServerTransportOptions,
+} from './app-server-transport.js';
 
 /** A concrete transport. */
 export type CodexTransportKind = 'exec' | 'app-server';

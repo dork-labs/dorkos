@@ -94,6 +94,8 @@ export interface CodexTransport {
   getSessionWarmth?(sessionId: string): SessionWarmth;
   /** Give back the session's warm thread (persistent transports only). */
   reapSession?(sessionId: string): Promise<void>;
+  /** Stop the credits-home process, if this transport keeps one (an unlink). */
+  closeCreditsProcess?(): Promise<void>;
   /** Stop everything this transport started. */
   shutdown(): Promise<void>;
 }

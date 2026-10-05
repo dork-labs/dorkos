@@ -84,7 +84,13 @@ import {
   turnAgentOf,
   type AgentHome,
 } from '../../core/agent-identity/index.js';
-import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
+import {
+  checkCodexDependencies,
+  codexAppServerVersionNote,
+  resolveCodexBinaryPath,
+} from './check-dependencies.js';
+import { codexAppServerPool } from './app-server/process-pool.js';
+import { PINNED_CODEX_APP_SERVER_VERSION } from './app-server/protocol/methods.js';
 import { createCodexEventContext } from './event-mapper.js';
 import { readCodexTurnContextUsage, readCodexTurnReading } from './turn-context-usage.js';
 import { ensureCreditsCodexHome, threadRunsOnCredits } from './credits-launch.js';
@@ -113,9 +119,11 @@ import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
 import {
   ExecCodexTransport,
+  createAppServerTransport,
   type CodexTransport,
   type CodexTransportKind,
 } from './transport/index.js';
+import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
 import { CodexModelCatalog } from './model-catalog.js';
 import { dorkosToolsPosture, resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
@@ -201,6 +209,12 @@ export interface CodexRuntimeOptions {
    * takes effect at the next server start. Defaults to `exec`.
    */
   transport?: CodexTransportKind | CodexTransport;
+  /**
+   * The loopback credits relay, when boot started one. Only the app-server
+   * transport uses it: a credits thread's provider points at the relay, so the
+   * credits token never enters Codex's process.
+   */
+  creditsRelay?: () => CreditsRelay | undefined;
 }
 
 /**
@@ -272,7 +286,7 @@ export class CodexRuntime implements AgentRuntime {
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
     this.modelCatalog =
       options.modelCatalog ?? new CodexModelCatalog({ resolveBinary: this.resolveBinary });
-    this.transport = this.buildTransport(options.transport ?? 'exec');
+    this.transport = this.buildTransport(options.transport ?? 'exec', options.creditsRelay);
     // Capability-gated members exist only where the transport backs them, so a
     // runtime on exec keeps the shape it always had.
     if (this.transport.getSessionWarmth) {
@@ -292,10 +306,16 @@ export class CodexRuntime implements AgentRuntime {
   /** Nothing to settle; present only on a persistent transport. */
   settleOpenTurn?: (sessionId: string) => Promise<boolean>;
 
-  private buildTransport(choice: CodexTransportKind | CodexTransport): CodexTransport {
+  private buildTransport(
+    choice: CodexTransportKind | CodexTransport,
+    creditsRelay: (() => CreditsRelay | undefined) | undefined
+  ): CodexTransport {
     if (typeof choice !== 'string') return choice;
     if (choice === 'app-server') {
-      throw new Error('The Codex app-server transport is not wired yet.');
+      return createAppServerTransport({
+        connectorTools: () => this.connectorRuntimeTools,
+        ...(creditsRelay ? { creditsRelay } : {}),
+      });
     }
     return new ExecCodexTransport();
   }
@@ -359,6 +379,14 @@ export class CodexRuntime implements AgentRuntime {
    */
   stopCreditsTurns(): void {
     for (const controller of this.creditsTurns) controller.abort();
+    // On app-server the credits home is a long-lived process: stop it too, so
+    // nothing paid for by the old link keeps running (its relay key revokes
+    // with it).
+    void this.transport
+      .closeCreditsProcess?.()
+      .catch((err: unknown) =>
+        logger.warn('[CodexRuntime] could not stop the credits Codex process', { err: String(err) })
+      );
   }
 
   /**
@@ -1241,7 +1269,13 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   async checkDependencies(): Promise<DependencyCheck[]> {
-    return checkCodexDependencies();
+    const checks = await checkCodexDependencies();
+    if (this.transport.kind !== 'app-server') return checks;
+    const note = codexAppServerVersionNote(
+      codexAppServerPool.lastSeenVersion,
+      PINNED_CODEX_APP_SERVER_VERSION
+    );
+    return note ? [...checks, note] : checks;
   }
 
   // --- Commands ---
