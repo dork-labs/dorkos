@@ -18,6 +18,7 @@
  *
  * @module services/extensions/isolation/ipc-protocol
  */
+import type { ToolHandleCheck } from '../agent-tools/tool-handle-rules.js';
 
 /** What the child reports about Node's permission model before any extension code runs. */
 export interface PermissionReport {
@@ -79,7 +80,10 @@ export interface RegisteredMessage {
   ok: boolean;
   /** Whether `register()` returned a cleanup function. */
   hasCleanup: boolean;
-  /** The tools it bound (always empty until tools cross the boundary). */
+  /**
+   * The tools it bound with `ctx.tools.handle`. Informational: the host
+   * offers only the tools it bound itself, through the real ctx.
+   */
   handledTools: string[];
   /** Why it failed, when it did. */
   error?: string;
@@ -128,14 +132,15 @@ export interface UnsubMessage {
 
 /**
  * The child holds a function the host should call (`reverse` members:
- * the account advisor, the inbox action handler). `methods` lists an
- * advisor's methods.
+ * the account advisor, the inbox action handler, a tool handler). `methods`
+ * lists an advisor's methods; `name` is a tool's name.
  */
 export interface ExposeMessage {
   type: 'expose';
   id: number;
   path: string;
   methods?: unknown;
+  name?: unknown;
 }
 
 /** Remove a function registered with {@link ExposeMessage}. */
@@ -283,6 +288,11 @@ export interface InitMessage {
    */
   allowAgents: boolean;
   /**
+   * Discovery's verdict on each tool the manifest declares, so the child's
+   * `ctx.tools.handle` throws the in-process words. The host checks again.
+   */
+  tools: ToolHandleCheck[];
+  /**
    * What `ctx.requirePerson` answers when the host's verdict header is
    * missing or unreadable: the in-process refusal of an agent, word for word
    * (fail closed).
@@ -362,7 +372,7 @@ export interface RcallMessage {
   id: number;
   /** The `expose` id. */
   handler: number;
-  /** Which function: an advisor method name, or `onAction`. */
+  /** Which function: an advisor method name, `onAction`, or `tool`. */
   method: string;
   args: unknown[];
 }

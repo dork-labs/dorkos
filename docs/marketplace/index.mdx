@@ -169,7 +169,9 @@ What running separately does not cover:
 
 If it stops on its own, DorkOS starts it again after a second, and waits longer each time it stops again. If it stops 3 times within 10 minutes, it stays off and its card says why. Click **Reload** on its card in Settings > Extensions to try again. If the card says it "can't run with its limits on this computer," DorkOS left it off rather than run it without them.
 
-Running separately has been tested on macOS and Linux. In the desktop app, DorkOS has checked that the limits hold, but a whole extension hasn't been run there yet. It hasn't been confirmed on Windows yet. These extensions can't give your agents tools yet.
+Running separately has been tested on macOS and Linux. In the desktop app, DorkOS has checked that the limits hold, but a whole extension hasn't been run there yet. It hasn't been confirmed on Windows yet.
+
+An extension that runs separately can give your agents tools, just like one that runs inside DorkOS. Your permissions are checked inside DorkOS before a call reaches the extension. If the extension stops or freezes, its tools disappear until it is running again.
 
 ## How large a package can be
 
