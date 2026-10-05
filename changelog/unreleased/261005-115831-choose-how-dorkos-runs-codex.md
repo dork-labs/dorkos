@@ -7,6 +7,7 @@ covers:
   - 'feat(codex): supervised app-server process pool, stopped at shutdown (DOR-2719)'
   - 'feat(codex): turns on app-server — loader, notification mapper, transport (DOR-2719)'
   - 'refactor(codex): transport seam; exec moves behind it unchanged (DOR-2719)'
+  - 'refactor(codex): split rate limits and turn parts out of the app-server mapper and transport (DOR-2719)'
 ---
 
 ### Added
