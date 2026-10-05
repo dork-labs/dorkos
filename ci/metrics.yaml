@@ -139,6 +139,21 @@ tracked:
       the count; a day collected before it existed has none and is left out,
       never read as 0. PRs closed without merging are not counted, as for every
       other ejection figure.
+  - id: tracked.desktop-release-wall-clock
+    unit: minutes
+    definition: >-
+      How long a release takes to ship: per release tag (v*), the minutes from
+      the Desktop Release workflow run its tag push started
+      (.github/workflows/desktop-release.yml, event push) to that tag's GitHub
+      Release being published; p50. One sample per tag, timed from its
+      EARLIEST push run, and placed in a window by that run's start.
+      workflow_dispatch runs never count. A tag whose release is a draft or
+      missing gives no sample, and so does a release published more than 24
+      hours after its run started: that is a person holding the release back,
+      not the pipeline (v0.95.0 was published 26 hours later). Computed by the
+      collector (`desktopReleaseRuns` in packages/ci-steward/src/series.ts)
+      and read by `desktopReleaseWallClock` in verdicts.ts; a day collected
+      before it existed has none and is left out, never read as 0.
   - id: tracked.neon-preview-branches
     unit: count
     definition: >-

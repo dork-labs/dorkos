@@ -201,7 +201,7 @@ export function dayRecording(): Recording {
       active_caches_size_in_bytes: 123,
       active_caches_count: 4,
     },
-    [`repos/${REPO}/releases?per_page=30`]: [
+    [`repos/${REPO}/releases?per_page=100`]: [
       { tag_name: 'v1.0.0', published_at: `${DAY}T15:00:00Z`, draft: false },
     ],
   };
