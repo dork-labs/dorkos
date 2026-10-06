@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "260921-022119",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-10-05T04:14:37Z; the verdict is computed on 2026-10-06.",
- "computed_at": "2026-10-05T12:14:43.618Z",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 260919-175505, 260919-175506 changed the same gate inside the after-window (2026-09-21T04:14:37Z to 2026-10-05T04:14:37Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-10-06T11:55:14.069Z",
  "hypothesis_hash": "144726866081fcc0",
  "metric": "local-commit",
  "anchor": "2026-09-21T04:14:37Z",
@@ -25,8 +25,8 @@
  "after": {
   "from": "2026-09-21T04:14:37Z",
   "to": "2026-10-05T04:14:37Z",
-  "n": 5615,
-  "value": 164
+  "n": 5828,
+  "value": 161
  },
  "confounders": [
   "260919-175505",
@@ -36,7 +36,7 @@
   "id": "local-commit",
   "stat": "p90",
   "before": 327,
-  "after": 164,
+  "after": 161,
   "movement": "better"
  }
 }
