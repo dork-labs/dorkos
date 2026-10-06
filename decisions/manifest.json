@@ -5196,12 +5196,13 @@
       "id": "260822-235759",
       "slug": "consent-led-default-flipping",
       "title": "Full power by default is consent-led — the door's accept writes the flips, never a migration",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-08-22",
       "extractedFrom": "full-power-defaults",
       "specSlug": "full-power-defaults",
       "amends": null,
-      "supersedes": null
+      "supersedes": null,
+      "supersededBy": "261006-225605"
     },
     {
       "id": "260822-235800",
@@ -6056,7 +6057,7 @@
       "id": "260923-223910",
       "slug": "destructive-actions-ask-and-three-areas-are-never-allowed",
       "title": "Destructive actions ask unless allowed one by one, and three floor areas are never Allowed",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-09-23",
       "extractedFrom": "agent-permissions",
       "specSlug": "agent-permissions",
@@ -6065,7 +6066,8 @@
         "packages/shared/src/permissions/resolve-permission.ts",
         "packages/shared/src/permissions/permission-areas.ts",
         "apps/server/src/services/core/permissions/permission-service.ts"
-      ]
+      ],
+      "supersededBy": "261006-225605"
     },
     {
       "id": "260923-201140",
@@ -6774,6 +6776,39 @@
         "apps/community/src/mail/",
         "apps/community/migrations/0032_email_links.sql",
         "packages/shared/src/community-wire.ts"
+      ]
+    },
+    {
+      "id": "261006-225605",
+      "slug": "agents-are-trusted-by-default-outsiders-and-third-party-code-are-not",
+      "title": "Agents are trusted by default; outsiders and third-party code are not",
+      "status": "accepted",
+      "created": "2026-10-06",
+      "extractedFrom": null,
+      "specSlug": null,
+      "amends": [
+        "260727-181825",
+        "260725-133220",
+        "260923-223904",
+        "260923-223908",
+        "260923-223909",
+        "260822-235802",
+        "260908-170643",
+        "260924-213416",
+        "260924-101531",
+        "260925-050657",
+        "261004-235818",
+        "260818-002803"
+      ],
+      "supersedes": ["260822-235759", "260923-223910", "0033"],
+      "affects": [
+        ".claude/rules/safe-defaults.md",
+        "packages/shared/src/permissions/",
+        "apps/server/src/services/core/capabilities/",
+        "apps/server/src/services/core/approvals/",
+        "apps/server/src/services/core/operator/config-write-policy.ts",
+        "apps/server/src/services/session/origin/turn-origin.ts",
+        "packages/mesh/src/topology.ts"
       ]
     }
   ]

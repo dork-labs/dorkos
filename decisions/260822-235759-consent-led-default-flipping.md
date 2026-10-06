@@ -1,10 +1,10 @@
 ---
 id: 260822-235759
 title: Full power by default is consent-led — the door's accept writes the flips, never a migration
-status: accepted
+status: superseded
 created: 2026-08-22
 spec: full-power-defaults
-superseded-by: null
+superseded-by: 261006-225605
 amends: null
 ---
 
@@ -12,7 +12,9 @@ amends: null
 
 ## Status
 
-Accepted — extracted from spec `full-power-defaults`.
+Superseded by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default). The new posture is applied by migration with a one-time notice, not only through the consent door.
+
+Originally: Accepted — extracted from spec `full-power-defaults`.
 
 ## Context
 

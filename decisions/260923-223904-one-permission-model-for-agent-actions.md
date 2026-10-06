@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (extracted from spec: agent-permissions; implemented in phases 1–3, DOR-2278). Supersedes `260828-123331` (the first hard tool filter at `registry.invoke`, no global twin), `260726-171347` (tool-group toggles gate context, not access), `0069` and `0071` (implicit tool-group hierarchy).
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): The default resolving through "Unchanged" or an ask-first preset is retired. The default becomes Trusted (every in-circle area Allowed); areas, states and overrides stay as opt-in narrowing.
+
 ## Context
 
 An agent's powers were set by four unrelated mechanisms: the per-agent `roomsManage` tool-group gate (fails closed, no global default, no approval path), the per-agent tier ceiling, the global and per-agent context switches (`agentContext.*Tools`, `enabledToolGroups.{tasks,relay,mesh,adapter}`) that only hid docs and never refused a call, and login-only standing grants. None could be set once for everyone. On an install where the person chose Full power, DorkBot still could not make a room and handed the job back ("turn on Manage rooms and tell me to go again").

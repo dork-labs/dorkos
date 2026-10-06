@@ -14,6 +14,8 @@ amends: [260924-213416]
 
 Accepted. Amends 260924-213416: its negative consequence "a hand edit of `.dork/agent.json` … is not gated" now reads "is not blocked, and is re-asked". Everything else in it stands, including that the approval key holds the schedule's own values, never resolved ones.
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): Re-asking followers when our own agent changes its runtime, model or effort is retired; the change is recorded instead. Outside-change recording stands.
+
 ## Context
 
 A schedule that leaves its runtime, model or effort unset runs on its agent's, and its approval records "follow the agent" (260924-213416). DOR-2328 put every DorkOS door that changes those three for an agent behind a person. The agent's `.dork/agent.json` stays outside that: it is the person's file (the DOR-2306 line), and DorkOS cannot tell the person's editor from an agent's shell writing the same bytes. So an agent that edited its own file moved its approved schedules with nothing recorded anywhere (DOR-2337).

@@ -16,6 +16,8 @@ Accepted. Constrains, and does not reverse,
 [260713-143958](260713-143958-two-plane-two-tier-data-collection-strategy.md) — see
 _Relationship to the Tier 1 opt-out model_ below.
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): Rule 1's "whether capability is granted" no longer covers capability granted to our own agents. Rules 1-4 still bind data leaving the machine, the exposure perimeter, third-party code and outsider-origin turns; rule 2 binds everywhere.
+
 ## Context
 
 A config wipe was observed reverting an explicit telemetry opt-out:

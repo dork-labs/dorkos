@@ -1,17 +1,19 @@
 ---
 id: 260923-223910
 title: Destructive actions ask unless allowed one by one, and three floor areas are never Allowed
-status: accepted
+status: superseded
 created: 2026-09-23
 spec: agent-permissions
-superseded-by: null
+superseded-by: 261006-225605
 ---
 
 # 260923-223910. Destructive actions ask unless allowed one by one, and three floor areas are never Allowed
 
 ## Status
 
-Accepted (extracted from spec: agent-permissions).
+Superseded by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default). Only perimeter (reach) actions keep a floor; destructive in-circle actions run and are recorded.
+
+Originally: Accepted (extracted from spec: agent-permissions).
 
 ## Context
 

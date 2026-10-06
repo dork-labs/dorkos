@@ -22,6 +22,8 @@ still auto-denies (approvals tier C is the follow-on), and `resolvedBy` is
 never populated on a single-identity install — both carried forward in
 `specs/unified-conversation/04-implementation.md`'s closing follow-up list.
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): "Only a person decides" becomes "the requester never decides its own request". Until roles exist the decider stays a person.
+
 ## Context
 
 DorkOS has two kinds of "somebody has to say yes" and treats them oppositely. Capability approvals ride the global `/api/events` fan-out plus a list-on-mount endpoint, so they show up in a header pill, the sidebar and the home triage header on every route (`services/core/approvals/approval-events.ts`). The SDK tool prompts — the ones that actually stop turns, on a ten-minute fuse (`config/constants.ts:171`) — ride only the per-session stream. The global stream carries one coarse bit for them, `lifecycle: 'blocked'`, with no id, kind, tool or deadline, and the client attaches to one session at a time, so fine-grained pending state is structurally unavailable fleet-wide. `entities/attention/model/derive-attention-signals.ts:193-208` records the consequence in a comment and names the fix as a server change. The cost is measured: in DOR-784 agents sat silent 20–41 minutes because their prompt only existed in a session nobody had open, and a room's only recourse was a deliberately vague notice telling the person to go and find that session.

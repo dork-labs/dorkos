@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (DOR-2323). Extends `260924-101531` (the timezone joined the key in DOR-2307). The Claude account a schedule names later joined the key too (DOR-2384).
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): Re-parking a schedule our own agent made or changed is retired. The key still applies to schedules whose content came from a package, a Shape or a file nobody local wrote.
+
 ## Context
 
 A person's approval of a schedule is a stored content key. It was `[prompt, cron, timezone]`, so an agent could change an approved schedule's name, runtime, model, effort, time limit (`maxRuntime`) or session memory (`sticky`) and it kept running. DOR-2313 parks an agent's change to approved work in the same request, but only for what the key covers.

@@ -14,6 +14,8 @@ amends: null
 
 Accepted (implemented with `inherited-start-permission`, DOR-2714).
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): The acceptEdits cap on our own token-authenticated /mcp callers and the full-autonomy consent ritual are retired. "Never higher than the starter" stands, so an outsider-origin turn cannot launch a stronger child.
+
 ## Context
 
 `session_start` lowered `bypassPermissions` to `acceptEdits` for every caller, the rule an agent-proposed schedule gets. A coordinator running at Full autonomy therefore got builders that stopped to ask, and a request for Full autonomy was silently lowered rather than answered. The operator's rule (2026-10-04): a chat may start chats at its own level or lower, never higher.
