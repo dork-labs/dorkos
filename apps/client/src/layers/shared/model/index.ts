@@ -48,6 +48,11 @@ export {
   type FeatureEnabledState,
 } from './server-config/use-feature-enabled';
 export {
+  SPACES_EXPERIMENT,
+  isExperimentEnabled,
+  readExperimentEnabled,
+} from './server-config/experiments';
+export {
   useAccountUsage,
   useAccountUsageRecord,
   mergeAccountUsage,

@@ -372,6 +372,10 @@ export const CONFIG_WRITE_POLICY = {
   'relay.maxAgentTurnsTotalPerHour': 'operator-only',
 
   'browser.enabled': 'operator-only',
+  // Whether this DorkOS joins and talks to spaces on other servers (DOR-2740).
+  // Another "who can this instance reach" door, so a person opens it, never an
+  // agent.
+  'spaces.enabled': 'operator-only',
   // Whether the external A2A surface mounts: an agent card describing the agents
   // here, plus a JSON-RPC address outside clients post work to. That is squarely
   // "who can reach this instance", which is why it sits with `tunnel.enabled` and
@@ -943,6 +947,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.auth',
       'mcp.enabled',
       'browser.enabled',
+      'spaces.enabled',
       'a2a.enabled',
       'mcp.apiKey',
       'mcp.rateLimit.enabled',

@@ -86,6 +86,7 @@ import {
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRouter } from './cloud-communities.js';
+import { requireSpacesEnabled } from '../middleware/spaces-enabled.js';
 
 const router = Router();
 
@@ -139,8 +140,11 @@ const OWNER_ONLY = {
   },
 } as const satisfies Record<string, AccountOwnerWording>;
 
-/** Hosted communities: "Start a community" and "Move a community here". */
-router.use('/communities', createCloudCommunitiesRouter());
+/**
+ * Hosted communities: "Start a community" and "Move a community here". Behind
+ * the spaces experiment, off by default (DOR-2740).
+ */
+router.use('/communities', requireSpacesEnabled, createCloudCommunitiesRouter());
 
 /** POST /api/cloud/link/start — begin the device flow; returns codes to display. */
 router.post('/link/start', async (req, res) => {

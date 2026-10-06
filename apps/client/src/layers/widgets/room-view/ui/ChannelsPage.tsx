@@ -1,6 +1,7 @@
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Navigate, useNavigate, useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
-import { useIsMobile } from '@/layers/shared/model';
+import { SPACES_EXPERIMENT, useIsMobile } from '@/layers/shared/model';
+import { useExperimentEnabledState } from '@/layers/entities/config';
 import { PageHeading } from '@/layers/shared/ui';
 import { useTeamRoomRedirect } from '../model/use-team-room-redirect';
 import { RoomHistorySkeleton } from './RoomFlow';
@@ -33,9 +34,17 @@ import { useCommunityConnections } from '@/layers/entities/community';
  * later; one heading element across both is what keeps focus on it when the
  * switcher has put it there. A local room's heading is its name in the channel
  * bar (`ChannelsBar`), so none is added here for one.
+ *
+ * **A space's address leads nowhere while spaces are off** (DOR-2740). A
+ * `?community=` link, a saved tab or the browser's history lands on the
+ * channels list instead, once the config has said so; nothing about the space
+ * is asked for or drawn first.
  */
 export function ChannelsPage() {
   const { id, community } = useSearch({ from: '/_shell/channels' });
+  const spaces = useExperimentEnabledState(SPACES_EXPERIMENT);
+  if (community && !spaces.enabled)
+    return spaces.isLoading ? null : <Navigate to="/channels" search={{}} replace />;
   return (
     <>
       {community ? (

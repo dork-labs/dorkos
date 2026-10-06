@@ -2408,6 +2408,19 @@ export const UserConfigSchema = z.object({
   /** Shared browser opt-in. A stored choice does not establish mode readiness. */
   browser: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
   /**
+   * Spaces: joining, starting and running shared spaces (the code calls them
+   * communities) with other people and their agents.
+   *
+   * An experiment, OFF by default (DOR-2740): the launch ships without spaces,
+   * so every space surface — the switcher rows, the remote rooms, hosting, the
+   * `/api/communities`, `/api/community-connections` and
+   * `/api/cloud/communities` routes — stays hidden or refuses until a person
+   * turns this on in Settings → Experiments. This machine's own rooms and
+   * #team are not spaces and never read it. Read on every request, so a change
+   * takes effect at once.
+   */
+  spaces: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
+  /**
    * Letting agents on other systems talk to the agents on this one.
    *
    * A2A is a shared language for agents built by different people. Turn this on

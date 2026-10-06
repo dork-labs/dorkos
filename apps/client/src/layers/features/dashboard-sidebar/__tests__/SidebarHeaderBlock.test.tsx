@@ -113,10 +113,20 @@ let mockConnections: Array<{
   };
 }> = [];
 let mockCommunityOrder: string[] = [];
-let mockConfig: { version?: string; latestVersion?: string | null; isDevMode?: boolean } = {
+/** The spaces experiment as the server resolves it (DOR-2740); ON unless a test turns it off. */
+function spacesExperiment(enabled: boolean) {
+  return [{ key: 'spaces.enabled', title: 'Spaces', description: '', enabled, lockedByEnv: false }];
+}
+let mockConfig: {
+  version?: string;
+  latestVersion?: string | null;
+  isDevMode?: boolean;
+  experiments?: ReturnType<typeof spacesExperiment>;
+} = {
   version: '0.58.0',
   latestVersion: null,
   isDevMode: false,
+  experiments: spacesExperiment(true),
 };
 const mockGetConfig = vi.fn(() => Promise.resolve(mockConfig));
 const mockOpenExternalLink = vi.fn((_href: string) => true);
@@ -239,7 +249,12 @@ beforeEach(() => {
   };
   vi.clearAllMocks();
   mockSelf = { id: 'me', displayName: 'Dorian', isSelf: true };
-  mockConfig = { version: '0.58.0', latestVersion: null, isDevMode: false };
+  mockConfig = {
+    version: '0.58.0',
+    latestVersion: null,
+    isDevMode: false,
+    experiments: spacesExperiment(true),
+  };
   mockMenuNodes = null;
   mockRosterPending = false;
   mockIsMobile = false;
@@ -2107,5 +2122,61 @@ describe('focus after a phone choice', () => {
     await idle();
     await settle();
     expect(heading()).not.toHaveFocus();
+  });
+});
+
+// Purpose: the launch ships without spaces (DOR-2740). With the experiment off
+// the menu is only "You": no space rows, no Join or Start, nothing hosted asked
+// for, even with connections on file. Fails if any space surface leaks through.
+describe('the switcher while the spaces experiment is off (DOR-2740)', () => {
+  const alpha = {
+    ref: 'a',
+    remoteCommunityId: 'remote-a',
+    label: 'Alpha',
+    pinnedOrigin: 'https://a.example.com',
+    connectedHumanMemberId: 'person-a',
+    status: 'connected' as const,
+    expiresAt: null,
+  };
+
+  it('shows you, your account and Settings, and no space at all', async () => {
+    mockConfig = { ...mockConfig, experiments: spacesExperiment(false) };
+    mockConnections = [alpha];
+    mockCloudLinked = true;
+    renderBlock();
+    await waitFor(() => expect(mockGetConfig).toHaveBeenCalled());
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByRole('menuitem', { name: /Settings/ })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument();
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+    expect(screen.queryByText('Switch context')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Add a space' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/space/i)).not.toBeInTheDocument();
+    expect(mockListHostedCommunities).not.toHaveBeenCalled();
+  });
+
+  it('ignores a space address and names this DorkOS', async () => {
+    mockConfig = { ...mockConfig, experiments: spacesExperiment(false) };
+    mockConnections = [alpha];
+    mockSearch = { community: 'a' };
+    renderBlock();
+    await waitFor(() => expect(mockGetConfig).toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: 'Dorian’s team menu' })).toBeInTheDocument();
+  });
+
+  it('hides space rows while the config has not answered yet', () => {
+    mockGetConfig.mockReturnValueOnce(new Promise(() => {}));
+    mockConnections = [alpha];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+  });
+
+  it('shows them again once it is on (the control)', async () => {
+    mockConnections = [alpha];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByText('Alpha')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Add a space' })).toBeInTheDocument();
   });
 });

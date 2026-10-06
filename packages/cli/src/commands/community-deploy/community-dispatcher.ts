@@ -57,10 +57,21 @@ import {
 } from './runtime/stop-record.js';
 import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 
+/**
+ * The line every `dorkos community` run starts with (DOR-2740).
+ *
+ * Spaces are an experiment the launch ships without: the app hides them until a
+ * person turns them on in Settings → Experiments, and the command that builds a
+ * space server says the same thing before it does anything.
+ */
+export const COMMUNITY_EXPERIMENTAL_NOTICE =
+  'Experimental: spaces are still changing. To use one in the app, turn on Spaces in Settings → Experiments.\n';
+
 /** Human-facing help for the guided deployment command. */
 export const COMMUNITY_DEPLOY_HELP = `
 Usage: dorkos community deploy [options]
 
+${COMMUNITY_EXPERIMENTAL_NOTICE}
 Guide a standalone DorkOS space server onto Fly, Neon, and private Tigris storage.
 The command keeps a non-secret recovery journal and never removes a resource without proof
 that this run made it and your typed confirmation.
@@ -288,6 +299,9 @@ export async function runCommunityDispatcher(
     process.stdout.write(COMMUNITY_DEPLOY_HELP);
     return 0;
   }
+  // On stderr, so the notice never mixes into output a script reads. Help
+  // already carries it.
+  process.stderr.write(COMMUNITY_EXPERIMENTAL_NOTICE);
   const removeRunId = parsed.values['remove-uncertain'];
   const forgetRunId = parsed.values.forget;
   if (parsed.values.confirm !== undefined && removeRunId === undefined) {

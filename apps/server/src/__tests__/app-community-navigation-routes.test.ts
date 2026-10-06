@@ -17,6 +17,9 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 const config = vi.hoisted(() => {
   const values: Record<string, unknown> = {
     ui: { communityNavigation: { version: 1, owners: [] } },
+    // Spaces are an experiment, off by default (DOR-2740); these routes exist
+    // only while it is on. The last describe below turns it off.
+    spaces: { enabled: true },
   };
   return {
     values,
@@ -129,5 +132,51 @@ describe('Community navigation routes in the booted app', () => {
     );
     expect(resolved.status).toBe(200);
     expect(resolved.body).toEqual({ destination: null });
+  });
+});
+
+describe('Space routes while the spaces experiment is off (DOR-2740)', () => {
+  it.each([
+    ['GET', '/api/community-connections/navigation'],
+    ['GET', '/api/community-connections'],
+    ['GET', '/api/communities/community-a/rooms'],
+    ['GET', '/api/communities/community-a/rooms/general/events'],
+    ['GET', '/api/cloud/communities'],
+    ['POST', '/api/cloud/communities'],
+  ])('%s %s refuses with SPACES_DISABLED and touches nothing', async (method, path) => {
+    config.values.spaces = { enabled: false };
+    try {
+      const app = bootApp();
+      const before = JSON.stringify(config.values.ui);
+      const res =
+        method === 'GET' ? await request(app).get(path) : await request(app).post(path).send({});
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({
+        error: 'Spaces are switched off. Turn them on in Settings → Experiments.',
+        code: 'SPACES_DISABLED',
+      });
+      expect(JSON.stringify(config.values.ui)).toBe(before);
+    } finally {
+      config.values.spaces = { enabled: true };
+    }
+  });
+
+  it('treats a config with no spaces section as off', async () => {
+    delete config.values.spaces;
+    try {
+      const res = await request(bootApp()).get('/api/community-connections/navigation');
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('SPACES_DISABLED');
+    } finally {
+      config.values.spaces = { enabled: true };
+    }
+  });
+
+  it('takes effect without a restart: the same app answers once it is turned on', async () => {
+    config.values.spaces = { enabled: false };
+    const app = bootApp();
+    expect((await request(app).get('/api/community-connections/navigation')).status).toBe(404);
+    config.values.spaces = { enabled: true };
+    expect((await request(app).get('/api/community-connections/navigation')).status).toBe(200);
   });
 });

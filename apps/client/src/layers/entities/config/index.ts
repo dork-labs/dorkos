@@ -9,6 +9,11 @@
 
 export { configKeys, CONFIG_STALE_TIME_MS } from './api/query-keys';
 export { useConfig } from './model/use-config';
+export {
+  useExperimentEnabledState,
+  useSpacesEnabled,
+  type ExperimentEnabledState,
+} from './model/use-experiment-enabled';
 export { useConfigSync } from './model/use-config-sync';
 export { useLocalCaller } from './model/use-local-caller';
 export { useEngagedWindow } from './model/use-engaged-window';
