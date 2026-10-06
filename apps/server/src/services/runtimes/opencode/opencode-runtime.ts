@@ -115,6 +115,7 @@ import {
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import { validatedGrants } from './messaging/directory-grants.js';
 import { projectModelOptions, projectedProviderIds } from './providers/models.js';
+import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { captureOpenCodeMedia } from './events/media-capture.js';
@@ -209,6 +210,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly approvals = new PendingApprovalStore();
   /** What {@link enforceApprovals} reaches into on every mapped turn event. */
   private readonly approvalGate: ApprovalGateDeps;
+  /** Each model's context window from the sidecar's catalog, read once and cached. */
+  private readonly contextWindows = new OpenCodeContextWindows();
   /** One record per in-flight turn (interrupt target). */
   private readonly activeTurns = new Map<string, ActiveTurn>();
   /** Turns between their first step and being tracked in {@link activeTurns}. */
@@ -748,7 +751,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       for await (const mapped of mapOpenCodeTurn(queue, ctx)) {
         // On credits, a refused token is the credits card, never an OpenCode
         // sign-in error: the person's own sign-in was not used.
-        const event = plan.mode === 'credits' ? asCreditsStopped(mapped, OPENCODE_LABEL) : mapped;
+        const event = await this.withContextWindow(
+          client,
+          directory,
+          ctx.providerId,
+          plan.mode === 'credits' ? asCreditsStopped(mapped, OPENCODE_LABEL) : mapped
+        );
         if (event.type === 'error') sawRuntimeError = true;
         yield* enforceApprovals(this.approvalGate, routing, event);
         // The async half of media mapping. `mapOpenCodeTurn` is pure and cannot
@@ -792,6 +800,38 @@ export class OpenCodeRuntime implements AgentRuntime {
         });
       }
     }
+  }
+
+  /**
+   * Add the model's context window to a reply's context reading, so the
+   * reading says how full the conversation is (DOR-2732). OpenCode's own
+   * usage event names the model but not its window; the sidecar's catalog
+   * does ({@link OpenCodeContextWindows}, cached). A model the catalog gives
+   * no window for keeps its reading without one.
+   *
+   * @param client - The sidecar client the turn runs on.
+   * @param directory - The session's directory, for the catalog read.
+   * @param providerId - The reply's provider, as the mapper recorded it.
+   * @param event - One mapped event; only a context reading is touched.
+   */
+  private async withContextWindow(
+    client: OpencodeClient,
+    directory: string,
+    providerId: string | undefined,
+    event: StreamEvent
+  ): Promise<StreamEvent> {
+    if (event.type !== 'session_status') return event;
+    const data = event.data as Record<string, unknown>;
+    if (data.contextTokens === undefined || data.contextMaxTokens !== undefined) return event;
+    const window = await this.contextWindows.lookup(
+      client,
+      directory,
+      providerId,
+      typeof data.model === 'string' ? data.model : undefined
+    );
+    return window === undefined
+      ? event
+      : ({ ...event, data: { ...data, contextMaxTokens: window } } as StreamEvent);
   }
 
   /**

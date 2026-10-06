@@ -794,20 +794,11 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     group: 'CMP',
     title: 'Report how full the conversation is',
     expected:
-      'After each reply the runtime reports the tokens in the context and the size of the window, so DorkOS can tell the agent when it passes 80%.',
-    cells: {
-      'claude-code': yes,
-      codex: yes,
-      opencode: {
-        status: 'partial',
-        reason:
-          'Reports the tokens a reply used but not the window size, so the 80% note never fires; the gauge reads the window from the model list.',
-      },
-      'test-mode': {
-        status: 'not-supported',
-        reason: 'Its scripted replies report no context reading.',
-      },
-    },
+      'After each reply the runtime reports the tokens in the context and the size of the window, so DorkOS can tell the agent when it passes 80%. A model whose window the runtime cannot learn reports no window rather than a guess.',
+    // Codex's column is app-server; on exec the reading comes from the turn's
+    // rollout file. OpenCode's window comes from its sidecar's model catalog,
+    // since its usage event names none.
+    cells: all(yes),
   },
 ];
 

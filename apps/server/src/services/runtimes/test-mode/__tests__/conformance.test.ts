@@ -84,6 +84,20 @@ runtimeConformance(() => new TestModeRuntime(), {
     scenarioStore.setDefault('compacting');
     return new TestModeRuntime();
   },
+  // DOR-2732: the `context-reading` scenario reports tokens and window.
+  contextReadingTurn: async () => {
+    scenarioStore.setDefault('context-reading');
+    const runtime = new TestModeRuntime();
+    const sessionId = 'context-reading-conformance';
+    runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
+    const events = [];
+    for await (const event of runtime.sendMessage(sessionId, 'conformance ping', {
+      cwd: '/projects/conformance',
+    })) {
+      events.push(event);
+    }
+    return events;
+  },
   // DOR-2732: a summary somebody asked for. test-mode's compact intent is the
   // fake that records the request and answers with a synthetic boundary.
   compactIntentTurn: async () => {

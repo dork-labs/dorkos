@@ -69,7 +69,7 @@ Before asking, the agent is told to save what it needs (open work, session ids, 
 
 When a conversation passes 80% of its room, DorkOS adds one short note to the agent's next reply suggesting it do exactly that. The agent gets the note once, and gets it again only after the conversation has been summarized and filled back up.
 
-This works on Claude Code, Codex and OpenCode. The agent's note about what to keep is used on Claude Code only, for the same reason as above. The note at 80% needs the agent to say how big its conversation can get. Claude Code and Codex do; OpenCode doesn't, so an agent on OpenCode never gets the note, though it can still ask for a summary. Codex set to its older `exec` mode can't summarize on request at all, so agents there aren't offered the tool.
+This works on Claude Code, Codex and OpenCode. The agent's note about what to keep is used on Claude Code only, for the same reason as above. The note at 80% works on all three too. OpenCode's usage report doesn't say how big a conversation can get, so DorkOS looks that up in OpenCode's own model list. For a model that list doesn't size, there's no note. Codex set to its older `exec` mode can't summarize on request at all, so agents there aren't offered the tool.
 
 To stop an agent from asking at all, open its **Permissions** page and set **Own chat** to Blocked. Only you can change that setting, and the note at 80% stops mentioning the tool for that agent.
 

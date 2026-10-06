@@ -264,6 +264,7 @@ import { initConfigManager } from '../../../core/config-manager.js';
 import { CONFORMANCE_CREDITS_TOKEN } from '@dorkos/test-utils';
 import {
   appServerCompactIntentTurn,
+  driveContextReading,
   appServerCreditsTurn,
   appServerDirectoryGrantTurns,
   appServerDispositionTurn,
@@ -410,6 +411,27 @@ runtimeConformance(
     // (no feedProjector), so native history is [] by design — completed
     // history lives in the DorkOS-owned EventLog (ADR-0263).
     expectHistory: false,
+    // DOR-2732, RT-CMP-03: on exec the reading comes from the turn's rollout
+    // file, which the mocked SDK writes none of (`read-context-usage.test.ts`
+    // proves that read); live, the real binary writes one.
+    ...(LIVE
+      ? {
+          contextReadingTurn: () =>
+            driveContextReading(
+              onModel(
+                new CodexRuntime({
+                  transport: 'exec',
+                  threadMap: new CodexThreadMap(createTestDb()),
+                }),
+                LIVE_MODEL
+              ),
+              projectDir
+            ),
+        }
+      : {
+          contextReadingUnprovenReason:
+            'on exec the context reading is read from the turn’s rollout file, which the mocked SDK never writes; read-context-usage.test.ts proves that read against real rollout records',
+        }),
     // DOR-189: a completed turn must survive a restart via the durable store.
     durableHistory: (runtime, sessionId, content) =>
       driveDurableTurn(runtime, sessionId, content, projectDir),
@@ -717,6 +739,20 @@ runtimeConformance(
     queueDurability: () => driveQueueDurability(),
     // A thread stays loaded between turns, so a session is warm after one.
     warmSession: (runtime, sessionId) => warmAppServerSession(runtime, sessionId, projectDir),
+    // DOR-2732, RT-CMP-03: Codex's usage update carries the model's window.
+    contextReadingTurn: () =>
+      driveContextReading(
+        LIVE
+          ? onModel(
+              new CodexRuntime({
+                threadMap: new CodexThreadMap(createTestDb()),
+                transport: 'app-server',
+              }),
+              LIVE_MODEL
+            )
+          : makeAppServerRuntime(),
+        projectDir
+      ),
     // DOR-2732: a summary somebody asked for, `thread/compact/start` on a
     // thread with a conversation in it. Live, against the real binary too.
     compactIntentTurn: () =>

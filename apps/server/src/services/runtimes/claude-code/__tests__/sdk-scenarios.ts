@@ -174,6 +174,48 @@ export async function* sdkSimpleText(
 }
 
 /**
+ * A reply that reports how full the conversation is (DOR-2732): the main
+ * thread's assistant message carries its request's usage (what the mapper
+ * reads the context size from) and the result names the model's window.
+ *
+ * @param text - The reply.
+ * @param reading - The request's prompt tokens and the model's window.
+ */
+export async function* sdkTextWithContextReading(
+  text: string,
+  reading: { inputTokens: number; cacheReadTokens: number; contextWindow: number }
+): AsyncGenerator<SDKMessage> {
+  yield makeInit();
+  yield {
+    type: 'stream_event',
+    event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
+    parent_tool_use_id: null,
+    session_id: SESSION_ID,
+    uuid: BASE_UUID,
+  } as SDKMessage;
+  yield {
+    type: 'assistant',
+    message: {
+      role: 'assistant',
+      content: [],
+      usage: {
+        input_tokens: reading.inputTokens,
+        cache_read_input_tokens: reading.cacheReadTokens,
+        cache_creation_input_tokens: 0,
+        output_tokens: 5,
+      },
+    },
+    parent_tool_use_id: null,
+    session_id: SESSION_ID,
+    uuid: BASE_UUID,
+  } as unknown as SDKMessage;
+  yield {
+    ...(makeResult() as Record<string, unknown>),
+    modelUsage: { 'claude-haiku-4-5-20251001': { contextWindow: reading.contextWindow } },
+  } as unknown as SDKMessage;
+}
+
+/**
  * Produces a single tool call (start → json delta → stop) followed by text.
  *
  * @param toolName - Tool to simulate (e.g. 'Bash', 'Read')

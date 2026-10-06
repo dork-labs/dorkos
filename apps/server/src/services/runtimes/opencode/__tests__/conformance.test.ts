@@ -493,6 +493,23 @@ function makeConformanceClient(turn: OpenCodeWireEvent[], stored?: StoredMessage
   };
 }
 
+/**
+ * `contextReadingTurn` (DOR-2732): one reply on a fresh session, its events.
+ *
+ * @param runtime - The runtime to drive.
+ */
+async function driveOpenCodeContextReading(runtime: OpenCodeRuntime): Promise<StreamEvent[]> {
+  const sessionId = randomUUID();
+  runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
+  const events: StreamEvent[] = [];
+  for await (const event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
+    cwd: PROJECT_DIR,
+  })) {
+    events.push(event);
+  }
+  return events;
+}
+
 /** Fresh mocked provider per runtime — task 3.6's verified construction seam. */
 function makeMockedProvider(
   turn: OpenCodeWireEvent[] = opencodeSimpleTurn(OC_SESSION_A, 'pong from opencode', {
@@ -673,6 +690,9 @@ runtimeConformance(
             'a live sidecar asks only when a model chooses to reach a folder, which this suite cannot script; the ask handler is proven in the mocked run against the live-captured ask shapes',
           creditsUnprovenReason:
             'a live OpenCode sidecar is a separate process this suite can only send to, so whether a credits token reached it is only observable in the mocked run',
+          // DOR-2732, RT-CMP-03, live: the real sidecar's catalog names the window.
+          contextReadingTurn: () =>
+            driveOpenCodeContextReading(new OpenCodeRuntime({ provider: liveManager! })),
           // DOR-2732, live: a real turn, then the sidecar's real summarize.
           compactIntentTurn: async () => {
             const runtime = new OpenCodeRuntime({ provider: liveManager! });
@@ -912,6 +932,30 @@ runtimeConformance(
             new OpenCodeRuntime({
               provider: makeMockedProvider(opencodeCompactingTurn(OC_SESSION_A)),
             }),
+          // DOR-2732, RT-CMP-03: the reply's usage names no window; the
+          // sidecar's catalog does, and the runtime reads it from there.
+          contextReadingTurn: () => {
+            const runtime = new OpenCodeRuntime({ provider: makeMockedProvider() });
+            lastClient!.provider.list.mockResolvedValue({
+              data: {
+                all: [
+                  {
+                    id: 'anthropic',
+                    name: 'Anthropic',
+                    models: {
+                      'claude-sonnet-4-5': {
+                        id: 'claude-sonnet-4-5',
+                        limit: { context: 200_000, output: 64_000 },
+                      },
+                    },
+                  },
+                ],
+                default: {},
+                connected: ['anthropic'],
+              },
+            } as never);
+            return driveOpenCodeContextReading(runtime);
+          },
           // DOR-2732: a summary somebody asked for. `session.summarize` is
           // answered by the sidecar's own compaction events (the mocked event
           // stream carries one scripted run, so the summary is that run).

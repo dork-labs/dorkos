@@ -173,6 +173,23 @@ export async function appServerCompactIntentTurn(
 }
 
 /**
+ * `contextReadingTurn` (DOR-2732): one reply on a fresh session, its events.
+ *
+ * @param runtime - A Codex runtime, on either transport.
+ * @param projectDir - Its working directory.
+ */
+export async function driveContextReading(
+  runtime: AgentRuntime,
+  projectDir: string
+): Promise<StreamEvent[]> {
+  const sessionId = randomUUID();
+  runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+  return drain(
+    runtime.sendMessage(sessionId, 'Reply with the single word: hi', { cwd: projectDir })
+  );
+}
+
+/**
  * `makeCompactingRuntime` (DOR-110): a runtime whose next turn has Codex
  * summarize on its own partway through (a `contextCompaction` item inside an
  * ordinary turn), then answer.

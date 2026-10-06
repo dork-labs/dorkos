@@ -17,6 +17,7 @@ import {
   wrapSdkQuery,
   sdkError,
   sdkSimpleText,
+  sdkTextWithContextReading,
   sdkCompaction,
   sdkImageToolResult,
 } from './sdk-scenarios.js';
@@ -932,6 +933,30 @@ runtimeConformance(
         () => wrapSdkQuery(sdkCompaction()) as unknown as ReturnType<typeof query>
       );
       return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    },
+    // DOR-2732: a reply that says how full the conversation is — the request's
+    // usage on the assistant message, the model's window on the result.
+    contextReadingTurn: async () => {
+      mockedQuery.mockImplementationOnce(
+        () =>
+          wrapSdkQuery(
+            sdkTextWithContextReading('pong', {
+              inputTokens: 1_200,
+              cacheReadTokens: 40_000,
+              contextWindow: 200_000,
+            })
+          ) as unknown as ReturnType<typeof query>
+      );
+      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
+      const events: StreamEvent[] = [];
+      for await (const event of runtime.sendMessage(sessionId, 'conformance ping', {
+        cwd: '/projects/conformance',
+      })) {
+        events.push(event);
+      }
+      return events;
     },
     // DOR-2732: a summary somebody asked for. The `/compact` the runtime sends
     // is answered by the SDK's own compaction stream, one query after the

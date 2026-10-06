@@ -151,6 +151,7 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
       'long-turn',
       'compacting',
       'compacting-hold',
+      'context-reading',
     ],
     /** Artificial per-event latency used by the fake stream generators. */
     deterministicLatencyMs: 0,

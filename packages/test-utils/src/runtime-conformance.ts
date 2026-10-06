@@ -214,6 +214,22 @@ export interface RuntimeConformanceOpts {
    */
   compactIntentTurn?: () => Promise<StreamEvent[]>;
   /**
+   * Drive one reply whose backend reports how full the conversation is, and
+   * return its events (DOR-2732). The suite (`RT-CMP-03`) requires a
+   * `session_status` reading with a positive `contextTokens` AND a positive
+   * `contextMaxTokens`: a reading without a window cannot say how full the
+   * conversation is, so the 80% note to the agent could never fire.
+   *
+   * Wire this, or declare {@link contextReadingUnprovenReason}.
+   */
+  contextReadingTurn?: () => Promise<StreamEvent[]>;
+  /**
+   * Why this run cannot drive a context reading with a window (a sentence;
+   * whitespace waives nothing). Exactly one of this and
+   * {@link contextReadingTurn} must be given.
+   */
+  contextReadingUnprovenReason?: string;
+  /**
    * Why this runtime legitimately repeats the message it was triggered with
    * back in its own output.
    *
@@ -1499,6 +1515,8 @@ export function runtimeConformance(
     authFailure,
     makeCompactingRuntime,
     compactIntentTurn,
+    contextReadingTurn,
+    contextReadingUnprovenReason,
     mediaTurn,
     roomCanvasTurn,
     durableHistory,
@@ -4072,6 +4090,44 @@ export function runtimeConformance(
           // drain to the end of the turn
         }
         expect(runtime.isTurnOpen(sessionId), 'a turn that has ended is not open').toBe(false);
+      });
+    });
+
+    describe('how full the conversation is (DOR-2732)', () => {
+      it('RT-CMP-03: a reply reports the tokens in its context and a positive window', async () => {
+        if (!contextReadingTurn) {
+          expect(
+            (contextReadingUnprovenReason ?? '').trim().length,
+            'this run wired no contextReadingTurn and gave no reason it could not, so nothing proves the runtime says how full a conversation is — without a window the 80% note to the agent never fires (see RuntimeConformanceOpts.contextReadingTurn)'
+          ).toBeGreaterThan(0);
+          return;
+        }
+        expect(
+          (contextReadingUnprovenReason ?? '').trim(),
+          'this run wired contextReadingTurn, so a reason it cannot would be dead copy'
+        ).toBe('');
+        const events = await contextReadingTurn();
+        const readings = events
+          .filter((event) => event.type === 'session_status')
+          .map((event) => event.data as { contextTokens?: number; contextMaxTokens?: number })
+          .filter((data) => data.contextTokens !== undefined);
+        expect(
+          readings.length,
+          'the reply must report how many tokens are in context'
+        ).toBeGreaterThan(0);
+        for (const reading of readings) {
+          if (reading.contextMaxTokens !== undefined) {
+            expect(reading.contextMaxTokens, 'a reported window must be positive').toBeGreaterThan(
+              0
+            );
+          }
+        }
+        expect(
+          readings.some(
+            (reading) => (reading.contextTokens ?? 0) > 0 && (reading.contextMaxTokens ?? 0) > 0
+          ),
+          'at least one reading must carry both a token count and the window it fills'
+        ).toBe(true);
       });
     });
 
