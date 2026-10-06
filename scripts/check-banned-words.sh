@@ -5,10 +5,10 @@
 # surface a user can read, after the operator retired both words for good (the
 # category phrase became "one place" then, meta/website-copy/decisions.md
 # Decision 18; since 2026-10 it is "a workspace for people and agents",
-# meta/positioning-202610/00-overview.md). A sweep with no guard rots: the next person to write a README
-# paragraph or a release post has no idea those two words were spent, and the
-# repo carries ~2,000 legitimate internal uses of "cockpit" in comments and
-# identifiers for them to copy the habit from.
+# meta/positioning-202610/00-overview.md). A sweep with no guard rots: the
+# next person to write a README paragraph or a release post has no idea those
+# two words were spent, and the repo carries ~2,000 legitimate internal uses of
+# "cockpit" in comments and identifiers for them to copy the habit from.
 #
 # WHY IT IS A SECOND GATE, NOT A REPLACEMENT. scripts/check-vocab-gate.ts
 # already guards this vocabulary inside app source, and DOR-1517 extended it

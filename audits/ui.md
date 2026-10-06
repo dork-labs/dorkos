@@ -109,8 +109,8 @@ it everywhere; do not invent a second spelling elsewhere.
     staggering, and dramatic or bouncy motion to remove. Delight that stays quiet.
 11. **Clutter, simplification & progressive disclosure** `clutter` — surfaces doing too much at once;
     panels that should hide advanced options behind disclosure; for each major surface, what
-    would a world-class product designer cut, merge, or reorder? Judge against the personas: Kai
-    wants density with calm, Ikechi must not be scared off.
+    would a world-class product designer cut, merge, or reorder? Judge against the personas: the
+    founder must not be scared off; Kai wants density with calm.
 12. **Componentization** `componentize` — repeated inline JSX that should become a shared component; ad-hoc
     reimplementations of things the shared layer already solves; near-stock primitives worth
     customizing further for responsiveness, styling, or micro-interaction.

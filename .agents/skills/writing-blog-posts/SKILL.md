@@ -9,24 +9,21 @@ The blog at `blog/*.mdx` holds 61 posts and every one of them is a release note.
 
 ## The gate, before you write a sentence
 
-A blog post is exactly where an unverified claim slips out. `AGENTS.md:7`:
+A blog post is exactly where an unverified claim slips out. The rule is the demo-claim gate in `meta/positioning-202610/00-overview.md` ("The demo-claim gate"), restated in `AGENTS.md` under Product state: never state that a still-unverified or unbuilt surface works.
 
-> "In user-facing copy, docs, and release notes, never state that a still-unverified surface or pillar ... works (the demo-claim gate: `meta/positioning-202607/09-gtm-plan.md` §2.0)."
+Under the gate right now:
 
-Under the gate right now, per that same line:
+| Surface                                                                                                                       | Status                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Obsidian plugin                                                                                                               | Retired; link the migration guide, never promise an install                                                    |
+| Windows x64 desktop                                                                                                           | Early alpha, never confirmed by a real end-user install                                                        |
+| Marketplace Claude-Code-superset compatibility                                                                                | Shipped, unverified end to end                                                                                 |
+| Linux desktop                                                                                                                 | Does not exist. Not gated, absent                                                                              |
+| Room slash commands, `post_to_room` everywhere                                                                                | Designed, not built (`specs/rooms/02-specification.md:628-706`)                                                |
+| Trust by default: full power by default, no permission prompts, an audit trail anyone can read                                | Decided, not built. State the principle only; the Activity page is a record of what agents did, not that trail |
+| Equal accounts, roles, the vault, email and phone, agents with their own computer, push, publishing, live shared docs, spaces | Roadmap. Say "coming" or leave it out                                                                          |
 
-| Surface                                        | Status                                                          |
-| ---------------------------------------------- | --------------------------------------------------------------- |
-| Obsidian plugin                                | Retired; link the migration guide, never promise an install     |
-| Windows x64 desktop                            | Early alpha, never confirmed by a real end-user install         |
-| Mesh+Relay multi-agent coordination            | Shipped, unverified end to end                                  |
-| Marketplace Claude-Code-superset compatibility | Shipped, unverified end to end                                  |
-| Linux desktop                                  | Does not exist. Not gated, absent                               |
-| Room slash commands, `post_to_room` everywhere | Designed, not built (`specs/rooms/02-specification.md:628-706`) |
-
-Clear of the gate: the web cockpit via CLI install, and the macOS desktop app (signed, notarized, downloadable).
-
-`AGENTS.md` is the live list. `09-gtm-plan.md` §2.0 is the rule behind it and is older, so where the two disagree, `AGENTS.md` wins.
+Clear of the gate: the app via CLI install, the macOS desktop app (signed, notarized, downloadable), rooms, direct chat, tasks, connections and the marketplace install path.
 
 **The instruction, and it is not optional.** Go through the finished draft one capability claim at a time. For each one, name the artifact that proves it shipped and was verified: a merged PR, a changelog fragment, a browser test, a docs page describing it as it works today. If you cannot find one, rewrite the sentence in the future tense or cut it. "DorkOS agents coordinate across machines" and "we are building toward agents that coordinate across machines" are different claims, and only one of them is currently true.
 
@@ -46,14 +43,14 @@ A post argues from a position. A neutral explainer is a docs page, and we alread
 
 The position comes from three places:
 
-- **The thesis.** `meta/dorkos-litepaper.md:298`: "Intelligence doesn't scale. Coordination does." Most posts here are an instance of it. The manifesto line is licensed on this surface and almost nowhere else (see Voice below), which makes an essay the one place the argument can be stated outright rather than implied.
-- **The design filters.** `AGENTS.md:15` names Jobs, Ive and Rams as the design mentors and states what they imply: every element justifies its existence, so if a paragraph would not be missed, cut it. The product "feels like a control panel, not a consumer app," and `meta/brand-foundation.md:425` says the same. The prose is instrument-panel prose, not lifestyle copy.
+- **The thesis.** `meta/brand-foundation.md` §12: "Intelligence doesn't scale. Coordination does." Most posts here are an instance of it. The manifesto line is licensed on this surface and almost nowhere else (see Voice below), which makes an essay the one place the argument can be stated outright rather than implied.
+- **The design filters.** The Decision filters line in `AGENTS.md` (Quality Standard) names Jobs, Ive and Rams as the design mentors and states what they imply: every element justifies its existence, so if a paragraph would not be missed, cut it. The product "feels like a control panel, not a consumer app," and `meta/brand-foundation.md:425` says the same. The prose is instrument-panel prose, not lifestyle copy.
 - **A named reader.** A post aimed at everyone reaches nobody. Name the persona before the first sentence.
 
 | Post type      | Usually for                                                                                                                                                                                                                 |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Feature post   | The founder (`meta/personas/the-ai-native-founder.md`), running a business mostly with agents, asking what this lets them hand off next; Kai (`meta/personas/the-autonomous-builder.md`) when the feature is for developers |
-| Decision essay | The founder or Kai at their most skeptical: the reader who reads the source before adopting and is really evaluating our judgment                                                                                           |
+| Decision essay | The skeptical reader (Kai, or a technical founder) who reads the source before adopting and is really evaluating our judgment                                                                                               |
 | Ecosystem post | Kai plus the other project's users, who arrived because of that project and not because of us                                                                                                                               |
 | Release recap  | People already running DorkOS, who want to know what changed and whether it was worth the upgrade                                                                                                                           |
 

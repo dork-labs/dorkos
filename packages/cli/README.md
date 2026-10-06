@@ -12,7 +12,7 @@
 
 **You, multiplied.**
 
-DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. It runs on your own computer, free, with no account needed.
+DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. The app runs on your own computer, free, with no DorkOS account needed. (Gmail and other apps connect through a DorkOS account or your own key.)
 
 Think of DorkOS as the office, and your agents as the workers who log in. Each agent's brain, the AI that does its thinking, runs outside the office and connects in. Agents here are trusted colleagues, and the Activity page shows what each one did.
 
@@ -31,7 +31,7 @@ Think of DorkOS as the office, and your agents as the workers who log in. Each a
 - **Agents that use your other apps.** Connect Gmail and other services, and your agents can work in them.
 - **Every session in one window.** See your Claude Code sessions for a project, no matter where you started them, then switch folders to see the rest.
 - **Step in from anywhere.** Check on an agent and answer it from your laptop or your phone.
-- **Your machine, your data.** DorkOS runs on your computer, free, with no account needed. The code is open source, and DorkOS Cloud is optional.
+- **Your machine, your data.** DorkOS runs on your computer, free, with no DorkOS account needed for the app. The code is open source, and DorkOS Cloud is optional.
 
 ## Install
 
@@ -49,7 +49,7 @@ Just want to try it first? `npx dorkos@latest` runs DorkOS with no install step 
 dorkos
 ```
 
-Already signed in to Claude Code? You're done. Your browser opens on your Claude Code sessions in this folder: the ones you started from your terminal, from VS Code, from anywhere. Switch folders from the sidebar to see sessions from your other projects.
+Already signed in to Claude Code? You're done. Your browser opens on #team, where you and your agents talk. Your Claude Code sessions from this folder, wherever you started them, are on that agent's Sessions page. Switch folders from the sidebar to see your other projects.
 
 No Claude Code yet, or paying per token instead of on a subscription? Set an API key first:
 
@@ -87,9 +87,9 @@ Set an agent to run at a time you pick (like every morning at 9am) or on demand,
 
 ### Relay: let agents reach you
 
-Your agents can message you on the channels you already use: Telegram, a webhook, or the browser. When an agent finishes or gets stuck, you hear about it where you are. Agents can also message each other across projects.
+Your agents can message you on the channels you already use: Telegram, Slack, a webhook, or the browser. When an agent finishes or gets stuck, you hear about it where you are. Agents can also message each other across projects.
 
-- Telegram and webhook support built in
+- Telegram, Slack and webhook support built in
 - Add a new channel with a plugin, no custom bot required
 - Messages wait for you even after you close the terminal
 
@@ -113,7 +113,7 @@ Start a session in the browser. Check on it from your phone. Every session shows
 
 ### Extensions
 
-Agents can build and install extensions that add new features. Each extension brings its own settings and secrets, all managed from the dashboard.
+Agents can build and install extensions that add new features. Each extension brings its own settings and secrets, all managed from the app.
 
 ### Connect other AI tools (MCP)
 
