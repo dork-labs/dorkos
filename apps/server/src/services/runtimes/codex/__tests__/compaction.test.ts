@@ -18,6 +18,18 @@ vi.mock('../check-dependencies.js', async (importOriginal) => ({
 vi.mock('../enumerate-mcp-servers.js', () => ({
   enumerateCodexMcpServers: vi.fn(async () => null),
 }));
+/** The credits model decision, replaceable per test (real by default). */
+const creditsDecision = vi.hoisted(() => ({ override: undefined as undefined | (() => never) }));
+vi.mock('../../../core/cloud/credits-models.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../core/cloud/credits-models.js')>();
+  return {
+    ...real,
+    decideCreditsLaunchModel: (...args: Parameters<typeof real.decideCreditsLaunchModel>) =>
+      creditsDecision.override
+        ? creditsDecision.override()
+        : real.decideCreditsLaunchModel(...args),
+  };
+});
 
 import {
   disposeProjector,
@@ -27,6 +39,8 @@ import { SessionEventStore, setSessionEventStore } from '../../../session/index.
 import { resetMessageDispatcher } from '../../../session/message-dispatcher.js';
 import { AgentCompactionService } from '../../../session/agent-compaction/agent-compaction-service.js';
 import { CodexRuntime } from '../codex-runtime.js';
+import type { CodexTransport } from '../transport/codex-transport.js';
+import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { CodexAppServerPool } from '../app-server/process-pool.js';
 import { AppServerCodexTransport } from '../transport/app-server-transport.js';
@@ -75,6 +89,18 @@ function prompts(home: ReturnType<typeof appServerRuntime>['home']): string[] {
 }
 
 describe('which Codex can summarize', () => {
+  it('keeps every intent the base declares when a transport turns one on (merged per intent)', () => {
+    const transport = {
+      kind: 'app-server',
+      capabilities: { commandIntents: {} },
+      runTurn: async function* () {},
+      interrupt: async () => ({ outcome: 'not-running', reason: 'no-open-turn', runtime: 'codex' }),
+      shutdown: async () => {},
+    } as unknown as CodexTransport;
+    const runtime = new CodexRuntime({ threadMap: new CodexThreadMap(createTestDb()), transport });
+    expect(runtime.getCapabilities().commandIntents.compact).toEqual({ supported: false });
+  });
+
   it('declares compact on app-server, and not on exec, where executeCommandIntent refuses', async () => {
     const { runtime } = appServerRuntime();
     expect(runtime.getCapabilities().commandIntents.compact.supported).toBe(true);
@@ -138,6 +164,44 @@ describe('a summary on app-server', () => {
     expect(second).not.toContain('<env>');
     // …until a summary may have dropped it.
     expect(third).toContain('<env>');
+  });
+
+  it('says there is nothing to summarize before asking who would pay, on a session with no thread', async () => {
+    const { runtime } = appServerRuntime();
+    const credits = vi.spyOn(
+      runtime as unknown as { creditsLaunchFor: () => Promise<unknown> },
+      'creditsLaunchFor'
+    );
+    const events = await drain(
+      runtime.executeCommandIntent('s-none', 'compact', { cwd: '/project' })
+    );
+    expect(events[0]).toMatchObject({
+      data: { state: 'failed', error: 'There is nothing to summarize yet.' },
+    });
+    expect(credits).not.toHaveBeenCalled();
+  });
+
+  it('refuses a credits summary the credits model list cannot run, before asking Codex', async () => {
+    const { runtime, home } = appServerRuntime();
+    await drain(runtime.sendMessage('s1', 'hello', { cwd: '/project' }));
+    vi.spyOn(
+      runtime as unknown as { creditsLaunchFor: () => Promise<unknown> },
+      'creditsLaunchFor'
+    ).mockResolvedValue({ token: 'not-a-secret' });
+    creditsDecision.override = () => {
+      throw new CreditsUnavailableError('no-models', 'Codex');
+    };
+    try {
+      const events = await drain(
+        runtime.executeCommandIntent('s1', 'compact', { cwd: '/project' })
+      );
+      expect(events.map((e) => e.type)).toEqual(['error', 'done']);
+      // Refused by the model decision itself, not by anything further on.
+      expect(events[0]).toMatchObject({ data: { reason: 'no-models' } });
+      expect(home.processes.flatMap((p) => p.requestsOf('thread/compact/start'))).toHaveLength(0);
+    } finally {
+      creditsDecision.override = undefined;
+    }
   });
 
   it('says there is nothing to summarize on a session that never ran a turn', async () => {

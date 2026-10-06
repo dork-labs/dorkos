@@ -393,6 +393,8 @@ export class FakeAppServer extends EventEmitter {
   compactionStartsBeforeAnswer = false;
   /** Answer `thread/compact/start` and then never open its turn. */
   compactionNeverStarts = false;
+  /** Answer `thread/compact/start`, and open its turn only this much later. */
+  compactionStartDelayMs = 0;
   /** Signals passed to `kill`. */
   readonly killSignals: string[] = [];
   exitCode: number | null = null;
@@ -706,6 +708,19 @@ export class FakeAppServer extends EventEmitter {
         method: 'turn/started',
         params: { threadId, turn: { id: turn.id, status: 'inProgress', items: [] } },
       });
+    const script = this.home.compactionScripts.shift() ?? compactionTurn;
+    const run = () =>
+      setImmediate(() => {
+        void Promise.resolve(script(this.contextFor(turn, params))).catch(() => {});
+      });
+    if (this.compactionStartDelayMs > 0) {
+      this.reply(id, {});
+      setTimeout(() => {
+        started();
+        run();
+      }, this.compactionStartDelayMs);
+      return;
+    }
     if (this.compactionStartsBeforeAnswer) {
       started();
       this.reply(id, {});
@@ -713,10 +728,7 @@ export class FakeAppServer extends EventEmitter {
       this.reply(id, {});
       started();
     }
-    const script = this.home.compactionScripts.shift() ?? compactionTurn;
-    setImmediate(() => {
-      void Promise.resolve(script(this.contextFor(turn, params))).catch(() => {});
-    });
+    run();
   }
 
   private turnInterrupt(id: number | string, params: Record<string, unknown>): void {

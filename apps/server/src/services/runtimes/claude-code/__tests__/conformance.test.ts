@@ -961,7 +961,7 @@ runtimeConformance(
     // DOR-2732: a summary somebody asked for. The `/compact` the runtime sends
     // is answered by the SDK's own compaction stream, one query after the
     // conversation's turn.
-    compactIntentTurn: async () => {
+    compactIntentTurn: async (observe) => {
       const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
       const sessionId = randomUUID();
       runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
@@ -978,6 +978,7 @@ runtimeConformance(
         cwd: '/projects/conformance',
       })) {
         events.push(event);
+        observe?.(runtime, sessionId);
       }
       return events;
     },

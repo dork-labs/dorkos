@@ -205,6 +205,10 @@ export interface RuntimeConformanceOpts {
    * The person's `/compact` and the agent's `compact_my_session` both arrive
    * here, so this is the path both depend on.
    *
+   * The driver calls `observe(runtime, sessionId)` once per event of the
+   * summary, as it reads it, so the suite can check the summary is an open
+   * turn while it runs.
+   *
    * Required for every runtime that declares `commandIntents.compact`
    * supported: the suite fails one that declares it and wires none, because a
    * declared summary nothing drives is exactly the claim this gate exists to
@@ -212,7 +216,9 @@ export interface RuntimeConformanceOpts {
    * runtime is never called (the route and the tool list both gate on the
    * flag), and the suite holds it to throwing instead.
    */
-  compactIntentTurn?: () => Promise<StreamEvent[]>;
+  compactIntentTurn?: (
+    observe?: (runtime: AgentRuntime, sessionId: string) => void
+  ) => Promise<StreamEvent[]>;
   /**
    * Drive one reply whose backend reports how full the conversation is, and
    * return its events (DOR-2732). The suite (`RT-CMP-03`) requires a
@@ -4064,6 +4070,25 @@ export function runtimeConformance(
           const last = (compaction.at(-1)!.data as { state?: string }).state;
           expect(['done', 'failed'], 'compaction progress must end resolved').toContain(last);
         }
+      });
+
+      it('RT-CMP-02: a summary is itself an open turn while it streams, and closed once it ends', async () => {
+        if (!makeRuntime().getCapabilities().commandIntents.compact.supported) return;
+        // A summary the agent asked for runs between turns; while it runs it
+        // must count as one, or a queued message, a relay turn or a second
+        // summary could start in the middle of it.
+        const open: boolean[] = [];
+        let last: { runtime: AgentRuntime; sessionId: string } | undefined;
+        await compactIntentTurn!((runtime, sessionId) => {
+          last = { runtime, sessionId };
+          open.push(runtime.isTurnOpen?.(sessionId) ?? false);
+        });
+        expect(open.length, 'the driver must report each event of the summary').toBeGreaterThan(0);
+        expect(open[0], 'a summary that is streaming is an open turn').toBe(true);
+        expect(
+          last!.runtime.isTurnOpen?.(last!.sessionId),
+          'a summary that has ended is not an open turn'
+        ).toBe(false);
       });
 
       it('RT-CMP-02: says a turn is open while it streams and closed once it ends, so a summary never starts mid-turn', async () => {

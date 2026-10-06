@@ -694,7 +694,7 @@ runtimeConformance(
           contextReadingTurn: () =>
             driveOpenCodeContextReading(new OpenCodeRuntime({ provider: liveManager! })),
           // DOR-2732, live: a real turn, then the sidecar's real summarize.
-          compactIntentTurn: async () => {
+          compactIntentTurn: async (observe) => {
             const runtime = new OpenCodeRuntime({ provider: liveManager! });
             const sessionId = randomUUID();
             runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: PROJECT_DIR });
@@ -708,6 +708,7 @@ runtimeConformance(
               cwd: PROJECT_DIR,
             })) {
               events.push(event);
+              observe?.(runtime, sessionId);
             }
             return events;
           },
@@ -959,7 +960,7 @@ runtimeConformance(
           // DOR-2732: a summary somebody asked for. `session.summarize` is
           // answered by the sidecar's own compaction events (the mocked event
           // stream carries one scripted run, so the summary is that run).
-          compactIntentTurn: async () => {
+          compactIntentTurn: async (observe) => {
             const runtime = new OpenCodeRuntime({
               provider: makeMockedProvider(opencodeCompactingTurn(OC_SESSION_A)),
             });
@@ -970,6 +971,7 @@ runtimeConformance(
               cwd: PROJECT_DIR,
             })) {
               events.push(event);
+              observe?.(runtime, sessionId);
             }
             return events;
           },

@@ -100,7 +100,7 @@ runtimeConformance(() => new TestModeRuntime(), {
   },
   // DOR-2732: a summary somebody asked for. test-mode's compact intent is the
   // fake that records the request and answers with a synthetic boundary.
-  compactIntentTurn: async () => {
+  compactIntentTurn: async (observe) => {
     const runtime = new TestModeRuntime();
     const sessionId = 'compact-intent-conformance';
     runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
@@ -114,6 +114,7 @@ runtimeConformance(() => new TestModeRuntime(), {
       cwd: '/projects/conformance',
     })) {
       events.push(event);
+      observe?.(runtime, sessionId);
     }
     return events;
   },

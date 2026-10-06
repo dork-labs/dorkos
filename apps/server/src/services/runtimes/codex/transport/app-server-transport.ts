@@ -97,8 +97,20 @@ export const APP_SERVER_STOP_ACK_MS = 3_000;
  */
 export const APP_SERVER_COMPACTION_START_MS = 10_000;
 
+/**
+ * How long a compaction that never opened its turn is watched for. Codex
+ * already accepted it, so a `turn/started` may still come; one that does in
+ * this window is stopped (it would otherwise run unseen, and on credits be
+ * billed unseen) rather than left for the next prompt to collide with.
+ */
+export const STRAY_COMPACTION_WATCH_MS = 5 * 60_000;
+
 /** The copy when there is no conversation for a compaction to summarize. */
 export const NOTHING_TO_SUMMARIZE_COPY = 'There is nothing to summarize yet.';
+
+/** The copy when Codex no longer has the conversation a compaction was asked for. */
+export const CONVERSATION_GONE_COPY =
+  'Codex no longer has this conversation, so it can’t be summarized.';
 
 /** The copy when Codex accepted a compaction but never started it. */
 export const COMPACTION_NOT_STARTED_COPY = 'Codex did not start the summary. Try again.';
@@ -215,6 +227,15 @@ export class AppServerCodexTransport implements CodexTransport {
    * would silently join it, so the next turn re-sends the stop and waits.
    */
   private readonly lingering = new Map<string, LingeringTurn>();
+  /**
+   * Compactions Codex accepted whose turn never opened in time, by thread:
+   * the first `turn/started` seen there becomes a lingering turn and is
+   * stopped (see {@link STRAY_COMPACTION_WATCH_MS}).
+   */
+  private readonly strayCompactions = new Map<
+    string,
+    { readonly process: CodexAppServerProcess; readonly until: number }
+  >();
   /** Last full rate-limit reading per person-home process. */
   private readonly rateLimits = new Map<string, unknown>();
   /** Relay keys per credits process, revoked when it stops. */
@@ -336,14 +357,18 @@ export class AppServerCodexTransport implements CodexTransport {
       // thread away (refreshed credentials), and a turn left running on the
       // old one would keep going, and keep billing on credits, unseen.
       const current = this.loader.loadedThreadFor(loadInput);
+      if (current !== undefined) await this.awaitStrayCompaction(process, current);
       clear = current === undefined || (await this.settleLingering(process, current));
       const found =
         mode === 'compact'
           ? await this.loader.ensureLoadedForCompaction(loadInput)
           : await this.loader.ensureLoaded(loadInput);
-      if (found === null) {
+      if (found === 'empty' || found === 'gone') {
         release();
-        yield* nothingToSummarize(sessionId);
+        yield* nothingToSummarize(
+          sessionId,
+          found === 'gone' ? CONVERSATION_GONE_COPY : NOTHING_TO_SUMMARIZE_COPY
+        );
         return;
       }
       loaded = found;
@@ -600,6 +625,11 @@ export class AppServerCodexTransport implements CodexTransport {
       if (!mapper.isFinished) {
         logger.warn('[CodexAppServer] a compaction was accepted but its turn never opened', {
           sessionId: turn.sessionId,
+        });
+        // It may still open: watch for it, so it is stopped rather than run unseen.
+        this.strayCompactions.set(threadId, {
+          process,
+          until: Date.now() + STRAY_COMPACTION_WATCH_MS,
         });
         queue.push(
           mapper.closeQuietly({
@@ -1026,7 +1056,9 @@ export class AppServerCodexTransport implements CodexTransport {
     if (!done) return;
     this.background.finish(done.task.taskId);
     const open = this.openBySession.get(done.task.sessionId);
-    if (open && !open.sawTerminal && !open.abandoned) {
+    // Only a model turn reads what finished; a summary does not, so work that
+    // ends during one is queued for the wake that follows it.
+    if (open && !open.compaction && !open.sawTerminal && !open.abandoned) {
       open.deliver([backgroundDoneEvent(done.completion)]);
       return;
     }
@@ -1256,6 +1288,8 @@ export class AppServerCodexTransport implements CodexTransport {
           }
         },
         (notification) => {
+          if (notification.method === 'turn/started')
+            this.catchStrayCompaction(process, threadId, notification);
           this.onLate(notification);
           // An abandoned turn finally ending clears the way for the next one.
           const lingering = this.lingering.get(threadId);
@@ -1337,6 +1371,54 @@ export class AppServerCodexTransport implements CodexTransport {
       });
     }
     turn.markCompleted('closed');
+  }
+
+  /**
+   * A `turn/started` on a thread whose accepted compaction never opened in
+   * time: that is the compaction, running with nobody reading it. Track it
+   * as lingering (so the next turn settles it first) and stop it.
+   */
+  private catchStrayCompaction(
+    process: CodexAppServerProcess,
+    threadId: string,
+    notification: ServerNotification
+  ): void {
+    const stray = this.strayCompactions.get(threadId);
+    if (!stray) return;
+    this.strayCompactions.delete(threadId);
+    const turnId = turnIdOf(notification);
+    if (stray.process !== process || Date.now() > stray.until || turnId === undefined) return;
+    if (this.openByThread.get(threadId)?.turnId === turnId) return;
+    logger.warn(
+      '[CodexAppServer] a late compaction opened after DorkOS gave up on it; stopping it',
+      {
+        threadId,
+      }
+    );
+    const stopWatching = process.onExit(() => {
+      if (this.lingering.get(threadId)?.process === process) this.clearLingering(threadId);
+    });
+    this.lingering.set(threadId, { turnId, process, refusals: 0, stopWatching });
+    void process.client.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
+  }
+
+  /**
+   * Before a turn on a thread with a stray compaction: give its late
+   * `turn/started` a bounded moment to arrive, so it is caught and settled
+   * rather than collided with. Past the watch window it is forgotten.
+   */
+  private async awaitStrayCompaction(
+    process: CodexAppServerProcess,
+    threadId: string
+  ): Promise<void> {
+    const stray = this.strayCompactions.get(threadId);
+    if (!stray) return;
+    if (stray.process !== process || Date.now() > stray.until) {
+      this.strayCompactions.delete(threadId);
+      return;
+    }
+    const deadline = Date.now() + this.stopAckMs;
+    while (this.strayCompactions.has(threadId) && Date.now() < deadline) await sleep(20);
   }
 
   /** Forget a lingering turn and stop watching its process. */
@@ -1483,15 +1565,19 @@ export function backgroundDoneEvent(completion: BackgroundCompletion): StreamEve
  * then the turn's one `done`.
  *
  * @param sessionId - The session.
+ * @param reason - Why; {@link NOTHING_TO_SUMMARIZE_COPY} by default.
  */
-function* nothingToSummarize(sessionId: string): Generator<StreamEvent> {
+export function* nothingToSummarize(
+  sessionId: string,
+  reason: string = NOTHING_TO_SUMMARIZE_COPY
+): Generator<StreamEvent> {
   yield {
     type: 'operation_progress',
     data: {
       operation: 'compaction',
       state: 'failed',
       determinate: false,
-      error: NOTHING_TO_SUMMARIZE_COPY,
+      error: reason,
     },
   };
   yield { type: 'done', data: { sessionId } };

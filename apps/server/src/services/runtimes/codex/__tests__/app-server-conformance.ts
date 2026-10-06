@@ -159,17 +159,26 @@ async function drain(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
  *
  * @param runtime - An app-server runtime.
  * @param projectDir - Its working directory.
+ * @param observe - Called after each event of the summary.
  */
 export async function appServerCompactIntentTurn(
   runtime: AgentRuntime,
-  projectDir: string
+  projectDir: string,
+  observe?: (runtime: AgentRuntime, sessionId: string) => void
 ): Promise<StreamEvent[]> {
   const sessionId = randomUUID();
   runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
   await drain(
     runtime.sendMessage(sessionId, 'Reply with the single word: hi', { cwd: projectDir })
   );
-  return drain(runtime.executeCommandIntent(sessionId, 'compact', { cwd: projectDir }));
+  const events: StreamEvent[] = [];
+  for await (const event of runtime.executeCommandIntent(sessionId, 'compact', {
+    cwd: projectDir,
+  })) {
+    events.push(event);
+    observe?.(runtime, sessionId);
+  }
+  return events;
 }
 
 /**

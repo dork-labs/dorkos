@@ -755,7 +755,7 @@ runtimeConformance(
       ),
     // DOR-2732: a summary somebody asked for, `thread/compact/start` on a
     // thread with a conversation in it. Live, against the real binary too.
-    compactIntentTurn: () =>
+    compactIntentTurn: (observe) =>
       appServerCompactIntentTurn(
         LIVE
           ? onModel(
@@ -766,7 +766,8 @@ runtimeConformance(
               LIVE_MODEL
             )
           : makeAppServerRuntime(),
-        projectDir
+        projectDir,
+        observe
       ),
     // C1: app-server declares steer (`turn/steer` into the open turn). Mocked,
     // the fake holds the turn open until it is stopped; live, the real model's

@@ -9,12 +9,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { StreamEventSchema } from '@dorkos/shared/schemas';
 import { makeAppServerHarness, PERSON_HOME } from '../../__tests__/app-server-harness.js';
+import type { BackgroundWake } from '../background-work.js';
 import {
   COMPACTED_TOKENS,
+  backgroundCommandTurn,
   failedCompactionTurn,
   parkedCompactionTurn,
 } from '../../__tests__/fake-app-server.js';
 import {
+  CONVERSATION_GONE_COPY,
   COMPACTION_NOT_STARTED_COPY,
   NOTHING_TO_SUMMARIZE_COPY,
 } from '../../transport/app-server-transport.js';
@@ -166,10 +169,11 @@ describe('compacting a Codex thread', () => {
     expect(fake.requestsOf('thread/compact/start')).toHaveLength(0);
   });
 
-  it('never starts a fresh thread when Codex lost the bound one', async () => {
+  it('never starts a fresh thread when Codex lost the bound one, and says so', async () => {
     const h = harness();
     const events = await h.compact({ sessionId: 's1', boundThreadId: 'gone' });
     expect(progress(events)).toEqual(['failed']);
+    expect(events[0]).toMatchObject({ data: { error: CONVERSATION_GONE_COPY } });
     const fake = h.host.home(PERSON_HOME).processes[0]!;
     expect(fake.requestsOf('thread/start')).toHaveLength(0);
     expect(h.bindings).toHaveLength(0);
@@ -211,6 +215,20 @@ describe('compacting a Codex thread', () => {
     expect(h.pool.list().every((process) => !process.stale)).toBe(true);
   });
 
+  it('keeps a cold-loaded thread for a next turn that wants no tools either, without a fork', async () => {
+    const h = harness();
+    const threadId = await withConversation(h);
+    h.host.home(PERSON_HOME).processes[0]!.exit(1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await h.compact({ sessionId: 's1', boundThreadId: threadId });
+    const events = await h.run(h.request({ sessionId: 's1', boundThreadId: threadId }));
+    expect(dones(events)).toHaveLength(1);
+    const cold = h.host.home(PERSON_HOME).processes[1]!;
+    expect(cold.requestsOf('thread/fork')).toHaveLength(0);
+    expect(cold.requestsOf('turn/start')[0]).toMatchObject({ threadId });
+    expect(h.pool.list().every((process) => !process.stale)).toBe(true);
+  });
+
   it('uses a warm thread as it is, without marking its process stale', async () => {
     const h = harness();
     const threadId = await withConversation(h);
@@ -223,5 +241,65 @@ describe('compacting a Codex thread', () => {
     await h.run(h.request({ sessionId: 's1', boundThreadId: threadId }));
     expect(fake.requestsOf('thread/fork')).toHaveLength(0);
     expect(fake.requestsOf('turn/start')).toHaveLength(2);
+  });
+});
+
+describe('work that finishes during a summary', () => {
+  it('is not shown inside the summary, and wakes the chat once the summary ends', async () => {
+    const h = harness();
+    const seen: BackgroundWake[] = [];
+    h.transport.onWake((wake) => {
+      seen.push(wake);
+      return true;
+    });
+    // The agent leaves a command running and ends its turn…
+    const bg = backgroundCommandTurn();
+    h.host.home(PERSON_HOME).nextTurn(bg.script);
+    await h.run(h.request({ sessionId: 's1' }));
+    const threadId = h.bindings[0]!.threadId;
+    // …then its summary runs, and the command finishes in the middle of it.
+    h.host.home(PERSON_HOME).compactionScripts.push(async (ctx) => {
+      const item = { type: 'contextCompaction', id: 'compact-mid' };
+      ctx.emit('item/started', { item });
+      bg.finish(0, 'tests passed\n');
+      await ctx.tick();
+      await ctx.tick();
+      ctx.emit('item/completed', { item });
+      ctx.complete('completed');
+    });
+    const events = await h.compact({ sessionId: 's1', boundThreadId: threadId });
+    expect(events.some((e) => e.type === 'background_task_done')).toBe(false);
+    for (let i = 0; i < 200 && seen.length === 0; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.completions).toEqual([
+      expect.objectContaining({ taskId: bg.itemId, status: 'completed' }),
+    ]);
+  });
+});
+
+describe('a summary that opens after DorkOS gave up on it', () => {
+  it('is stopped, and the next message waits for it rather than joining it', async () => {
+    const h = harness({ compactionStartMs: 30, stopAckMs: 1_000 });
+    const threadId = await withConversation(h);
+    const fake = h.host.home(PERSON_HOME).processes[0]!;
+    fake.compactionStartDelayMs = 150;
+    h.host.home(PERSON_HOME).compactionScripts.push(parkedCompactionTurn);
+    const gaveUp = await h.compact({ sessionId: 's1', boundThreadId: threadId });
+    expect(gaveUp).toContainEqual({
+      type: 'error',
+      data: { message: COMPACTION_NOT_STARTED_COPY, code: 'compaction_not_started' },
+    });
+
+    // The person sends a message before the late summary opens.
+    const next = await h.run(h.request({ sessionId: 's1', boundThreadId: threadId }));
+    expect(next.map((e) => e.type)).not.toContain('error');
+    expect(next.filter((e) => e.type === 'text_delta').length).toBeGreaterThan(0);
+    // The late summary was stopped, and the message ran as a turn of its own.
+    expect(fake.requestsOf('turn/interrupt').length).toBeGreaterThan(0);
+    const turnStarts = fake.requestsOf('turn/start');
+    expect(turnStarts).toHaveLength(2);
+    expect(fake.loaded.get(threadId)!.activeTurn).toBeUndefined();
   });
 });
