@@ -19,6 +19,14 @@ import type { ServerNotification } from './protocol/methods.js';
 export interface TurnSink {
   /** The turn's id, once `turn/start` answered. Until then everything buffers. */
   turnId: string | undefined;
+  /**
+   * Present on a turn whose id no answer carries: `thread/compact/start`
+   * answers `{}` and the turn it runs is named only by its `turn/started`. The
+   * first `turn/started` on the thread while this sink waits becomes the
+   * sink's turn — DorkOS has no other turn open there, so it can be no one
+   * else's — and this is told its id before anything is delivered.
+   */
+  adopt?(turnId: string): void;
   /** One notification for this turn (or, before `turnId` is known, for the thread). */
   notify(notification: ServerNotification): void;
   /** The process went away under the turn. */
@@ -124,6 +132,12 @@ export class ThreadChannel {
     }
     if (sink.turnId === undefined) {
       this.pending.push(notification);
+      const started = notification.method === 'turn/started' ? turnIdOf(notification) : undefined;
+      if (sink.adopt && started !== undefined) {
+        sink.turnId = started;
+        sink.adopt(started);
+        this.flush();
+      }
       return;
     }
     const turnId = turnIdOf(notification);

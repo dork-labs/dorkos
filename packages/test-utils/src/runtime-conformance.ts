@@ -33,6 +33,7 @@ import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
 import {
+  CompactBoundaryEventSchema,
   ErrorEventSchema,
   OperationProgressEventSchema,
   SessionImageEventSchema,
@@ -197,6 +198,21 @@ export interface RuntimeConformanceOpts {
    * degradation, not a weakened assertion.
    */
   makeCompactingRuntime?: () => AgentRuntime;
+  /**
+   * Drive a summary somebody ASKED for (DOR-2732): a session with a
+   * conversation in it, then `executeCommandIntent(sessionId, 'compact')` with
+   * the runtime's backend scripted to summarize, returning that run's events.
+   * The person's `/compact` and the agent's `compact_my_session` both arrive
+   * here, so this is the path both depend on.
+   *
+   * Required for every runtime that declares `commandIntents.compact`
+   * supported: the suite fails one that declares it and wires none, because a
+   * declared summary nothing drives is exactly the claim this gate exists to
+   * check. Must not be wired for a runtime that declares it unsupported — that
+   * runtime is never called (the route and the tool list both gate on the
+   * flag), and the suite holds it to throwing instead.
+   */
+  compactIntentTurn?: () => Promise<StreamEvent[]>;
   /**
    * Why this runtime legitimately repeats the message it was triggered with
    * back in its own output.
@@ -1482,6 +1498,7 @@ export function runtimeConformance(
     makeFailingRuntime,
     authFailure,
     makeCompactingRuntime,
+    compactIntentTurn,
     mediaTurn,
     roomCanvasTurn,
     durableHistory,
@@ -3982,6 +3999,79 @@ export function runtimeConformance(
             })()
           ).rejects.toThrow();
         }
+      });
+    });
+
+    describe('a summary somebody asked for (DOR-2732)', () => {
+      it('RT-CMP-01: a supported compact summarizes a conversation: a boundary, resolved progress, one done', async () => {
+        const supported = makeRuntime().getCapabilities().commandIntents.compact.supported;
+        if (!supported) {
+          expect(
+            compactIntentTurn,
+            'this runtime declares compact unsupported, so nothing may drive one: the route and the agent’s tool list never call it'
+          ).toBeUndefined();
+          return;
+        }
+        expect(
+          compactIntentTurn,
+          'this runtime declares commandIntents.compact supported and wired no compactIntentTurn, so nothing proves a summary it was asked for happens (see RuntimeConformanceOpts.compactIntentTurn)'
+        ).toBeDefined();
+        const events = await compactIntentTurn!();
+
+        // One run, one terminal, last.
+        expect(events.filter((event) => event.type === TERMINAL_EVENT_TYPE)).toHaveLength(1);
+        expect(events.at(-1)?.type).toBe(TERMINAL_EVENT_TYPE);
+
+        // The durable line the transcript keeps.
+        expect(
+          events.some((event) => event.type === 'compact_boundary'),
+          'a summary that ran must yield the compact_boundary the chat draws its line from'
+        ).toBe(true);
+        for (const event of events.filter((e) => e.type === 'compact_boundary')) {
+          expect(
+            CompactBoundaryEventSchema.safeParse(event.data).success,
+            'malformed compact_boundary'
+          ).toBe(true);
+        }
+
+        // Any progress it reported is well formed and resolved, so the
+        // person's bar can never stay open.
+        const compaction = events.filter(
+          (event) =>
+            event.type === 'operation_progress' &&
+            (event.data as { operation?: string }).operation === 'compaction'
+        );
+        for (const event of compaction) assertOperationProgress(event);
+        if (compaction.length > 0) {
+          const last = (compaction.at(-1)!.data as { state?: string }).state;
+          expect(['done', 'failed'], 'compaction progress must end resolved').toContain(last);
+        }
+      });
+
+      it('RT-CMP-02: says a turn is open while it streams and closed once it ends, so a summary never starts mid-turn', async () => {
+        const runtime = makeRuntime();
+        const supported = runtime.getCapabilities().commandIntents.compact.supported;
+        if (!runtime.isTurnOpen) {
+          expect(
+            supported,
+            'a runtime that can summarize on request must say when a turn is open (AgentRuntime.isTurnOpen), or an agent’s summary could start in the middle of a turn the server did not dispatch'
+          ).toBe(false);
+          return;
+        }
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        expect(runtime.isTurnOpen(sessionId), 'a session that never ran has no open turn').toBe(
+          false
+        );
+        const turn = runtime.sendMessage(sessionId, messageContent, { cwd: projectDir });
+        const first = await turn.next();
+        if (!first.done && first.value.type !== TERMINAL_EVENT_TYPE) {
+          expect(runtime.isTurnOpen(sessionId), 'a turn that is streaming is open').toBe(true);
+        }
+        while (!(await turn.next()).done) {
+          // drain to the end of the turn
+        }
+        expect(runtime.isTurnOpen(sessionId), 'a turn that has ended is not open').toBe(false);
       });
     });
 

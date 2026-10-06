@@ -18,10 +18,10 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | Runtime | yes | partial | unverified | planned | no | n/a |
 | --- | --- | --- | --- | --- | --- | --- |
-| claude-code | 39 | 1 | 2 | 0 | 1 | 1 |
-| codex | 29 | 1 | 3 | 0 | 10 | 1 |
-| opencode | 26 | 1 | 4 | 1 | 10 | 2 |
-| test-mode | 25 | 0 | 6 | 0 | 0 | 13 |
+| claude-code | 40 | 1 | 2 | 0 | 1 | 1 |
+| codex | 32 | 1 | 3 | 0 | 8 | 1 |
+| opencode | 27 | 1 | 4 | 1 | 10 | 2 |
+| test-mode | 25 | 0 | 6 | 0 | 1 | 13 |
 
 ## Sessions
 
@@ -195,11 +195,13 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | ID | Capability | claude-code | codex | opencode | test-mode |
 | --- | --- | --- | --- | --- | --- |
-| RT-CMP-01 | Compact the conversation | yes (U) | no | yes (U) | yes (U) |
-| RT-CMP-02 | The agent can ask for its own conversation to be compacted | yes (U) | no | partial | yes (U) |
+| RT-CMP-01 | Compact the conversation | yes (U) | yes (U) | yes (U) | yes (U) |
+| RT-CMP-02 | The agent can ask for its own conversation to be compacted | yes (U) | yes (U) | yes (U) | yes (U) |
+| RT-CMP-03 | Report how full the conversation is | yes (U) | yes (U) | partial | no |
 
 - **RT-CMP-01** The person can ask for the conversation to be compacted, and progress is reported while it runs. _(flag `commandIntents.compact`)_
-- **RT-CMP-02** An agent asks for its own conversation to be summarized; it runs after the turn ends, and the chat says the agent asked. _(flag `commandIntents.compact`)_
+- **RT-CMP-02** An agent asks for its own conversation to be summarized; it runs after the turn ends, and the chat says the agent asked. Its focus note is used where the runtime takes one (Claude Code). _(flag `commandIntents.compact`)_
+- **RT-CMP-03** After each reply the runtime reports the tokens in the context and the size of the window, so DorkOS can tell the agent when it passes 80%.
 
 ## Gaps
 
@@ -210,7 +212,7 @@ Every cell that is not `yes`, `no` or `n/a`, planned work first.
 | RT-LIFE-03 | opencode | planned | DOR-2717 | Nothing delivers work that finishes after an OpenCode turn. |
 | RT-LIFE-03 | claude-code | partial | DOR-2717 | Helpers report back on a warm session; background shells, timers and hooks do not yet. |
 | RT-LIFE-03 | codex | partial | DOR-2717 | Background commands wake the chat; a helper agent that outlives its turn is tracked but not yet proven against Codex. |
-| RT-CMP-02 | opencode | partial |  | Runs the same summarize call RT-CMP-01 proves, but OpenCode takes no focus note. |
+| RT-CMP-03 | opencode | partial |  | Reports the tokens a reply used but not the window size, so the 80% note never fires; the gauge reads the window from the model list. |
 | RT-SES-03 | codex | unverified |  | Resumes its thread by id; no test pins a resumed turn seeing earlier history. |
 | RT-SES-03 | opencode | unverified |  | Resumes its session by id; no test pins a resumed turn seeing earlier history. |
 | RT-SES-03 | test-mode | unverified |  | test-mode is a scripted fixture with no backend behind it. |

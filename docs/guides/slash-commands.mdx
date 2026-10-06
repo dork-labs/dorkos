@@ -54,7 +54,7 @@ The palette lists one row per action, so an agent's own word for it never shows 
 
 `/clear` and `/context` happen right in your browser, with no round trip to the agent. `/compact` asks the agent to do the shrinking, because only the agent can compact its own memory. If the agent you're on can't compact, its `/compact` row is greyed out and marked "Not supported," and typing it just tells you why, instead of quietly sending it as a message.
 
-You can add instructions after `/compact` to guide what the agent keeps — for example, `/compact focus on the API changes`. Claude Code follows them. OpenCode's compaction doesn't take instructions, so on OpenCode the conversation still shrinks but the extra words are ignored.
+You can add instructions after `/compact` to guide what the agent keeps — for example, `/compact focus on the API changes`. Claude Code follows them. Codex and OpenCode don't take instructions when they compact, so on those two the conversation still shrinks but the extra words are ignored.
 
 ### When the agent asks for it
 
@@ -69,7 +69,9 @@ Before asking, the agent is told to save what it needs (open work, session ids, 
 
 When a conversation passes 80% of its room, DorkOS adds one short note to the agent's next reply suggesting it do exactly that. The agent gets the note once, and gets it again only after the conversation has been summarized and filled back up.
 
-This works on Claude Code and OpenCode. Codex summarizes its conversation on its own when it fills up, so agents on Codex aren't offered the tool. To stop an agent from asking at all, open its **Permissions** page and set **Own chat** to Blocked. Only you can change that setting, and the note at 80% stops mentioning the tool for that agent.
+This works on Claude Code, Codex and OpenCode. The agent's note about what to keep is used on Claude Code only, for the same reason as above. The note at 80% needs the agent to say how big its conversation can get. Claude Code and Codex do; OpenCode doesn't, so an agent on OpenCode never gets the note, though it can still ask for a summary. Codex set to its older `exec` mode can't summarize on request at all, so agents there aren't offered the tool.
+
+To stop an agent from asking at all, open its **Permissions** page and set **Own chat** to Blocked. Only you can change that setting, and the note at 80% stops mentioning the tool for that agent.
 
 ## The /flow command family
 

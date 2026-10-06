@@ -263,6 +263,7 @@ import { LocalSessionAttachmentStore } from '../../../session/attachments/local-
 import { initConfigManager } from '../../../core/config-manager.js';
 import { CONFORMANCE_CREDITS_TOKEN } from '@dorkos/test-utils';
 import {
+  appServerCompactIntentTurn,
   appServerCreditsTurn,
   appServerDirectoryGrantTurns,
   appServerDispositionTurn,
@@ -272,6 +273,7 @@ import {
   hangAppServerInterrupt,
   makeFailingAppServerRuntime,
   makeAppServerRuntime,
+  makeAutoCompactingAppServerRuntime,
   startConformanceRelay,
   stopAppServerConformance,
   warmAppServerSession,
@@ -715,6 +717,21 @@ runtimeConformance(
     queueDurability: () => driveQueueDurability(),
     // A thread stays loaded between turns, so a session is warm after one.
     warmSession: (runtime, sessionId) => warmAppServerSession(runtime, sessionId, projectDir),
+    // DOR-2732: a summary somebody asked for, `thread/compact/start` on a
+    // thread with a conversation in it. Live, against the real binary too.
+    compactIntentTurn: () =>
+      appServerCompactIntentTurn(
+        LIVE
+          ? onModel(
+              new CodexRuntime({
+                threadMap: new CodexThreadMap(createTestDb()),
+                transport: 'app-server',
+              }),
+              LIVE_MODEL
+            )
+          : makeAppServerRuntime(),
+        projectDir
+      ),
     // C1: app-server declares steer (`turn/steer` into the open turn). Mocked,
     // the fake holds the turn open until it is stopped; live, the real model's
     // turn has to still be running when the steer lands.
@@ -778,6 +795,8 @@ runtimeConformance(
           systemPromptAppendTurns: (runtime, sessionId, appends) =>
             appServerSystemPromptAppendTurns(runtime, sessionId, appends, projectDir),
           makeFailingRuntime: () => makeFailingAppServerRuntime('Simulated Codex turn failure'),
+          // DOR-110: Codex summarizing on its own inside an ordinary turn.
+          makeCompactingRuntime: makeAutoCompactingAppServerRuntime,
           // DOR-1656 on app-server: Codex reports a dead sign-in as
           // `codexErrorInfo: unauthorized` with the vendor's words; the person
           // must read DorkOS's sentence, the vendor's words kept in details.

@@ -96,6 +96,25 @@ export interface CodexTurnRequest {
   readonly wakeContext?: unknown;
 }
 
+/**
+ * One resolved compaction: summarize the session's thread so it has room
+ * again (a person's `/compact`, or the agent's own request). The runtime has
+ * already decided who pays; nothing else of a turn's is needed, because a
+ * compaction sends no prompt and runs no tools.
+ */
+export type CodexCompactRequest = Pick<
+  CodexTurnRequest,
+  | 'binary'
+  | 'sessionId'
+  | 'boundThreadId'
+  | 'cwd'
+  | 'settings'
+  | 'launch'
+  | 'signal'
+  | 'events'
+  | 'onThreadBound'
+>;
+
 /** How one transport talks to Codex. */
 export interface CodexTransport {
   /** Which transport this is. */
@@ -104,6 +123,13 @@ export interface CodexTransport {
   readonly capabilities: Partial<RuntimeCapabilities>;
   /** Run one turn. Ends with exactly one terminal `done` on every path. */
   runTurn(request: CodexTurnRequest): AsyncGenerator<StreamEvent>;
+  /**
+   * Summarize the session's thread. Ends with exactly one terminal `done`;
+   * a success carries a `compact_boundary`, a failure a `failed` compaction
+   * progress. Absent on a transport with no way to ask Codex for one (exec:
+   * `codex exec` only runs prompts).
+   */
+  compact?(request: CodexCompactRequest): AsyncGenerator<StreamEvent>;
   /**
    * Stop the session's open turn and say what happened. Called by the runtime
    * after it aborted the turn's controller.

@@ -147,8 +147,9 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
     // for credits; until then the card is exactly what it was.
     sections: [{ kind: 'credits-runs-on' }, { kind: 'runtime-usage' }],
   },
-  // Codex has no compaction/summarize API (`Thread.run` only, verified at the
-  // 0.154.0 pin), so this stays honestly `false` (DOR-109 task 2.3).
+  // `codex exec` only runs prompts, so on exec there is no way to ask Codex to
+  // summarize and this stays honestly `false`. The app-server transport turns
+  // it on (`thread/compact/start`, {@link CODEX_APP_SERVER_CAPABILITIES}).
   commandIntents: { compact: { supported: false } },
   // DorkOS credits (ADR 261001-000811): a new thread set to credits runs in a
   // DorkOS-owned Codex home with a `dorkos-credits` model provider DorkOS
@@ -234,8 +235,9 @@ export const CODEX_APP_SERVER_PERMISSION_MODES: RuntimeCapabilities['permissionM
 /**
  * Capability overrides for the app-server transport, merged over
  * {@link CODEX_CAPABILITIES} (spec §14, phase P2). A thread stays loaded
- * between turns; Codex can stop to ask, put a question to the person, and take
- * a message into a running turn.
+ * between turns; Codex can stop to ask, put a question to the person, take a
+ * message into a running turn, and summarize the conversation on request (a
+ * person's `/compact`, the agent's `compact_my_session`; DOR-2732).
  */
 export const CODEX_APP_SERVER_CAPABILITIES: Partial<RuntimeCapabilities> = {
   supportsPersistentSession: true,
@@ -245,4 +247,7 @@ export const CODEX_APP_SERVER_CAPABILITIES: Partial<RuntimeCapabilities> = {
   // `canSteerSession`. Staging (`thread/inject_items`) is a follow-up.
   supportsSteer: true,
   permissionModes: CODEX_APP_SERVER_PERMISSION_MODES,
+  // `thread/compact/start` (verified on 0.154). It takes no instructions, so
+  // a focus note is not used here.
+  commandIntents: { compact: { supported: true } },
 };

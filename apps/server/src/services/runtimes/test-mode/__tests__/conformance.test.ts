@@ -84,6 +84,25 @@ runtimeConformance(() => new TestModeRuntime(), {
     scenarioStore.setDefault('compacting');
     return new TestModeRuntime();
   },
+  // DOR-2732: a summary somebody asked for. test-mode's compact intent is the
+  // fake that records the request and answers with a synthetic boundary.
+  compactIntentTurn: async () => {
+    const runtime = new TestModeRuntime();
+    const sessionId = 'compact-intent-conformance';
+    runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
+    for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
+      cwd: '/projects/conformance',
+    })) {
+      // the conversation the summary runs on
+    }
+    const events = [];
+    for await (const event of runtime.executeCommandIntent(sessionId, 'compact', {
+      cwd: '/projects/conformance',
+    })) {
+      events.push(event);
+    }
+    return events;
+  },
   // A room turn that puts a document on the room's shared canvas (spec
   // `room-canvas`). Test-mode is the runtime that makes this case FREE: the
   // scenario yields an ordinary, unstamped `ui_command`, which is exactly the

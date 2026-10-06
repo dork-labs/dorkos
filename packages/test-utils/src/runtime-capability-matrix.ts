@@ -762,7 +762,10 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     },
     cells: {
       'claude-code': yes,
-      codex: { status: 'not-supported', reason: 'The Codex SDK exposes no compact command.' },
+      // On app-server, the default transport: `thread/compact/start`. On exec
+      // (`runtimes.codex.transport: exec`) Codex only runs prompts, and the
+      // flag is false there.
+      codex: yes,
       opencode: yes,
       'test-mode': yes,
     },
@@ -772,23 +775,38 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     group: 'CMP',
     title: 'The agent can ask for its own conversation to be compacted',
     expected:
-      'An agent asks for its own conversation to be summarized; it runs after the turn ends, and the chat says the agent asked.',
+      'An agent asks for its own conversation to be summarized; it runs after the turn ends, and the chat says the agent asked. Its focus note is used where the runtime takes one (Claude Code).',
     flag: {
       label: 'commandIntents.compact',
       read: (caps) => caps.commandIntents.compact?.supported === true,
     },
     cells: {
       'claude-code': yes,
-      codex: {
-        status: 'not-supported',
-        reason:
-          'Codex has no on-demand compaction; it compacts on its own, so the request is refused.',
-      },
+      // Codex and OpenCode take no focus note; the row says so rather than
+      // marking the same summary partial on one runtime and whole on another.
+      codex: yes,
+      opencode: yes,
+      'test-mode': yes,
+    },
+  },
+  {
+    id: 'RT-CMP-03',
+    group: 'CMP',
+    title: 'Report how full the conversation is',
+    expected:
+      'After each reply the runtime reports the tokens in the context and the size of the window, so DorkOS can tell the agent when it passes 80%.',
+    cells: {
+      'claude-code': yes,
+      codex: yes,
       opencode: {
         status: 'partial',
-        reason: 'Runs the same summarize call RT-CMP-01 proves, but OpenCode takes no focus note.',
+        reason:
+          'Reports the tokens a reply used but not the window size, so the 80% note never fires; the gauge reads the window from the model list.',
       },
-      'test-mode': yes,
+      'test-mode': {
+        status: 'not-supported',
+        reason: 'Its scripted replies report no context reading.',
+      },
     },
   },
 ];

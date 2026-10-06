@@ -4,7 +4,7 @@ import type { CommandEntry } from '@dorkos/shared/types';
 /**
  * A palette command entry that may be shown but not selectable — the honest
  * capability-gating surface (DOR-109). A runtime-fulfilled intent the active
- * runtime cannot fulfill (e.g. `/compact` on Codex) renders `disabled` with a
+ * runtime cannot fulfill (e.g. `/compact` on Codex in exec mode) renders `disabled` with a
  * `disabledReason` rather than silently vanishing.
  */
 export interface PaletteCommandEntry extends CommandEntry {

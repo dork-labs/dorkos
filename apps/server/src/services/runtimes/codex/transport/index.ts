@@ -9,6 +9,7 @@ import type { CodexTransportSetting } from '@dorkos/shared/config-schema';
 export type {
   CodexTransport,
   CodexTurnRequest,
+  CodexCompactRequest,
   CodexTurnTools,
   CodexLaunch,
 } from './codex-transport.js';

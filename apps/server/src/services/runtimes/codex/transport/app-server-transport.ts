@@ -79,10 +79,37 @@ import {
   mapServerRequest,
   type ServerRequestTurnView,
 } from '../app-server/server-requests.js';
-import type { CodexTransport, CodexTurnRequest } from './codex-transport.js';
+import type {
+  CodexCompactRequest,
+  CodexTransport,
+  CodexTurnRequest,
+  CodexTurnTools,
+} from './codex-transport.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
 export const APP_SERVER_STOP_ACK_MS = 3_000;
+
+/**
+ * How long a compaction may take to open its turn once Codex accepted it.
+ * `thread/compact/start` answers `{}` and the `turn/started` follows within
+ * milliseconds (verified on 0.154); this only bounds a binary that never sends
+ * one, so the person is told rather than left watching a bar.
+ */
+export const APP_SERVER_COMPACTION_START_MS = 10_000;
+
+/** The copy when there is no conversation for a compaction to summarize. */
+export const NOTHING_TO_SUMMARIZE_COPY = 'There is nothing to summarize yet.';
+
+/** The copy when Codex accepted a compaction but never started it. */
+export const COMPACTION_NOT_STARTED_COPY = 'Codex did not start the summary. Try again.';
+
+/** A compaction loads no tools: it sends no prompt and calls nothing. */
+const NO_TOOLS: CodexTurnTools = {
+  agentTokenEnv: {},
+  managed: { servers: {}, env: {} },
+  dorkosTools: null,
+  connectorTools: null,
+};
 
 /** Dependencies of {@link AppServerCodexTransport}. */
 export interface AppServerTransportOptions {
@@ -99,6 +126,8 @@ export interface AppServerTransportOptions {
   };
   /** Bound on a stop's acknowledgement. */
   readonly stopAckMs?: number;
+  /** Bound on a compaction's turn opening (tests). */
+  readonly compactionStartMs?: number;
   /** Realpath seam for the loader. */
   readonly realpath?: (path: string) => string;
   /** The countdown an approval, question or elicitation card shows. */
@@ -114,6 +143,8 @@ export interface AppServerTransportOptions {
 
 interface OpenTurn {
   readonly sessionId: string;
+  /** A compaction, not a prompt: nothing can be steered into it. */
+  readonly compaction: boolean;
   readonly process: CodexAppServerProcess;
   readonly threadId: string;
   turnId: string | undefined;
@@ -162,6 +193,16 @@ export class AppServerCodexTransport implements CodexTransport {
   private readonly pool: CodexAppServerPool;
   private readonly loader: CodexThreadLoader;
   private readonly stopAckMs: number;
+  private readonly compactionStartMs: number;
+  /**
+   * The context size each thread's last turn on this server ended at, by
+   * thread id: what a compaction that runs next starts from. A property of
+   * the conversation, not of the process holding it, so it outlives a
+   * restarted process. One number per thread, never evicted (the same trade
+   * as `CodexContextGate`): forgetting one costs only the "before" figure on
+   * that thread's next summary.
+   */
+  private readonly contextTokens = new Map<string, number>();
   /** One routed subscription per loaded (process, thread). */
   private readonly channels = new Map<string, ThreadChannel>();
   /** Open turns, by thread id: the joining-trap guard. */
@@ -198,6 +239,7 @@ export class AppServerCodexTransport implements CodexTransport {
   constructor(private readonly options: AppServerTransportOptions) {
     this.pool = options.pool ?? codexAppServerPool;
     this.stopAckMs = options.stopAckMs ?? APP_SERVER_STOP_ACK_MS;
+    this.compactionStartMs = options.compactionStartMs ?? APP_SERVER_COMPACTION_START_MS;
     this.requests = new CodexServerRequestBroker({
       ...(options.interactionCountdownMs !== undefined
         ? { countdownMs: options.interactionCountdownMs }
@@ -236,7 +278,33 @@ export class AppServerCodexTransport implements CodexTransport {
    *
    * @param request - The resolved turn.
    */
-  async *runTurn(request: CodexTurnRequest): AsyncGenerator<StreamEvent> {
+  runTurn(request: CodexTurnRequest): AsyncGenerator<StreamEvent> {
+    return this.run(request, 'turn');
+  }
+
+  /**
+   * Summarize the session's thread: `thread/compact/start`, which Codex runs
+   * as a turn of its own (`turn/started`, one `contextCompaction` item,
+   * `turn/completed`; verified on 0.154). It goes through the same open-turn
+   * bookkeeping as a prompt, so a stop, a crash and the joining-trap guard
+   * treat it exactly like one, and nothing can be sent into it meanwhile.
+   *
+   * Codex takes no instructions for it, so a focus note has nowhere to go.
+   *
+   * @param request - The resolved compaction.
+   */
+  compact(request: CodexCompactRequest): AsyncGenerator<StreamEvent> {
+    return this.run(
+      { ...request, writableDirectories: [], prompt: '', tools: NO_TOOLS },
+      'compact'
+    );
+  }
+
+  /** One turn: a prompt (`turn/start`) or a compaction (`thread/compact/start`). */
+  private async *run(
+    request: CodexTurnRequest,
+    mode: 'turn' | 'compact'
+  ): AsyncGenerator<StreamEvent> {
     const sessionId = request.sessionId;
     const onCredits = request.launch.home === 'credits';
     let process: CodexAppServerProcess;
@@ -269,7 +337,16 @@ export class AppServerCodexTransport implements CodexTransport {
       // old one would keep going, and keep billing on credits, unseen.
       const current = this.loader.loadedThreadFor(loadInput);
       clear = current === undefined || (await this.settleLingering(process, current));
-      loaded = await this.loader.ensureLoaded(loadInput);
+      const found =
+        mode === 'compact'
+          ? await this.loader.ensureLoadedForCompaction(loadInput)
+          : await this.loader.ensureLoaded(loadInput);
+      if (found === null) {
+        release();
+        yield* nothingToSummarize(sessionId);
+        return;
+      }
+      loaded = found;
       if (loaded.threadId !== current) clear = await this.settleLingering(process, loaded.threadId);
     } catch (err) {
       release?.();
@@ -278,7 +355,9 @@ export class AppServerCodexTransport implements CodexTransport {
     }
     if (loaded.retired !== undefined) this.retire(process, loaded.retired);
 
-    if (!clear) {
+    // A compaction never reloads a stuck thread: the fork would carry none of
+    // the agent's tools, and the next prompt turn does the reload properly.
+    if (!clear && mode === 'turn') {
       const lingering = this.lingering.get(loaded.threadId);
       if (lingering && ++lingering.refusals >= LINGERING_REFUSAL_LIMIT) {
         // Codex will not stop that turn. Reload just this thread (a fork,
@@ -306,7 +385,7 @@ export class AppServerCodexTransport implements CodexTransport {
       yield { type: 'done', data: { sessionId } };
       return;
     }
-    const turn = this.openTurn(sessionId, process, loaded.threadId);
+    const turn = this.openTurn(sessionId, process, loaded.threadId, mode === 'compact');
     if (!turn) {
       release();
       // DorkOS serialises turns, so this is a bug, not a person's action: say
@@ -331,10 +410,16 @@ export class AppServerCodexTransport implements CodexTransport {
         ? { keyId: loaded.keyId, bindingId: request.tools.connectorBindingId }
         : undefined;
     const queue = new EventQueue();
+    const priorContextTokens = this.contextTokens.get(loaded.threadId);
     const mapper = new AppServerTurnMapper(request.events, {
       rateLimits: () => (onCredits ? [] : this.rolloutRateLimits(process)),
+      ...(mode === 'compact' ? { compaction: true } : {}),
+      ...(priorContextTokens !== undefined ? { priorContextTokens } : {}),
     });
     const channel = this.channelFor(process, loaded.threadId);
+    // A compaction's turn is named only by its `turn/started` (see `TurnSink.adopt`).
+    let adopted: () => void = () => {};
+    const adoption = new Promise<void>((resolve) => (adopted = resolve));
     let bound = !loaded.needsBinding;
     // A server request's card can arrive before `turn/start` answered (the
     // channel is still buffering the items it is about): hold it until then,
@@ -373,6 +458,14 @@ export class AppServerCodexTransport implements CodexTransport {
         queue.push(mapper.closeOnCrash(close.detail));
         queue.end();
       },
+      ...(mode === 'compact'
+        ? {
+            adopt: (turnId: string) => {
+              turn.turnId = turnId;
+              adopted();
+            },
+          }
+        : {}),
     };
     turn.deliver = (events) => {
       if (sink.turnId === undefined) early.push(...events);
@@ -425,6 +518,10 @@ export class AppServerCodexTransport implements CodexTransport {
         yield* finish(mapper.closeQuietly());
         return;
       }
+      if (mode === 'compact') {
+        yield* this.startCompaction(process, loaded.threadId, turn, mapper, queue, adoption, early);
+        return;
+      }
       let turnId: string;
       try {
         const result = await process.client.request(
@@ -460,6 +557,9 @@ export class AppServerCodexTransport implements CodexTransport {
       queue.push(early.splice(0));
       yield* queue.drain();
     } finally {
+      // What the next compaction on this thread starts from.
+      const tokens = mapper.contextTokens;
+      if (tokens !== undefined) this.contextTokens.set(loaded.threadId, tokens);
       // Every request still held gets its one reply; the turn is over.
       this.requests.dropSession(sessionId);
       request.signal.removeEventListener('abort', onAbort);
@@ -468,6 +568,58 @@ export class AppServerCodexTransport implements CodexTransport {
       this.closeTurn(turn);
       release();
     }
+  }
+
+  /**
+   * Ask Codex to summarize, then stream the turn it opens for it. The answer
+   * is `{}`; the turn is adopted from its `turn/started` (in either order),
+   * and a turn that never opens is ended here with the reason.
+   */
+  private async *startCompaction(
+    process: CodexAppServerProcess,
+    threadId: string,
+    turn: OpenTurn,
+    mapper: AppServerTurnMapper,
+    queue: EventQueue,
+    adoption: Promise<void>,
+    early: StreamEvent[]
+  ): AsyncGenerator<StreamEvent> {
+    try {
+      await process.client.request('thread/compact/start', { threadId });
+    } catch (err) {
+      queue.push(this.failedCompaction(mapper, err));
+      queue.end();
+      yield* queue.drain();
+      return;
+    }
+    if (turn.turnId === undefined && !mapper.isFinished) {
+      await Promise.race([adoption, turn.completed, sleep(this.compactionStartMs)]);
+    }
+    if (turn.turnId === undefined) {
+      // A crash or a stop already queued its own ending; otherwise say why.
+      if (!mapper.isFinished) {
+        logger.warn('[CodexAppServer] a compaction was accepted but its turn never opened', {
+          sessionId: turn.sessionId,
+        });
+        queue.push(
+          mapper.closeQuietly({
+            message: COMPACTION_NOT_STARTED_COPY,
+            code: 'compaction_not_started',
+          })
+        );
+      }
+      queue.end();
+      yield* queue.drain();
+      return;
+    }
+    if (turn.abandoned) {
+      // The stop gave up before Codex named the turn: stop it now that it has.
+      void process.client
+        .request('turn/interrupt', { threadId, turnId: turn.turnId })
+        .catch(() => undefined);
+    }
+    queue.push(early.splice(0));
+    yield* queue.drain();
   }
 
   /**
@@ -555,7 +707,9 @@ export class AppServerCodexTransport implements CodexTransport {
   ): Promise<RuntimeDeliveryResult> {
     if (opts.mode !== 'steer') return { delivered: false, reason: 'unsupported' };
     const turn = this.openBySession.get(sessionId);
-    if (!turn) return { delivered: false, reason: 'no-open-turn' };
+    // A compaction cannot take input (Codex refuses a steer into one as not
+    // steerable); the message waits for the next turn instead.
+    if (!turn || turn.compaction) return { delivered: false, reason: 'no-open-turn' };
     // A steer right after a send can beat `turn/start`'s answer: wait (bounded)
     // for the turn to have an id rather than refuse a turn that is opening.
     const deadline = Date.now() + this.stopAckMs;
@@ -1128,13 +1282,15 @@ export class AppServerCodexTransport implements CodexTransport {
   private openTurn(
     sessionId: string,
     process: CodexAppServerProcess,
-    threadId: string
+    threadId: string,
+    compaction: boolean
   ): OpenTurn | undefined {
     if (this.openByThread.has(threadId) || this.openBySession.has(sessionId)) return undefined;
     let markCompleted!: (status: string) => void;
     const completed = new Promise<string>((resolve) => (markCompleted = resolve));
     const turn: OpenTurn = {
       sessionId,
+      compaction,
       process,
       threadId,
       turnId: undefined,
@@ -1282,6 +1438,24 @@ export class AppServerCodexTransport implements CodexTransport {
     yield { type: 'done', data: { sessionId } };
   }
 
+  private failedCompaction(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
+    if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
+    logger.warn('[CodexAppServer] thread/compact/start failed', { err: String(err) });
+    const message = 'Codex could not summarize this conversation. Try again.';
+    return [
+      {
+        type: 'operation_progress',
+        data: {
+          operation: 'compaction',
+          state: 'failed',
+          determinate: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      },
+      ...mapper.closeQuietly({ message, code: 'compaction_failed' }),
+    ];
+  }
+
   private failedStart(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
     if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
     logger.warn('[CodexAppServer] turn/start failed', { err: String(err) });
@@ -1302,6 +1476,25 @@ export function backgroundDoneEvent(completion: BackgroundCompletion): StreamEve
     type: 'background_task_done',
     data: { taskId: completion.taskId, status: completion.status, summary: completion.summary },
   };
+}
+
+/**
+ * A compaction with no conversation to summarize: said as a failed summary,
+ * then the turn's one `done`.
+ *
+ * @param sessionId - The session.
+ */
+function* nothingToSummarize(sessionId: string): Generator<StreamEvent> {
+  yield {
+    type: 'operation_progress',
+    data: {
+      operation: 'compaction',
+      state: 'failed',
+      determinate: false,
+      error: NOTHING_TO_SUMMARIZE_COPY,
+    },
+  };
+  yield { type: 'done', data: { sessionId } };
 }
 
 function sleep(ms: number): Promise<void> {

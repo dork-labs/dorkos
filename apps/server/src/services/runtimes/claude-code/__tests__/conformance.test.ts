@@ -167,10 +167,16 @@ vi.mock('../../../../lib/boundary.js', () => ({
 }));
 // Filesystem command scanner — never read a real .claude/commands/ dir.
 vi.mock('../tooling/command-registry.js', () => ({
-  CommandRegistryService: vi.fn().mockImplementation(() => ({
-    getCommands: vi.fn().mockResolvedValue({ commands: [], lastScanned: new Date().toISOString() }),
-    invalidateCache: vi.fn(),
-  })),
+  // A `function`, not an arrow: the runtime constructs it with `new`, which a
+  // `/compact` turn reaches (the slash-command path) and a plain prompt never did.
+  CommandRegistryService: vi.fn().mockImplementation(function () {
+    return {
+      getCommands: vi
+        .fn()
+        .mockResolvedValue({ commands: [], lastScanned: new Date().toISOString() }),
+      invalidateCache: vi.fn(),
+    };
+  }),
 }));
 vi.mock('../../../core/event-fan-out.js', () => ({
   eventFanOut: { broadcast: vi.fn(), addClient: vi.fn(), clientCount: 0 },
@@ -206,7 +212,7 @@ vi.mock('../tooling/check-dependency.js', () => ({
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { renderContextEntry } from '../messaging/context-builder.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { HistoryMessage, InterruptReceipt } from '@dorkos/shared/types';
+import type { HistoryMessage, InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 import {
   drivePresenceTurn,
@@ -926,6 +932,29 @@ runtimeConformance(
         () => wrapSdkQuery(sdkCompaction()) as unknown as ReturnType<typeof query>
       );
       return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    },
+    // DOR-2732: a summary somebody asked for. The `/compact` the runtime sends
+    // is answered by the SDK's own compaction stream, one query after the
+    // conversation's turn.
+    compactIntentTurn: async () => {
+      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      const sessionId = randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
+      for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
+        cwd: '/projects/conformance',
+      })) {
+        // the conversation the summary runs on
+      }
+      mockedQuery.mockImplementationOnce(
+        () => wrapSdkQuery(sdkCompaction()) as unknown as ReturnType<typeof query>
+      );
+      const events: StreamEvent[] = [];
+      for await (const event of runtime.executeCommandIntent(sessionId, 'compact', {
+        cwd: '/projects/conformance',
+      })) {
+        events.push(event);
+      }
+      return events;
     },
   }
 );

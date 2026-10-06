@@ -393,3 +393,141 @@ describe('rate limits', () => {
     expect(merged).toEqual({ limitId: 'codex', planType: 'pro', primary: { usedPercent: 40 } });
   });
 });
+
+describe('compaction (DOR-2732)', () => {
+  const usage = (last: number) =>
+    n('thread/tokenUsage/updated', {
+      tokenUsage: {
+        total: {
+          totalTokens: 90_000,
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+        },
+        last: {
+          totalTokens: last,
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+        },
+        modelContextWindow: 200_000,
+      },
+    });
+  const item = { type: 'contextCompaction', id: 'c1' };
+
+  it('reports a compaction Codex runs inside a turn as auto, with the sizes either side', () => {
+    const events = all(mapper(), [
+      usage(180_000),
+      n('item/started', { item, startedAtMs: 100 }),
+      usage(20_000),
+      n('item/completed', { item, completedAtMs: 600 }),
+    ]);
+    expect(events).toEqual([
+      {
+        type: 'operation_progress',
+        data: {
+          operation: 'compaction',
+          state: 'started',
+          determinate: false,
+          message: 'Compacting context…',
+        },
+      },
+      {
+        type: 'operation_progress',
+        data: { operation: 'compaction', state: 'done', determinate: false },
+      },
+      {
+        type: 'compact_boundary',
+        data: { trigger: 'auto', preTokens: 180_000, postTokens: 20_000, durationMs: 500 },
+      },
+    ]);
+  });
+
+  it('leaves out a size it has no reading for, rather than guessing', () => {
+    const m = new AppServerTurnMapper(createCodexEventContext('s1'), { compaction: true });
+    const events = all(m, [n('item/started', { item }), n('item/completed', { item })]);
+    expect(events.at(-1)).toEqual({ type: 'compact_boundary', data: { trigger: 'manual' } });
+  });
+
+  it('draws one line when the deprecated thread/compacted comes too, in either order', () => {
+    const before = all(mapper(), [
+      n('item/started', { item }),
+      n('thread/compacted'),
+      n('item/completed', { item }),
+    ]);
+    const after = all(mapper(), [
+      n('item/started', { item }),
+      n('item/completed', { item }),
+      n('thread/compacted'),
+    ]);
+    for (const events of [before, after]) {
+      expect(events.filter((e) => e.type === 'compact_boundary')).toHaveLength(1);
+    }
+  });
+
+  it('still draws the line from thread/compacted alone', () => {
+    expect(all(mapper(), [n('thread/compacted')])).toEqual([
+      { type: 'compact_boundary', data: { trigger: 'auto' } },
+    ]);
+  });
+
+  it('resolves an unfinished compaction as failed when its turn fails, so the bar never stays open', () => {
+    const events = all(mapper(), [
+      n('item/started', { item }),
+      completed('failed', { message: 'Error running remote compact task' }),
+    ]);
+    expect(events.filter((e) => e.type === 'operation_progress').at(-1)).toMatchObject({
+      data: { state: 'failed', error: expect.any(String) },
+    });
+    expect(events.filter((e) => e.type === 'compact_boundary')).toHaveLength(0);
+    expect(events.at(-1)?.type).toBe('done');
+  });
+
+  it('resolves an unfinished compaction as failed when the process goes away', () => {
+    const m = mapper();
+    all(m, [n('item/started', { item })]);
+    const events = m.closeOnCrash('exit code 1');
+    expect(events[0]).toMatchObject({
+      type: 'operation_progress',
+      data: { state: 'failed', error: CODEX_STOPPED_COPY },
+    });
+  });
+});
+
+describe('how full the conversation is', () => {
+  it('RT-CMP-03: ends a reply with the context in use and the window, and leaves out a window Codex did not send', () => {
+    const reading = (window: number | null) =>
+      n('thread/tokenUsage/updated', {
+        tokenUsage: {
+          total: {
+            totalTokens: 9_000,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+          },
+          last: {
+            totalTokens: 160_000,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+          },
+          modelContextWindow: window,
+        },
+      });
+    const status = (events: StreamEvent[]) =>
+      events.find((event) => event.type === 'session_status')!.data as Record<string, unknown>;
+
+    const known = status(all(mapper(), [reading(200_000), completed()]));
+    expect(known).toMatchObject({ contextTokens: 160_000, contextMaxTokens: 200_000 });
+
+    // No window, no reading: a gauge (and the 80% note) cannot be computed
+    // from half of one, so neither half is reported.
+    const unknown = status(all(mapper(), [reading(null), completed()]));
+    expect(unknown).not.toHaveProperty('contextTokens');
+    expect(unknown).not.toHaveProperty('contextMaxTokens');
+  });
+});
