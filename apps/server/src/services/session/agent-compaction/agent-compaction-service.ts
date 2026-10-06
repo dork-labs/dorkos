@@ -191,6 +191,10 @@ export class AgentCompactionService {
         const projector = getOrCreateProjector(sessionId, cwd, {
           persist: persistenceModeFor(caps),
         });
+        // A conversation's first turn has no reading until that turn ends, so
+        // one asked for there knows no percent yet. By now the asking turn has
+        // ended and its reading has landed: use it rather than show none.
+        const percent = contextPercent ?? percentOfContext(projector.getStatus().contextUsage);
         return dispatchCommandIntent({
           sessionId,
           clientId: AGENT_COMPACTION_CLIENT_ID,
@@ -202,7 +206,7 @@ export class AgentCompactionService {
           boundaryTag: {
             requestedBy: 'agent',
             requestedAt,
-            ...(contextPercent !== null ? { contextPercent } : {}),
+            ...(percent !== null ? { contextPercent: percent } : {}),
           },
           onError: (err) => {
             logger.warn('[agent-compaction] the summary run failed', {

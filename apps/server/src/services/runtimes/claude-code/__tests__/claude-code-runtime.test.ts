@@ -1237,6 +1237,39 @@ describe('ClaudeCodeRuntime', () => {
     });
   });
 
+  describe('isTurnOpen()', () => {
+    it('reports a turn the server never dispatched — a relay-style direct send — until it ends (DOR-2732)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // The SDK streams its first message, then the turn stays open until released.
+      async function* heldTurn() {
+        const messages = sdkSimpleText('ok');
+        const first = await messages.next();
+        if (!first.done) yield first.value;
+        await hold;
+        yield* messages;
+      }
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(heldTurn()));
+      agentManager.ensureSession('relay-1', { permissionMode: 'default' });
+      expect(agentManager.isTurnOpen('relay-1')).toBe(false);
+
+      const turn = agentManager
+        .sendMessage('relay-1', 'from another agent')
+        [Symbol.asyncIterator]();
+      await turn.next();
+      expect(agentManager.isTurnOpen('relay-1')).toBe(true);
+
+      release();
+      while (!(await turn.next()).done) {
+        // drain
+      }
+      expect(agentManager.isTurnOpen('relay-1')).toBe(false);
+    });
+  });
+
   describe('executeCommandIntent()', () => {
     /** Stub sendMessage with an empty turn so only the composed prompt matters. */
     function spySend() {

@@ -344,9 +344,18 @@ interface PendingAgentCompaction {
   waitingOnLock: boolean;
   /** Drops it at {@link SESSIONS.AGENT_COMPACTION_MAX_WAIT_MS}. */
   deadline: ReturnType<typeof setTimeout>;
+  /**
+   * The deadline passed while a check or launch was out. That attempt is left
+   * to finish; if it does not end in a running summary, the entry is dropped
+   * then, so the ceiling is never skipped.
+   */
+  expired?: boolean;
   /** A look-again while the runtime reports a turn the server did not dispatch. */
   recheck?: ReturnType<typeof setTimeout>;
 }
+
+/** Why a waiting summary that hit its ceiling was dropped, for the log line. */
+const TOO_LONG = 'it waited too long for the session to come free';
 
 /** Agent-requested summaries waiting to run, one per session at most, keyed by primary id. */
 const pendingCompactions = new Map<string, PendingAgentCompaction>();
@@ -2421,11 +2430,14 @@ export function scheduleAgentCompaction(opts: ScheduleAgentCompactionOpts): bool
     launching: false,
     waitingOnLock: false,
     deadline: setTimeout(() => {
-      // A run already starting is left to finish; anything else has waited
-      // long enough that the request no longer describes the conversation.
-      if (pendingCompactions.get(sessionKey) === entry && !entry.launching) {
-        dropCompaction(sessionKey, entry, 'it waited too long for the session to come free');
+      if (pendingCompactions.get(sessionKey) !== entry) return;
+      // An attempt already out is left to finish, and marked: if it does not
+      // end in a running summary, the drop happens when it comes back.
+      if (entry.launching) {
+        entry.expired = true;
+        return;
       }
+      dropCompaction(sessionKey, entry, TOO_LONG);
     }, SESSIONS.AGENT_COMPACTION_MAX_WAIT_MS),
   };
   entry.deadline.unref?.();
@@ -2580,6 +2592,10 @@ function launchDueCompaction(sessionKey: string): boolean {
           dropCompaction(sessionKey, entry, 'the owner blocked it after it was asked for');
           return;
         }
+        if (entry.expired) {
+          dropCompaction(sessionKey, entry, TOO_LONG);
+          return;
+        }
         entry.admitted = true;
         schedulePump(sessionKey);
       },
@@ -2599,6 +2615,12 @@ function launchDueCompaction(sessionKey: string): boolean {
       return;
     }
     entry.launching = false;
+    // Refused by the lock after its deadline passed mid-launch: the ceiling
+    // still holds, it just lands here instead of on the timer.
+    if (entry.expired) {
+      dropCompaction(sessionKey, entry, TOO_LONG);
+      return;
+    }
     entry.waitingOnLock = true;
     // Let the queue behind it move now rather than at the next boundary.
     schedulePump(sessionKey);

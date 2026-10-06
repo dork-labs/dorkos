@@ -25,6 +25,7 @@ vi.mock('../../context-assembler.js', () => ({
 import {
   dispatchMessage,
   hasPendingAgentCompaction,
+  scheduleAgentCompaction,
   noteSessionOrphaned,
   noteTurnBoundary,
   resetMessageDispatcher,
@@ -442,5 +443,99 @@ describe('compact_my_session — a failed summary still says who asked (review, 
       .replayFrom(0)
       .find((event) => event.type === 'operation_progress');
     expect(failed).toMatchObject({ state: 'failed', requestedBy: 'agent' });
+  });
+});
+
+describe('compact_my_session — the percent on a first turn (live proof, DOR-2732)', () => {
+  it('reads the percent at launch when the asking turn had none yet', async () => {
+    const hold = gate();
+    // A first turn: no reading exists until the turn reports one at its end.
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await hold.wait;
+        yield {
+          type: 'session_status',
+          data: { contextTokens: 178_000, contextMaxTokens: 200_000 },
+        } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    await dispatchMessage({
+      sessionId: session,
+      clientId: 'window-a',
+      content: 'first message',
+      projector: getOrCreateProjector(session),
+      runtime,
+    });
+    await settle();
+    expect(getOrCreateProjector(session).getStatus().contextUsage).toBeNull();
+
+    await service().request({ sessionId: session });
+    hold.open();
+    await settle();
+
+    const boundary = getOrCreateProjector(session)
+      .replayFrom(0)
+      .find((event) => event.type === 'compact_boundary');
+    expect(boundary).toMatchObject({ requestedBy: 'agent', contextPercent: 89 });
+  });
+});
+
+describe('compact_my_session — the ceiling is never skipped (review, DOR-2732)', () => {
+  it('drops a request whose deadline passed while its launch was out and the lock refused it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      runtime.hasSession.mockReturnValue(true);
+      let finish!: (result: { accepted: boolean }) => void;
+      const onDropped = vi.fn();
+      scheduleAgentCompaction({
+        sessionId: session,
+        runtime,
+        launch: () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+        onDropped,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(finish).toBeDefined(); // the launch is out
+
+      await vi.advanceTimersByTimeAsync(SESSIONS.AGENT_COMPACTION_MAX_WAIT_MS + 10);
+      expect(hasPendingAgentCompaction(session, runtime)).toBe(true); // left to finish
+      finish({ accepted: false }); // refused by a lock
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(hasPendingAgentCompaction(session, runtime)).toBe(false);
+      expect(onDropped).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops a request whose deadline passed while its permission check was out', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      runtime.hasSession.mockReturnValue(true);
+      let answer!: (allowed: boolean) => void;
+      const launch = vi.fn(async () => ({ accepted: true }));
+      scheduleAgentCompaction({
+        sessionId: session,
+        runtime,
+        launch,
+        admit: () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      });
+      await vi.advanceTimersByTimeAsync(SESSIONS.AGENT_COMPACTION_MAX_WAIT_MS + 10);
+      answer(true);
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(launch).not.toHaveBeenCalled();
+      expect(hasPendingAgentCompaction(session, runtime)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
