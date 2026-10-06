@@ -1,19 +1,21 @@
 ---
 id: 260721-221810
 title: The Shape is the fifth marketplace package type — a composition manifest that activates existing packages, holding agents by affinity, not ownership
-status: accepted
+status: superseded
 created: 2026-07-21
 spec: shapes
 extractedFrom: shapes
 specSlug: shapes
-superseded-by: null
+superseded-by: 261006-235242
 ---
 
 # 260721-221810. The Shape is the fifth marketplace package type — a composition manifest that activates existing packages, holding agents by affinity, not ownership
 
 ## Status
 
-Accepted
+Superseded by [261006-235242](261006-235242-everything-is-a-plugin.md) (everything is a plugin; 2026-10-06 vision reset). The marketplace moves to one package type, the plugin, and Shapes become mini apps a plugin can contain. The `shape` type still ships until that work lands.
+
+Originally: Accepted
 
 ## Context
 

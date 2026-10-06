@@ -15,6 +15,8 @@ superseded-by: null
 
 Accepted — implemented for DOR-1208 in `apps/server/src/services/rooms/`.
 
+Amended by [261006-235239](261006-235239-people-and-agents-hold-equal-accounts.md) (equal accounts; 2026-10-06 vision reset): retires rule 1, "a room that holds two or more agents holds the owner too" (`OWNER_MUST_BE_PRESENT`), and "only an agent gets the escape". No person is required in any room. Rules 2 and 3 stand.
+
 ## Context
 
 `RoomService.requireSeedingAllowed` refused **any** room a non-owner opened that held an agent other than the caller. An agent could open a room for itself and talk to its operator, and nothing more. The reasoning was sound as far as it went: `/api/rooms` is reachable by any member, and a caller able to assemble a roster of somebody else's agents could build a room whose members answer each other — model quota spent, with the server process's filesystem access, without the person ever asking.

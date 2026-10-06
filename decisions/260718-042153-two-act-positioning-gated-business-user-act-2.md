@@ -1,17 +1,19 @@
 ---
 id: 260718-042153
 title: 'Two-act positioning: launch on operator/dev framing now, gate business-user Act 2 on evidence triggers'
-status: accepted
+status: superseded
 created: 2026-07-17
 spec: null
-superseded-by: null
+superseded-by: 261006-235237
 ---
 
 # 260718-042153. Two-act positioning: launch on operator/dev framing now, gate business-user Act 2 on evidence triggers
 
 ## Status
 
-Accepted
+Superseded by [261006-235237](261006-235237-a-workspace-for-people-and-agents-built-first-for-the-founder.md) (a workspace for people and agents; 2026-10-06 vision reset). The founder leads from launch; there is no second act and no evidence gate.
+
+Originally: Accepted
 
 ## Context
 
