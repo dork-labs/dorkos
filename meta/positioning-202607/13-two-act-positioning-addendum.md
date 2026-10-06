@@ -1,5 +1,7 @@
 # Addendum: Two-Act Positioning for Business Users
 
+> **Superseded 2026-10-06.** This July 2026 positioning work is kept for history. The current strategy is [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md): DorkOS is a workspace for people and agents, built first for founders who run a business with agents, with Kai (developers) second. The two-act structure is retired: the business-user story it gated is now the main story, with no evidence gate. ADR `260718-042153` is expected to be superseded to match.
+
 > Addendum to `00-overview.md`, written 2026-07-17 alongside `plans/shapes-program.md` (decision D1) and
 > `research/20260717_shapes-byoa-positioning.md` (§7, "Open strategic question: developer vs. business-user
 > positioning"). Full decision record: **ADR 260718-042153**. This document is purely additive — it records

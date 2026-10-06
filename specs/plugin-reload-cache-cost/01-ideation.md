@@ -83,7 +83,7 @@ owns loading them, and the reload is the handshake between the two halves.
   because something told him to. A modal about cache writes in dollars, MCP
   server counts and LSP tool changes is four ideas he has no use for. If he sees
   anything at all it is one sentence in plain words.
-- **Priya** (`meta/personas/the-knowledge-architect.md`) — will want to know that
+- **Priya** (`meta/archive/personas/the-knowledge-architect.md`) — will want to know that
   the number came from the runtime and is an estimate, not a DorkOS guess dressed
   up as a fact.
 

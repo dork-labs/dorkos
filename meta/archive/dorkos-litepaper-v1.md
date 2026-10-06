@@ -154,7 +154,7 @@ Loop is not part of DorkOS. It's a separate, fully deterministic data system wit
 
 DorkOS integrates with Loop through Pulse: on a scheduled cadence, Pulse polls Loop's dispatch endpoint, receives the next priority task, and executes it as an agent session. The agent reports results back to Loop. Outcomes feed in as new signals. The system improves itself.
 
-See the [Loop Litepaper](./loop-litepaper.md) for the full vision.
+See the [Loop Litepaper](../../research/loop-litepaper.md) for the full vision.
 
 **Status: In Development**
 

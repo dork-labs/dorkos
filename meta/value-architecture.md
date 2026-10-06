@@ -243,7 +243,7 @@ Before finalizing any Value Ladder, verify:
 After building all Value Ladders, create a matrix showing which benefit layer is most resonant for each persona:
 
 ```
-                          Kai (Primary)    Priya (Secondary)
+                          Founder (Primary)  Kai (Secondary)
 Feature A                 Layer 4          Layer 3
 Feature B                 Layer 5          Layer 4
 Feature C                 Layer 3          Layer 5

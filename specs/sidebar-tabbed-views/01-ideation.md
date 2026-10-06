@@ -61,7 +61,7 @@ status: ideation
 - `apps/client/src/layers/entities/relay/`: useRelayEnabled, useRelayAdapters hooks.
 - `apps/client/src/layers/entities/mesh/`: useRegisteredAgents, useMeshStatus hooks.
 - `meta/personas/the-autonomous-builder.md`: Kai — 10-20 sessions/week, wants glanceable agent status, dismisses "chatbot wrappers."
-- `meta/personas/the-knowledge-architect.md`: Priya — flow preservation is core need, reads source code, keyboard-first.
+- `meta/archive/personas/the-knowledge-architect.md`: Priya — flow preservation is core need, reads source code, keyboard-first.
 - `meta/personas/the-prompt-dabbler.md`: Jordan (anti-persona) — expects hand-holding, wizards, full text labels. We explicitly don't serve this.
 - `meta/brand-foundation.md`: "Confident. Minimal. Technical. Sharp." Control panel, not consumer app.
 - `meta/value-architecture-applied.md`: Value streams map to agent capabilities; sidebar views surface the three pillars of agent operation.

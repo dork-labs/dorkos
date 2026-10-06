@@ -1,5 +1,7 @@
 # GTM Tracker
 
+> **Superseded 2026-10-06.** This July 2026 positioning work is kept for history. The current strategy is [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md): DorkOS is a workspace for people and agents, built first for founders who run a business with agents, with Kai (developers) second. Do not plan new launch work from this tracker: launch scope and order now live in the new overview. Its open checkboxes are history, not a to-do list.
+
 > **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
 
 > The single itemized checklist for the whole positioning/GTM effort. Source of truth for _what's next_; the reasoning lives in the numbered docs (`09-gtm-plan.md` is the spine). Check items off as they finish; add the completion date after the checkbox when useful. Target dates assume Week 1 = week of **2026-07-06** and slip together, in order, if life happens. Keep this file updated with every working session (agents included).

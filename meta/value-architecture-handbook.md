@@ -449,12 +449,13 @@ meta/
 ├── value-architecture-applied.md       # The actual applied output for this product
 ├── brand-foundation.md                 # Brand voice, tone, aesthetic
 ├── dorkos-litepaper.md                 # Product vision
+├── positioning-202610/00-overview.md   # Current strategy (2026-10)
 └── personas/
     ├── manifest.json
-    ├── the-autonomous-builder.md       # Primary persona
-    ├── the-knowledge-architect.md      # Secondary persona
+    ├── the-ai-native-founder.md        # Primary persona (the founder)
+    ├── the-autonomous-builder.md       # Secondary persona (Kai)
     ├── the-prompt-dabbler.md           # Anti-persona
-    └── icp-ai-native-dev-shop.md       # ICP
+    └── icp-agent-run-business.md       # ICP
 research/
 ├── 20260227_feature_benefit_marketing_frameworks.md   # Framework analysis
 └── 20260227_feature_to_benefit_messaging_patterns.md  # Brand examples
