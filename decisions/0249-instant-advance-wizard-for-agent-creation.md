@@ -5,6 +5,7 @@ status: accepted
 created: 2026-04-11
 spec: create-agent-two-step-flow
 superseded-by: null
+supersedes: 0244
 ---
 
 # 249. Instant-Advance Wizard for Agent Creation

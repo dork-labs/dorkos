@@ -5,6 +5,7 @@ status: accepted
 created: 2026-09-23
 spec: marketplace-package-file-ownership
 superseded-by: null
+amends: [0233, 0304]
 ---
 
 # 260923-163513. An installed package owns only the files its install put there, proven by a recorded hash

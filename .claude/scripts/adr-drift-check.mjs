@@ -14,6 +14,9 @@
  *   - missing files         manifest entry with no matching on-disk file
  *   - duplicate ids         two on-disk files share the same id (the timestamp
  *                           backstop for the vanishingly rare same-second clash)
+ *   - duplicate entries     two manifest entries share the same id (a bulk
+ *                           rewrite once copied ADR 0001 over all 249 legacy
+ *                           entries, which surfaced only as 249 orphans)
  *   - broken links          `superseded` status without a `supersededBy` pointer
  *   - dangling links        supersededBy/supersedes/amends pointing at no known ADR
  *   - contradictions        `supersedes` aimed at a still-live ADR (partial
@@ -99,6 +102,11 @@ export function findDrift(decisionsDir) {
   const manifest = JSON.parse(readFileSync(join(decisionsDir, 'manifest.json'), 'utf8'));
   const entries = manifest.decisions || [];
   const byKey = new Map(entries.map((d) => [keyOf(d), d]));
+  const seenEntries = new Map();
+  for (const d of entries) seenEntries.set(keyOf(d), (seenEntries.get(keyOf(d)) ?? 0) + 1);
+  const duplicateEntries = [...seenEntries]
+    .filter(([, count]) => count > 1)
+    .map(([key, count]) => ({ key, count }));
 
   const fileKeys = new Set();
   const orphans = [];
@@ -210,6 +218,7 @@ export function findDrift(decisionsDir) {
     orphans,
     slugMismatches,
     duplicates,
+    duplicateEntries,
     missingFiles,
     linkIssues,
     frontmatterDrift,
@@ -223,6 +232,7 @@ export function formatReport(findings) {
     orphans,
     slugMismatches,
     duplicates,
+    duplicateEntries,
     missingFiles,
     linkIssues,
     frontmatterDrift,
@@ -232,6 +242,7 @@ export function formatReport(findings) {
     orphans.length +
     slugMismatches.length +
     duplicates.length +
+    duplicateEntries.length +
     missingFiles.length +
     linkIssues.length +
     frontmatterDrift.length +
@@ -244,6 +255,8 @@ export function formatReport(findings) {
   const cap = (arr) => arr.slice(0, 8);
   for (const d of cap(duplicates))
     lines.push(`  - duplicate id: ${d.file} (id ${d.key} already used by another file)`);
+  for (const d of cap(duplicateEntries))
+    lines.push(`  - duplicate entry: manifest lists id ${d.key} ${d.count} times`);
   for (const o of cap(orphans)) lines.push(`  - orphan: ${o.file} (id ${o.key} not in manifest)`);
   for (const s of cap(slugMismatches))
     lines.push(`  - collision: ${s.file} (manifest ${s.key} is "${s.manifestSlug}")`);

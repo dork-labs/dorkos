@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Draft (extracted from `spaces-email`, DOR-2710). Extends the never-confirmed rule of ADR `261004-200411`.
+Accepted (extracted from `spaces-email`, DOR-2710; shipped in #2605). Extends the never-confirmed rule of ADR `261004-200411`.
 
 ## Context
 

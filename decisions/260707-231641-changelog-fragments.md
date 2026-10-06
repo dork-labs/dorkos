@@ -5,6 +5,7 @@ status: accepted
 created: 2026-07-07
 spec: null
 superseded-by: null
+supersedes: 0313
 ---
 
 # 260707-231641. Changelog fragments — one file per change, compiled at release

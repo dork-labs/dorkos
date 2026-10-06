@@ -5,6 +5,7 @@ status: accepted
 created: 2026-07-25
 spec: agents-as-operators
 superseded-by: null
+supersedes: 260723-013236
 ---
 
 # 260725-152018. The agent-facing config snapshot is an allowlist, not a denylist

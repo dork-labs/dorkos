@@ -5,6 +5,7 @@ status: accepted
 created: 2026-08-08
 spec: team-room-home
 superseded-by: null
+supersedes: 260722-120728
 amends: null
 ---
 

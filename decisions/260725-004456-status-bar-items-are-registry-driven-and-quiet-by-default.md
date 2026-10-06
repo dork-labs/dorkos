@@ -5,6 +5,7 @@ status: accepted
 created: 2026-07-25
 spec: composer-status-redesign
 superseded-by: null
+supersedes: 260723-013234
 ---
 
 # 260725-004456. Status bar items are registry-driven and quiet by default

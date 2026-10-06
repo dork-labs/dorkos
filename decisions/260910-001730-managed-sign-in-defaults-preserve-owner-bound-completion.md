@@ -10,6 +10,10 @@ superseded-by: null
 
 # Managed sign-in defaults preserve owner-bound completion
 
+## Status
+
+Accepted.
+
 ## Context
 
 Requiring a developer OAuth application for each service blocks the dynamic catalog even when Composio supports managed authentication. The operator chose managed defaults and preserved existing custom overrides. Composio documents deferred callback identity verification for OAuth connections that pass through provider redirects. Its hosted Connect Link also collects API keys and custom fields, but the published contract does not extend that identity guarantee to non-OAuth collection. This is a missing documented guarantee, not a live-tested refusal.

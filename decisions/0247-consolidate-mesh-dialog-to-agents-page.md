@@ -5,6 +5,7 @@ status: accepted
 created: 2026-04-11
 spec: mesh-panel-consolidation
 superseded-by: null
+supersedes: 0166
 ---
 
 # 0247. Consolidate Mesh Dialog to Agents Page

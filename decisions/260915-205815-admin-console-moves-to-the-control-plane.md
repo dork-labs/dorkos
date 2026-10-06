@@ -5,6 +5,7 @@ status: accepted
 created: 2026-09-15
 spec: null
 superseded-by: null
+supersedes: 260707-122350
 ---
 
 # 260915-205815. The admin console and the account surface move to the control plane

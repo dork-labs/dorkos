@@ -5,6 +5,7 @@ status: accepted
 created: 2026-08-17
 spec: canvas-dev-server-preview
 superseded-by: null
+amends: 260708-185519
 ---
 
 # 260817-152705. Dev-server previews get their own origin; local-file serving keeps the opaque one
