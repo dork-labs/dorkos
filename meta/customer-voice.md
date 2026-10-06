@@ -1,5 +1,7 @@
 # Customer Voice: Real Developer Frustrations DorkOS Solves
 
+> **Read this first (2026-10-06).** Everything collected below is **developer voice**: it speaks for Kai, now the secondary persona. The primary persona is the founder who runs a business with agents ([`personas/the-ai-native-founder.md`](personas/the-ai-native-founder.md); strategy in [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md)), and **founder voice has not been gathered yet.** Theme 9 below is the place for it. Collect real quotes with source and date; never invent or paraphrase from memory. Until founder quotes exist, do not use this document to justify founder-facing copy.
+
 > Verbatim quotes and attributed paraphrases from developers across Hacker News, GitHub Issues, Reddit, and developer blogs. Organized by pain theme. Collected February 2026.
 >
 > **Status note (2026-07-06, positioning review):** Themes 1-2 (terminal isolation, background execution) predate Anthropic's Remote Control / Claude Code web / Cowork maturity; several quoted gaps are now partially solved by first parties _for Claude Code specifically_. They remain valid for non-Claude runtimes and self-hosted users, but copy built on them should be re-checked against mid-2026 reality. Three new themes are open for collection below (7: vendor sprawl, 8: agent security fear, 9: non-developer operators — added 2026-07-09); they have structure but **no quotes yet — collect real ones, never paraphrase from memory**. See `positioning-202607/04-brand-doc-changes.md`.
@@ -594,7 +596,7 @@ _(No quotes yet. Do not fabricate; collect verbatim with source + date.)_
 
 ## Theme 9: The Non-Developer Operator _(opened 2026-07-09 — quotes to be collected)_
 
-_Non-developers who own and run their own AI systems: founders shipping apps by directing agents, privacy-sensitive professionals refusing to put work data into consumer chat apps, people choosing local-run over hosted for control. This theme is the evidentiary base for the Ikechi and Lil personas (`personas/the-ai-native-founder.md`, `personas/the-private-professional.md`) and for the anti-persona boundary redrawn 2026-07-09 (operator mentality, not technical skill). Especially wanted: `[aspiration]` quotes — what these users are trying to become._
+_Non-developers who own and run their own AI systems: founders shipping apps by directing agents, privacy-sensitive professionals refusing to put work data into consumer chat apps, people choosing local-run over hosted for control. This theme is the evidentiary base for the Ikechi persona, now the primary persona (`personas/the-ai-native-founder.md`), and historically for the retired Lil persona (`archive/personas/the-private-professional.md`) and for the anti-persona boundary redrawn 2026-07-09 (operator mentality, not technical skill). Especially wanted: `[aspiration]` quotes — what these users are trying to become._
 
 _Seed sources: interview the real DorkOS users these personas are drawn from (**disclose that they are close contacts, not organic users**, and record what setup help they received). Then look for organic voices: vibe-coding/AI-builder communities, r/ArtificialIntelligence "I built an app without knowing how to code" threads, privacy-forward professional communities. The validation milestone is the first quote from someone we've never met._
 

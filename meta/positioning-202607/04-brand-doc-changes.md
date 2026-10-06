@@ -1,5 +1,7 @@
 # Brand Doc Changes: brand-foundation, customer-voice, value-architecture, personas
 
+> **Superseded 2026-10-06.** This July 2026 positioning work is kept for history. The current strategy is [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md): DorkOS is a workspace for people and agents, built first for founders who run a business with agents, with Kai (developers) second. Read what follows as dated planning, not current direction.
+
 > **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
 
 > Positioning review deliverable (July 2026). Concrete edits to the existing meta docs, with reasons. The docs are structurally sound; most changes are (a) catching the docs up to the shipped product, (b) folding in the market shift from `01-market-landscape.md`, and (c) finishing the pro-human sweep that Decision 16 started.

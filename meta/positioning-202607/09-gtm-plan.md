@@ -1,5 +1,7 @@
 # The GTM Plan: Alpha to Launched, Beginning to End
 
+> **Superseded 2026-10-06.** This July 2026 positioning work is kept for history. The current strategy is [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md): DorkOS is a workspace for people and agents, built first for founders who run a business with agents, with Kai (developers) second. Its demo-claim gate (§2.0 below) is replaced by the one in [the new demo-claim gate](../positioning-202610/00-overview.md#the-demo-claim-gate). The rest is kept as the history of the July launch plan.
+
 > **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
 
 > Positioning review deliverable (July 2026). The operational go-to-market plan that turns `02-positioning.md` and `05-marketing-strategy.md` into a dated, ordered checklist. Inputs: the full Linear board audit (66 open issues, 2026-07-06), the codebase's actual instrumentation state (verified by grep, not memory), and the market/site research in docs 01-07.

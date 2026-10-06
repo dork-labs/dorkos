@@ -1,5 +1,7 @@
 # ICP: AI-Native Dev Shop
 
+> **Archived 2026-10-06.** The ideal customer is now the founder running a business mostly with agents: see [`icp-agent-run-business.md`](../../personas/icp-agent-run-business.md). A small developer shop is still a good fit and is served through Kai (secondary), but it no longer defines who DorkOS is built for. The pricing and plan notes below are July 2026 planning history, not current offers.
+
 **Role**: Ideal Customer Profile (company-level)
 **Confidence**: Proto-persona (assumption-based)
 **Created**: 2026-02-27

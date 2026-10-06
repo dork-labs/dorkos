@@ -16,7 +16,9 @@ Tracking key creative decisions as they're made.
 **Decision:** Round 1 asks for the organizing concept, not a tagline. A slogan is the compression of a concept — you need the concept first.
 **Rationale:** Starting with slogans produces clever lines with no structural integrity. Starting with concepts produces a site where every section reinforces the same idea.
 
-## Decision 3: Reject "Employment" Metaphor
+## Decision 3: Reject "Employment" Metaphor _(retired 2026-10-06, see Decision 19)_
+
+> **Retired 2026-10-06.** The nuance below ("The human is the lead. Human and agent are not peers.") is superseded. People and agents now have equal accounts and are colleagues; no person is required anywhere, and an agent can even be a space's admin. The "like teammates" hedge is retired with it (`brand-foundation.md` §10). What survives: the tone stays warm and collaborative, not managerial, and copy never frames the founder as "a boss managing headcount". The word "worker" is allowed in the one image the story now uses ("DorkOS is the office; people and agents are the workers who log in"). See Decision 19.
 
 **Date:** 2026-02-27
 **Decision:** Ogilvy's "tool → employee" framing is rejected. Too corporate. The relationship between human and agent should use language like "work with," "teammate," "collaborate," "crew" — not "employ," "worker," "hire."
@@ -137,6 +139,8 @@ Tracking key creative decisions as they're made.
 
 ## Decision 18: The Category Phrase Is "One Place" — "Mission Control" and "Cockpit" Are Retired
 
+> **Updated 2026-10-06 (Decision 19).** The category phrase is no longer "one place". It is now **"a workspace for people and agents"**. "All your agents. One place." and "one place for every AI agent you run" are retired as category lines; plain uses of the words "one place", "one window" and "the app" remain fine and remain the right replacements for the two banned words. **The ban on "mission control" and "cockpit" is unchanged** and still enforced by `scripts/check-banned-words.sh`. The text below is the 2026-08-24 record.
+
 **Date:** 2026-08-24 (DOR-1517)
 **Decision:** The category phrase is **"one place"**. Hero form: **"All your agents. One place."** Long form: **"DorkOS is one place for every AI agent you run."** Supporting variants when the sentence needs a different shape: "one window", "one home", "your team". For prose about the product itself, write "the DorkOS app" or "the app".
 
@@ -151,3 +155,24 @@ Tracking key creative decisions as they're made.
 **One exception, and it is not ours:** GitHub ships a product literally named "Mission Control". Competitive-analysis copy may name it.
 
 **Affected documents:** `AGENTS.md`, both READMEs, the marketing site, `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `chat-capabilities.md`, `agent-etiquette.md`, `INDEX.md`, all of `positioning-202607/`, and two personas. Deliberately untouched: `rounds/**` and `archive/**`, which are frozen historical artifacts.
+
+## Decision 19: The 2026-10 Story: A Workspace for People and Agents
+
+**Date:** 2026-10-06 (vision reset, agreed with the founder; strategy in `meta/positioning-202610/00-overview.md`)
+**Decision:**
+
+- **Category:** **a workspace for people and agents.** Long form: "the workspace where founders run their business with people and agents." Replaces "one place for every AI agent you run" (Decision 18) and "operating system for AI agents" as category claims. The product name stays DorkOS.
+- **Tagline:** **You, Multiplied.** Unchanged, hero surfaces only. "Intelligence doesn't scale. Coordination does." stays a manifesto line for essays, never a headline.
+- **Explainer:** "Teams needed Slack. AI agents need DorkOS."
+- **Core image:** DorkOS is the office; people and agents are the workers who log in. An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in.
+- **Audience:** the founder first (semi-technical, T-shaped, YC-style, building a big business mostly with agents); Kai, the developer, second. Priya and Lil retired for focus.
+- **Relationship:** people and agents are colleagues with equal accounts. Retires Decision 3's "not peers" nuance.
+- **Trust:** "trusted by default", "colleagues, not babysitters". Copy may state the principle now. It may not claim full power by default, an audit trail anyone can read, or the absence of permission prompts as shipped behavior until the trust work ships (the demo-claim gate, `meta/positioning-202610/00-overview.md#the-demo-claim-gate`).
+- **Runtime names:** "Claude Code, Codex and OpenCode side by side" leaves the headline. Runtimes are a docs fact; one plain mention lower down on a story surface is fine.
+- **Cloud:** local first, cloud optional. Free forever on your own computer with no required account; DorkOS Cloud is an option, never a requirement.
+
+**Name collision:** "Workspaces" is an existing product noun (the /workspaces page). Make the category use obvious ("a workspace for people and agents") and never redefine the product page.
+
+**Why:** the product already looks like this (rooms, `#team`, connections to business tools), and the founder audience is where DorkOS is load-bearing rather than a convenience. "One place for every AI agent you run" described a developer's fleet; the new line describes a business.
+
+**Affected documents:** `meta/` (this folder's brief is bannered; `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, the personas). `AGENTS.md`, the READMEs, docs and the site follow in their own changes under DOR-2736. Deliberately untouched: `rounds/**` and `archive/**`, frozen historical artifacts.

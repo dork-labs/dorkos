@@ -1,5 +1,7 @@
 # Supplemental Brief: The AI Boldness Landscape
 
+> **Note 2026-10-06.** Written for the February 2026 developer brief, now superseded (see [`../../positioning-202610/00-overview.md`](../../positioning-202610/00-overview.md)). Its solopreneur and small-team findings still apply to the founder audience; its developer framing is history.
+
 Condensed from `research/20260227_ai_agents_reshaping_software_development.md` (40+ sources). Use this as additional context for website copy.
 
 ## The Moment

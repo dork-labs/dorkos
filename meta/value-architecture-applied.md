@@ -1,16 +1,45 @@
 # The Value Architecture — Applied to DorkOS
 
-> **2026-09-25 product update:** The Obsidian plugin is retired. In-vault features and plugin-based journeys described below are historical research, not current product promises. Priya remains a target persona; the current path is the normal DorkOS app working with her vault folder, subject to ordinary permissions. See [retirement and migration](../docs/guides/obsidian-plugin.mdx).
+> **2026-10-06 vision reset:** read the 2026-10 Addendum below first. The strategy is [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md). Priya and Lil are retired personas (`archive/personas/`); every Priya column, job map and persona reading in the 1.0 body below is history. _(Earlier note, 2026-09-25: the Obsidian plugin is retired, so in-vault journeys below are historical research. See [retirement and migration](../docs/guides/obsidian-plugin.mdx).)_
 
-**Version**: 1.2
-**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`) · 2026-07-09 (hero reframe: "You, multiplied." roof; personas expanded)
+**Version**: 1.3
+**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`) · 2026-07-09 (hero reframe: "You, multiplied." roof; personas expanded) · 2026-10-06 (vision reset: new pillars and personas, `positioning-202610/`)
 **Framework**: `meta/value-architecture.md` + `meta/value-architecture-handbook.md`
 **Personas**: `meta/personas/`
 **Brand Foundation**: `meta/brand-foundation.md`
 
 ---
 
-## 2026-07 Addendum (read first)
+## 2026-10 Addendum (read first)
+
+The 2026-10 vision reset replaces this document's outputs again, without rerunning the whole method. Where this addendum disagrees with the 2026-07 addendum or the 1.0 body, this addendum wins. The method mechanics (phases, ladders, matrix, templates) are unchanged.
+
+**Message House v3** (supersedes v2's pillars; roof kept):
+
+- **Roof:** **You, multiplied.** One founder, running a business far bigger than its headcount. The customer stays the subject.
+- **Category line:** a workspace for people and agents ("the workspace where founders run their business with people and agents").
+- **Pillar 1: One office for your people and agents.** DMs, channels and threads with people and agents; a shared canvas; agents post like any other member. _Proof (built):_ `#team` home, rooms, DMs and threads, direct chat with the full coding view, the shared canvas.
+- **Pillar 2: Agents that work your real tools.** Agents act in Gmail and the other tools a business runs on, run on schedules, and reach you on Telegram or Slack. _Proof (built):_ Connections through Composio and Nango, Tasks, Telegram and Slack connections. _Later (roadmap):_ email, phone, a vault and payments as account features.
+- **Pillar 3: Colleagues, not babysitters.** Agents are trusted by default, and the safety net is a record anyone in the space can read; trust goes to your agents, never to strangers. _Proof today:_ the Activity page (not a complete audit trail). _Before launch:_ full power by default and the readable audit trail. Until those ship, public copy states the principle only (demo-claim gate).
+- **Pillar 4: Yours, free, cloud optional.** Runs on your own computer, free forever, no required account; open source (MIT). DorkOS Cloud adds remote access, accounts and credits when you want them, and you can leave any time. _Proof (built):_ the CLI and desktop installs, localhost defaults, readable source, DorkOS Cloud today.
+
+**Retired pillars (v2):** "All your agents, one place" (the runtime trio is a docs fact now, not a pillar), "A team, not tabs" (folded into Pillars 1 and 2), and "Yours, and safe to run" (split into Pillars 3 and 4).
+
+**Ladder status:**
+
+- **VL-11 Every Agent In One Place** demotes from lead to proof under Pillar 1 ("any agent can log in"). Do not lead with it.
+- **VL-12 Marketplace + Ecosystem Judo** stays gated: the Claude Code superset claim is still unverified.
+- **VL-07 Trust & Oversight** is rewritten in spirit: the emotional payoff is "I trust my agents like colleagues and can always check the record", not "I approve what they do". Re-author it in the 1.0 format at the next full revision.
+- **New ladders owed** (author in the 1.0 format): **VL-13 The Office** (people and agents in one workspace), **VL-14 Agents in Your Real Tools** (built Connections today; account features later), **VL-15 Trusted by Default** (the readable record; claimable only after it ships).
+- **VL-08 (Wing)** stays vision-stage. **VL-01 (autonomy)** remains proof, not hero.
+
+**Personas (2026-10-06):** primary **Ikechi, The Founder** (`personas/the-ai-native-founder.md`); secondary **Kai** (`personas/the-autonomous-builder.md`); anti-persona unchanged in principle (operator mentality, not technical skill) but no longer defined by "never hosted". Priya and Lil are retired. Maintenance owed at the next full revision: rebuild the Phase 1B job maps and the Persona-Benefit Matrix with the founder as the first column and Kai as the second, and re-check every activation template against the plain-language register, which is now the primary persona's register.
+
+**1C Identity Territory, current reading:** worldview: agents are colleagues, and a founder with the right workspace runs a company far bigger than its headcount. Tribe: founders and builders who give agents real jobs and own the system they run on. Signal: "My company is a few people and a lot of agents, and they all work in one place." Anti-identity: people who want to rent an outcome with nobody in charge of it.
+
+---
+
+## 2026-07 Addendum _(superseded 2026-10-06 by the addendum above; kept for history)_
 
 The July 2026 positioning review updates this document's outputs without rerunning the whole method. Where the addendum and the 1.0 body disagree, the addendum wins.
 

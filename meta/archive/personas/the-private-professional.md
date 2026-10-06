@@ -1,5 +1,7 @@
 # Lil — The Private Professional
 
+> **Retired 2026-10-06 (focus).** DorkOS now serves two personas: the founder who runs a business with agents ([`the-ai-native-founder.md`](../../personas/the-ai-native-founder.md), primary) and Kai, the developer running many agents ([`the-autonomous-builder.md`](../../personas/the-autonomous-builder.md), secondary). Lil is retired as a planning persona only so the product can focus on those two. It says nothing about the real person she is drawn from, who is welcome as a user like anyone else. The privacy needs this persona described still matter: DorkOS runs on your own computer, free, with no required account. The current strategy is [`positioning-202610/00-overview.md`](../../positioning-202610/00-overview.md).
+
 **Role**: Horizon persona (staged — NOT a launch target; see Staging Rules)
 **Confidence**: Grounded — modeled on a real DorkOS user (a close contact, not an organic one; see Validation Caveat)
 **Created**: 2026-07-09

@@ -1,5 +1,7 @@
 # The Revenue Model: From Free Alpha to Paying Crews
 
+> **Superseded 2026-10-06.** This July 2026 positioning work is kept for history. The current strategy is [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md): DorkOS is a workspace for people and agents, built first for founders who run a business with agents, with Kai (developers) second. Read what follows as dated planning, not current direction.
+
 > **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
 
 > Positioning review deliverable (July 2026). The monetization strategy, tier ladder, and the month-by-month arc from today's unlaunched alpha to first revenue within 3-6 months. Grounded in: spec #268 (accounts-and-auth, whose decisions this doc builds on, not revisits), the shipped-in-review DOR-181/182 device-link + instance-registry work, and a deep OSS-monetization research pass (2026-07-06; sources and price verifications in the research output; aggregator-sourced prices re-verify before public use).

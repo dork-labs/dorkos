@@ -14,6 +14,16 @@ research, and human-agent studies from 2023 to 2026) and
 `research/20260727_agents-in-group-chat-industry-survey.md` (what shipping
 products actually do).
 
+**Updated 2026-10-06 (trusted by default).** DorkOS now treats agents as trusted
+colleagues (`positioning-202610/00-overview.md`). The manners in this document
+all stay: they are how a good colleague behaves. What changed is what holds them
+up. Earlier versions leaned on hard caps (reactions per hour, notes per hour,
+turn counts) as the real enforcement. Under trust by default, caps on routine
+work are due to go, and the safety net becomes a record anyone in the space can
+read. So every rule below stands on judgment and is checked against
+transcripts, not against a counter. Where the code still counts today, the text
+says so and says it is not what the rule relies on.
+
 ---
 
 ## 1. The standard
@@ -70,7 +80,7 @@ _Check: every mention of the agent has a corresponding turn, or a visible reason
 there was not one._
 
 **E2. Do not answer a question addressed to someone else.** If a person asks
-Priya, the agent stays out until Priya answers, defers, or the asker
+Sam, the agent stays out until Sam answers, defers, or the asker
 re-addresses. In the 1974 model the selected party has both the right and the
 obligation, and "no others have such rights." Hermes ships this as an explicit
 setting (`IGNORE_NO_MENTION`) and it should be our default posture, not a
@@ -156,11 +166,9 @@ So: **before the long work begins, put 👀 on the message that triggered you.**
 Not after, not with the result — first, while the room can still use it. A
 reaction is the right instrument precisely because it is not a message: it takes
 no turn, notifies nobody, writes no entry, and cannot become the noise E15 is
-guarding against. It is also already bounded by a mechanism rather than by an
-agent's judgment (`ReactionBudget`, E16b), so "signal early" cannot degrade into
-signalling constantly. The bound is real: a signalled turn spends two of the
-twenty reactions an agent gets per room per hour (the 👀, then the ✅ of E15b;
-taking one off is free).
+guarding against. What keeps "signal early" from
+turning into signalling constantly is the judgment in the next two paragraphs,
+not a counter.
 
 **A sentence instead of the glyph only when the glyph would not carry it** —
 when what a person needs to know is not "seen" but _what_ you are doing, or that
@@ -267,13 +275,14 @@ room's own, the one on every message shown, and the one for the message being
 answered (DOR-1263). It is the cheapest thing an agent can say, and
 the point of allowing it is the message it replaces — an agent that has
 understood you and has nothing to add used to post filler, because filler was the
-only acknowledgment it had. The bound is a mechanism, not this rule: **20
-reactions per agent per room per hour**, refused at the boundary
-(`ReactionBudget`), because "react sparingly" is not a rule an agent can follow
-any more than "don't get into a loop" is. Nothing else changes — a reaction still
-takes no turn, writes no entry and starts no cascade, in either direction.
-_Check: no agent left more than the hourly ceiling of reactions in one room, and
-no reaction ever appears in `room_entries`._
+only acknowledgment it had. Sparingly is the agent's own judgment, as it would be for
+a colleague: a reaction replaces a message, it does not decorate one.
+_(2026-10-06: the code still counts reactions per agent per room per hour, a cap
+added in August. Under trust by default that cap is due to go. This rule does
+not rely on it.)_ Nothing else changes: a reaction still takes no turn, writes no
+entry and starts no cascade, in either direction.
+_Check: each reaction an agent left stands in for a message it would otherwise
+have posted, and no reaction ever appears in `room_entries`._
 
 > ~~_Sending._ Agents do not react. Not "sparingly" — not at all, at this commit.
 > Nothing in DorkOS builds the path and the server refuses it: only an author the
@@ -286,7 +295,9 @@ no reaction ever appears in `room_entries`._
 > permit agent reactions, and an agent already SEES acknowledgments on its own
 > posts, so the ban made the one thing it could be given a thing it could only
 > receive. The refusal-at-the-boundary instinct survives the reversal intact —
-> what sits at the boundary now is a rate rather than a kind.
+> what sat at the boundary after that was a rate rather than a kind.
+> _(2026-10-06: under trust by default the rate is due to go as well. The
+> manners stay.)_
 >
 > The DOR-505 residual the old rule named survives too, and is worth keeping in
 > view: with **Require login** off, a local program presenting no agent header
@@ -315,14 +326,13 @@ aside**: that chat may hold other people, because a connection can be bound to a
 group or to a conversation with somebody else, and a connection left on its
 default chat filter covers every chat that has messaged the bot. Write a note to
 be read by whoever is in the room it lands in. Progress, thinking aloud, and
-anything they will see next time they read the room belong in the room. As
-everywhere else, the bound is a mechanism rather than this rule: **10 notes per
-agent per hour**, refused at the boundary (`NotifyBudget`, in memory — a server
-restart starts the hour over), with a refusal that tells the agent to say it in
-the conversation it is already in. _Check: a healthy run logs **zero** refusals
-with `reason: notify_budget`, because nothing should come near ten notes an hour;
-one agent appearing there repeatedly is the signal, and the thing to read next is
-what those notes said and whether the room could have carried them._
+anything they will see next time they read the room belong in the room. The
+bar is judgment, the same bar a colleague uses before calling your phone.
+_(2026-10-06: the code still caps notes per agent per hour. Under trust by
+default that cap is due to go, and the record of every note becomes the safety
+net instead. Do not lean on it.)_ _Check: read the notes one agent sent in a
+day. Each is something the person would want to be interrupted for, and none
+could have waited in the room._
 
 ## 6. Disagreement, correction, and refusal
 
@@ -454,9 +464,13 @@ finding.
   Teams, Discord, ChatGPT group chats, and the agent frameworks actually ship.
 - `decisions/260726-170125-a-room-is-a-membership-scoped-durable-stream.md`: the
   room model these behaviors run on.
-- `decisions/260726-170127-the-room-path-carries-its-own-cascade-guard.md`: the
-  hard bound underneath the soft norms. Etiquette keeps a healthy room pleasant;
-  the cascade guard keeps a broken one cheap. Neither substitutes for the other.
+- `decisions/260726-170127-the-room-path-carries-its-own-cascade-guard.md`:
+  today's loop guard, which counts turns. Under trust by default it is planned
+  to give way to a watcher that looks only for agents spinning with no progress,
+  nudges them first, and pauses that one conversation if the spinning goes on
+  (planned, not built; see `positioning-202610/00-overview.md`). Etiquette keeps
+  a healthy room pleasant; the loop guard keeps a broken one cheap. Neither
+  substitutes for the other.
 - `AGENTS.md` quality standard and the `writing-for-humans` skill: the prose bar
   that section 4 assumes.
   </content>

@@ -1,42 +1,27 @@
 {
   "version": 1,
+  "updated": "2026-10-06",
+  "strategy": "meta/positioning-202610/00-overview.md",
   "personas": [
+    {
+      "slug": "the-ai-native-founder",
+      "name": "Ikechi",
+      "archetype": "The Founder",
+      "role": "primary",
+      "confidence": "partly-grounded-close-contact",
+      "created": "2026-07-09",
+      "reviewBy": "2027-04-06",
+      "notes": "Promoted to primary 2026-10-06. Semi-technical, T-shaped founder building a big or complex business mostly with agents."
+    },
     {
       "slug": "the-autonomous-builder",
       "name": "Kai Nakamura",
       "archetype": "The Autonomous Builder",
-      "role": "primary",
-      "confidence": "proto-persona",
-      "created": "2026-02-27",
-      "reviewBy": "2026-08-27"
-    },
-    {
-      "slug": "the-knowledge-architect",
-      "name": "Priya Sharma",
-      "archetype": "The Knowledge Architect",
       "role": "secondary",
       "confidence": "proto-persona",
       "created": "2026-02-27",
-      "reviewBy": "2026-08-27"
-    },
-    {
-      "slug": "the-ai-native-founder",
-      "name": "Ikechi",
-      "archetype": "The AI-Native Founder",
-      "role": "secondary",
-      "confidence": "grounded-close-contact",
-      "created": "2026-07-09",
-      "reviewBy": "2027-01-09"
-    },
-    {
-      "slug": "the-private-professional",
-      "name": "Lil",
-      "archetype": "The Private Professional",
-      "role": "horizon",
-      "confidence": "grounded-close-contact",
-      "created": "2026-07-09",
-      "reviewBy": "2027-01-09",
-      "notes": "Staged persona — not a launch target. Informs privacy defaults, plain-language copy, and the desktop surface. Graduation criteria in the persona file."
+      "reviewBy": "2027-04-06",
+      "notes": "Moved from primary to secondary 2026-10-06. The developer running many agents across many projects."
     }
   ],
   "antiPersonas": [
@@ -46,15 +31,41 @@
       "archetype": "The Prompt Dabbler",
       "confidence": "proto-persona",
       "created": "2026-02-27",
-      "reviewBy": "2027-01-09",
-      "notes": "Boundary redrawn 2026-07-09: the disqualifier is operator mentality (won't own their system), not technical skill."
+      "reviewBy": "2027-04-06",
+      "notes": "Boundary: operator mentality, not technical skill. 2026-10-06: the 'never hosted' clause removed; DorkOS Cloud is an optional hosted layer."
     }
   ],
   "icp": {
-    "slug": "icp-ai-native-dev-shop",
-    "name": "AI-Native Dev Shop",
+    "slug": "icp-agent-run-business",
+    "name": "The Agent-Run Business",
     "confidence": "proto-persona",
-    "created": "2026-02-27",
-    "reviewBy": "2026-08-27"
-  }
+    "created": "2026-10-06",
+    "reviewBy": "2027-04-06"
+  },
+  "retired": [
+    {
+      "slug": "the-knowledge-architect",
+      "name": "Priya Sharma",
+      "archetype": "The Knowledge Architect",
+      "path": "meta/archive/personas/the-knowledge-architect.md",
+      "retired": "2026-10-06",
+      "reason": "focus"
+    },
+    {
+      "slug": "the-private-professional",
+      "name": "Lil",
+      "archetype": "The Private Professional",
+      "path": "meta/archive/personas/the-private-professional.md",
+      "retired": "2026-10-06",
+      "reason": "focus"
+    },
+    {
+      "slug": "icp-ai-native-dev-shop",
+      "name": "AI-Native Dev Shop",
+      "archetype": "ICP",
+      "path": "meta/archive/personas/icp-ai-native-dev-shop.md",
+      "retired": "2026-10-06",
+      "reason": "replaced by icp-agent-run-business"
+    }
+  ]
 }
