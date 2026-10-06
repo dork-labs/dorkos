@@ -5,14 +5,41 @@ paths: packages/shared/src/config-schema.ts, packages/shared/src/*-schemas.ts, a
 # User-Safe Defaults
 
 You are editing a file that decides what happens to someone who never touches a setting. **Every
-default, fallback, and reset state lands on the option that protects them.** ADR 260727-181825.
+default, fallback, and reset state lands on the option that protects them.** ADR 260727-181825,
+as amended by ADR 261006-225605.
+
+## Who is being protected, and from what
+
+ADR 261006-225605: **our own agents are trusted by default; outsiders and third-party code are
+not.** So "the protective option" means protecting the person from **strangers, stranger code and
+the open internet**, not from their own agents. Sort a field before you pick its default:
+
+- **In the circle** — what a person in the space, or one of our agents, may do on its own work:
+  rooms, schedules it writes, messages to other agents, non-perimeter settings, connections the
+  owner already made, packages from sources the owner trusts, code our agents wrote locally. The
+  default is **full power**. Recording the action in the audit trail is the safeguard, not asking.
+- **Outsider-origin turns** — anything a Telegram or Slack sender, an inbound email or other
+  connector event, a webhook, an A2A peer or an external room author starts. The default seeds
+  **no power** and stays in a prompting mode. Outside-chat allowlists start empty.
+- **Third-party code** — marketplace hooks, global plugins, extensions from untrusted sources,
+  schedules that arrive inside a package or Shape. The default **needs a yes**.
+- **The perimeter** — login, remote access (tunnel, public bind), credentials and provider keys,
+  `/mcp` and A2A exposure, package sources. **Owner-only**, and absence keeps it closed.
+- **Data leaving the machine** — telemetry and anything else outbound. Absence withholds.
+- **Accident guards** — loop and runaway limits (cascade guard, turn budgets, relay ceiling,
+  envelope budget). Keep them bounded; their replacement is DOR-2745's decision, not yours.
+
+A field that is half in-circle and half outsider is split into two fields or two rules. Never
+open it whole.
 
 ## The four rules
 
-1. **Absence is not consent.** A missing, `null`, or `undefined` value resolves to the option that
-   withholds, denies, or bounds. `?? true` and `!== false` are the two spellings of the bug —
-   fine where the value gates nothing, never where it decides whether data leaves the machine,
-   whether an agent gains capability, or whether a bound is enforced.
+1. **Absence is not consent — for outsiders, third-party code, the perimeter, outbound data and
+   accident bounds.** A missing, `null`, or `undefined` value in those classes resolves to the
+   option that withholds, denies, or bounds; a missing limit is never `?? Infinity`. `?? true` and `!== false` are the two spellings of the bug there. For a
+   capability our own agents use on in-circle work, the absent value is full power, and the
+   action is recorded instead (ADR 261006-225605). Changing an in-circle default for existing
+   installs is done by a migration with a one-time notice, never silently.
 2. **Losing state must not lose a protection.** A wipe may lose preferences. Recovery re-applies
    decisions and protective values on top of fresh defaults, and never a value more permissive than
    a fresh install carries.
@@ -20,7 +47,9 @@ default, fallback, and reset state lands on the option that protects them.** ADR
    they decided. A channel they were never asked about takes the protective value, not the schema
    default.
 4. **A permissive default is legal, but it must be argued.** Add it to `PERMISSIVE_DEFAULTS` with a
-   concrete reason.
+   concrete reason. For an in-circle capability the reason is ADR 261006-225605 plus the audit
+   event that records its use; "agents are trusted" alone is not a reason for an outsider,
+   third-party-code, perimeter, outbound or accident-bound field.
 
 ## What this means concretely
 
@@ -70,6 +99,9 @@ store.set('telemetry', { ...defaults, userHasDecided: prior.userHasDecided });
 
 // BAD: recovery that starts from defaults and keeps nothing
 catch { fs.unlinkSync(configPath); this.store = new Conf(opts); }
+
+// BAD: full power seeded by config alone, so a Telegram stranger's turn inherits it
+const mode = config.runtimes.defaultTrustStop; // ignores where the turn came from
 ```
 
 ```typescript
@@ -83,4 +115,7 @@ const decision = salvageTelemetryDecision(stored); // undefined unless userHasDe
 const stored = readStoredConfigForSalvage(configPath);
 /* … replace … */
 restoreProtectedState(this.store, stored, 'Recovered a damaged config');
+
+// GOOD: power follows the origin; outsider-origin turns seed nothing
+const seed = permissionSeedForOrigin(origin); // 'none' for bindings, connector events, A2A, …
 ```

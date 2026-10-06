@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (extracted from spec: agent-permissions). The residual below was accepted by the operator on 2026-09-23.
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): Unidentified callers are no longer restricted to the defaults as a safety measure; their actions are recorded in the audit trail. Labelling stands.
+
 ## Context
 
 With login off, nothing tells the person in the app apart from a program on the same machine calling the API without its agent header (`decision-authority.ts`, DOR-505). The ideation wanted writes that "did not come through the app" recorded as unverified, which cannot be built honestly. Separately, an unidentified caller (an external `/mcp` client with no token, `dorkos call` without `DORKOS_AGENT_TOKEN`) has no agent whose overrides could apply.

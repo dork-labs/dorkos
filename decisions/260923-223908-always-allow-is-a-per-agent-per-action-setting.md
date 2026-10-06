@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (extracted from spec: agent-permissions).
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): No clause retired; Always allow becomes rare because in-circle areas default to Allowed.
+
 ## Context
 
 "Stop asking" existed only as standing grants: time-boxed windows, destructive calls only, and only with login on, because a login-off decision cannot prove a person (`standing-grant-posture.ts`). They lived in their own table and service, invisible from the agent's settings. A refusal from the tool-group gate or the tier ceiling had no "yes" at all (DOR-2093).

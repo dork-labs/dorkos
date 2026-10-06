@@ -14,6 +14,8 @@ superseded-by: null
 
 Accepted (extracted from spec: `ask-entitlement`, DOR-1356).
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): no clause retired yet. Once roles exist, an Ask's detail reaches any role holder who may decide it, agents included; the requester never decides its own request.
+
 ## Context
 
 The global event stream (`GET /api/events`, served over both a WebSocket and SSE through

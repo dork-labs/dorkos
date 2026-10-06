@@ -14,6 +14,8 @@ amends: 260823-200726
 
 Accepted (DOR-2307).
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): Re-parking on a timezone change by our own agent is retired. The key still applies to package-, Shape- and file-origin schedules.
+
 ## Context
 
 A schedule's arm grant and its bypass keep-grant share one content key (ADR `260823-200726`). The key was `[prompt, cron]`, so a change of timezone was not a change of approved work. An agent could move an approved schedule to another timezone, which shifts its real run time by up to a day and can cross a day boundary, and it stayed approved. The DOR-2302 review showed this: an agent set `Pacific/Kiritimati` and the schedule stayed active.
