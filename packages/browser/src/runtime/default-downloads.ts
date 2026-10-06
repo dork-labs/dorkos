@@ -7,6 +7,8 @@ export class DefaultDownloadOwner {
   private session?: CDPSession;
   private detach?: CDPSession['detach'];
   private remove?: () => void;
+  private removeBrowser?: () => void;
+  private browserDisconnected = false;
   private closing = false;
   private sessionClosed = false;
   private joined?: Promise<void>;
@@ -17,10 +19,40 @@ export class DefaultDownloadOwner {
     private readonly lost: () => void
   ) {
     // Preregister the whole operation before any original getter/receiver can reenter close.
-    this.ready = Promise.resolve().then(() => this.acquire());
+    this.ready = Promise.resolve().then(() => {
+      if (this.failure) throw this.failure.value;
+      return this.acquire();
+    });
     void this.ready.catch((value: unknown) => {
       this.failure ??= Object.freeze({ value });
     });
+    // SDK Browser disconnect settles its parent transport but need not emit CDPSession close.
+    // Retain the exact original observer/remover before any asynchronous session acquisition.
+    try {
+      const on = browser.on;
+      if (this.closing) throw new BrowserLifecycleError('ENGINE_STOPPED');
+      const off = browser.off;
+      if (this.closing) throw new BrowserLifecycleError('ENGINE_STOPPED');
+      const disconnected = (original: Browser) => {
+        if (original === this.browser) this.browserDisconnected = true;
+        if (original !== this.browser || !this.closing) {
+          this.failure ??= Object.freeze({
+            value: new BrowserLifecycleError('OPERATION_FAILED'),
+          });
+          try {
+            this.lost();
+          } catch (value) {
+            this.failure ??= Object.freeze({ value });
+          }
+        }
+      };
+      this.removeBrowser = () => {
+        Reflect.apply(off, browser, ['disconnected', disconnected]);
+      };
+      Reflect.apply(on, browser, ['disconnected', disconnected]);
+    } catch (value) {
+      this.failure ??= Object.freeze({ value });
+    }
   }
   private admitted(): void {
     if (this.closing || !this.current()) throw new BrowserLifecycleError('ENGINE_STOPPED');
@@ -49,7 +81,9 @@ export class DefaultDownloadOwner {
     const closed = () => {
       this.sessionClosed = true;
       if (!this.closing) {
-        this.failure ??= Object.freeze({ value: new BrowserLifecycleError('OPERATION_FAILED') });
+        this.failure ??= Object.freeze({
+          value: new BrowserLifecycleError('OPERATION_FAILED'),
+        });
         try {
           this.lost();
         } catch (value) {
@@ -86,9 +120,11 @@ export class DefaultDownloadOwner {
       } catch (value) {
         this.failure ??= Object.freeze({ value });
       }
-      // An exact original SDK close event already settled this session; a code/name is not proof.
+      // Only observed exact original SDK closure is proof: the Browser parent transport
+      // can close without the child CDPSession receiving Target.detachedFromTarget.
+      // Readiness has returned above, so an entered acquire/send is still joined first.
       try {
-        if (this.session && !this.sessionClosed) {
+        if (this.session && !this.sessionClosed && !this.browserDisconnected) {
           if (!this.detach) throw new BrowserLifecycleError('OPERATION_FAILED');
           await Reflect.apply(this.detach, this.session, []);
         }
@@ -97,6 +133,11 @@ export class DefaultDownloadOwner {
       }
       try {
         this.remove?.();
+      } catch (value) {
+        this.failure ??= Object.freeze({ value });
+      }
+      try {
+        this.removeBrowser?.();
       } catch (value) {
         this.failure ??= Object.freeze({ value });
       }
