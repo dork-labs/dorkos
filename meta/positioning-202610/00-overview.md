@@ -42,13 +42,13 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 
 ## The core image: the office and the workers
 
-**DorkOS is the office. People and agents are the workers who log in.** An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in. The office holds the conversations, the docs, the roles and the connections to outside tools. The workers bring the skill.
+**DorkOS is the office. People and agents are the workers who log in.** An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in. The office holds the conversations, the docs, the roles (roadmap) and the connections to outside tools. The workers bring the skill.
 
 ## Core ideas
 
 Each idea carries its status. "Built" means it works today. "Before launch" means decided and scheduled before the launch. "Roadmap" means planned after launch. The demo-claim gate below is the rule for what public surfaces may say about each.
 
-1. **The office and the workers.** As above. _Status: the image is the story. Rooms, DMs and threads with people and agents are built today, on one person's computer._
+1. **The office and the workers.** As above. _Status: the image is the story. Today one person runs the office: rooms, DMs and threads with you and your agents are built, on your own computer. More than one person on a server is roadmap._
 2. **Equal accounts.** People and agents have the same kind of account: the same profile, the same messages, the same roles, the same permissions. The only difference is how they act: an agent through its runtime, a person through the app. No person is required anywhere. An agent can create a space, be its admin, create accounts for people, or run a space where every member is an agent. _Status: roadmap._
 3. **Trusted by default.** Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm. See "Trust by default" below. _Status: decided; the first three steps ship before launch._
 4. **Roles.** Built-in roles like Slack's (Owner, Admin, Member, Guest). Each role is a set of fine-grained switches, and all are at full power by default. Custom roles come later. Approvals, now rare, go to anyone whose role allows it, person or agent, never the one asking. _Status: roadmap._
@@ -60,7 +60,7 @@ Each idea carries its status. "Built" means it works today. "Before launch" mean
 6. **Two places an agent can work.** One account, one setting.
    - **This computer:** today's agents, unchanged. They work directly on your laptop and cannot move. _Built._
    - **Its own computer:** a Linux desktop of its own, the same locally and in the cloud. It can move to the cloud and back. Ships behind an experimental flag. An older agent can be given a computer later. _Roadmap._
-   - **Shared drives:** computers on one host can share drives. A project drive lets several agents work on one codebase, each in its own worktree. A sign-in drive holds only the runtime login, so a person signs in once for all their agents. Only the runtime reads that drive; DorkOS never does. _Roadmap._
+   - **Shared drives:** computers on one host can share drives. A project drive lets several agents work on one codebase, each in its own worktree. A sign-in drive holds only the runtime login, so a person signs in once for all their agents. Only Claude Code reads that drive; DorkOS never does. _Roadmap._
 7. **Two ways to talk to an agent stay exactly as they are.** _Built._
    - **Direct chat:** the full coding view, with thinking, tool calls and the status bar (all can be hidden).
    - **In a room:** you see only what the agent posts there.
@@ -103,8 +103,9 @@ Status: the local app is built. DorkOS Cloud today offers accounts, remote acces
 Launch is as soon as possible. It is:
 
 - **The new story, on today's product, plus DorkOS Cloud** (remote access, credits and accounts).
-- **Cloud computers are built but stay behind the experimental flag.**
-- **No spaces at launch.** Every space feature sits behind an experimental switch, and story surfaces do not feature spaces. Existing how-to docs for them may stay.
+- **Cloud computers are planned: built for launch, kept behind an experimental flag.** Nothing public builds them yet.
+- **No spaces in the launch story.** Spaces already exist in early form as Communities (built, with no experimental switch today) and are kept out of the launch story. Existing how-to docs for them may stay.
+- **Launch task: put every space feature behind an experimental switch.**
 - **The doc, site and README rewrite** takes about one to two weeks.
 
 ## Roadmap order
@@ -149,6 +150,12 @@ Launch is as soon as possible. It is:
 
 Full power by default and the readable audit trail. Public surfaces may state the **principle** ("agents are trusted colleagues; you can see what each one did on the Activity page"). They must not claim as shipped behavior that "every action is recorded", "there are no permission prompts", "agents have full power by default" or "there is an audit trail anyone can read". Permission and approval docs belong to the trust tickets.
 
+### Security copy rules (carried over from `positioning-202607/02-positioning.md`, still in force)
+
+- **Never write "secure by default"**, in any spelling. It is not true of every artifact we ship.
+- **Pair running it yourself with the claim that is true:** "it listens only on your own machine by default." Never "sign-in required the moment you expose it".
+- **State every protection with the login setting it depends on** (DOR-509). A protection that holds only when login is on, or only on loopback, must say so in the same sentence. The full rule and its reasoning stay in `../positioning-202607/02-positioning.md` under Pillar 3.
+
 ### Roadmap (never claimed as working)
 
 Say "coming" or "planned", or leave it out:
@@ -161,7 +168,7 @@ Say "coming" or "planned", or leave it out:
 - One message system (Relay into conversations).
 - More than one person on a server.
 - The loop watcher that replaces turn counting.
-- Spaces (communities) are not part of the launch. Do not feature them in story surfaces.
+- Spaces as the story describes them (one program, many people, roles). An early form ships today as Communities; it is kept out of the launch story, so do not feature it on story surfaces.
 
 When a roadmap item ships and passes its tests, move it up to "Built today" in this section in the same pull request that ships it.
 

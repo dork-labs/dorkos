@@ -75,7 +75,7 @@ always the same is not information.
 - **Kai** (`meta/personas/the-autonomous-builder.md`) — wants a calm screen by
   default and everything available when he goes looking. Hiding something from
   him permanently is worse than showing too much.
-- **Priya** (`meta/personas/the-knowledge-architect.md`) — will accept omission
+- **Priya** (`meta/archive/personas/the-knowledge-architect.md`) — will accept omission
   and will not accept a wrong picture. The presence strip's own rule is the one
   she would apply here: omit rather than lie.
 

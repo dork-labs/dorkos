@@ -40,7 +40,7 @@ status: ideation
 - `.temp/relay-design-critique.md`: Full Jobs/Ive screen-by-screen critique with specific issues, severity ratings, and a phased overhaul plan. Revised after code review, ADR review, and persona analysis.
 - `.temp/relay-bindings-review.md`: Deep code review of the bindings system. Confirmed Bindings tab is redundant (bindings appear in 6 UI surfaces), session strategy is over-exposed, permissions are absent, orphan bindings accumulate silently.
 - `meta/personas/the-autonomous-builder.md`: Kai — primary persona. Runs agents overnight. Core need: see system state at a glance, safety for autonomous runs. Binding permissions (`canInitiate: false`) is his #1 safety concern.
-- `meta/personas/the-knowledge-architect.md`: Priya — secondary persona. Hates context-switching. The dialog-in-panel-in-tab nesting (Panel > Tab > List > Detail) is the exact flow interruption she dreads.
+- `meta/archive/personas/the-knowledge-architect.md`: Priya — secondary persona. Hates context-switching. The dialog-in-panel-in-tab nesting (Panel > Tab > List > Detail) is the exact flow interruption she dreads.
 - `meta/personas/the-prompt-dabbler.md`: Jordan — anti-persona. Any feature that makes the Relay Panel feel like a consumer dashboard is out of scope.
 - `decisions/0038-progressive-disclosure-mode-ab-for-feature-panels.md`: Mode A (empty) hides tabs/stats and shows single keystone action. Mode B (populated) shows full interface. Designed for Relay but not fully applied.
 - `decisions/0046-central-binding-router-for-adapter-agent-routing.md`: Central BindingRouter architecture. Adapters are dumb protocol bridges. Routing logic is centralized.

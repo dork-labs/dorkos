@@ -49,7 +49,7 @@ The toggle is a prerequisite for persistence being useful — if you can't reope
 - `apps/client/src/layers/shared/ui/sidebar.tsx`: Reference pattern for mobile Sheet + desktop panel toggle. Uses `useIsMobile()` hook.
 - `packages/shared/src/schemas.ts`: `UiCanvasContentSchema` — discriminated union of `url | markdown | json` types (lines 1140-1159). All three are JSON-serializable.
 - `meta/personas/the-autonomous-builder.md`: Kai runs 10-20 sessions/week across 5 projects. Expects tools to maintain context.
-- `meta/personas/the-knowledge-architect.md`: Priya's core emotional need is flow preservation. Context-switching costs 15 minutes of mental state.
+- `meta/archive/personas/the-knowledge-architect.md`: Priya's core emotional need is flow preservation. Context-switching costs 15 minutes of mental state.
 - `research/20260328_multi_panel_toggle_ux_patterns.md`: Comprehensive research on panel toggle UX from VS Code, Cursor, Figma, Obsidian, Linear. Key finding: always-visible toggle button is load-bearing infrastructure.
 
 ## 3) Codebase Map

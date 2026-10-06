@@ -58,7 +58,7 @@ Lil is live evidence for two strategic claims:
 1. **The privacy story works on non-developers.** Local-first control is usually marketed as a developer ideology; Lil proves it sells as professional common sense. Her use case belongs in the trust pillar's evidence base.
 2. **The marketplace absorbed the Wing vision.** Wing (the life layer) is vision-stage and forbidden from marketing — yet Lil lives the Wing use case today via a marketplace agent package. The life layer turned out to be a package, not a product module. This validates the marketplace as the expansion mechanism without new subsystems.
 
-She is also a plausible early **Solo** subscriber in the revenue arc (`positioning-202607/11-revenue-model.md`): remote reach for someone who will never configure a tunnel is exactly what the Cloud tier monetizes.
+She is also a plausible early DorkOS Cloud user in the revenue arc (`positioning-202607/11-revenue-model.md`): remote reach for someone who will never configure a tunnel is exactly what the Cloud offers.
 
 ## Staging Rules (the point of "horizon")
 

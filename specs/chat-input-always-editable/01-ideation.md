@@ -45,7 +45,7 @@ status: ideation
 - `contributing/state-management.md`: Zustand for UI state, TanStack Query for server state.
 - `contributing/data-fetching.md`: TanStack Query patterns, mutations.
 - `meta/personas/the-autonomous-builder.md`: Kai — 10-20 agent sessions/week, thinks in systems, wants agents to work while he sleeps. Flow: compose → send → context-switch → return to results.
-- `meta/personas/the-knowledge-architect.md`: Priya — staff architect, lives in Obsidian, context-switching costs 15 minutes. Keyboard-first, flow preservation is core emotional need.
+- `meta/archive/personas/the-knowledge-architect.md`: Priya — staff architect, lives in Obsidian, context-switching costs 15 minutes. Keyboard-first, flow preservation is core emotional need.
 
 ## 3) Codebase Map
 

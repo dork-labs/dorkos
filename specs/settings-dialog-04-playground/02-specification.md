@@ -705,7 +705,7 @@ This is **a developer surface, not a user surface.** The audience is:
 - **Reviewers** verifying visual changes
 - **New contributors** browsing the gallery to understand the system
 
-The persona that benefits most is **Priya Sharma** (`meta/personas/the-knowledge-architect.md`) — the staff engineer who reads source code before adopting tools. The playground is her primary surface for understanding how DorkOS UI works.
+The persona that benefits most is **Priya Sharma** (`meta/archive/personas/the-knowledge-architect.md`) — the staff engineer who reads source code before adopting tools. The playground is her primary surface for understanding how DorkOS UI works.
 
 User journey:
 
@@ -891,7 +891,7 @@ Resolved (§6.6): **one per `PlaygroundSection`** (6 entries), matching every ot
 - `apps/client/src/dev/PlaygroundSection.tsx`, `ShowcaseDemo.tsx`, `ShowcaseLabel.tsx` — Showcase primitives
 - `apps/client/src/layers/features/settings/ui/*` — The components being showcased
 - `apps/client/src/layers/features/agent-settings/ui/AgentDialog.tsx` — The agent dialog being showcased
-- `meta/personas/the-knowledge-architect.md` — Priya Sharma persona (the playground audience)
+- `meta/archive/personas/the-knowledge-architect.md` — Priya Sharma persona (the playground audience)
 - `.claude/skills/maintaining-dev-playground/SKILL.md` — The methodology for keeping the playground in sync with the app
 
 ### External

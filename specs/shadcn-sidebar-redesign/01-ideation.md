@@ -48,7 +48,7 @@ status: ideation
 - `research/20260303_shadcn_sidebar_redesign.md`: Full research report covering Shadcn Sidebar API, Zustand integration, mobile Sheet behavior, Tailwind v4 compatibility, CSS variable requirements, and dialog lifting patterns.
 - `specs/agent-centric-ux/01-ideation.md`: Parent spec (85) that established the agent-centric UX vision, command palette, and initial sidebar redesign direction. This spec (#86) focuses specifically on the Shadcn Sidebar migration and agent context chips.
 - `meta/personas/the-autonomous-builder.md`: Kai — runs 10+ agents across 5 projects, needs quick agent switching and at-a-glance status. "I don't need another chatbot wrapper. I need my agents to work while I sleep and tell me what they did."
-- `meta/personas/the-knowledge-architect.md`: Priya — values clean architecture and seamless cross-client sessions. "It just... stays out of the way."
+- `meta/archive/personas/the-knowledge-architect.md`: Priya — values clean architecture and seamless cross-client sessions. "It just... stays out of the way."
 
 ## 3) Codebase Map
 

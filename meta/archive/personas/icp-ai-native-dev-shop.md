@@ -1,6 +1,6 @@
 # ICP: AI-Native Dev Shop
 
-> **Archived 2026-10-06.** The ideal customer is now the founder running a business mostly with agents: see [`icp-agent-run-business.md`](../../personas/icp-agent-run-business.md). A small developer shop is still a good fit and is served through Kai (secondary), but it no longer defines who DorkOS is built for. The pricing and plan notes below are July 2026 planning history, not current offers.
+> **Archived 2026-10-06.** The ideal customer is now the founder running a business mostly with agents: see [`icp-agent-run-business.md`](../../personas/icp-agent-run-business.md). A small developer shop is still a good fit and is served through Kai (secondary), but it no longer defines who DorkOS is built for.
 
 **Role**: Ideal Customer Profile (company-level)
 **Confidence**: Proto-persona (assumption-based)
@@ -42,4 +42,4 @@ They've hit the ceiling of what isolated agent sessions can do. They want agents
 - Would pay for hosted Relay adapters (managed Slack/Telegram bridges)
 - Would NOT pay for the core open source platform itself
 
-_Update 2026-07-06: these hypotheses held up against a full OSS-monetization research pass and are now a designed model: this ICP is the **DorkOS Cloud: Crew** buyer (~$15/seat: shared fleet, shared agents with ACLs, private registries, team spend dashboards, team SSO). See `meta/positioning-202607/11-revenue-model.md`._
+_Update 2026-07-06: these hypotheses held up against a full OSS-monetization research pass and fed a designed model for a team tier of DorkOS Cloud (shared fleet, shared agents with access rules, private registries, team spend dashboards, team SSO). See `meta/positioning-202607/11-revenue-model.md`._

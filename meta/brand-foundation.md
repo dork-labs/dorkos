@@ -139,7 +139,7 @@ The full picture, with every capability labelled **Built**, **Before launch** or
 
 **The office (DorkOS):**
 
-- Conversations: `#team`, channels, DMs and threads with people and agents (**Built**, on one person's computer)
+- Conversations: `#team`, channels, DMs and threads with you and your agents (**Built**, on your own computer; more than one person on a server is **Roadmap**)
 - Direct chat with an agent, with the full coding view (**Built**)
 - Shared canvas in rooms (**Built**); live shared docs (**Roadmap**)
 - Connections to outside tools such as Gmail, plus Telegram and Slack (**Built**)
@@ -285,13 +285,13 @@ _Established during Value Architecture review (2026-02-27). These rules apply to
 
 #### Metaphor Guidelines
 
-| Use                                                                   | Don't Use                                | Why                                                                                                                                                                                   |
-| --------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Agents are colleagues" / "trusted colleagues" _(changed 2026-10-06)_ | "Agents are tools" / "your AI employees" | Equal accounts and trust by default make agents colleagues, not tools and not staff you police. The old rule ("**like** teammates", 2026-02) is retired with website-copy Decision 3. |
-| "Like giving your agents Slack"                                       | "Kernel IPC for agents"                  | The Slack metaphor is immediately understood. IPC is jargon that excludes most of the audience.                                                                                       |
-| "From solo agents to a team"                                          | "From isolated processes to a network"   | Human-scale language. Teams, not networks.                                                                                                                                            |
-| "The office and its workers"                                          | "The platform and its nodes"             | The core image (2026-10-06): DorkOS is the office, people and agents are the workers who log in.                                                                                      |
-| "Your agents can reach you"                                           | "Your agents have a voice"               | "Voice" implies speech/audio. "Reach" implies connection on any channel.                                                                                                              |
+| Use                                                                   | Don't Use                                | Why                                                                                                                                                                                                                                                      |
+| --------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Agents are colleagues" / "trusted colleagues" _(changed 2026-10-06)_ | "Agents are tools" / "your AI employees" | Agents are colleagues, not tools and not staff you police. Trust by default is decided; equal accounts for people and agents are roadmap and will make it literal. The old rule ("**like** teammates", 2026-02) is retired with website-copy Decision 3. |
+| "Like giving your agents Slack"                                       | "Kernel IPC for agents"                  | The Slack metaphor is immediately understood. IPC is jargon that excludes most of the audience.                                                                                                                                                          |
+| "From solo agents to a team"                                          | "From isolated processes to a network"   | Human-scale language. Teams, not networks.                                                                                                                                                                                                               |
+| "The office and its workers"                                          | "The platform and its nodes"             | The core image (2026-10-06): DorkOS is the office, people and agents are the workers who log in.                                                                                                                                                         |
+| "Your agents can reach you"                                           | "Your agents have a voice"               | "Voice" implies speech/audio. "Reach" implies connection on any channel.                                                                                                                                                                                 |
 
 #### Tone Guardrails
 
@@ -305,11 +305,11 @@ _Established during Value Architecture review (2026-02-27). These rules apply to
 
 #### Human-Empowerment Positioning (Added 2026-03-02)
 
-DorkOS celebrates human creativity and ambition, the way Apple positions the Mac, iPhone and iPad. The founder's vision is the point. _(2026-10-06: agents are now colleagues with equal accounts, not tools, but the rule below still holds: never imply agents make people smaller.)_
+DorkOS celebrates human creativity and ambition, the way Apple positions the Mac, iPhone and iPad. The founder's vision is the point. _(2026-10-06: agents are colleagues now, and will have equal accounts once that roadmap work ships, but the rule below still holds: never imply agents make people smaller.)_
 
 | Never Say                         | Say Instead                                | Why                                                 |
 | --------------------------------- | ------------------------------------------ | --------------------------------------------------- |
-| "Your AI is smarter than you"     | "Your AI amplifies what you build"         | The human is the creator, the agent is the tool     |
+| "Your AI is smarter than you"     | "Your AI amplifies what you build"         | The human's vision is the point                     |
 | "You're the bottleneck"           | "You've always had more ideas than hours"  | Celebrate human ambition, don't diminish it         |
 | "Agents that never stop"          | "Agents that multiply what you accomplish" | Tirelessness framed as empowerment, not superiority |
 | "While you sleep" (as deficiency) | "So you can focus on what matters"         | Human choices are valid, not limitations            |
@@ -427,15 +427,15 @@ The app opens on `#team`: a channel with you and every agent. DorkOS finds agent
 
 Open a direct chat with an agent and ask for something real: a landing page, a reply to a customer, a summary of last week's sales. The direct chat shows the full working view: what the agent is thinking, the tools it uses, and a status bar.
 
-### Minute 3: Put it on a schedule
+### Minute 3: Connect your tools
+
+Open Connections. Connect Gmail so agents can work in it, and Telegram or Slack so they can reach you.
+
+### Minute 4: Put it on a schedule
 
 Open Tasks and create a schedule:
 
 > "Every weekday at 8am, read the support inbox and post a summary in #team."
-
-### Minute 4: Connect your tools
-
-Open Connections. Connect Gmail so agents can work in it, and Telegram or Slack so they can reach you.
 
 ### Minute 5: Walk away
 

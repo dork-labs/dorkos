@@ -28,7 +28,7 @@ status: ideation
 - `contributing/design-system.md`: "Calm Tech" philosophy. Message entrance: fade + slide up 8px, 200ms ease-out. Tool card expand: 300ms ease-in-out. Hover: 150ms. Button press: scale to 0.97. Streaming cursor: blink animation.
 - `contributing/styling-theming.md`: Tailwind v4 + CSS custom properties, `cn()` utility, semantic color tokens only.
 - `meta/personas/the-autonomous-builder.md`: Primary persona (Kai Nakamura, 28-35, indie hacker/senior dev) — operates 10-20 agent sessions per week, lives in the chat UI. Polish matters disproportionately to power users who see every interaction dozens of times per day.
-- `meta/personas/the-knowledge-architect.md`: Secondary persona — values calm, unobtrusive UI that doesn't distract from deep work.
+- `meta/archive/personas/the-knowledge-architect.md`: Secondary persona — values calm, unobtrusive UI that doesn't distract from deep work.
 - `apps/client/src/layers/features/chat/ui/ChatPanel.tsx`: Main chat container, 616 lines. Uses AnimatePresence for scroll-to-bottom/new-messages pills.
 - `apps/client/src/layers/features/chat/ui/MessageList.tsx`: Virtualized message container (TanStack Virtual). Tracks `historyCount` to determine `isNew`. No motion.dev usage directly.
 - `apps/client/src/layers/features/chat/ui/MessageItem.tsx`: Wraps each message in `motion.div`. Current entrance: `initial={isNew ? { opacity: 0, y: 8 } : false}`, `animate={{ opacity: 1, y: 0 }}`, `transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}`.
