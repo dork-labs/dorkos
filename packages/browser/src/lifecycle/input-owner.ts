@@ -97,6 +97,7 @@ export function composeInput(
   try {
     slot.handle = createEngineInput({
       tab,
+      preserveFocus: record.supervisor !== undefined,
       cleanup: cleanupRoute(record, slot),
       stopGate: record.lifetime.gate,
       policy: config.policy,

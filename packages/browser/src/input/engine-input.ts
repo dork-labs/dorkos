@@ -28,6 +28,8 @@ import type { CleanupObservation } from '../lifecycle/ownership.js';
 
 /** Parent registry owns one composition per actual canonical TabRecord/Page lifetime. */
 export interface EngineInputOptions {
+  /** Constructor-private preservation of the SDK focus default suppressed by noDefaults. */
+  readonly preserveFocus?: boolean;
   readonly cleanup: InputCleanupRoute;
   readonly tab: TabRecord;
   readonly stopGate: BrowserStopGate;
@@ -146,6 +148,7 @@ class EngineInputOwner {
       this.acquiring = true;
       this.transport = createPageTransport({
         cleanup: this.options.cleanup,
+        preserveFocus: this.options.preserveFocus,
         pointer: this.options.tab.pointer,
         page: this.page,
         current: () => this.current(),
