@@ -31,6 +31,16 @@ export async function observeDarwinJournal(
     endBrowser?: () => boolean;
     /** Private original child-return receiver; requested stop/end-browser cannot populate it. */
     originalRootReturned?: () => ProcessIdentity | undefined;
+    /** Original close entry fences new enumeration; entered queries still commit without healing. */
+    enumerationCloseRequested?: () => boolean;
+    /** Acknowledges this same campaign only after its original gap-free durable commit. */
+    onEnumerationClosed?: (
+      checkpoint: Readonly<{
+        sequence: number;
+        monotonic: number;
+        root: ProcessIdentity;
+      }>
+    ) => Promise<void>;
     launchNotEntered?: () => boolean;
     observer: DarwinProcessObserver;
     monotonicNow: () => number;
@@ -41,7 +51,11 @@ export async function observeDarwinJournal(
     onObservationFault?: () => Promise<void>;
     /** Emitted only after an original gap-free sweep is durably committed. */
     onCheckpoint?: (
-      checkpoint: Readonly<{ sequence: number; monotonic: number; root: ProcessIdentity }>
+      checkpoint: Readonly<{
+        sequence: number;
+        monotonic: number;
+        root: ProcessIdentity;
+      }>
     ) => Promise<void>;
     maxGap: number;
   }>
@@ -75,6 +89,7 @@ export async function observeDarwinJournal(
     return 'uncertain';
   let currentWindowEnd = options.endMonotonic;
   let faultReported = false;
+  let enumerationClosed = false;
   const reportFault = async () => {
     if (options.continuousWindowMilliseconds === undefined || faultReported) return;
     faultReported = true;
@@ -101,7 +116,13 @@ export async function observeDarwinJournal(
   ) => {
     const prior = next.gaps.find((value) => value.cause === cause);
     if (prior) prior.count = Math.min(Number.MAX_SAFE_INTEGER, prior.count + 1);
-    else next.gaps.push({ cause, identity, firstSequence: next.sequence, count: 1 });
+    else
+      next.gaps.push({
+        cause,
+        identity,
+        firstSequence: next.sequence,
+        count: 1,
+      });
     next.firstCause ??= { cause, sequence: next.sequence };
   };
   const checkBoot = (batch: DarwinProcessBatch) =>
@@ -267,6 +288,7 @@ export async function observeDarwinJournal(
             sameProcess(parent.identity, returnedRoot)
           )
             continue;
+          if (options.enumerationCloseRequested?.()) continue;
           let childFacts: DarwinProcessBatch['processes'];
           if (parent.role === 'manager') {
             // This generation enrolls one selected root, not every controller auxiliary.
@@ -339,7 +361,10 @@ export async function observeDarwinJournal(
               gap(next, 'capacity-exceeded');
               continue;
             }
-            const relation = { ...window, endMonotonic: options.monotonicNow() };
+            const relation = {
+              ...window,
+              endMonotonic: options.monotonicNow(),
+            };
             const association = {
               parentBefore: parent.identity,
               parentAfter: parent.identity,
@@ -394,6 +419,23 @@ export async function observeDarwinJournal(
           break;
         }
         current = validateJournalSnapshot(next);
+        if (!enumerationClosed && options.enumerationCloseRequested?.()) {
+          if (
+            current.gaps.length ||
+            current.root.kind !== 'attributed' ||
+            !current.retainedIdentities.some(
+              (row) =>
+                row.role === 'root' && row.lifecycle === 'alive' && sameProcess(row.identity, root)
+            )
+          )
+            throw new Error('JOURNAL_PRECLOSE_REFUSED');
+          enumerationClosed = true;
+          await options.onEnumerationClosed?.({
+            sequence: current.sequence,
+            monotonic: end,
+            root: current.root.identity,
+          });
+        }
         if (options.continuousWindowMilliseconds !== undefined) {
           if (
             current.gaps.length ||

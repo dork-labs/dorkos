@@ -23,6 +23,8 @@ import {
 export interface DarwinEngineJournal {
   readonly binding: Readonly<JournalBinding>;
   attributeRoot(root: ProcessIdentity, supervisor?: ProcessIdentity): Promise<void>;
+  /** Original durable enumeration barrier before any context/native close enters. */
+  prepareClose(): Promise<void>;
   stop(
     launchEntered?: boolean
   ): Promise<
@@ -123,6 +125,7 @@ export async function startDarwinEngineJournal(
     stopped = false,
     attributed = false;
   let attributedRoot: ProcessIdentity | undefined, rootReturnForward: Promise<void> | undefined;
+  let closeReady: Promise<void> | undefined;
   const completion = worker.completion.then(
     async (result) => {
       if (rootReturnForward) {
@@ -184,6 +187,18 @@ export async function startDarwinEngineJournal(
         uncertain = true;
         throw error;
       }
+    },
+    prepareClose() {
+      if (closeReady) return closeReady;
+      closeReady = Promise.resolve().then(async () => {
+        if (stopped || uncertain || !pending || !attributedRoot || rootReturnForward)
+          throw new Error('JOURNAL_PRECLOSE_REFUSED');
+        await worker.prepareClose();
+      });
+      void closeReady.catch(() => {
+        uncertain = true;
+      });
+      return closeReady;
     },
     rootReturned(root: ProcessIdentity) {
       const identity = ProcessIdentitySchema.parse(root);

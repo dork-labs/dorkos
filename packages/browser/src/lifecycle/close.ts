@@ -136,19 +136,24 @@ async function performClose(
     }),
   ]);
   void inputs.catch(() => {});
+  // Reserve the original worker barrier before any SDK context close can make
+  // a live-parent query incomplete. A timeout never substitutes for its ACK.
+  const requiresJournalBarrier = !!record.journal && record.launchEntered;
+  const journalBarrier = requiresJournalBarrier
+    ? ownOperation(record, () => record.journal!.prepareClose())
+    : Promise.resolve();
+  void journalBarrier.catch(() => {
+    owner.uncertain = true;
+  });
+  const closeEntryBarrier = Promise.allSettled([observed, inputs, journalBarrier]).then(
+    (joined) => {
+      if (joined.some((result) => result.status === 'rejected')) owner.uncertain = true;
+    }
+  );
   if (record.supervisor) {
     // Enter all original closes now, but preserve the attributable snapshot and exact
     // input-session detach before asking the separate owner to terminate Chromium.
-    record.supervisorStopBarrier = until(
-      Promise.all([observed, inputs]),
-      inputEnd,
-      'CONTEXT_CLOSE_TIMEOUT'
-    ).then(
-      () => {},
-      () => {
-        owner.uncertain = true;
-      }
-    );
+    record.supervisorStopBarrier = closeEntryBarrier;
   }
   const navigationObserver = record.ownerNavigationObserver
     ? (record.ownerNavigationObserverClose ??= ownOperation(record, () =>
@@ -159,7 +164,12 @@ async function performClose(
     owner.uncertain = true;
   });
   const context = record.context
-    ? closeOwned(record, 'context', record.context)
+    ? requiresJournalBarrier
+      ? ownOperation(record, async () => {
+          await closeEntryBarrier;
+          await closeOwned(record, 'context', record.context!);
+        })
+      : closeOwned(record, 'context', record.context)
     : Promise.resolve();
   const network = record.networkPeer
     ? (record.networkClosePromise ??= ownOperation(record, async () => {
@@ -174,7 +184,11 @@ async function performClose(
   const proxy = record.proxy ? closeOwned(record, 'proxy', record.proxy) : Promise.resolve();
   const connection =
     !record.context && record.controllerBrowser
-      ? ownOperation(record, () => record.controllerBrowser!.close())
+      ? ownOperation(record, () =>
+          requiresJournalBarrier
+            ? closeEntryBarrier.then(() => record.controllerBrowser!.close())
+            : record.controllerBrowser!.close()
+        )
       : Promise.resolve();
   void connection.catch(() => {
     owner.uncertain = true;

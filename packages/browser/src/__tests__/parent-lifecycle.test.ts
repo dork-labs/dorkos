@@ -4,7 +4,7 @@ import { createPointerLedger } from '../tabs/pointer.js';
 import { unavailableDiagnostics } from '../tabs/diagnostics.js';
 import { createDiagnosticsBudget } from '../tabs/diagnostics-budget.js';
 import { createBrowserLifetime, fenceOrdinary, ordinaryRecord } from '../lifecycle/ownership.js';
-import { it, expect, vi } from 'vitest';
+import { it, expect, vi, onTestFinished } from 'vitest';
 import type { BrowserContext } from 'playwright-core';
 import type { EngineConfiguration } from '../configuration.js';
 import type { BrowserRecord, TabRecord } from '../lifecycle/records.js';
@@ -45,7 +45,10 @@ function config(): EngineConfiguration {
       descendants: async () => ({ status: 'complete', identities: [identity] }),
       observe: async () => ({ status: 'dead' }),
     },
-    policy: { authorizeAction: async () => 'allowed', verifyBrokerLease: async () => 'unknown' },
+    policy: {
+      authorizeAction: async () => 'allowed',
+      verifyBrokerLease: async () => 'unknown',
+    },
   };
 }
 function record(): BrowserRecord {
@@ -155,7 +158,10 @@ it.each([false, true])(
       detachPending: false,
     });
     if (fault) {
-      expect(outcome).toEqual({ cleanup: 'unverified', reason: 'observationUnavailable' });
+      expect(outcome).toEqual({
+        cleanup: 'unverified',
+        reason: 'observationUnavailable',
+      });
       expect(owner.handle!.custody().uncertain).toBe(true);
       expect(r.tabs.get(tab.binding.tabId)).toBe(tab);
       expect(r.context).toBe(context);
@@ -213,3 +219,57 @@ it('an actual canonical Page without an input owner cannot certify complete reti
   expect(r.context).toBe(context);
   expect(r.lifetime.ordinary.phase).toBe('terminal');
 });
+
+it.each([false, true])(
+  'waits for original journal pre-close before context close (refusal=%s)',
+  async (refusal) => {
+    const r = record(),
+      c = config();
+    let release!: () => void, entered!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entering = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const contextClose = vi.fn(async () => {});
+    r.context = { close: contextClose } as unknown as BrowserContext;
+    const originals: { operation?: Promise<unknown> } = {};
+    onTestFinished(async () => {
+      release();
+      if (originals.operation) await originals.operation;
+    });
+    r.journal = {
+      binding: {
+        journalId: 'close',
+        browserId: r.browserId,
+        browserGeneration: 0,
+        reservationNonce: 'nonce',
+        manager: r.manager,
+        runtimeIdentityDigest: 'a'.repeat(64),
+        profile: { kind: 'ephemeral' },
+        bootScope: { kind: 'unknown', cause: 'boot-unknown' },
+      },
+      attributeRoot: async () => {},
+      prepareClose: async () => {
+        expect(closeRecord(c, r)).toBe(r.closePromise);
+        entered();
+        await held;
+        if (refusal) throw undefined;
+      },
+      stop: async () => 'campaign-closed',
+      historyGapped: () => false,
+      custody: () => ({ pending: false, uncertain: false }),
+    };
+    originals.operation = closeRecord(c, r);
+    await entering;
+    expect(contextClose).not.toHaveBeenCalled();
+    release();
+    expect(await originals.operation).toEqual(
+      refusal
+        ? { cleanup: 'unverified', reason: 'observationUnavailable' }
+        : { cleanup: 'observed' }
+    );
+    expect(contextClose).toHaveBeenCalledTimes(1);
+  }
+);

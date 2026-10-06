@@ -182,7 +182,9 @@ it.each(['freshness', 'wrong-root', 'rejected-drain', 'premature-close'] as cons
     let child: ChildProcess | undefined;
     let terminal: Promise<unknown> | undefined;
     let originalSend: ChildProcess['send'] | undefined;
-    const originals: { starting?: ReturnType<typeof startDarwinJournalWorker> } = {};
+    const originals: {
+      starting?: ReturnType<typeof startDarwinJournalWorker>;
+    } = {};
     let worker: Awaited<ReturnType<typeof startDarwinJournalWorker>> | undefined;
     let firstFailure: { reason: unknown } | undefined;
     const failed = (reason: unknown) => {
@@ -311,5 +313,142 @@ it.each(['freshness', 'wrong-root', 'rejected-drain', 'premature-close'] as cons
     }
     if (firstFailure) throw firstFailure.reason;
     expect(await worker.completion).toBe('uncertain');
+  }
+);
+
+// Actual Node IPC/pipe/child originals; durable checkpoint data here is a protocol double.
+it.each(['exact', 'wrong-nonce', 'wrong-root', 'duplicate', 'reentrant-send'] as const)(
+  'correlates original pre-close ACK and retains natural worker return (%s)',
+  async (mode) => {
+    const input = await options();
+    await writeFile(
+      input.workerPath,
+      `
+    let root, nonce, ack, ended = false;
+    process.on('message', value => {
+      if (value.kind === 'seed') { nonce = value.initial.binding.reservationNonce; process.send({kind:'enrolled'}); }
+      if (value.kind === 'root') root = value.identity;
+      if (value.kind === 'prepare-close') {
+        ack = {kind:'enumeration-closed',nonce:${mode === 'wrong-nonce' ? "'other-nonce'" : 'nonce'},sequence:2,monotonic:1000,
+          root:${mode === 'wrong-root' ? "{...root,birth:'other-original'}" : 'root'}};
+        process.stdout.write('held');
+      }
+      if (value.kind === 'control-release' && ack) {
+        process.send(ack);
+        ${mode === 'duplicate' ? 'process.send(ack);' : ''}
+        ack = null;
+      }
+      if (value.kind === 'end-browser' && !ended) {
+        ended = true;
+        process.send({kind:'complete',result:'campaign-closed'}, () => process.disconnect());
+      }
+    });
+  `
+    );
+    vi.spyOn(process.hrtime, 'bigint').mockImplementation(() => 1000000000n);
+    const originals: {
+      child?: ChildProcess;
+      terminal?: Promise<unknown>;
+      starting?: ReturnType<typeof startDarwinJournalWorker>;
+      send?: ChildProcess['send'];
+      joined?: Promise<void>;
+    } = {};
+    const release = () =>
+      new Promise<void>((resolve, reject) => {
+        if (!originals.child?.connected || !originals.send) {
+          resolve();
+          return;
+        }
+        originals.send({ kind: 'control-release' }, (reason: Error | null) =>
+          reason ? reject(reason) : resolve()
+        );
+      });
+    const cleanup = () =>
+      (originals.joined ??= Promise.resolve().then(async () => {
+        let first: { reason: unknown } | undefined;
+        try {
+          await release();
+        } catch (reason) {
+          first ??= { reason };
+        }
+        try {
+          if (originals.child?.connected && originals.send)
+            await new Promise<void>((resolve, reject) =>
+              originals.send!(
+                { kind: 'end-browser', launchEntered: true },
+                (reason: Error | null) => (reason ? reject(reason) : resolve())
+              )
+            );
+        } catch (reason) {
+          first ??= { reason };
+        }
+        const joins: Promise<unknown>[] = [];
+        if (originals.starting) joins.push(originals.starting.then((worker) => worker.completion));
+        if (originals.terminal) joins.push(originals.terminal);
+        for (const joined of await Promise.allSettled(joins))
+          if (joined.status === 'rejected') first ??= { reason: joined.reason };
+        if (first) throw first.reason;
+      }));
+    originalFinalizers.add(cleanup);
+    onTestFinished(cleanup);
+    controls.spawn.mockImplementation((...args: Parameters<typeof actualSpawn>) => {
+      const child = actualSpawn(...args);
+      originals.child = child;
+      originals.terminal = once(child, 'close');
+      originals.send = child.send.bind(child);
+      return child;
+    });
+    originals.starting = startDarwinJournalWorker(input);
+    const worker = await originals.starting;
+    await worker.enrollRoot({ pid: 20, birth: 'darwin-bsd-start:200:0' });
+    let reentrant: Promise<void> | undefined;
+    let sends = 0;
+    if (mode === 'reentrant-send') {
+      const actualSend = worker.child.send;
+      vi.spyOn(worker.child, 'send').mockImplementation(function (
+        ...args: Parameters<ChildProcess['send']>
+      ) {
+        if (
+          typeof args[0] === 'object' &&
+          args[0] !== null &&
+          'kind' in args[0] &&
+          args[0].kind === 'prepare-close'
+        ) {
+          sends++;
+          reentrant = worker.prepareClose();
+        }
+        return Reflect.apply(actualSend, worker.child, args);
+      });
+    }
+    const held = once(worker.child.stdout!, 'data');
+    const first = worker.prepareClose();
+    void first.catch(() => {});
+    expect(worker.prepareClose()).toBe(first);
+    let settled = false;
+    void first.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    await held;
+    expect(settled).toBe(false);
+    if (mode === 'reentrant-send') {
+      expect(reentrant).toBe(first);
+      expect(sends).toBe(1);
+    }
+    await release();
+    if (mode === 'wrong-nonce' || mode === 'wrong-root')
+      await expect(first).rejects.toThrow('JOURNAL_PRECLOSE_REFUSED');
+    else await first;
+    await worker.endBrowser(true);
+    expect(await worker.completion).toBe(
+      mode === 'exact' || mode === 'reentrant-send' ? 'campaign-closed' : 'uncertain'
+    );
+    expect(worker.child.exitCode).toBe(0);
+    expect(worker.child.stdout!.readableEnded).toBe(true);
+    expect(worker.child.stderr!.readableEnded).toBe(true);
   }
 );
