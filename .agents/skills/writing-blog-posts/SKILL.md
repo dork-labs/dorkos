@@ -50,14 +50,14 @@ The position comes from three places:
 - **The design filters.** `AGENTS.md:15` names Jobs, Ive and Rams as the design mentors and states what they imply: every element justifies its existence, so if a paragraph would not be missed, cut it. The product "feels like a control panel, not a consumer app," and `meta/brand-foundation.md:425` says the same. The prose is instrument-panel prose, not lifestyle copy.
 - **A named reader.** A post aimed at everyone reaches nobody. Name the persona before the first sentence.
 
-| Post type      | Usually for                                                                                                                       |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Feature post   | Kai (`meta/personas/the-autonomous-builder.md`), running many agents, asking whether this does something his current setup cannot |
-| Decision essay | Priya (`the-knowledge-architect.md`), who reads the source before adopting and is really evaluating our judgment                  |
-| Ecosystem post | Kai plus the other project's users, who arrived because of that project and not because of us                                     |
-| Release recap  | People already running DorkOS, who want to know what changed and whether it was worth the upgrade                                 |
+| Post type      | Usually for                                                                                                                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Feature post   | The founder (`meta/personas/the-ai-native-founder.md`), running a business mostly with agents, asking what this lets them hand off next; Kai (`meta/personas/the-autonomous-builder.md`) when the feature is for developers |
+| Decision essay | The founder or Kai at their most skeptical: the reader who reads the source before adopting and is really evaluating our judgment                                                                                           |
+| Ecosystem post | Kai plus the other project's users, who arrived because of that project and not because of us                                                                                                                               |
+| Release recap  | People already running DorkOS, who want to know what changed and whether it was worth the upgrade                                                                                                                           |
 
-A feature that removes the need to write code is Ikechi's (`the-ai-native-founder.md`), not Kai's. Pick one and write to them.
+A feature aimed at developers (runtimes, the CLI, the API) is Kai's, running many agents and asking whether this does something his current setup cannot. One that lets a founder hand off work without writing code is the founder's. Pick one and write to them.
 
 The test: **if the post could have been written by a competitor about their own product, it has no point of view.** Rewrite it or do not publish it.
 

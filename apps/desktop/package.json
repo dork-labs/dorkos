@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/desktop",
   "version": "0.98.0",
-  "description": "DorkOS desktop app - all your coding agents in one place",
+  "description": "DorkOS desktop app: a workspace for people and agents",
   "author": "144 Studio, LLC",
   "private": true,
   "main": "dist/main/index.js",

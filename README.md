@@ -12,13 +12,17 @@
 
 **You, multiplied.**
 
-DorkOS is one place for every AI agent you run: Claude Code, Codex, and OpenCode, in one window. See every session, approve what your agents do, and put them on a schedule, all on your own machine.
+DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. It runs on your own computer, free, with no account needed.
+
+Think of DorkOS as the office, and your agents as the workers who log in. Each agent's brain, the AI that does its thinking, runs outside the office and connects in. Agents here are trusted colleagues, and the Activity page shows what each one did.
 
 **Alpha, and moving fast.** DorkOS is built in the open by one person and a fleet of agents. Expect rough edges. [File an issue](https://github.com/dork-labs/dorkos/issues) and we'll get to it.
 
 ## Who this is for
 
-You run AI coding agents like Claude Code, Codex, and OpenCode, and you start them from a lot of places: your terminal, your editor, a script. DorkOS gathers all of those sessions into one dashboard in your browser, so you can see what each agent is doing and step in when it matters.
+**Founders who build with agents.** You have a clear picture of the business you want and the taste to judge the work. You get most of it done by directing AI agents, and you don't need to be a full-time developer to do it. DorkOS gives you and your agents one workspace: a #team channel where you all talk, a channel per project, schedules that run while you sleep, and a Telegram or Slack message when something needs you.
+
+**Developers running many agents.** You run a lot of coding agents across a lot of projects, and you start them from your terminal, your editor and your scripts. DorkOS shows every session in one window, whichever tool started it, so you can see what each agent is doing and step in from your laptop or your phone. Your agents can run on Claude Code, Codex or OpenCode.
 
 ## Install
 
@@ -49,7 +53,19 @@ dorkos
 
 It's 7am. Your automated tests have been failing since 2:47am, because an overnight dependency update broke three of your projects. Your agent could have caught this, fixed it, and sent you a message. Instead, nothing was watching.
 
-DorkOS gives your agents what they're missing: a schedule, a way to reach you, and a way to find each other. The intelligence comes from the agents. Everything else comes from DorkOS.
+DorkOS gives your agents what they're missing: a place to work with you, a schedule, a way to reach you, and a way to find each other. The intelligence comes from the agents. Everything else comes from DorkOS.
+
+### Rooms: talk with your agents
+
+Every install starts with a #team channel: you, DorkBot (the built-in helper agent) and every agent you add. Open more channels for each project or topic, send any agent a direct message, and reply in threads. Agents post their updates where you can see them, and a shared canvas holds the documents a room is working on.
+
+- Type without naming anyone and your default agent answers
+- Name an agent with `@` to ask it directly
+- Bring a Telegram chat in as a channel, so your agent reads the whole conversation
+
+### Connections: let agents work your other apps
+
+Connect the outside apps your work depends on, like Gmail, and your agents can read and act in them for you. You choose which apps to connect.
 
 ### Tasks: run agents on a schedule
 

@@ -1,7 +1,7 @@
 {
   "name": "dorkos",
   "version": "0.98.0",
-  "description": "You, multiplied. All your agents in one place: Claude Code, Codex, and OpenCode. See every session, approve what your agents do, and run them on a schedule. Self-hosted, MIT.",
+  "description": "You, multiplied. A workspace for people and agents: talk with your agents in channels and threads, run them on a schedule, and let them work your other apps. Runs on your own computer, free. MIT.",
   "license": "MIT",
   "author": "Dorian Collier",
   "repository": {
