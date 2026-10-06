@@ -718,6 +718,9 @@ export class OpenCodeRuntime implements AgentRuntime {
       controller.signal.throwIfAborted();
 
       const ctx = createOpenCodeEventContext(sessionId);
+      // Read the model catalog now, so the reply's context reading finds its
+      // window ready rather than waiting on it (bounded either way).
+      this.contextWindows.prefetch(client, directory);
       const queue = new TurnEventQueue<OpenCodeWireEvent>();
       subscription = this.hub.subscribe({
         cwd,
@@ -806,8 +809,10 @@ export class OpenCodeRuntime implements AgentRuntime {
    * Add the model's context window to a reply's context reading, so the
    * reading says how full the conversation is (DOR-2732). OpenCode's own
    * usage event names the model but not its window; the sidecar's catalog
-   * does ({@link OpenCodeContextWindows}, cached). A model the catalog gives
-   * no window for keeps its reading without one.
+   * does ({@link OpenCodeContextWindows}, cached per directory, waited on for
+   * at most `CONTEXT_WINDOW_READ_TIMEOUT_MS`). A model the catalog gives no
+   * window for, or a catalog that does not answer in time, leaves the reading
+   * without one.
    *
    * @param client - The sidecar client the turn runs on.
    * @param directory - The session's directory, for the catalog read.

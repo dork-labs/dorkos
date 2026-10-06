@@ -2,6 +2,8 @@
 covers:
   - 'feat(codex): /compact and agent self-compaction in Codex chats (DOR-2732)'
   - 'feat(opencode): say how full an OpenCode chat is, so the 80% note works there too (DOR-2732)'
+  - "fix(codex): close the review's gaps in Codex compaction (DOR-2732)"
+  - 'fix(session): bound the context-window read and the stray-summary wait (DOR-2732)'
 ---
 
 ### Added

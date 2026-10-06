@@ -303,3 +303,22 @@ describe('a summary that opens after DorkOS gave up on it', () => {
     expect(fake.loaded.get(threadId)!.activeTurn).toBeUndefined();
   });
 });
+
+describe('a summary Codex never opens at all', () => {
+  it('holds only the first message after it, never every message for the watch window', async () => {
+    const h = harness({ compactionStartMs: 20, stopAckMs: 400 });
+    const threadId = await withConversation(h);
+    h.host.home(PERSON_HOME).processes[0]!.compactionNeverStarts = true;
+    await h.compact({ sessionId: 's1', boundThreadId: threadId });
+
+    const timed = async () => {
+      const started = Date.now();
+      await h.run(h.request({ sessionId: 's1', boundThreadId: threadId }));
+      return Date.now() - started;
+    };
+    // The first waits (bounded) for the late start; the next ones do not.
+    expect(await timed()).toBeGreaterThanOrEqual(350);
+    expect(await timed()).toBeLessThan(200);
+    expect(await timed()).toBeLessThan(200);
+  });
+});

@@ -67,7 +67,7 @@ describe('OpenCodeContextWindows', () => {
   it('reads it again once the cached copy is old, and per sidecar client', async () => {
     let now = 0;
     const list = vi.fn(async () => ({ data: catalog }));
-    const windows = new OpenCodeContextWindows(() => now);
+    const windows = new OpenCodeContextWindows({ now: () => now });
     const sidecar = client(list);
     await windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5');
     now = CONTEXT_WINDOW_TTL_MS - 1;
@@ -88,7 +88,7 @@ describe('OpenCodeContextWindows', () => {
       .fn()
       .mockResolvedValueOnce({ error: { message: 'down' } })
       .mockResolvedValue({ data: catalog });
-    const windows = new OpenCodeContextWindows(() => now);
+    const windows = new OpenCodeContextWindows({ now: () => now });
     const sidecar = client(list);
     expect(await windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5')).toBeUndefined();
     expect(await windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5')).toBeUndefined();
@@ -96,5 +96,73 @@ describe('OpenCodeContextWindows', () => {
     now = CONTEXT_WINDOW_RETRY_MS + 1;
     expect(await windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5')).toBe(200_000);
     expect(list).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('OpenCodeContextWindows — never costs a reply', () => {
+  it('answers without a window once the bound passes on a catalog that never answers', async () => {
+    const list = vi.fn(() => new Promise(() => {}));
+    const windows = new OpenCodeContextWindows({ readTimeoutMs: 20 });
+    const started = Date.now();
+    expect(
+      await windows.lookup(client(list), '/p', 'anthropic', 'claude-sonnet-4-5')
+    ).toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('survives a catalog call that throws before it returns, and tries again later', async () => {
+    let now = 0;
+    const list = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('sidecar gone');
+      })
+      .mockResolvedValue({ data: catalog });
+    const windows = new OpenCodeContextWindows({ now: () => now });
+    const sidecar = client(list);
+    await expect(
+      windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5')
+    ).resolves.toBeUndefined();
+    await expect(
+      windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5')
+    ).resolves.toBeUndefined();
+    now = CONTEXT_WINDOW_RETRY_MS + 1;
+    expect(await windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5')).toBe(200_000);
+  });
+
+  it('reads each project directory’s catalog of its own (opencode.json can resize a model)', async () => {
+    const resized = {
+      ...catalog,
+      all: [
+        {
+          id: 'anthropic',
+          name: 'Anthropic',
+          models: {
+            'claude-sonnet-4-5': {
+              id: 'claude-sonnet-4-5',
+              limit: { context: 1_000_000, output: 64_000 },
+            },
+          },
+        },
+      ],
+    };
+    const list = vi.fn(async (options: { query: { directory: string } }) => ({
+      data: options.query.directory === '/big' ? resized : catalog,
+    }));
+    const windows = new OpenCodeContextWindows();
+    const sidecar = client(list as unknown as ReturnType<typeof vi.fn>);
+    expect(await windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5')).toBe(200_000);
+    expect(await windows.lookup(sidecar, '/big', 'anthropic', 'claude-sonnet-4-5')).toBe(1_000_000);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts the read at prefetch, so the lookup finds it done', async () => {
+    const list = vi.fn(async () => ({ data: catalog }));
+    const windows = new OpenCodeContextWindows();
+    const sidecar = client(list);
+    windows.prefetch(sidecar, '/p');
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(await windows.lookup(sidecar, '/p', 'anthropic', 'claude-sonnet-4-5')).toBe(200_000);
+    expect(list).toHaveBeenCalledTimes(1);
   });
 });

@@ -5,12 +5,23 @@
  * (DOR-2732: the 80% note, and the gauge's window on the server side).
  *
  * OpenCode's `message.updated` names the provider and model but carries no
- * window, so the window is looked up here. The catalog is read once per
- * sidecar client and kept for {@link CONTEXT_WINDOW_TTL_MS}, so a reply costs
- * no network call; a failed read is remembered for a short while rather than
- * retried on every reply. A model the catalog gives no positive limit for
- * answers `undefined`, and the reading goes without a window rather than with
- * a guessed one.
+ * window, so the window is looked up here. Three rules keep the lookup from
+ * costing a reply anything:
+ *
+ * - **Read once, per sidecar client AND project directory.** One sidecar
+ *   serves every project, and a project's `opencode.json` can add or resize
+ *   models, so the catalog is per directory. A read is kept for
+ *   {@link CONTEXT_WINDOW_TTL_MS}; a failed one for {@link CONTEXT_WINDOW_RETRY_MS}.
+ * - **Started early.** {@link OpenCodeContextWindows.prefetch} starts the read
+ *   when a turn opens, so it is usually done by the time the reply's usage
+ *   arrives.
+ * - **Never waited on for long.** A lookup waits at most
+ *   {@link CONTEXT_WINDOW_READ_TIMEOUT_MS}; a catalog read that stalls leaves
+ *   that reading without a window (the read carries on for the next reply),
+ *   so a slow sidecar can never hold a reply's `done`, or a Stop, hostage.
+ *
+ * A model the catalog gives no positive limit for answers `undefined`, and the
+ * reading goes without a window rather than with a guessed one.
  *
  * @module services/runtimes/opencode/providers/context-windows
  */
@@ -22,6 +33,9 @@ export const CONTEXT_WINDOW_TTL_MS = 10 * 60_000;
 
 /** How long a failed read is remembered before the next one is tried. */
 export const CONTEXT_WINDOW_RETRY_MS = 60_000;
+
+/** The longest a reply's reading waits for the catalog before going without a window. */
+export const CONTEXT_WINDOW_READ_TIMEOUT_MS = 1_500;
 
 /** `provider/model` → window, from one catalog read. */
 type WindowTable = ReadonlyMap<string, number>;
@@ -49,22 +63,47 @@ export function contextWindowsFrom(payload: ProviderListResponse): WindowTable {
   return table;
 }
 
-/** Cached context windows, one catalog read per sidecar client. */
+/** Seams for {@link OpenCodeContextWindows}. */
+export interface OpenCodeContextWindowsOptions {
+  /** Clock (tests). */
+  readonly now?: () => number;
+  /** The longest a lookup waits (tests). */
+  readonly readTimeoutMs?: number;
+}
+
+/** Cached context windows, one catalog read per sidecar client and directory. */
 export class OpenCodeContextWindows {
-  private readonly entries = new WeakMap<object, Entry>();
+  private readonly entries = new WeakMap<object, Map<string, Entry>>();
+  private readonly now: () => number;
+  private readonly readTimeoutMs: number;
 
   /**
    * Construct the cache.
    *
-   * @param now - Clock seam (tests).
+   * @param options - Clock and timeout seams.
    */
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(options: OpenCodeContextWindowsOptions = {}) {
+    this.now = options.now ?? Date.now;
+    this.readTimeoutMs = options.readTimeoutMs ?? CONTEXT_WINDOW_READ_TIMEOUT_MS;
+  }
 
   /**
-   * The window of one model, or `undefined` when the catalog does not say.
+   * Start reading the catalog for a directory if no fresh read is held, so a
+   * reply's lookup later usually finds it done. Never throws.
+   *
+   * @param client - The sidecar client the turn runs on.
+   * @param directory - The turn's project directory.
+   */
+  prefetch(client: OpencodeClient, directory: string): void {
+    void this.tableFor(client, directory);
+  }
+
+  /**
+   * The window of one model, or `undefined` when the catalog does not say or
+   * did not answer within the bound. Never throws.
    *
    * @param client - The sidecar client the reply came from.
-   * @param directory - The directory to read the catalog for.
+   * @param directory - The project directory the catalog is read for.
    * @param providerId - The reply's provider.
    * @param modelId - The reply's model.
    */
@@ -75,30 +114,48 @@ export class OpenCodeContextWindows {
     modelId: string | undefined
   ): Promise<number | undefined> {
     if (!providerId || !modelId) return undefined;
-    const table = await this.tableFor(client, directory);
-    return table.get(`${providerId}/${modelId}`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), this.readTimeoutMs);
+      timer.unref?.();
+    });
+    try {
+      const table = await Promise.race([this.tableFor(client, directory), timedOut]);
+      return table?.get(`${providerId}/${modelId}`);
+    } catch {
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private tableFor(client: OpencodeClient, directory: string): Promise<WindowTable> {
-    const held = this.entries.get(client);
+    let byDirectory = this.entries.get(client);
+    if (!byDirectory) {
+      byDirectory = new Map();
+      this.entries.set(client, byDirectory);
+    }
+    const held = byDirectory.get(directory);
     if (held && this.now() - held.at < held.ttl) return held.table;
-    const entry: Entry = {
-      at: this.now(),
-      ttl: CONTEXT_WINDOW_TTL_MS,
-      table: this.read(client, directory, () => {
-        // Failed: keep the empty answer only briefly.
-        this.entries.set(client, { ...entry, ttl: CONTEXT_WINDOW_RETRY_MS });
-      }),
-    };
-    this.entries.set(client, entry);
-    return entry.table;
+    const directories = byDirectory;
+    const table = this.read(client, directory).then((read) => {
+      // A failed read is kept only briefly, so the next try is not ten minutes away.
+      if (read === null) {
+        directories.set(directory, {
+          at: this.now(),
+          ttl: CONTEXT_WINDOW_RETRY_MS,
+          table: Promise.resolve(new Map()),
+        });
+        return new Map<string, number>();
+      }
+      return read;
+    });
+    directories.set(directory, { at: this.now(), ttl: CONTEXT_WINDOW_TTL_MS, table });
+    return table;
   }
 
-  private async read(
-    client: OpencodeClient,
-    directory: string,
-    onFailure: () => void
-  ): Promise<WindowTable> {
+  /** One catalog read; `null` when it failed, however it failed. */
+  private async read(client: OpencodeClient, directory: string): Promise<WindowTable | null> {
     try {
       const listed = await client.provider.list({ query: { directory } });
       if (listed.error !== undefined || listed.data === undefined) {
@@ -110,8 +167,7 @@ export class OpenCodeContextWindows {
         '[OpenCodeRuntime] model catalog unavailable for context windows',
         logError(err)
       );
-      onFailure();
-      return new Map();
+      return null;
     }
   }
 }

@@ -234,7 +234,7 @@ export class AppServerCodexTransport implements CodexTransport {
    */
   private readonly strayCompactions = new Map<
     string,
-    { readonly process: CodexAppServerProcess; readonly until: number }
+    { readonly process: CodexAppServerProcess; readonly until: number; waited: boolean }
   >();
   /** Last full rate-limit reading per person-home process. */
   private readonly rateLimits = new Map<string, unknown>();
@@ -630,6 +630,7 @@ export class AppServerCodexTransport implements CodexTransport {
         this.strayCompactions.set(threadId, {
           process,
           until: Date.now() + STRAY_COMPACTION_WATCH_MS,
+          waited: false,
         });
         queue.push(
           mapper.closeQuietly({
@@ -1405,7 +1406,9 @@ export class AppServerCodexTransport implements CodexTransport {
   /**
    * Before a turn on a thread with a stray compaction: give its late
    * `turn/started` a bounded moment to arrive, so it is caught and settled
-   * rather than collided with. Past the watch window it is forgotten.
+   * rather than collided with. Only the first turn after it waits; later ones
+   * go straight on (it is still caught and stopped if it ever opens, until the
+   * watch window ends). Past the watch window it is forgotten.
    */
   private async awaitStrayCompaction(
     process: CodexAppServerProcess,
@@ -1417,6 +1420,8 @@ export class AppServerCodexTransport implements CodexTransport {
       this.strayCompactions.delete(threadId);
       return;
     }
+    if (stray.waited) return;
+    stray.waited = true;
     const deadline = Date.now() + this.stopAckMs;
     while (this.strayCompactions.has(threadId) && Date.now() < deadline) await sleep(20);
   }
