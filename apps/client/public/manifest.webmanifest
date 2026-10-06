@@ -1,7 +1,7 @@
 {
   "name": "DorkOS",
   "short_name": "DorkOS",
-  "description": "All your agents. One place.",
+  "description": "A workspace for people and agents.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",

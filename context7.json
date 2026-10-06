@@ -1,7 +1,7 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "DorkOS",
-  "description": "One place for every AI agent you run: Claude Code, Codex, and OpenCode. Open source, on your own machine.",
+  "description": "A workspace for people and agents: talk with your agents in channels and threads, run them on a schedule, and let them work your other apps. Open source, on your own machine.",
   "folders": ["docs"],
   "excludeFolders": ["docs/api/api"],
   "excludeFiles": ["docs/api/openapi.json"],

@@ -4,11 +4,11 @@ paths: apps/site/src/layers/features/marketing/**, apps/site/src/app/\(marketing
 
 # Marketing Copy on dorkos.ai
 
-Every string here is read by a stranger deciding whether to trust us. The plain-language contract in `user-facing-writing.md` applies in full: 9th-grade level, short sentences, second person, active voice, no em dashes. This file adds what is specific to the marketing site.
+Every string here is read by a stranger deciding whether to trust us. The primary reader is the founder who builds a business mostly with agents (`meta/personas/the-ai-native-founder.md`); Kai, the developer running many agents (`meta/personas/the-autonomous-builder.md`), comes second. The plain-language contract in `user-facing-writing.md` applies in full: 9th-grade level, short sentences, second person, active voice, no em dashes. This file adds what is specific to the marketing site.
 
 ## Voice
 
-- **The category phrase is "one place"** — "All your agents. One place." / "one place for every AI agent you run". Say "the DorkOS app", "the app", "one place" or "one window".
+- **The category phrase is "a workspace for people and agents"**; the longer form is "the workspace where founders run their business with people and agents". The canon is `meta/positioning-202610/00-overview.md`. "All your agents. One place." is retired as the category line, and runtime names (Claude Code, Codex, OpenCode) never lead a headline. Never redefine the product's Workspaces page (project checkouts) when you use the category word. For the product itself say "the DorkOS app" or "the app".
 - **Banned words.** "mission control" and "cockpit" are retired and CI-enforced (`scripts/check-banned-words.sh`, `scripts/check-vocab-gate.ts`). Also avoid, though no script catches them: orchestration, coordination, multi-agent, fleet, platform, seamless, powerful, workflow, AI-powered, 10x, and the internal subsystem names (Mesh, Relay, Tasks, Console). A rival's own feature name is the exception — Buzz ships "Workflows" and Roo Code shipped "Orchestrator mode", so name them as they do.
 - **DorkOS _is_.** Never "trying to be", "what we're building toward", "aims to", "we think", "arguably", "probably". DorkOS is the fixed point a sentence measures other things against: "DeepSeek Harness is the closest thing on this list to what DorkOS is", never "the closest thing to what DorkOS is trying to be".
 - **Condense over pad.** Cut throat-clearing openers, doubled statements, and any sentence whose removal loses nothing. Brevity comes from tighter sentences, never from dropping a fact, a concession or a caveat.

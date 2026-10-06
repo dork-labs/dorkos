@@ -3,11 +3,12 @@
 #
 # WHY THIS EXISTS. DOR-1517 swept "mission control" and "cockpit" out of every
 # surface a user can read, after the operator retired both words for good (the
-# category phrase is now "one place" — meta/website-copy/decisions.md,
-# Decision 18). A sweep with no guard rots: the next person to write a README
-# paragraph or a release post has no idea those two words were spent, and the
-# repo carries ~2,000 legitimate internal uses of "cockpit" in comments and
-# identifiers for them to copy the habit from.
+# category phrase became "one place" then, meta/website-copy/decisions.md
+# Decision 18; since 2026-10 it is "a workspace for people and agents",
+# meta/positioning-202610/00-overview.md). A sweep with no guard rots: the
+# next person to write a README paragraph or a release post has no idea those
+# two words were spent, and the repo carries ~2,000 legitimate internal uses of
+# "cockpit" in comments and identifiers for them to copy the habit from.
 #
 # WHY IT IS A SECOND GATE, NOT A REPLACEMENT. scripts/check-vocab-gate.ts
 # already guards this vocabulary inside app source, and DOR-1517 extended it
@@ -181,8 +182,8 @@ if [ "$violations" -gt 0 ]; then
   {
     echo ""
     echo "The words \"mission control\" and \"cockpit\" are retired (DOR-1517)."
-    echo "The category phrase is \"one place\": \"All your agents. One place.\""
-    echo "Write \"the DorkOS app\", \"the app\", \"one place\" or \"one window\" instead."
+    echo "The category phrase is \"a workspace for people and agents\"."
+    echo "Write \"the DorkOS app\", \"the app\" or \"one window\" instead."
     echo "See meta/brand-foundation.md section 10 for the rule and its two carve-outs."
     echo ""
     echo "If this is a genuine reference to GitHub's product named \"Mission Control\","

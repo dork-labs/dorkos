@@ -2,7 +2,7 @@
 
 Welcome! We're excited that you're interested in contributing to DorkOS. This guide will help you get started with development, testing, and submitting contributions.
 
-DorkOS is one place for every AI agent you run — Claude Code, Codex, and OpenCode, side by side in one window. It's a local-first web app and a REST/SSE API: a chat UI with tool approval flows, plus scheduled tasks, rooms, and a message bus your agents use to talk to each other.
+DorkOS is a workspace for people and agents, where a founder runs their business by talking with agents in channels, direct messages and threads. Under the hood it is a local-first web app and a REST/SSE API: rooms, a direct chat view for each agent, scheduled tasks, and a message bus agents use to reach each other, with agents running on Claude Code, Codex or OpenCode.
 
 ## Prerequisites
 
