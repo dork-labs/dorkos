@@ -102,6 +102,18 @@ export interface RecordedModelSubstitution {
   createdAt: string;
 }
 
+/**
+ * One recorded agent-requested `compact_boundary` row (DOR-2732), with the
+ * wall-clock it was written at — its turn's end, a beat after the runtime wrote
+ * the compaction into its own transcript.
+ */
+export interface RecordedAgentCompaction {
+  /** The boundary as it was projected, `seq` included. */
+  event: Extract<SessionEvent, { type: 'compact_boundary' }>;
+  /** ISO-8601 wall-clock the row was written at. */
+  createdAt: string;
+}
+
 /** The prompt event types, mapped to the interaction kind each one raises. */
 const ASK_KIND_BY_EVENT_TYPE: Readonly<
   Record<BlockingInteractionEventType, PendingInteractionDTO['type']>
@@ -306,6 +318,35 @@ export class SessionEventStore {
       }
     }
     return substitutions;
+  }
+
+  /**
+   * A session's agent-requested `compact_boundary` rows only (DOR-2732),
+   * filtered in SQLite like {@link SessionEventStore.readModelSubstitutions},
+   * because it too runs on every history read.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readAgentCompactions(sessionId: string): RecordedAgentCompaction[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"requestedBy":"agent"%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const compactions: RecordedAgentCompaction[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'compact_boundary' && event.requestedBy === 'agent') {
+        compactions.push({ event, createdAt: row.createdAt });
+      }
+    }
+    return compactions;
   }
 
   /**

@@ -89,6 +89,24 @@ export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Whether `'record'` mode keeps one event: every {@link RECORDED_EVENT_TYPES}
+ * member, plus a `compact_boundary` the AGENT asked for (DOR-2732).
+ *
+ * An ordinary boundary is in the transcript already. Who asked for it is not:
+ * the transcript says a conversation was summarized, never that the agent asked
+ * for it, so that one boundary is kept and `agent-compaction-overlay` puts the
+ * tag back on the reopened conversation. A predicate rather than a set member
+ * because it turns on a field, and recording every boundary would store rows
+ * the transcript already answers for.
+ *
+ * @param event - The event the projector is about to flush.
+ */
+export function isRecordedEvent(event: { type: string; requestedBy?: unknown }): boolean {
+  if (RECORDED_EVENT_TYPES.has(event.type)) return true;
+  return event.type === 'compact_boundary' && event.requestedBy === 'agent';
+}
+
+/**
  * Event types written to the store the INSTANT they are ingested, rather than
  * waiting for their turn to end.
  *

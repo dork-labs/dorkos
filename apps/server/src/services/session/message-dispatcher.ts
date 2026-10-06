@@ -105,6 +105,26 @@
  * waiting on a teardown, not on work, so if it cannot run it is dropped rather
  * than given a second chance. See {@link DispatchPlan.transient}.
  *
+ * ## A summary the agent asked for (DOR-2732)
+ *
+ * An agent can ask for its own conversation to be summarized
+ * (`compact_my_session`). It asks from INSIDE a turn, and a compaction run
+ * mid-turn would summarize the conversation out from under the work that asked,
+ * so the request waits here, in {@link scheduleAgentCompaction}, and the pump
+ * starts it at the first free moment: after the calling turn has ended, with no
+ * turn open, nothing parked on a person, and the write-lock free. It never
+ * expires — a turn that runs long only delays it — and one session holds at
+ * most one, so asking twice is "already scheduled", never two summaries.
+ *
+ * **It goes ahead of a person's queued message**, deliberately. It was asked
+ * for in the turn that just ended, it is short, and the message behind it is
+ * exactly what the summary makes room for: running the message first would
+ * hand it the near-full conversation the agent was trying to get out of. The
+ * person's message still runs next, in the order they queued it.
+ *
+ * Like a person's `/compact` it is never a queue row and a restart forgets it:
+ * the agent is told it was scheduled, not that it ran, and can ask again.
+ *
  * {@link SessionTurnQueue} (DOR-1088) is kept, underneath: it is the
  * intra-process ordering primitive inside `triggerTurn` and this does not
  * replace it. What changed is that no HTTP request waits on it.
@@ -163,7 +183,11 @@ import {
   type TriggerTurnOpts,
   type TriggerTurnResult,
 } from './trigger-turn.js';
-import { triggerCommandIntent } from './trigger-command-intent.js';
+import { triggerCommandIntent, type CompactionBoundaryTag } from './trigger-command-intent.js';
+import {
+  clearOwedContextWarning,
+  noteContextWarningBoundary,
+} from './agent-compaction/context-warning.js';
 import { ROOMS, SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
 import { captureDispatchScope, runInDispatch } from '../../lib/dispatch-context.js';
@@ -290,6 +314,23 @@ const privateLaunches = new Map<AbortSignal, Set<Promise<TriggerTurnResult>>>();
  * server that never restarted.
  */
 const launching = new Set<string>();
+/** A summary the agent asked for, waiting for its session to come free (DOR-2732). */
+interface PendingAgentCompaction {
+  /** The runtime the session resolves to, asked whether its lock is held. */
+  runtime: AgentRuntime;
+  /** Start the compaction. Claims the in-flight slot synchronously. */
+  launch: () => Promise<{ accepted: boolean }>;
+  /** A launch is out; the pump must not start a second one. */
+  launching: boolean;
+  /**
+   * The write-lock refused the last launch. Retried at the next turn boundary,
+   * never sooner, for the reason {@link PendingDispatch.waitingOnLock} gives.
+   */
+  waitingOnLock: boolean;
+}
+
+/** Agent-requested summaries waiting to run, one per session at most, keyed by primary id. */
+const pendingCompactions = new Map<string, PendingAgentCompaction>();
 /** Tail of each session's dispatch mutex chain; dropped when it drains. */
 const dispatchMutex = new Map<string, Promise<void>>();
 /** Sessions the fleet has reported gone, awaiting the next sweep. */
@@ -2234,6 +2275,11 @@ export interface DispatchCommandIntentOpts {
    * (DOR-1101). Both bounds derive from the one constant, so they cannot drift.
    */
   queueWaitMs?: number;
+  /**
+   * Fields stamped on the run's `compact_boundary` — set only for a summary the
+   * agent asked for (DOR-2732), so the chat can say so.
+   */
+  boundaryTag?: CompactionBoundaryTag;
   onError?(err: unknown): void;
 }
 
@@ -2298,6 +2344,7 @@ export async function dispatchCommandIntent(
         getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
       },
       queueWaitMs: opts.queueWaitMs ?? COMMAND_INTENT_QUEUE_WAIT_MS,
+      ...(opts.boundaryTag !== undefined ? { boundaryTag: opts.boundaryTag } : {}),
       onError: opts.onError,
       // The run is detached and the 202 has gone out long before it ends, so
       // this is the only moment the dispatcher can learn the session is free.
@@ -2305,11 +2352,128 @@ export async function dispatchCommandIntent(
     });
     // A refused run never settles at all, so nothing else will hand it back.
     if (!result.accepted) clearIfOurs();
+    // A summary is under way, so a context warning owed from the reading before
+    // it would describe a conversation that no longer exists (DOR-2732).
+    else if (intent === 'compact') clearOwedContextWarning(sessionKey);
     return result;
   } catch (err) {
     clearIfOurs();
     throw err;
   }
+}
+
+/** Inputs for {@link scheduleAgentCompaction}. */
+export interface ScheduleAgentCompactionOpts {
+  /** The session the agent is running in, by any id it answers to. */
+  sessionId: string;
+  /** The runtime that session resolves to. */
+  runtime: AgentRuntime;
+  /**
+   * Start the compaction — normally {@link dispatchCommandIntent} with the
+   * agent's tag. Must claim the session synchronously, before its first await,
+   * which `dispatchCommandIntent` does.
+   */
+  launch: () => Promise<{ accepted: boolean }>;
+}
+
+/**
+ * Hold a summary the agent asked for until its session is free, then run it
+ * ahead of anything queued (see the module doc's DOR-2732 section).
+ *
+ * @param opts - The session, its runtime and how to start the compaction.
+ * @returns `'scheduled'`, or `'already-scheduled'` when the session already has
+ *   one waiting or starting — a second request never becomes a second summary.
+ */
+export function scheduleAgentCompaction(
+  opts: ScheduleAgentCompactionOpts
+): 'scheduled' | 'already-scheduled' {
+  const sessionKey = primaryOf(opts.runtime.getInternalSessionId(opts.sessionId) ?? opts.sessionId);
+  if (pendingCompactions.has(sessionKey)) return 'already-scheduled';
+  pendingCompactions.set(sessionKey, {
+    runtime: opts.runtime,
+    launch: opts.launch,
+    launching: false,
+    waitingOnLock: false,
+  });
+  // The calling turn is still running, so this pump finds the session busy and
+  // does nothing; it is here for a request that arrives on a session that is
+  // already free, which then does not wait for a boundary that never comes.
+  schedulePump(sessionKey);
+  return 'scheduled';
+}
+
+/**
+ * Whether a session has an agent-requested summary waiting or starting.
+ *
+ * @param sessionId - The session, by any id it answers to.
+ * @param runtime - The runtime it resolves to, for the canonical id.
+ */
+export function hasPendingAgentCompaction(
+  sessionId: string,
+  runtime: Pick<AgentRuntime, 'getInternalSessionId'>
+): boolean {
+  return pendingCompactions.has(primaryOf(runtime.getInternalSessionId(sessionId) ?? sessionId));
+}
+
+/**
+ * Start the session's waiting agent compaction if the session is free.
+ *
+ * Called by the pump after its own two gates (nothing parked on a person, no
+ * in-flight slot), and asks two more: no turn open on the projector and the
+ * write-lock free. The slot alone is lossy (a budget-exhausted launch runs
+ * without one, see {@link isTurnInFlight}), and a summary started under a live
+ * turn is exactly the mid-turn compaction this exists to prevent.
+ *
+ * Must be called with the dispatch mutex held.
+ *
+ * @param sessionKey - The session's primary id.
+ * @returns True when the queue behind it must wait: a compaction is starting
+ *   or the session is still busy with a turn.
+ */
+function launchDueCompaction(sessionKey: string): boolean {
+  const entry = pendingCompactions.get(sessionKey);
+  if (!entry) return false;
+  if (entry.launching) return true;
+  // Refused by a lock somebody else holds: the queue may try its own luck, and
+  // this waits for the boundary that changes the lock's answer.
+  if (entry.waitingOnLock) return false;
+  if ((projectorFor(sessionKey)?.peekInProgressTurn() ?? null) !== null) return true;
+  if (entry.runtime.isLocked(sessionKey)) return false;
+  entry.launching = true;
+  const settle = (accepted: boolean): void => {
+    if (pendingCompactions.get(sessionKey) !== entry) return;
+    if (accepted) {
+      pendingCompactions.delete(sessionKey);
+      return;
+    }
+    entry.launching = false;
+    entry.waitingOnLock = true;
+    // Let the queue behind it move now rather than at the next boundary.
+    schedulePump(sessionKey);
+  };
+  try {
+    void entry.launch().then(
+      (result) => settle(result.accepted),
+      (err: unknown) => {
+        // A launch that threw ran nothing and will not run better by retrying:
+        // drop it, so the session is not held for a summary that cannot start.
+        if (pendingCompactions.get(sessionKey) === entry) pendingCompactions.delete(sessionKey);
+        logger.warn('[MessageDispatcher] an agent-requested compaction could not start', {
+          sessionId: sessionKey,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        schedulePump(sessionKey);
+      }
+    );
+  } catch (err) {
+    pendingCompactions.delete(sessionKey);
+    logger.warn('[MessageDispatcher] an agent-requested compaction could not start', {
+      sessionId: sessionKey,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -2619,6 +2783,9 @@ function pumpLocked(sessionKey: string): void {
   // first of those fires while the ending turn still holds the write-lock — so
   // this gate is also what keeps the queue from racing a release it would lose.
   if (inFlight.has(sessionKey)) return;
+  // A summary the agent asked for runs first, once the turn that asked for it
+  // has ended (DOR-2732; the module doc says why it goes ahead of the queue).
+  if (launchDueCompaction(sessionKey)) return;
   // Budget-held documents occupy no runtime slot and cannot block a person's work.
   const head = orderedWaiting(sessionKey).find(
     (entry) => entry.notBefore === undefined || entry.notBefore <= Date.now()
@@ -2750,6 +2917,8 @@ export function noteTurnBoundary(sessionId: string): void {
     // runtime holds it again, and the queue shows the latest counts.
     entry.held = undefined;
   }
+  const compaction = pendingCompactions.get(sessionKey);
+  if (compaction) compaction.waitingOnLock = false;
   schedulePump(sessionId);
 }
 
@@ -2816,6 +2985,8 @@ export function sweepOrphanedMessageQueues(opts?: {
     // for the life of the install.
     staged?.deleteForSessions(chunk);
   }
+  // So does a summary the agent asked for: there is no conversation left to summarize.
+  for (const id of doomed) pendingCompactions.delete(id);
   // The rename bookkeeping goes with them. Two entries are added per renamed
   // session and nothing has ever removed one, so a long-lived server accumulates
   // a pair for every session it ever started — small, but unbounded, and the
@@ -2890,6 +3061,7 @@ export function resetMessageDispatcher(): void {
   releases.clear();
   runtimeTurns.clear();
   pending.clear();
+  pendingCompactions.clear();
   launching.clear();
   resetSessionKeys();
   dispatchMutex.clear();
@@ -2904,5 +3076,8 @@ export function resetMessageDispatcher(): void {
 // way to fail. There is nothing to configure and nothing to tear down, so
 // there is nothing for a root to decide.
 onProjectorTurnBoundary(noteTurnBoundary);
+// The early context warning reads each turn's final reading (DOR-2732). Wired
+// here for the same reason, and after the pump's listener, which only defers.
+onProjectorTurnBoundary(noteContextWarningBoundary);
 onProjectorRekey(linkSessionId);
 onSessionRemoved(noteSessionOrphaned);

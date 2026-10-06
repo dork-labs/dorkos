@@ -1,5 +1,6 @@
 import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
+import { formatContextWarning } from '../../../session/agent-compaction/context-warning-block.js';
 /**
  * Per-turn input shaping for the OpenCode runtime: the `session.promptAsync`
  * body assembly that delivers the neutral additional-context bag (ADR-0273)
@@ -86,6 +87,8 @@ function renderContextBody(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
     case 'accounts_access':
       return formatAccountsAccess(entry.data, 'opencode');
+    case 'context_warning':
+      return formatContextWarning(entry.data, 'opencode');
     case 'approval_verdict':
       return formatApprovalVerdict(entry.data);
     case 'room_context':

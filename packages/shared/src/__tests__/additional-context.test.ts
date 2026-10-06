@@ -21,6 +21,7 @@ const ALL_KINDS: ContextKind[] = [
   'approval_verdict',
   'accounts_access',
   'doc_events',
+  'context_warning',
 ];
 
 /** A minimal but complete room context — every field the union requires. */

@@ -36,4 +36,26 @@ describe('CompactBoundaryRow', () => {
     expect(screen.getByText('Couldn’t compact')).toBeInTheDocument();
     expect(screen.getByText('summarization failed')).toBeInTheDocument();
   });
+
+  it('says the agent asked, and how full the conversation was (DOR-2732)', () => {
+    render(
+      <CompactBoundaryRow
+        trigger="manual"
+        preTokens={178000}
+        postTokens={9000}
+        requestedBy="agent"
+        contextPercent={89}
+      />
+    );
+    const row = screen.getByTestId('compact-boundary-row');
+    expect(row).toHaveAttribute('data-requested-by', 'agent');
+    expect(screen.getByText('Summarized at 89% (asked by the agent)')).toBeInTheDocument();
+    // Who asked is the whole story; the person/runtime trigger badge would contradict it.
+    expect(screen.queryByTestId('compact-boundary-trigger')).not.toBeInTheDocument();
+  });
+
+  it('still says the agent asked when no reading was taken', () => {
+    render(<CompactBoundaryRow requestedBy="agent" />);
+    expect(screen.getByText('Summarized (asked by the agent)')).toBeInTheDocument();
+  });
 });

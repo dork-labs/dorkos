@@ -108,6 +108,7 @@ import { feedProjector } from './session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
 import { assembleAdditionalContext, appendDocEventsContext } from './context-assembler.js';
+import { restoreContextWarning, takeContextWarning } from './agent-compaction/context-warning.js';
 import { holdStagedContext, takeStagedContext } from './staged-context-store.js';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import { withStallGuard } from './stall-guard.js';
@@ -882,6 +883,21 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // fills this hold, so its dispatches are untouched.
     const staged = takeStagedContext(sessionId);
     additionalContext.push(...staged);
+    // The one-time note that this conversation has filled past the early-warning
+    // line (DOR-2732), owed by the turn that crossed it and taken here so it
+    // rides exactly this dispatch. A command intent never reaches this path, so
+    // a compaction run carries no note of its own.
+    const owedWarning = takeContextWarning(turnKey);
+    if (owedWarning !== null && !deps.getCapabilities().nativeContext.includes('context_warning')) {
+      additionalContext.push({
+        kind: 'context_warning',
+        scope: 'per-turn',
+        data: {
+          percent: owedWarning,
+          canCompact: deps.getCapabilities().commandIntents.compact.supported,
+        },
+      });
+    }
     // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
     // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about
     // the ROOM when a room triggered the turn and about the session otherwise,
@@ -951,6 +967,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // attempt took, so the next attempt finds it where it was.
         for (const entry of staged)
           holdStagedContext(sessionId, entry.data.text, crypto.randomUUID());
+        if (owedWarning !== null) restoreContextWarning(turnKey, owedWarning);
         uiTurnFacts.endTurn(turnKey);
         releaseOnce();
         turnSpan.end();

@@ -1,0 +1,262 @@
+/**
+ * An agent asking for its own conversation to be summarized (DOR-2732), driven
+ * through the real service and the real dispatcher against `FakeAgentRuntime`.
+ *
+ * The promises this pins:
+ *
+ * - it only ever reaches the CALLER's conversation, and refuses plainly when
+ *   there is none or it is not loaded;
+ * - it never runs mid-turn: nothing is dispatched while the asking turn runs,
+ *   and exactly one compaction runs once it ends — a second request while one
+ *   is waiting does not make two;
+ * - the boundary it produces says the agent asked, and how full it was;
+ * - a runtime that cannot summarize on request is refused honestly;
+ * - once an hour per session.
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
+import type { StreamEvent } from '@dorkos/shared/types';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+
+vi.mock('../../context-assembler.js', () => ({
+  assembleAdditionalContext: vi.fn(async () => []),
+}));
+
+import { dispatchMessage, resetMessageDispatcher } from '../../message-dispatcher.js';
+import { disposeProjector, getOrCreateProjector } from '../../session-state-projector.js';
+import { AgentCompactionService } from '../agent-compaction-service.js';
+import { CompactionRequestBudget } from '../compaction-budget.js';
+
+let runtime: FakeAgentRuntime;
+let session: string;
+let counter = 0;
+let gates: Array<() => void>;
+let now: number;
+
+/** A promise plus its opener, registered so teardown can unpark it. */
+function gate(): { wait: Promise<void>; open: () => void } {
+  let open!: () => void;
+  const wait = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  gates.push(open);
+  return { wait, open };
+}
+
+/** A turn that streams, parks on `hold`, then ends. */
+function heldTurn(hold: Promise<void>) {
+  return async function* (): AsyncGenerator<StreamEvent> {
+    yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+    await hold;
+    yield { type: 'done', data: {} } as StreamEvent;
+  };
+}
+
+/** Let queued microtasks and the pump's deferral drain. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+
+/** The agent's turn: open on the session until `open()` is called. */
+async function startAgentTurn(): Promise<() => void> {
+  const turn = gate();
+  runtime.withScenarios([heldTurn(turn.wait)]);
+  await dispatchMessage({
+    sessionId: session,
+    clientId: 'window-a',
+    content: 'keep going',
+    projector: getOrCreateProjector(session),
+    runtime,
+  });
+  await settle();
+  return turn.open;
+}
+
+function service(): AgentCompactionService {
+  return new AgentCompactionService({
+    resolveRuntime: async () => runtime,
+    budget: new CompactionRequestBudget({ now: () => now }),
+  });
+}
+
+beforeEach(() => {
+  counter += 1;
+  session = `00000000-0000-4000-9000-${String(counter).padStart(12, '0')}`;
+  gates = [];
+  now = Date.parse('2026-10-06T12:00:00.000Z');
+  runtime = new FakeAgentRuntime();
+  runtime.getInternalSessionId.mockReturnValue(undefined);
+});
+
+afterEach(async () => {
+  for (const open of gates) open();
+  await settle();
+  resetMessageDispatcher();
+  disposeProjector(session);
+  vi.restoreAllMocks();
+});
+
+describe('compact_my_session — whose conversation', () => {
+  it('refuses a call that came from no conversation, and schedules nothing', async () => {
+    const outcome = await service().request({});
+    expect(outcome).toMatchObject({ status: 'refused', code: 'no-session' });
+    await settle();
+    expect(runtime.executeCommandIntent).not.toHaveBeenCalled();
+  });
+
+  it('refuses a conversation that is not loaded, naming it', async () => {
+    const outcome = await service().request({ sessionId: 'not-a-live-session' });
+    expect(outcome).toMatchObject({ status: 'refused', code: 'unknown-session' });
+    expect(outcome.message).toContain('not-a-live-session');
+    await settle();
+    expect(runtime.executeCommandIntent).not.toHaveBeenCalled();
+  });
+
+  it('summarizes only the session it was asked from', async () => {
+    const other = `${session}-other`;
+    runtime.hasSession.mockImplementation((id) => id === session || id === other);
+
+    const outcome = await service().request({ sessionId: session });
+    await settle();
+
+    expect(outcome.status).toBe('scheduled');
+    expect(runtime.executeCommandIntent).toHaveBeenCalledTimes(1);
+    expect(runtime.executeCommandIntent.mock.calls[0]![0]).toBe(session);
+    disposeProjector(other);
+  });
+});
+
+describe('compact_my_session — after the turn, never during it', () => {
+  it('dispatches nothing while the asking turn runs, then exactly once when it ends', async () => {
+    const endTurn = await startAgentTurn();
+
+    const first = await service().request({ sessionId: session, note: 'the open migration' });
+    const second = await service().request({ sessionId: session });
+    await settle();
+
+    expect(first.status).toBe('scheduled');
+    expect(second.status).toBe('already-scheduled');
+    expect(runtime.executeCommandIntent).not.toHaveBeenCalled();
+
+    endTurn();
+    await settle();
+
+    expect(runtime.executeCommandIntent).toHaveBeenCalledTimes(1);
+    expect(runtime.executeCommandIntent).toHaveBeenCalledWith(
+      session,
+      'compact',
+      expect.objectContaining({ instructions: 'the open migration' })
+    );
+  });
+
+  it('waits out a pending approval as well as the turn', async () => {
+    const endTurn = await startAgentTurn();
+    const projector = getOrCreateProjector(session);
+    const asking = vi.spyOn(projector, 'hasPendingInteractions').mockReturnValue(true);
+
+    await service().request({ sessionId: session });
+    endTurn();
+    await settle();
+    expect(runtime.executeCommandIntent).not.toHaveBeenCalled();
+
+    asking.mockReturnValue(false);
+    // An answered ask is a turn boundary; it is what moves anything waiting.
+    const { noteTurnBoundary } = await import('../../message-dispatcher.js');
+    noteTurnBoundary(session);
+    await settle();
+    expect(runtime.executeCommandIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs ahead of a message the person queued behind the turn', async () => {
+    const endTurn = await startAgentTurn();
+    const order: string[] = [];
+    runtime.executeCommandIntent.mockImplementation(async function* () {
+      order.push('compact');
+      yield { type: 'compact_boundary', data: {} } as StreamEvent;
+    });
+    runtime.withScenarios([
+      async function* () {
+        order.push('queued message');
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+
+    await service().request({ sessionId: session });
+    await dispatchMessage({
+      sessionId: session,
+      clientId: 'window-a',
+      content: 'and then this',
+      projector: getOrCreateProjector(session),
+      runtime,
+    });
+    endTurn();
+    await settle();
+    await settle();
+
+    expect(order).toEqual(['compact', 'queued message']);
+  });
+
+  it('stamps the boundary with who asked and how full the conversation was', async () => {
+    const endTurn = await startAgentTurn();
+    const projector = getOrCreateProjector(session);
+    projector.seedStatus({
+      contextUsage: {
+        totalTokens: 178_000,
+        maxTokens: 200_000,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+    });
+
+    await service().request({ sessionId: session });
+    endTurn();
+    await settle();
+
+    const boundary = projector.replayFrom(0).find((event) => event.type === 'compact_boundary');
+    expect(boundary).toMatchObject({ requestedBy: 'agent', contextPercent: 89 });
+  });
+});
+
+describe('compact_my_session — refusals', () => {
+  it('refuses honestly on a runtime that cannot summarize on request', async () => {
+    const supported = runtime.getCapabilities();
+    runtime.getCapabilities.mockReturnValue({
+      ...supported,
+      type: 'codex',
+      commandIntents: { compact: { supported: false } },
+    } as RuntimeCapabilities);
+    const endTurn = await startAgentTurn();
+
+    const outcome = await service().request({ sessionId: session });
+    endTurn();
+    await settle();
+
+    expect(outcome).toMatchObject({ status: 'refused', code: 'unsupported' });
+    expect(outcome.message).toContain('Codex');
+    expect(runtime.executeCommandIntent).not.toHaveBeenCalled();
+  });
+
+  it('allows one request an hour, and says when the next may be made', async () => {
+    runtime.hasSession.mockReturnValue(true);
+    const compaction = service();
+
+    expect((await compaction.request({ sessionId: session })).status).toBe('scheduled');
+    await settle();
+    expect(runtime.executeCommandIntent).toHaveBeenCalledTimes(1);
+
+    now += 30 * 60 * 1000;
+    const again = await compaction.request({ sessionId: session });
+    expect(again).toMatchObject({
+      status: 'refused',
+      code: 'rate-limited',
+      retryAfter: '2026-10-06T13:00:00.000Z',
+    });
+    await settle();
+    expect(runtime.executeCommandIntent).toHaveBeenCalledTimes(1);
+
+    now += 30 * 60 * 1000;
+    expect((await compaction.request({ sessionId: session })).status).toBe('scheduled');
+  });
+});

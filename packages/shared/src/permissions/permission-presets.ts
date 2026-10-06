@@ -40,7 +40,7 @@ const CAREFUL: PermissionPresetTable = Object.freeze({
     permissions: 'ask',
     reach: 'blocked',
   }),
-  actions: Object.freeze({}),
+  actions: Object.freeze({ 'session.compact': 'allowed' }),
   filesStop: 'ask',
 });
 
@@ -62,7 +62,7 @@ const BALANCED: PermissionPresetTable = Object.freeze({
     permissions: 'ask',
     reach: 'ask',
   }),
-  actions: Object.freeze({}),
+  actions: Object.freeze({ 'session.compact': 'allowed' }),
   filesStop: 'act',
 });
 
@@ -85,7 +85,7 @@ const FULL: PermissionPresetTable = Object.freeze({
     permissions: 'ask',
     reach: 'ask',
   }),
-  actions: Object.freeze({}),
+  actions: Object.freeze({ 'session.compact': 'allowed' }),
   filesStop: 'autonomy',
 });
 
@@ -116,6 +116,14 @@ export const PERMISSION_PRESET_TABLES: Readonly<Record<PermissionPreset, Permiss
  * destructive action into Ask.
  *
  * `filesStop: null`: the stored trust stop stays untouched.
+ *
+ * `session.compact` — an agent asking for its OWN conversation to be summarized
+ * (DOR-2732) — is Allowed in this table and in all three presets, where its
+ * area (Other agents) would otherwise ask or block. A permissive default, argued:
+ * it reaches nothing outside the agent's own conversation, it runs only after
+ * the asking turn ends, at most once an hour, and the chat shows it happened.
+ * The person can block it per agent. It is a new action, so no shipped value
+ * changed.
  */
 export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
   areas: Object.freeze({
@@ -134,6 +142,7 @@ export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
   actions: Object.freeze({
     'rooms.merge': 'allowed',
     'operator.update_agent_boundaries': 'ask',
+    'session.compact': 'allowed',
   }),
   filesStop: null,
 });

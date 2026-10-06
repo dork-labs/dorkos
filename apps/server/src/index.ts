@@ -583,6 +583,7 @@ import { AccountUsageStore } from './services/core/usage/account-usage-store.js'
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
 import { SessionContextStore } from './services/session/fleet/session-context-store.js';
+import { AgentCompactionService } from './services/session/agent-compaction/agent-compaction-service.js';
 import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
 import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
@@ -5725,6 +5726,14 @@ async function start() {
       // rather than supplied — a model that could name its own provenance could
       // make a poisoned note claim it came from somewhere trustworthy.
       memoryDeps: { roomLabelForSession: (id: string) => roomService.roomLabelForSession(id) },
+      // An agent asking for its own conversation to be summarized (DOR-2732).
+      // Built here, once: its once-an-hour budget must outlive the per-session
+      // tool servers that reach it.
+      sessionCompactionDeps: {
+        compaction: new AgentCompactionService({
+          resolveRuntime: (sessionId: string) => runtimeRegistry.resolveForSession(sessionId),
+        }),
+      },
     },
     createCapabilityAttributionObserver(activityService)
   );

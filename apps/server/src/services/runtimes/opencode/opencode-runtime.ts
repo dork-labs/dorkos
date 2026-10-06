@@ -70,6 +70,7 @@ import {
 } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { overlayModelSubstitutions } from '../../session/overlays/model-substitution-overlay.js';
+import { overlayAgentCompactions } from '../../session/overlays/agent-compaction-overlay.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
@@ -1094,9 +1095,14 @@ export class OpenCodeRuntime implements AgentRuntime {
       // The sidecar's store names the model that ran and never one DorkOS
       // credits put in place of the session's (DOR-2636), so that notice is
       // put back from the durable event record, as for Claude Code.
-      return overlayModelSubstitutions(
+      // Its store keeps no compaction row at all, so a summary the agent asked
+      // for (DOR-2732) is drawn back from the same record.
+      return overlayAgentCompactions(
         sessionId,
-        await this.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId)
+        overlayModelSubstitutions(
+          sessionId,
+          await this.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId)
+        )
       );
     } catch (err) {
       logger.debug(

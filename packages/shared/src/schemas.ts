@@ -2598,6 +2598,22 @@ export const MemoryRecallEventSchema = z
 export type MemoryRecallEvent = z.infer<typeof MemoryRecallEventSchema>;
 
 /**
+ * The fields that mark a compaction THE AGENT asked for (`compact_my_session`,
+ * DOR-2732), shared by the wire event, the rendered part and the history
+ * metadata so the three cannot drift.
+ *
+ * Server-derived, never read off model text: the dispatcher stamps them on the
+ * boundary of the compaction it ran because the agent asked. Absent on every
+ * other compaction, which renders exactly as it always has.
+ */
+const agentCompactionShape = {
+  /** Who asked for this compaction, when it was not the person or the runtime. */
+  requestedBy: z.enum(['agent']).optional(),
+  /** Share of the context window in use when the agent asked, 0–100. */
+  contextPercent: z.number().int().min(0).max(100).optional(),
+};
+
+/**
  * Emitted at a context-window compaction boundary (SDK `compact_boundary`).
  * Carries the SDK's `compact_metadata` so a renderer can show "Compacted — N
  * tokens summarized (manual/auto)". All fields are optional: the mapper forwards
@@ -2614,6 +2630,7 @@ export const CompactBoundaryEventSchema = z
     postTokens: z.number().int().optional(),
     /** Wall-clock duration of the compaction, in milliseconds. */
     durationMs: z.number().int().optional(),
+    ...agentCompactionShape,
   })
   .openapi('CompactBoundaryEvent');
 
@@ -3482,6 +3499,7 @@ export const CompactBoundaryPartSchema = z
     postTokens: z.number().int().optional(),
     /** Wall-clock duration of the compaction, in milliseconds. */
     durationMs: z.number().int().optional(),
+    ...agentCompactionShape,
     /** Set when compaction failed — the row renders as an error surface. */
     failed: z.boolean().optional(),
     /** Human-readable failure detail (SDK `compact_error`); present when `failed`. */
@@ -3605,6 +3623,7 @@ export const CompactMetadataSchema = z
     postTokens: z.number().int().optional(),
     /** Wall-clock duration of the compaction, in milliseconds. */
     durationMs: z.number().int().optional(),
+    ...agentCompactionShape,
   })
   .openapi('CompactMetadata');
 

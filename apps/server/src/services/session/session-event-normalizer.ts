@@ -269,6 +269,12 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         ...(data.preTokens !== undefined ? { preTokens: Number(data.preTokens) } : {}),
         ...(data.postTokens !== undefined ? { postTokens: Number(data.postTokens) } : {}),
         ...(data.durationMs !== undefined ? { durationMs: Number(data.durationMs) } : {}),
+        // Stamped by the dispatcher on a compaction the agent asked for
+        // (DOR-2732), never by a runtime, so only the one value is carried.
+        ...(data.requestedBy === 'agent' ? { requestedBy: 'agent' as const } : {}),
+        ...(typeof data.contextPercent === 'number'
+          ? { contextPercent: Math.round(data.contextPercent) }
+          : {}),
       };
       return boundary;
     }

@@ -1282,6 +1282,46 @@ describe('ClaudeCodeRuntime', () => {
       );
     });
 
+    it('RT-CMP-02: the agent’s own request runs /compact with its note, and the record keeps who asked', async () => {
+      // Loaded after `resetModules`, so the dispatcher, projector and store are
+      // the same module instances this runtime uses.
+      const { AgentCompactionService } =
+        await import('../../../session/agent-compaction/agent-compaction-service.js');
+      const session = await import('../../../session/index.js');
+      const { resetMessageDispatcher } = await import('../../../session/message-dispatcher.js');
+      const { createTestDb } = await import('@dorkos/test-utils/db');
+      const store = new session.SessionEventStore(createTestDb());
+      session.setSessionEventStore(store);
+      try {
+        agentManager.ensureSession('cmp-1', { permissionMode: 'default', cwd: '/mock' });
+        const sendSpy = vi
+          .spyOn(agentManager, 'sendMessage')
+          .mockImplementation(async function* (): AsyncGenerator<StreamEvent> {
+            yield {
+              type: 'compact_boundary',
+              data: { trigger: 'manual', preTokens: 178_000 },
+            } as StreamEvent;
+            yield { type: 'done', data: {} } as StreamEvent;
+          });
+        const compaction = new AgentCompactionService({ resolveRuntime: async () => agentManager });
+
+        const outcome = await compaction.request({ sessionId: 'cmp-1', note: 'keep the plan' });
+        expect(outcome.status).toBe('scheduled');
+        await vi.waitFor(() => expect(store.readAgentCompactions('cmp-1')).toHaveLength(1));
+
+        expect(sendSpy).toHaveBeenCalledWith('cmp-1', '/compact keep the plan', expect.anything());
+        // The transcript says a summary happened; the overlay puts back who asked.
+        const reopened = session.overlayAgentCompactions('cmp-1', [
+          { id: 'c1', role: 'user', content: 'summary', messageType: 'compaction' },
+        ]);
+        expect(reopened[0]!.compactMetadata).toMatchObject({ requestedBy: 'agent' });
+      } finally {
+        resetMessageDispatcher();
+        session.disposeProjector('cmp-1');
+        session.setSessionEventStore(undefined);
+      }
+    });
+
     it('treats whitespace-only instructions as absent (bare /compact)', async () => {
       const sendSpy = spySend();
       await drain(

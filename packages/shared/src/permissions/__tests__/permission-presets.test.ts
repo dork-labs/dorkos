@@ -29,7 +29,9 @@ describe('shipped preset tables', () => {
         permissions: 'ask',
         reach: 'blocked',
       },
-      actions: {},
+      // An agent summarizing its own conversation (DOR-2732): a new action,
+      // Allowed in every table where its area would ask.
+      actions: { 'session.compact': 'allowed' },
       filesStop: 'ask',
     });
   });
@@ -49,7 +51,9 @@ describe('shipped preset tables', () => {
         permissions: 'ask',
         reach: 'ask',
       },
-      actions: {},
+      // An agent summarizing its own conversation (DOR-2732): a new action,
+      // Allowed in every table where its area would ask.
+      actions: { 'session.compact': 'allowed' },
       filesStop: 'act',
     });
   });
@@ -69,7 +73,9 @@ describe('shipped preset tables', () => {
         permissions: 'ask',
         reach: 'ask',
       },
-      actions: {},
+      // An agent summarizing its own conversation (DOR-2732): a new action,
+      // Allowed in every table where its area would ask.
+      actions: { 'session.compact': 'allowed' },
       filesStop: 'autonomy',
     });
   });
@@ -92,7 +98,11 @@ describe('shipped preset tables', () => {
         permissions: 'blocked',
         reach: 'blocked',
       },
-      actions: { 'rooms.merge': 'allowed', 'operator.update_agent_boundaries': 'ask' },
+      actions: {
+        'rooms.merge': 'allowed',
+        'operator.update_agent_boundaries': 'ask',
+        'session.compact': 'allowed',
+      },
       filesStop: null,
     });
     expect(presetTableFor(null)).toBe(UNCHANGED_PERMISSION_TABLE);

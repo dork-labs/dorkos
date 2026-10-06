@@ -293,7 +293,7 @@ describe('in-session tool exposure', () => {
     await Promise.all([client.close(), server.instance.close()]);
   });
 
-  it('always-loads exactly the ten a turn cannot search for first', async () => {
+  it('always-loads exactly the eleven a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -326,6 +326,9 @@ describe('in-session tool exposure', () => {
         // Spec `agent-permissions` D15: the line that replaces a Blocked area's
         // tools names this one, so it may not be deferred.
         'request_permission',
+        // DOR-2732: the `<context_warning>` note names it on the turn with the
+        // least room to spend on a lookup.
+        'compact_my_session',
       ].sort()
     );
     // The declared set and the served surface are the same set, in both
@@ -461,7 +464,7 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    expect(tools).toHaveLength(119);
+    expect(tools).toHaveLength(120);
     expect(deferred).toHaveLength(109);
     for (const name of [
       'configure_doc_channel',
@@ -519,6 +522,7 @@ describe('in-session tool exposure', () => {
         'read_canvas',
         'memory_write',
         'request_permission',
+        'compact_my_session',
         'mesh_list',
         'mesh_inspect',
         'relay_send',

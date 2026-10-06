@@ -246,6 +246,8 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           postTokens={part.postTokens}
           failed={part.failed}
           error={part.error}
+          requestedBy={part.requestedBy}
+          contextPercent={part.contextPercent}
         />
       );
     }

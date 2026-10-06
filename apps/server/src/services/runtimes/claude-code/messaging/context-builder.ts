@@ -1,5 +1,6 @@
 import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
+import { formatContextWarning } from '../../../session/agent-compaction/context-warning-block.js';
 import type {
   AdditionalContextEntry,
   GitStatusData,
@@ -777,6 +778,9 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       // two — which is exactly what the default arm in the Codex and OpenCode
       // renderers would have done.
       return wrapTag(tag, formatApprovalVerdict(entry.data));
+    case 'context_warning':
+      // Shared so the note names tools each runtime can actually call.
+      return wrapTag(tag, formatContextWarning(entry.data, 'claude-code'));
   }
 }
 

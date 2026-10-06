@@ -146,6 +146,9 @@ function clampSeed(text: string): string {
  * - `approval_verdict`: added when a late approval answer is being delivered to
  *   this session. The sixth kind that flows, and the only one that is not about
  *   the turn's own circumstances at all — it IS the reason the turn exists.
+ * - `context_warning`: NOT emitted here. It is owed by the session, not derived
+ *   from this turn's inputs, and must be TAKEN exactly once, so `triggerTurn`
+ *   takes it beside the staged-context fold (`agent-compaction/context-warning.ts`, DOR-2732).
  *
  * @param opts - Effective cwd, optional client signals, optional room context,
  *   optional caller-supplied seed, and the runtime's native-context omission

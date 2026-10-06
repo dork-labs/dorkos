@@ -65,7 +65,7 @@ import { getStagedContextStore } from './staged-context-store.js';
 import { getSessionLimitStore, withSessionLimitStore } from './fleet/session-limit-store.js';
 import {
   EAGERLY_RECORDED_EVENT_TYPES,
-  RECORDED_EVENT_TYPES,
+  isRecordedEvent,
   type ProjectorPersistence,
   type ProjectorPersistenceMode,
 } from './projector-persistence.js';
@@ -884,7 +884,8 @@ export class SessionStateProjector {
    * persistence error only forfeits cross-restart durability (degrading to the
    * pre-DOR-189 in-memory behavior) and must never break live streaming.
    *
-   * In `'record'` mode the turn is narrowed to {@link RECORDED_EVENT_TYPES}
+   * In `'record'` mode the turn is narrowed to `RECORDED_EVENT_TYPES`
+   * (plus an agent-requested compaction boundary, {@link isRecordedEvent})
    * first, so the row count per turn is a constant rather than a function of how
    * much the model said.
    *
@@ -901,9 +902,7 @@ export class SessionStateProjector {
     const persistence = this.persistence;
     if (persistence === undefined) return;
     const rows =
-      persistence.mode === 'record'
-        ? events.filter((event) => RECORDED_EVENT_TYPES.has(event.type))
-        : events;
+      persistence.mode === 'record' ? events.filter((event) => isRecordedEvent(event)) : events;
     if (rows.length === 0) return;
     try {
       persistence.store.appendTurn(this.sessionId, rows);
