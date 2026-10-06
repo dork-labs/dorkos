@@ -51,7 +51,10 @@ it('refuses uncertainty and newer canonical records', async () => {
   const newer = fixture();
   newer.finish();
   const token = await newer.owner.completion;
-  newer.records.set(newer.record.browserId, { ...newer.record, browserGeneration: 1 });
+  newer.records.set(newer.record.browserId, {
+    ...newer.record,
+    browserGeneration: 1,
+  });
   expect(newer.owner.consume(token, newer.owner.binding)).toBe(false);
 });
 
@@ -99,7 +102,10 @@ it('refuses proxy bindings and nested manager accessors without invoking their t
   ).toBe(false);
   expect(calls).toBe(0);
   expect(
-    f.owner.consume(token, { ...f.owner.binding, manager: { ...f.owner.binding.manager } })
+    f.owner.consume(token, {
+      ...f.owner.binding,
+      manager: { ...f.owner.binding.manager },
+    })
   ).toBe(true);
 });
 
@@ -120,6 +126,7 @@ it('refuses generation authority from a gapped journal even after local original
     historyGapped: () => gapped,
     custody: () => ({ pending: false, uncertain: false }),
     attributeRoot: async () => {},
+    prepareClose: async () => {},
     stop: async () => 'campaign-closed-gapped',
   };
   f.finish();

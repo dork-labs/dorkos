@@ -16,7 +16,10 @@ import {
 import { darwinBirth } from './darwin-process-observer.js';
 import { observeDarwinJournal } from './darwin-journal-observer.js';
 const identity = z
-  .object({ pid: z.number().int().positive(), birth: z.string().min(1).max(128) })
+  .object({
+    pid: z.number().int().positive(),
+    birth: z.string().min(1).max(128),
+  })
   .strict();
 const seedSchema = z
   .object({
@@ -40,7 +43,10 @@ const seedSchema = z
       })
       .strict(),
     artifact: z
-      .object({ path: z.string().max(4096), sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+      .object({
+        path: z.string().max(4096),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
       .strict(),
     duration: z.number().positive().max(600000),
     continuous: z.boolean().default(false),
@@ -48,7 +54,11 @@ const seedSchema = z
   })
   .strict();
 const rootSchema = z
-  .object({ kind: z.literal('root'), identity, supervisor: identity.optional() })
+  .object({
+    kind: z.literal('root'),
+    identity,
+    supervisor: identity.optional(),
+  })
   .strict();
 const launchSchema = z
   .object({
@@ -60,12 +70,32 @@ const launchSchema = z
   .strict();
 const refuseSchema = z.object({ kind: z.literal('refuse-seed') }).strict();
 const returnedSchema = z
-  .object({ kind: z.literal('root-returned'), nonce: z.string().min(1).max(128), identity })
+  .object({
+    kind: z.literal('root-returned'),
+    nonce: z.string().min(1).max(128),
+    identity,
+  })
+  .strict();
+const prepareCloseSchema = z
+  .object({
+    kind: z.literal('prepare-close'),
+    nonce: z.string().min(1).max(128),
+    identity,
+  })
   .strict();
 const endSchema = z.object({ kind: z.literal('end-browser'), launchEntered: z.boolean() }).strict();
 const messages = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('enrolled') }).strict(),
   z.object({ kind: z.literal('observation-fault') }).strict(),
+  z
+    .object({
+      kind: z.literal('enumeration-closed'),
+      nonce: z.string().min(1).max(128),
+      sequence: z.number().int().positive().safe(),
+      monotonic: z.number().int().nonnegative().safe(),
+      root: identity,
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('checkpoint'),
@@ -98,8 +128,14 @@ export interface DarwinJournalWorker {
   enrollRoot(root: ProcessIdentity, supervisor?: ProcessIdentity): Promise<void>;
   endBrowser(launchEntered: boolean): Promise<void>;
   rootReturned(root: ProcessIdentity): Promise<void>;
+  /** Retains the exact original pre-close ACK, not a requested end-browser proof. */
+  prepareClose(): Promise<void>;
   launchRoot(
-    command: Readonly<{ executable: string; argv: readonly string[]; cwd: string }>
+    command: Readonly<{
+      executable: string;
+      argv: readonly string[];
+      cwd: string;
+    }>
   ): Promise<void>;
   readonly completion: Promise<
     | 'recorded-gone'
@@ -172,10 +208,20 @@ export async function startDarwinJournalWorker(
     rejectCheckpoint = reject;
   });
   void firstCheckpoint.catch(() => {});
+  let closeRequested = false,
+    closeAcknowledged = false;
+  let resolveClose!: () => void, rejectClose!: (reason: unknown) => void;
+  const closeReady = new Promise<void>((resolve, reject) => {
+    resolveClose = resolve;
+    rejectClose = reject;
+  });
+  void closeReady.catch(() => {});
+  let closeSend: Promise<void> | undefined;
   const fault = (reason: unknown) => {
     failure = true;
     refuse(reason);
     rejectCheckpoint(reason);
+    rejectClose(reason);
   };
   const observationKnown = () => {
     if (failure || !sawEnrolled || sawComplete) return false;
@@ -200,6 +246,29 @@ export async function startDarwinJournalWorker(
     }
     if (parsed.data.kind === 'observation-fault') {
       fault(new Error('JOURNAL_OBSERVATION_REFUSED'));
+    } else if (parsed.data.kind === 'enumeration-closed') {
+      const next = parsed.data;
+      const now = monotonicNow();
+      if (
+        !closeRequested ||
+        closeAcknowledged ||
+        failure ||
+        sawComplete ||
+        !sawEnrolled ||
+        !expectedRoot ||
+        next.nonce !== seed.initial.binding.reservationNonce ||
+        !sameProcess(next.root, expectedRoot) ||
+        !Number.isSafeInteger(now) ||
+        next.monotonic > now ||
+        now - next.monotonic > seed.maxGap ||
+        (checkpoint &&
+          (next.sequence <= checkpoint.sequence || next.monotonic < checkpoint.monotonic))
+      ) {
+        fault(new Error('JOURNAL_PRECLOSE_REFUSED'));
+        return;
+      }
+      closeAcknowledged = true;
+      resolveClose();
     } else if (parsed.data.kind === 'checkpoint') {
       const next = parsed.data;
       const now = monotonicNow();
@@ -239,6 +308,7 @@ export async function startDarwinJournalWorker(
       sawComplete = true;
       if (seed.continuous && !checkpoint) fault(new Error('JOURNAL_CHECKPOINT_REFUSED'));
       rejectCheckpoint(new Error('JOURNAL_OBSERVATION_ENDED'));
+      if (!closeAcknowledged) rejectClose(new Error('JOURNAL_PRECLOSE_REFUSED'));
       result = parsed.data.result;
     }
   });
@@ -249,6 +319,7 @@ export async function startDarwinJournalWorker(
     child.once('close', (code) => {
       if (!sawComplete) fault(new Error('JOURNAL_UNAVAILABLE'));
       rejectCheckpoint(new Error('JOURNAL_OBSERVATION_ENDED'));
+      if (!closeAcknowledged) rejectClose(new Error('JOURNAL_PRECLOSE_REFUSED'));
       resolve(code);
     })
   );
@@ -352,6 +423,24 @@ export async function startDarwinJournalWorker(
     location: seed.location,
     stderr: () => Buffer.concat(stderrChunks),
     completion,
+    prepareClose() {
+      if (closeSend) return closeSend;
+      closeRequested = true;
+      closeSend = Promise.resolve().then(async () => {
+        if (failure || sawComplete || returnedSent || !expectedRoot)
+          throw new Error('JOURNAL_PRECLOSE_REFUSED');
+        await send(
+          prepareCloseSchema.parse({
+            kind: 'prepare-close',
+            nonce: seed.initial.binding.reservationNonce,
+            identity: expectedRoot,
+          })
+        );
+        await closeReady;
+      });
+      void closeSend.catch(fault);
+      return closeSend;
+    },
     async rootReturned(root: ProcessIdentity) {
       const original = identity.parse(root);
       if (failure || returnedSent || !expectedRoot || !sameProcess(original, expectedRoot))
@@ -369,7 +458,11 @@ export async function startDarwinJournalWorker(
       await send({ kind: 'end-browser', launchEntered });
     },
     async launchRoot(
-      command: Readonly<{ executable: string; argv: readonly string[]; cwd: string }>
+      command: Readonly<{
+        executable: string;
+        argv: readonly string[];
+        cwd: string;
+      }>
     ) {
       if (!options.ownedLaunch || used) throw new Error('ROOT_ALREADY_ENROLLED');
       used = true;
@@ -413,6 +506,7 @@ async function runPrivateWorker(): Promise<void> {
     launchNotEntered = false;
   let seedNonce: string | undefined;
   let enrolledRoot: ProcessIdentity | undefined, returnedRoot: ProcessIdentity | undefined;
+  let enumerationCloseRequested = false;
   let seeded = false,
     rooted = false,
     invalid = false;
@@ -428,6 +522,25 @@ async function runPrivateWorker(): Promise<void> {
     if (!seeded) {
       seeded = true;
       seedResolve(value);
+      return;
+    }
+    const prepare = prepareCloseSchema.safeParse(value);
+    if (prepare.success) {
+      if (
+        invalid ||
+        ended ||
+        enumerationCloseRequested ||
+        returnedRoot ||
+        !rooted ||
+        !enrolledRoot ||
+        !seedNonce ||
+        prepare.data.nonce !== seedNonce ||
+        !sameProcess(prepare.data.identity, enrolledRoot)
+      ) {
+        invalid = true;
+        return;
+      }
+      enumerationCloseRequested = true;
       return;
     }
     const returned = returnedSchema.safeParse(value);
@@ -520,7 +633,9 @@ async function runPrivateWorker(): Promise<void> {
       value.initial.binding.bootScope.sourceIdentityDigest !== value.artifact.sha256
     )
       throw new Error('BOOT_SOURCE_UNAVAILABLE');
-    const logicalManager = value.logicalManager ?? { ...value.initial.binding.manager };
+    const logicalManager = value.logicalManager ?? {
+      ...value.initial.binding.manager,
+    };
     const observer = createDarwinProcessObserver(value.artifact);
     let ownedRoot: DarwinOwnedChild | null = null;
     if (value.ownedLaunch) {
@@ -569,6 +684,12 @@ async function runPrivateWorker(): Promise<void> {
           if (invalid) throw new Error('JOURNAL_ROOT_RETURN_REFUSED');
           return returnedRoot;
         },
+        enumerationCloseRequested: () => {
+          if (invalid) throw new Error('JOURNAL_PRECLOSE_REFUSED');
+          return enumerationCloseRequested;
+        },
+        onEnumerationClosed: (checkpoint) =>
+          send({ kind: 'enumeration-closed', nonce: seedNonce, ...checkpoint }),
         launchNotEntered: () => launchNotEntered,
         ...(value.ownedLaunch
           ? { logicalManager, exitingObserver: value.initial.binding.manager }
@@ -589,7 +710,11 @@ async function runPrivateWorker(): Promise<void> {
           if (reportedIncomplete) return;
           reportedIncomplete = true;
           const bytes =
-            JSON.stringify({ kind: 'incomplete-native-children', parent, batch }) + '\n';
+            JSON.stringify({
+              kind: 'incomplete-native-children',
+              parent,
+              batch,
+            }) + '\n';
           await new Promise<void>((resolve, reject) =>
             process.stderr.write(bytes, (error) => (error ? reject(error) : resolve()))
           );

@@ -356,3 +356,60 @@ it('never publishes raw untyped stderr or malformed kernel metadata', async () =
   expect(await malformed.stop()).toBe('uncertain');
   expect(receiver).not.toHaveBeenCalled();
 });
+
+it.each([false, true])(
+  'retains the exact original pre-close join and undefined refusal (refusal=%s)',
+  async (refusal) => {
+    const f = await fixture();
+    let release!: () => void, finish!: (value: 'recorded-gone') => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const completion = new Promise<'recorded-gone'>((resolve) => {
+      finish = resolve;
+    });
+    const prepareClose = vi.fn(async () => {
+      await held;
+      if (refusal) throw undefined;
+    });
+    controls.start.mockResolvedValue({
+      completion,
+      enrollRoot: vi.fn(async () => {}),
+      prepareClose,
+      endBrowser: vi.fn(async () => {}),
+    });
+    const originals: {
+      starting?: ReturnType<typeof startDarwinEngineJournal>;
+      cleanup?: Promise<void>;
+    } = {};
+    let closed = false;
+    const cleanup = () => {
+      closed = true;
+      return (originals.cleanup ??= Promise.resolve().then(async () => {
+        release();
+        finish('recorded-gone');
+        if (originals.starting) {
+          const original = await originals.starting;
+          await original.stop();
+        }
+      }));
+    };
+    originalFinalizers.add(cleanup);
+    onTestFinished(cleanup);
+    originals.starting = startDarwinEngineJournal(f);
+    const adapter = await originals.starting;
+    if (closed) throw new Error('FIXTURE_CLOSED');
+    await adapter.attributeRoot({ pid: 123, birth: 'darwin-bsd-start:21:0' });
+    if (closed) throw new Error('FIXTURE_CLOSED');
+    const first = adapter.prepareClose();
+    void first.catch(() => {});
+    expect(adapter.prepareClose()).toBe(first);
+    await Promise.resolve();
+    expect(prepareClose).toHaveBeenCalledTimes(1);
+    release();
+    if (refusal) await expect(first).rejects.toBeUndefined();
+    else await first;
+    finish('recorded-gone');
+    expect(await adapter.stop()).toBe(refusal ? 'uncertain' : 'recorded-gone');
+  }
+);

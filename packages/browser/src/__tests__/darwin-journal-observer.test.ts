@@ -1,7 +1,7 @@
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 import { observeDarwinJournal } from '../runtime/darwin-journal-observer.js';
 import { darwinBirth, type DarwinProcessObserver } from '../runtime/darwin-process-observer.js';
 import {
@@ -120,7 +120,14 @@ it('preserves an admitted root association when the old manager dies during its 
         complete: true,
         processes:
           parent.pid === 20
-            ? [{ kind: 'present' as const, identity: f.childNative, parentPid: 20, zombie: false }]
+            ? [
+                {
+                  kind: 'present' as const,
+                  identity: f.childNative,
+                  parentPid: 20,
+                  zombie: false,
+                },
+              ]
             : [],
       };
     },
@@ -191,7 +198,12 @@ it('refuses new root attribution if its old parent dies between the initial nati
           }
           return selected
             ? { kind: 'absent' as const, pid }
-            : { kind: 'present' as const, identity: f.managerNative, parentPid: 1, zombie: false };
+            : {
+                kind: 'present' as const,
+                identity: f.managerNative,
+                parentPid: 1,
+                zombie: false,
+              };
         }),
       };
     },
@@ -256,7 +268,14 @@ it('retains a genuine-shaped discovery gap while tracking admitted originals to 
         complete: round !== 2,
         processes:
           parent.pid === 20 && round === 1
-            ? [{ kind: 'present' as const, identity: f.childNative, parentPid: 20, zombie: false }]
+            ? [
+                {
+                  kind: 'present' as const,
+                  identity: f.childNative,
+                  parentPid: 20,
+                  zombie: false,
+                },
+              ]
             : [],
       };
     },
@@ -311,7 +330,11 @@ it.each([false, true])(
     const f = await fixture();
     let round = 0,
       clock = 10;
-    const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+    const boot = {
+      version: 1 as const,
+      bootSeconds: '1',
+      bootMicroseconds: '0',
+    };
     const supervisor = f.root;
     const root = darwinBirth(f.childNative);
     const observer: DarwinProcessObserver = {
@@ -402,7 +425,11 @@ it.each([false, true])(
     const f = await fixture();
     let round = 0,
       clock = 10;
-    const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+    const boot = {
+      version: 1 as const,
+      bootSeconds: '1',
+      bootMicroseconds: '0',
+    };
     const observer: DarwinProcessObserver = {
       async inspect(pids) {
         return {
@@ -477,7 +504,11 @@ it.each([false, true])(
       clock = 10;
     const checkpoints: JournalSnapshot[] = [];
     const published: number[] = [];
-    const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+    const boot = {
+      version: 1 as const,
+      bootSeconds: '1',
+      bootMicroseconds: '0',
+    };
     const observer: DarwinProcessObserver = {
       async inspect(pids) {
         return {
@@ -742,7 +773,11 @@ it.each([
       clock = 10,
       faults = 0;
     let bootCheckpoint: Awaited<ReturnType<typeof readJournal>> | undefined;
-    const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+    const boot = {
+      version: 1 as const,
+      bootSeconds: '1',
+      bootMicroseconds: '0',
+    };
     const observer: DarwinProcessObserver = {
       async inspect(pids) {
         return {
@@ -873,7 +908,14 @@ it('uses genuine original root return only to stop fresh enumeration, retaining 
         complete: true,
         processes:
           parent.pid === 20
-            ? [{ kind: 'present' as const, identity: f.childNative, parentPid: 20, zombie: false }]
+            ? [
+                {
+                  kind: 'present' as const,
+                  identity: f.childNative,
+                  parentPid: 20,
+                  zombie: false,
+                },
+              ]
             : [],
       };
     },
@@ -945,7 +987,13 @@ it('never heals an already-entered incomplete query when the original root retur
       // The original query entered before this genuine private proof became available.
       returned = true;
       await new Promise<void>((resolve) => setImmediate(resolve));
-      return { ...boot, parentBefore: null, parentAfter: null, complete: false, processes: [] };
+      return {
+        ...boot,
+        parentBefore: null,
+        parentAfter: null,
+        complete: false,
+        processes: [],
+      };
     },
   };
   try {
@@ -1081,7 +1129,14 @@ it('enrolls a grandchild forked by a retained live descendant after genuine root
         complete: true,
         processes:
           parent.pid === 20
-            ? [{ kind: 'present' as const, identity: f.childNative, parentPid: 20, zombie: false }]
+            ? [
+                {
+                  kind: 'present' as const,
+                  identity: f.childNative,
+                  parentPid: 20,
+                  zombie: false,
+                },
+              ]
             : returned && parent.pid === 30
               ? [
                   {
@@ -1129,6 +1184,172 @@ it('enrolls a grandchild forked by a retained live descendant after genuine root
         read.snapshot.retainedIdentities.find((row) => row.identity.pid === 40)?.lifecycle
       ).toBe('dead');
     }
+  } finally {
+    await rm(f.parentDirectory, { recursive: true, force: true });
+  }
+});
+
+it.each([false, true])(
+  'joins an entered native query and durable commit before pre-close ACK (incomplete=%s)',
+  async (incomplete) => {
+    const f = await fixture();
+    const boot = {
+      version: 1 as const,
+      bootSeconds: '1',
+      bootMicroseconds: '0',
+    };
+    let clock = 10,
+      requested = false,
+      closed = false,
+      calls = 0;
+    let release!: () => void, enter!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const acknowledged: number[] = [];
+    const originals: { operation?: Promise<unknown> } = {};
+    onTestFinished(async () => {
+      release();
+      if (originals.operation) await originals.operation;
+      await rm(f.parentDirectory, { recursive: true, force: true });
+    });
+    const observer: DarwinProcessObserver = {
+      async inspect(pids) {
+        return {
+          ...boot,
+          processes: pids.map((pid) =>
+            closed && pid !== 10
+              ? { kind: 'absent' as const, pid }
+              : {
+                  kind: 'present' as const,
+                  identity:
+                    pid === 10 ? f.managerNative : pid === 20 ? f.rootNative : f.childNative,
+                  parentPid: pid === 10 ? 1 : pid === 20 ? 10 : 20,
+                  zombie: false,
+                }
+          ),
+        };
+      },
+      async children() {
+        calls++;
+        requested = true; // Reentrant original query requests close before its own return.
+        enter();
+        await held;
+        return {
+          ...boot,
+          parentBefore: incomplete ? null : f.rootNative,
+          parentAfter: incomplete ? null : f.rootNative,
+          complete: !incomplete,
+          processes: incomplete
+            ? []
+            : [
+                {
+                  kind: 'present' as const,
+                  identity: f.childNative,
+                  parentPid: 20,
+                  zombie: false,
+                },
+              ],
+        };
+      },
+    };
+    originals.operation = observeDarwinJournal({
+      location: f.location,
+      initial: f.initial,
+      root: f.root,
+      observer,
+      enumerationCloseRequested: () => requested,
+      onEnumerationClosed: async (checkpoint) => {
+        const read = await readJournal(f.location);
+        expect(read.state).toBe('valid-recorded-data');
+        if (read.state !== 'valid-recorded-data') throw new Error('MISSING_DURABLE_CHECKPOINT');
+        expect(read.snapshot.sequence).toBe(checkpoint.sequence);
+        expect(read.snapshot.gaps).toEqual([]);
+        expect(read.snapshot.retainedIdentities.some((row) => row.identity.pid === 30)).toBe(true);
+        acknowledged.push(checkpoint.sequence);
+        closed = true;
+      },
+      endBrowser: () => closed,
+      originalRootReturned: () => (closed ? f.root : undefined),
+      monotonicNow: () => clock++,
+      pause: async () => {},
+      endMonotonic: 100,
+      maxGap: 100,
+    });
+    await entered;
+    await Promise.resolve();
+    expect(acknowledged).toEqual([]);
+    release();
+    expect(await originals.operation).toBe(incomplete ? 'uncertain' : 'campaign-closed');
+    expect(calls).toBe(1);
+    expect(acknowledged.length).toBe(incomplete ? 0 : 1);
+    const final = await readJournal(f.location);
+    expect(final.state).toBe('valid-recorded-data');
+    if (final.state === 'valid-recorded-data') {
+      if (incomplete)
+        expect(final.snapshot.gaps.some((row) => row.cause === 'association-missing')).toBe(true);
+      else
+        expect(
+          final.snapshot.retainedIdentities
+            .filter((row) => row.role !== 'manager')
+            .every((row) => row.lifecycle === 'dead')
+        ).toBe(true);
+    }
+  }
+);
+
+it('retains an original undefined pre-close ACK failure without reopening enumeration', async () => {
+  const f = await fixture();
+  let clock = 10,
+    requested = false,
+    calls = 0;
+  const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+  try {
+    const result = await observeDarwinJournal({
+      location: f.location,
+      initial: f.initial,
+      root: f.root,
+      observer: {
+        async inspect(pids) {
+          return {
+            ...boot,
+            processes: pids.map((pid) => ({
+              kind: 'present' as const,
+              identity: pid === 10 ? f.managerNative : f.rootNative,
+              parentPid: pid === 10 ? 1 : 10,
+              zombie: false,
+            })),
+          };
+        },
+        async children() {
+          calls++;
+          requested = true;
+          return {
+            ...boot,
+            parentBefore: f.rootNative,
+            parentAfter: f.rootNative,
+            complete: true,
+            processes: [],
+          };
+        },
+      },
+      enumerationCloseRequested: () => requested,
+      onEnumerationClosed: async () => {
+        throw undefined;
+      },
+      monotonicNow: () => clock++,
+      pause: async () => {},
+      endMonotonic: 100,
+      maxGap: 100,
+    });
+    expect(result).toBe('uncertain');
+    expect(calls).toBe(1);
+    const read = await readJournal(f.location);
+    expect(read.state).toBe('valid-recorded-data');
+    if (read.state === 'valid-recorded-data') expect(read.snapshot.phase).toBe('retained');
   } finally {
     await rm(f.parentDirectory, { recursive: true, force: true });
   }
