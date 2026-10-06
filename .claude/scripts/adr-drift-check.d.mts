@@ -35,6 +35,7 @@ export interface DriftFindings {
   orphans: Array<{ file: string; key: string }>;
   slugMismatches: Array<{ file: string; key: string; manifestSlug: string }>;
   duplicates: Array<{ file: string; key: string }>;
+  duplicateEntries: Array<{ key: string; count: number }>;
   missingFiles: ManifestDecision[];
   linkIssues: LinkIssue[];
   frontmatterDrift: Array<{ key: string; field: string; file: string; manifest: string }>;
