@@ -836,3 +836,300 @@ it.each([
     }
   }
 );
+
+it('uses genuine original root return only to stop fresh enumeration, retaining known descendants until strict absence', async () => {
+  const f = await fixture();
+  let round = 0,
+    clock = 10,
+    returned = false,
+    afterReturnRootQueries = 0,
+    afterReturnDescendantQueries = 0;
+  const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+  const checkpoints: JournalSnapshot[] = [];
+  const observer: DarwinProcessObserver = {
+    async inspect(pids) {
+      const processes = pids.map((pid) => {
+        if ((pid === 20 && returned) || (pid === 30 && round >= 4))
+          return { kind: 'absent' as const, pid };
+        const identity = pid === 10 ? f.managerNative : pid === 20 ? f.rootNative : f.childNative;
+        return {
+          kind: 'present' as const,
+          identity,
+          parentPid: pid === 10 ? 1 : pid === 20 ? 10 : returned ? 1 : 20,
+          zombie: false,
+        };
+      });
+      if (round === 2) returned = true; // Original return arrives after this inspect took its facts.
+      return { ...boot, processes };
+    },
+    async children(parent) {
+      if (returned && parent.pid === 20) afterReturnRootQueries++;
+      if (returned && parent.pid === 30) afterReturnDescendantQueries++;
+      const identity = parent.pid === 20 ? f.rootNative : f.childNative;
+      return {
+        ...boot,
+        parentBefore: identity,
+        parentAfter: { ...identity },
+        complete: true,
+        processes:
+          parent.pid === 20
+            ? [{ kind: 'present' as const, identity: f.childNative, parentPid: 20, zombie: false }]
+            : [],
+      };
+    },
+  };
+  try {
+    expect(
+      await observeDarwinJournal({
+        location: f.location,
+        initial: f.initial,
+        root: f.root,
+        observer,
+        originalRootReturned: () => (returned ? f.root : undefined),
+        endBrowser: () => returned,
+        monotonicNow: () => clock++,
+        pause: async () => {
+          const read = await readJournal(f.location);
+          if (read.state === 'valid-recorded-data') checkpoints.push(read.snapshot);
+          round++;
+        },
+        endMonotonic: 1000,
+        maxGap: 100,
+      })
+    ).toBe('campaign-closed');
+    expect(afterReturnRootQueries).toBe(0);
+    expect(afterReturnDescendantQueries).toBeGreaterThan(0);
+    expect(
+      checkpoints.some(
+        (s) =>
+          s.retainedIdentities.some(
+            (row) => row.role === 'descendant' && row.lifecycle === 'alive'
+          ) && s.retainedIdentities.some((row) => row.role === 'root' && row.lifecycle === 'dead')
+      )
+    ).toBe(true);
+    const read = await readJournal(f.location);
+    expect(read.state).toBe('valid-recorded-data');
+    if (read.state === 'valid-recorded-data') {
+      expect(read.snapshot.gaps).toEqual([]);
+      expect(
+        read.snapshot.retainedIdentities
+          .filter((row) => row.role !== 'manager')
+          .every((row) => row.lifecycle === 'dead')
+      ).toBe(true);
+    }
+  } finally {
+    await rm(f.parentDirectory, { recursive: true, force: true });
+  }
+});
+
+it('never heals an already-entered incomplete query when the original root returns during it', async () => {
+  const f = await fixture();
+  let clock = 10,
+    returned = false,
+    entered = false;
+  const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+  const observer: DarwinProcessObserver = {
+    async inspect(pids) {
+      return {
+        ...boot,
+        processes: pids.map((pid) => ({
+          kind: 'present' as const,
+          identity: pid === 10 ? f.managerNative : f.rootNative,
+          parentPid: pid === 10 ? 1 : 10,
+          zombie: false,
+        })),
+      };
+    },
+    async children() {
+      entered = true;
+      // The original query entered before this genuine private proof became available.
+      returned = true;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      return { ...boot, parentBefore: null, parentAfter: null, complete: false, processes: [] };
+    },
+  };
+  try {
+    expect(
+      await observeDarwinJournal({
+        location: f.location,
+        initial: f.initial,
+        root: f.root,
+        observer,
+        originalRootReturned: () => (returned ? f.root : undefined),
+        endBrowser: () => returned,
+        monotonicNow: () => clock++,
+        pause: async () => {},
+        endMonotonic: 100,
+        maxGap: 100,
+      })
+    ).toBe('retained');
+    expect(entered).toBe(true);
+    const read = await readJournal(f.location);
+    expect(read.state).toBe('valid-recorded-data');
+    if (read.state === 'valid-recorded-data')
+      expect(read.snapshot.gaps.some((gap) => gap.cause === 'association-missing')).toBe(true);
+  } finally {
+    await rm(f.parentDirectory, { recursive: true, force: true });
+  }
+});
+
+it('refuses a returned-root lifetime mismatch without upgrading the recorded campaign', async () => {
+  const f = await fixture();
+  let clock = 10,
+    round = 0;
+  const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+  const observer: DarwinProcessObserver = {
+    async inspect(pids) {
+      return {
+        ...boot,
+        processes: pids.map((pid) => ({
+          kind: 'present' as const,
+          identity: pid === 10 ? f.managerNative : f.rootNative,
+          parentPid: pid === 10 ? 1 : 10,
+          zombie: false,
+        })),
+      };
+    },
+    async children() {
+      return {
+        ...boot,
+        parentBefore: f.rootNative,
+        parentAfter: f.rootNative,
+        complete: true,
+        processes: [],
+      };
+    },
+  };
+  try {
+    expect(
+      await observeDarwinJournal({
+        location: f.location,
+        initial: f.initial,
+        root: f.root,
+        observer,
+        originalRootReturned: () => (round ? { ...f.root, birth: 'reused-lifetime' } : undefined),
+        endBrowser: () => true,
+        monotonicNow: () => clock++,
+        pause: async () => {
+          round++;
+        },
+        endMonotonic: 100,
+        maxGap: 100,
+      })
+    ).toBe('retained');
+    const read = await readJournal(f.location);
+    expect(read.state).toBe('valid-recorded-data');
+    if (read.state === 'valid-recorded-data')
+      expect(read.snapshot.gaps.some((gap) => gap.cause === 'identity-unknown')).toBe(true);
+  } finally {
+    await rm(f.parentDirectory, { recursive: true, force: true });
+  }
+});
+
+it('enrolls a grandchild forked by a retained live descendant after genuine root return', async () => {
+  const f = await fixture();
+  const grandchildNative = { pid: 40, seconds: '400', microseconds: '0' };
+  let round = 0,
+    clock = 10,
+    returned = false,
+    enrolledAfterReturn = false;
+  const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+  const checkpoints: JournalSnapshot[] = [];
+  const observer: DarwinProcessObserver = {
+    async inspect(pids) {
+      return {
+        ...boot,
+        processes: pids.map((pid) => {
+          if ((pid === 20 && returned) || (pid === 30 && round >= 5) || (pid === 40 && round >= 6))
+            return { kind: 'absent' as const, pid };
+          const identity =
+            pid === 10
+              ? f.managerNative
+              : pid === 20
+                ? f.rootNative
+                : pid === 30
+                  ? f.childNative
+                  : grandchildNative;
+          return {
+            kind: 'present' as const,
+            identity,
+            parentPid:
+              pid === 10
+                ? 1
+                : pid === 20
+                  ? 10
+                  : pid === 30
+                    ? returned
+                      ? 1
+                      : 20
+                    : round >= 5
+                      ? 1
+                      : 30,
+            zombie: false,
+          };
+        }),
+      };
+    },
+    async children(parent) {
+      const identity =
+        parent.pid === 20 ? f.rootNative : parent.pid === 30 ? f.childNative : grandchildNative;
+      if (returned && parent.pid === 30) enrolledAfterReturn = true;
+      return {
+        ...boot,
+        parentBefore: identity,
+        parentAfter: { ...identity },
+        complete: true,
+        processes:
+          parent.pid === 20
+            ? [{ kind: 'present' as const, identity: f.childNative, parentPid: 20, zombie: false }]
+            : returned && parent.pid === 30
+              ? [
+                  {
+                    kind: 'present' as const,
+                    identity: grandchildNative,
+                    parentPid: 30,
+                    zombie: false,
+                  },
+                ]
+              : [],
+      };
+    },
+  };
+  try {
+    expect(
+      await observeDarwinJournal({
+        location: f.location,
+        initial: f.initial,
+        root: f.root,
+        observer,
+        originalRootReturned: () => (returned ? f.root : undefined),
+        endBrowser: () => returned,
+        monotonicNow: () => clock++,
+        pause: async () => {
+          const read = await readJournal(f.location);
+          if (read.state === 'valid-recorded-data') checkpoints.push(read.snapshot);
+          round++;
+          if (round === 2) returned = true;
+        },
+        endMonotonic: 1000,
+        maxGap: 100,
+      })
+    ).toBe('campaign-closed');
+    expect(enrolledAfterReturn).toBe(true);
+    expect(
+      checkpoints.some((s) =>
+        s.retainedIdentities.some((row) => row.identity.pid === 40 && row.lifecycle === 'alive')
+      )
+    ).toBe(true);
+    const read = await readJournal(f.location);
+    expect(read.state).toBe('valid-recorded-data');
+    if (read.state === 'valid-recorded-data') {
+      expect(read.snapshot.gaps).toEqual([]);
+      expect(
+        read.snapshot.retainedIdentities.find((row) => row.identity.pid === 40)?.lifecycle
+      ).toBe('dead');
+    }
+  } finally {
+    await rm(f.parentDirectory, { recursive: true, force: true });
+  }
+});

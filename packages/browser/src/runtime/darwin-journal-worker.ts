@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { z } from 'zod';
 import {
   JournalSnapshotSchema,
+  sameProcess,
   type JournalLocation,
   type JournalSnapshot,
 } from '../lifecycle/process-journal.js';
@@ -58,6 +59,9 @@ const launchSchema = z
   })
   .strict();
 const refuseSchema = z.object({ kind: z.literal('refuse-seed') }).strict();
+const returnedSchema = z
+  .object({ kind: z.literal('root-returned'), nonce: z.string().min(1).max(128), identity })
+  .strict();
 const endSchema = z.object({ kind: z.literal('end-browser'), launchEntered: z.boolean() }).strict();
 const messages = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('enrolled') }).strict(),
@@ -93,6 +97,7 @@ export interface DarwinJournalWorker {
   stderr(): Uint8Array;
   enrollRoot(root: ProcessIdentity, supervisor?: ProcessIdentity): Promise<void>;
   endBrowser(launchEntered: boolean): Promise<void>;
+  rootReturned(root: ProcessIdentity): Promise<void>;
   launchRoot(
     command: Readonly<{ executable: string; argv: readonly string[]; cwd: string }>
   ): Promise<void>;
@@ -143,6 +148,7 @@ export async function startDarwinJournalWorker(
   originals.add(child);
   let failure = false,
     used = false,
+    returnedSent = false,
     result:
       | 'recorded-gone'
       | 'original-child-returned-observer-live'
@@ -346,6 +352,19 @@ export async function startDarwinJournalWorker(
     location: seed.location,
     stderr: () => Buffer.concat(stderrChunks),
     completion,
+    async rootReturned(root: ProcessIdentity) {
+      const original = identity.parse(root);
+      if (failure || returnedSent || !expectedRoot || !sameProcess(original, expectedRoot))
+        throw new Error('JOURNAL_ROOT_RETURN_REFUSED');
+      returnedSent = true;
+      await send(
+        returnedSchema.parse({
+          kind: 'root-returned',
+          nonce: seed.initial.binding.reservationNonce,
+          identity: original,
+        })
+      );
+    },
     async endBrowser(launchEntered: boolean) {
       await send({ kind: 'end-browser', launchEntered });
     },
@@ -392,6 +411,8 @@ async function runPrivateWorker(): Promise<void> {
   });
   let ended = false,
     launchNotEntered = false;
+  let seedNonce: string | undefined;
+  let enrolledRoot: ProcessIdentity | undefined, returnedRoot: ProcessIdentity | undefined;
   let seeded = false,
     rooted = false,
     invalid = false;
@@ -407,6 +428,22 @@ async function runPrivateWorker(): Promise<void> {
     if (!seeded) {
       seeded = true;
       seedResolve(value);
+      return;
+    }
+    const returned = returnedSchema.safeParse(value);
+    if (returned.success) {
+      if (
+        !rooted ||
+        !enrolledRoot ||
+        returnedRoot ||
+        !seedNonce ||
+        returned.data.nonce !== seedNonce ||
+        !sameProcess(returned.data.identity, enrolledRoot)
+      ) {
+        invalid = true;
+        return;
+      }
+      returnedRoot = Object.freeze({ ...returned.data.identity });
       return;
     }
     const end = endSchema.safeParse(value);
@@ -445,6 +482,7 @@ async function runPrivateWorker(): Promise<void> {
     }
     rooted = true;
     supervisor = parsed.data.supervisor;
+    enrolledRoot = Object.freeze({ ...parsed.data.identity });
     rootResolve(parsed.data.identity);
   };
   process.on('message', receive);
@@ -476,6 +514,7 @@ async function runPrivateWorker(): Promise<void> {
     | 'uncertain';
   try {
     const value = seedSchema.parse(await seed);
+    seedNonce = value.initial.binding.reservationNonce;
     if (
       value.initial.binding.bootScope.kind !== 'observed' ||
       value.initial.binding.bootScope.sourceIdentityDigest !== value.artifact.sha256
@@ -526,6 +565,10 @@ async function runPrivateWorker(): Promise<void> {
         rootSupervisor: () => supervisor,
         observer,
         endBrowser: () => ended,
+        originalRootReturned: () => {
+          if (invalid) throw new Error('JOURNAL_ROOT_RETURN_REFUSED');
+          return returnedRoot;
+        },
         launchNotEntered: () => launchNotEntered,
         ...(value.ownedLaunch
           ? { logicalManager, exitingObserver: value.initial.binding.manager }

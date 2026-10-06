@@ -95,6 +95,7 @@ export const SupervisorReplySchema = z.discriminatedUnion('kind', [
       value: z.union([z.array(tab).max(128), z.object({ tab: sequence }).strict()]),
     })
     .strict(),
+  z.object({ kind: z.literal('rootReturned'), nonce, sequence, root: identity }).strict(),
   z.object({ kind: z.literal('closed'), nonce, sequence, returned: z.boolean() }).strict(),
   z.object({ kind: z.literal('refused'), nonce, sequence }).strict(),
   z.object({ kind: z.literal('custodyFault'), nonce }).strict(),

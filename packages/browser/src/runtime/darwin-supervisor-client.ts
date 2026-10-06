@@ -16,6 +16,7 @@ type State = {
   uncertain: boolean;
   pending: boolean;
   sends: Set<Promise<void>>;
+  forwards: Set<Promise<void>>;
   cleanup?: Promise<unknown>;
   startup?: Promise<void>;
 };
@@ -28,7 +29,8 @@ export async function startDarwinSupervisorClient(
     generation: number;
     reservationNonce: string;
   },
-  originalRootFailure: () => void = () => {}
+  originalRootFailure: () => void = () => {},
+  originalRootReturned?: (root: ProcessIdentity) => void | Promise<void>
 ) {
   const nonce = randomUUID();
   const { workerPath, ...input } = options;
@@ -45,7 +47,13 @@ export async function startDarwinSupervisorClient(
       env: { PATH: '/usr/bin:/bin', HOME: options.profileDir, LANG: 'C', LC_ALL: 'C' },
     }
   );
-  const state: State = { child, uncertain: false, pending: true, sends: new Set() };
+  const state: State = {
+    child,
+    uncertain: false,
+    pending: true,
+    sends: new Set(),
+    forwards: new Set(),
+  };
   retained.add(state);
   const diagnosticChunks: Uint8Array[] = [];
   let sequence = 0,
@@ -53,7 +61,8 @@ export async function startDarwinSupervisorClient(
     exited = false,
     closedReport = false,
     sawReady = false,
-    sawRootFailure = false;
+    sawRootFailure = false,
+    sawRootReturn = false;
   let reportedRoot: ProcessIdentity | undefined;
   let reportedSupervisor: ProcessIdentity | undefined,
     reportedProxyURL = '',
@@ -153,6 +162,32 @@ export async function startDarwinSupervisorClient(
       refuse();
       return;
     }
+    if (value.kind === 'rootReturned') {
+      if (
+        sawRootReturn ||
+        request.action !== 'close' ||
+        !sawReady ||
+        !reportedRoot ||
+        !sameProcess(reportedRoot, value.root)
+      ) {
+        refuse();
+        return;
+      }
+      sawRootReturn = true;
+      // Register before the original receiver can reenter close or reject, including undefined.
+      const forward = Promise.resolve().then(() =>
+        originalRootReturned?.(Object.freeze({ ...value.root }))
+      );
+      state.forwards.add(forward);
+      void forward.then(
+        () => state.forwards.delete(forward),
+        () => {
+          state.forwards.delete(forward);
+          refuse();
+        }
+      );
+      return;
+    }
     pending.delete(value.sequence);
     clearTimeout(request.timer);
     if (
@@ -162,7 +197,7 @@ export async function startDarwinSupervisorClient(
     )
       request.resolve(value.value);
     else if (value.kind === 'closed' && request.action === 'close') {
-      closedReport = value.returned === true;
+      closedReport = value.returned === true && (!originalRootReturned || sawRootReturn);
       request.resolve(closedReport);
     } else {
       state.uncertain = true;
@@ -209,15 +244,19 @@ export async function startDarwinSupervisorClient(
     await originalClose;
     if (!eof || !closed) state.uncertain = true;
   };
-  const completion = Promise.all([terminal, drain(child.stdout), drain(child.stderr)]).then(() => {
-    state.pending = state.sends.size !== 0;
-    if (state.pending) state.uncertain = true;
-    if (!closedReport) state.uncertain = true;
-    if (!state.uncertain) retained.delete(state);
-    if (pending.size) refuse();
-    readyReject(new Error('SUPERVISOR_UNAVAILABLE'));
-    return { pending: state.pending, uncertain: state.uncertain } as const;
-  });
+  const completion = Promise.all([terminal, drain(child.stdout), drain(child.stderr)]).then(
+    async () => {
+      const forwards = await Promise.allSettled([...state.forwards]);
+      if (forwards.some((result) => result.status === 'rejected')) state.uncertain = true;
+      state.pending = state.sends.size !== 0;
+      if (state.pending) state.uncertain = true;
+      if (!closedReport) state.uncertain = true;
+      if (!state.uncertain) retained.delete(state);
+      if (pending.size) refuse();
+      readyReject(new Error('SUPERVISOR_UNAVAILABLE'));
+      return { pending: state.pending, uncertain: state.uncertain } as const;
+    }
+  );
   const send = (value: object) => {
     const original = new Promise<void>((resolve, reject) => {
       child.send(value, (error) => {
