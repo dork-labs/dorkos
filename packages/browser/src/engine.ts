@@ -1,3 +1,19 @@
+import {
+  installOwnerNavigation,
+  type PrivateOwnerNavigationContinuation,
+} from './navigation/owner-continuation.js';
+import { navigateOwned } from './navigation/navigate.js';
+import { navigationPending } from './navigation/cohort.js';
+import {
+  createOwnedNavigationIssuer,
+  type OwnedNavigationAuthorization,
+} from './navigation/owned-work.js';
+import {
+  createOwnedCaptureIssuer,
+  type OwnedCaptureAuthorization,
+  type OwnedCaptureWork,
+} from './tabs/owned-capture-work.js';
+import { createOwnedInputIssuer, type OwnedInputAuthorization } from './input/owned-work.js';
 import { navigateOwnedInitial } from './lifecycle/initial-navigation.js';
 import { initialNavigationPending } from './lifecycle/initial-navigation-state.js';
 import { currentAuthorityCustody } from './lifecycle/live-custody.js';
@@ -63,12 +79,34 @@ export interface PrivateBrowserRetirementReceiver {
     root: import('./configuration.js').ProcessIdentity;
     supervisor: import('./configuration.js').ProcessIdentity;
   }> | null;
-  verifiedRuntimeBinding(): Readonly<{ runtimeIdentity: string; policyRevision: number }> | null;
+  verifiedRuntimeBinding(): Readonly<{
+    runtimeIdentity: string;
+    policyRevision: number;
+  }> | null;
   disabled(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   authorityRevoked(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   persistenceFailure(): Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   generationReturned(): Promise<DarwinGenerationReturn | null>;
   consumeGenerationReturn(token: unknown, binding: DarwinGenerationBinding): boolean;
+}
+/** Constructor-private input dispatcher; tokens never cross the wire or public engine. */
+export interface PrivateBrowserInputDispatcher {
+  input(
+    command: unknown,
+    authorization: OwnedInputAuthorization,
+    signal?: AbortSignal
+  ): Promise<InputResult>;
+}
+/** Trusted server constructor captures the original dispatcher before any open. */
+export interface PrivateBrowserInputOwner {
+  registerDispatcher(dispatcher: PrivateBrowserInputDispatcher): void;
+}
+/** Constructor-private raster dispatcher; JSON commands never carry its authority. */
+export interface PrivateBrowserCaptureDispatcher {
+  capture(value: unknown, authorization: OwnedCaptureAuthorization): Promise<BrowserCapture>;
+}
+export interface PrivateBrowserCaptureOwner {
+  registerDispatcher(dispatcher: PrivateBrowserCaptureDispatcher): void;
 }
 /** Original trusted network peer; credentials stay in the private owned composition. */
 export interface PrivateBrowserNetworkPeer {
@@ -85,8 +123,29 @@ export interface PrivateBrowserNetworkOwner {
     peer: PrivateBrowserNetworkPeer
   ): Promise<void>;
 }
-/** Trusted server constructor owns both synchronous callbacks before any engine birth. */
+/** Private original command dispatcher; never the public BrowserLifecycleEngine surface. */
+export interface PrivateBrowserNavigationDispatcher {
+  navigate(
+    command: unknown,
+    authorization: OwnedNavigationAuthorization,
+    signal?: AbortSignal
+  ): Promise<Readonly<BrowserBinding>>;
+}
+/** One constructor captures one original dispatcher receiver. */
+export interface PrivateBrowserNavigationOwner {
+  readonly continuation?: PrivateOwnerNavigationContinuation;
+  observeLifetime?(
+    receiver: Pick<
+      PrivateBrowserRetirementReceiver,
+      'browserId' | 'browserGeneration' | 'observation'
+    >
+  ): void;
+  registerDispatcher(dispatcher: PrivateBrowserNavigationDispatcher): void;
+}
 export interface PrivateBrowserBirthOwner {
+  readonly navigation?: PrivateBrowserNavigationOwner;
+  readonly input?: PrivateBrowserInputOwner;
+  readonly capture?: PrivateBrowserCaptureOwner;
   readonly network?: PrivateBrowserNetworkOwner;
   registerBirth(receiver: PrivateBrowserRetirementReceiver): void;
   refuseBirth(receiver: PrivateBrowserRetirementReceiver): void;
@@ -98,6 +157,20 @@ type EngineConstruction =
       owner: PrivateBrowserBirthOwner;
       registerBirth: PrivateBrowserBirthOwner['registerBirth'];
       refuseBirth: PrivateBrowserBirthOwner['refuseBirth'];
+      navigation?: Readonly<{
+        owner: PrivateBrowserNavigationOwner;
+        registerDispatcher: PrivateBrowserNavigationOwner['registerDispatcher'];
+        continuation?: PrivateOwnerNavigationContinuation;
+        observeLifetime?: PrivateBrowserNavigationOwner['observeLifetime'];
+      }>;
+      input?: Readonly<{
+        owner: PrivateBrowserInputOwner;
+        registerDispatcher: PrivateBrowserInputOwner['registerDispatcher'];
+      }>;
+      capture?: Readonly<{
+        owner: PrivateBrowserCaptureOwner;
+        registerDispatcher: PrivateBrowserCaptureOwner['registerDispatcher'];
+      }>;
       network?: Readonly<{
         owner: PrivateBrowserNetworkOwner;
         bindBeforeLaunch: PrivateBrowserNetworkOwner['bindBeforeLaunch'];
@@ -110,7 +183,7 @@ export function createBrowserEngine(configuration: unknown): BrowserLifecycleEng
   return constructEngine(configuration, Object.freeze({ kind: 'engineLocalFixture' }));
 }
 
-/** Proposed PRIVATE entry, not exported by the existing public index or current exports map. */
+/** Backend-only constructor captures original dispatchers before any canonical browser birth. */
 export function constructOwnedBrowserEngine(
   configuration: unknown,
   owner: PrivateBrowserBirthOwner
@@ -119,6 +192,43 @@ export function constructOwnedBrowserEngine(
   const registerBirth = owner.registerBirth;
   const refuseBirth = owner.refuseBirth;
   if (typeof registerBirth !== 'function' || typeof refuseBirth !== 'function')
+    throw new BrowserLifecycleError('ENGINE_STOPPED');
+  const navigationOwner = owner.navigation;
+  const originalContinuation = navigationOwner?.continuation;
+  const continuation = originalContinuation
+    ? Object.freeze({
+        acquire: originalContinuation.acquire.bind(originalContinuation),
+        joinPublications: originalContinuation.joinPublications.bind(originalContinuation),
+        observeTransition: originalContinuation.observeTransition?.bind(originalContinuation),
+      })
+    : undefined;
+  const navigation = navigationOwner
+    ? Object.freeze({
+        owner: navigationOwner,
+        registerDispatcher: navigationOwner.registerDispatcher,
+        continuation,
+        observeLifetime: navigationOwner.observeLifetime,
+      })
+    : undefined;
+  if (navigation && typeof navigation.registerDispatcher !== 'function')
+    throw new BrowserLifecycleError('ENGINE_STOPPED');
+  const inputOwner = owner.input;
+  const input = inputOwner
+    ? Object.freeze({
+        owner: inputOwner,
+        registerDispatcher: inputOwner.registerDispatcher,
+      })
+    : undefined;
+  if (input && typeof input.registerDispatcher !== 'function')
+    throw new BrowserLifecycleError('ENGINE_STOPPED');
+  const captureOwner = owner.capture;
+  const capture = captureOwner
+    ? Object.freeze({
+        owner: captureOwner,
+        registerDispatcher: captureOwner.registerDispatcher,
+      })
+    : undefined;
+  if (capture && typeof capture.registerDispatcher !== 'function')
     throw new BrowserLifecycleError('ENGINE_STOPPED');
   const networkOwner = owner.network;
   const network = networkOwner
@@ -135,7 +245,16 @@ export function constructOwnedBrowserEngine(
     throw new BrowserLifecycleError('ENGINE_STOPPED');
   return constructEngine(
     configuration,
-    Object.freeze({ kind: 'serverOwned', owner, registerBirth, refuseBirth, network })
+    Object.freeze({
+      kind: 'serverOwned',
+      owner,
+      registerBirth,
+      refuseBirth,
+      network,
+      input,
+      capture,
+      navigation,
+    })
   );
 }
 
@@ -223,7 +342,9 @@ function constructEngine(
         return Object.freeze({
           url: `http://${endpoint.host}`,
           root: Object.freeze({ ...record.root }),
-          supervisor: Object.freeze({ ...record.supervisor.reportedSupervisor }),
+          supervisor: Object.freeze({
+            ...record.supervisor.reportedSupervisor,
+          }),
         });
       },
       verifiedRuntimeBinding: () =>
@@ -298,6 +419,14 @@ function constructEngine(
         if (returned !== undefined) {
           record.lifetime.uncertain = true;
           throw new BrowserLifecycleError('ENGINE_STOPPED');
+        }
+        if (construction.navigation?.observeLifetime) {
+          const observed = Reflect.apply(
+            construction.navigation.observeLifetime,
+            construction.navigation.owner,
+            [birthReceiver]
+          );
+          if (observed !== undefined) throw new BrowserLifecycleError('ENGINE_STOPPED');
         }
         if (
           stopping ||
@@ -402,6 +531,16 @@ function constructEngine(
       if (!first) throw new BrowserLifecycleError('PAGE_UNAVAILABLE');
       if (!record.lifetime.inputs.get(first)?.ready)
         throw new BrowserLifecycleError('BROWSER_STOPPED');
+      if (construction.kind === 'serverOwned' && construction.navigation?.continuation) {
+        await installOwnerNavigation(
+          config,
+          record,
+          first,
+          () => !stopping && records.get(record.browserId) === record && ordinaryRecord(record),
+          construction.navigation.continuation
+        );
+        if (!birthReceiver?.isAuthorityCurrent()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+      }
       return parseBrowserResult({
         kind: 'opened',
         requestId: command.requestId,
@@ -437,7 +576,45 @@ function constructEngine(
       );
     }
   };
-  return Object.freeze({
+  const captureOriginal = async (
+    value: unknown,
+    ownedWork?: OwnedCaptureWork
+  ): Promise<BrowserCapture> => {
+    const command = parseBrowserCommand(value);
+    if (command.kind !== 'capture') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
+    const record = find(command.binding.browserId, command.binding.browserGeneration);
+    if (!ordinaryRecord(record) || initialNavigationPending(record))
+      throw new BrowserLifecycleError('BROWSER_STOPPED');
+    const tab = record.tabs.get(command.binding.tabId);
+    if (tab && navigationPending(tab)) throw new BrowserLifecycleError('STALE_BINDING');
+    const page = tab?.page;
+    const capture = await ownOperation(record, () =>
+      captureTab(config, record, command, ownedWork)
+    ).catch((error: unknown) => {
+      // The unchanged capture deadline bounds waiting, not an underlying Page effect.
+      if (
+        error instanceof BrowserLifecycleError &&
+        (error.code === 'CAPTURE_TIMEOUT' || error.code === 'COUNTER_EXHAUSTED')
+      ) {
+        record.lifetime.uncertain = true;
+        record.lifetime.requestRetirement('engineFault');
+      }
+      throw error;
+    });
+    if (
+      !ordinaryRecord(record) ||
+      !tab ||
+      record.status !== 'running' ||
+      tab.stopped ||
+      tab.page !== page ||
+      record.tabs.get(command.binding.tabId) !== tab ||
+      record.lifetime.gate.stopped ||
+      !sameBinding(tab.binding, command.binding)
+    )
+      throw new BrowserLifecycleError('STALE_BINDING');
+    return capture;
+  };
+  const engine: BrowserLifecycleEngine = Object.freeze({
     open(command: unknown) {
       // Preregister a trusted native promise BEFORE open can enter external birth callbacks.
       const operation = Promise.resolve().then(() => open(command));
@@ -458,43 +635,24 @@ function constructEngine(
           .map((tab) => Object.freeze({ ...tab.binding }))
       );
     },
-    async capture(value: unknown) {
-      const command = parseBrowserCommand(value);
-      if (command.kind !== 'capture') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
-      const record = find(command.binding.browserId, command.binding.browserGeneration);
-      if (!ordinaryRecord(record) || initialNavigationPending(record))
-        throw new BrowserLifecycleError('BROWSER_STOPPED');
-      const tab = record.tabs.get(command.binding.tabId);
-      const page = tab?.page;
-      const capture = await ownOperation(record, () => captureTab(config, record, command)).catch(
-        (error: unknown) => {
-          // The unchanged capture deadline bounds waiting, not an underlying Page effect.
-          if (
-            error instanceof BrowserLifecycleError &&
-            (error.code === 'CAPTURE_TIMEOUT' || error.code === 'COUNTER_EXHAUSTED')
-          ) {
-            record.lifetime.uncertain = true;
-            record.lifetime.requestRetirement('engineFault');
-          }
-          throw error;
-        }
-      );
-      if (
-        !ordinaryRecord(record) ||
-        !tab ||
-        record.status !== 'running' ||
-        tab.stopped ||
-        tab.page !== page ||
-        record.tabs.get(command.binding.tabId) !== tab ||
-        record.lifetime.gate.stopped ||
-        !sameBinding(tab.binding, command.binding)
-      )
-        throw new BrowserLifecycleError('STALE_BINDING');
-      return capture;
+    capture(value: unknown) {
+      if (construction.kind === 'serverOwned' && construction.capture)
+        return Promise.reject(new BrowserLifecycleError('POLICY_REFUSED'));
+      return captureOriginal(value);
     },
     input(value: unknown, signal?: AbortSignal) {
       const command = parseBrowserCommand(value);
       if (command.kind !== 'input') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
+      if (construction.kind === 'serverOwned' && construction.input)
+        return Promise.resolve(
+          Object.freeze({
+            kind: 'action',
+            requestId: command.requestId,
+            binding: command.binding,
+            outcome: 'rejected',
+            reason: 'policyRefused',
+          })
+        );
       return submitInput(
         find(command.binding.browserId, command.binding.browserGeneration),
         command,
@@ -538,4 +696,74 @@ function constructEngine(
       return shutdownPromise;
     },
   });
+  if (construction.kind === 'serverOwned' && construction.input) {
+    const issuer = createOwnedInputIssuer();
+    const dispatcher: PrivateBrowserInputDispatcher = Object.freeze({
+      input(value: unknown, authorization: OwnedInputAuthorization, signal?: AbortSignal) {
+        const command = parseBrowserCommand(value);
+        if (command.kind !== 'input') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
+        if (stopping) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        const token = issuer.issue(command, authorization);
+        try {
+          const operation = submitInput(
+            find(command.binding.browserId, command.binding.browserGeneration),
+            command,
+            signal,
+            token
+          );
+          return operation.finally(() => issuer.invalidate(token));
+        } catch (error) {
+          issuer.invalidate(token);
+          throw error;
+        }
+      },
+    });
+    Reflect.apply(construction.input.registerDispatcher, construction.input.owner, [dispatcher]);
+  }
+  if (construction.kind === 'serverOwned' && construction.capture) {
+    const issuer = createOwnedCaptureIssuer();
+    const dispatcher: PrivateBrowserCaptureDispatcher = Object.freeze({
+      capture(value: unknown, authorization: OwnedCaptureAuthorization) {
+        if (stopping) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        const token = issuer.issue(value, authorization);
+        return captureOriginal(value, token).finally(() => issuer.invalidate(token));
+      },
+    });
+    Reflect.apply(construction.capture.registerDispatcher, construction.capture.owner, [
+      dispatcher,
+    ]);
+  }
+  if (construction.kind === 'serverOwned' && construction.navigation) {
+    const issuer = createOwnedNavigationIssuer();
+    const dispatcher: PrivateBrowserNavigationDispatcher = Object.freeze({
+      navigate(value: unknown, authorization: OwnedNavigationAuthorization, signal?: AbortSignal) {
+        const command = parseBrowserCommand(value);
+        if (command.kind !== 'navigate') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
+        if (stopping || signal?.aborted) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        const token = issuer.issue(command, authorization);
+        try {
+          const record = find(command.binding.browserId, command.binding.browserGeneration);
+          const lifetime = record.lifetime;
+          const generation = record.browserGeneration;
+          const current = () =>
+            !stopping &&
+            Map.prototype.get.call(records, record.browserId) === record &&
+            record.lifetime === lifetime &&
+            record.browserGeneration === generation &&
+            lifetime.ordinary.record === record &&
+            lifetime.ordinary.records === records;
+          return navigateOwned(config, record, current, command, token, signal).finally(() =>
+            issuer.invalidate(token)
+          );
+        } catch (error) {
+          issuer.invalidate(token);
+          throw error;
+        }
+      },
+    });
+    Reflect.apply(construction.navigation.registerDispatcher, construction.navigation.owner, [
+      dispatcher,
+    ]);
+  }
+  return engine;
 }

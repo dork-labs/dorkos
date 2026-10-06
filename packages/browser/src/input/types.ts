@@ -1,3 +1,4 @@
+import type { OwnedInputWork } from './owned-work.js';
 import type { BrowserBinding, BrowserInputStep, BrowserResult } from '../contracts.js';
 import type { BrowserStopGate } from '../lifecycle/stop.js';
 import type { CleanupPermit, CleanupAttempt, CleanupObservation } from '../lifecycle/ownership.js';
@@ -11,7 +12,7 @@ export type ResetResult = Readonly<{ binding: BrowserBinding; status: 'ready' | 
 
 /** Trusted, private transport. AbortSignal is notification, never proof of native cancellation. */
 export interface NativeInputTransport {
-  dispatch(step: NativeInputStep, signal: AbortSignal): Promise<void>;
+  dispatch(step: NativeInputStep, signal: AbortSignal, current?: () => boolean): Promise<void>;
   cancelComposition(signal: AbortSignal): Promise<void>;
   cancelDrag(signal: AbortSignal): Promise<void>;
   cleanup(permit: CleanupPermit, attempt: CleanupAttempt, signal: AbortSignal): Promise<void>;
@@ -70,7 +71,7 @@ export interface InputPorts {
 
 /** Implemented input leaf; parent owns transport and registry wiring, not this queue's state. */
 export interface TabInput {
-  submit(command: unknown, signal?: AbortSignal): Promise<InputResult>;
+  submit(command: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork): Promise<InputResult>;
   reset(): Promise<ResetResult>;
   retire(end: number): Promise<CleanupObservation>;
   stop(): void;

@@ -1,9 +1,14 @@
 import { retirementFixture as captureRetirement } from './parent-fixture.js';
 import { captureTab as retirementCapture } from '../tabs/capture.js';
-import { it, expect, vi } from 'vitest';
+import { it, expect, vi, onTestFinished } from 'vitest';
 import { composeInput } from '../lifecycle/input-owner.js';
 import { submitInput, resetInput } from '../lifecycle/parent-actions.js';
-import { captureTab } from '../tabs/capture.js';
+import { captureTab, joinTabCaptureOriginals } from '../tabs/capture.js';
+import {
+  createOwnedCaptureIssuer,
+  isOwnedCaptureCancellation,
+} from '../tabs/owned-capture-work.js';
+import { BrowserLifecycleError } from '../lifecycle/errors.js';
 import { closeRecord } from '../lifecycle/close.js';
 import { configuration, tabFixture, deferred, tick, fakeJPEG, fakePage } from './parent-fixture.js';
 vi.mock('../profiles/owned-directory.js', () => ({ assertDirectory: vi.fn() }));
@@ -1031,3 +1036,91 @@ it.each([
     }
   }
 );
+
+it.each(['return', 'reject'] as const)(
+  'keeps original permission revocation separate from a screenshot %s',
+  async (settlement) => {
+    const h = tabFixture();
+    let current = true;
+    const held = deferred<Uint8Array>();
+    h.raw.screenshot.mockImplementation(() => held.promise);
+    const command = {
+      kind: 'capture' as const,
+      requestId: h.command().requestId,
+      binding: { ...h.tab.binding },
+    };
+    const issuer = createOwnedCaptureIssuer();
+    const work = issuer.issue(command, {
+      isCurrent: () => current,
+      authorize: async () => 'allowed',
+    });
+    const originals: { operation?: ReturnType<typeof captureTab> } = {};
+    const nativeFailure = new Error('Original native screenshot failed');
+    // Install release, exact native/operation joins and issuer cleanup before screenshot entry.
+    onTestFinished(async () => {
+      if (settlement === 'return') held.resolve(fakeJPEG());
+      else held.reject(nativeFailure);
+      await Promise.allSettled([
+        originals.operation ?? Promise.resolve(),
+        joinTabCaptureOriginals(h.tab),
+      ]);
+      issuer.invalidate(work);
+    });
+    const operation = captureTab(configuration(), h.record, command, work);
+    originals.operation = operation;
+    const observed = operation.then(
+      () => ({ failed: false as const }),
+      (error: unknown) => ({ failed: true as const, error })
+    );
+    await vi.waitFor(() => expect(h.raw.screenshot).toHaveBeenCalledTimes(1));
+    current = false;
+    let joined = false;
+    const joining = joinTabCaptureOriginals(h.tab).then(() => {
+      joined = true;
+    });
+    await tick();
+    expect(joined).toBe(false);
+    if (settlement === 'return') held.resolve(fakeJPEG());
+    else held.reject(nativeFailure);
+    const result = await observed;
+    expect(result.failed).toBe(true);
+    if (result.failed) {
+      expect(result.error).toMatchObject({
+        code: settlement === 'return' ? 'STALE_BINDING' : 'CAPTURE_FAILED',
+      });
+      expect(isOwnedCaptureCancellation(result.error)).toBe(settlement === 'return');
+    }
+    await joining;
+    expect(joined).toBe(true);
+    expect(h.tab.pending).toBe(0);
+    issuer.invalidate(work);
+  }
+);
+
+it('cannot classify a caller-created stale error as original capture cancellation', () => {
+  expect(isOwnedCaptureCancellation(new BrowserLifecycleError('STALE_BINDING'))).toBe(false);
+  expect(isOwnedCaptureCancellation({ code: 'STALE_BINDING' })).toBe(false);
+  expect(isOwnedCaptureCancellation(undefined)).toBe(false);
+});
+
+it('a throwing original permission check remains an unclassified refusal', async () => {
+  const h = tabFixture();
+  const command = {
+    kind: 'capture' as const,
+    requestId: h.command().requestId,
+    binding: { ...h.tab.binding },
+  };
+  const issuer = createOwnedCaptureIssuer();
+  const work = issuer.issue(command, {
+    isCurrent: () => {
+      throw undefined;
+    },
+    authorize: async () => 'allowed',
+  });
+  const error = await captureTab(configuration(), h.record, command, work).catch(
+    (error: unknown) => error
+  );
+  expect(error).toMatchObject({ code: 'STALE_BINDING' });
+  expect(isOwnedCaptureCancellation(error)).toBe(false);
+  expect(h.raw.screenshot).not.toHaveBeenCalled();
+});

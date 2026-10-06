@@ -150,6 +150,14 @@ async function performClose(
       }
     );
   }
+  const navigationObserver = record.ownerNavigationObserver
+    ? (record.ownerNavigationObserverClose ??= ownOperation(record, () =>
+        record.ownerNavigationObserver!.close()
+      ))
+    : Promise.resolve();
+  void navigationObserver.catch(() => {
+    owner.uncertain = true;
+  });
   const context = record.context
     ? closeOwned(record, 'context', record.context)
     : Promise.resolve();
@@ -172,6 +180,11 @@ async function performClose(
     owner.uncertain = true;
   });
   let observationFailed = record.setupCleanupUncertain === true;
+  try {
+    await until(navigationObserver, inputEnd, 'CONTEXT_CLOSE_TIMEOUT');
+  } catch {
+    owner.uncertain = true;
+  }
   try {
     await until(observed, end, 'PROCESS_OBSERVATION_UNAVAILABLE');
   } catch {
@@ -285,6 +298,8 @@ async function performClose(
     record.supervisor = undefined;
     record.controllerBrowser = undefined;
     record.context = undefined;
+    record.ownerNavigationObserver = undefined;
+    record.ownerNavigationObserverClose = undefined;
     record.proxy = undefined;
     record.reservation = undefined;
     record.profileDir = undefined;
