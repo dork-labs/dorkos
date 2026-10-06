@@ -23,6 +23,7 @@ let registered: Record<string, { configSection: string | null; supportsEffort: b
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getSessionSettings: () => readSettings(),
     has: (type: string) => registered[type] !== undefined,
     // The real `get` THROWS on an unregistered type — it does not answer

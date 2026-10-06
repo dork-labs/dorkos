@@ -13,7 +13,10 @@ import { BindingBridgeSection } from '../BindingBridgeSection';
 // The bridge action lands the person in the new channel via the router. The
 // component is rendered outside a router here, so its one router call is mocked.
 const navigateSpy = vi.fn();
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigateSpy }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigateSpy,
+}));
 
 function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
   return {

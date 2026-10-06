@@ -231,7 +231,7 @@ export function ChatPanel({
    */
   const startFreshSession = useCallback(
     (fromSessionId: string | null) => {
-      setSessionId(crypto.randomUUID(), { continuedFrom: fromSessionId ?? undefined });
+      setSessionId(crypto.randomUUID(), { continuedFrom: fromSessionId ?? undefined, draft: true });
     },
     [setSessionId]
   );

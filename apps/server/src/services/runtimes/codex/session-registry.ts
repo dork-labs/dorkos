@@ -143,6 +143,24 @@ export class CodexSessionRegistry {
     }
   }
 
+  /** Adopt verified native identity while retaining choices staged before its import. */
+  adoptNative(session: Session): void {
+    const current = this.sessions.get(session.id);
+    const copy = {
+      ...session,
+      ...(current
+        ? {
+            permissionMode: current.permissionMode,
+            ...(current.model !== undefined ? { model: current.model } : {}),
+            ...(current.effort !== undefined ? { effort: current.effort } : {}),
+            ...(current.fastMode !== undefined ? { fastMode: current.fastMode } : {}),
+          }
+        : {}),
+    };
+    this.sessions.set(session.id, copy);
+    this.emit({ type: 'session_upserted', session: { ...copy } });
+  }
+
   /** Whether the session is tracked. */
   has(sessionId: string): boolean {
     return this.sessions.has(sessionId);

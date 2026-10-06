@@ -180,8 +180,8 @@ import {
   projectorFor,
   queueKeyOf,
   resetSessionKeys,
-} from './session-key-registry.js';
-import { onSessionRemoved } from './session-list-broadcaster.js';
+} from './resolution/session-key-registry.js';
+import { onSessionRemoved } from './catalog/session-list-broadcaster.js';
 import { runtimeLockHolder } from './session-lock.js';
 import { getStagedContextStore, holdStagedContext } from './staged-context-store.js';
 import {

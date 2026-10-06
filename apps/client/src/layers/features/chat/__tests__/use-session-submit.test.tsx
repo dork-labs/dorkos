@@ -83,6 +83,7 @@ import {
   useSessionListStore,
   useSessionStreamStore,
   sessionKeys,
+  setSessionRouteContext,
 } from '@/layers/entities/session';
 import { resetSessionStreamBinding } from '@/layers/entities/session';
 import { TIMING } from '@/layers/shared/lib';
@@ -189,6 +190,27 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       expect.objectContaining({ create: true })
     );
   });
+
+  it.each(['claude-code', 'codex', 'opencode'])(
+    'never creates an existing %s session when its list cache is empty',
+    async (runtime) => {
+      const id = `existing-cold-${runtime}`;
+      setSessionRouteContext(id, { cwd: '/test/cwd', runtime, draft: false });
+      const postMessage = vi.fn().mockResolvedValue({ sessionId: id });
+      const { result } = renderHook(() => useChatSession(id), {
+        wrapper: createWrapper(createMockTransport({ postMessage })),
+      });
+      await waitFor(() => expect(result.current.status).toBe('idle'));
+      act(() => result.current.setInput('Resume'));
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+      expect(postMessage).toHaveBeenCalled();
+      expect(postMessage.mock.calls[0][3]).not.toHaveProperty('create');
+      expect(postMessage.mock.calls[0][3]).not.toHaveProperty('runtime');
+      expect(postMessage.mock.calls[0][3]).not.toHaveProperty('account');
+    }
+  );
 
   it('still says create when retrying a first send that failed (DOR-2712)', async () => {
     // The failed send left a placeholder row in the list, so the list alone
@@ -319,6 +341,14 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(onSessionIdChangeReplace).toHaveBeenCalledWith('sdk-canonical');
     // Durable stream re-attached to the canonical id (same cwd).
     expect(attachSession).toHaveBeenCalledWith('sdk-canonical', '/test/cwd');
+    const canonicalAttach = attachSession.mock.calls.findIndex(([id]) => id === 'sdk-canonical');
+    expect(mockAppState.carryCanvasWritesAcross).toHaveBeenCalledWith(
+      'client-uuid',
+      'sdk-canonical'
+    );
+    expect(mockAppState.carryCanvasWritesAcross.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      attachSession.mock.invocationCallOrder[canonicalAttach]!
+    );
     // Optimistic message moved to the canonical key; cleared on the old key.
     const store = useSessionStreamStore.getState();
     expect(store.getSession('sdk-canonical').optimisticUserMessage?.content).toBe('First message');
@@ -481,61 +511,75 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(result.current.messages.filter((m) => m.content === 'Second reply')).toHaveLength(1);
   });
 
-  it('passes the launch runtime hint on the session-creating first send only (DOR-180)', async () => {
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const transport = createMockTransport({ postMessage });
-    // Default gcTime (not 0): the sessions list cache must survive between the
-    // two sends, as it does in the real app where the sidebar observes it.
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+  it.each(['claude-code', 'codex', 'opencode'])(
+    'preserves %s and the selected account after pre-message settings cache writes',
+    async (runtime) => {
+      const sessionId = `settings-draft-${runtime}`;
+      const postMessage = vi
+        .fn()
+        .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+      const transport = createMockTransport({ postMessage });
+      // Default gcTime (not 0): the sessions list cache must survive between the
+      // two sends, as it does in the real app where the sidebar observes it.
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
 
-    const { result } = renderHook(() => useChatSession('s1', { launchRuntime: 'opencode' }), {
-      wrapper: createWrapper(transport, queryClient),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
+      setSessionRouteContext(sessionId, { cwd: '/test/cwd', draft: true, runtime });
+      mockAppState.pendingAccount = { sessionId: sessionId, id: 'selected-account' };
+      queryClient.setQueryData(
+        sessionKeys.detail(sessionId, '/test/cwd'),
+        createMockSession({ id: sessionId, permissionMode: 'plan', runtime: 'claude-code' })
+      );
+      const { result } = renderHook(() => useChatSession(sessionId, { launchRuntime: runtime }), {
+        wrapper: createWrapper(transport, queryClient),
+      });
+      await waitFor(() => expect(result.current.status).toBe('idle'));
 
-    act(() => {
-      result.current.setInput('Hello');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Hello'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
+      act(() => {
+        result.current.setInput('Hello');
+      });
+      await waitFor(() => expect(result.current.input).toBe('Hello'));
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
 
-    // First (session-creating) send carries the hint.
-    expect(postMessage).toHaveBeenCalledTimes(1);
-    expect(postMessage.mock.calls[0][3]).toMatchObject({ runtime: 'opencode' });
-    // The optimistic sidebar row is seeded with the SELECTED runtime, not a
-    // hardcoded placeholder.
-    const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>(
-      sessionKeys.list('/test/cwd')
-    );
-    expect(sessions?.find((s) => s.id === 's1')?.runtime).toBe('opencode');
+      // First (session-creating) send carries the hint.
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      expect(postMessage.mock.calls[0][3]).toMatchObject({
+        create: true,
+        runtime,
+        account: 'selected-account',
+      });
+      // The optimistic sidebar row is seeded with the SELECTED runtime, not a
+      // hardcoded placeholder.
+      const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>(
+        sessionKeys.list('/test/cwd')
+      );
+      expect(sessions?.find((s) => s.id === sessionId)?.runtime).toBe(runtime);
 
-    // Settle the turn so a second send is allowed.
-    act(() => {
-      const store = useSessionStreamStore.getState();
-      store.applyEvent('s1', { seq: 1, type: 'turn_start' });
-      store.applyEvent('s1', { seq: 2, type: 'turn_end' });
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
+      // Settle the turn so a second send is allowed.
+      act(() => {
+        const store = useSessionStreamStore.getState();
+        store.applyEvent(sessionId, { seq: 1, type: 'turn_start' });
+        store.applyEvent(sessionId, { seq: 2, type: 'turn_end' });
+      });
+      await waitFor(() => expect(result.current.status).toBe('idle'));
 
-    act(() => {
-      result.current.setInput('Second');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Second'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
+      act(() => {
+        result.current.setInput('Second');
+      });
+      await waitFor(() => expect(result.current.input).toBe('Second'));
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
 
-    // Subsequent sends must NOT resend the hint (persistSessionRuntime is
-    // first-write-wins server-side; resending is harmless but noise).
-    expect(postMessage).toHaveBeenCalledTimes(2);
-    expect(postMessage.mock.calls[1][3]).not.toHaveProperty('runtime');
-  });
+      // Subsequent sends must NOT resend the hint (persistSessionRuntime is
+      // first-write-wins server-side; resending is harmless but noise).
+      expect(postMessage).toHaveBeenCalledTimes(2);
+      expect(postMessage.mock.calls[1][3]).not.toHaveProperty('runtime');
+    }
+  );
 
   it('passes exact selected-agent ownership on the session-creating first send only', async () => {
     const postMessage = vi

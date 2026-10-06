@@ -1,3 +1,6 @@
+import { notifySessionLookupFailed } from '@/layers/entities/session';
+import { reportClientError } from '@/layers/shared/lib';
+import { sessionLocationTarget } from '@/layers/shared/lib';
 import { useMemo, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -10,7 +13,7 @@ import {
   useTeamRoster,
   type TeamRosterFilters,
 } from '@/layers/entities/team';
-import { applySortAndFilter, toSession } from '@/layers/shared/lib';
+import { applySortAndFilter } from '@/layers/shared/lib';
 import { useFilterState, useProfileDeepLink, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { ScrollArea } from '@/layers/shared/ui/scroll-area';
@@ -198,9 +201,14 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
   // one handler (DOR-1415).
   const handleNavigate = useCallback(
     (projectPath: string) => {
-      void navigate(toSession({ dir: projectPath }));
+      void sessionLocationTarget(transport, projectPath)
+        .then((target) => navigate(target))
+        .catch((error) => {
+          reportClientError(transport, error);
+          notifySessionLookupFailed(projectPath);
+        });
     },
-    [navigate]
+    [navigate, transport]
   );
 
   // Stable row-action handlers — only recreated when a callback changes

@@ -1913,7 +1913,7 @@ export function runtimeConformance(
       it('subscribeSessionList emits only events that satisfy SessionListEventSchema (DOR-851)', async () => {
         // Purpose: `SessionListBroadcaster` feeds every `subscribeSessionList`
         // event straight through `SessionListEventSchema` and silently DROPS
-        // whatever fails it (apps/server/src/services/session/session-list-broadcaster.ts) —
+        // whatever fails it (apps/server/src/services/session/catalog/session-list-broadcaster.ts) —
         // so a runtime whose own upsert/status events do not parse simply
         // never appears in the live session list, with nothing louder than a
         // log line. That is exactly how DOR-851 happened: test-mode reports

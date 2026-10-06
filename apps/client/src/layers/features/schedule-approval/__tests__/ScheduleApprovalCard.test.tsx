@@ -365,7 +365,7 @@ describe('ScheduleApprovalCard — the conversation behind it', () => {
     // the proposing session is usually not the one this window has open.
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'ses-42', dir: '/Users/dev/agents/dorkbot' },
+      search: { session: 'ses-42', dir: undefined },
     });
   });
 
@@ -779,7 +779,7 @@ describe('ScheduleApprovalCard — running it once', () => {
     await userEvent.click(screen.getByRole('button', { name: /view what it did/ }));
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'ses-run-1', dir: '/Users/dev/agents/dorkbot' },
+      search: { session: 'ses-run-1', dir: undefined },
     });
   });
 

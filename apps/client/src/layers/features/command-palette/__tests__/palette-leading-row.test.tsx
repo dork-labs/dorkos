@@ -110,7 +110,8 @@ afterEach(cleanup);
 
 // --- Mocks: everything the palette needs that is NOT rooms ---
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
 }));
 

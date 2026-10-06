@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The "Jump back in" popover's state: when it is up, which row is highlighted,
  * and where a row goes (spec `team-room-home` §D2.3).
@@ -354,7 +355,7 @@ export function useJumpBackInPopover({
         return;
       }
       useInteractionStore.getState().recordOpened('room', item.room.id);
-      navigate({ to: '/channels', search: { id: item.room.id } });
+      navigate({ ...appRoutes.channels(), search: { id: item.room.id } });
     },
     [navigate]
   );

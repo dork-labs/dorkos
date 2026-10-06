@@ -17,7 +17,10 @@ import { ICON_MAP } from '../ui/palette-constants';
 const mockTransport = createMockTransport();
 const navigate = vi.hoisted(() => vi.fn());
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigate,
+}));
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => ['/projects/current', vi.fn()],

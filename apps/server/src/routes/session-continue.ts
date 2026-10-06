@@ -23,6 +23,10 @@
  *
  * @module routes/session-continue
  */
+import {
+  AmbiguousSessionError,
+  SessionDiscoveryUnavailableError,
+} from '../services/session/resolution/session-lookup-error.js';
 import type { Request, Response } from 'express';
 import type { MeshCore } from '@dorkos/mesh';
 import { CREDITS_ACCOUNT_ID, type LimitHistoryResponse } from '@dorkos/shared/account-usage';
@@ -39,7 +43,7 @@ import {
 import { CarryOverError } from '../services/session/fleet/carry-over.js';
 import { AccountNotAllowedError } from '../services/core/usage/account-eligibility.js';
 import { getSessionLimitStore } from '../services/session/fleet/session-limit-store.js';
-import { callerNamedCwd, resolveSessionCwdOrDefault } from '../services/session/index.js';
+import { resolveSessionCwdOrDefault } from '../services/session/index.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
 import { resolveCaller } from './room-caller.js';
@@ -191,21 +195,21 @@ export async function limitHistoryHandler(req: Request, res: Response): Promise<
   // The same boundary judgement as `GET /:id/events`: a directory the caller
   // named first, else the one the session's runtime places it in.
   const cwdParam = (req.query.cwd as string) || undefined;
-  if (callerNamedCwd(cwdParam) && !(await assertBoundary(cwdParam, res, { allowDorkHome: true })))
-    return;
-  if (!callerNamedCwd(cwdParam)) {
-    let cwd: string;
-    try {
-      const runtime = await runtimeRegistry.resolveForSession(sessionId);
-      cwd = resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
-    } catch (err) {
-      logger.error('[session-continue] limit-history could not place the session', {
-        err: err instanceof Error ? err.message : String(err),
-      });
-      return sendError(res, 500, 'Could not read the limit history.', 'LIMIT_HISTORY_ERROR');
-    }
-    if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
+  let cwd: string;
+  try {
+    const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    cwd = await resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
+  } catch (err) {
+    if (err instanceof AmbiguousSessionError || err instanceof SessionDiscoveryUnavailableError)
+      return sendError(
+        res,
+        err instanceof AmbiguousSessionError ? 409 : 503,
+        err.message,
+        err.code
+      );
+    throw err;
   }
+  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
   const store = getSessionLimitStore();
   if (!store?.knowsSession(sessionId)) {
     return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');

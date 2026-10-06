@@ -20,7 +20,8 @@ const { redirect, params } = vi.hoisted(() => ({
   params: { current: { id: 'room-1' } as Record<string, unknown> },
 }));
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => params.current,
   useNavigate: () => vi.fn(),
 }));

@@ -73,7 +73,7 @@ export function registerSendLandsInTodayTests({ agentDir }: SendLandsInTodayDeps
      */
     async function openFreshAndWrite(page: Page, text: string): Promise<void> {
       const chat = new ChatPage(page);
-      await chat.goto(crypto.randomUUID(), { dir: agentDir() });
+      await chat.goto(crypto.randomUUID(), { dir: agentDir(), draft: true });
       await chat.sendMessage(text);
       // The turn has to finish before the next one starts: the title is derived
       // from the first message server-side, and the row is found by it.

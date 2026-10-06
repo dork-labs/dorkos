@@ -1,6 +1,11 @@
+import { BoundaryError } from '../lib/boundary.js';
 import type { Request, Response, NextFunction } from 'express';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../lib/logger.js';
+import {
+  AmbiguousSessionError,
+  SessionDiscoveryUnavailableError,
+} from '../services/session/resolution/session-lookup-error.js';
 import { RuntimeNotRegisteredError } from '../services/core/runtime-registry.js';
 
 /** Global Express error handler that logs the error and returns a JSON response. */
@@ -43,6 +48,23 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
   // (`runtimeDisplayName`) and stating the recovery is what makes them one
   // answer. `runtime` still rides the body as the raw type, for a client that
   // wants to route on it rather than print it.
+  if (err instanceof BoundaryError) {
+    res
+      .status(403)
+      .json({ error: 'This session is outside the allowed directory.', code: err.code });
+    return;
+  }
+
+  if (err instanceof SessionDiscoveryUnavailableError) {
+    res.status(503).json({ error: err.message, code: err.code, runtime: err.runtime });
+    return;
+  }
+
+  if (err instanceof AmbiguousSessionError) {
+    res.status(409).json({ error: err.message, code: err.code });
+    return;
+  }
+
   if (err instanceof RuntimeNotRegisteredError) {
     const program = runtimeDisplayName(err.runtime);
     res.status(503).json({

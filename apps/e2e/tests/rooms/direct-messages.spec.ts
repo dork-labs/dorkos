@@ -70,7 +70,15 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.startConversationButton).toHaveText(`Open session with ${ana.name}`);
     await roomsPage.startConversationButton.click();
 
-    await expect(page).toHaveURL(/\/session\?.*dir=/, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(page).toHaveURL(/\/session\?.*session=/, { timeout: SERVER_ROUND_TRIP_MS });
+    const sessionUrl = new URL(page.url());
+    expect(sessionUrl.searchParams.has('dir')).toBe(false);
+    expect(sessionUrl.searchParams.has('agentPath')).toBe(false);
+    const launchRef = sessionUrl.searchParams.get('launchRef');
+    expect(launchRef).toBeTruthy();
+    const location = await page.request.get(`/api/session-locations/${launchRef}`);
+    expect(location.ok()).toBe(true);
+    expect(await location.json()).toMatchObject({ cwd: ana.projectPath });
     // And no second conversation was made anywhere: nothing landed in Direct
     // messages, and nothing landed in Channels either.
     await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(0);

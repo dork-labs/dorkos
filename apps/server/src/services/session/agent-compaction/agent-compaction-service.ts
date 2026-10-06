@@ -49,7 +49,7 @@ import {
 } from '../message-dispatcher.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import { getOrCreateProjector, peekProjector } from '../session-state-projector.js';
-import { primaryOf } from '../session-key-registry.js';
+import { primaryOf } from '../resolution/session-key-registry.js';
 import { CompactionRequestBudget } from './compaction-budget.js';
 import { isCompactionBlocked } from './compaction-permission.js';
 

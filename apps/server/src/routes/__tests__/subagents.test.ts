@@ -33,6 +33,7 @@ const TEST_MODE_SESSION = '22222222-2222-4222-8222-222222222222';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => claudeRuntime),
     getDefaultType: vi.fn(() => 'claude-code'),
     getAllCapabilities: vi.fn(() => ({})),

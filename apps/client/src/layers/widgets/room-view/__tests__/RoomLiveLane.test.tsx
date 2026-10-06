@@ -25,7 +25,10 @@ import { SILENT_FINISH_DISPLAY_MS, useRoomPresenceStore } from '@/layers/entitie
 import { RoomLiveLane } from '../ui/RoomLiveLane';
 
 const navigateSpy = vi.fn();
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigateSpy }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigateSpy,
+}));
 
 // The fleet reads behind the faces are not what this suite is about, and an
 // unresolved mesh is a state the room already handles by falling back to the

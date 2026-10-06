@@ -169,6 +169,21 @@ function createProvider(client: MockClient | null): OpenCodeClientProvider & {
 }
 
 describe('OpenCodeSessionMapper', () => {
+  it('finds a derived external session id without needing its project directory', async () => {
+    const client = createMockClient();
+    const native = ocSession({ directory: '/another/project' });
+    client.session.list.mockResolvedValue({ data: [native] });
+    const mapper = new OpenCodeSessionMapper(createProvider(client));
+    const id = mapper.adoptOpenCodeSession(native.id);
+    const cold = new OpenCodeSessionMapper(createProvider(client));
+    await expect(cold.findSession('/default', id)).resolves.toMatchObject({
+      id,
+      cwd: '/another/project',
+    });
+    expect(client.session.list.mock.calls[0]![0]!.query.directory).toBeUndefined();
+    expect(client.session.create).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

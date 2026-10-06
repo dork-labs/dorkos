@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * Submit logic for the app's feedback dialog (DOR-317, ADR 260713-143958
  * Phase 5; diagnostics + transcript + anonymous plumbing per feedback-pipeline
@@ -62,7 +63,6 @@ import { configKeys } from '@/layers/entities/config';
 import { buildFeedbackRoute } from '../lib/feedback-route';
 
 /** Where the person's own reports live — "Your reports" in the help menu. */
-const YOUR_REPORTS_PATH = '/feedback-requests';
 
 /**
  * How long the same report counts as the same report. Long enough to catch a
@@ -317,10 +317,7 @@ export function useSendFeedback(): UseSendFeedback {
               : {}),
             action: {
               label: 'Your reports',
-              // The route is not in the typed router table, so navigate is
-              // loosened here on purpose, as the help menu does.
-              onClick: () =>
-                (navigate as (opts: { to: string }) => void)({ to: YOUR_REPORTS_PATH }),
+              onClick: () => navigate(appRoutes.feedbackRequests()),
             },
           });
         } else {

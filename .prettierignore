@@ -141,3 +141,7 @@ apps/site/next-env.d.ts
 # dork-labs/marketplace by scripts/sync-flow-conformance.ts. Reformatting it
 # would make the copy differ from the pinned commit SOURCE.json names.
 packages/shared/src/__fixtures__/flow-fleet-conformance/
+
+# TanStack Router owns this generated tree; web and desktop regenerate it.
+# Preserve generator output so a build cannot change the formatting verdict.
+apps/client/src/routeTree.gen.ts

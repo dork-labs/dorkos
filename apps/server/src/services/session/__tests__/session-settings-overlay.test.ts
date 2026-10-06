@@ -14,7 +14,7 @@ import {
   applyStoredSettings,
   resolveSettingsKey,
   type SessionSettingsOverlayPort,
-} from '../session-settings-overlay.js';
+} from '../resolution/session-settings-overlay.js';
 
 function makeSession(id: string, runtime?: string): Session {
   return {

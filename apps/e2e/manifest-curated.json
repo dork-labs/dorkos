@@ -57,7 +57,7 @@
         "apps/client/src/layers/entities/attention/model/use-pending-interactions.ts",
         "apps/client/src/layers/widgets/inbox-bell/ui/InboxBell.tsx",
         "apps/server/src/routes/sessions.ts",
-        "apps/server/src/services/session/session-list-broadcaster.ts"
+        "apps/server/src/services/session/catalog/session-list-broadcaster.ts"
       ],
       "explorationNotes": "The room leg is deliberately absent: a prompt on a ROOM lane needs a room, an agent bound into it and a turn dispatched by the room runner, and this leg seeds none of those (its fixture is one agent directory and a chat session). The filter is unit-tested in RoomLiveLane.test.tsx, the roomId join is server-tested in session-list-broadcaster-asks, and the whole path was walked against a real room for the phase acceptance check."
     },

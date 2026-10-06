@@ -66,7 +66,7 @@ import {
   readAgentExecutionDefaults,
   type AgentExecutionDefaults,
   resolveUnattendedSessionDefaults,
-} from '../../session/resolve-session-defaults.js';
+} from '../../session/resolution/resolve-session-defaults.js';
 import { createTaggedLogger } from '../../../lib/logger.js';
 
 const logger = createTaggedLogger('Tasks');

@@ -112,7 +112,7 @@ describe('route headers', () => {
     // typecheck against it. The route objects it holds are shaped exactly like
     // `routesByPath`'s (an `options.staticData` this test only reads), so a
     // narrow structural cast is honest rather than an `any` escape hatch.
-    const routesById = router().routesById as Record<
+    const routesById = router().routesById as unknown as Record<
       string,
       { options: { staticData?: { header?: unknown } } } | undefined
     >;

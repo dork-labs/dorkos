@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { Link } from '@tanstack/react-router';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
@@ -89,7 +90,7 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
         .map((room) => (
           <Link
             key={room.roomId}
-            to="/channels"
+            {...appRoutes.channels()}
             search={{ community: connection.ref, id: room.roomId }}
             aria-current={
               search.community === connection.ref && search.id === room.roomId ? 'page' : undefined

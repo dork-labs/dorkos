@@ -22,7 +22,8 @@ import { SEARCH_SCOPE_SUMMARY } from '../model/message-search-scope';
 import { MessageSearchDialog } from '../ui/MessageSearchDialog';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
   useSearch: () => ({}),
   useRouter: () => ({

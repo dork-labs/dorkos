@@ -159,6 +159,7 @@ const interruptsDeliveredTo: string[] = [];
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
     forgetUnstartedSession: (...args: unknown[]) => forgetUnstartedSession(...args),
     getSessionSettings: () => Promise.resolve(storedSettings),

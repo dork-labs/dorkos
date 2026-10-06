@@ -20,7 +20,7 @@ import { SSE } from '../config/constants.js';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { sendSessionStatusSnapshot } from '../services/session/session-list-broadcaster.js';
+import { sendSessionStatusSnapshot } from '../services/session/catalog/session-list-broadcaster.js';
 
 /**
  * Adapt an Express response to the fan-out's {@link FanOutClient} port.

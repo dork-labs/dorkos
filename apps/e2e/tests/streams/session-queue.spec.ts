@@ -126,7 +126,7 @@ test.describe('the queue every window can see', () => {
     try {
       const windowA = await context.newPage();
       const chatA = new ChatPage(windowA);
-      await chatA.goto(sessionId, { dir: agentDir });
+      await chatA.goto(sessionId, { dir: agentDir, draft: true });
 
       // Start the turn that everything queues behind. It keeps working.
       await chatA.sendMessage('Migrate the auth tokens table');
@@ -206,7 +206,7 @@ test.describe('the queue every window can see', () => {
     try {
       const windowA = await context.newPage();
       const chatA = new ChatPage(windowA);
-      await chatA.goto(sessionId, { dir: agentDir });
+      await chatA.goto(sessionId, { dir: agentDir, draft: true });
 
       await chatA.sendMessage('Migrate the auth tokens table');
       await expect(windowA.getByTestId('transcript-feed')).toContainText(/Working on it/, {

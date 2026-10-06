@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Check, ChevronLeft } from 'lucide-react';
@@ -169,7 +170,7 @@ export function MarketplaceSidebar() {
       <SidebarHeader className="gap-2 border-b p-3">
         <button
           type="button"
-          onClick={() => void navigate({ to: '/' })}
+          onClick={() => void navigate({ ...appRoutes.home() })}
           className="text-muted-foreground hover:bg-accent hover:text-foreground focus-ring -ml-1 flex w-fit items-center gap-1 rounded-md py-1 pr-2 pl-1 text-xs font-medium transition-colors"
         >
           <ChevronLeft className="size-4" aria-hidden />

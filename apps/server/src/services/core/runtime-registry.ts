@@ -1,5 +1,12 @@
+import { resolveCodexHome } from '../runtimes/codex/codex-home.js';
+import type { CallerPrincipal } from '../../lib/caller-principal.js';
+import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
+import {
+  SessionDiscoveryUnavailableError,
+  AmbiguousSessionError,
+} from '../session/resolution/session-lookup-error.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import type { SessionSettings } from '@dorkos/shared/types';
+import type { Session, SessionSettings } from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
 // The module directly rather than the `../session/index.js` barrel. There is no
 // cycle to dodge today — nothing that barrel exports imports this file, and
@@ -13,7 +20,7 @@ import {
   resolveSessionDefaults,
   readAgentExecutionDefaults,
   type AgentExecutionDefaults,
-} from '../session/resolve-session-defaults.js';
+} from '../session/resolution/resolve-session-defaults.js';
 // Direct, for the same reason and by the same rule as the resolver above: this
 // is a RUNTIME import of a leaf function, so taking it through
 // `../session/index.js` would put the whole session surface on this module's
@@ -31,6 +38,7 @@ import {
 import {
   sessionContext,
   sessionMetadata,
+  sessionNativeBindings,
   eq,
   inArray,
   isNull,
@@ -112,8 +120,8 @@ export interface SessionRuntimeResolution {
   /** The runtime type to route by — the bound owner, or the inference. */
   type: string;
   /**
-   * True only when `session_metadata` names an owner. False means NOBODY has
-   * said which runtime this session runs on yet, and {@link type} is the
+   * True when durable metadata or a native store identifies the owner. False
+   * means no store has identified this session, and {@link type} is the
    * fallback rather than an answer.
    */
   bound: boolean;
@@ -463,14 +471,50 @@ export class RuntimeRegistry {
    *
    * @param sessionId - Session identifier
    */
-  async resolveSessionRuntime(sessionId: string): Promise<SessionRuntimeResolution> {
+  async resolveSessionRuntime(
+    sessionId: string,
+    options: { allowUnbound?: boolean } = {}
+  ): Promise<SessionRuntimeResolution> {
     const db = this.requireDb('resolveSessionRuntime');
     const row = db
       .select({ runtime: sessionMetadata.runtime })
       .from(sessionMetadata)
       .where(eq(sessionMetadata.sessionId, sessionId))
       .get();
-    if (row?.runtime) return { type: row.runtime, bound: true };
+    if (row?.runtime) {
+      // A stored conversation must never resume under a different personal sign-in home.
+      const source = this.getNativeSessionAccount(sessionId);
+      if (row.runtime === 'codex' && source && source !== resolveCodexHome())
+        throw new SessionDiscoveryUnavailableError(row.runtime);
+      return { type: row.runtime, bound: true };
+    }
+
+    // Native stores are evidence of ownership; a missing draft id is not.
+    // Never persist a read-time inference: first-message binding still wins.
+    const native = await Promise.all(
+      Array.from(this.runtimes.values()).map(async (runtime) => {
+        if (!runtime.findSession) return null;
+        try {
+          return (await runtime.findSession(sessionId)) ? runtime.type : null;
+        } catch (error) {
+          if (
+            error instanceof AmbiguousSessionError ||
+            (error as { name?: string })?.name === 'BoundaryError'
+          )
+            throw error;
+          logger.warn('[RuntimeRegistry] native session lookup failed', {
+            runtime: runtime.type,
+            sessionId,
+            error,
+          });
+          if (!options.allowUnbound) throw new SessionDiscoveryUnavailableError(runtime.type);
+          return null;
+        }
+      })
+    );
+    const owners = native.filter((type): type is string => type !== null);
+    if (owners.length > 1) throw new AmbiguousSessionError();
+    if (owners[0]) return { type: owners[0], bound: true };
 
     // Legacy inference: sessions predating the registry table are Claude Code
     // sessions — but only when that adapter is actually registered. On a
@@ -498,8 +542,11 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier
    * @throws {RuntimeNotRegisteredError} If the session's stored runtime is not registered.
    */
-  async resolveForSession(sessionId: string): Promise<AgentRuntime> {
-    return (await this.resolveForSessionWithOwnership(sessionId)).runtime;
+  async resolveForSession(
+    sessionId: string,
+    options: { allowUnbound?: boolean } = {}
+  ): Promise<AgentRuntime> {
+    return (await this.resolveForSessionWithOwnership(sessionId, options)).runtime;
   }
 
   /**
@@ -514,12 +561,84 @@ export class RuntimeRegistry {
    * @throws {RuntimeNotRegisteredError} If the session's stored runtime is not registered.
    */
   async resolveForSessionWithOwnership(
-    sessionId: string
+    sessionId: string,
+    options: { allowUnbound?: boolean } = {}
   ): Promise<{ runtime: AgentRuntime; bound: boolean }> {
-    const { type, bound } = await this.resolveSessionRuntime(sessionId);
+    const { type, bound } = await this.resolveSessionRuntime(sessionId, options);
     const runtime = this.runtimes.get(type);
     if (!runtime) throw new RuntimeNotRegisteredError(type, sessionId);
     return { runtime, bound };
+  }
+
+  /** Persist native proof only for the owner, after verifying its actual directory. */
+  async rememberNativeSession(session: Session, caller: CallerPrincipal): Promise<void> {
+    if (caller.kind !== 'operator' && caller.kind !== 'program') return;
+    if (!session.cwd) return;
+    await validateBoundaryOrDorkHome(session.cwd);
+    const db = this.requireDb('rememberNativeSession');
+    db.transaction((tx) => {
+      const existing = tx
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, session.id))
+        .get();
+      if (existing?.runtime && existing.runtime !== session.runtime)
+        throw new AmbiguousSessionError();
+      const source = tx
+        .select()
+        .from(sessionNativeBindings)
+        .where(eq(sessionNativeBindings.sessionId, session.id))
+        .get();
+      if (source?.account && session.account && source.account !== session.account)
+        throw new AmbiguousSessionError();
+      const createdAt = new Date().toISOString();
+      tx.insert(sessionMetadata)
+        .values({ sessionId: session.id, runtime: session.runtime, createdAt })
+        .onConflictDoUpdate({
+          target: sessionMetadata.sessionId,
+          set: { runtime: session.runtime },
+          setWhere: isNull(sessionMetadata.runtime),
+        })
+        .run();
+      tx.insert(sessionNativeBindings)
+        .values({
+          sessionId: session.id,
+          runtime: session.runtime,
+          cwd: session.cwd!,
+          account: session.account ?? source?.account ?? null,
+          createdAt,
+        })
+        .onConflictDoUpdate({
+          target: sessionNativeBindings.sessionId,
+          set: { cwd: session.cwd!, account: session.account ?? source?.account ?? null },
+        })
+        .run();
+    });
+  }
+
+  /** Private native source, never part of a navigation URL. */
+  getNativeSessionAccount(sessionId: string): string | null {
+    if (!this.db) return null;
+    return (
+      this.db
+        .select({ account: sessionNativeBindings.account })
+        .from(sessionNativeBindings)
+        .where(eq(sessionNativeBindings.sessionId, sessionId))
+        .get()?.account ?? null
+    );
+  }
+
+  /** Actual native directory, distinct from the agent's ownership provenance. */
+  getNativeSessionCwd(sessionId: string): string | null {
+    const db = this.db;
+    if (!db) return null;
+    return (
+      db
+        .select({ cwd: sessionNativeBindings.cwd })
+        .from(sessionNativeBindings)
+        .where(eq(sessionNativeBindings.sessionId, sessionId))
+        .get()?.cwd ?? null
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -981,6 +1100,21 @@ export class RuntimeRegistry {
       .where(eq(sessionMetadata.sessionId, toId))
       .get();
     db.transaction((tx) => {
+      // Native location and sign-in source belong to the conversation identity,
+      // so a canonical rename must move them with its runtime/settings row.
+      // A destination's verified source wins, just as its settings do below.
+      const nativeSource = tx
+        .select()
+        .from(sessionNativeBindings)
+        .where(eq(sessionNativeBindings.sessionId, fromId))
+        .get();
+      if (nativeSource) {
+        tx.insert(sessionNativeBindings)
+          .values({ ...nativeSource, sessionId: toId })
+          .onConflictDoNothing({ target: sessionNativeBindings.sessionId })
+          .run();
+        tx.delete(sessionNativeBindings).where(eq(sessionNativeBindings.sessionId, fromId)).run();
+      }
       tx.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, fromId)).run();
       if (!destination) {
         tx.insert(sessionMetadata)

@@ -26,7 +26,7 @@ import {
   describeExecutionDefaults,
   resolveUnattendedDefaultStop,
   resolveUnattendedPermissionMode,
-} from '../resolve-session-defaults.js';
+} from '../resolution/resolve-session-defaults.js';
 import {
   initPermissionGate,
   readAgentPermissionsFromManifest,

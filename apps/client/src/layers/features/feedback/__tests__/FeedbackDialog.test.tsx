@@ -22,7 +22,8 @@ const routerState = vi.hoisted(() => ({
 }));
 // The thank-you toast's "Your reports" action navigates; this is where it goes.
 const navigate = vi.hoisted(() => vi.fn());
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => navigate,
   useRouterState: (opts?: { select?: (s: unknown) => unknown }) => {
     // `searchStr` is DERIVED from `search` here, exactly as the real router
