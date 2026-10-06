@@ -348,6 +348,8 @@ describe('private browser package boundaries', () => {
           // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [
             'runtime/crash-custody.ts',
+            // Public Browser/CDPSession types pin the sole lifetime-retained deny owner.
+            'runtime/default-downloads.ts',
             // Public Request identity for the private one-shot navigation owner.
             'lifecycle/initial-navigation.ts',
             'runtime/darwin-supervisor-worker.ts',

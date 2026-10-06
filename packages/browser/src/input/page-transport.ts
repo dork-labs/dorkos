@@ -16,6 +16,8 @@ export interface PageInputCustody {
 }
 /** Private canonical Page port, never accepted from an input command. */
 export interface PageTransportOptions {
+  /** Preserve the fixed SDK focus default on the lifetime-retained input session after noDefaults. */
+  readonly preserveFocus?: boolean;
   readonly cleanup: InputCleanupRoute;
   readonly pointer: PointerLedger;
   readonly page: Page;
@@ -117,17 +119,33 @@ class PageTransportOwner {
     const accept = (session: CDPSession) => {
       // Possession is retained even when producer registration refuses or reenters retirement.
       this.session = session;
-      try {
-        this.options.cleanup.registerTarget(this.page, this, session);
-      } catch (error) {
-        this.uncertain = true;
-        this.reject(error);
-        this.retire();
-      } finally {
-        this.acquisitionPending = false;
-        complete();
-        if (this.retired) void this.detach().catch(() => {});
-      }
+      void Promise.resolve()
+        .then(async () => {
+          // Original registration owns terminal refusal and retains late session cleanup.
+          this.options.cleanup.registerTarget(this.page, this, session);
+          if (this.options.preserveFocus && this.current()) {
+            const send = session.send.bind(session);
+            // Retirement fences an unstarted focus command without inventing an operational failure.
+            if (!this.current()) return;
+            // Preserve Playwright's fixed focus setting on this lifetime-retained original Page session.
+            await Reflect.apply(send, session, [
+              'Emulation.setFocusEmulationEnabled',
+              { enabled: true },
+            ]);
+          }
+        })
+        .then(
+          () => {
+            this.acquisitionPending = false;
+            complete();
+            if (this.retired) void this.detach().catch(() => {});
+          },
+          (error: unknown) => {
+            this.uncertain = true;
+            fail(error);
+            if (this.retired) void this.detach().catch(() => {});
+          }
+        );
     };
     const fail = (error: unknown) => {
       this.acquisitionPending = false;

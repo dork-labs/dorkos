@@ -287,6 +287,7 @@ export async function acquireBrowser(
       if (record.supervisor) {
         const browser = await chromium.connectOverCDP(record.supervisor.reportedEndpointURL, {
           timeout: 10000,
+          noDefaults: true,
         });
         record.controllerBrowser = browser;
         if (stopped()) {
@@ -294,6 +295,8 @@ export async function acquireBrowser(
           await browser.close();
           throw new BrowserLifecycleError('ENGINE_STOPPED');
         }
+        // The sole supervisor deny owner is initialized before its ready publication.
+        // Suppress SDK defaults without creating a second context override owner.
         const contexts = browser.contexts();
         if (contexts.length !== 1) throw new BrowserLifecycleError('PAGE_UNAVAILABLE');
         const context = contexts[0]!;
@@ -309,6 +312,7 @@ export async function acquireBrowser(
           executablePath: config.runtime.executable.path,
           headless: true,
           chromiumSandbox: true,
+          acceptDownloads: false,
           viewport: { width: 1280, height: 720 },
           timeout: 10_000,
           proxy: { server: record.proxy!.url, bypass: '<-loopback>' },

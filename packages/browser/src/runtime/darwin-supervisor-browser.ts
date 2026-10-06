@@ -1,3 +1,4 @@
+import { DefaultDownloadOwner, closeBrowserAndDownloads } from './default-downloads.js';
 import { ownPrivateProxyAuthentication } from './private-proxy-auth.js';
 import { constants } from 'node:fs';
 import { open, lstat, type FileHandle } from 'node:fs/promises';
@@ -24,6 +25,7 @@ type State = {
   auth?: Awaited<ReturnType<typeof ownPrivateProxyAuthentication>>;
   uncertain: boolean;
   cleanup?: Promise<unknown>;
+  downloads?: DefaultDownloadOwner;
 };
 const retained = new Set<State>();
 const endpointReads = new Set<FileHandle>();
@@ -225,10 +227,21 @@ export async function launchDarwinSupervisorBrowser(
       });
     state.browser = await chromium.connectOverCDP(url, {
       timeout: Math.max(1, end - performance.now()),
+      noDefaults: true,
     });
+    state.downloads = new DefaultDownloadOwner(
+      state.browser,
+      () => !state.uncertain && performance.now() < end,
+      () => {
+        state.uncertain = true;
+        failed('custody');
+      }
+    );
+    await waitWithin(state.downloads.ready, Math.max(1, end - performance.now()));
     if (state.browser.contexts().length !== 1) throw new Error('PERSISTENT_CONTEXT_UNAVAILABLE');
   } catch (error) {
     state.uncertain = true;
+    state.downloads?.retire();
     // Failure remains retained; request cooperative stop of the actual original only.
     try {
       state.child?.child.kill('SIGTERM');
@@ -236,7 +249,9 @@ export async function launchDarwinSupervisorBrowser(
       /* Original custody remains retained. */
     }
     state.cleanup = Promise.allSettled([
-      Promise.resolve().then(() => state.browser?.close()),
+      // Join initialization even if the independent original browser closure refuses.
+      state.downloads?.ready,
+      Promise.resolve().then(() => closeBrowserAndDownloads(state.browser, state.downloads)),
       Promise.resolve().then(() => state.proxy?.close()),
       Promise.resolve().then(() => state.auth?.close()),
       Promise.resolve().then(() => state.child?.completion()),
@@ -258,6 +273,7 @@ export async function launchDarwinSupervisorBrowser(
     endpointURL,
     close() {
       if (closing) return closing;
+      state.downloads?.retire();
       const original = (async () => {
         const abort = new AbortController();
         let tree: ProcessTreeObservation = { status: 'unknown', identities: [] };
@@ -311,7 +327,7 @@ export async function launchDarwinSupervisorBrowser(
           state.uncertain = true;
         }
         try {
-          await browser.close();
+          await closeBrowserAndDownloads(browser, state.downloads);
         } catch {
           state.uncertain = true;
         }
