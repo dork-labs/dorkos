@@ -28,6 +28,8 @@ export interface DarwinEngineJournal {
   ): Promise<
     'recorded-gone' | 'campaign-closed' | 'campaign-closed-gapped' | 'retained' | 'uncertain'
   >;
+  /** Constructor-private correlated original supervisor child return, not requested shutdown. */
+  rootReturned?(root: ProcessIdentity): Promise<void>;
   historyGapped(): boolean;
   custody(): Readonly<{ pending: boolean; uncertain: boolean }>;
 }
@@ -120,8 +122,16 @@ export async function startDarwinEngineJournal(
     uncertain = false,
     stopped = false,
     attributed = false;
+  let attributedRoot: ProcessIdentity | undefined, rootReturnForward: Promise<void> | undefined;
   const completion = worker.completion.then(
     async (result) => {
+      if (rootReturnForward) {
+        try {
+          await rootReturnForward;
+        } catch {
+          uncertain = true;
+        }
+      }
       // Original pipes have returned. Retain the diagnostic receiver's own completion too;
       // neither its bytes nor a successful write can upgrade a refused journal.
       if (
@@ -167,12 +177,30 @@ export async function startDarwinEngineJournal(
       attributed = true;
       try {
         const identity = ProcessIdentitySchema.parse(root);
+        attributedRoot = Object.freeze({ ...identity });
         if (supervisor) await worker.enrollRoot(identity, ProcessIdentitySchema.parse(supervisor));
         else await worker.enrollRoot(identity);
       } catch (error) {
         uncertain = true;
         throw error;
       }
+    },
+    rootReturned(root: ProcessIdentity) {
+      const identity = ProcessIdentitySchema.parse(root);
+      if (
+        !pending ||
+        !attributedRoot ||
+        !sameProcess(identity, attributedRoot) ||
+        rootReturnForward
+      ) {
+        uncertain = true;
+        return Promise.reject(new Error('JOURNAL_ROOT_RETURN_REFUSED'));
+      }
+      rootReturnForward = Promise.resolve().then(() => worker.rootReturned(identity));
+      void rootReturnForward.catch(() => {
+        uncertain = true;
+      });
+      return rootReturnForward;
     },
     stop(launchEntered = true) {
       if (!stopped) {

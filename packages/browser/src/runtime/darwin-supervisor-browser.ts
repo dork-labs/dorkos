@@ -116,7 +116,8 @@ export async function launchDarwinSupervisorBrowser(
       credentials: Readonly<{ username: string; password: string }>;
     }>;
   }>,
-  failed: (cause: 'custody' | 'browser', root?: ProcessIdentity) => void = () => {}
+  failed: (cause: 'custody' | 'browser', root?: ProcessIdentity) => void = () => {},
+  originalRootReturned?: (root: ProcessIdentity) => void | Promise<void>
 ) {
   if (endpointUncertain) throw new Error('DEVTOOLS_CLOSE_UNCERTAIN');
   const directory = ownDirectory(options.profileDir);
@@ -285,6 +286,13 @@ export async function launchDarwinSupervisorBrowser(
             );
         if (results.some((result) => result.status === 'rejected')) state.uncertain = true;
         const returned = await child.returned();
+        // The actual original child capability is checked before the private event producer.
+        // Reserve its promise before entering the captured receiver; join independently below.
+        const rootReturnForward =
+          returned && acceptsDarwinOwnedChildReturn(child, returned) && originalRootReturned
+            ? Promise.resolve().then(() => originalRootReturned(Object.freeze({ ...root })))
+            : Promise.resolve();
+        void rootReturnForward.catch(() => {});
         if (!returned)
           process.stderr.write(
             'SUPERVISOR_CHILD_RETURN: ' + String(child.custody().firstCause) + '\n'
@@ -304,6 +312,11 @@ export async function launchDarwinSupervisorBrowser(
         }
         try {
           await browser.close();
+        } catch {
+          state.uncertain = true;
+        }
+        try {
+          await rootReturnForward;
         } catch {
           state.uncertain = true;
         }

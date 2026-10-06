@@ -238,6 +238,9 @@ export async function acquireBrowser(
     throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
   record.launchEntered = true;
   if (config.nativeJournal?.browserWorkerPath) {
+    const originalJournal = record.journal;
+    const originalRootReturned = originalJournal?.rootReturned?.bind(originalJournal);
+    if (!originalRootReturned) throw new BrowserLifecycleError('PROCESS_OBSERVATION_UNAVAILABLE');
     await ownOperation(
       record,
       () =>
@@ -254,7 +257,8 @@ export async function acquireBrowser(
             generation: record.browserGeneration,
             reservationNonce,
           },
-          () => noteOriginalRootFailure(record)
+          () => noteOriginalRootFailure(record),
+          (root) => ownOperation(record, () => originalRootReturned(root))
         ),
       (supervisor) => {
         record.supervisor = supervisor;

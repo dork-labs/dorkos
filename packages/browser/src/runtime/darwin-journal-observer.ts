@@ -29,6 +29,8 @@ export async function observeDarwinJournal(
     logicalManager?: ProcessIdentity;
     exitingObserver?: ProcessIdentity;
     endBrowser?: () => boolean;
+    /** Private original child-return receiver; requested stop/end-browser cannot populate it. */
+    originalRootReturned?: () => ProcessIdentity | undefined;
     launchNotEntered?: () => boolean;
     observer: DarwinProcessObserver;
     monotonicNow: () => number;
@@ -252,6 +254,19 @@ export async function observeDarwinJournal(
           )!;
           if (next.gaps.length) break; // No new admission after a genuine observation gap.
           if (now.lifecycle !== 'alive') continue;
+          // Sample the original proof immediately before any new recursive native query.
+          // Already-entered queries are never discarded; earlier gaps above already fence admission.
+          const returnedRoot = options.originalRootReturned?.();
+          if (returnedRoot && !sameProcess(returnedRoot, root)) {
+            gap(next, 'identity-unknown', root);
+            break;
+          }
+          if (
+            returnedRoot &&
+            current.root.kind === 'attributed' &&
+            sameProcess(parent.identity, returnedRoot)
+          )
+            continue;
           let childFacts: DarwinProcessBatch['processes'];
           if (parent.role === 'manager') {
             // This generation enrolls one selected root, not every controller auxiliary.

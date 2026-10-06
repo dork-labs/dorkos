@@ -17,6 +17,7 @@ export async function runDarwinSupervisorWorker(): Promise<void> {
   let pending = 0,
     tail: Promise<void> = Promise.resolve(),
     closePromise: Promise<boolean> | undefined;
+  let originalCloseSequence: number | undefined;
   const pages = new Map<number, import('playwright-core').Page>();
   let nextTab = 1;
   const sends = new Set<Promise<void>>();
@@ -95,14 +96,28 @@ export async function runDarwinSupervisorWorker(): Promise<void> {
         return;
       }
       launching = (async () => {
-        owner = await launchDarwinSupervisorBrowser(seed, (cause, root) => {
-          void send(
-            cause === 'browser' && root
-              ? { kind: 'rootFailure', nonce: seed!.nonce, root }
-              : { kind: 'custodyFault', nonce: seed!.nonce }
-          ).catch(() => {});
-          disconnect();
-        });
+        owner = await launchDarwinSupervisorBrowser(
+          seed,
+          (cause, root) => {
+            void send(
+              cause === 'browser' && root
+                ? { kind: 'rootFailure', nonce: seed!.nonce, root }
+                : { kind: 'custodyFault', nonce: seed!.nonce }
+            ).catch(() => {});
+            disconnect();
+          },
+          async (root) => {
+            // This callback can enter only after the original Chromium child returned.
+            // Disconnect-driven cleanup does not manufacture a command correlation.
+            if (originalCloseSequence === undefined) return;
+            await send({
+              kind: 'rootReturned',
+              nonce: seed.nonce,
+              sequence: originalCloseSequence,
+              root,
+            });
+          }
+        );
         if (stopping) return;
         // Acquisition settles independently of the original IPC acknowledgement.
         void send({
@@ -133,6 +148,7 @@ export async function runDarwinSupervisorWorker(): Promise<void> {
     const request = parsed.data;
     lastSequence = request.sequence;
     if (request.action.kind === 'close') {
+      originalCloseSequence = request.sequence;
       void close()
         .then(async (returned) => {
           await send({ kind: 'closed', nonce: seed.nonce, sequence: request.sequence, returned });
