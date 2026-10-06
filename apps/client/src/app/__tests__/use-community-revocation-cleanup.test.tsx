@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { toast } from 'sonner';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import type { CommunityNavigationState } from '@dorkos/shared/community-navigation';
 import {
@@ -81,17 +81,19 @@ function useWatcherWithPush() {
 }
 
 function mount(hook: () => void = useWatcher) {
-  const transport = createMockTransport({
-    listCommunityConnections: vi.fn(() => Promise.resolve(rows)),
-    getCommunityNavigation: vi.fn(() =>
-      Promise.resolve({
-        ownerKey: 'owner-a',
-        installationDestination: { path: '/' as const, search: {} },
-        order: [],
-        destinations: [],
-      } as unknown as CommunityNavigationState)
-    ),
-  });
+  const transport = withSpacesExperiment(
+    createMockTransport({
+      listCommunityConnections: vi.fn(() => Promise.resolve(rows)),
+      getCommunityNavigation: vi.fn(() =>
+        Promise.resolve({
+          ownerKey: 'owner-a',
+          installationDestination: { path: '/' as const, search: {} },
+          order: [],
+          destinations: [],
+        } as unknown as CommunityNavigationState)
+      ),
+    })
+  );
   const wrapper = ({ children }: PropsWithChildren) => (
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>{children}</TransportProvider>
