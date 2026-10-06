@@ -3,6 +3,8 @@ covers:
   - 'feat(session): agents can ask to summarize their own chat (DOR-2732)'
   - "fix(session): close the review's gaps in agent-requested compaction (DOR-2732)"
   - 'chore(changelog): cover the compaction review fixes (DOR-2732)'
+  - 'fix(session): show the percent on a first-turn summary, keep the ceiling (DOR-2732)'
+  - 'chore(changelog): fold the first-turn percent fix into the fragment (DOR-2732)'
 ---
 
 ### Added
