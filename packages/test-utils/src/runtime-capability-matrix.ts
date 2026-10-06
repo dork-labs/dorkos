@@ -767,6 +767,30 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'test-mode': yes,
     },
   },
+  {
+    id: 'RT-CMP-02',
+    group: 'CMP',
+    title: 'The agent can ask for its own conversation to be compacted',
+    expected:
+      'An agent asks for its own conversation to be summarized; it runs after the turn ends, and the chat says the agent asked.',
+    flag: {
+      label: 'commandIntents.compact',
+      read: (caps) => caps.commandIntents.compact?.supported === true,
+    },
+    cells: {
+      'claude-code': yes,
+      codex: {
+        status: 'not-supported',
+        reason:
+          'Codex has no on-demand compaction; it compacts on its own, so the request is refused.',
+      },
+      opencode: {
+        status: 'partial',
+        reason: 'Runs the same summarize call RT-CMP-01 proves, but OpenCode takes no focus note.',
+      },
+      'test-mode': yes,
+    },
+  },
 ];
 
 /** What to call a status in the doc. */

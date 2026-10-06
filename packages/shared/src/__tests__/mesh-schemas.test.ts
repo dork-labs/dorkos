@@ -402,6 +402,8 @@ describe('AgentManifestFileSchema — the read-time fold of retired permission f
     // An observe ceiling blocks Extension tools too (DOR-2685): a capped agent
     // must not gain the tools an extension adds.
     extensions: 'blocked',
+    // Own chat (DOR-2732) is an act-tier action, which an observe ceiling never allowed.
+    own_chat: 'blocked',
     settings: 'blocked',
     safety: 'blocked',
     permissions: 'blocked',

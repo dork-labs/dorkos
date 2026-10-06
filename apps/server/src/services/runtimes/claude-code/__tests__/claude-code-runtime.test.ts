@@ -1237,6 +1237,39 @@ describe('ClaudeCodeRuntime', () => {
     });
   });
 
+  describe('isTurnOpen()', () => {
+    it('reports a turn the server never dispatched — a relay-style direct send — until it ends (DOR-2732)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // The SDK streams its first message, then the turn stays open until released.
+      async function* heldTurn() {
+        const messages = sdkSimpleText('ok');
+        const first = await messages.next();
+        if (!first.done) yield first.value;
+        await hold;
+        yield* messages;
+      }
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(heldTurn()));
+      agentManager.ensureSession('relay-1', { permissionMode: 'default' });
+      expect(agentManager.isTurnOpen('relay-1')).toBe(false);
+
+      const turn = agentManager
+        .sendMessage('relay-1', 'from another agent')
+        [Symbol.asyncIterator]();
+      await turn.next();
+      expect(agentManager.isTurnOpen('relay-1')).toBe(true);
+
+      release();
+      while (!(await turn.next()).done) {
+        // drain
+      }
+      expect(agentManager.isTurnOpen('relay-1')).toBe(false);
+    });
+  });
+
   describe('executeCommandIntent()', () => {
     /** Stub sendMessage with an empty turn so only the composed prompt matters. */
     function spySend() {
@@ -1280,6 +1313,46 @@ describe('ClaudeCodeRuntime', () => {
         '/compact focus on the API changes',
         expect.anything()
       );
+    });
+
+    it('RT-CMP-02: the agent’s own request runs /compact with its note, and the record keeps who asked', async () => {
+      // Loaded after `resetModules`, so the dispatcher, projector and store are
+      // the same module instances this runtime uses.
+      const { AgentCompactionService } =
+        await import('../../../session/agent-compaction/agent-compaction-service.js');
+      const session = await import('../../../session/index.js');
+      const { resetMessageDispatcher } = await import('../../../session/message-dispatcher.js');
+      const { createTestDb } = await import('@dorkos/test-utils/db');
+      const store = new session.SessionEventStore(createTestDb());
+      session.setSessionEventStore(store);
+      try {
+        agentManager.ensureSession('cmp-1', { permissionMode: 'default', cwd: '/mock' });
+        const sendSpy = vi
+          .spyOn(agentManager, 'sendMessage')
+          .mockImplementation(async function* (): AsyncGenerator<StreamEvent> {
+            yield {
+              type: 'compact_boundary',
+              data: { trigger: 'manual', preTokens: 178_000 },
+            } as StreamEvent;
+            yield { type: 'done', data: {} } as StreamEvent;
+          });
+        const compaction = new AgentCompactionService({ resolveRuntime: async () => agentManager });
+
+        const outcome = await compaction.request({ sessionId: 'cmp-1', note: 'keep the plan' });
+        expect(outcome.status).toBe('scheduled');
+        await vi.waitFor(() => expect(store.readAgentCompactions('cmp-1')).toHaveLength(1));
+
+        expect(sendSpy).toHaveBeenCalledWith('cmp-1', '/compact keep the plan', expect.anything());
+        // The transcript says a summary happened; the overlay puts back who asked.
+        const reopened = session.overlayAgentCompactions('cmp-1', [
+          { id: 'c1', role: 'user', content: 'summary', messageType: 'compaction' },
+        ]);
+        expect(reopened[0]!.compactMetadata).toMatchObject({ requestedBy: 'agent' });
+      } finally {
+        resetMessageDispatcher();
+        session.disposeProjector('cmp-1');
+        session.setSessionEventStore(undefined);
+      }
     });
 
     it('treats whitespace-only instructions as absent (bare /compact)', async () => {

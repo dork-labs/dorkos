@@ -99,6 +99,8 @@ const CARRIES_PROSE: Record<ContextKind, boolean> = {
   // sentence a person typed when they refused. That is text DorkOS did not write,
   // so the kind is enlisted here and its writer has to fence it.
   approval_verdict: true,
+  // A number and a boolean the server derived from its own context reading.
+  context_warning: false,
 };
 
 /** One representative entry per ContextKind — keyed so the test is exhaustive. */
@@ -166,6 +168,11 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
     kind: 'staged_context',
     scope: 'per-turn',
     data: { text: `Use the staging bucket, not prod.\n\n${BREAKOUT}` },
+  },
+  context_warning: {
+    kind: 'context_warning',
+    scope: 'per-turn',
+    data: { percent: 81, canCompact: true },
   },
   approval_verdict: {
     kind: 'approval_verdict',

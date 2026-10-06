@@ -58,6 +58,13 @@ export const MEMORY_NO_AGENT_MESSAGE =
   'This session is not running as one of your agents, so it has no memory file to write to. ' +
   'Memory belongs to an agent, and this session is a plain working directory. Nothing was saved.';
 
+/**
+ * The tool name `memory.write` is registered under. Exported so prose that has
+ * to name it (the `<context_warning>` note) reads it from here instead of
+ * spelling it a second time.
+ */
+export const MEMORY_WRITE_TOOL_NAME = 'memory_write';
+
 /** The typed refusal shape every failed write comes back as. */
 const MemoryWriteOutcomeSchema = z.object({
   saved: z.boolean(),
@@ -189,7 +196,7 @@ export const memoryDomain: CapabilityDomain = {
       output: MemoryWriteOutcomeSchema,
       surfaces: {
         mcp: {
-          toolName: 'memory_write',
+          toolName: MEMORY_WRITE_TOOL_NAME,
           servers: ['in-session', 'external'],
           annotations: { idempotentHint: false },
         },

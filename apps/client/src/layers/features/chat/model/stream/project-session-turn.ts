@@ -554,6 +554,8 @@ function foldCompactBoundary(
     ...(event.preTokens !== undefined ? { preTokens: event.preTokens } : {}),
     ...(event.postTokens !== undefined ? { postTokens: event.postTokens } : {}),
     ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+    ...(event.requestedBy !== undefined ? { requestedBy: event.requestedBy } : {}),
+    ...(event.contextPercent !== undefined ? { contextPercent: event.contextPercent } : {}),
   });
 }
 
@@ -600,6 +602,7 @@ function foldOperationProgress(
     type: 'compact_boundary',
     failed: true,
     ...(event.error !== undefined ? { error: event.error } : {}),
+    ...(event.requestedBy !== undefined ? { requestedBy: event.requestedBy } : {}),
   });
 }
 

@@ -436,6 +436,35 @@ export const SESSIONS = {
    */
   STRANDED_TURN_SETTLE_MS: 2_000,
   /**
+   * How full a conversation's context window has to be, in percent, before its
+   * agent is told so on its next turn (DOR-2732). Low enough to leave room to
+   * save notes and ask for a summary before the runtime compacts on its own
+   * (Claude Code does so a little past 90%), high enough that the note is rare.
+   */
+  CONTEXT_WARNING_PERCENT: 80,
+  /**
+   * How often one session's agent may ask for its own conversation to be
+   * summarized (DOR-2732). A summary drops detail for good, so an agent that
+   * asks in a loop would keep throwing away its own work; once an hour is ample
+   * for a conversation that took hours to fill.
+   */
+  AGENT_COMPACTION_INTERVAL_MS: 60 * 60 * 1000,
+  /**
+   * The longest an agent-requested summary may wait for its session to come
+   * free before it is dropped and its hourly allowance given back (DOR-2732).
+   * A session busy for half an hour straight is not one the agent's request
+   * still describes, and a request that could wait forever would answer
+   * "already scheduled" forever.
+   */
+  AGENT_COMPACTION_MAX_WAIT_MS: 30 * 60 * 1000,
+  /**
+   * How often a waiting agent-requested summary looks again while the RUNTIME
+   * reports a turn the server did not dispatch (a Relay delivery, an unattended
+   * scheduled run). Those turns end without a boundary the dispatcher hears,
+   * so the summary asks again on this clock, and only while it waits.
+   */
+  AGENT_COMPACTION_RECHECK_MS: 2_000,
+  /**
    * How long the stall watchdog waits for the runtime's interrupt to settle
    * before closing the turn anyway (DOR-782). `interruptQuery` reaches a
    * possibly-wedged subprocess, so the call that is meant to unstick a hung turn

@@ -632,6 +632,46 @@ describe('projectInProgressTurn', () => {
     });
   });
 
+  it('carries who asked for a compaction onto the row (DOR-2732)', () => {
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'compact_boundary',
+        trigger: 'manual',
+        preTokens: 178000,
+        requestedBy: 'agent',
+        contextPercent: 89,
+      },
+    ];
+    expect(projectInProgressTurn(events)[0]).toEqual({
+      type: 'compact_boundary',
+      trigger: 'manual',
+      preTokens: 178000,
+      requestedBy: 'agent',
+      contextPercent: 89,
+    });
+  });
+
+  it('carries who asked onto a failed compaction row (DOR-2732)', () => {
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'operation_progress',
+        operation: 'compaction',
+        state: 'failed',
+        determinate: false,
+        error: 'no room',
+        requestedBy: 'agent',
+      },
+    ];
+    expect(projectInProgressTurn(events)[0]).toEqual({
+      type: 'compact_boundary',
+      failed: true,
+      error: 'no room',
+      requestedBy: 'agent',
+    });
+  });
+
   it('synthesizes a failed compaction row from operation_progress state:failed (DOR-110)', () => {
     // Purpose: a failed compaction fires NO compact_boundary, so its only durable
     // signal is operation_progress — surface that inline as a failed row + error.

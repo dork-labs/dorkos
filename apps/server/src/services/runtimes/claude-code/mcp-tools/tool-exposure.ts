@@ -25,7 +25,7 @@
  * two escapes and this module uses both, deliberately unevenly:
  *
  * - **`alwaysLoad`** puts a tool in the prompt from turn 1. Granted to the
- *   {@link ALWAYS_LOADED_TOOLS} nine on every session. A room turn is the case that
+ *   {@link ALWAYS_LOADED_TOOLS} eleven on every session. A room turn is the case that
  *   cannot afford a lookup: the agent is answering a person in a shared room, and a
  *   search step before it can react is a turn spent on plumbing. `list_capabilities`
  *   joins them as the discovery entry point — the one name that leads to the other
@@ -156,7 +156,7 @@ export function inSessionToolName(bare: string): string {
  * attached at registration, before Claude Code qualifies anything.
  *
  * Kept deliberately short — see the module note on why the server as a whole stays
- * deferred. Each of these nine earns it by being needed in a turn that has no
+ * deferred. Each of these earns it by being needed in a turn that has no
  * room for a lookup first:
  *
  * - the four room verbs, because a room turn is a person waiting in a shared
@@ -219,6 +219,12 @@ export function inSessionToolName(bare: string): string {
  * the DOR-1292 rule exactly: a prompt that names a tool the SDK defers costs a
  * search on the very turn the agent is already stuck. `list_my_permissions`
  * is named by nothing and stays deferred.
+ *
+ * **`compact_my_session` IS here** (DOR-2732), by the same rule: the
+ * `<context_warning>` note names it on the turn after a conversation fills past
+ * the warning line, and that is the turn with the least room to spend on a
+ * lookup. An agent near its limit that has to search for the tool that frees
+ * room is the DOR-1292 defect at its most expensive.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',
@@ -231,6 +237,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'list_capabilities',
   'memory_write',
   'request_permission',
+  'compact_my_session',
 ]);
 
 /**
@@ -238,7 +245,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
  *
  * Granted eagerly only to sessions that ARE a registered mesh agent with Relay
  * on — never to a plain session, which is most of them. The trade is the same
- * one the nine above make and it is paid by a different set of turns: reaching
+ * one the set above makes and it is paid by a different set of turns: reaching
  * a peer means finding it (`mesh_list`), reading its address
  * (`mesh_inspect`), and sending (`relay_send`, `relay_send_async`,
  * `relay_send_and_wait`, `relay_inbox`), and DorkOS's own tester watched an

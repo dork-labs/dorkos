@@ -269,6 +269,13 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         ...(data.preTokens !== undefined ? { preTokens: Number(data.preTokens) } : {}),
         ...(data.postTokens !== undefined ? { postTokens: Number(data.postTokens) } : {}),
         ...(data.durationMs !== undefined ? { durationMs: Number(data.durationMs) } : {}),
+        // Stamped by the dispatcher on a compaction the agent asked for
+        // (DOR-2732), never by a runtime, so only the one value is carried.
+        ...(data.requestedBy === 'agent' ? { requestedBy: 'agent' as const } : {}),
+        ...(typeof data.contextPercent === 'number'
+          ? { contextPercent: Math.round(data.contextPercent) }
+          : {}),
+        ...(typeof data.requestedAt === 'string' ? { requestedAt: data.requestedAt } : {}),
       };
       return boundary;
     }
@@ -340,6 +347,8 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         ...(data.percent !== undefined ? { percent: Number(data.percent) } : {}),
         ...(data.message !== undefined ? { message: String(data.message) } : {}),
         ...(data.error !== undefined ? { error: String(data.error) } : {}),
+        // Stamped by the dispatcher on an agent-requested compaction (DOR-2732).
+        ...(data.requestedBy === 'agent' ? { requestedBy: 'agent' as const } : {}),
       };
       return progress;
     }

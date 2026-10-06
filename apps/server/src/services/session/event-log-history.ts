@@ -446,6 +446,8 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
           ...(event.preTokens !== undefined ? { preTokens: event.preTokens } : {}),
           ...(event.postTokens !== undefined ? { postTokens: event.postTokens } : {}),
           ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+          ...(event.requestedBy !== undefined ? { requestedBy: event.requestedBy } : {}),
+          ...(event.contextPercent !== undefined ? { contextPercent: event.contextPercent } : {}),
         };
         messages.push({
           id: `compaction-${event.seq}`,

@@ -65,6 +65,7 @@ export { overlayApprovalReceipts } from './overlays/approval-receipt-overlay.js'
 // --- Refused tool calls nobody was asked about, put back the same way (DOR-795) ---
 export { overlayPermissionDenials } from './overlays/permission-denial-overlay.js';
 export { overlayModelSubstitutions } from './overlays/model-substitution-overlay.js';
+export { overlayAgentCompactions } from './overlays/agent-compaction-overlay.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './replay/ring-buffer.js';
 export { DevtoolsCaptureStore, devtoolsCaptureStore } from './devtools-capture-store.js';
 // The `ui` capability domain and the browser driver seat (spec

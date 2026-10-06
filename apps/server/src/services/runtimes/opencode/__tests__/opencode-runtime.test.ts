@@ -294,6 +294,26 @@ describe('OpenCodeRuntime', () => {
     });
   });
 
+  describe('isTurnOpen', () => {
+    it('reports a turn open while a direct send runs, and not once it ends (DOR-2732)', async () => {
+      const harness = makeRuntime();
+      const sessionId = nextSessionId();
+      expect(harness.runtime.isTurnOpen(sessionId)).toBe(false);
+
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+      expect(harness.runtime.isTurnOpen(sessionId)).toBe(true);
+
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'Hello there')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+      expect(harness.runtime.isTurnOpen(sessionId)).toBe(false);
+    });
+  });
+
   describe('sendMessage', () => {
     it('creates the sidecar session on a cold first send without eager initialization', async () => {
       const harness = makeRuntime();

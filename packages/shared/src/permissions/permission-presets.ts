@@ -14,7 +14,7 @@ import type { PermissionAreaId, PermissionPreset, PermissionState } from './perm
 
 /** One preset: a state for every area, and the trust stop it sets for files. */
 export interface PermissionPresetTable {
-  /** A state for each of the eleven state areas. */
+  /** A state for each of the twelve state areas. */
   readonly areas: Readonly<Record<PermissionAreaId, PermissionState>>;
   /** Action-level entries that beat the area entry. */
   readonly actions: Readonly<Record<string, PermissionState>>;
@@ -35,6 +35,7 @@ const CAREFUL: PermissionPresetTable = Object.freeze({
     connections: 'ask',
     packages: 'ask',
     extensions: 'ask',
+    own_chat: 'allowed',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -57,6 +58,7 @@ const BALANCED: PermissionPresetTable = Object.freeze({
     connections: 'ask',
     packages: 'ask',
     extensions: 'allowed',
+    own_chat: 'allowed',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -80,6 +82,7 @@ const FULL: PermissionPresetTable = Object.freeze({
     connections: 'allowed',
     packages: 'ask',
     extensions: 'allowed',
+    own_chat: 'allowed',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -116,6 +119,13 @@ export const PERMISSION_PRESET_TABLES: Readonly<Record<PermissionPreset, Permiss
  * destructive action into Ask.
  *
  * `filesStop: null`: the stored trust stop stays untouched.
+ *
+ * Own chat (DOR-2732) is a new area — an agent asking for its OWN conversation
+ * to be summarized — so it has no old behaviour to reproduce, and it is Allowed
+ * here and in all three presets. A permissive default, argued: it reaches
+ * nothing outside the agent's own conversation, runs only after the asking turn
+ * ends, at most once an hour, and the chat shows it happened. Adding an area
+ * changes no shipped value.
  */
 export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
   areas: Object.freeze({
@@ -126,6 +136,7 @@ export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
     connections: 'allowed',
     packages: 'allowed',
     extensions: 'allowed',
+    own_chat: 'allowed',
     settings: 'allowed',
     safety: 'blocked',
     permissions: 'blocked',

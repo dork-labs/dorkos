@@ -114,6 +114,7 @@ import {
   getOrCreateProjector,
   overlayApprovalReceipts,
   overlayModelSubstitutions,
+  overlayAgentCompactions,
   overlayPermissionDenials,
   peekProjector,
   streamGenerationOf,
@@ -487,6 +488,23 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   hasSession(sessionId: string): boolean {
     return this.sessionStore.hasSession(sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The same three places {@link interruptQuery} looks for something to stop:
+   * a dispatched turn's query, a persistent session's first turn still booting,
+   * and a turn the agent started itself. A Relay delivery calls `sendMessage`
+   * directly and arms the first, so it is seen here though the server never
+   * dispatched it.
+   */
+  isTurnOpen(sessionId: string): boolean {
+    return (
+      this.sessionStore.findSession(sessionId)?.activeQuery !== undefined ||
+      this.persistent.bootingQuery(sessionId) !== undefined ||
+      this.persistent.runtimeTurnQuery(sessionId) !== undefined
+    );
   }
 
   /** @inheritdoc */
@@ -1609,9 +1627,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // And the fourth, for turns that ran on another model than the session
     // names because DorkOS credits do not cover it (DOR-2636): the transcript
     // names the model that ran and never the one it replaced.
-    return overlayModelSubstitutions(
+    // And the fifth, for summaries the agent asked for itself (DOR-2732): the
+    // transcript records that the conversation was summarized, never who asked.
+    return overlayAgentCompactions(
       sessionId,
-      overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages))
+      overlayModelSubstitutions(
+        sessionId,
+        overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages))
+      )
     );
   }
 

@@ -1,5 +1,6 @@
 import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../shared/accounts-access-context.js';
+import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
 /**
  * Per-turn input shaping for the Codex runtime: the DorkOS permission-mode →
  * ThreadOptions projection (NOTES.md Verdict 2) and the prompt assembly that
@@ -164,6 +165,8 @@ function renderContextBody(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
     case 'accounts_access':
       return formatAccountsAccess(entry.data, 'codex');
+    case 'context_warning':
+      return formatContextWarning(entry.data, 'codex');
     case 'approval_verdict':
       return formatApprovalVerdict(entry.data);
     case 'room_context':

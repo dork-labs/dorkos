@@ -77,6 +77,50 @@ export interface TriggerCommandIntentDeps {
   getInternalSessionId(sessionId: string): string | undefined;
 }
 
+/** What a compaction the agent asked for stamps onto its boundary (DOR-2732). */
+export interface CompactionBoundaryTag {
+  /** Who asked: always the agent, the only requester that needs saying. */
+  requestedBy: 'agent';
+  /** Share of the context window in use when the agent asked, when known. */
+  contextPercent?: number;
+  /** When the agent asked (ISO-8601). */
+  requestedAt?: string;
+}
+
+/**
+ * Stamp a tag onto every `compact_boundary` a run yields, and who asked onto
+ * its compaction progress (so a FAILED run still says the agent asked),
+ * passing every other event through untouched.
+ *
+ * @param source - The runtime's intent stream.
+ * @param tag - The fields to add.
+ */
+async function* tagBoundaries(
+  source: AsyncGenerator<StreamEvent>,
+  tag: CompactionBoundaryTag
+): AsyncGenerator<StreamEvent> {
+  for await (const event of source) {
+    const data = (event.data ?? {}) as Record<string, unknown>;
+    if (event.type === 'operation_progress' && data.operation === 'compaction') {
+      yield { ...event, data: { ...data, requestedBy: tag.requestedBy } } as StreamEvent;
+      continue;
+    }
+    if (event.type !== 'compact_boundary') {
+      yield event;
+      continue;
+    }
+    yield {
+      ...event,
+      data: {
+        ...data,
+        requestedBy: tag.requestedBy,
+        ...(tag.contextPercent !== undefined ? { contextPercent: tag.contextPercent } : {}),
+        ...(tag.requestedAt !== undefined ? { requestedAt: tag.requestedAt } : {}),
+      },
+    } as StreamEvent;
+  }
+}
+
 /** Inputs for {@link triggerCommandIntent}. */
 export interface TriggerCommandIntentOpts {
   sessionId: string;
@@ -102,6 +146,14 @@ export interface TriggerCommandIntentOpts {
    * {@link triggerCommandIntent}.
    */
   queueWaitMs?: number;
+  /**
+   * Fields stamped onto every `compact_boundary` this run yields — how a
+   * compaction the AGENT asked for says so on the boundary a person sees and the
+   * record keeps (DOR-2732). Server-derived by the caller that scheduled the run;
+   * never read off anything the model produced. Absent for a person's
+   * `/compact`, whose boundary passes through untouched.
+   */
+  boundaryTag?: CompactionBoundaryTag;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
   /**
@@ -244,8 +296,10 @@ export async function triggerCommandIntent(
       deps,
       Math.min(SESSIONS.STRANDED_TURN_SETTLE_MS, waitBudgetMs - (Date.now() - waitingSince))
     );
-    source = tapEachEvent(deps.executeCommandIntent(sessionId, intent, { cwd, instructions }), () =>
-      lifecycle.touch()
+    const intentStream = deps.executeCommandIntent(sessionId, intent, { cwd, instructions });
+    source = tapEachEvent(
+      opts.boundaryTag ? tagBoundaries(intentStream, opts.boundaryTag) : intentStream,
+      () => lifecycle.touch()
     );
   } catch (err) {
     // Nothing was launched, so nothing downstream will release the lock or the

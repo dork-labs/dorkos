@@ -487,7 +487,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // which it does not use), so it stays deferred and unprefixed.
     // Unchanged by extension tools (DOR-2685): the docs registry this reads
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
-    expect(advertised.size).toBe(119);
+    // 119 -> 120 for `compact_my_session` (DOR-2732): the `<context_warning>`
+    // note names it, with each runtime's prefix, so it is always loaded.
+    expect(advertised.size).toBe(120);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

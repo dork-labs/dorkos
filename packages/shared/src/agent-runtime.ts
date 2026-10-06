@@ -1616,6 +1616,25 @@ export interface AgentRuntime {
   ): () => void;
 
   /**
+   * Whether a turn is running on this session right now, asked of the runtime
+   * itself rather than of anything the server tracks (DOR-2732).
+   *
+   * The server's own bookkeeping — the dispatcher's in-flight slot, the
+   * write-lock, the projector's open turn — sees only turns that went through it.
+   * A Relay delivery and an unattended scheduled run call
+   * {@link AgentRuntime.sendMessage} directly and leave none of those set, yet
+   * their agent holds the same session's tools. Anything that must not start
+   * work under a live turn (an agent-requested summary) asks here too.
+   *
+   * **Synchronous**, because the queue pump asks it under a lock and cannot
+   * await. Optional: a runtime that omits it is trusted to be idle whenever the
+   * server's own bookkeeping says so, which is the behaviour before it existed.
+   *
+   * @param sessionId - The session, in any id it answers to
+   */
+  isTurnOpen?(sessionId: string): boolean;
+
+  /**
    * Whether this session owes a delivery that has not arrived yet, so the queue
    * should hold its head rather than launch it (spec `warm-process-lifecycle`
    * D6).

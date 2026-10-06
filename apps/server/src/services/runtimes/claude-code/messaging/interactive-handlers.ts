@@ -186,6 +186,12 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // The agent's own memory. Always loaded and auto-allowed on identity, for
     // the argument stated in full under IDENTITY_SCOPED_TOOLS below.
     'memory_write',
+    // Asking for its OWN conversation to be summarized (DOR-2732). It reaches
+    // nothing but the calling session, runs only after the turn ends, at most
+    // once an hour, and the owner's say is the DorkOS permission the gate
+    // already resolves on every call. A runtime card on top would be a second
+    // ask for one question, raised on the turn with the least room to spare.
+    'compact_my_session',
     // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
     // — most of its actions only move pixels, but not all of them, so its calls go
     // through `isAutoAllowedCall` below rather than riding this membership alone.

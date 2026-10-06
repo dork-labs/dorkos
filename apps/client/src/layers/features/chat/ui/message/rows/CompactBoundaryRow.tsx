@@ -1,6 +1,6 @@
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { CompactResultRow } from '@/layers/shared/ui';
-import { formatTokenCount } from '../../../lib/format-compaction';
+import { agentCompactionLabel, formatTokenCount } from '../../../lib/format-compaction';
 
 interface CompactBoundaryRowProps {
   /** What triggered compaction: manual (`/compact`) or auto (context pressure). */
@@ -13,6 +13,10 @@ interface CompactBoundaryRowProps {
   failed?: boolean;
   /** Human-readable failure detail; shown below the row when `failed`. */
   error?: string;
+  /** Set when the agent asked for this summary itself (DOR-2732). */
+  requestedBy?: 'agent';
+  /** How full the conversation was when the agent asked, 0–100. */
+  contextPercent?: number;
 }
 
 /** Build the success summary line from the token metadata. */
@@ -28,7 +32,9 @@ function summaryText(preTokens?: number, postTokens?: number): string {
  *
  * Success state ({@link CompactResultRow} with a refresh glyph): "Compacted
  * context · N → M tokens" plus a `manual`/`auto` trigger badge. Failure state
- * (amber alert glyph): "Couldn’t compact" with the SDK error beneath. Sourced
+ * (amber alert glyph): "Couldn’t compact" with the SDK error beneath. A summary
+ * the agent asked for reads "Summarized at 89% (asked by the agent)" instead of
+ * the token line, with no trigger badge — who asked is the whole story. Sourced
  * from the `compact_boundary` part folded by `projectInProgressTurn`.
  */
 export function CompactBoundaryRow({
@@ -37,6 +43,8 @@ export function CompactBoundaryRow({
   postTokens,
   failed,
   error,
+  requestedBy,
+  contextPercent,
 }: CompactBoundaryRowProps) {
   if (failed) {
     return (
@@ -46,10 +54,27 @@ export function CompactBoundaryRow({
         icon={
           <AlertTriangle aria-hidden="true" className="text-status-warning-dot size-3 shrink-0" />
         }
-        label={<span className="text-status-warning-fg">Couldn’t compact</span>}
+        label={
+          <span className="text-status-warning-fg">
+            {requestedBy === 'agent' ? 'Couldn’t compact (asked by the agent)' : 'Couldn’t compact'}
+          </span>
+        }
       >
         {error ? <p className="text-muted-foreground mt-1 text-xs">{error}</p> : null}
       </CompactResultRow>
+    );
+  }
+
+  if (requestedBy === 'agent') {
+    return (
+      <CompactResultRow
+        data-testid="compact-boundary-row"
+        data-requested-by="agent"
+        icon={<RefreshCw aria-hidden="true" className="text-muted-foreground size-3 shrink-0" />}
+        label={
+          <span className="text-muted-foreground">{agentCompactionLabel(contextPercent)}</span>
+        }
+      />
     );
   }
 

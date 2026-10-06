@@ -32,4 +32,16 @@ describe('formatCompactionLabel', () => {
     expect(formatCompactionLabel()).toBe('Context compacted');
     expect(formatCompactionLabel({})).toBe('Context compacted');
   });
+
+  it('reads the same as the live row for a summary the agent asked for (DOR-2732)', () => {
+    expect(
+      formatCompactionLabel({
+        trigger: 'manual',
+        preTokens: 178000,
+        requestedBy: 'agent',
+        contextPercent: 89,
+      })
+    ).toBe('Summarized at 89% (asked by the agent)');
+    expect(formatCompactionLabel({ requestedBy: 'agent' })).toBe('Summarized (asked by the agent)');
+  });
 });

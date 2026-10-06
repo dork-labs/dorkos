@@ -3206,6 +3206,7 @@
               "connections",
               "packages",
               "extensions",
+              "own_chat",
               "settings",
               "safety",
               "permissions",
@@ -3633,6 +3634,20 @@
           "durationMs": {
             "type": "integer"
           },
+          "requestedBy": {
+            "type": "string",
+            "enum": [
+              "agent"
+            ]
+          },
+          "contextPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "requestedAt": {
+            "type": "string"
+          },
           "failed": {
             "type": "boolean"
           },
@@ -3670,6 +3685,20 @@
           },
           "durationMs": {
             "type": "integer"
+          },
+          "requestedBy": {
+            "type": "string",
+            "enum": [
+              "agent"
+            ]
+          },
+          "contextPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "requestedAt": {
+            "type": "string"
           }
         }
       },
@@ -4407,6 +4436,20 @@
               },
               "durationMs": {
                 "type": "integer"
+              },
+              "requestedBy": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              },
+              "contextPercent": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "requestedAt": {
+                "type": "string"
               }
             },
             "required": [
@@ -4562,6 +4605,12 @@
               },
               "error": {
                 "type": "string"
+              },
+              "requestedBy": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
               }
             },
             "required": [
@@ -11761,6 +11810,7 @@
           "connections",
           "packages",
           "extensions",
+          "own_chat",
           "settings",
           "safety",
           "permissions",
@@ -20253,6 +20303,20 @@
                         },
                         "durationMs": {
                           "type": "integer"
+                        },
+                        "requestedBy": {
+                          "type": "string",
+                          "enum": [
+                            "agent"
+                          ]
+                        },
+                        "contextPercent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "requestedAt": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -20408,6 +20472,12 @@
                         },
                         "error": {
                           "type": "string"
+                        },
+                        "requestedBy": {
+                          "type": "string",
+                          "enum": [
+                            "agent"
+                          ]
                         }
                       },
                       "required": [
