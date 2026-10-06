@@ -122,7 +122,7 @@ export const futureCards: FutureCard[] = [
   {
     id: 'together',
     label: 'Together',
-    title: 'Agents that work beside people',
+    title: 'Agents that work beside you',
     description: 'Already shipping. You and your agents share channels, DMs and threads.',
     color: 'blue',
   },

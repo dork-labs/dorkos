@@ -21,7 +21,7 @@ export const faqItems: FaqItem[] = [
     id: 'data-privacy',
     question: 'Does DorkOS send any data to external servers?',
     answer:
-      "Not unless you choose to. DorkOS runs on your own computer, and your chats stay there, in each AI tool's own local files. You need no account and nothing phones home to check in. Your agents still send their work to the AI company that powers them. DorkOS Cloud is optional, and you can leave it any time.",
+      "Not unless you choose to. DorkOS runs on your own computer, and your chats stay there, in DorkOS's own files and each AI tool's. You need no account and nothing phones home to check in. Your agents still send their work to the AI company that powers them. DorkOS Cloud is optional, and you can leave it any time.",
   },
   {
     id: 'getting-started',

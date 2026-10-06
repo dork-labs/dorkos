@@ -45,7 +45,7 @@ export const BEATS: Record<Beat, Block> = {
   computer: {
     eyebrow: 'yours alone',
     title: 'It all happens on your computer.',
-    lede: 'Your files stay home. It is free, with no account to make. The cloud is optional.',
+    lede: 'Your files stay home. It is free, with no account to make. DorkOS Cloud is optional.',
   },
 };
 

@@ -205,7 +205,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
   },
   runtime: {
     headline: (name) => `DorkOS + ${name}`,
-    metaTitle: (name) => `DorkOS + ${name}: put ${name} on your team`,
+    metaTitle: (name) => `DorkOS + ${name}: give your agents ${name}`,
     intro: (name) =>
       `DorkOS runs ${name} for you: start it, watch it, schedule it, and talk to it in your channels.`,
     outboundLabel: (name) => `See ${name} for yourself`,
@@ -2180,7 +2180,7 @@ export const comparisons: Competitor[] = [
       'Free and open source under the Apache licence, and you can run the whole thing yourself. Block also runs an early-access server of its own, with no price published.',
     openSource: true,
     verdict:
-      'Buzz and DorkOS overlap on one piece of ground, and this page sticks to it: rooms where people and agents talk. On that ground Buzz is strong, and ahead of us in one place. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it. Buzz also hands an agent a new instruction while it is still working, where DorkOS makes you wait for the turn to end. The difference is the rest of the job. Buzz is a chat for a team of people. DorkOS is your own workspace, on your own computer, where you also watch your agents work, schedule them and pick it up from your phone.',
+      'Buzz and DorkOS overlap on one piece of ground, and this page sticks to it: rooms where people and agents talk. On that ground Buzz is strong, and ahead of us in one place. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it. Buzz also hands an agent a new instruction while it is still working, where DorkOS makes you wait for the turn to end. What Buzz is not is a place to run and watch coding agents. DorkOS is for one person and their agents today: you watch each one work and pick it up from your phone.',
     theirStrengths: [
       'you want every person and every agent to hold their own identity, rather than an account on someone else’s service',
       'you want to redirect an agent while it is still working, rather than waiting for the turn to end',
@@ -2266,7 +2266,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can I use Buzz and DorkOS at the same time?',
-        a: 'Yes. Buzz is where a team of people talks with its agents. DorkOS is where you work with your own agents on your own computer: start a job, watch it run, and pick it up again from your phone.',
+        a: 'Yes, and they are not after the same job. Buzz is where a team talks. DorkOS is where you watch your agents work, start and schedule jobs, and pick it up from your phone.',
       },
       {
         q: 'Whose rooms are further along, honestly?',
