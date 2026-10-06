@@ -1,3 +1,5 @@
+import { observeOwnerSameDocument } from '../navigation/owner-same-document.js';
+import { commitNavigation } from '../navigation/cohort.js';
 import { commitInitialNavigation } from '../lifecycle/initial-navigation-state.js';
 import { observePopup, commitPopup } from './popup-navigation.js';
 import { createPointerLedger } from './pointer.js';
@@ -116,10 +118,21 @@ export function trackPage(
             }, retire);
             return;
           }
+          const navigationCommit = commitNavigation(tab, frame.url());
+          if (navigationCommit !== null) {
+            if (!navigationCommit) retire();
+            else tab.diagnostics.replaceEpoch();
+            return;
+          }
           const initialCommit = commitInitialNavigation(tab, frame.url());
           if (initialCommit !== null) {
             if (!initialCommit) retire();
             else tab.diagnostics.replaceEpoch();
+            return;
+          }
+          const sameDocument = observeOwnerSameDocument(tab, page, frame);
+          if (sameDocument !== null) {
+            if (!sameDocument) retire();
             return;
           }
           tab.binding = {

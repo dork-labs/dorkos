@@ -1,3 +1,9 @@
+import {
+  navigationPending,
+  navigationOwnsReset,
+  type NavigationCohort,
+} from '../navigation/cohort.js';
+import type { OwnedInputWork } from '../input/owned-work.js';
 import { initialNavigationPending } from './initial-navigation-state.js';
 import type { BrowserBinding, BrowserCommand } from '../contracts.js';
 import type { BrowserRecord } from './records.js';
@@ -11,16 +17,23 @@ import { ordinaryRecord } from './ownership.js';
 export function submitInput(
   record: BrowserRecord,
   command: Extract<BrowserCommand, { kind: 'input' }>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  ownedWork?: OwnedInputWork
 ): Promise<InputResult> {
   try {
-    if (initialNavigationPending(record)) throw new BrowserLifecycleError('STALE_BINDING');
+    const navigationTab = record.tabs.get(command.binding.tabId);
+    if (initialNavigationPending(record) || (navigationTab && navigationPending(navigationTab)))
+      throw new BrowserLifecycleError('STALE_BINDING');
     const slot = readyInput(record, command.binding);
     if (slot.resetPromise) throw new BrowserLifecycleError('STALE_BINDING');
     const submit = slot.handle!.submit;
     if (slot.resetPromise || readyInput(record, command.binding) !== slot)
       throw new BrowserLifecycleError('STALE_BINDING');
-    return Reflect.apply(submit, slot.handle!, [command, signal]) as Promise<InputResult>;
+    return Reflect.apply(submit, slot.handle!, [
+      command,
+      signal,
+      ownedWork,
+    ]) as Promise<InputResult>;
   } catch {
     return Promise.resolve(
       Object.freeze({
@@ -36,7 +49,14 @@ export function submitInput(
 }
 
 /** Coalesce reset with synchronous child publication before its first drain; failures retire admission. */
-export function resetInput(record: BrowserRecord, binding: BrowserBinding): Promise<ResetResult> {
+export function resetInput(
+  record: BrowserRecord,
+  binding: BrowserBinding,
+  navigation?: NavigationCohort
+): Promise<ResetResult> {
+  const tab = record.tabs.get(binding.tabId);
+  if (tab && navigationPending(tab) && !navigationOwnsReset(tab, navigation))
+    return Promise.resolve(Object.freeze({ binding, status: 'stopped' }));
   if (initialNavigationPending(record))
     return Promise.resolve(Object.freeze({ binding, status: 'stopped' }));
   const slot = readyInput(record, binding);

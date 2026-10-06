@@ -350,6 +350,11 @@ describe('private browser package boundaries', () => {
             'runtime/crash-custody.ts',
             // Public Browser/CDPSession types pin the sole lifetime-retained deny owner.
             'runtime/default-downloads.ts',
+            // Exact public Request/Route/Frame/CDPSession types for private canonical navigation.
+            'navigation/navigate.ts',
+            'navigation/owner-continuation.ts',
+            'navigation/owner-same-document.ts',
+            'navigation/native-same-document.ts',
             // Public Request identity for the private one-shot navigation owner.
             'lifecycle/initial-navigation.ts',
             'runtime/darwin-supervisor-worker.ts',

@@ -12,6 +12,8 @@ import type { FixtureProxy } from '../network/fixture-proxy.js';
 
 /** Internal acquisition ledger, allocated before any owned browser can launch. */
 export interface BrowserRecord {
+  ownerNavigationObserver?: Readonly<{ close(): Promise<void> }>;
+  ownerNavigationObserverClose?: Promise<void>;
   diagnosticsBudget: DiagnosticsBudget;
   lifetime: BrowserLifetime;
   browserId: BrowserId;

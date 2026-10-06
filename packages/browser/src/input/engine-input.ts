@@ -1,4 +1,11 @@
 import {
+  registerNavigationInput,
+  adoptNavigation,
+  navigationPending,
+  ownerPreparationPending,
+} from '../navigation/cohort.js';
+import type { OwnedInputWork } from './owned-work.js';
+import {
   initialNavigationInputFenced,
   adoptInitialNavigation,
 } from '../lifecycle/initial-navigation-state.js';
@@ -39,7 +46,7 @@ export interface EngineInputOptions {
 /** Private fixture composition; no Page, protocol target or authority comes from command bodies. */
 export interface EngineTabInput {
   readonly ready: Promise<void>;
-  submit(command: unknown, signal?: AbortSignal): Promise<InputResult>;
+  submit(command: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork): Promise<InputResult>;
   reset(): Promise<ResetResult>;
   retire(end: number): Promise<CleanupObservation>;
   close(deadline?: number): Promise<PageInputCustody>;
@@ -55,7 +62,8 @@ export function createEngineInput(options: EngineInputOptions): EngineTabInput {
   const owner = new EngineInputOwner(options);
   const handle = Object.freeze({
     ready: owner.ready,
-    submit: (command: unknown, signal?: AbortSignal) => owner.submit(command, signal),
+    submit: (command: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork) =>
+      owner.submit(command, signal, ownedWork),
     reset: () => owner.reset(),
     retire: (end: number) => owner.retire(end),
     close: (deadline?: number) => owner.close(deadline),
@@ -98,6 +106,12 @@ class EngineInputOwner {
     this.page = options.tab.page;
     this.navigation = (frame) => {
       if (frame !== this.page.mainFrame()) return;
+      if (ownerPreparationPending(this.options.tab)) return;
+      const navigation = adoptNavigation(this.options.tab, this.initial, this);
+      if (navigation && !this.resetPromise && !this.retired) {
+        this.initial = navigation;
+        return;
+      }
       if (!this.inputEverEntered && !this.resetPromise && !this.retired) {
         const popup = adoptPopup(this.options.tab, this.initial, this);
         if (popup) {
@@ -131,6 +145,12 @@ class EngineInputOwner {
       this.reject = reject;
     });
     void this.ready.catch(() => {});
+    registerNavigationInput(options.tab, this, () => {
+      const navigation = adoptNavigation(this.options.tab, this.initial, this);
+      if (!navigation || this.resetPromise || this.retired) return false;
+      this.initial = navigation;
+      return true;
+    });
     registerPopupInput(options.tab, this.initial, this, this.ready);
   }
 
@@ -152,6 +172,7 @@ class EngineInputOwner {
         pointer: this.options.tab.pointer,
         page: this.page,
         current: () => this.current(),
+        ordinary: () => this.ordinary(),
         readBinding: () => this.canonicalBinding(),
         retire: () => this.invalidate(),
       });
@@ -184,14 +205,22 @@ class EngineInputOwner {
     }
   }
 
-  async submit(value: unknown, signal?: AbortSignal): Promise<InputResult> {
-    const fenced = initialNavigationInputFenced(this.options.tab) || popupPending(this.options.tab);
+  async submit(
+    value: unknown,
+    signal?: AbortSignal,
+    ownedWork?: OwnedInputWork
+  ): Promise<InputResult> {
+    const fenced =
+      navigationPending(this.options.tab) ||
+      initialNavigationInputFenced(this.options.tab) ||
+      popupPending(this.options.tab);
     if (!fenced) this.inputEverEntered = true;
     const command = parseBrowserCommand(value);
     if (command.kind !== 'input') throw new BrowserValidationError('INVALID_COMMAND');
     // Do not make requests during acquisition wait for a later native lifetime.
     if (
       fenced ||
+      navigationPending(this.options.tab) ||
       initialNavigationInputFenced(this.options.tab) ||
       popupPending(this.options.tab) ||
       this.resetPromise ||
@@ -206,7 +235,7 @@ class EngineInputOwner {
         outcome: 'rejected',
         reason: this.options.stopGate.stopped ? 'stopped' : 'staleBinding',
       });
-    return this.queue.submit(command, signal);
+    return this.queue.submit(command, signal, ownedWork);
   }
 
   reset(): Promise<ResetResult> {
@@ -449,9 +478,10 @@ class EngineInputOwner {
   /** Observe genuine canonical membership without treating retirement as a replacement. */
   private canonicalBinding(): BrowserBinding | null {
     try {
-      const closed = this.page.isClosed();
+      // This constructor-private map observation is the data-only final target fence.
+      // Fallible SDK liveness and Work authorization have already run before this read.
       const tab = this.options.readTab();
-      if (closed || tab !== this.options.tab || tab.page !== this.page || tab.stopped) return null;
+      if (tab !== this.options.tab || tab.page !== this.page || tab.stopped) return null;
       const binding = Object.freeze({ ...tab.binding });
       if (tab.page !== this.page || tab.stopped || !sameBinding(tab.binding, binding)) return null;
       return binding;
@@ -459,6 +489,16 @@ class EngineInputOwner {
       this.invalidate();
       return null;
     }
+  }
+
+  /** Final ordinary input fence over private lifetime cells, without native getters. */
+  private ordinary(): boolean {
+    return (
+      !initialNavigationInputFenced(this.options.tab) &&
+      !this.retired &&
+      this.options.cleanup.ordinary() &&
+      this.options.stopGate.accepts(this.initial)
+    );
   }
 
   private current(): boolean {

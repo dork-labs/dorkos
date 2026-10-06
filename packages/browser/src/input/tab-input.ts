@@ -1,3 +1,10 @@
+import {
+  consumeOwnedInputWork,
+  ownedInputWorkCurrent,
+  authorizeOwnedInputWork,
+  settleOwnedInputWork,
+  type OwnedInputWork,
+} from './owned-work.js';
 import { parseBrowserCommand, type BrowserBinding, type BrowserCommand } from '../contracts.js';
 import { advanceCounter } from '../counters.js';
 import { BrowserValidationError } from '../errors.js';
@@ -18,6 +25,7 @@ import type {
 
 type InputCommand = Extract<BrowserCommand, { kind: 'input' }>;
 type Work = {
+  ownedWork?: OwnedInputWork;
   command: InputCommand;
   steps: readonly NativeInputStep[];
   end: number;
@@ -30,7 +38,8 @@ type Work = {
 export function createTabInput(ports: InputPorts): TabInput {
   const queue = new InputQueue(ports);
   return Object.freeze({
-    submit: (command: unknown, signal?: AbortSignal) => queue.submit(command, signal),
+    submit: (command: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork) =>
+      queue.submit(command, signal, ownedWork),
     reset: () => queue.reset(),
     retire: (end: number) => queue.retire(end),
     stop: () => ports.cleanup.requestRetirement('explicitStop'),
@@ -63,7 +72,7 @@ class InputQueue implements TabInput {
     if (!this.unregister) this.stopped = true;
   }
 
-  submit(value: unknown, signal?: AbortSignal): Promise<InputResult> {
+  submit(value: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork): Promise<InputResult> {
     const command = parseBrowserCommand(value);
     if (command.kind !== 'input') throw new BrowserValidationError('INVALID_COMMAND');
     command.binding = Object.freeze({ ...command.binding });
@@ -77,14 +86,24 @@ class InputQueue implements TabInput {
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
     return new Promise((settle) => {
-      this.pending.push({
+      const work: Work = {
+        ownedWork,
         command,
         steps,
         end: performance.now() + INPUT_BUDGET_MS,
         cancel,
         settle,
-        dispose: () => signal?.removeEventListener('abort', abort),
-      });
+        dispose: () => {
+          signal?.removeEventListener('abort', abort);
+          if (ownedWork) settleOwnedInputWork(ownedWork, work);
+        },
+      };
+      if (ownedWork !== undefined && !consumeOwnedInputWork(ownedWork, command, work)) {
+        signal?.removeEventListener('abort', abort);
+        settle(this.result(command, 'rejected', 'policyRefused'));
+        return;
+      }
+      this.pending.push(work);
       this.pump();
     });
   }
@@ -261,6 +280,21 @@ class InputQueue implements TabInput {
     );
   }
 
+  private async authorize(
+    work: Work,
+    step: NativeInputStep
+  ): Promise<'allowed' | 'refused' | 'unknown'> {
+    const allowed = await this.ports.authorize(work.command.binding, step, work.cancel.signal);
+    if (allowed !== 'allowed' || !work.ownedWork) return allowed;
+    return authorizeOwnedInputWork(
+      work.ownedWork,
+      work,
+      work.command.binding,
+      step,
+      work.cancel.signal
+    );
+  }
+
   private async execute(work: Work): Promise<InputResult> {
     let completed = 0;
     for (const step of work.steps) {
@@ -269,11 +303,7 @@ class InputQueue implements TabInput {
         return this.result(work.command, completed ? 'aborted' : 'rejected', reason ?? 'deadline');
       let allowed: 'allowed' | 'refused' | 'unknown';
       try {
-        allowed = await within(
-          Promise.resolve(this.ports.authorize(work.command.binding, step, work.cancel.signal)),
-          work.end,
-          work.cancel.signal
-        );
+        allowed = await within(this.authorize(work, step), work.end, work.cancel.signal);
       } catch {
         return this.result(work.command, completed ? 'aborted' : 'rejected', 'policyRefused');
       }
@@ -300,9 +330,20 @@ class InputQueue implements TabInput {
           completed ? 'aborted' : 'rejected',
           beforeDispatch ?? 'deadline'
         );
+      if (work.ownedWork && !ownedInputWorkCurrent(work.ownedWork, work))
+        return this.result(work.command, completed ? 'aborted' : 'rejected', 'policyRefused');
       this.held.track(step);
       try {
-        const native = this.dispatchNative(step, work.cancel.signal, transport, dispatch);
+        const originalWork = work.ownedWork;
+        const native = this.dispatchNative(
+          step,
+          work.cancel.signal,
+          transport,
+          dispatch,
+          originalWork
+            ? () => !work.cancel.signal.aborted && ownedInputWorkCurrent(originalWork, work)
+            : undefined
+        );
         await within(native, work.end, work.cancel.signal);
       } catch (error) {
         // A cancelled/failed started call may already have changed native state.
@@ -320,11 +361,7 @@ class InputQueue implements TabInput {
       if (afterDispatch || work.cancel.signal.aborted)
         return this.result(work.command, 'aborted', afterDispatch ?? 'deadline');
       try {
-        const approved = await within(
-          Promise.resolve(this.ports.authorize(work.command.binding, step, work.cancel.signal)),
-          work.end,
-          work.cancel.signal
-        );
+        const approved = await within(this.authorize(work, step), work.end, work.cancel.signal);
         const stale = this.refusal(work.command.binding);
         if (stale || approved !== 'allowed')
           return this.result(work.command, 'aborted', stale ?? 'policyRefused');
@@ -339,7 +376,8 @@ class InputQueue implements TabInput {
     step: NativeInputStep,
     signal: AbortSignal,
     transport: NativeInputTransport,
-    dispatch: NativeInputTransport['dispatch']
+    dispatch: NativeInputTransport['dispatch'],
+    current?: () => boolean
   ): Promise<void> {
     let acknowledge!: () => void;
     let refuse!: (error: unknown) => void;
@@ -354,10 +392,9 @@ class InputQueue implements TabInput {
       () => this.clearNative(native)
     );
     try {
-      void Promise.resolve(Reflect.apply(dispatch, transport, [step, signal])).then(
-        acknowledge,
-        refuse
-      );
+      void Promise.resolve(
+        Reflect.apply(dispatch, transport, current ? [step, signal, current] : [step, signal])
+      ).then(acknowledge, refuse);
     } catch (error) {
       refuse(error);
     }

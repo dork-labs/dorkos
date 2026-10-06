@@ -1,5 +1,6 @@
 import type { PointerLedger } from '../tabs/pointer.js';
 import type { CDPSession, Page } from 'playwright-core';
+import { registerOriginalPageSession } from '../navigation/native-same-document.js';
 import type { BrowserBinding } from '../contracts.js';
 import { sameBinding } from './binding.js';
 import { INPUT_BUDGET_MS, within } from './budget.js';
@@ -22,6 +23,8 @@ export interface PageTransportOptions {
   readonly pointer: PointerLedger;
   readonly page: Page;
   current(): boolean;
+  /** Constructor-private ordinary admission over engine-owned cells; no SDK or grant callbacks. */
+  ordinary(): boolean;
   readBinding(): BrowserBinding | null;
   retire(): void;
 }
@@ -84,8 +87,15 @@ class PageTransportOwner {
     // Readiness failures are observable even if acquisition synchronously reenters close.
     void this.ready.catch(() => {});
     this.native = Object.freeze({
-      dispatch: (step: NativeInputStep, signal: AbortSignal) =>
-        this.call((guard, settle) => this.dispatch(step, guard, settle), signal, step),
+      dispatch: (step: NativeInputStep, signal: AbortSignal, current?: () => boolean) =>
+        this.call(
+          (guard, settle) => this.dispatch(step, guard, settle),
+          signal,
+          step,
+          undefined,
+          undefined,
+          current
+        ),
       cancelComposition: (signal: AbortSignal) =>
         this.call((guard) => this.sendCancel('Input.imeSetComposition', guard), signal),
       cancelDrag: (signal: AbortSignal) =>
@@ -123,6 +133,7 @@ class PageTransportOwner {
         .then(async () => {
           // Original registration owns terminal refusal and retains late session cleanup.
           this.options.cleanup.registerTarget(this.page, this, session);
+          registerOriginalPageSession(this.page, session, this.isCustodyKnown.bind(this));
           if (this.options.preserveFocus && this.current()) {
             const send = session.send.bind(session);
             // Retirement fences an unstarted focus command without inventing an operational failure.
@@ -357,7 +368,8 @@ class PageTransportOwner {
     signal: AbortSignal,
     step?: NativeInputStep,
     permit?: CleanupPermit,
-    attempt?: CleanupAttempt
+    attempt?: CleanupAttempt,
+    operationCurrent?: () => boolean
   ): Promise<void> {
     this.nativePending++;
     let resolve!: () => void;
@@ -420,6 +432,12 @@ class PageTransportOwner {
         !this.current() ||
         !sameBinding(this.options.readBinding(), binding) ||
         !this.current() ||
+        (operationCurrent !== undefined && !operationCurrent()) ||
+        // The Work callback may synchronously retire the owning admission cell.
+        !this.options.ordinary() ||
+        // The Work callback may synchronously replace the canonical Page or binding.
+        // The private data-only observation must be last, after every fallible SDK/grant read.
+        !sameBinding(this.options.readBinding(), binding) ||
         this.retired ||
         signal.aborted
       )

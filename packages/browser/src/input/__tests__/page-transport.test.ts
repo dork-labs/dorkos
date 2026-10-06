@@ -2,11 +2,17 @@ import {
   tabFixture as ownedTransportFixture,
   configuration as transportConfiguration,
   createOwnedFixtureEngineInput,
+  fakePage,
+  requestId,
 } from '../../__tests__/parent-fixture.js';
 import { composeInput as composeTransportOwner } from '../../lifecycle/input-owner.js';
 import type { CleanupPermit, CleanupAttempt } from '../../lifecycle/ownership.js';
 import type { OwnedPageTransport as OwnedCleanupTransport } from '../page-transport.js';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
+import { createOwnedInputIssuer } from '../owned-work.js';
+import { submitInput } from '../../lifecycle/parent-actions.js';
+import { fenceOrdinary } from '../../lifecycle/ownership.js';
+import type { PrivateBrowserInputDispatcher } from '../../engine.js';
 import type { CDPSession, Page } from 'playwright-core';
 import { createPageTransport } from '../page-transport.js';
 import { createPointerLedger, type PointerLedger } from '../../tabs/pointer.js';
@@ -14,7 +20,7 @@ import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
 import { unavailableDiagnostics } from '../../tabs/diagnostics.js';
 import type { TabRecord } from '../../lifecycle/records.js';
-import type { BrowserBinding } from '../../contracts.js';
+import { parseBrowserCommand, type BrowserBinding } from '../../contracts.js';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -641,3 +647,62 @@ it('refuses known custody after genuine session acquisition rejection', async ()
   expect(h.input.isCustodyKnown()).toBe(false);
   await h.close();
 });
+
+for (const replacement of ['epoch', 'page', 'ordinary', 'parentMap'] as const)
+  it(`an owned dispatcher current callback cannot replace canonical ${replacement} after SDK lookup`, async () => {
+    const h = fixture();
+    const issuer = createOwnedInputIssuer();
+    const originals: { operation?: ReturnType<PrivateBrowserInputDispatcher['input']> } = {};
+    const parentRecords = h.record.lifetime.ordinary.records;
+    onTestFinished(async () => {
+      await Promise.allSettled([originals.operation]);
+      // Restore only the test's removed Map entry so the real original owner can tear down.
+      // The retired ordinary cell is never reopened and the refused result remains asserted.
+      if (replacement === 'parentMap') parentRecords?.set(h.record.browserId, h.record);
+      await h.close();
+    });
+    await h.ready;
+    const tab = [...h.record.tabs.values()][0];
+    if (!tab) throw new Error('FIXTURE_CANONICAL_TAB_MISSING');
+    const binding = { ...tab.binding };
+    let methodLookedUp = false;
+    let replaced = false;
+    const insert = h.keyboard.insertText;
+    Object.defineProperty(h.keyboard, 'insertText', {
+      configurable: true,
+      get() {
+        methodLookedUp = true;
+        return insert;
+      },
+    });
+    const dispatcher: PrivateBrowserInputDispatcher = {
+      input(command, authorization, signal) {
+        const token = issuer.issue(command, authorization);
+        const parsed = parseBrowserCommand(command);
+        if (parsed.kind !== 'input') throw new Error('FIXTURE_INPUT_COMMAND_REFUSED');
+        const operation = submitInput(h.record, parsed, signal, token);
+        return operation.finally(() => issuer.invalidate(token));
+      },
+    };
+    const operation = dispatcher.input(
+      { kind: 'input', requestId, binding, steps: [{ kind: 'text', text: 'refused' }] },
+      {
+        authorize: async () => 'allowed',
+        isCurrent() {
+          if (methodLookedUp && !replaced) {
+            replaced = true;
+            if (replacement === 'epoch')
+              tab.binding = { ...tab.binding, epoch: tab.binding.epoch + 1 };
+            else if (replacement === 'page') tab.page = fakePage().page;
+            else if (replacement === 'ordinary') fenceOrdinary(h.record, 'authorityRevoked');
+            else h.record.lifetime.ordinary.records?.delete(h.record.browserId);
+          }
+          return true;
+        },
+      }
+    );
+    originals.operation = operation;
+    expect((await operation).outcome).not.toBe('completed');
+    expect(replaced).toBe(true);
+    expect(insert).not.toHaveBeenCalled();
+  });

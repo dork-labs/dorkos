@@ -176,6 +176,7 @@ it('focus uses the existing owned input session and survives readiness until ori
     preserveFocus: true,
     page,
     current: () => true,
+    ordinary: () => true,
     readBinding: () => null,
     retire: () => {},
     pointer: createPointerLedger(() => null),
