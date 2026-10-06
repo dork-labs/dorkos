@@ -18,7 +18,11 @@ import {
 import { ApprovalService } from '../../../core/approvals/index.js';
 import { eventFanOut } from '../../../core/event-fan-out.js';
 import type { AgentIdentity } from '../../../core/agent-identity/agent-identity-service.js';
-import { SESSION_COMPACT_CAPABILITY_ID, sessionDomain } from '../compaction-capabilities.js';
+import {
+  SESSION_COMPACT_CAPABILITY_ID,
+  compactionToolsHiddenFor,
+  sessionDomain,
+} from '../compaction-capabilities.js';
 import type { AgentCompactionService } from '../agent-compaction-service.js';
 
 const AGENT: AgentIdentity = {
@@ -93,12 +97,16 @@ describe('compact_my_session — the declaration', () => {
       'ran'
     );
     expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith({ sessionId: 'session-a', note: 'keep the plan' });
+    expect(request).toHaveBeenCalledWith({
+      sessionId: 'session-a',
+      note: 'keep the plan',
+      agentPath: AGENT.agentPath,
+    });
   });
 
   it('passes no session at all when the call came from none, so the service refuses', async () => {
     await callFrom(undefined);
-    expect(request).toHaveBeenCalledWith({});
+    expect(request).toHaveBeenCalledWith({ agentPath: AGENT.agentPath });
   });
 
   it.each([null, 'careful', 'balanced', 'full'] as const)(
@@ -118,5 +126,34 @@ describe('compact_my_session — the declaration', () => {
       reason: 'permission_blocked',
     });
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it('is decided by its own Own chat area, not by Other agents', async () => {
+    preset = 'careful';
+    // An owner who set Other agents to Blocked for this agent, and the install
+    // default for it to Ask, has said nothing about summarizing its own chat.
+    agent = { areas: { agents: 'blocked' } };
+    expect(await callFrom('session-a')).toBe('ran');
+
+    agent = { areas: { own_chat: 'blocked' } };
+    expect(await callFrom('session-a')).toMatchObject({ reason: 'permission_blocked' });
+  });
+
+  it('is not turned into an approval card by an install default for Other agents', async () => {
+    preset = 'full';
+    initPermissionGate({
+      readConfig: () => ({ preset, defaults: { areas: { agents: 'ask' }, actions: {} } }),
+      readAgentPermissions: async () => undefined,
+    });
+    expect(await callFrom('session-a')).toBe('ran');
+  });
+
+  it('hides the tool from a runtime that cannot summarize on request', () => {
+    expect(compactionToolsHiddenFor({ commandIntents: { compact: { supported: false } } })).toEqual(
+      ['compact_my_session']
+    );
+    expect(compactionToolsHiddenFor({ commandIntents: { compact: { supported: true } } })).toEqual(
+      []
+    );
   });
 });

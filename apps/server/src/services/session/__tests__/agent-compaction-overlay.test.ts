@@ -76,4 +76,21 @@ describe('applyAgentCompactions', () => {
       compactMetadata: { requestedBy: 'agent', contextPercent: 91 },
     });
   });
+
+  it('never hands the tag to a compaction from before the agent asked', () => {
+    // The agent's own summary is missing from this (paged) transcript; the
+    // person's earlier /compact is not the one it asked for.
+    const messages = [
+      user('m1', '2026-10-06T10:00:00.000Z'),
+      compaction('c-person', { trigger: 'manual', preTokens: 90_000 }),
+      user('m2', '2026-10-06T11:00:00.000Z'),
+    ];
+    const asked = row(9, '2026-10-06T11:05:00.000Z');
+    asked.event.requestedAt = '2026-10-06T11:01:00.000Z';
+
+    const result = applyAgentCompactions(messages, [asked]);
+
+    expect(result.find((m) => m.id === 'c-person')!.compactMetadata?.requestedBy).toBeUndefined();
+    expect(result.map((m) => m.id)).toEqual(['m1', 'c-person', 'm2', 'agent-compaction-9']);
+  });
 });

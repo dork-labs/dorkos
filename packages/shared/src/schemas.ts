@@ -2515,6 +2515,11 @@ export const OperationProgressEventShapeSchema = z.object({
   message: z.string().optional(),
   /** Human-readable failure reason; present only when `state` is `failed`. */
   error: z.string().optional(),
+  /**
+   * For a compaction: set when the agent asked for it (DOR-2732), so a FAILED
+   * one still says who asked. Server-stamped, like the boundary's own tag.
+   */
+  requestedBy: z.enum(['agent']).optional(),
 });
 
 /**
@@ -2611,6 +2616,12 @@ const agentCompactionShape = {
   requestedBy: z.enum(['agent']).optional(),
   /** Share of the context window in use when the agent asked, 0–100. */
   contextPercent: z.number().int().min(0).max(100).optional(),
+  /**
+   * When the agent asked (ISO-8601). What places the summary in a reopened
+   * conversation whose own compaction rows carry no time: only a compaction
+   * after this moment can be the one the agent asked for.
+   */
+  requestedAt: z.string().optional(),
 };
 
 /**

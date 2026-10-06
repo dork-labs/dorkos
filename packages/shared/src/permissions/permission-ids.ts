@@ -15,10 +15,16 @@
 export const PERMISSION_STATES = ['blocked', 'ask', 'allowed'] as const;
 
 /**
- * The eleven areas that take a state. `files` is separate: it takes a trust stop.
+ * The twelve areas that take a state. `files` is separate: it takes a trust stop.
  *
  * `extensions` holds every tool a running extension adds (DOR-2685). It has no
  * static member: its actions join the live registry while their extension runs.
+ *
+ * `own_chat` holds one action, an agent asking for its own conversation to be
+ * summarized (DOR-2732). It is an area rather than an action filed under a
+ * neighbour because an area-level setting elsewhere — Other agents set to Ask
+ * or Blocked — must not quietly decide it: only a setting for THIS area (per
+ * agent, or for everyone) does.
  */
 export const PERMISSION_AREA_IDS = [
   'rooms',
@@ -28,6 +34,7 @@ export const PERMISSION_AREA_IDS = [
   'connections',
   'packages',
   'extensions',
+  'own_chat',
   'settings',
   'safety',
   'permissions',

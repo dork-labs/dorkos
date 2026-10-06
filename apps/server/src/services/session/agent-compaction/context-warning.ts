@@ -27,8 +27,9 @@
  * reading. Runtime-neutral by construction: a runtime that reports no reading,
  * or no window size, never crosses and is never told.
  *
- * State is in memory and keyed by the session's primary id. A restart forgets
- * it, which costs at most one repeated note on a session that is still over the
+ * State is in memory, keyed by the session's primary id, and swept with the
+ * dispatcher's other per-session state when a session goes away. A restart
+ * forgets it, which costs at most one repeated note on a session that is still over the
  * line — the right side to err on.
  *
  * @module services/session/agent-compaction/context-warning
@@ -123,6 +124,17 @@ export function restoreContextWarning(sessionId: string, percent: number): void 
 export function clearOwedContextWarning(sessionId: string): void {
   const state = states.get(primaryOf(sessionId));
   if (state) delete state.owed;
+}
+
+/**
+ * Forget one session's state, for a session that has gone for good — called
+ * from the dispatcher's orphan sweep beside its own per-session maps, so the
+ * map does not keep an entry for every session the server ever saw.
+ *
+ * @param sessionId - The session, by any id it answers to.
+ */
+export function forgetContextWarning(sessionId: string): void {
+  states.delete(primaryOf(sessionId));
 }
 
 /**

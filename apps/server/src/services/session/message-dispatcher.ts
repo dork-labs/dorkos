@@ -112,9 +112,15 @@
  * mid-turn would summarize the conversation out from under the work that asked,
  * so the request waits here, in {@link scheduleAgentCompaction}, and the pump
  * starts it at the first free moment: after the calling turn has ended, with no
- * turn open, nothing parked on a person, and the write-lock free. It never
- * expires — a turn that runs long only delays it — and one session holds at
- * most one, so asking twice is "already scheduled", never two summaries.
+ * turn open (the dispatcher's own, or one only the RUNTIME can see — a Relay
+ * delivery or an unattended scheduled run calls it directly), nothing parked on
+ * a person, nothing held for background work, no delivery owed, and the
+ * write-lock free. A turn only the runtime sees ends without a boundary this
+ * module hears, so while one is open the request looks again on a short clock.
+ * It waits at most {@link SESSIONS.AGENT_COMPACTION_MAX_WAIT_MS}, then is dropped
+ * and its hourly allowance given back, as it is whenever it ends without
+ * running (owner blocked it since, launch failed, session gone). One session
+ * holds at most one, so asking twice is "already scheduled", never two.
  *
  * **It goes ahead of a person's queued message**, deliberately. It was asked
  * for in the turn that just ended, it is short, and the message behind it is
@@ -186,6 +192,7 @@ import {
 import { triggerCommandIntent, type CompactionBoundaryTag } from './trigger-command-intent.js';
 import {
   clearOwedContextWarning,
+  forgetContextWarning,
   noteContextWarningBoundary,
 } from './agent-compaction/context-warning.js';
 import { ROOMS, SESSIONS } from '../../config/constants.js';
@@ -316,17 +323,29 @@ const privateLaunches = new Map<AbortSignal, Set<Promise<TriggerTurnResult>>>();
 const launching = new Set<string>();
 /** A summary the agent asked for, waiting for its session to come free (DOR-2732). */
 interface PendingAgentCompaction {
-  /** The runtime the session resolves to, asked whether its lock is held. */
+  /** The id the agent called from — the runtime's lock may be held under its canonical id. */
+  sessionId: string;
+  /** The runtime the session resolves to, asked whether a turn is open or the lock held. */
   runtime: AgentRuntime;
   /** Start the compaction. Claims the in-flight slot synchronously. */
   launch: () => Promise<{ accepted: boolean }>;
-  /** A launch is out; the pump must not start a second one. */
+  /** Asked once, just before it starts: is it still allowed? The owner may have blocked it since. */
+  admit?: () => Promise<boolean>;
+  /** Called when it is dropped without having run, so its hourly allowance comes back. */
+  onDropped?: () => void;
+  /** `admit` has said yes. */
+  admitted: boolean;
+  /** An admission check or a launch is out; the pump must not start a second. */
   launching: boolean;
   /**
    * The write-lock refused the last launch. Retried at the next turn boundary,
    * never sooner, for the reason {@link PendingDispatch.waitingOnLock} gives.
    */
   waitingOnLock: boolean;
+  /** Drops it at {@link SESSIONS.AGENT_COMPACTION_MAX_WAIT_MS}. */
+  deadline: ReturnType<typeof setTimeout>;
+  /** A look-again while the runtime reports a turn the server did not dispatch. */
+  recheck?: ReturnType<typeof setTimeout>;
 }
 
 /** Agent-requested summaries waiting to run, one per session at most, keyed by primary id. */
@@ -2374,6 +2393,10 @@ export interface ScheduleAgentCompactionOpts {
    * which `dispatchCommandIntent` does.
    */
   launch: () => Promise<{ accepted: boolean }>;
+  /** Re-checked just before it starts; `false` drops it (the owner blocked it since). */
+  admit?: () => Promise<boolean>;
+  /** Called if it is dropped without running, to give its allowance back. */
+  onDropped?: () => void;
 }
 
 /**
@@ -2381,25 +2404,37 @@ export interface ScheduleAgentCompactionOpts {
  * ahead of anything queued (see the module doc's DOR-2732 section).
  *
  * @param opts - The session, its runtime and how to start the compaction.
- * @returns `'scheduled'`, or `'already-scheduled'` when the session already has
- *   one waiting or starting — a second request never becomes a second summary.
+ * @returns `false` when the session already has one waiting or starting — a
+ *   second request never becomes a second summary, and the caller gives back
+ *   whatever it spent on this one.
  */
-export function scheduleAgentCompaction(
-  opts: ScheduleAgentCompactionOpts
-): 'scheduled' | 'already-scheduled' {
+export function scheduleAgentCompaction(opts: ScheduleAgentCompactionOpts): boolean {
   const sessionKey = primaryOf(opts.runtime.getInternalSessionId(opts.sessionId) ?? opts.sessionId);
-  if (pendingCompactions.has(sessionKey)) return 'already-scheduled';
-  pendingCompactions.set(sessionKey, {
+  if (pendingCompactions.has(sessionKey)) return false;
+  const entry: PendingAgentCompaction = {
+    sessionId: opts.sessionId,
     runtime: opts.runtime,
     launch: opts.launch,
+    ...(opts.admit !== undefined ? { admit: opts.admit } : {}),
+    ...(opts.onDropped !== undefined ? { onDropped: opts.onDropped } : {}),
+    admitted: false,
     launching: false,
     waitingOnLock: false,
-  });
+    deadline: setTimeout(() => {
+      // A run already starting is left to finish; anything else has waited
+      // long enough that the request no longer describes the conversation.
+      if (pendingCompactions.get(sessionKey) === entry && !entry.launching) {
+        dropCompaction(sessionKey, entry, 'it waited too long for the session to come free');
+      }
+    }, SESSIONS.AGENT_COMPACTION_MAX_WAIT_MS),
+  };
+  entry.deadline.unref?.();
+  pendingCompactions.set(sessionKey, entry);
   // The calling turn is still running, so this pump finds the session busy and
   // does nothing; it is here for a request that arrives on a session that is
   // already free, which then does not wait for a boundary that never comes.
   schedulePump(sessionKey);
-  return 'scheduled';
+  return true;
 }
 
 /**
@@ -2416,13 +2451,89 @@ export function hasPendingAgentCompaction(
 }
 
 /**
+ * Stop a waiting compaction's clocks.
+ *
+ * @param entry - The waiting compaction.
+ */
+function clearCompactionTimers(entry: PendingAgentCompaction): void {
+  clearTimeout(entry.deadline);
+  if (entry.recheck !== undefined) clearTimeout(entry.recheck);
+  entry.recheck = undefined;
+}
+
+/**
+ * Drop a waiting compaction that will never run, giving its allowance back.
+ *
+ * @param sessionKey - The session's primary id.
+ * @param entry - The entry being dropped; a newer one under the key is left alone.
+ * @param why - For the log line.
+ */
+function dropCompaction(sessionKey: string, entry: PendingAgentCompaction, why: string): void {
+  if (pendingCompactions.get(sessionKey) !== entry) return;
+  pendingCompactions.delete(sessionKey);
+  clearCompactionTimers(entry);
+  try {
+    entry.onDropped?.();
+  } catch (err) {
+    logger.warn('[MessageDispatcher] giving back a dropped compaction’s allowance failed', {
+      sessionId: sessionKey,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  logger.info('[MessageDispatcher] dropped an agent-requested compaction', {
+    sessionId: sessionKey,
+    reason: why,
+  });
+  schedulePump(sessionKey);
+}
+
+/**
+ * Whether the RUNTIME reports a turn open on this session, under either id it
+ * answers to. The server's own bookkeeping cannot see a turn it did not
+ * dispatch — a Relay delivery or an unattended scheduled run calls the runtime
+ * directly — and the agent in that turn holds the same tools.
+ *
+ * @param entry - The waiting compaction.
+ */
+function runtimeTurnOpen(entry: PendingAgentCompaction): boolean {
+  const { runtime } = entry;
+  if (runtime.isTurnOpen === undefined) return false;
+  const lockKey = runtime.getInternalSessionId(entry.sessionId) ?? entry.sessionId;
+  return (
+    runtime.isTurnOpen(lockKey) ||
+    (lockKey !== entry.sessionId && runtime.isTurnOpen(entry.sessionId))
+  );
+}
+
+/**
+ * Whether the write-lock is held, asked under the canonical id the lock is
+ * held under, exactly as {@link isTurnInFlight} asks.
+ *
+ * @param entry - The waiting compaction.
+ */
+function compactionLockHeld(entry: PendingAgentCompaction): boolean {
+  const lockKey = entry.runtime.getInternalSessionId(entry.sessionId) ?? entry.sessionId;
+  return (
+    entry.runtime.isLocked(lockKey) ||
+    (lockKey !== entry.sessionId && entry.runtime.isLocked(entry.sessionId))
+  );
+}
+
+/**
  * Start the session's waiting agent compaction if the session is free.
  *
  * Called by the pump after its own two gates (nothing parked on a person, no
- * in-flight slot), and asks two more: no turn open on the projector and the
- * write-lock free. The slot alone is lossy (a budget-exhausted launch runs
- * without one, see {@link isTurnInFlight}), and a summary started under a live
- * turn is exactly the mid-turn compaction this exists to prevent.
+ * in-flight slot), and asks every other authority that can know a turn is
+ * running or about to: the projector's open turn, the runtime's own report of a
+ * turn the server never dispatched, a message held for the agent's background
+ * work, a delivery the runtime already owes, and the write-lock. The slot alone
+ * is lossy, and a summary started under a live turn is exactly the mid-turn
+ * compaction this exists to prevent.
+ *
+ * A turn only the runtime can see ends with no boundary the dispatcher hears,
+ * so while one is open this arms a look-again on
+ * {@link SESSIONS.AGENT_COMPACTION_RECHECK_MS} — bounded, like everything a
+ * waiting compaction does, by its deadline.
  *
  * Must be called with the dispatch mutex held.
  *
@@ -2438,12 +2549,53 @@ function launchDueCompaction(sessionKey: string): boolean {
   // this waits for the boundary that changes the lock's answer.
   if (entry.waitingOnLock) return false;
   if ((projectorFor(sessionKey)?.peekInProgressTurn() ?? null) !== null) return true;
-  if (entry.runtime.isLocked(sessionKey)) return false;
+  if (runtimeTurnOpen(entry)) {
+    if (entry.recheck === undefined) {
+      entry.recheck = setTimeout(() => {
+        entry.recheck = undefined;
+        schedulePump(sessionKey);
+      }, SESSIONS.AGENT_COMPACTION_RECHECK_MS);
+      entry.recheck.unref?.();
+    }
+    return false;
+  }
+  // The two gates the queue head respects, for the same reasons: starting now
+  // would end the agent's background work, or would run beside a delivery the
+  // runtime already owes. Both are released by a boundary or the runtime's
+  // gate change, each of which pumps again.
+  if (hasHeldMessage(sessionKey)) return false;
+  if (entry.runtime.isSegmentPending?.(sessionKey) === true) return false;
+  if (compactionLockHeld(entry)) return false;
+
   entry.launching = true;
+  if (!entry.admitted && entry.admit !== undefined) {
+    // Asked once, here, rather than only at the request: the owner may have
+    // blocked it since. Answered off the mutex, then the pump looks again with
+    // every gate re-asked, because the session may have moved meanwhile.
+    void entry.admit().then(
+      (allowed) => {
+        if (pendingCompactions.get(sessionKey) !== entry) return;
+        entry.launching = false;
+        if (!allowed) {
+          dropCompaction(sessionKey, entry, 'the owner blocked it after it was asked for');
+          return;
+        }
+        entry.admitted = true;
+        schedulePump(sessionKey);
+      },
+      () => {
+        entry.launching = false;
+        dropCompaction(sessionKey, entry, 'whether it is still allowed could not be read');
+      }
+    );
+    return true;
+  }
+
   const settle = (accepted: boolean): void => {
     if (pendingCompactions.get(sessionKey) !== entry) return;
     if (accepted) {
       pendingCompactions.delete(sessionKey);
+      clearCompactionTimers(entry);
       return;
     }
     entry.launching = false;
@@ -2451,26 +2603,20 @@ function launchDueCompaction(sessionKey: string): boolean {
     // Let the queue behind it move now rather than at the next boundary.
     schedulePump(sessionKey);
   };
-  try {
-    void entry.launch().then(
-      (result) => settle(result.accepted),
-      (err: unknown) => {
-        // A launch that threw ran nothing and will not run better by retrying:
-        // drop it, so the session is not held for a summary that cannot start.
-        if (pendingCompactions.get(sessionKey) === entry) pendingCompactions.delete(sessionKey);
-        logger.warn('[MessageDispatcher] an agent-requested compaction could not start', {
-          sessionId: sessionKey,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        schedulePump(sessionKey);
-      }
-    );
-  } catch (err) {
-    pendingCompactions.delete(sessionKey);
+  // A launch that threw ran nothing and will not run better by retrying: drop
+  // it, so the session is not held for a summary that cannot start.
+  const failed = (err: unknown): void => {
     logger.warn('[MessageDispatcher] an agent-requested compaction could not start', {
       sessionId: sessionKey,
       error: err instanceof Error ? err.message : String(err),
     });
+    entry.launching = false;
+    dropCompaction(sessionKey, entry, 'its launch failed');
+  };
+  try {
+    void entry.launch().then((result) => settle(result.accepted), failed);
+  } catch (err) {
+    failed(err);
     return false;
   }
   return true;
@@ -2986,7 +3132,11 @@ export function sweepOrphanedMessageQueues(opts?: {
     staged?.deleteForSessions(chunk);
   }
   // So does a summary the agent asked for: there is no conversation left to summarize.
-  for (const id of doomed) pendingCompactions.delete(id);
+  for (const id of doomed) {
+    const compaction = pendingCompactions.get(id);
+    if (compaction) dropCompaction(id, compaction, 'its session went away');
+    forgetContextWarning(id);
+  }
   // The rename bookkeeping goes with them. Two entries are added per renamed
   // session and nothing has ever removed one, so a long-lived server accumulates
   // a pair for every session it ever started — small, but unbounded, and the
@@ -3061,6 +3211,7 @@ export function resetMessageDispatcher(): void {
   releases.clear();
   runtimeTurns.clear();
   pending.clear();
+  for (const entry of pendingCompactions.values()) clearCompactionTimers(entry);
   pendingCompactions.clear();
   launching.clear();
   resetSessionKeys();

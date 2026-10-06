@@ -88,6 +88,8 @@ export class TestModeRuntime implements AgentRuntime {
   private readonly capabilities: RuntimeCapabilities;
   /** The managed-MCP server resolver, injected at boot; drives {@link getMcpStatus}. */
   private managedMcp: ManagedMcpServerResolver | undefined;
+  /** Turns running right now, per session; drives {@link isTurnOpen}. */
+  private readonly openTurns = new Map<string, number>();
 
   /**
    * Create a test-mode runtime instance registered under `type`.
@@ -122,6 +124,11 @@ export class TestModeRuntime implements AgentRuntime {
 
   hasSession(sessionId: string): boolean {
     return this.registry.has(sessionId);
+  }
+
+  /** @inheritdoc Counted per session: a turn is open from its first line to its `finally`. */
+  isTurnOpen(sessionId: string): boolean {
+    return (this.openTurns.get(sessionId) ?? 0) > 0;
   }
 
   /**
@@ -214,6 +221,7 @@ export class TestModeRuntime implements AgentRuntime {
     // turn distinguishable from a fresh one. `undefined` for a session on the
     // resume path: nothing is held, so there is nothing to hand back.
     const heldTurn = heldProcesses.beginTurn(sessionId);
+    this.openTurns.set(sessionId, (this.openTurns.get(sessionId) ?? 0) + 1);
     try {
       yield* scenario(content, ctx, opts);
     } catch (error) {
@@ -241,6 +249,9 @@ export class TestModeRuntime implements AgentRuntime {
       // which is what an acked stop does on the real pump. Token-scoped for the
       // same lazy-disposal reason the gate close is.
       if (heldTurn !== undefined) heldProcesses.endTurn(sessionId, heldTurn);
+      const open = (this.openTurns.get(sessionId) ?? 1) - 1;
+      if (open > 0) this.openTurns.set(sessionId, open);
+      else this.openTurns.delete(sessionId);
     }
   }
 

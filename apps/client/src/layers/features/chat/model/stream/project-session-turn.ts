@@ -602,6 +602,7 @@ function foldOperationProgress(
     type: 'compact_boundary',
     failed: true,
     ...(event.error !== undefined ? { error: event.error } : {}),
+    ...(event.requestedBy !== undefined ? { requestedBy: event.requestedBy } : {}),
   });
 }
 

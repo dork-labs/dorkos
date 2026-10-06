@@ -78,9 +78,10 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
     'operator.sidebar_remove_from_group',
     'operator.update_agent',
     'operator.update_agent_execution',
-    'session.compact',
     'session_start',
   ],
+  // One action, an agent summarizing its own conversation (DOR-2732).
+  own_chat: ['session.compact'],
   messages: [
     'relay_get_metrics',
     'relay_get_trace',

@@ -24,14 +24,14 @@ describe('shipped preset tables', () => {
         connections: 'ask',
         packages: 'ask',
         extensions: 'ask',
+        // Own chat (DOR-2732): an agent summarizing its own chat, Allowed everywhere.
+        own_chat: 'allowed',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
         reach: 'blocked',
       },
-      // An agent summarizing its own conversation (DOR-2732): a new action,
-      // Allowed in every table where its area would ask.
-      actions: { 'session.compact': 'allowed' },
+      actions: {},
       filesStop: 'ask',
     });
   });
@@ -46,14 +46,14 @@ describe('shipped preset tables', () => {
         connections: 'ask',
         packages: 'ask',
         extensions: 'allowed',
+        // Own chat (DOR-2732): an agent summarizing its own chat, Allowed everywhere.
+        own_chat: 'allowed',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
         reach: 'ask',
       },
-      // An agent summarizing its own conversation (DOR-2732): a new action,
-      // Allowed in every table where its area would ask.
-      actions: { 'session.compact': 'allowed' },
+      actions: {},
       filesStop: 'act',
     });
   });
@@ -68,14 +68,14 @@ describe('shipped preset tables', () => {
         connections: 'allowed',
         packages: 'ask',
         extensions: 'allowed',
+        // Own chat (DOR-2732): an agent summarizing its own chat, Allowed everywhere.
+        own_chat: 'allowed',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
         reach: 'ask',
       },
-      // An agent summarizing its own conversation (DOR-2732): a new action,
-      // Allowed in every table where its area would ask.
-      actions: { 'session.compact': 'allowed' },
+      actions: {},
       filesStop: 'autonomy',
     });
   });
@@ -93,16 +93,14 @@ describe('shipped preset tables', () => {
         connections: 'allowed',
         packages: 'allowed',
         extensions: 'allowed',
+        // Own chat (DOR-2732): an agent summarizing its own chat, Allowed everywhere.
+        own_chat: 'allowed',
         settings: 'allowed',
         safety: 'blocked',
         permissions: 'blocked',
         reach: 'blocked',
       },
-      actions: {
-        'rooms.merge': 'allowed',
-        'operator.update_agent_boundaries': 'ask',
-        'session.compact': 'allowed',
-      },
+      actions: { 'rooms.merge': 'allowed', 'operator.update_agent_boundaries': 'ask' },
       filesStop: null,
     });
     expect(presetTableFor(null)).toBe(UNCHANGED_PERMISSION_TABLE);
@@ -126,7 +124,7 @@ describe('shipped preset tables', () => {
 });
 
 describe('area registry', () => {
-  it('lists the eleven state areas plus files, with exactly three floors', () => {
+  it('lists the twelve state areas plus files, with exactly three floors', () => {
     expect(PERMISSION_AREAS.map((a) => a.id)).toEqual([...PERMISSION_AREA_IDS, 'files']);
     expect(PERMISSION_AREAS.filter((a) => a.floor).map((a) => a.id)).toEqual([
       'safety',

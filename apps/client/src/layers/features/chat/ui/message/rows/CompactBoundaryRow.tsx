@@ -54,7 +54,11 @@ export function CompactBoundaryRow({
         icon={
           <AlertTriangle aria-hidden="true" className="text-status-warning-dot size-3 shrink-0" />
         }
-        label={<span className="text-status-warning-fg">Couldn’t compact</span>}
+        label={
+          <span className="text-status-warning-fg">
+            {requestedBy === 'agent' ? 'Couldn’t compact (asked by the agent)' : 'Couldn’t compact'}
+          </span>
+        }
       >
         {error ? <p className="text-muted-foreground mt-1 text-xs">{error}</p> : null}
       </CompactResultRow>

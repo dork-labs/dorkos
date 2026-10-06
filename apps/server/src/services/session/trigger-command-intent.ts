@@ -83,11 +83,14 @@ export interface CompactionBoundaryTag {
   requestedBy: 'agent';
   /** Share of the context window in use when the agent asked, when known. */
   contextPercent?: number;
+  /** When the agent asked (ISO-8601). */
+  requestedAt?: string;
 }
 
 /**
- * Stamp a tag onto every `compact_boundary` a run yields, passing every other
- * event through untouched.
+ * Stamp a tag onto every `compact_boundary` a run yields, and who asked onto
+ * its compaction progress (so a FAILED run still says the agent asked),
+ * passing every other event through untouched.
  *
  * @param source - The runtime's intent stream.
  * @param tag - The fields to add.
@@ -97,17 +100,22 @@ async function* tagBoundaries(
   tag: CompactionBoundaryTag
 ): AsyncGenerator<StreamEvent> {
   for await (const event of source) {
+    const data = (event.data ?? {}) as Record<string, unknown>;
+    if (event.type === 'operation_progress' && data.operation === 'compaction') {
+      yield { ...event, data: { ...data, requestedBy: tag.requestedBy } } as StreamEvent;
+      continue;
+    }
     if (event.type !== 'compact_boundary') {
       yield event;
       continue;
     }
-    const data = (event.data ?? {}) as Record<string, unknown>;
     yield {
       ...event,
       data: {
         ...data,
         requestedBy: tag.requestedBy,
         ...(tag.contextPercent !== undefined ? { contextPercent: tag.contextPercent } : {}),
+        ...(tag.requestedAt !== undefined ? { requestedAt: tag.requestedAt } : {}),
       },
     } as StreamEvent;
   }

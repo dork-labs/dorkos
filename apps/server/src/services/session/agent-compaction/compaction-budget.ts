@@ -12,7 +12,10 @@
  * them (`session-key-registry.ts`). Spent when a request is SCHEDULED, not when
  * it runs: a second request in the hour is refused whether or not the first has
  * started, which is what "once an hour" has to mean to an agent reading the
- * refusal.
+ * refusal. A request that never ran — dropped because the owner blocked it, the
+ * launch failed, it waited past its ceiling, or the session went away — gives
+ * the allowance back ({@link CompactionRequestBudget.refund}), because nothing
+ * was summarized for it.
  *
  * In memory, and built ONCE at boot: the in-session tool server is rebuilt per
  * session, and a budget built with it would hand every rebuild a fresh
@@ -23,7 +26,7 @@
 import { SESSIONS } from '../../../config/constants.js';
 
 /** What {@link CompactionRequestBudget.tryReserve} answers. */
-export type CompactionReservation = { ok: true } | { ok: false; retryAt: number };
+export type CompactionReservation = { ok: true; at: number } | { ok: false; retryAt: number };
 
 /** The once-an-hour allowance for agent-requested summaries. */
 export class CompactionRequestBudget {
@@ -62,6 +65,20 @@ export class CompactionRequestBudget {
     for (const [key, spentAt] of this.lastSpent) {
       if (at - spentAt >= this.intervalMs) this.lastSpent.delete(key);
     }
-    return { ok: true };
+    return { ok: true, at };
+  }
+
+  /**
+   * Give back an allowance whose request never ran.
+   *
+   * Token-matched on the reservation's time, so a refund that arrives after a
+   * LATER reservation (impossible within one hour today, cheap to rule out)
+   * cannot hand back the newer one.
+   *
+   * @param sessionKey - The session's primary id.
+   * @param at - The `at` its reservation answered with.
+   */
+  refund(sessionKey: string, at: number): void {
+    if (this.lastSpent.get(sessionKey) === at) this.lastSpent.delete(sessionKey);
   }
 }

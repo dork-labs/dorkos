@@ -584,6 +584,7 @@ import { setAccountUsageStore } from './services/core/usage/current-usage-store.
 import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
 import { SessionContextStore } from './services/session/fleet/session-context-store.js';
 import { AgentCompactionService } from './services/session/agent-compaction/agent-compaction-service.js';
+import { compactionToolsHiddenFor } from './services/session/agent-compaction/compaction-capabilities.js';
 import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
 import { probeForReset } from './services/runtimes/claude-code/accounts/account-probe.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
@@ -5834,12 +5835,20 @@ async function start() {
         const visibility = await resolveToolVisibilityFor(identity.agentPath, {
           inactive: Boolean(identity.inactive),
         });
-        return createAgentRuntimeMcpServer(
-          capabilityRegistry!,
-          principal,
-          identity,
-          visibility.hiddenToolNames
-        );
+        // A runtime that cannot summarize on request is not offered the tool
+        // that asks it to (DOR-2732).
+        const claims = principal.claims;
+        const runtimeCaps =
+          claims.kind === 'runtime'
+            ? runtimeRegistry
+                .listRuntimes()
+                .find((runtime) => runtime.type === claims.runtime)
+                ?.getCapabilities()
+            : undefined;
+        const hidden = runtimeCaps
+          ? new Set([...visibility.hiddenToolNames, ...compactionToolsHiddenFor(runtimeCaps)])
+          : visibility.hiddenToolNames;
+        return createAgentRuntimeMcpServer(capabilityRegistry!, principal, identity, hidden);
       },
     });
     for (const runtime of runtimeRegistry.listRuntimes()) {

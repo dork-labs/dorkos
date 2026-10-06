@@ -13,22 +13,23 @@
  * - **In-session only.** The external `/mcp` server has no session, so the verb
  *   would only ever refuse there. Listing it would be a tool that cannot work.
  *
- * ## Why a permission, and why the Other agents area
+ * ## Why a permission, and why an area of its own
  *
  * The owner decides, per agent, whether it may ask (default Allowed). That is
- * exactly what an action-level permission is: a per-agent switch on the agent's
- * permissions page, stored in its `.dork/agent.json`, that only a person can
- * change — the `change_permission` path is in the Permissions floor area, which
- * is never Allowed, so an agent can at most ASK a person to change it. A new
- * field beside it would need its own writer, its own guard against the agent
- * editing it, and its own switch; the permission model already has all three.
+ * exactly what a permission is: a per-agent switch on the agent's permissions
+ * page, stored in its `.dork/agent.json`, that only a person can change — the
+ * `change_permission` path is in the Permissions floor area, which is never
+ * Allowed, so an agent can at most ASK a person to change it. A new field beside
+ * it would need its own writer, its own guard against the agent editing it, and
+ * its own switch; the permission model already has all three.
  *
- * It needs an area, and none is a perfect fit. Other agents ("set up, change,
- * and remove agents") is the closest: the action changes what an agent is
- * working with. Its preset entries pin it to Allowed in every preset
- * (`permission-presets.ts`) so the default does not follow that area's Ask. A
- * person blocks it for one agent on its own row; blocking that agent's whole
- * Other agents area blocks it too, which is the area doing what it says.
+ * It is the only member of the Own chat area rather than an action filed under
+ * a neighbour, because the resolver lets an area entry beat a preset's action
+ * entry: filed under Other agents, setting that area to Ask or Blocked would
+ * quietly decide this too. In an area of its own only a setting for THIS action
+ * (per agent, or the install's default for the area) decides it, and the
+ * permissions pages render the new row from `PERMISSION_AREAS` with no code of
+ * their own. Allowed in every preset (`permission-presets.ts`).
  *
  * @module services/session/agent-compaction/compaction-capabilities
  */
@@ -55,6 +56,21 @@ export const SESSION_COMPACT_CAPABILITY_ID = 'session.compact';
  * `<context_warning>` note names it from here rather than spelling it again.
  */
 export const COMPACT_MY_SESSION_TOOL_NAME = 'compact_my_session';
+
+/**
+ * The tool names to leave off a session's tool list because its runtime cannot
+ * summarize on request (Codex compacts on its own). Listing it there would be a
+ * tool that can only refuse — the reason it is not on the external `/mcp`
+ * server either. Decided by the same capability flag the person's `/compact`
+ * reads, never by runtime name.
+ *
+ * @param capabilities - The session's runtime capabilities.
+ */
+export function compactionToolsHiddenFor(capabilities: {
+  commandIntents: { compact: { supported: boolean } };
+}): readonly string[] {
+  return capabilities.commandIntents.compact.supported ? [] : [COMPACT_MY_SESSION_TOOL_NAME];
+}
 
 /** What a request came to, as the agent reads it. */
 const CompactionOutcomeSchema = z.object({
@@ -100,7 +116,7 @@ export const sessionDomain: CapabilityDomain = {
         'conversation only, at most once an hour; a second call while one is scheduled does ' +
         'nothing more.',
       tier: 'act',
-      area: 'agents',
+      area: 'own_chat',
       // What a card shows if the owner sets this to Ask: the note, if any.
       approvalDisplayFields: ['note'],
       input: z.object({
@@ -127,6 +143,10 @@ export const sessionDomain: CapabilityDomain = {
           // from. There is no input field that could name another.
           ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
           ...(input.note !== undefined ? { note: input.note } : {}),
+          // Whose permission the summary re-checks before it starts.
+          ...(context.identity && !context.identity.inactive
+            ? { agentPath: context.identity.agentPath }
+            : {}),
         }),
     }),
   ],

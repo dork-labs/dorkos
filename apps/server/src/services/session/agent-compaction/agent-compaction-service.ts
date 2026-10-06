@@ -19,14 +19,16 @@
  * 1. A session, and a loaded one.
  * 2. A runtime that can summarize on request — the same capability flag the
  *    person's `/compact` reads. Codex compacts on its own and has no way to be
- *    asked, so it is refused honestly rather than accepted and dropped.
+ *    asked: its sessions are not offered the tool at all, and a call that
+ *    reaches here anyway is refused honestly rather than accepted and dropped.
  * 3. Not already scheduled — "already scheduled" spends nothing.
  * 4. The once-an-hour allowance ({@link CompactionRequestBudget}).
  *
  * Whether this agent may ask at all is not decided here. It is a permission
- * (`session.compact`, Other agents area, default Allowed): the gate inside
+ * (`session.compact`, Own chat area, default Allowed): the gate inside
  * `registry.invoke` refuses a Blocked agent before this code runs, and only a
- * person can change the setting.
+ * person can change the setting. It is asked once more just before the
+ * summary starts, because the owner may have blocked it in between.
  *
  * The compaction itself is the person's `/compact`, run through the same
  * `dispatchCommandIntent` path with the runtime's own mechanism; the only
@@ -48,6 +50,7 @@ import { persistenceModeFor } from '../projector-persistence.js';
 import { getOrCreateProjector, peekProjector } from '../session-state-projector.js';
 import { primaryOf } from '../session-key-registry.js';
 import { CompactionRequestBudget } from './compaction-budget.js';
+import { isCompactionBlocked } from './compaction-permission.js';
 
 /**
  * The lock identity an agent-requested compaction runs under. Its own, so it
@@ -71,6 +74,11 @@ export interface AgentCompactionServiceDeps {
   resolveRuntime(sessionId: string): Promise<AgentRuntime>;
   /** The once-an-hour allowance; one per process. */
   budget?: CompactionRequestBudget;
+  /**
+   * Whether the agent is blocked from asking, re-checked just before the
+   * summary starts. Defaults to the real permission resolution; a seam for tests.
+   */
+  isBlocked?: (agentPath: string | undefined) => Promise<boolean>;
 }
 
 /** How each runtime is named in a refusal; an unknown type is named as itself. */
@@ -100,9 +108,15 @@ export class AgentCompactionService {
    *   the call came from a surface that has none.
    * @param opts.note - What the summary should keep, used as the focus where
    *   the runtime takes one.
+   * @param opts.agentPath - The calling agent's home, when the call carried an
+   *   identity: whose permission is re-checked before the summary starts.
    */
-  async request(opts: { sessionId?: string; note?: string }): Promise<CompactionRequestOutcome> {
-    const { sessionId, note } = opts;
+  async request(opts: {
+    sessionId?: string;
+    note?: string;
+    agentPath?: string;
+  }): Promise<CompactionRequestOutcome> {
+    const { sessionId, note, agentPath } = opts;
     if (!sessionId) {
       return refused(
         'no-session',
@@ -159,10 +173,17 @@ export class AgentCompactionService {
       (peekProjector(sessionId) ?? peekProjector(sessionKey))?.getStatus().contextUsage
     );
     const instructions = note?.trim() ? note.trim() : undefined;
+    const requestedAt = new Date().toISOString();
 
-    scheduleAgentCompaction({
+    const isBlocked = this.deps.isBlocked ?? isCompactionBlocked;
+    const scheduled = scheduleAgentCompaction({
       sessionId,
       runtime,
+      // The gate let the call through, but the summary may start much later:
+      // if the owner blocked it in between, it does not run.
+      admit: async () => !(await isBlocked(agentPath)),
+      // Nothing was summarized for it, so the hour is not spent.
+      onDropped: () => this.budget.refund(sessionKey, reservation.at),
       launch: () => {
         // Same projector and persistence the person's `/compact` uses
         // (`session-command-intent-handler.ts`), so the boundary survives a restart.
@@ -180,6 +201,7 @@ export class AgentCompactionService {
           runtime,
           boundaryTag: {
             requestedBy: 'agent',
+            requestedAt,
             ...(contextPercent !== null ? { contextPercent } : {}),
           },
           onError: (err) => {
@@ -191,6 +213,18 @@ export class AgentCompactionService {
         });
       },
     });
+
+    if (!scheduled) {
+      // The dispatcher is the authority on what is waiting. The check above
+      // answers first so "already scheduled" never spends the hour; if the two
+      // ever disagree, this request gets its allowance back.
+      this.budget.refund(sessionKey, reservation.at);
+      return {
+        status: 'already-scheduled',
+        message:
+          'A summary is already scheduled for when this turn ends. Nothing more was scheduled.',
+      };
+    }
 
     return {
       status: 'scheduled',

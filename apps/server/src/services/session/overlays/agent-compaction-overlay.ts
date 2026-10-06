@@ -18,9 +18,16 @@
  * A row TAGS the compaction it belongs to rather than adding one beside it. The
  * transcript's compaction message carries no timestamp of its own, so each one
  * is dated by the last timestamped message before it, and a row claims the
- * latest untagged compaction dated at or before the row. The row is written at
- * the compaction turn's end, after the agent's turn and before the next
- * person's message, which is exactly the gap the right compaction sits in.
+ * latest untagged compaction that sits in the window the agent's summary can
+ * be in:
+ *
+ * - AFTER every message written before the agent asked (`requestedAt`). The
+ *   message that carried the request was written before the tool ran, so the
+ *   summary comes after it; a person's earlier `/compact` comes before it. Without
+ *   this bound, a history whose own row for the agent's summary is missing (a
+ *   paged or truncated transcript) would hand the tag to that earlier one.
+ * - Dated at or before the row, which is written at the compaction turn's end,
+ *   before the next person's message.
  *
  * A history with no compaction message to tag — OpenCode's sidecar store keeps
  * none — gets a compaction row of its own, spliced in by the row's clock, so the
@@ -82,8 +89,12 @@ export function applyAgentCompactions(
   const tagged = new Map<number, CompactMetadata>();
   const unplaced: RecordedAgentCompaction[] = [];
   for (const row of rows) {
+    const askedAfter = lastIndexBefore(messages, row.event.requestedAt);
     const match = candidates.filter(
-      (candidate) => !tagged.has(candidate.index) && candidate.datedAt <= row.createdAt
+      (candidate) =>
+        !tagged.has(candidate.index) &&
+        candidate.index > askedAfter &&
+        candidate.datedAt <= row.createdAt
     );
     const target = match.at(-1);
     if (target) {
@@ -110,6 +121,25 @@ export function applyAgentCompactions(
     messageType: 'compaction',
     compactMetadata: metadataOf(row),
   }));
+}
+
+/**
+ * The index of the last timestamped message written before `requestedAt`, or
+ * -1 when there is none or the row predates the field (no bound then).
+ *
+ * @param messages - History as the runtime assembled it.
+ * @param requestedAt - When the agent asked (ISO-8601).
+ */
+function lastIndexBefore(
+  messages: readonly HistoryMessage[],
+  requestedAt: string | undefined
+): number {
+  if (requestedAt === undefined) return -1;
+  let last = -1;
+  messages.forEach((message, index) => {
+    if (message.timestamp !== undefined && message.timestamp < requestedAt) last = index;
+  });
+  return last;
 }
 
 /** Just the two fields this overlay owns. */

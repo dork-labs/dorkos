@@ -450,6 +450,21 @@ export const SESSIONS = {
    */
   AGENT_COMPACTION_INTERVAL_MS: 60 * 60 * 1000,
   /**
+   * The longest an agent-requested summary may wait for its session to come
+   * free before it is dropped and its hourly allowance given back (DOR-2732).
+   * A session busy for half an hour straight is not one the agent's request
+   * still describes, and a request that could wait forever would answer
+   * "already scheduled" forever.
+   */
+  AGENT_COMPACTION_MAX_WAIT_MS: 30 * 60 * 1000,
+  /**
+   * How often a waiting agent-requested summary looks again while the RUNTIME
+   * reports a turn the server did not dispatch (a Relay delivery, an unattended
+   * scheduled run). Those turns end without a boundary the dispatcher hears,
+   * so the summary asks again on this clock, and only while it waits.
+   */
+  AGENT_COMPACTION_RECHECK_MS: 2_000,
+  /**
    * How long the stall watchdog waits for the runtime's interrupt to settle
    * before closing the turn anyway (DOR-782). `interruptQuery` reaches a
    * possibly-wedged subprocess, so the call that is meant to unstick a hung turn

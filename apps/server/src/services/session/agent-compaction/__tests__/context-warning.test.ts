@@ -23,7 +23,16 @@ import {
   resetContextWarnings,
   takeContextWarning,
 } from '../context-warning.js';
-import { dispatchMessage, resetMessageDispatcher } from '../../message-dispatcher.js';
+import {
+  dispatchMessage,
+  noteSessionOrphaned,
+  resetMessageDispatcher,
+  sweepOrphanedMessageQueues,
+} from '../../message-dispatcher.js';
+import {
+  initPermissionGate,
+  resetPermissionGate,
+} from '../../../core/capabilities/permission-enforcement.js';
 import { disposeProjector, getOrCreateProjector } from '../../session-state-projector.js';
 
 const MAX = 200_000;
@@ -72,6 +81,13 @@ describe('context warning — the crossing rules', () => {
     clearOwedContextWarning(session);
     expect(takeContextWarning(session)).toBeNull();
     noteContextReading(session, at(89)); // a stale reading after the summary
+    expect(takeContextWarning(session)).toBeNull();
+  });
+
+  it('forgets a session that went away, with the dispatcher’s other per-session state', () => {
+    noteContextReading(session, at(85));
+    noteSessionOrphaned(session);
+    sweepOrphanedMessageQueues({ isLive: () => false });
     expect(takeContextWarning(session)).toBeNull();
   });
 
@@ -127,6 +143,7 @@ describe('context warning — rides the next turn', () => {
 
   afterEach(() => {
     resetMessageDispatcher();
+    resetPermissionGate();
     disposeProjector(session);
     vi.restoreAllMocks();
   });
@@ -161,5 +178,45 @@ describe('context warning — rides the next turn', () => {
     await turnEndingAt(91);
 
     expect(warnings(bags()[1]!)[0]).toMatchObject({ data: { percent: 90, canCompact: false } });
+  });
+
+  it('does not point an agent the owner blocked at the summary tool', async () => {
+    initPermissionGate({
+      readConfig: () => ({
+        preset: 'full',
+        defaults: { areas: { own_chat: 'blocked' }, actions: {} },
+      }),
+      readAgentPermissions: async () => undefined,
+    });
+
+    await turnEndingAt(90);
+    await turnEndingAt(91);
+
+    expect(warnings(bags()[1]!)[0]).toMatchObject({ data: { percent: 90, canCompact: false } });
+  });
+
+  it('hands the note back when the turn that took it fails to start', async () => {
+    await turnEndingAt(85); // crosses
+    runtime.sendMessage.mockImplementationOnce(() => {
+      throw new Error('the runtime refused to start');
+    });
+    await dispatchMessage({
+      sessionId: session,
+      clientId: 'window-a',
+      content: 'this one never starts',
+      projector: getOrCreateProjector(session),
+      runtime,
+    }).catch(() => undefined);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await turnEndingAt(86); // the next turn that does run carries it
+
+    // The failed attempt took it (its call is recorded); the turn that ran
+    // next carries it again, rather than the note being lost with the attempt.
+    const next = runtime.sendMessage.mock.calls.find((call) => call[1] === 'turn at 86%')!;
+    const bag = (next[2] as { additionalContext?: AdditionalContext }).additionalContext ?? [];
+    expect(warnings(bag)).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ percent: 85 }) }),
+    ]);
   });
 });

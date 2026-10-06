@@ -58,4 +58,17 @@ describe('test-mode — agent-requested compaction', () => {
     const row = history.find((message) => message.messageType === 'compaction');
     expect(row?.compactMetadata).toMatchObject({ requestedBy: 'agent', contextPercent: 90 });
   });
+
+  it('reports a turn as open for as long as it runs, however it was started', async () => {
+    const runtime = new TestModeRuntime();
+    runtime.ensureSession(SESSION, { cwd: CWD, permissionMode: 'default' });
+    expect(runtime.isTurnOpen(SESSION)).toBe(false);
+    const turn = runtime.sendMessage(SESSION, 'hello', { cwd: CWD })[Symbol.asyncIterator]();
+    await turn.next();
+    expect(runtime.isTurnOpen(SESSION)).toBe(true);
+    while (!(await turn.next()).done) {
+      // drain
+    }
+    expect(runtime.isTurnOpen(SESSION)).toBe(false);
+  });
 });

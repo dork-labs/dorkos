@@ -604,6 +604,11 @@ export class CodexRuntime implements AgentRuntime {
     return this.registry.has(sessionId);
   }
 
+  /** @inheritdoc */
+  isTurnOpen(sessionId: string): boolean {
+    return this.activeTurns.has(sessionId);
+  }
+
   /** Codex has no fork surface — a thread can only be resumed, not branched. */
   async forkSession(): Promise<Session | null> {
     return null;

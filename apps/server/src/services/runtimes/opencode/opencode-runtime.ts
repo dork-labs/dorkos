@@ -285,6 +285,14 @@ export class OpenCodeRuntime implements AgentRuntime {
     return this.registry.has(sessionId);
   }
 
+  /** @inheritdoc A turn still setting up its sidecar counts: it is about to send. */
+  isTurnOpen(sessionId: string): boolean {
+    return (
+      this.activeTurns.has(sessionId) ||
+      [...this.settingUp].some((turn) => turn.sessionId === sessionId)
+    );
+  }
+
   /**
    * @inheritdoc
    *

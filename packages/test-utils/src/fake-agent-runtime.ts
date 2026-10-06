@@ -141,11 +141,27 @@ export class FakeAgentRuntime implements AgentRuntime {
     // A send that goes ahead opens a dispatched turn, as a real runtime's does (DOR-2717).
     for (const listener of [...this.dispatchedTurnListeners]) listener(sessionId);
     const scenario = this._scenarios[this._scenarioIndex];
-    if (scenario) {
-      this._scenarioIndex++;
+    if (!scenario) return;
+    this._scenarioIndex++;
+    // Counted for `isTurnOpen`, as a real runtime counts its own turns: one
+    // opened by a caller that bypassed the dispatcher is still open here.
+    this.openTurns.set(sessionId, (this.openTurns.get(sessionId) ?? 0) + 1);
+    try {
       yield* scenario(content);
+    } finally {
+      const open = (this.openTurns.get(sessionId) ?? 1) - 1;
+      if (open > 0) this.openTurns.set(sessionId, open);
+      else this.openTurns.delete(sessionId);
     }
   });
+
+  /** Turns running right now, per session — what {@link isTurnOpen} reads. */
+  private readonly openTurns = new Map<string, number>();
+
+  /** Whether a scenario turn is running on this session, however it was started. */
+  isTurnOpen = vi.fn<(sessionId: string) => boolean>(
+    (sessionId) => (this.openTurns.get(sessionId) ?? 0) > 0
+  );
 
   /**
    * Fulfill the runtime-fulfilled `compact` intent by yielding a synthetic

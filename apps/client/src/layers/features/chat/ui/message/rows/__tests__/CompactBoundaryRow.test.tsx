@@ -58,4 +58,9 @@ describe('CompactBoundaryRow', () => {
     render(<CompactBoundaryRow requestedBy="agent" />);
     expect(screen.getByText('Summarized (asked by the agent)')).toBeInTheDocument();
   });
+
+  it('says the agent asked when the summary it asked for failed', () => {
+    render(<CompactBoundaryRow failed error="no room" requestedBy="agent" />);
+    expect(screen.getByText('Couldn’t compact (asked by the agent)')).toBeInTheDocument();
+  });
 });

@@ -490,6 +490,23 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.sessionStore.hasSession(sessionId);
   }
 
+  /**
+   * @inheritdoc
+   *
+   * The same three places {@link interruptQuery} looks for something to stop:
+   * a dispatched turn's query, a persistent session's first turn still booting,
+   * and a turn the agent started itself. A Relay delivery calls `sendMessage`
+   * directly and arms the first, so it is seen here though the server never
+   * dispatched it.
+   */
+  isTurnOpen(sessionId: string): boolean {
+    return (
+      this.sessionStore.findSession(sessionId)?.activeQuery !== undefined ||
+      this.persistent.bootingQuery(sessionId) !== undefined ||
+      this.persistent.runtimeTurnQuery(sessionId) !== undefined
+    );
+  }
+
   /** @inheritdoc */
   async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
     return this.sessionStore.updateSession(sessionId, opts);

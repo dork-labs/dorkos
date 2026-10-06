@@ -60,7 +60,7 @@ You can add instructions after `/compact` to guide what the agent keeps — for 
 
 An agent doesn't have to wait for you to type `/compact`. When its conversation is nearly full, it can ask for the same thing with its `compact_my_session` tool. A few rules keep this safe:
 
-- **It never happens in the middle of a reply.** The conversation is summarized after the agent's current reply ends, and before anything you queued behind it.
+- **It never happens in the middle of a reply.** The conversation is summarized after the agent's current reply ends, and before anything you queued behind it. That holds for replies started by another agent or a scheduled task too. If the conversation stays busy for half an hour, the request is dropped and the agent can ask again.
 - **It only touches the agent's own conversation.** The tool has no way to name another one.
 - **At most once an hour** for each conversation.
 - **You can see it.** The chat shows a line like "Summarized at 89% (asked by the agent)", and the line is still there when you reopen the conversation later.
@@ -69,7 +69,7 @@ Before asking, the agent is told to save what it needs (open work, session ids, 
 
 When a conversation passes 80% of its room, DorkOS adds one short note to the agent's next reply suggesting it do exactly that. The agent gets the note once, and gets it again only after the conversation has been summarized and filled back up.
 
-This works on Claude Code and OpenCode. Codex summarizes its conversation on its own when it fills up, so it can't be asked to; if an agent on Codex tries, it's told so. To stop an agent from asking at all, open its **Permissions** page and set **Summarize its own chat**, under Other agents, to Blocked. Only you can change that setting.
+This works on Claude Code and OpenCode. Codex summarizes its conversation on its own when it fills up, so agents on Codex aren't offered the tool. To stop an agent from asking at all, open its **Permissions** page and set **Own chat** to Blocked. Only you can change that setting, and the note at 80% stops mentioning the tool for that agent.
 
 ## The /flow command family
 
