@@ -174,7 +174,14 @@ describe('private browser package boundaries', () => {
       expect(['.', './runtime-installation', './server-owner']).toContain(subpath);
       expect(existsSync(path.resolve(packageRoot, target.types))).toBe(true);
     }
-    expect(Object.keys(installationApi)).toEqual(['createRuntimeInstallation']);
+    expect(Object.keys(installationApi).sort()).toEqual(
+      [
+        'createRuntimeInstallation',
+        'resolveInstalledNativeJournal',
+        'resolveInstalledRuntimeConfiguration',
+        'verifyInstalledNativeJournal',
+      ].sort()
+    );
     expect(Object.keys(publicApi).sort()).toEqual(
       [
         'BrowserValidationError',
@@ -215,6 +222,8 @@ describe('private browser package boundaries', () => {
             'lifecycle/process-reconciliation.ts',
             'runtime/darwin-process-observer.ts',
             'runtime/darwin-journal-worker.ts',
+            // Bounded original kernel diagnostic records; no cleanup authority.
+            'runtime/darwin-journal-diagnostic.ts',
             'runtime/darwin-packaged-observer.ts',
             'configuration.ts',
             'runtime-descriptor.ts',
@@ -232,6 +241,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/filesystem.ts',
           ],
           'node:path': [
+            // Fixed package-relative native worker and manifest paths.
+            'runtime/installation/packaged.ts',
             'runtime/darwin-supervisor-browser.ts',
 
             'lifecycle/process-journal.ts',
@@ -247,6 +258,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/transaction.ts',
           ],
           'node:crypto': [
+            // Package manifest, controller, worker and native artifact hash correspondence.
+            'runtime/installation/packaged.ts',
             'runtime/darwin-supervisor-client.ts',
 
             'lifecycle/acquisition.ts',
@@ -267,6 +280,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/jobs.ts',
             'runtime/installation/fresh-verifier.ts',
             'runtime/installation/index.ts',
+            // Exact installed native-observer/controller digest correspondence.
+            'runtime/installation/native-mode.ts',
           ],
           'node:child_process': [
             'runtime/darwin-supervisor-client.ts',
@@ -278,6 +293,8 @@ describe('private browser package boundaries', () => {
             'runtime/darwin-owned-child.ts',
           ],
           'node:fs': [
+            // No-follow file opens and original file identity comparison.
+            'runtime/installation/packaged.ts',
             'runtime/darwin-supervisor-browser.ts',
 
             'runtime/darwin-packaged-observer.ts',
@@ -293,6 +310,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/fresh-verifier.ts',
           ],
           'node:fs/promises': [
+            // Bounded original installed-file reads and canonical package paths.
+            'runtime/installation/packaged.ts',
             'runtime/darwin-supervisor-browser.ts',
 
             'runtime/darwin-packaged-observer.ts',
@@ -311,13 +330,19 @@ describe('private browser package boundaries', () => {
             'runtime/darwin-owned-child.ts',
           ],
           'node:url': [
+            // Convert the canonical original module URL to its file path.
+            'runtime/installation/packaged.ts',
             'runtime/installation/fresh-verifier.ts',
             'runtime/darwin-packaged-observer.ts',
           ],
           // Exact native Proxy rejection for owner-private final binding checks.
           'node:util': ['lifecycle/input-owner.ts', 'runtime/darwin-generation-return.ts'],
           'node:os': ['runtime/host-identity.ts'],
-          'node:module': ['runtime/public-library.ts'],
+          'node:module': [
+            // Resolve the installed CLI package relative to its actual controller entry.
+            'runtime/installation/packaged.ts',
+            'runtime/public-library.ts',
+          ],
           'node:http': ['network/fixture-proxy.ts'],
           // Only pinned public types/library imports in these reviewed internal modules.
           // Inline import types are enumerated too; private package subpaths stay forbidden.

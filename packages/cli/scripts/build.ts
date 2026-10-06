@@ -2,6 +2,8 @@ import { build, formatMessages, type Message, type Plugin } from 'esbuild';
 import { execSync } from 'child_process';
 import { createHash } from 'node:crypto';
 import { builtinModules } from 'node:module';
+import { buildNativeObserver } from '../../browser/scripts/build-native-observer.ts';
+import { importBrowserNativeArtifact } from './browser-native-artifact.ts';
 import fs from 'fs/promises';
 import { cpSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
@@ -307,6 +309,89 @@ export async function buildBrowserRuntimeAssets(root = ROOT, output = OUT): Prom
   );
 }
 
+/** Package actual original native workers/helper; unsupported build hosts remain unavailable.
+ * No runtime compiler/download, fixture path, or source-only ready callback is emitted. */
+export async function buildBrowserNativeAssets(root = ROOT, output = OUT): Promise<void> {
+  const assets = path.join(output, 'browser/native');
+  await fs.mkdir(assets, { recursive: true });
+  const artifactDirectory = process.env.DORKOS_BROWSER_DARWIN_ARTIFACT_DIRECTORY;
+  const artifactSHA256 = process.env.DORKOS_BROWSER_DARWIN_ARTIFACT_SHA256;
+  if (Boolean(artifactDirectory) !== Boolean(artifactSHA256))
+    throw new Error(
+      'The browser native release artifact requires both its directory and pinned manifest hash.'
+    );
+  let native:
+    | Awaited<ReturnType<typeof buildNativeObserver>>
+    | Awaited<ReturnType<typeof importBrowserNativeArtifact>>
+    | undefined = artifactDirectory
+    ? undefined
+    : await buildNativeObserver({ outputDirectory: assets });
+  const workers: { name: string; sha256: string; bytes: number }[] = [];
+  for (const worker of ['darwin-journal-worker', 'darwin-supervisor-worker'] as const) {
+    const name = `${worker}.mjs`,
+      outfile = path.join(assets, name);
+    const result = await build({
+      absWorkingDir: root,
+      entryPoints: [path.join(root, `packages/browser/src/runtime/${worker}.ts`)],
+      outfile,
+      bundle: true,
+      platform: 'node',
+      target: 'node22.22',
+      format: 'esm',
+      external: ['zod', 'playwright-core'],
+      plugins: [dorkosSourcePlugin(root)],
+      write: false,
+      metafile: true,
+      logLevel: 'silent',
+    });
+    await assertNoUnexpectedWarnings(`browser ${worker}`, result.warnings);
+    const allowed = new Set([
+      ...builtinModules,
+      ...builtinModules.map((value) => `node:${value}`),
+      'zod',
+      'playwright-core',
+    ]);
+    for (const record of [
+      ...Object.values(result.metafile!.inputs),
+      ...Object.values(result.metafile!.outputs),
+    ])
+      for (const dependency of record.imports)
+        if (dependency.external && !allowed.has(dependency.path))
+          throw new Error(`Browser native worker dependency is not packaged: ${dependency.path}`);
+    if (
+      result.outputFiles.length !== 1 ||
+      path.resolve(result.outputFiles[0].path) !== path.resolve(outfile)
+    )
+      throw new Error('Browser native worker output is missing or unexpected.');
+    const bytes = result.outputFiles[0].contents;
+    if (bytes.length > 16 * 1024 * 1024)
+      throw new Error('Browser native worker exceeds its packaged bound.');
+    await fs.writeFile(outfile, bytes);
+    workers.push({
+      name,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      bytes: bytes.length,
+    });
+  }
+  if (artifactDirectory)
+    native = await importBrowserNativeArtifact(root, assets, artifactDirectory, artifactSHA256!);
+  if (!native) throw new Error('Browser native producer is missing.');
+  const controller = await fs.readFile(path.join(output, 'bin/cli.js'));
+  const nativeManifest = await fs.readFile(
+    path.join(assets, 'darwin-process-observer.manifest.json')
+  );
+  const manifest = {
+    version: 1,
+    controllerSHA256: createHash('sha256').update(controller).digest('hex'),
+    nativeManifestSHA256: createHash('sha256').update(nativeManifest).digest('hex'),
+    platform: native.platform,
+    arch: native.arch,
+    availability: native.availability,
+    workers,
+  };
+  await fs.writeFile(path.join(assets, 'package-manifest.json'), JSON.stringify(manifest) + '\n');
+}
+
 async function buildCLI() {
   // Clean
   await fs.rm(OUT, { recursive: true, force: true });
@@ -476,6 +561,7 @@ async function buildCLI() {
 
   await assertNoUnexpectedWarnings('CLI', cliBundle.warnings);
   await buildBrowserRuntimeAssets();
+  await buildBrowserNativeAssets();
 
   // Make executable
   await fs.chmod(path.join(OUT, 'bin/cli.js'), 0o755);

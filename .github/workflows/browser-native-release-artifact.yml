@@ -1,0 +1,77 @@
+name: Browser Native Release Artifact
+
+# An explicit same-commit release producer; changes no required PR/queue checks.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build-darwin:
+    runs-on: macos-latest
+    # Initial ceiling follows the existing desktop Mac producer (56 minutes).
+    # This new explicit job has no measured duration yet; ledger records that limit.
+    timeout-minutes: 56
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      manifest_sha: ${{ steps.handoff.outputs.manifest_sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build actual Mac CLI and native assets
+        run: pnpm --filter dorkos build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - name: Export captured same-source original assets
+        id: handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin=$(node --experimental-strip-types packages/cli/scripts/browser-native-artifact.ts "$RUNNER_TEMP/browser-native-handoff")
+          [[ "$pin" =~ ^[a-f0-9]{64}$ ]]
+          echo "manifest_sha=$pin" >> "$GITHUB_OUTPUT"
+      - name: Attest the exact same-source handoff manifest
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/browser-native-handoff/handoff-manifest.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: browser-darwin-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/browser-native-handoff
+          if-no-files-found: error
+
+  verify-linux-handoff:
+    needs: build-darwin
+    runs-on: ubuntu-latest
+    timeout-minutes: 56
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: browser-darwin-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/browser-native-handoff
+      - name: Build Linux CLI with the exact Mac producer manifest pin
+        run: pnpm --filter dorkos build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          DORKOS_BROWSER_DARWIN_ARTIFACT_DIRECTORY: ${{ runner.temp }}/browser-native-handoff
+          DORKOS_BROWSER_DARWIN_ARTIFACT_SHA256: ${{ needs.build-darwin.outputs.manifest_sha }}
+      # Neither a successful build nor this handoff is native browser acceptance.

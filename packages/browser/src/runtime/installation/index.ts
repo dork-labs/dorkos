@@ -137,3 +137,9 @@ export function createRuntimeInstallation(
   });
   return facade;
 }
+
+/** Actual packaged provenance only; fresh verification and native owner readiness remain separate. */
+export { resolveInstalledRuntimeConfiguration, resolveInstalledNativeJournal } from './packaged.js';
+
+/** Original read-only native support probe; never a browser authority grant. */
+export { verifyInstalledNativeJournal } from './native-mode.js';

@@ -34,6 +34,13 @@ export async function observeDarwinJournal(
     monotonicNow: () => number;
     pause: () => Promise<void>;
     endMonotonic: number;
+    /** Renew only this original durable campaign after each complete gap-free native sweep. */
+    continuousWindowMilliseconds?: number;
+    onObservationFault?: () => Promise<void>;
+    /** Emitted only after an original gap-free sweep is durably committed. */
+    onCheckpoint?: (
+      checkpoint: Readonly<{ sequence: number; monotonic: number; root: ProcessIdentity }>
+    ) => Promise<void>;
     maxGap: number;
   }>
 ): Promise<
@@ -56,10 +63,21 @@ export async function observeDarwinJournal(
         options.exitingObserver.pid !== process.pid ||
         !sameProcess(options.exitingObserver, current.binding.manager))) ||
     !Number.isFinite(options.endMonotonic) ||
+    (options.continuousWindowMilliseconds !== undefined &&
+      (!Number.isSafeInteger(options.continuousWindowMilliseconds) ||
+        options.continuousWindowMilliseconds < 100 ||
+        options.continuousWindowMilliseconds > 600000)) ||
     !Number.isFinite(options.maxGap) ||
     options.maxGap <= 0
   )
     return 'uncertain';
+  let currentWindowEnd = options.endMonotonic;
+  let faultReported = false;
+  const reportFault = async () => {
+    if (options.continuousWindowMilliseconds === undefined || faultReported) return;
+    faultReported = true;
+    await options.onObservationFault?.();
+  };
   const opened = await openJournalWriter({
     ...options.location,
     writer: current.writer,
@@ -128,7 +146,7 @@ export async function observeDarwinJournal(
     if (root)
       for (;;) {
         const start = options.monotonicNow();
-        if (!Number.isFinite(start) || start >= options.endMonotonic) {
+        if (!Number.isFinite(start) || start >= currentWindowEnd) {
           result = 'retained';
           break;
         }
@@ -171,13 +189,37 @@ export async function observeDarwinJournal(
             retained.lifecycle = 'replacement';
             retained.currentParent = null;
           } else if (fact.zombie) {
-            gap(next, 'custody-pending', retained.identity);
-            // endBrowser on this route follows original supervisor child/pipe return.
-            // Keep the gap: this terminal fact can close local custody, never history.
-            if (supervisor && options.endBrowser?.() && retained.role === 'descendant') {
-              retained.lifecycle = 'dead';
-              retained.currentParent = null;
+            const prior = current.retainedIdentities.find((row) =>
+              sameProcess(row.identity, retained.identity)
+            );
+            const parent = retained.parent && facts.get(retained.parent.pid);
+            const parentKnown =
+              parent?.kind === 'absent' ||
+              (parent?.kind === 'present' &&
+                !parent.zombie &&
+                retained.parent &&
+                sameProcess(darwinBirth(parent.identity), retained.parent));
+            if (
+              retained.role === 'descendant' &&
+              retained.association &&
+              retained.parent &&
+              prior &&
+              (prior.lifecycle === 'alive' || prior.lifecycle === 'exited-unreaped') &&
+              parentKnown
+            ) {
+              // Exact enrolled terminal original: nonexecuting, not reaped or custody returned.
+              retained.lifecycle = 'exited-unreaped';
+              retained.currentParent =
+                parent?.kind === 'present' && fact.parentPid === parent.identity.pid
+                  ? retained.parent
+                  : null;
+            } else {
+              gap(next, 'custody-pending', retained.identity);
             }
+          } else if (retained.lifecycle === 'exited-unreaped') {
+            // The exact terminal original cannot become executable again; a contradictory fact is unknown.
+            retained.lifecycle = 'unknown';
+            gap(next, 'identity-unknown', retained.identity);
           } else {
             retained.lifecycle = 'alive';
             const parent = facts.get(fact.parentPid);
@@ -248,6 +290,24 @@ export async function observeDarwinJournal(
             childFacts = children.processes;
           }
           for (const fact of childFacts) {
+            // Enumeration may still include an already enrolled unreaped child; it admits no new parent/work.
+            if (fact.kind === 'present' && fact.zombie) {
+              const prior = current.retainedIdentities.find((row) =>
+                sameProcess(row.identity, darwinBirth(fact.identity))
+              );
+              const retained = next.retainedIdentities.find((row) =>
+                sameProcess(row.identity, darwinBirth(fact.identity))
+              );
+              if (
+                prior &&
+                retained?.lifecycle === 'exited-unreaped' &&
+                retained.role === 'descendant' &&
+                retained.parent &&
+                sameProcess(retained.parent, parent.identity) &&
+                fact.parentPid === parent.identity.pid
+              )
+                continue;
+            }
             if (fact.kind !== 'present' || fact.zombie) {
               gap(next, 'association-missing', parent.identity);
               continue;
@@ -298,7 +358,7 @@ export async function observeDarwinJournal(
         if (
           !Number.isFinite(end) ||
           end < start ||
-          end >= options.endMonotonic ||
+          end >= currentWindowEnd ||
           end - start > options.maxGap
         )
           gap(next, 'observer-lost');
@@ -319,6 +379,32 @@ export async function observeDarwinJournal(
           break;
         }
         current = validateJournalSnapshot(next);
+        if (options.continuousWindowMilliseconds !== undefined) {
+          if (
+            current.gaps.length ||
+            !Number.isFinite(end) ||
+            end < start ||
+            end >= currentWindowEnd
+          ) {
+            // Fenced gap/expiry is never resumed from a retained DTO or a new writer campaign.
+            await reportFault();
+            result = 'retained';
+            break;
+          }
+          const nextEnd = end + options.continuousWindowMilliseconds;
+          if (!Number.isFinite(nextEnd) || nextEnd <= end) {
+            await reportFault();
+            result = 'retained';
+            break;
+          }
+          if (!gone && current.root.kind === 'attributed')
+            await options.onCheckpoint?.({
+              sequence: current.sequence,
+              monotonic: end,
+              root: current.root.identity,
+            });
+          currentWindowEnd = nextEnd;
+        }
         if (current.gaps.length && admittedGone) {
           const managerFact = facts.get(current.binding.manager.pid);
           // Gaps remain recorded. This distinct local-cleanup result requires the
@@ -353,6 +439,12 @@ export async function observeDarwinJournal(
     result !== 'campaign-closed' &&
     result !== 'campaign-closed-gapped'
   ) {
+    // Notify original parent before any final refusal snapshot/close can retain unfinished IO.
+    try {
+      await reportFault();
+    } catch {
+      result = 'uncertain';
+    }
     const refusal = copyJournalData(current) as JournalSnapshot;
     refusal.sequence++;
     refusal.phase = 'retained';

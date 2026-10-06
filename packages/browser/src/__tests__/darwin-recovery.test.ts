@@ -3,7 +3,11 @@ import { mkdtemp, realpath, mkdir, writeFile, readFile, rm } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { openJournalWriter, observeJournalDirectory } from '../lifecycle/process-journal.js';
+import {
+  openJournalWriter,
+  observeJournalDirectory,
+  validateJournalSnapshot,
+} from '../lifecycle/process-journal.js';
 import { reserveProfile } from '../profiles/reservation.js';
 import { parseProfileId } from '../ids.js';
 import { configuration } from './parent-fixture.js';
@@ -172,7 +176,15 @@ it('recognizes replacement without treating it as the original', () => {
 });
 
 // Real private journal/reservation I/O with semantic native facts, not a native acceptance claim.
-it.each(['live-root', 'gone', 'pid-reuse', 'missing-original', 'history-gap'] as const)(
+it.each([
+  'live-root',
+  'gone',
+  'pid-reuse',
+  'missing-original',
+  'history-gap',
+  'unreaped-zombie',
+  'unreaped-absent',
+] as const)(
   'startup automatically reconciles %s against every original without profile mutation',
   async (mode) => {
     const rootDir = await realpath(await mkdtemp(join(tmpdir(), 'startup-recorded-')));
@@ -217,6 +229,14 @@ it.each(['live-root', 'gone', 'pid-reuse', 'missing-original', 'history-gap'] as
         data.firstCause = { cause: 'association-missing', sequence: 2 };
       }
       expect((await opened.writer.commitSnapshot(data)).state).toBe('durable-recorded');
+      if (mode === 'unreaped-zombie' || mode === 'unreaped-absent') {
+        const terminal = structuredClone(data);
+        terminal.sequence = 3;
+        terminal.observationWindow = window(3);
+        for (const original of terminal.retainedIdentities) original.lastSeenSequence = 3;
+        terminal.retainedIdentities[2]!.lifecycle = 'exited-unreaped';
+        expect((await opened.writer.commitSnapshot(terminal)).state).toBe('durable-recorded');
+      }
       await opened.writer.close();
       const directory = join(rootDir, 'reservations', id),
         profile = join(rootDir, 'profiles', id);
@@ -238,6 +258,13 @@ it.each(['live-root', 'gone', 'pid-reuse', 'missing-original', 'history-gap'] as
           identity: { pid: 20, seconds: mode === 'pid-reuse' ? '2' : '1', microseconds: '20' },
           parentPid: 1,
           zombie: false,
+        };
+      if (mode === 'unreaped-zombie')
+        batch.processes[2] = {
+          kind: 'present',
+          identity: { pid: 30, seconds: '1', microseconds: '30' },
+          parentPid: 1,
+          zombie: true,
         };
       if (mode === 'missing-original') batch.processes.pop();
       controls.inspect.mockResolvedValue(batch);
@@ -263,5 +290,43 @@ it.each(['live-root', 'gone', 'pid-reuse', 'missing-original', 'history-gap'] as
       await rm(rootDir, { recursive: true, force: true });
       controls.inspect.mockReset();
     }
+  }
+);
+
+it('recovery independently observes every exited-unreaped original and requires actual absence', () => {
+  const recorded = snapshot();
+  recorded.sequence = 3;
+  recorded.observationWindow = window(3);
+  for (const row of recorded.retainedIdentities) row.lastSeenSequence = 3;
+  recorded.retainedIdentities[2]!.lifecycle = 'exited-unreaped';
+  const observed = gone();
+  observed.processes[2] = {
+    kind: 'present',
+    identity: { pid: 30, seconds: '1', microseconds: '30' },
+    parentPid: 1,
+    zombie: true,
+  };
+  const pending = reconcileDarwinBatch(recorded, observed, 'b'.repeat(64), 4, 5);
+  expect(pending.recordedDisposition).toBe('unknown');
+  expect(pending.decision).toBe('retain');
+  const missing = gone();
+  missing.processes.pop();
+  expect(reconcileDarwinBatch(recorded, missing, 'b'.repeat(64), 4, 5).recordedDisposition).toBe(
+    'unknown'
+  );
+  const absent = reconcileDarwinBatch(recorded, gone(), 'b'.repeat(64), 4, 5);
+  expect(absent.recordedDisposition).toBe('matching-recorded-gone');
+  expect(absent.decision).toBe('retain');
+});
+
+it.each(['manager', 'root'] as const)(
+  'rejects a recorded exited-unreaped %s as descendant evidence',
+  (role) => {
+    const recorded = snapshot();
+    recorded.sequence = 3;
+    recorded.observationWindow = window(3);
+    for (const row of recorded.retainedIdentities) row.lastSeenSequence = 3;
+    recorded.retainedIdentities.find((row) => row.role === role)!.lifecycle = 'exited-unreaped';
+    expect(() => validateJournalSnapshot(recorded)).toThrow();
   }
 );

@@ -374,7 +374,7 @@ export function createInstallationJobs(
       slot,
       config.controllerEntry,
       config.sourceVintage.controllerSHA256,
-      INSTALLATION_LIMITS.libraryFileBytes
+      INSTALLATION_LIMITS.controllerBytes
     );
     await readPinned(
       slot,

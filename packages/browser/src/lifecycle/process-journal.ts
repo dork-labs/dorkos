@@ -118,7 +118,7 @@ const retainedSchema = z
     firstSeenSequence: counter,
     lastSeenSequence: counter,
     relationWindow: ObservationWindowSchema,
-    lifecycle: z.enum(['alive', 'dead', 'replacement', 'unknown']),
+    lifecycle: z.enum(['alive', 'exited-unreaped', 'dead', 'replacement', 'unknown']),
   })
   .strict();
 const gapSchema = z
@@ -296,6 +296,15 @@ export function validateJournalSnapshot(value: unknown): JournalSnapshot {
         r.relationWindow.endSequence <= r.firstSeenSequence &&
         r.acquisitionEpoch <= s.writer.epoch
     );
+    // A recorded terminal fact remains retained; only attributed nonroot originals may await reaping.
+    if (r.lifecycle === 'exited-unreaped')
+      insist(
+        r.role === 'descendant' &&
+          r.association !== null &&
+          r.parent !== null &&
+          r.firstSeenSequence < r.lastSeenSequence,
+        'association-missing'
+      );
     if (r.lifecycle === 'unknown')
       insist(
         s.gaps.some(
@@ -407,6 +416,11 @@ function successor(prior: JournalSnapshot, next: JournalSnapshot): void {
       'association-missing'
     );
   }
+  for (const old of prior.retainedIdentities)
+    if (old.lifecycle === 'exited-unreaped') {
+      const current = next.retainedIdentities.find((r) => sameProcess(r.identity, old.identity));
+      insist(current && current.lifecycle !== 'alive', 'identity-unknown');
+    }
   for (const added of next.retainedIdentities)
     if (!prior.retainedIdentities.some((r) => sameProcess(r.identity, added.identity))) {
       const parent = prior.retainedIdentities.find(
