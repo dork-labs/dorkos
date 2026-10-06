@@ -4,7 +4,6 @@ date: 2026-10-06
 type: internal-architecture
 status: active
 tags: [trust, permissions, approvals, audit, relay, rooms, vision-202610]
-feature_slug: vision-202610
 ---
 
 # Trust audit: every gate on what an agent can do

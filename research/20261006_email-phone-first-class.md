@@ -4,14 +4,13 @@ date: 2026-10-06
 type: internal-architecture
 status: active
 tags: [email, phone, google-workspace, twilio, 10dlc, provider-adapter, vision-202610]
-feature_slug: vision-202610
 ---
 
 # Email addresses and phone numbers as first-class account features
 
 Research date: 2026-10-06. Web research only; nothing here is decided. Prices are US list prices as found on the date above and change often. Items marked **UNVERIFIED** come from secondary sources only or are my inference.
 
-Framing from the vision notes: people and agents are near-identical accounts; local-only is the default with no required monthly fee; paid cloud is opt-in. A related internal note observes that a per-agent address is already designed in the private cloud repo with a stub provider; this report does not repeat private details.
+Framing from the vision notes: people and agents are near-identical accounts; local-only is the default with no required monthly fee; paid cloud is opt-in. Paid cloud details are out of scope here.
 
 ---
 
@@ -291,7 +290,6 @@ Providers:
 
 - Addresses on a DorkOS domain (and verified custom domains on a higher tier) that receive 24/7 and sync to the local app; built on a supplier that allows resale (Cloudflare Email Service, SES, or white-label AgentMail), never on Workspace seats.
 - Numbers bought under DorkOS's ISV account, with DorkOS running 10DLC and toll-free registration and the country document bundles for the user, plus a cloud answerer for live calls while the laptop is closed.
-- Price per add-on, matching the existing add-on idea; no new private specifics here.
 
 **Top risks:**
 

@@ -4,12 +4,11 @@ date: 2026-10-06
 type: internal-architecture
 status: active
 tags: [secrets, vault, encryption, age, credentials, payments, vision-202610]
-feature_slug: vision-202610
 ---
 
 # A secrets core for every account (human and agent)
 
-Checked 2026-10-06. Scratch research for the vision-202610 programme. Web research ran in three
+Checked 2026-10-06. Web research ran in three
 parallel tracks: vault licences, crypto libraries and key hierarchies, and use-don't-read plus
 payments. npm metadata was checked directly with `npm view` the same day. No secret value appears here.
 

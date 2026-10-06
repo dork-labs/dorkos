@@ -4,7 +4,6 @@ date: 2026-10-06
 type: internal-architecture
 status: active
 tags: [sync, crdt, publishing, identity, agent-mobility, local-first, vision-202610]
-feature_slug: vision-202610
 ---
 
 # DorkOS as "one software, many sizes": precedents, sync, publishing, agent mobility, identity
