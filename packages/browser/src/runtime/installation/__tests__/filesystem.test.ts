@@ -421,7 +421,7 @@ describe('real installation filesystem', () => {
       code: 'LIBRARY_MISMATCH',
     });
   });
-  it('validates the genuine distribution with narrowly separated generated self-bin metadata', async () => {
+  it('validates genuine distribution with the observed 13MiB controller and bounded self-bin metadata', async () => {
     // Copy this checkout's genuine distribution and Node binary into private
     // fixture ancestors: CI's tool cache may intentionally be group-writable.
     // Production ancestor validation stays strict; no network or browser launch.
@@ -431,7 +431,9 @@ describe('real installation filesystem', () => {
     );
     const libraryRoot = path.join(root, 'genuine-library');
     await fs.cp(installedLibrary, libraryRoot, { recursive: true });
-    const controller = Buffer.from('export {};\n'),
+    // Actual original21722 CLI was 13,236,583 bytes. These equally sized fixture bytes
+    // exercise real controller hashing/limits only and are never executed as native code.
+    const controller = Buffer.alloc(13_236_583, 0x2f),
       verifier = Buffer.from('export {};\n');
     const source = recordBytes(
       { schemaVersion: 1, controllerSHA256: sha256(controller), verifierSHA256: sha256(verifier) },
@@ -481,6 +483,25 @@ describe('real installation filesystem', () => {
     expect(library.distributionSHA256).toBe(INSTALLATION_TARGET.libraryDistributionSHA256);
     expect(library.files).toHaveLength(114);
     expect(producer.custody().unresolvedHandles).toBe(0);
+    // A sparse over-cap controller must refuse before hashing/opening it; this does
+    // not widen the pinned official library or verifier file bounds.
+    const oversized = await fs.open(configuration.controllerEntry, 'r+');
+    try {
+      await oversized.truncate(INSTALLATION_LIMITS.controllerBytes + 1);
+    } finally {
+      await oversized.close();
+    }
+    const openedBeforeRefusal = control.opened.filter(
+      (entry) => entry.path === configuration.controllerEntry
+    ).length;
+    await expect(producer.validateLibrary()).rejects.toMatchObject({
+      code: 'INSTALLATION_INVALID',
+    });
+    expect(
+      control.opened.filter((entry) => entry.path === configuration.controllerEntry)
+    ).toHaveLength(openedBeforeRefusal);
+    expect(producer.custody().unresolvedHandles).toBe(0);
+    await fs.writeFile(configuration.controllerEntry, controller);
     // Copy the test allocation's genuine official source into a test-owned root;
     // generated metadata is independently formed and never executed or hashed as source.
     const copiedRoot = path.join(root, 'installed-library');

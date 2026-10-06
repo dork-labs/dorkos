@@ -25,6 +25,7 @@ export const INSTALLATION_LIMITS = Object.freeze({
   manifestBytes: 16_384,
   pointerBytes: 1_024,
   libraryFileBytes: 8_388_608,
+  controllerBytes: 67_108_864,
   libraryBytes: 33_554_432,
   libraryEntries: 256,
   payloadEntries: 16_384,

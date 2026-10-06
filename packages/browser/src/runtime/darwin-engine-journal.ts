@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import {
+  readDarwinJournalDiagnostic,
+  type DarwinJournalDiagnostic,
+} from './darwin-journal-diagnostic.js';
 import type { ProcessIdentity } from '../configuration.js';
 import {
   observeJournalDirectory,
@@ -37,9 +41,13 @@ export async function startDarwinEngineJournal(
     workerPath: string;
     artifact: Readonly<{ path: string; sha256: string }>;
     duration: number;
+    continuous?: boolean;
     maxGap: number;
+    onDiagnostic?: (diagnostic: DarwinJournalDiagnostic) => void | Promise<void>;
   }>
 ): Promise<DarwinEngineJournal> {
+  const continuous = options.continuous === true;
+  const onDiagnostic = options.onDiagnostic;
   const manager = ProcessIdentitySchema.parse(options.binding.manager);
   if (manager.pid !== process.pid) throw new Error('JOURNAL_MANAGER_MISMATCH');
   const observer = createDarwinProcessObserver(options.artifact);
@@ -95,6 +103,7 @@ export async function startDarwinEngineJournal(
     workerPath: options.workerPath,
     artifact: options.artifact,
     duration: options.duration,
+    continuous,
     maxGap: options.maxGap,
     initial,
     location: {
@@ -104,13 +113,32 @@ export async function startDarwinEngineJournal(
     },
   });
   retained.add(worker);
+  const observationKnown = worker.isObservationKnown?.bind(worker);
+  const originalStderr = onDiagnostic ? worker.stderr.bind(worker) : undefined;
   let historyGapped = false;
   let pending = true,
     uncertain = false,
     stopped = false,
     attributed = false;
   const completion = worker.completion.then(
-    (result) => {
+    async (result) => {
+      // Original pipes have returned. Retain the diagnostic receiver's own completion too;
+      // neither its bytes nor a successful write can upgrade a refused journal.
+      if (
+        originalStderr &&
+        onDiagnostic &&
+        (uncertain || (result !== 'recorded-gone' && result !== 'campaign-closed'))
+      ) {
+        try {
+          const diagnostic = readDarwinJournalDiagnostic(
+            originalStderr(),
+            initial.binding.journalId
+          );
+          if (diagnostic) await onDiagnostic(diagnostic);
+        } catch {
+          uncertain = true;
+        }
+      }
       pending = false;
       historyGapped ||= result === 'campaign-closed-gapped';
       uncertain ||=
@@ -156,6 +184,15 @@ export async function startDarwinEngineJournal(
       return completion;
     },
     historyGapped: () => historyGapped,
-    custody: () => Object.freeze({ pending, uncertain }),
+    custody: () => {
+      if (continuous && pending) {
+        try {
+          if (!observationKnown || observationKnown() !== true) uncertain = true;
+        } catch {
+          uncertain = true;
+        }
+      }
+      return Object.freeze({ pending, uncertain });
+    },
   });
 }

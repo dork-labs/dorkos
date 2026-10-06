@@ -540,7 +540,11 @@ pnpm run publish:cloud-api
 pnpm run publish:connector-providers
 ```
 
-The `prepublishOnly` hook in each package builds before publishing.
+`publish:cli` now resolves the exact merged version tag and same-source Mac native artifact before npm publication. It first uses the trusted repository’s actual default `main` branch and exact GitHub commit comparison to prove the tagged HEAD has merged; a clean local tag alone is insufficient. It refreshes that proof before dispatch, download, build and publication or packing. It starts the manually dispatched Browser Native Release Artifact workflow at that tag if no original run exists, joins an existing in-progress run, and refuses a failed run without retrying it. It downloads the successful original run's artifact and verifies the manifest's GitHub attestation against the exact repository, release tag, source commit and signer workflow. The CLI's normal `prepublishOnly` build then imports those verified observer bytes and binds them to its own CLI and worker files; pnpm's normal publication and git checks remain in place. GitHub CLI authentication and artifact/attestation read access are prerequisites beside the existing npm sign-in.
+
+To build and inspect the exact tarball without publishing, run `pnpm run release:cli:prepare` after Phase 6.9. It uses the same original artifact acquisition, verification and build, packs into a fresh retained temporary directory, and prints the tarball and receipt paths. It does not publish npm or create a GitHub Release. A prepared build is not native runtime acceptance.
+
+The other packages' `prepublishOnly` hooks still build before publishing.
 
 `@dork-labs/cloud-api` publishes **after** the CLI and is **not** allowed to be skipped on a
 release that changed it: the hosted control plane resolves the contract from public npm, so a

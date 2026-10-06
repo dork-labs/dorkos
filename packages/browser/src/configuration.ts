@@ -3,6 +3,7 @@ import { AbsolutePathSchema, RuntimeDescriptorSchema } from './runtime-descripto
 import type { BrowserBinding } from './contracts.js';
 import type { BrowserId } from './ids.js';
 import { parseValidated } from './validation.js';
+import type { DarwinJournalDiagnostic } from './runtime/darwin-journal-diagnostic.js';
 
 /** PID plus observer-issued birth identity; PID alone never authorizes cleanup. */
 export interface ProcessIdentity {
@@ -10,7 +11,9 @@ export interface ProcessIdentity {
   readonly birth: string;
 }
 /** Observed matching liveness; unknown is not permission to reuse a profile. */
-export type ProcessObservation = { readonly status: 'alive' | 'dead' | 'unknown' };
+export type ProcessObservation = {
+  readonly status: 'alive' | 'dead' | 'unknown';
+};
 /** Owned tree observation with explicit completeness, including after reparenting. */
 export interface ProcessTreeObservation {
   readonly status: 'complete' | 'unknown';
@@ -107,10 +110,17 @@ const ConfigurationSchema = z
         workerPath: AbsolutePathSchema,
         browserWorkerPath: AbsolutePathSchema.optional(),
         artifact: z
-          .object({ path: AbsolutePathSchema, sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+          .object({
+            path: AbsolutePathSchema,
+            sha256: z.string().regex(/^[a-f0-9]{64}$/),
+          })
           .strict(),
         duration: z.number().int().min(100).max(600000),
+        continuous: z.boolean().optional(),
         maxGap: z.number().int().min(1).max(10000),
+        onDiagnostic: z
+          .custom<(diagnostic: DarwinJournalDiagnostic) => void | Promise<void>>(callback)
+          .optional(),
       })
       .strict()
       .optional(),

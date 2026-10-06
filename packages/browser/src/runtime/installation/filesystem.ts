@@ -630,7 +630,7 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
       node.file.sha256 === c.nodeExecutableSHA256 && (node.file.identity.mode & 0o111) !== 0,
       'SOURCE_MISMATCH'
     );
-    const controller = await this.read(c.controllerEntry, LIMIT.libraryFileBytes);
+    const controller = await this.read(c.controllerEntry, LIMIT.controllerBytes);
     const verifier = await this.read(c.verifierEntry, LIMIT.libraryFileBytes);
     const vintage = await this.read(c.sourceManifestPath, LIMIT.manifestBytes, LIMIT.manifestBytes);
     const source = parseRecord(vintage.bytes, SourceManifestSchema, LIMIT.manifestBytes);

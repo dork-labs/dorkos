@@ -24,6 +24,8 @@
     // type bugs, and not something `@dorkos/server`'s own green typecheck is
     // hiding, since it computes those paths from its own root.
     "noEmit": true,
+    // Build/release helpers run through tsx and name their original TypeScript files.
+    "allowImportingTsExtensions": true,
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false

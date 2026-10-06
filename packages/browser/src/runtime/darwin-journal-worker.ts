@@ -42,6 +42,7 @@ const seedSchema = z
       .object({ path: z.string().max(4096), sha256: z.string().regex(/^[a-f0-9]{64}$/) })
       .strict(),
     duration: z.number().positive().max(600000),
+    continuous: z.boolean().default(false),
     maxGap: z.number().positive().max(10000),
   })
   .strict();
@@ -60,6 +61,15 @@ const refuseSchema = z.object({ kind: z.literal('refuse-seed') }).strict();
 const endSchema = z.object({ kind: z.literal('end-browser'), launchEntered: z.boolean() }).strict();
 const messages = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('enrolled') }).strict(),
+  z.object({ kind: z.literal('observation-fault') }).strict(),
+  z
+    .object({
+      kind: z.literal('checkpoint'),
+      sequence: z.number().int().positive().safe(),
+      monotonic: z.number().int().nonnegative().safe(),
+      root: identity,
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('complete'),
@@ -76,6 +86,8 @@ const messages = z.discriminatedUnion('kind', [
 ]);
 /** Original worker remains retained by the caller until both streams and its natural terminal close. */
 export interface DarwinJournalWorker {
+  /** Exact original message/pipe/process custody, with sticky observation refusal. */
+  isObservationKnown(): boolean;
   readonly child: ChildProcess;
   readonly location: JournalLocation;
   stderr(): Uint8Array;
@@ -102,6 +114,7 @@ export async function startDarwinJournalWorker(
     initial: JournalSnapshot;
     artifact: Readonly<{ path: string; sha256: string }>;
     duration: number;
+    continuous?: boolean;
     maxGap: number;
     ownedLaunch?: boolean;
   }>
@@ -113,9 +126,14 @@ export async function startDarwinJournalWorker(
     initial: options.initial,
     artifact: options.artifact,
     duration: options.duration,
+    continuous: options.continuous ?? false,
     maxGap: options.maxGap,
   });
   if (Buffer.byteLength(JSON.stringify(seed)) > 1048576) throw new Error('JOURNAL_UNAVAILABLE');
+  // Capture the original host boot clock before callbacks can replace its receiver.
+  const originalClock = process.hrtime.bigint.bind(process.hrtime);
+  const monotonicNow = () => Number(originalClock() / 1000000n);
+  if (seed.continuous && seed.ownedLaunch) throw new Error('CONTINUOUS_ROOT_UNSUPPORTED');
   const child = spawn(process.execPath, [options.workerPath, '--private-darwin-journal-worker'], {
     shell: false,
     detached: false,
@@ -140,36 +158,91 @@ export async function startDarwinJournalWorker(
   void enrolled.catch(() => {});
   let sawEnrolled = false,
     sawComplete = false;
+  let expectedRoot: ProcessIdentity | undefined;
+  let checkpoint: { sequence: number; monotonic: number } | undefined;
+  let acceptCheckpoint!: () => void, rejectCheckpoint!: (reason: unknown) => void;
+  const firstCheckpoint = new Promise<void>((resolve, reject) => {
+    acceptCheckpoint = resolve;
+    rejectCheckpoint = reject;
+  });
+  void firstCheckpoint.catch(() => {});
+  const fault = (reason: unknown) => {
+    failure = true;
+    refuse(reason);
+    rejectCheckpoint(reason);
+  };
+  const observationKnown = () => {
+    if (failure || !sawEnrolled || sawComplete) return false;
+    if (!seed.continuous) return true;
+    if (!checkpoint) return false;
+    const now = monotonicNow();
+    if (
+      !Number.isSafeInteger(now) ||
+      now < checkpoint.monotonic ||
+      now - checkpoint.monotonic > seed.maxGap
+    ) {
+      fault(new Error('JOURNAL_OBSERVATION_STALE'));
+      return false;
+    }
+    return true;
+  };
   child.on('message', (value) => {
     const parsed = messages.safeParse(value);
     if (!parsed.success) {
-      failure = true;
-      refuse(new Error('JOURNAL_UNAVAILABLE'));
+      fault(new Error('JOURNAL_UNAVAILABLE'));
       return;
     }
-    if (parsed.data.kind === 'enrolled') {
+    if (parsed.data.kind === 'observation-fault') {
+      fault(new Error('JOURNAL_OBSERVATION_REFUSED'));
+    } else if (parsed.data.kind === 'checkpoint') {
+      const next = parsed.data;
+      const now = monotonicNow();
+      if (
+        !seed.continuous ||
+        !sawEnrolled ||
+        sawComplete ||
+        failure ||
+        !expectedRoot ||
+        expectedRoot.pid !== next.root.pid ||
+        expectedRoot.birth !== next.root.birth ||
+        (checkpoint &&
+          (!observationKnown() ||
+            next.sequence <= checkpoint.sequence ||
+            next.monotonic < checkpoint.monotonic)) ||
+        !Number.isSafeInteger(now) ||
+        next.monotonic > now ||
+        now - next.monotonic > seed.maxGap
+      ) {
+        fault(new Error('JOURNAL_CHECKPOINT_REFUSED'));
+        return;
+      }
+      checkpoint = { sequence: next.sequence, monotonic: next.monotonic };
+      acceptCheckpoint();
+    } else if (parsed.data.kind === 'enrolled') {
       if (sawEnrolled || sawComplete) {
-        failure = true;
+        fault(new Error('JOURNAL_UNAVAILABLE'));
         return;
       }
       sawEnrolled = true;
       acknowledge();
     } else {
       if (!sawEnrolled || sawComplete) {
-        failure = true;
+        fault(new Error('JOURNAL_UNAVAILABLE'));
         return;
       }
       sawComplete = true;
+      if (seed.continuous && !checkpoint) fault(new Error('JOURNAL_CHECKPOINT_REFUSED'));
+      rejectCheckpoint(new Error('JOURNAL_OBSERVATION_ENDED'));
       result = parsed.data.result;
     }
   });
   child.on('error', () => {
-    failure = true;
-    refuse(new Error('JOURNAL_UNAVAILABLE'));
+    fault(new Error('JOURNAL_UNAVAILABLE'));
   });
   const terminal = new Promise<number | null>((resolve) =>
     child.once('close', (code) => {
-      refuse(new Error('JOURNAL_UNAVAILABLE'));
+      if (!sawComplete) fault(new Error('JOURNAL_UNAVAILABLE'));
+      rejectCheckpoint(new Error('JOURNAL_OBSERVATION_ENDED'));
       resolve(code);
     })
   );
@@ -180,22 +253,29 @@ export async function startDarwinJournalWorker(
   ];
   const drain = async (stream: ChildProcess['stdout'], duty: (typeof pipeReturns)[number]) => {
     if (!stream) {
-      failure = true;
+      fault(new Error('JOURNAL_PIPE_UNAVAILABLE'));
       return;
     }
+    stream.once('error', (reason) => fault(reason));
     stream.once('end', () => {
       duty.eof = true;
     });
     stream.once('close', () => {
       duty.closed = true;
+      if (!duty.eof) fault(new Error('JOURNAL_PIPE_UNAVAILABLE'));
     });
-    let bytes = 0;
-    for await (const chunk of stream) {
-      bytes += Buffer.byteLength(chunk);
-      if (bytes > 262144) failure = true;
-      else if (stream === child.stderr) stderrChunks.push(Buffer.from(chunk));
+    try {
+      let bytes = 0;
+      for await (const chunk of stream) {
+        bytes += Buffer.byteLength(chunk);
+        if (bytes > 262144) fault(new Error('JOURNAL_PIPE_UNAVAILABLE'));
+        else if (stream === child.stderr) stderrChunks.push(Buffer.from(chunk));
+      }
+      if (!stream.readableEnded || !duty.eof) throw new Error('JOURNAL_PIPE_UNAVAILABLE');
+    } catch (reason) {
+      fault(reason);
+      throw reason;
     }
-    if (!stream.readableEnded || !duty.eof) throw new Error('JOURNAL_PIPE_UNAVAILABLE');
   };
   const streams = Promise.allSettled([
     drain(child.stdout, pipeReturns[0]),
@@ -218,7 +298,7 @@ export async function startDarwinJournalWorker(
     new Promise<void>((resolve, reject) =>
       child.send(value as object, (error) => {
         if (error) {
-          failure = true;
+          fault(error);
           reject(error);
         } else resolve();
       })
@@ -262,6 +342,7 @@ export async function startDarwinJournalWorker(
   }
   return Object.freeze({
     child,
+    isObservationKnown: observationKnown,
     location: seed.location,
     stderr: () => Buffer.concat(stderrChunks),
     completion,
@@ -278,9 +359,15 @@ export async function startDarwinJournalWorker(
     async enrollRoot(root: ProcessIdentity, supervisor?: ProcessIdentity) {
       if (used || options.ownedLaunch) throw new Error('ROOT_ALREADY_ENROLLED');
       used = true;
+      expectedRoot = identity.parse(root);
       await send(
-        rootSchema.parse({ kind: 'root', identity: root, ...(supervisor ? { supervisor } : {}) })
+        rootSchema.parse({
+          kind: 'root',
+          identity: expectedRoot,
+          ...(supervisor ? { supervisor } : {}),
+        })
       );
+      if (seed.continuous) await firstCheckpoint;
     },
   });
 }
@@ -446,6 +533,13 @@ async function runPrivateWorker(): Promise<void> {
         monotonicNow: darwinMonotonicNow,
         pause: () => new Promise((resolve) => setTimeout(resolve, 50)),
         endMonotonic: darwinMonotonicNow() + value.duration,
+        ...(value.continuous
+          ? {
+              continuousWindowMilliseconds: value.duration,
+              onObservationFault: () => send({ kind: 'observation-fault' }),
+              onCheckpoint: (checkpoint) => send({ kind: 'checkpoint', ...checkpoint }),
+            }
+          : {}),
         maxGap: value.maxGap,
         onEnrolled: () => send({ kind: 'enrolled' }),
         onIncompleteChildren: async (parent, batch) => {
