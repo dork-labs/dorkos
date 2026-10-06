@@ -34,9 +34,9 @@ open it whole.
 
 ## The four rules
 
-1. **Absence is not consent — for outsiders, third-party code, the perimeter and outbound data.**
-   A missing, `null`, or `undefined` value in those classes resolves to the option that withholds,
-   denies, or bounds. `?? true` and `!== false` are the two spellings of the bug there. For a
+1. **Absence is not consent — for outsiders, third-party code, the perimeter, outbound data and
+   accident bounds.** A missing, `null`, or `undefined` value in those classes resolves to the
+   option that withholds, denies, or bounds; a missing limit is never `?? Infinity`. `?? true` and `!== false` are the two spellings of the bug there. For a
    capability our own agents use on in-circle work, the absent value is full power, and the
    action is recorded instead (ADR 261006-225605). Changing an in-circle default for existing
    installs is done by a migration with a one-time notice, never silently.
@@ -49,7 +49,7 @@ open it whole.
 4. **A permissive default is legal, but it must be argued.** Add it to `PERMISSIVE_DEFAULTS` with a
    concrete reason. For an in-circle capability the reason is ADR 261006-225605 plus the audit
    event that records its use; "agents are trusted" alone is not a reason for an outsider,
-   third-party-code, perimeter or outbound field.
+   third-party-code, perimeter, outbound or accident-bound field.
 
 ## What this means concretely
 

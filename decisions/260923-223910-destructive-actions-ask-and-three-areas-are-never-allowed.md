@@ -1,19 +1,19 @@
 ---
 id: 260923-223910
 title: Destructive actions ask unless allowed one by one, and three floor areas are never Allowed
-status: superseded
+status: accepted
 created: 2026-09-23
 spec: agent-permissions
-superseded-by: 261006-225605
+superseded-by: null
 ---
 
 # 260923-223910. Destructive actions ask unless allowed one by one, and three floor areas are never Allowed
 
 ## Status
 
-Superseded by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default). Only perimeter (reach) actions keep a floor; destructive in-circle actions run and are recorded.
+Accepted (extracted from spec: agent-permissions).
 
-Originally: Accepted (extracted from spec: agent-permissions).
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): the destructive rule no longer covers in-circle actions, and `safety` and `permissions` are no longer floor areas. The `reach` floor stands whole: `FLOOR_NEVER_ALLOWED`, the resolver clamp, and `operator.config_patch` escalating into `reach` for perimeter paths.
 
 ## Context
 

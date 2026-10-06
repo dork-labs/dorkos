@@ -6057,7 +6057,7 @@
       "id": "260923-223910",
       "slug": "destructive-actions-ask-and-three-areas-are-never-allowed",
       "title": "Destructive actions ask unless allowed one by one, and three floor areas are never Allowed",
-      "status": "superseded",
+      "status": "accepted",
       "created": "2026-09-23",
       "extractedFrom": "agent-permissions",
       "specSlug": "agent-permissions",
@@ -6066,8 +6066,7 @@
         "packages/shared/src/permissions/resolve-permission.ts",
         "packages/shared/src/permissions/permission-areas.ts",
         "apps/server/src/services/core/permissions/permission-service.ts"
-      ],
-      "supersededBy": "261006-225605"
+      ]
     },
     {
       "id": "260923-201140",
@@ -6798,9 +6797,11 @@
         "260924-101531",
         "260925-050657",
         "261004-235818",
-        "260818-002803"
+        "260818-002803",
+        "260819-022912",
+        "260923-223910"
       ],
-      "supersedes": ["260822-235759", "260923-223910", "0033"],
+      "supersedes": ["260822-235759", "0033"],
       "affects": [
         ".claude/rules/safe-defaults.md",
         "packages/shared/src/permissions/",
