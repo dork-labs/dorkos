@@ -499,7 +499,7 @@ export function InstallMoment() {
         </motion.div>
 
         <motion.p variants={REVEAL} className="text-charcoal mb-2 text-lg font-medium">
-          One person. Ten agents. Ship around the clock.
+          One person. A team of agents. Work that runs while you sleep.
         </motion.p>
 
         <motion.div variants={REVEAL} className="mt-8 flex items-center justify-center gap-6">

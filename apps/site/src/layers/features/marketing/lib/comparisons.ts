@@ -205,9 +205,9 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
   },
   runtime: {
     headline: (name) => `DorkOS + ${name}`,
-    metaTitle: (name) => `DorkOS + ${name}: one place to run ${name}`,
+    metaTitle: (name) => `DorkOS + ${name}: put ${name} on your team`,
     intro: (name) =>
-      `DorkOS runs ${name} for you: one place to start it, watch it, and schedule it.`,
+      `DorkOS runs ${name} for you: start it, watch it, schedule it, and talk to it in your channels.`,
     outboundLabel: (name) => `See ${name} for yourself`,
     tableHeading: 'What DorkOS adds on top',
     theirColumn: (name) => `${name} on its own`,
@@ -221,7 +221,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
     ourReasonHeading: 'Add DorkOS when',
     recommendationHeading: 'What each part does',
     groupLabel: 'Agent tools DorkOS runs',
-    groupBlurb: 'Keep the agent you like. Run it from one place.',
+    groupBlurb: 'Keep the agent tool you like. DorkOS gives it a seat on your team.',
   },
   adjacent: {
     headline: (name) => `DorkOS vs ${name}`,
@@ -271,7 +271,7 @@ export const COMPARISON_FRAMING_COPY: Record<ComparisonFraming, ComparisonFramin
 export const COMPARISON_DIMENSIONS: ComparisonDimension[] = [
   {
     id: 'multi-runtime',
-    label: 'Many agent tools, one place',
+    label: 'More than one company’s agents',
     featureSlugs: ['every-agent-one-place', 'session-durability'],
     question: 'Can you run more than one company’s coding agent from the same screen?',
     wantPhrase: 'every coding agent you run on one screen, not one company’s',
@@ -476,12 +476,12 @@ export const comparisons: Competitor[] = [
     framing: 'competitor',
     category: 'AI code editor',
     oneLiner:
-      'Cursor is an AI code editor. DorkOS is one place for every coding agent you already run. Here is what each one is for, in plain words.',
+      'Cursor is an AI code editor. DorkOS is a workspace for people and agents, built around the agents you run. Here is what each one is for.',
     pricing:
       'Free Hobby plan. Pro is $20 a month, with higher paid tiers above it and teams at $40 per person. Every plan includes some model use, and going past it costs extra.',
     openSource: false,
     verdict:
-      'Cursor is an excellent editor, and if you write code all day in one window it is the better buy. DorkOS is not an editor. It is one place for every agent you already run: on your own machine, on a schedule, and on your phone when you are out. Those agents write code. They also send the email, plan the week and book the call.',
+      'Cursor is an excellent editor, and if you write code all day in one window it is the better buy. DorkOS is not an editor. It is a workspace where you and your agents work together: on your own machine, on a schedule, and on your phone when you are out. Those agents write code. They also send the email, plan the week and book the call.',
     theirStrengths: [
       'you want one polished window for writing code with an agent beside you',
       'you want several of its agents at once, each on its own copy of your project',
@@ -2175,12 +2175,12 @@ export const comparisons: Competitor[] = [
     framing: 'adjacent',
     category: 'Team chat where agents are members',
     oneLiner:
-      'Buzz is Block’s team chat where agents join as members with their own identity. DorkOS is one place for the coding agents you run. This page compares the rooms.',
+      'Buzz is Block’s team chat where agents join as members with their own identity. DorkOS is a workspace for you and your agents. This page compares the rooms.',
     pricing:
       'Free and open source under the Apache licence, and you can run the whole thing yourself. Block also runs an early-access server of its own, with no price published.',
     openSource: true,
     verdict:
-      'Buzz and DorkOS are after different jobs, so this page covers only the ground they share: rooms where people and agents talk. On that ground Buzz is strong, and ahead of us in one place. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it. Buzz also hands an agent a new instruction while it is still working, where DorkOS makes you wait for the turn to end. What Buzz is not is a place to run and watch coding agents.',
+      'Buzz and DorkOS overlap on one piece of ground, and this page sticks to it: rooms where people and agents talk. On that ground Buzz is strong, and ahead of us in one place. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it. Buzz also hands an agent a new instruction while it is still working, where DorkOS makes you wait for the turn to end. The difference is the rest of the job. Buzz is a chat for a team of people. DorkOS is your own workspace, on your own computer, where you also watch your agents work, schedule them and pick it up from your phone.',
     theirStrengths: [
       'you want every person and every agent to hold their own identity, rather than an account on someone else’s service',
       'you want to redirect an agent while it is still working, rather than waiting for the turn to end',
@@ -2266,7 +2266,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can I use Buzz and DorkOS at the same time?',
-        a: 'Yes, and they are not after the same job. Buzz is where a team talks. DorkOS is where you start a coding job, watch it run, and pick it up again from your phone.',
+        a: 'Yes. Buzz is where a team of people talks with its agents. DorkOS is where you work with your own agents on your own computer: start a job, watch it run, and pick it up again from your phone.',
       },
       {
         q: 'Whose rooms are further along, honestly?',
@@ -2293,12 +2293,12 @@ export const comparisons: Competitor[] = [
     framing: 'adjacent',
     category: 'Personal assistant that lives in your chat apps',
     oneLiner:
-      'OpenClaw runs your whole digital life from the chat apps you already use. DorkOS is one place for the coding agents you run. Here is where the two overlap.',
+      'OpenClaw runs your whole digital life from the chat apps you already use. DorkOS is a workspace for you and your agents. Here is where the two overlap.',
     pricing:
       'Free, and open source under the MIT licence. You run it on your own machine and pay only for the model behind it, on a plan or a key you already have.',
     openSource: true,
     verdict:
-      'These are different products with one honest overlap. OpenClaw is a personal assistant that lives in your chat apps and runs your whole digital life: your messages, your files, your calendar, the machine itself. DorkOS is one place for the coding agents you run. They meet in three ways: both are yours, both run on your own computer, and both get on with work while you are not watching. If you want one assistant you can reach from WhatsApp, that is OpenClaw. DorkOS is not competing for the job.',
+      'These are different products with one honest overlap. OpenClaw is a personal assistant that lives in your chat apps and runs your whole digital life: your messages, your files, your calendar, the machine itself. DorkOS is a workspace where you and your agents work together on real projects. They meet in three ways: both are yours, both run on your own computer, and both get on with work while you are not watching. If you want one assistant you can reach from WhatsApp, that is OpenClaw. DorkOS is not competing for the job.',
     theirStrengths: [
       'you want one assistant for your whole digital life, not only the code part of it',
       'you would rather talk to it in WhatsApp or Telegram than open one more app',
@@ -2379,7 +2379,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can I use OpenClaw and DorkOS at the same time?',
-        a: 'Yes, and they barely overlap in practice. OpenClaw handles your messages and your day. DorkOS runs the coding agents and shows you what they did. Both sit on your own machine.',
+        a: 'Yes, and they barely overlap in practice. OpenClaw handles your messages and your day. DorkOS is where your agents work beside you and you see what they did. Both sit on your own machine.',
       },
       {
         q: 'Who looks after OpenClaw now?',
@@ -2387,7 +2387,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Which one should I pick?',
-        a: 'They answer different questions. Want an assistant in your pocket for your whole life? OpenClaw. Want to run several coding agents on real projects and see what happened? DorkOS.',
+        a: 'They answer different questions. Want an assistant in your pocket for your whole life? OpenClaw. Want a team of agents working with you on real projects, where you can see what happened? DorkOS.',
       },
     ],
     lastVerified: '2026-08-24',
@@ -2412,7 +2412,7 @@ export const comparisons: Competitor[] = [
     framing: 'adjacent',
     category: 'Assistant that lives in your chat apps',
     oneLiner:
-      'Hermes Agent puts an assistant in Telegram, Discord, Slack and more. DorkOS is one place for the coding agents you run. This page sticks to the shared ground.',
+      'Hermes Agent puts an assistant in Telegram, Discord, Slack and more. DorkOS is a workspace for you and your agents. This page sticks to the shared ground.',
     pricing:
       'The agent itself is free and open source, whatever else you buy. Nous sells credits for models and tools on top: a free tier, then $20 a month for Plus, $100 for Super and $200 for Ultra.',
     openSource: true,
@@ -2501,7 +2501,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can I use Hermes and DorkOS together?',
-        a: 'Yes. They want different jobs and neither gets in the other one’s way. Hermes is your assistant in chat, and DorkOS is where coding work runs and gets watched.',
+        a: 'Yes. They want different jobs and neither gets in the other one’s way. Hermes is your assistant in chat, and DorkOS is where your agents do their work and you watch it.',
       },
       {
         q: 'Does DorkOS work in Telegram and Slack too?',
@@ -2528,7 +2528,7 @@ export const comparisons: Competitor[] = [
     framing: 'adjacent',
     category: 'Cloud coworker with a computer of its own',
     oneLiner:
-      'Grok Bot is SpaceXAI’s cloud coworker with a computer of its own. DorkOS is one place for the coding agents on your machine. Here is the shared ground.',
+      'Grok Bot is SpaceXAI’s cloud coworker with a computer of its own. DorkOS is a workspace for you and the agents on your machine. Here is the shared ground.',
     pricing:
       'It needs a paid plan, and not the cheapest one. The plans listed as eligible are SuperGrok Plus or SuperGrok Heavy, which the App Store prices at $100 and $300 a month, or on the Cursor side Pro+ at $60, Ultra at $200, or a Teams seat from $40. Plain SuperGrok at $30 and Cursor Pro at $20 are not on that list.',
     openSource: false,
@@ -2624,7 +2624,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can I use Grok Bot and DorkOS together?',
-        a: 'Yes, and they are not after the same job. Grok Bot takes the office work. DorkOS is where you start a coding job on your own machine, watch it run, and pick it up from your phone.',
+        a: 'Yes. Grok Bot is a coworker on a cloud computer SpaceXAI runs. DorkOS is your own workspace, where you and your agents work on your own machine and you pick it up from your phone.',
       },
     ],
     lastVerified: '2026-08-24',

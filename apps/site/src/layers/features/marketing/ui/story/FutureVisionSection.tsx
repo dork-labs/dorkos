@@ -17,7 +17,7 @@ const LABEL_COLOR: Record<FutureCard['color'], string> = {
 
 /**
  * Permanent-page-only section. Hidden in ?present=true via CSS.
- * Shows where DorkOS is heading: autonomous -> connected -> commerce.
+ * Shows where DorkOS is heading: autonomous -> together -> commerce.
  */
 export function FutureVisionSection({ slideId = 'vision' }: FutureVisionSectionProps) {
   return (

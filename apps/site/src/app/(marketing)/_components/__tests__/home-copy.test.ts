@@ -108,12 +108,19 @@ const NAMED_IN_CHAT: DockAppId[] = CHAT_SCRIPT.map((line) => line.dockApp).filte
 
 describe('the settled lines', () => {
   // These six are not editorial choices a passing build should be free to
-  // change. "All your agents. One place." is the category line the operator
-  // fixed (AGENTS.md, DOR-1517) and "You, multiplied." is the tagline; the
-  // rest were approved word for word in the design session this page came
-  // out of. Anything else on the page is fair game to rewrite.
+  // change. "A workspace for people and agents." is the category line of the
+  // 2026-10 story (DOR-2736, replacing DOR-1517's "All your agents. One
+  // place.") and "You, multiplied." is the tagline; the rest were approved
+  // word for word in the design session this page came out of. Anything else
+  // on the page is fair game to rewrite.
   it('says the category line, unedited', () => {
-    expect(HERO.title).toBe('All your agents. One place.');
+    expect(HERO.title).toBe('A workspace for people and agents.');
+  });
+
+  it('keeps the runtime names out of the hero', () => {
+    // The 2026-10 story moved "Claude Code, Codex and OpenCode" from the
+    // headline to a fact further down. The cast's badges still carry them.
+    expect(Object.values(HERO).join(' ')).not.toMatch(/claude|codex|opencode/i);
   });
 
   it('keeps the three beat headlines', () => {

@@ -8,8 +8,13 @@ import { company } from '@dorkos/shared/company';
  */
 export const siteConfig = {
   name: 'DorkOS',
+  /**
+   * The category line, as it reads in titles and card alt text. Settled in
+   * the 2026-10 story; the hero says the same words as a sentence.
+   */
+  category: 'A workspace for people and agents',
   description:
-    'One place for every AI agent you run: Claude Code, Codex, and OpenCode. Open source, and it runs on your own computer.',
+    'The workspace where founders run their business with people and agents. Free, open source, and it runs on your own computer.',
   url: 'https://dorkos.ai',
   /** The company's published contact address; owned by `@dorkos/shared/company`. */
   contactEmail: company.contactEmail,

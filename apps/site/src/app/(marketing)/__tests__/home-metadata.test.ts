@@ -13,8 +13,8 @@ import { metadata } from '../page';
 describe('the home page’s metadata', () => {
   it('says DorkOS exactly once in the title', () => {
     // The root layout's template is `%s | DorkOS`. A plain string title would
-    // be fed through it and come back "DorkOS — … | DorkOS".
-    expect(metadata.title).toEqual({ absolute: 'DorkOS — All your agents. One place.' });
+    // be fed through it and come back "DorkOS: … | DorkOS".
+    expect(metadata.title).toEqual({ absolute: 'DorkOS: A workspace for people and agents' });
   });
 
   it('is indexable, with the site root as its canonical', () => {
@@ -35,7 +35,7 @@ describe('the home page’s metadata', () => {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'DorkOS: one place for every AI agent you run',
+        alt: 'DorkOS: a workspace for people and agents',
       },
     ]);
   });
@@ -60,7 +60,7 @@ describe('the home page’s metadata', () => {
     // different things about the same URL.
     expect(metadata.twitter).toEqual({
       card: 'summary_large_image',
-      title: 'DorkOS — All your agents. One place.',
+      title: 'DorkOS: A workspace for people and agents',
       description: metadata.description,
     });
   });
