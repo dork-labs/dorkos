@@ -217,10 +217,10 @@ export class ActivityService {
    * low volume, and a permission history that forgets cannot answer "who
    * allowed this".
    *
-   * @param retentionDays - Days to retain events (default 30)
+   * @param retentionDays - Days to retain events (default 365, the `activity.retentionDays` default)
    * @returns Number of deleted rows
    */
-  async prune(retentionDays: number = 30): Promise<number> {
+  async prune(retentionDays: number = 365): Promise<number> {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - retentionDays);
 

@@ -165,6 +165,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // tool, ends with the server's process, and costs battery, which the Sleep
   // setting says in plain words.
   'keepAwake.whileAgentsWork',
+  // How long the Activity feed keeps its rows (spec `audit-trail` §3.5). It
+  // holds no message content, moves nothing off the machine and grants
+  // nothing, and the audit log keeps every action whatever it says.
+  'activity.retentionDays',
   // When an idle agent working copy is tidied away, and how long a queued merge
   // waits its turn. Neither enforces a safety bound: the reap sweep removes
   // nothing that is dirty, unmerged, or being worked in right now — a gate that

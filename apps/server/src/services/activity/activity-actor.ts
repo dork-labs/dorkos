@@ -49,7 +49,7 @@ import type { AgentIdentity } from '../core/agent-identity/agent-identity-servic
 import { getRequestAgentIdentity, presentsAgentIdentity } from '../../middleware/agent-identity.js';
 
 /** What the feed says about a caller DorkOS cannot name. */
-const UNIDENTIFIED_ACTOR_LABEL = 'Unidentified caller';
+export const UNIDENTIFIED_ACTOR_LABEL = 'Unidentified caller';
 
 /** What the feed calls the person whose machine this is. */
 const OPERATOR_ACTOR_LABEL = 'You';

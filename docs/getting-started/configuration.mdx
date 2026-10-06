@@ -148,6 +148,21 @@ DorkOS keeps your computer from falling asleep while agents work, then lets it s
   }}
 />
 
+### Activity
+
+How long the Activity feed keeps its history. The record behind it keeps every action forever, whatever this says. See [The record](/docs/guides/audit-trail).
+
+<TypeTable
+  type={{
+    'activity.retentionDays': {
+      description:
+        'Days of Activity history to keep, from 1 to 3650. The DORKOS_ACTIVITY_RETENTION_DAYS environment variable wins when set.',
+      type: 'number',
+      default: '365',
+    },
+  }}
+/>
+
 ### A2A Gateway
 
 The A2A gateway lets agents built by other people, on other systems, send work to the agents here — anything that speaks Google's Agent-to-Agent protocol. Agent messaging (Relay) has to be on for it to do anything.
