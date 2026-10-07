@@ -22,6 +22,17 @@ Asked for by Dorian on 2026-10-07: build `/compare` pages for these three, resea
 - **Left off the pages on purpose:** Paperclip's fixed CVE (a closed bug is not a current fact, and leading with it reads as a dig), Paperclip's default-on anonymous telemetry (not what any row asks), and every unverified number (extra-dot pricing, Slack Code limits).
 - **Conceded on the record:** Paperclip's budgets beat our reply caps; dots keep working with the laptop shut; Slack Code's multiplayer review and app reach.
 
+## Changed after adversarial review (2026-10-07)
+
+A second pass opened every cited URL again. These findings below were corrected on the pages, and win over the per-product sections further down:
+
+- **ChatGPT Space surfaces is `partial`, not `yes`:** the dots channels page says the phone app works "when the supporting update is available" and "Mobile web is not supported"; web means desktop web.
+- **ChatGPT Space approvals:** requests are answered in the desktop app's Activity view; no source says a dot brings approvals to Slack or Teams.
+- **ChatGPT Space agents:** the Space agents page names ChatGPT and dots, not Codex, as the agents inside Space.
+- **Paperclip export:** a team exports to a local folder; GitHub is an import source only. Budgets resume when you raise the limit or the month resets; there is no approval step to restart. A third-party iOS app exists, so the page says no _official_ phone app.
+- **Slack Code:** the help article covers desktop and mobile (not web), and says a stop button pauses the agent; "anyone can pause" and "from any Slack app" were not stated.
+- **DorkOS:** saying yes from Slack or Telegram needs a one-time setup (an approver list), so the FAQ says "connect once".
+
 ## Not verifiable on 2026-10-07
 
 - openai.com and help.openai.com refused direct fetches; those claims rest on search-engine excerpts, cross-checked with learn.chatgpt.com (read in full) and press.

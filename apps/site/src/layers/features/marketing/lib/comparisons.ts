@@ -2219,7 +2219,7 @@ export const comparisons: Competitor[] = [
         verdict: 'yes',
         note: 'Yes, and further than DorkOS goes. The company, each agent and each project can have a budget, with a warning at 80% and an automatic pause at 100%.',
         detail:
-          'DorkOS caps how many replies your agents may trade with each other. Paperclip caps the money itself: when an agent reaches its budget it stops, and starting it again past a hard limit needs your approval. If a spending limit in dollars is what you want, Paperclip has the better answer today.',
+          'DorkOS caps how many replies your agents may trade with each other. Paperclip caps the money itself: when an agent reaches its budget it stops until you raise the limit or the month resets. If a spending limit in dollars is what you want, Paperclip has the better answer today.',
         source: 'https://docs.paperclip.ing/guides/day-to-day/costs/',
       },
       'local-first': {
@@ -2234,7 +2234,7 @@ export const comparisons: Competitor[] = [
       },
       surfaces: {
         verdict: 'partial',
-        note: 'A web page that also works in a phone browser, if you can reach your computer from there. There is no phone or desktop app yet, and no push alerts.',
+        note: 'A web page that also works in a phone browser, if you can reach your computer from there. There is no official phone or desktop app yet, and no push alerts.',
         source: 'https://github.com/paperclipai/paperclip/issues/14736',
       },
       'approvals-anywhere': {
@@ -2249,7 +2249,7 @@ export const comparisons: Competitor[] = [
       },
       extensibility: {
         verdict: 'yes',
-        note: 'Yes. Plugins add pages and tools, skills are shared across the company, and a whole team exports to a folder or GitHub for someone else to install.',
+        note: 'Yes. Plugins add pages and tools, skills are shared across the company, and a whole team exports to a folder that someone else can install, from a folder or GitHub.',
         source: 'https://docs.paperclip.ing/guides/power/export-import/',
       },
       pricing: {
@@ -2301,10 +2301,10 @@ export const comparisons: Competitor[] = [
     oneLiner:
       'ChatGPT Space puts your team and OpenAI’s always-on dots in shared pages. DorkOS adds mini apps your agents build, on your computer, with your files.',
     pricing:
-      'Space comes with ChatGPT Pro, Business and Enterprise. Your first dot, the always-on agent, needs Pro (from $100 a month) or a Business Premium seat ($125 a person a month). The price of extra dots is not published yet.',
+      'Space comes with ChatGPT Pro, Business and Enterprise. Your first dot, the always-on agent, needs Pro (from $100 a month) or a Business Premium seat ($125 a person a month, billed monthly). The price of extra dots is not published yet.',
     openSource: false,
     verdict:
-      'ChatGPT Space and DorkOS answer the same question: where do you, your people and your agents work together? OpenAI’s answer lives in its cloud. Your dot, OpenAI’s always-on agent, has a computer and a browser of its own and keeps working when your laptop is shut, and you reach it from the ChatGPT apps, Slack or Teams. That is a real lead, because DorkOS needs your computer awake. DorkOS answers with mini apps: ask for a tool and your agents build it, and it opens inside DorkOS once you say yes. It is built for founders, and it is yours. It runs on your computer with your real files, works with Claude Code, Codex or OpenCode on the plans you already have, and is free and open source.',
+      'ChatGPT Space and DorkOS answer the same question: where do you, your people and your agents work together? OpenAI’s answer lives in its cloud. Your dot, OpenAI’s always-on agent, has a computer and a browser of its own and keeps working when your laptop is shut, and you reach it from ChatGPT on your desktop, Slack or Teams. That is a real lead, because DorkOS needs your computer awake. DorkOS answers with mini apps: ask for a tool and your agents build it, and it opens inside DorkOS once you say yes. It is built for founders, and it is yours. It runs on your computer with your real files, works with Claude Code, Codex or OpenCode on the plans you already have, and is free and open source.',
     theirStrengths: [
       'you want an agent that keeps working with your laptop shut, on a computer OpenAI runs',
       'you want nothing to install, inside an app your team may already use every day',
@@ -2314,7 +2314,7 @@ export const comparisons: Competitor[] = [
     cells: {
       'multi-runtime': {
         verdict: 'no',
-        note: 'No. Space and dots run on OpenAI’s models, and the only coding agent inside is Codex.',
+        note: 'No. Space and dots run on OpenAI’s models, and the only agents inside are ChatGPT and your dots.',
       },
       'your-own-subscriptions': {
         verdict: 'partial',
@@ -2346,20 +2346,20 @@ export const comparisons: Competitor[] = [
         verdict: 'no',
         note: 'No. A dot lives in OpenAI’s cloud. It can reach one of your computers while the ChatGPT app is open there, but the agent and its memory stay in the cloud.',
         detail:
-          'This is the deepest difference, and each side pays for its choice. A dot’s cloud computer is why it keeps working with your laptop shut, and DorkOS cannot match that today. DorkOS has no cloud for your work to sit in: your projects, your files and your history stay on your own computer, and your agents work in the folders you already use.',
+          'This is the deepest difference, and each side pays for its choice. A dot’s cloud computer is why it keeps working with your laptop shut, and DorkOS cannot match that today. DorkOS keeps your work off anyone’s cloud: your projects, your files and your history stay on your own computer, and your agents work in the folders you already use.',
       },
       'open-and-yours': {
         verdict: 'no',
         note: 'No. It is closed, run by OpenAI, and needs a paid ChatGPT account.',
       },
       surfaces: {
-        verdict: 'yes',
-        note: 'Yes. Message or call your dot from ChatGPT on the web, the desktop app and your phone, or from Slack and Teams.',
+        verdict: 'partial',
+        note: 'Message or call your dot from ChatGPT on a desktop browser or the desktop app, or from Slack and Teams. The phone app is coming, and phone browsers are not supported.',
         source: 'https://learn.chatgpt.com/docs/dots/channels',
       },
       'approvals-anywhere': {
         verdict: 'partial',
-        note: 'You can have your dot bring decisions to you in Slack or Teams. Its own list of waiting requests lives in the desktop app, and we found no word on answering one from the phone.',
+        note: 'Requests wait in the desktop app’s Activity view. We found no way to answer one from Slack, Teams or a phone.',
         source: 'https://learn.chatgpt.com/docs/dots/controls',
       },
       'attention-management': {
@@ -2380,7 +2380,7 @@ export const comparisons: Competitor[] = [
     faq: [
       {
         q: 'Can ChatGPT build me a tool too?',
-        a: 'Partly. Pages hold spreadsheets, slides and simple sites, there is a command for interactive charts, and ChatGPT Sites is in beta. The difference is where the tool lives. In DorkOS your agent builds a mini app that opens inside DorkOS, on your computer, next to your files, once you say yes.',
+        a: 'Partly. Pages hold spreadsheets, slides and simple sites, and there is a command for interactive visuals. The difference is where the tool lives. In DorkOS your agent builds a mini app that opens inside DorkOS, on your computer, next to your files, once you say yes.',
       },
       {
         q: 'Does a dot keep working when my computer is off?',
@@ -2388,7 +2388,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can I use Claude Code in ChatGPT Space?',
-        a: 'No. Space and dots run on OpenAI’s models, and Codex is the coding agent inside. DorkOS runs Claude Code, Codex and OpenCode, each on the plan you already pay for.',
+        a: 'No. Space and dots run on OpenAI’s models, and the agents inside are ChatGPT and your dots. DorkOS runs Claude Code, Codex and OpenCode, each on the plan you already pay for.',
       },
       {
         q: 'Is ChatGPT Space available everywhere?',
@@ -2428,10 +2428,10 @@ export const comparisons: Competitor[] = [
       'Included in every Slack plan, the free one too, but you need your own account with each coding agent and you pay its maker. Paid Slack plans start at $7.25 a person a month, billed yearly.',
     openSource: false,
     verdict:
-      'Slack Code and DorkOS share one piece of ground, and the table below sticks to it: people and agents working in the same channel. On that ground Slack Code is strong. You mention a coding agent, and it opens a code channel where the whole team sees its plan, its changes and a live preview, and anyone can pause or stop it. It costs nothing on top of Slack, and your team may already be there. It is for code today, and the agents run in their makers’ clouds rather than on your computer. DorkOS is not only for code. Ask for a tool and your agents build it as a mini app, which opens inside DorkOS once you say yes. It is built for founders, and it is yours: your agents work on your own computer with your real files, on the plans you already have, and DorkOS is free and open source.',
+      'Slack Code and DorkOS share one piece of ground, and the table below sticks to it: people and agents working in the same channel. On that ground Slack Code is strong. You mention a coding agent, and it opens a code channel where the whole team sees its plan, its changes and a live preview, and you can pause it. It costs nothing on top of Slack, and your team may already be there. It is for code today, and the agents run in their makers’ clouds rather than on your computer. DorkOS is not only for code. Ask for a tool and your agents build it as a mini app, which opens inside DorkOS once you say yes. It is built for founders, and it is yours: your agents work on your own computer with your real files, on the plans you already have, and DorkOS is free and open source.',
     theirStrengths: [
       'your team already works in Slack and you want agents there too, at no extra cost',
-      'you want the whole team to watch an agent’s plan, changes and live preview, and anyone to pause it',
+      'you want the whole team to watch an agent’s plan, changes and live preview as it works',
       'you want about a dozen coding agents from different companies one mention away',
       'you need the admin, security and record-keeping controls a large company expects',
     ],
@@ -2478,13 +2478,13 @@ export const comparisons: Competitor[] = [
       },
       surfaces: {
         verdict: 'yes',
-        note: 'Yes. Slack’s desktop, phone and web apps all show code channels, so you can follow a job from anywhere.',
+        note: 'Yes. Code channels work in Slack’s desktop and phone apps, so you can follow a job away from your desk.',
         source:
           'https://slack.com/help/articles/54310833022355-Build-with-AI-as-a-team-using-Slack-Code',
       },
       'approvals-anywhere': {
         verdict: 'yes',
-        note: 'Yes. A step like shipping to production waits for a person to approve it in the channel, from any Slack app, and anyone there can pause or stop the agent.',
+        note: 'Yes. A high-stakes step like shipping to production can wait for a person to approve it in the channel, and a stop button pauses the agent.',
         source: 'https://slack.com/blog/news/slack-code-channels-for-agents',
       },
       'attention-management': {
@@ -2518,7 +2518,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can I use Slack and DorkOS together?',
-        a: 'Yes. DorkOS connects to Slack, so your agents can message you there and you can say yes to them without opening DorkOS.',
+        a: 'Yes. Connect DorkOS to Slack once, and your agents can message you there and ask you for a yes.',
       },
     ],
     lastVerified: '2026-10-07',
