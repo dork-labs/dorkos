@@ -4,6 +4,8 @@ covers:
   - 'feat(community): notify live streams from every entry and access write (DOR-2764)'
   - 'feat(community): live streams wake on notices, with caps, readiness and metrics (DOR-2764)'
   - 'docs(community): document live-stream settings, readiness and metrics (DOR-2764)'
+  - 'fix(community): a stream gives back its place, checks access at once, keeps its closed frame (DOR-2764)'
+  - 'feat(community): per-member stream cap, a self-checking listener, readiness off the pool (DOR-2764)'
 ---
 
 ### Changed
