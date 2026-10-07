@@ -533,10 +533,7 @@ test('Installed saved and clean browsers draw frames, show caret and pointer, ty
     await settingsPage.close();
     await expect(view.canvas).toHaveCount(0);
     await expect(view.pointer).toHaveCount(0);
-    await view.goto();
-    await expect(
-      page.getByText('Turn on Shared browser in Settings → Experiments.', { exact: true })
-    ).toBeVisible();
+    await view.gotoOff();
     const final = await page.request.get('/api/browser/runtime/status');
     expect(final.status()).toBe(200);
     expect(await final.json()).toMatchObject({ state: 'disabled', enabled: false });

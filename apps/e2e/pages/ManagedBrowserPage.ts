@@ -18,6 +18,21 @@ export class ManagedBrowserPage {
     await this.page.goto('/browser');
     await expect(this.page.getByLabel('Workspace', { exact: true })).toBeVisible();
   }
+  async gotoOff() {
+    await this.page.goto('/browser');
+    await expect(
+      this.page.getByText(
+        'Shared browser is an experiment. Turn it on in Settings → Experiments to try it.',
+        { exact: true }
+      )
+    ).toBeVisible();
+    await expect(
+      this.page.getByRole('button', { name: 'Open settings', exact: true })
+    ).toBeVisible();
+    await expect(this.page.getByLabel('Workspace', { exact: true })).toHaveCount(0);
+    await expect(this.canvas).toHaveCount(0);
+    await expect(this.pointer).toHaveCount(0);
+  }
   async createSaved(label: string, workspace: string) {
     await this.page.getByLabel('Workspace', { exact: true }).selectOption(workspace);
     await this.page.getByLabel('New saved profile', { exact: true }).fill(label);
