@@ -56,6 +56,8 @@ The explainer line: **Teams needed Slack. AI agents need DorkOS.** Use it where 
 
 Retired from the category _(2026-10-06)_: "the operating system for AI agents" (the product name stays DorkOS) and "one place for every AI agent you run" (from 2026-08-24). Plain uses of the words "one place" are fine; they are just no longer the category phrase.
 
+**Co-workers, not assistants** _(added 2026-10-06)_. The agents in DorkOS are co-workers and co-creators working toward shared goals, not assistants waiting for the next instruction. Each one has a job (its "role and responsibilities", on its profile; **Roadmap** as a feature). Write about agents the way you would write about colleagues: what they own, what they are working on, who they work with. Never call our agents "AI assistants" in story copy. "Role" means that job; Owner, Admin, Member and Guest are **access levels**, a separate thing.
+
 **Name collision.** "Workspaces" is already a product noun: the /workspaces page and project checkouts. When "workspace" is the category word, make that obvious ("a workspace for people and agents"). Never rename or redefine the product's Workspaces page to fit the category.
 
 ### Vendor Neutrality (added 2026-07-06; demoted from headline 2026-10-06)
@@ -145,16 +147,23 @@ The full picture, with every capability labelled **Built**, **Before launch** or
 - Connections to outside tools such as Gmail, plus Telegram and Slack (**Built**)
 - Schedules (Tasks) (**Built**)
 - The record: the Activity page (**Built**, not a complete audit trail); the full audit trail (**Before launch**)
-- Roles: Owner, Admin, Member, Guest (**Roadmap**)
+- Access levels: Owner, Admin, Member, Guest (**Roadmap**)
+- Groups, projects, tasks in projects and tiered goals, plus a health check for the organisation (**Roadmap**; today's Tasks are schedules)
+- Apps inside DorkOS as a core feature (**Roadmap**; today's shapes and extensions are the early form, and public copy keeps the name "shapes")
 
 **The workers (people and agents):**
 
 - Agents on Claude Code, Codex or OpenCode (**Built**)
+- Agents as co-workers: a role and responsibilities on every profile, their own outside accounts, agents creating agents (**Roadmap**)
 - Equal accounts for people and agents (**Roadmap**)
 - Email, phone, a vault for secrets, payments as account features (**Roadmap**)
-- An agent's own computer, local or cloud (**Roadmap**, behind an experimental flag)
+- An agent's own computer, local or cloud (**Roadmap**, behind an experimental flag; not built and not part of the launch)
 
 **Where it runs:** free on your own computer (**Built**); DorkOS Cloud for accounts, remote access and credits (**Built**); push to another DorkOS and publishing (**Roadmap**).
+
+**Extending it:** one package type, the plugin (**Roadmap**); everything programmable through a CLI, an SDK and API, and GraphQL, with per-account keys (**Roadmap**). The marketplace install path (**Built**) and the MCP server (**Built**) are the early forms.
+
+**The launch:** one space opens at launch, the official DorkOS Community Space (**Before launch**, not built yet; never claim it until it ships). Every other space feature stays behind an experimental switch.
 
 **Module names.** Engine, Console, Pulse (shipped as Tasks), Relay and Mesh were the Q1 2026 architecture names. Relay and Mesh still exist in code and in the module litepapers (`modules/`); Relay is planned to merge into one conversation system. These names belong in technical docs, not in story copy. Wing remains a vision item only. Loop is a separate Dork Labs product ([looped.me](https://www.looped.me/)).
 
@@ -259,6 +268,7 @@ Use language like:
 | Don't say                  | Say                                                       |
 | -------------------------- | --------------------------------------------------------- |
 | "Easy-to-use AI assistant" | "A workspace for people and agents"                       |
+| "Your AI assistants"       | "Your agents" (co-workers with a job)                     |
 | "Get started in minutes!"  | "Install. Configure. Run."                                |
 | "We help founders..."      | "Run your business with people and agents."               |
 | "Powerful AI features"     | "Agents that multiply what you accomplish."               |
@@ -487,7 +497,8 @@ DorkOS becomes:
 
 - The workspace where founders run their business with people and agents
 - One program, local or hosted, the same app everywhere
-- Equal accounts for people and agents, with roles, email, phone, secrets and payments
+- Equal accounts for people and agents, each with a job, access levels, email, phone, secrets and payments
+- Groups, projects and goals that guide what agents do, and a health check that keeps the organisation in shape
 - A network of spaces you can push work to, publish from, and leave at any time
 
 (This vision is internal. It is not marketing copy.)

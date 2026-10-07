@@ -18,7 +18,7 @@
 
 ## Context
 
-Ikechi has a strong vision and strong taste, and more ideas than hours. He builds products and runs operations by directing agents: one agent writes the app, another drafts the investor update, another works the support inbox, another keeps the books in order. He treats agents as colleagues with jobs, not as a chat box he types into.
+Ikechi has a strong vision and strong taste, and more ideas than hours. He builds products and runs operations by directing agents: one agent writes the app, another drafts the investor update, another works the support inbox, another keeps the books in order. He treats agents as co-workers and co-creators, not as assistants or a chat box he types into. He sets the goals; each agent has a job and works toward them.
 
 He wants **one place to run the business**, not a pile of tools: a workspace where he talks to his people and his agents in DMs, channels and threads, and where agents can act in the outside tools the business depends on. He wants to trust his agents the way he trusts a good hire, and to be able to check the record when something looks off.
 
@@ -47,9 +47,10 @@ The second-worst day: not knowing what an agent did in an outside account (an em
 ## Goals
 
 1. Build a business far bigger than its headcount
-2. Talk to people and agents in one place, and let agents work the business's real tools
-3. Trust agents with real work, with a record to check instead of a permission prompt for every step
-4. Compound capability over time: every agent set up and every skill installed makes the next job faster
+2. Set the goals and let co-workers, people and agents, own the work toward them
+3. Talk to people and agents in one place, and let agents work the business's real tools
+4. Trust agents with real work, with a record to check instead of a permission prompt for every step
+5. Compound capability over time: every agent set up and every skill installed makes the next job faster
 
 ## Frustrations
 

@@ -167,6 +167,9 @@ Tracking key creative decisions as they're made.
 - **Core image:** DorkOS is the office; people and agents are the workers who log in. An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in.
 - **Audience:** the founder first (semi-technical, T-shaped, YC-style, building a big business mostly with agents); Kai, the developer, second. Priya and Lil retired for focus.
 - **Relationship:** people and agents are colleagues, and will have equal accounts (roadmap). Retires Decision 3's "not peers" nuance.
+- **Co-workers, not assistants** _(added 2026-10-06, brief update)_: agents are co-workers and co-creators working toward shared goals. Never frame our agents as "AI assistants". Every profile will carry a "role and responsibilities", the job (roadmap). Describing other products as assistants, and technical uses such as "assistant message", are fine.
+- **Access levels** _(added 2026-10-06)_: Owner, Admin, Member and Guest are **access levels**, not roles. "Role" means the job on a profile. All of it is roadmap; copy does not claim it.
+- **Apps inside DorkOS** _(added 2026-10-06)_: the new name is not final ("mini apps" is a working name in `meta/` only). Public copy keeps "shapes" and does not introduce a new name until one is chosen.
 - **Trust:** "trusted by default", "colleagues, not babysitters". Copy may state the principle now. It may not claim full power by default, an audit trail anyone can read, or the absence of permission prompts as shipped behavior until the trust work ships (the demo-claim gate, `meta/positioning-202610/00-overview.md#the-demo-claim-gate`).
 - **Runtime names:** "Claude Code, Codex and OpenCode side by side" leaves the headline. Runtimes are a docs fact; one plain mention lower down on a story surface is fine.
 - **Cloud:** local first, cloud optional. Free forever on your own computer with no required account; DorkOS Cloud is an option, never a requirement.
