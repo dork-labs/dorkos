@@ -100,6 +100,7 @@ const PRESET_LABEL: Record<PermissionPreset, string> = {
   careful: 'Careful',
   balanced: 'Balanced',
   full: 'Full power',
+  trusted: 'Trusted',
 };
 
 /** A Files & commands stop as a person reads it (the app's words). */

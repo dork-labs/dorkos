@@ -130,16 +130,16 @@ describe('destructive rule', () => {
 
 describe('floor clamp', () => {
   // A floor area is never Allowed, whichever layer tried.
-  const base = { area: 'permissions' as const, actionId: 'permissions.change' };
+  const base = { area: 'reach' as const, actionId: 'tunnel.enable' };
   it.each([
-    ['agent action', { agent: { actions: { 'permissions.change': 'allowed' as const } } }],
-    ['agent area', { agent: { areas: { permissions: 'allowed' as const } } }],
+    ['agent action', { agent: { actions: { 'tunnel.enable': 'allowed' as const } } }],
+    ['agent area', { agent: { areas: { reach: 'allowed' as const } } }],
     [
       'default action',
       {
         config: {
           preset: 'full' as const,
-          defaults: { areas: {}, actions: { 'permissions.change': 'allowed' as const } },
+          defaults: { areas: {}, actions: { 'tunnel.enable': 'allowed' as const } },
         },
       },
     ],
@@ -148,7 +148,7 @@ describe('floor clamp', () => {
       {
         config: {
           preset: 'full' as const,
-          defaults: { areas: { permissions: 'allowed' as const }, actions: {} },
+          defaults: { areas: { reach: 'allowed' as const }, actions: {} },
         },
       },
     ],
@@ -157,8 +157,19 @@ describe('floor clamp', () => {
     expect(r).toMatchObject({ state: 'ask', source: 'floor', layer: 'floor' });
   });
 
+  it('lets the Permissions area resolve Allowed now that it is no floor', () => {
+    const r = resolvePermission(
+      input({
+        area: 'permissions',
+        actionId: 'permissions.change',
+        agent: { areas: { permissions: 'allowed' } },
+      })
+    );
+    expect(r).toMatchObject({ state: 'allowed', source: 'agent-area' });
+  });
+
   it('leaves Blocked in a floor area alone', () => {
-    const r = resolvePermission(input({ ...base, agent: { areas: { permissions: 'blocked' } } }));
+    const r = resolvePermission(input({ ...base, agent: { areas: { reach: 'blocked' } } }));
     expect(r).toMatchObject({ state: 'blocked', source: 'agent-area' });
   });
 });

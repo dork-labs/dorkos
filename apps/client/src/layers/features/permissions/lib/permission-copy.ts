@@ -24,6 +24,7 @@ export const PRESET_LABEL: Record<PermissionPreset, string> = {
   careful: 'Careful',
   balanced: 'Balanced',
   full: 'Full power',
+  trusted: 'Trusted',
 };
 
 /** What each preset means, in one line. */
@@ -31,6 +32,7 @@ export const PRESET_SUMMARY: Record<PermissionPreset, string> = {
   careful: 'Agents ask before they change anything, and can’t reach outside DorkOS.',
   balanced: 'Agents run their rooms and ask before anything wider.',
   full: 'Agents do everyday work alone and ask before installs or settings changes.',
+  trusted: 'Agents work on their own, and everything they do is recorded.',
 };
 
 /**

@@ -124,12 +124,10 @@ describe('shipped preset tables', () => {
 });
 
 describe('area registry', () => {
-  it('lists the twelve state areas plus files, with exactly three floors', () => {
+  it('lists the twelve state areas plus files, with exactly two floors', () => {
+    // Permissions stopped being a floor with ADR 261006-225605: an agent may
+    // change permissions as a person may, and every change is recorded.
     expect(PERMISSION_AREAS.map((a) => a.id)).toEqual([...PERMISSION_AREA_IDS, 'files']);
-    expect(PERMISSION_AREAS.filter((a) => a.floor).map((a) => a.id)).toEqual([
-      'safety',
-      'permissions',
-      'reach',
-    ]);
+    expect(PERMISSION_AREAS.filter((a) => a.floor).map((a) => a.id)).toEqual(['safety', 'reach']);
   });
 });

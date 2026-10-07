@@ -92,9 +92,36 @@ const FULL: PermissionPresetTable = Object.freeze({
   filesStop: 'autonomy',
 });
 
-/** The three shipped presets, frozen. */
+/**
+ * Trusted: agents act with full power and every action is recorded (ADR
+ * `261006-225605`). Every in-circle area is Allowed. Two areas still ask:
+ * Safety limits, because its loop-guard settings stay a person's call until
+ * DOR-2745 decides their replacement, and Reach & secrets, which is never
+ * Allowed for an agent. Files & commands runs at Full autonomy.
+ * Shipped values are frozen; see the module doc before changing one.
+ */
+const TRUSTED: PermissionPresetTable = Object.freeze({
+  areas: Object.freeze({
+    rooms: 'allowed',
+    tasks: 'allowed',
+    agents: 'allowed',
+    messages: 'allowed',
+    connections: 'allowed',
+    packages: 'allowed',
+    extensions: 'allowed',
+    own_chat: 'allowed',
+    settings: 'allowed',
+    safety: 'ask',
+    permissions: 'allowed',
+    reach: 'ask',
+  }),
+  actions: Object.freeze({}),
+  filesStop: 'autonomy',
+});
+
+/** The shipped presets, frozen. */
 export const PERMISSION_PRESET_TABLES: Readonly<Record<PermissionPreset, PermissionPresetTable>> =
-  Object.freeze({ careful: CAREFUL, balanced: BALANCED, full: FULL });
+  Object.freeze({ careful: CAREFUL, balanced: BALANCED, full: FULL, trusted: TRUSTED });
 
 /**
  * Unchanged: what an install gets while `permissions.preset` is `null`. It must
