@@ -99,11 +99,16 @@ describe('browser registry migration on real SQLite', () => {
     expect(db.select().from(authors).all()).toHaveLength(2);
     db.insert(browserProfiles).values(profile()).run();
     expect(db.select().from(browserProfiles).get()?.label).toBe('Named');
+    expect(db.select().from(browserProfiles).get()?.importState).toBe('none');
+    expect(() =>
+      db.$client.prepare("UPDATE browser_profiles SET import_state='invented'").run()
+    ).toThrow();
     const columns = db.$client.prepare('PRAGMA table_info(browser_profiles)').all() as {
       name: string;
     }[];
     expect(columns.map((row) => row.name).sort()).toEqual([
       'created_at',
+      'import_state',
       'label',
       'metadata_version',
       'mode',

@@ -86,7 +86,8 @@ export async function reserveProfile(
   config: EngineConfiguration,
   root: string,
   profileId: ProfileId,
-  manager: ProcessIdentity
+  manager: ProcessIdentity,
+  fresh = false
 ): Promise<ProfileReservation> {
   const directory = join(root, 'reservations', profileId);
   const ownerFile = join(directory, 'owner.json');
@@ -98,6 +99,7 @@ export async function reserveProfile(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
+  if (!acquired && fresh) throw new BrowserLifecycleError('PROFILE_UNCERTAIN');
   if (!acquired) {
     privateDirectory(directory);
     const prior = readOwner(ownerFile);
@@ -166,6 +168,7 @@ export async function reserveProfile(
   try {
     reservationDirectory = ownDirectory(directory);
     persist();
+    if (fresh) mkdirSync(profileDir, { mode: 0o700 });
     privateDirectory(profileDir);
     profileDirectory = ownDirectory(profileDir);
     const native = config.nativeJournal

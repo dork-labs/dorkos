@@ -3775,6 +3775,11 @@ export interface BrowserProductionTransport {
     request: BrowserProductionProfileCreateRequest,
     signal: AbortSignal
   ): Promise<BrowserProductionProfileCreateReceipt>;
+  /** Explicit owner cookie/local-storage import into a new profile; never seeds clean mode. */
+  importBrowserProfile?(
+    request: import('./browser-schemas.js').BrowserProductionProfileImportRequest,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserProductionProfileImportReceipt>;
   /** Actual owner/native-mode Settings opt-in; disabling joins original owned browsers. */
   setBrowserRuntimeEnabled(
     enabled: boolean,

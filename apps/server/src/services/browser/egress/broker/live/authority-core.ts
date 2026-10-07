@@ -568,7 +568,8 @@ export function createBrowserAuthorityCore(
       configuration: unknown,
       command: unknown,
       network?: PrivateLiveNetworkPreparation,
-      participants?: PrivateLiveBrowserParticipants
+      participants?: PrivateLiveBrowserParticipants,
+      initialStorageState?: unknown
     ): Promise<{
       engine: BrowserLifecycleEngine;
       opened: Awaited<ReturnType<BrowserLifecycleEngine['open']>>;
@@ -806,6 +807,8 @@ export function createBrowserAuthorityCore(
         let engine: BrowserLifecycleEngine | undefined;
         const acquiredOriginal: { engine?: BrowserLifecycleEngine } = {};
         try {
+          if (initialStorageState !== undefined && !runtimeOwner)
+            throw new BrokerError('AUTHORITY_REFUSED');
           let opened: Awaited<ReturnType<BrowserLifecycleEngine['open']>>;
           if (runtimeOwner) {
             const parsed = validateEngineConfiguration(configuration);
@@ -822,7 +825,8 @@ export function createBrowserAuthorityCore(
               }),
               command,
               undefined,
-              _runtime.identity.mode
+              _runtime.identity.mode,
+              initialStorageState
             );
             if (acquiredOriginal.engine !== acquired.engine)
               throw new BrokerError('AUTHORITY_REFUSED');

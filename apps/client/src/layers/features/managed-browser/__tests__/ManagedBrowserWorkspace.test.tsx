@@ -42,6 +42,7 @@ function fixture() {
   const loss = new AbortController();
   const production: BrowserProductionTransport = {
     createBrowserProfile: vi.fn(),
+    importBrowserProfile: vi.fn(),
     setBrowserRuntimeEnabled: vi.fn(),
     readBrowserRuntimeStatus: vi.fn(async (): Promise<BrowserProductionStatus> => ({
       state: 'ready',
@@ -960,4 +961,29 @@ it('local website permission is an explicit owner request, never automatic navig
     expect.any(AbortSignal)
   );
   expect(f.production.navigateBrowser).not.toHaveBeenCalled();
+});
+
+it('joins the original imported file read and refuses the import after owner loss', async () => {
+  const f = fixture();
+  const view = f.mount();
+  await screen.findByRole('option', { name: 'My workspace' });
+  fireEvent.change(screen.getByLabelText('Workspace'), { target: { value: workspaceId } });
+  fireEvent.change(screen.getByLabelText('New saved profile'), { target: { value: 'Imported' } });
+  let release!: (value: string) => void;
+  const read = new Promise<string>((yes) => {
+    release = yes;
+  });
+  f.originals.push(read);
+  f.releases.push(() => release('{"cookies":[],"origins":[]}'));
+  const file = new File(['{}'], 'sign-ins.json', { type: 'application/json' });
+  Object.defineProperty(file, 'text', { value: () => read });
+  fireEvent.change(screen.getByLabelText(/Import sign-ins into a new profile/u), {
+    target: { files: [file] },
+  });
+  view.switchOwner('bob');
+  await act(async () => {
+    release('{"cookies":[],"origins":[]}');
+    await read;
+  });
+  expect(f.production.importBrowserProfile).not.toHaveBeenCalled();
 });

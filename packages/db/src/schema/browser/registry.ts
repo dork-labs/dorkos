@@ -23,6 +23,10 @@ export const browserProfiles = sqliteTable(
     metadataVersion: integer('metadata_version').notNull(),
     revision: integer('revision').notNull(),
     status: text('status', { enum: ['available', 'inUse', 'quarantined'] }).notNull(),
+    /** Initialization failure is durable and independent of ordinary native quarantine. */
+    importState: text('import_state', { enum: ['none', 'pending', 'failed', 'ready'] })
+      .notNull()
+      .default('none'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -34,6 +38,10 @@ export const browserProfiles = sqliteTable(
     check(
       'browser_profiles_revision',
       sql`typeof(${t.revision}) = 'integer' AND ${t.revision} BETWEEN 0 AND 9007199254740991`
+    ),
+    check(
+      'browser_profiles_import_state',
+      sql`${t.importState} IN ('none', 'pending', 'failed', 'ready')`
     ),
     check('browser_profiles_status', sql`${t.status} IN ('available', 'inUse', 'quarantined')`),
   ]

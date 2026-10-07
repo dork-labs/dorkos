@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { BrowserProductionProfileImportRequestSchema } from '@dorkos/shared/browser-schemas';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useId, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BrowserLocalDestinationRequestSchema,
@@ -67,6 +68,7 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
   const [acquisitionMode, setAcquisitionMode] = useState<'ephemeral' | 'persistent'>('ephemeral');
   const [profileId, setProfileId] = useState('');
   const [profileLabel, setProfileLabel] = useState('');
+  const importFileId = useId();
   const [url, setUrl] = useState('');
   const displayLifetime = useRef<
     | {
@@ -330,6 +332,41 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
       if (!admitted(generation) || signal.aborted) return;
       setBindings([receipt.binding]);
       show(receipt.binding, undefined, generation);
+    });
+  }
+  function readImportState(text: string): unknown {
+    try {
+      return JSON.parse(text);
+    } catch (cause) {
+      throw new Error('This storage-state file could not be read.', { cause });
+    }
+  }
+  function importNamedProfile(file: File) {
+    const label = profileLabel,
+      selectedWorkspace = admission.current.workspaceId;
+    const method = original.production.importBrowserProfile;
+    if (!method || !label.trim()) return;
+    const importProfile = method.bind(original.production);
+    void operation(async (signal, generation) => {
+      if (file.size > 16 * 1024) throw new Error('Choose a storage-state file smaller than 16 KB.');
+      const text = await file.text();
+      if (!admitted(generation) || signal.aborted) return;
+      const request = BrowserProductionProfileImportRequestSchema.parse({
+        requestId: crypto.randomUUID(),
+        label,
+        workspaceId: selectedWorkspace,
+        storageState: readImportState(text),
+      });
+      const receipt = await importProfile(request, signal);
+      if (!admitted(generation) || signal.aborted) return;
+      await queryClient.invalidateQueries({
+        queryKey: browserKeys.profiles(cacheOwner),
+        exact: true,
+      });
+      if (!admitted(generation) || signal.aborted) return;
+      setProfileId(receipt.profile.profileId);
+      setProfileLabel('');
+      setAcquisitionMode('persistent');
     });
   }
   function createNamedProfile() {
@@ -702,6 +739,25 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
           <Button type="submit" size="sm" disabled={pending || !profileLabel.trim()}>
             Create saved profile
           </Button>
+          {original.production.importBrowserProfile ? (
+            <label htmlFor={importFileId} className="text-sm">
+              Import sign-ins into a new profile
+              <Input
+                id={importFileId}
+                type="file"
+                accept="application/json,.json"
+                disabled={pending || !profileLabel.trim() || !workspaceId}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  if (file) importNamedProfile(file);
+                }}
+              />
+              <span className="text-muted-foreground">
+                Cookies and local storage only, up to 16 KB. Clean browsers stay empty.
+              </span>
+            </label>
+          ) : null}
         </form>
       ) : null}
       {acquisitionMode === 'persistent' ? (

@@ -589,3 +589,26 @@ it.each([false, undefined])(
     }
   }
 );
+
+it.each([false, undefined])(
+  'preserves original forwarding when diagnostic-only session getter throws %s',
+  async (cause) => {
+    const f = fixture();
+    try {
+      const event = { method: 'Runtime.consoleAPICalled', params: {} };
+      const read = vi.fn(() => {
+        throw cause;
+      });
+      Object.defineProperty(event, 'sessionId', { get: read });
+      f.original.onmessage?.(event);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(f.sdk.mock.calls[0]?.[0]).toBe(event);
+      expect(f.sdk).toHaveBeenCalledTimes(1);
+      expect(f.fault).not.toHaveBeenCalled();
+      expect(f.sent).toEqual([]);
+      expect(f.owner.isKnown()).toBe(true);
+    } finally {
+      await f.finish();
+    }
+  }
+);

@@ -183,7 +183,8 @@ export function createProductionLiveBrowserComposition(
     async open(
       grant: PrivateWorkspaceBrowserGrant,
       command: unknown,
-      participant: PrivateLiveBrowserParticipants
+      participant: PrivateLiveBrowserParticipants,
+      initialStorageState?: unknown
     ) {
       if (stopped || originalOpen) throw new BrokerError('CLOSED');
       originalOpen = Promise.resolve()
@@ -325,7 +326,8 @@ export function createProductionLiveBrowserComposition(
                 if (stopped || !peer.isCustodyKnown()) throw new BrokerError('AUTHORITY_REFUSED');
               },
             },
-            participant
+            participant,
+            initialStorageState
           );
         })
         .then((original) => {

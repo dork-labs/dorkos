@@ -194,6 +194,21 @@ export class BrowserRegistry {
     );
   }
 
+  private publicRow(
+    owner: string,
+    browserId: string,
+    generation: number,
+    onOriginalDenial?: (value: BrowserRegistryError) => void
+  ): BrowserInstanceRow {
+    const row = this.store.instance(owner, browserId, generation, onOriginalDenial);
+    if (row.profileId && this.store.isProfileImport(owner, row.profileId)) {
+      const refusal = new BrowserRegistryError('inaccessible');
+      onOriginalDenial?.(refusal);
+      throw refusal;
+    }
+    return row;
+  }
+
   /** Return live metadata only after querying the original engine, never database status alone. */
   instance(
     owner: string,
@@ -202,10 +217,7 @@ export class BrowserRegistry {
     onOriginalDenial?: (value: BrowserRegistryError) => void
   ): BrowserInstance {
     return this.store.project(
-      this.refresh(
-        this.store.instance(owner, browserId, generation, onOriginalDenial),
-        onOriginalDenial
-      )
+      this.refresh(this.publicRow(owner, browserId, generation, onOriginalDenial), onOriginalDenial)
     );
   }
 
@@ -213,14 +225,18 @@ export class BrowserRegistry {
   instances(owner: string): BrowserInstance[] {
     return this.store
       .rows()
-      .filter((row) => row.ownerAuthorId === owner)
+      .filter(
+        (row) =>
+          row.ownerAuthorId === owner &&
+          !(row.profileId && this.store.isProfileImport(owner, row.profileId))
+      )
       .map((row) => this.store.project(this.refresh(row)));
   }
 
   /** Associate only an independently authorized target with a genuinely current owned browser. */
   attach(owner: string, browserId: string, generation: number, target: BrowserAttachment): string {
     const attachment = Object.freeze(BrowserAttachmentSchema.parse(target));
-    const row = this.refresh(this.store.instance(owner, browserId, generation));
+    const row = this.refresh(this.publicRow(owner, browserId, generation));
     if (row.status !== 'running') throw new BrowserRegistryError('stopped');
     if (!this.authorizeAttachment(owner, attachment))
       throw new BrowserRegistryError('inaccessible');

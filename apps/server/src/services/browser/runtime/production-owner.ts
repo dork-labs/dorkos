@@ -346,7 +346,8 @@ export function createProductionBrowserRuntimeOwner() {
       },
       command: unknown,
       signal?: AbortSignal,
-      identityMode: BrowserRuntimeDescriptor['identity']['mode'] = 'native'
+      identityMode: BrowserRuntimeDescriptor['identity']['mode'] = 'native',
+      initialStorageState?: unknown
     ) {
       if (closed) return Promise.reject(failed ? failure : new ProductionRuntimeRefusal('CLOSED'));
       if (work) return Promise.reject(new ProductionRuntimeRefusal('BUSY'));
@@ -621,9 +622,15 @@ export function createProductionBrowserRuntimeOwner() {
           check();
           Reflect.apply(bindEngine, participant, [engine]);
           check();
-          const originalOpen = engine.open;
+          const originalOpen =
+            initialStorageState === undefined ? engine.open : engine.initializeProfile;
+          if (typeof originalOpen !== 'function') throw new ProductionRuntimeRefusal('CLOSED');
           check();
-          const result = await Reflect.apply(originalOpen, engine, [command]);
+          const result = await Reflect.apply(
+            originalOpen,
+            engine,
+            initialStorageState === undefined ? [command] : [command, initialStorageState]
+          );
           check();
           opened = true;
           return Object.freeze({ engine, opened: result });

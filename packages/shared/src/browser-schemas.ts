@@ -1,3 +1,8 @@
+import { BrowserStorageStateSchema } from './browser-storage-state-schemas.js';
+export {
+  BrowserStorageStateSchema,
+  type BrowserStorageState,
+} from './browser-storage-state-schemas.js';
 import { createBrowserCaptureSchemas } from './browser-capture-schemas.js';
 /** Strict browser-safe managed-browser projections. Parsing never authorizes an actor or activates a runtime. */
 import { z } from 'zod';
@@ -574,6 +579,25 @@ export const BrowserProductionProfileCreateRequestSchema = boundedBrowserJson(
 export const BrowserProductionProfileCreateReceiptSchema = boundedBrowserJson(
   z.object({ requestId: ref, profile: BrowserProfileSchema }).strict()
 );
+/** Owner-authorized import always allocates a new named profile; no destination ID is accepted. */
+export const BrowserProductionProfileImportRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      label: browserPlainText(512).refine((value) => value.trim().length > 0),
+      workspaceId: ref,
+      storageState: BrowserStorageStateSchema,
+    })
+    .strict()
+);
+export const BrowserProductionProfileImportReceiptSchema =
+  BrowserProductionProfileCreateReceiptSchema;
+export type BrowserProductionProfileImportRequest = z.infer<
+  typeof BrowserProductionProfileImportRequestSchema
+>;
+export type BrowserProductionProfileImportReceipt = z.infer<
+  typeof BrowserProductionProfileImportReceiptSchema
+>;
 export type BrowserProductionProfileCreateRequest = z.infer<
   typeof BrowserProductionProfileCreateRequestSchema
 >;

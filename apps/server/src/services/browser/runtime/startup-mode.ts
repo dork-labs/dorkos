@@ -10,6 +10,7 @@ import type {
   PrivateViewerSampleObserver,
 } from './private-native-acceptance.js';
 import { createBrowserRuntimeOwnerResolution } from './runtime-owner-resolution.js';
+import { importNewBrowserProfile } from './profiles/import.js';
 import { joinProductionBrowserClose } from './close-browser-join.js';
 import {
   BrowserLocalDestinationRequestSchema,
@@ -35,6 +36,10 @@ import { join } from 'node:path';
 import { validateEngineConfiguration, type EngineConfiguration } from '@dorkos/browser';
 import {
   BrowserProductionStatusSchema,
+  BrowserProductionProfileImportRequestSchema,
+  BrowserProductionProfileImportReceiptSchema,
+  type BrowserProductionProfileImportRequest,
+  type BrowserStorageState,
   BrowserProductionProfileCreateRequestSchema,
   BrowserProductionProfileCreateReceiptSchema,
   BrowserOpenRequestSchema,
@@ -571,6 +576,10 @@ export function createProductionBrowserStartupMode(options: {
     signal: AbortSignal,
     initialUrl?: string
   ) => Promise<OpenResult>;
+  const profileImports = new WeakMap<
+    object,
+    Readonly<{ profileId: string; state: BrowserStorageState }>
+  >();
   const runtimeRequests = new WeakMap<object, RuntimeBrowserBirth>();
   const runtimeSubjects = new Map<
     ReturnType<typeof createProductionBrowserSession>,
@@ -767,6 +776,77 @@ export function createProductionBrowserStartupMode(options: {
       const matches = [...browsers].filter((browser) => browser.ownsTicket(token));
       if (matches.length !== 1 || !matches[0]!.current()) throw modeRefusal('AUTHORITY_REFUSED');
       return matches[0]!;
+    },
+    /** Explicit owner import uses a new locked profile and joins original close before availability. */
+    importProfile(
+      headers: { cookie?: string },
+      request: BrowserProductionProfileImportRequest,
+      signal: AbortSignal
+    ): Promise<import('@dorkos/shared/browser-schemas').BrowserProductionProfileImportReceipt> {
+      return retain(
+        Promise.resolve().then(async () => {
+          const original = BrowserProductionProfileImportRequestSchema.parse(request),
+            enteredEpoch = epoch;
+          if (!current() || signal.aborted) throw modeRefusal('AUTHORITY_REFUSED');
+          const actor = await captureOwner(headers, signal);
+          const profiles = readProfiles(actor.ownerId);
+          if (profiles.length >= 64) throw modeRefusal('QUOTA');
+          if (measuredResources) resourceCheck(() => measuredResources.profiles(profiles.length));
+          const valid = () => current() && actor() && !signal.aborted && epoch === enteredEpoch;
+          if (!valid()) throw modeRefusal('AUTHORITY_REFUSED');
+          const profile = store.beginProfileImport(actor.ownerId, original.label);
+          const importHeaders = Object.freeze({ cookie: headers.cookie });
+          profileImports.set(
+            importHeaders,
+            Object.freeze({ profileId: profile.profileId, state: original.storageState })
+          );
+          let completed: import('@dorkos/shared/browser-schemas').BrowserProfile | undefined;
+          try {
+            await importNewBrowserProfile({
+              current: valid,
+              open: () =>
+                api.open(
+                  importHeaders,
+                  original.workspaceId,
+                  {
+                    requestId: original.requestId,
+                    mode: 'persistent',
+                    profileId: profile.profileId,
+                  },
+                  signal
+                ),
+              async close(acquired) {
+                // Cleanup uses the already captured owner/binding, even after request cancellation.
+                await joinProductionBrowserClose(
+                  () => retain(browserCloses.get(acquired.browser)!()),
+                  () =>
+                    registry.stop(
+                      actor.ownerId,
+                      acquired.result.opened.browserId,
+                      acquired.result.opened.browserGeneration
+                    )
+                );
+                browsers.delete(acquired.browser);
+                const row = store.instance(
+                  actor.ownerId,
+                  acquired.result.opened.browserId,
+                  acquired.result.opened.browserGeneration
+                );
+                if (row.status !== 'stopped') throw modeRefusal('AUTHORITY_REFUSED');
+              },
+              finish(observed) {
+                completed = store.finishProfileImport(actor.ownerId, profile.profileId, observed);
+              },
+            });
+            return BrowserProductionProfileImportReceiptSchema.parse({
+              requestId: original.requestId,
+              profile: completed,
+            });
+          } finally {
+            profileImports.delete(importHeaders);
+          }
+        })
+      );
     },
     /** Metadata creation never starts a browser or seeds clean-mode storage. */
     createProfile(
@@ -965,6 +1045,13 @@ export function createProductionBrowserStartupMode(options: {
       );
       void (async () => {
         const originalRequest = BrowserOpenRequestSchema.parse(request);
+        const initializing = profileImports.get(headers);
+        if (
+          initializing &&
+          (originalRequest.mode !== 'persistent' ||
+            originalRequest.profileId !== initializing.profileId)
+        )
+          throw modeRefusal('AUTHORITY_REFUSED');
         if (!current() || browsers.size >= 16 || !configGet('browser').enabled)
           throw modeRefusal('AUTHORITY_REFUSED');
         const runtime = runtimeRequests.get(headers);
@@ -986,7 +1073,13 @@ export function createProductionBrowserStartupMode(options: {
           const profile = readProfiles(actorCurrent.ownerId).find(
             (value) => value.profileId === originalRequest.profileId
           );
-          if (!profile || profile.status !== 'available') throw modeRefusal('AUTHORITY_REFUSED');
+          if (
+            !profile ||
+            (store.isProfileImport(actorCurrent.ownerId, originalRequest.profileId)
+              ? initializing?.profileId !== originalRequest.profileId
+              : profile.status !== 'available')
+          )
+            throw modeRefusal('AUTHORITY_REFUSED');
         }
         const originalChromeUserAgent = configGet('browser').chromeUserAgent === true;
         const enteredEpoch = epoch;
@@ -1084,7 +1177,15 @@ export function createProductionBrowserStartupMode(options: {
           throw refusal.value;
         }
         const result = await retain(
-          browser.open(headers, workspaceId, originalRequest, signal, initialUrl, runtime)
+          browser.open(
+            headers,
+            workspaceId,
+            originalRequest,
+            signal,
+            initialUrl,
+            runtime,
+            initializing?.state
+          )
         );
         if (!valid() || !browser.current()) {
           await retain(browserCloses.get(browser)!());

@@ -17,6 +17,50 @@ import { mintProductionBrowserEnablePermit } from '../activation/activation-perm
 import { BrowserRegistryStore } from '../../registry/store.js';
 import { createProductionBrowserStartupMode, isOriginalStartupRefusal } from '../startup-mode.js';
 
+it.each(['off', 'aborted', 'unsigned', 'capacity'] as const)(
+  'refuses %s import before allocating a new profile or native instance',
+  async (scenario) => {
+    const f = await fixture();
+    if (scenario !== 'off')
+      f.config.enableOwnedBrowser(mintProductionBrowserEnablePermit(f.config, () => true));
+    const mode = createProductionBrowserStartupMode({
+      db: f.db,
+      auth: f.auth,
+      config: f.config,
+      inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    });
+    f.beforeDispose(async () => {
+      try {
+        await mode.close();
+      } catch (value) {
+        if (!isOriginalStartupRefusal(value)) throw value;
+      }
+    });
+    const signal = new AbortController();
+    if (scenario === 'aborted') signal.abort();
+    let before = 0;
+    if (scenario === 'capacity') {
+      const actor = await mode.captureOwner({ cookie: f.cookie }, new AbortController().signal);
+      for (let i = 0; i < 64; i++) mode.store.createProfile(actor.ownerId, 'Existing ' + i);
+      before = 64;
+    }
+    const request = {
+      requestId: 'request_import_reference_0001',
+      label: 'Imported',
+      workspaceId: 'workspace_owned_reference_0001',
+      storageState: { cookies: [], origins: [] },
+    };
+    await expect(
+      mode.importProfile(
+        { cookie: scenario === 'unsigned' ? undefined : f.cookie },
+        request,
+        signal.signal
+      )
+    ).rejects.toSatisfy(isOriginalStartupRefusal);
+    expect(f.db.select().from(browserProfiles).all()).toHaveLength(before);
+    expect(mode.store.rows()).toEqual([]);
+  }
+);
 function fixture() {
   type Result = {
     config: ConfigManager;

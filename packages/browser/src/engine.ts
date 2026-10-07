@@ -1,3 +1,4 @@
+import { parseProfileStorageState, type ProfileStorageState } from './profiles/storage-state.js';
 import { retainOriginalNavigationRefusal } from './navigation/refusal.js';
 import type {
   OwnedResponseDownload,
@@ -91,6 +92,8 @@ function diagnosticRefusal(): BrowserLifecycleError {
 /** Private canonical input/capture/lifecycle composition; native production readiness is separate. */
 export interface BrowserLifecycleEngine {
   open(command: unknown): Promise<OpenedResult>;
+  /** Private owner import, never an ordinary open or clean-mode seed. */
+  initializeProfile?(command: unknown, state: unknown): Promise<OpenedResult>;
   listTabs(browserId: string, browserGeneration: number): readonly BrowserBinding[];
   capture(command: unknown): Promise<BrowserCapture>;
   diagnostics(binding: unknown): DiagnosticSummary;
@@ -512,9 +515,13 @@ function constructEngine(
       browserGeneration: record.browserGeneration,
       ...(await close(record, callerEnd)),
     }) as Extract<BrowserResult, { kind: 'close' }>;
-  const open = async (value: unknown): Promise<OpenedResult> => {
+  const open = async (
+    value: unknown,
+    initialStorageState?: ProfileStorageState
+  ): Promise<OpenedResult> => {
     const command = parseBrowserCommand(value);
-    if (command.kind !== 'open') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
+    if (command.kind !== 'open' || (initialStorageState && command.mode !== 'persistent'))
+      throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
     if (stopping) throw new BrowserLifecycleError('ENGINE_STOPPED');
     if (
       command.mode === 'persistent' &&
@@ -528,6 +535,7 @@ function constructEngine(
     const browserId = parseBrowserId(randomBytes(16).toString('base64url'));
     const record: BrowserRecord = {
       diagnosticsBudget,
+      ...(initialStorageState ? { initialStorageState } : {}),
       browserId,
       lifetime: createBrowserLifetime(browserId, 0),
       browserGeneration: 0,
@@ -707,6 +715,7 @@ function constructEngine(
         tab: first.binding,
       }) as OpenedResult;
     } catch (error) {
+      delete record.initialStorageState;
       if (construction.kind === 'serverOwned' && birthReceiver !== null) {
         // Failed registration or acquisition closes local ordinary admission BEFORE server disposal.
         record.lifetime.requestRetirement('engineFault');
@@ -774,6 +783,16 @@ function constructEngine(
     open(command: unknown) {
       // Preregister a trusted native promise BEFORE open can enter external birth callbacks.
       const operation = Promise.resolve().then(() => open(command));
+      opening.add(operation);
+      void operation.then(
+        () => opening.delete(operation),
+        () => opening.delete(operation)
+      );
+      return operation;
+    },
+    initializeProfile(command: unknown, state: unknown) {
+      const original = parseProfileStorageState(state);
+      const operation = Promise.resolve().then(() => open(command, original));
       opening.add(operation);
       void operation.then(
         () => opening.delete(operation),

@@ -253,7 +253,8 @@ export function createProductionBrowserSession(options: {
       request: BrowserOpenRequest,
       signal: AbortSignal,
       initialUrl?: string,
-      runtime?: RuntimeBrowserBirth
+      runtime?: RuntimeBrowserBirth,
+      initialStorageState?: unknown
     ): Promise<
       Readonly<{
         engine: BrowserLifecycleEngine;
@@ -375,9 +376,27 @@ export function createProductionBrowserSession(options: {
                 upload: capabilitySlots.uploadOwner,
                 download: capabilitySlots.downloadOwner,
                 semantic: capabilitySlots.semanticOwner,
-              })
+              }),
+              initialStorageState
             );
             acquired = original;
+            if (initialStorageState !== undefined) {
+              // Initialization never publishes ordinary HTTP, actor, viewer or controller hosts.
+              if (request.mode !== 'persistent' || !available() || signal.aborted)
+                throw new Error('BROWSER_UNAVAILABLE');
+              return Object.freeze({
+                engine: original.engine,
+                opened: original.opened,
+                instance: store.project(
+                  store.instance(
+                    mode.ownerId,
+                    original.opened.browserId,
+                    original.opened.browserGeneration
+                  )
+                ),
+                binding: original.opened.tab,
+              });
+            }
             if (initialUrl !== undefined) {
               admit();
               const navigate = network.navigate.bind(network);

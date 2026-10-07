@@ -11,6 +11,8 @@ import {
   BrowserProductionNavigateRequestSchema,
   BrowserProductionNavigateReceiptSchema,
   BrowserProductionOpenRequestSchema,
+  BrowserProductionProfileImportRequestSchema,
+  BrowserProductionProfileImportReceiptSchema,
   BrowserProductionProfileCreateRequestSchema,
   BrowserProductionProfileCreateReceiptSchema,
   BrowserProductionOpenReceiptSchema,
@@ -334,6 +336,16 @@ export function createProductionBrowserRuntimeRoutes(
           signal,
           (original) => localDenials.add(original)
         )
+      );
+    })
+  );
+  router.post(
+    '/runtime/profiles/import',
+    handle(async (req, _res, signal) => {
+      const request = parseInput(BrowserProductionProfileImportRequestSchema, req.body);
+      requireAvailable();
+      return BrowserProductionProfileImportReceiptSchema.parse(
+        await mode.importProfile({ cookie: req.headers.cookie }, request, signal)
       );
     })
   );

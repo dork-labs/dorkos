@@ -26,6 +26,21 @@ Agents that browse the web keep running into sign-in pages. With the signed-in b
 
 ## Sign in to a site
 
+### Import sign-ins into a new saved profile
+
+The experimental Shared browser accepts a storage-state JSON file that you choose. It never reads your personal Chrome profile.
+
+1. If Shared browser is available and its safety checks pass, turn it on in **Settings → Experiments**.
+2. Open **Browser** and choose your workspace.
+3. Enter a new saved-profile name.
+4. Choose **Import sign-ins into a new profile**, then select the file.
+
+The file may contain cookies and local storage, up to 16 KB. Saved passwords, passkeys, IndexedDB, and full browser profiles are not imported. Cookies and local storage can contain private sign-in data. Import always creates a new profile. It does not replace an existing profile or add sign-ins to clean browsers.
+
+An imported profile becomes available after its browser closes successfully. If import or cleanup fails, the new profile stays blocked. Existing profiles remain separate.
+
+Your current `dorkos browser login`, `status`, and `forget` commands keep their existing behavior. Turning Shared browser on or off does not copy or delete their saved sign-ins. To import that save, choose its file yourself.
+
 ### Install the experimental managed browser
 
 On Apple Silicon Macs, you can download and verify the browser files for the experimental managed browser:

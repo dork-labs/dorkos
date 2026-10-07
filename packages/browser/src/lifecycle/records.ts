@@ -41,6 +41,7 @@ export interface BrowserRecord {
   mode: 'persistent' | 'ephemeral';
   profileId?: ProfileId;
   profileDir?: string;
+  initialStorageState?: import('../profiles/storage-state.js').ProfileStorageState;
   directory?: OwnedDirectory;
   dataRoot?: OwnedDirectory;
   reservation?: ProfileReservation;

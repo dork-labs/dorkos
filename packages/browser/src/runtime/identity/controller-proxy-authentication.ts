@@ -1,3 +1,4 @@
+import { createControllerFetchStages } from './controller-fetch-stages.js';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 
 type Message = Record<string, unknown>;
@@ -81,6 +82,7 @@ export function createControllerProxyAuthentication(
       /* The original decision and producer cause stay unchanged. */
     }
   };
+  const fetchStages = createControllerFetchStages((value) => diagnosticSink?.(value));
   const sessions = new Map<string, Session>();
   const targets = new Map<string, Target>();
   for (const info of initialTargets) {
@@ -242,8 +244,10 @@ export function createControllerProxyAuthentication(
           throw new Error('CONTROLLER_AUTH_READ_CAPACITY');
         targetReads.add(Number(value.id));
       }
+      const fetchStage = fetchStages.entering(value);
       try {
         sendOriginal(value);
+        fetchStages.entered(fetchStage);
       } catch (value) {
         note(value);
         throw value;
@@ -256,6 +260,25 @@ export function createControllerProxyAuthentication(
   original.onmessage = (value) => {
     try {
       if (!record(value)) throw new Error('CONTROLLER_AUTH_MESSAGE_INVALID');
+      try {
+        const stageSession =
+          typeof value.sessionId === 'string' ? sessions.get(value.sessionId) : undefined;
+        const stageTarget = stageSession?.admitted
+          ? targets.get(stageSession.target)?.type
+          : undefined;
+        fetchStages.observe(
+          value,
+          stageTarget === 'page' ||
+            stageTarget === 'iframe' ||
+            stageTarget === 'worker' ||
+            stageTarget === 'service_worker' ||
+            stageTarget === 'shared_worker'
+            ? stageTarget
+            : 'unowned'
+        );
+      } catch {
+        /* Diagnostic projection cannot fault the original SDK producer or forwarding. */
+      }
       if (typeof value.id === 'number' && value.id < 0) {
         const task = pending.get(value.id);
         if (!task || value.sessionId !== task.session)
@@ -363,6 +386,7 @@ export function createControllerProxyAuthentication(
   };
   original.onclose = (...args) => {
     closed = true;
+    fetchStages.close();
     if (!retiring) note(new Error('CONTROLLER_AUTH_WIRE_CLOSED'));
     if (pending.size) note(new Error('CONTROLLER_AUTH_ACK_UNOBSERVED'));
     transport.onclose?.(...args);

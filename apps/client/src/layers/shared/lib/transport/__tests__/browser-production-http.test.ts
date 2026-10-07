@@ -1,6 +1,34 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserProductionHttp } from '../browser-production-http';
+it('imports only a new profile and refuses a substituted/unavailable receipt', async () => {
+  const request = {
+    requestId: 'request_original_reference_0001',
+    label: 'Imported',
+    workspaceId: 'workspace_owned_reference_0001',
+    storageState: { cookies: [], origins: [] },
+  };
+  const profile = {
+    profileId: 'profile_imported_reference_0001',
+    label: request.label,
+    revision: 2,
+    status: 'available',
+  };
+  const fetch = serve({ requestId: request.requestId, profile });
+  await createBrowserProductionHttp(base).importBrowserProfile!(request, signal());
+  expect(fetch).toHaveBeenCalledWith(
+    base + '/browser/runtime/profiles/import',
+    expect.objectContaining({
+      method: 'POST',
+      credentials: 'include',
+      body: JSON.stringify(request),
+    })
+  );
+  serve({ requestId: request.requestId, profile: { ...profile, status: 'quarantined' } });
+  await expect(
+    createBrowserProductionHttp(base).importBrowserProfile!(request, signal())
+  ).rejects.toThrow('could not be confirmed');
+});
 const binding = {
   browserId: 'browser_original_000000000001',
   browserGeneration: 1,

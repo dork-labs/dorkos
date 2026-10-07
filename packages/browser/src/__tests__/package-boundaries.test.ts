@@ -237,6 +237,7 @@ describe('private browser package boundaries', () => {
             'semantic/process-worker.ts',
           ],
           zod: [
+            'profiles/storage-state.ts',
             'runtime/darwin-supervisor-protocol.ts',
             'runtime/darwin-supervisor-worker.ts',
             // Private bounded journal records and native supervisor protocol.

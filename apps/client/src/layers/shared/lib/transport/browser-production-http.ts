@@ -7,6 +7,9 @@ import {
   BrowserProductionOpenReceiptSchema,
   BrowserProductionStatusSchema,
   BrowserProductionEnableRequestSchema,
+  BrowserProductionProfileImportRequestSchema,
+  BrowserProductionProfileImportReceiptSchema,
+  type BrowserProductionProfileImportRequest,
   BrowserProductionProfileCreateRequestSchema,
   BrowserProductionProfileCreateReceiptSchema,
   BrowserBindingSchema,
@@ -64,6 +67,27 @@ export function createBrowserProductionHttp(baseUrl: string): BrowserProductionT
         ...receipt,
         binding: Object.freeze({ ...receipt.binding }),
       });
+    },
+    async importBrowserProfile(
+      request: BrowserProductionProfileImportRequest,
+      signal: AbortSignal
+    ) {
+      const original = BrowserProductionProfileImportRequestSchema.parse(request);
+      signal.throwIfAborted();
+      const response = await fetchJSON<unknown>(baseUrl, '/browser/runtime/profiles/import', {
+        method: 'POST',
+        body: JSON.stringify(original),
+        signal,
+      });
+      signal.throwIfAborted();
+      const receipt = BrowserProductionProfileImportReceiptSchema.parse(response);
+      if (
+        receipt.requestId !== original.requestId ||
+        receipt.profile.label !== original.label ||
+        receipt.profile.status !== 'available'
+      )
+        throw new Error('The imported browser profile could not be confirmed.');
+      return Object.freeze({ ...receipt, profile: Object.freeze({ ...receipt.profile }) });
     },
     async createBrowserProfile(
       request: BrowserProductionProfileCreateRequest,

@@ -32,6 +32,8 @@ import {
   BrowserProductionOpenReceiptSchema,
   BrowserProductionOpenRequestSchema,
   BrowserProductionProfileCreateReceiptSchema,
+  BrowserProductionProfileImportRequestSchema,
+  BrowserProductionProfileImportReceiptSchema,
   BrowserProductionProfileCreateRequestSchema,
   BrowserProductionStatusSchema,
   BrowserProfileSchema,
@@ -136,6 +138,13 @@ export function registerBrowserOpenApi(registry: OpenAPIRegistry): void {
     BrowserProductionEnableRequestSchema,
     BrowserProductionStatusSchema,
     'Requires the current signed-in owner and an allowed request origin. Turning it off joins original browser cleanup. With enabled false, an optional chromeUserAgent choice is accepted only when no runtime transition or owned browser remains. Enabling does not grant workspace, viewer or controller permission.'
+  );
+  post(
+    '/runtime/profiles/import',
+    'Import sign-ins into a new saved profile',
+    BrowserProductionProfileImportRequestSchema,
+    BrowserProductionProfileImportReceiptSchema,
+    'Requires the current signed-in owner, an allowed request origin and an authorized workspace. Accepts bounded cookies and local storage only. Always creates a new profile; it never seeds a clean browser or changes an existing profile. Availability requires original browser cleanup; failed imports remain quarantined.'
   );
   // Activation returns 403 for host/origin refusal; owner and input refusal return 503.
   registry.registerPath({

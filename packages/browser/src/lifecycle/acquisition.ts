@@ -1,3 +1,4 @@
+import { restoreProfileStorageState } from '../profiles/restore-state.js';
 import { readControllerOriginalCatalog } from '../runtime/identity/controller-original-catalog.js';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 import { createSupervisorProtocolWire } from '../runtime/identity/supervisor-protocol-wire.js';
@@ -172,7 +173,14 @@ export async function acquireBrowser(
   if (record.profileId) {
     await ownOperation(
       record,
-      () => reserveProfile(config, root, record.profileId!, record.manager),
+      () =>
+        reserveProfile(
+          config,
+          root,
+          record.profileId!,
+          record.manager,
+          !!record.initialStorageState
+        ),
       (reservation) => {
         record.reservation = reservation;
         if (stopped()) record.lifetime.uncertain = true;
@@ -426,6 +434,8 @@ export async function acquireBrowser(
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   if (record.supervisor) ownCrashRetirement(record, context);
   if (!record.supervisor) await attributeRoot(config, record, stopped);
+  if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+  await restoreProfileStorageState(record, stopped);
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   const register = (
     event: 'page' | 'close',

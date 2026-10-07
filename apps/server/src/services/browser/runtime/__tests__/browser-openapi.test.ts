@@ -7,6 +7,7 @@ it('exports the mounted browser owner routes with bounded wire schemas and disti
     '/runtime/status': 'get',
     '/runtime/enable': 'post',
     '/runtime/profiles': 'post',
+    '/runtime/profiles/import': 'post',
     '/runtime/open': 'post',
     '/runtime/local-destination': 'post',
     '/diagnostics': 'post',
