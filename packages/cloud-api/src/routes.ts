@@ -55,11 +55,26 @@ export const V1_ROUTES = {
   remoteOpen: '/v1/remote/open',
   remoteClose: '/v1/remote/close',
   remoteWakeTokens: '/v1/remote/wake-tokens',
+  /**
+   * Consent to managed remote access. `POST` is a person's browser session
+   * (answered with `RemoteEnrolmentSchema`); `DELETE` is the instance's own key
+   * or a person's session (answered with `RemoteEnrolmentWithdrawnSchema`).
+   */
   remoteEnrolment: '/v1/remote/enrolment',
+  /**
+   * A machine asks a person to approve managed remote access. Instance API key
+   * only; answered with `RemoteEnrolmentRequestSchema`.
+   */
+  remoteEnrolmentRequests: '/v1/remote/enrolment/requests',
   remoteAddress: '/v1/remote/address',
   remoteCustomAddress: '/v1/remote/address/custom',
   remoteCredentialsIssue: '/v1/remote/credentials/issue',
   remoteCredentialsConfirm: '/v1/remote/credentials/confirm',
+  /**
+   * An instance revokes its own tunnel credentials. Instance API key only, no
+   * body; answered with `RemoteCredentialRevokeResponseSchema`.
+   */
+  remoteCredentialsRevoke: '/v1/remote/credentials/revoke',
   remoteCommands: '/v1/remote/commands',
   remoteCommandsAck: '/v1/remote/commands/ack',
   /**
@@ -207,6 +222,31 @@ export const v1Path = {
    * @param orgId - The organization's opaque identifier.
    */
   orgRemoteDesignation: (orgId: string) => `/v1/orgs/${enc(orgId)}/remote/designation`,
+  /**
+   * The route for one enrolment request. `GET` reads where it stands
+   * (`RemoteEnrolmentRequestStatusSchema`), with the API key of the instance
+   * that made it.
+   *
+   * @param requestId - The request's opaque identifier.
+   */
+  remoteEnrolmentRequest: (requestId: string) => `/v1/remote/enrolment/requests/${enc(requestId)}`,
+  /**
+   * The route where a person approves one enrolment request. A person's browser
+   * session only; takes `RemoteEnrolmentApproveRequestSchema` and answers with
+   * `RemoteEnrolmentRequestStatusSchema`.
+   *
+   * @param requestId - The request's opaque identifier.
+   */
+  remoteEnrolmentRequestApprove: (requestId: string) =>
+    `/v1/remote/enrolment/requests/${enc(requestId)}/approve`,
+  /**
+   * The route where a person declines one enrolment request. A person's browser
+   * session only, no body; answers with `RemoteEnrolmentRequestStatusSchema`.
+   *
+   * @param requestId - The request's opaque identifier.
+   */
+  remoteEnrolmentRequestDeny: (requestId: string) =>
+    `/v1/remote/enrolment/requests/${enc(requestId)}/deny`,
   /**
    * The route for one agent.
    *

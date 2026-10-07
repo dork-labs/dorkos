@@ -115,6 +115,19 @@
     "communities/moves.json": "CommunityMoveListResponseSchema",
     "problem/community-name-reserved.json": "ProblemSchema",
     "communities/sign-in.json": "CommunitySignInResponseSchema",
-    "communities/sign-in-none.json": "CommunitySignInResponseSchema"
+    "communities/sign-in-none.json": "CommunitySignInResponseSchema",
+    "remote/enrolment-request.json": "RemoteEnrolmentRequestSchema",
+    "remote/enrolment-request-pending.json": "RemoteEnrolmentRequestStatusSchema",
+    "remote/enrolment-request-approved.json": "RemoteEnrolmentRequestStatusSchema",
+    "remote/enrolment-request-denied.json": "RemoteEnrolmentRequestStatusSchema",
+    "remote/enrolment-request-expired.json": "RemoteEnrolmentRequestStatusSchema",
+    "remote/enrolment-approve-request.json": "RemoteEnrolmentApproveRequestSchema",
+    "remote/enrolment-withdrawn.json": "RemoteEnrolmentWithdrawnSchema",
+    "problem/remote-enrolment-already-enrolled.json": "ProblemSchema",
+    "problem/remote-enrolment-wrong-code.json": "ProblemSchema",
+    "remote/credential-issue-request.json": "RemoteCredentialIssueRequestSchema",
+    "remote/credential-with-edge-proof.json": "RemoteCredentialSchema",
+    "problem/remote-credential-already-delivered.json": "ProblemSchema",
+    "remote/credential-revoke.json": "RemoteCredentialRevokeResponseSchema"
   }
 }

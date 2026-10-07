@@ -1,0 +1,9 @@
+{
+  "status": "approved",
+  "requestId": "enrq_0001",
+  "enrolment": {
+    "enrolmentId": "enr_0001",
+    "consentVersion": "2026-09-01",
+    "enrolledAt": "2026-09-15T12:03:00.000Z"
+  }
+}

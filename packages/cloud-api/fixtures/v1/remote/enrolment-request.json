@@ -1,0 +1,8 @@
+{
+  "requestId": "enrq_0001",
+  "userCode": "BCDF-GHJK",
+  "approveUrl": "https://cloud.example.invalid/remote/approve?code=BCDF-GHJK",
+  "expiresAt": "2026-09-15T12:15:00.000Z",
+  "pollAfterMs": 5000,
+  "consentVersion": "2026-09-01"
+}
