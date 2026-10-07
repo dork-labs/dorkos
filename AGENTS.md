@@ -47,6 +47,7 @@ dorkos/
 │   ├── mesh/             # @dorkos/mesh - Agent discovery & registry
 │   ├── harness/          # @dorkos/harness - Projects .agents/ + plugins to every agent harness
 │   ├── memory/           # @dorkos/memory - MEMORY.md store behind the MemoryProvider port
+│   ├── decisions/        # @dorkos/decisions - DecisionModel bridges (rules, OpenAI-compatible, Jev) + the ladder
 │   ├── keep-awake/       # @dorkos/keep-awake - Holds the computer awake while work runs (caffeinate, systemd-inhibit, Windows)
 │   ├── a2a-gateway/      # @dorkos/a2a-gateway - A2A protocol gateway
 │   ├── connector-providers/ # @dork-labs/connector-providers - Confined external connector SDK adapters
@@ -154,7 +155,7 @@ React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-S
 
 ### Site, Shared, CLI
 
-`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (111 subpaths, no root entry). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
+`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (117 subpaths, no root entry). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
 
 ## The `/flow` Workflow
 

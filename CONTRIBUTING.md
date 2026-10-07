@@ -34,7 +34,7 @@ The client will be available at `http://localhost:6241` and the server at `http:
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with six apps and seventeen shared packages:
+This is a Turborepo monorepo with five apps and nineteen shared packages:
 
 | Directory                    | Package                     | Description                                          |
 | ---------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -50,6 +50,7 @@ This is a Turborepo monorepo with six apps and seventeen shared packages:
 | `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry                           |
 | `packages/harness`           | `@dorkos/harness`           | Projects skills, commands & hooks to every agent CLI |
 | `packages/memory`            | `@dorkos/memory`            | Agent memory engine behind the `MemoryProvider` port |
+| `packages/decisions`         | `@dorkos/decisions`         | Decision bridges and ladder behind `DecisionModel`   |
 | `packages/keep-awake`        | `@dorkos/keep-awake`        | Holds the computer awake while agents work           |
 | `packages/skills`            | `@dorkos/skills`            | `SKILL.md` schemas, parser, writer, scanner          |
 | `packages/operating-skills`  | `@dorkos/operating-skills`  | First-party skills that teach agents to run DorkOS   |

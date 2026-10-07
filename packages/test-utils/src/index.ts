@@ -7,6 +7,10 @@
 // consumers (@dorkos/server, @dorkos/evals) use a Node tsconfig with no `jsx`
 // option, so tsc fails with TS6142 the moment their test files enter a
 // typechecked program.
+//
+// decisionModelConformance is exported via '@dorkos/test-utils/decision-model-conformance'
+// only: its one consumer is @dorkos/decisions, and keeping it off the barrel keeps
+// every other suite from loading the decision-model port it never uses.
 export * from './capability-conformance.js';
 export * from './community-conformance.js';
 export * from './directory-membership-vectors.js';
