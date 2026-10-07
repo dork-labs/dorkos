@@ -56,6 +56,13 @@ export const COMMUNITY_API_V1_ROUTES = {
   inviteBind: '/api/v1/invites/bind',
   inviteRedeem: '/api/v1/invites/redeem',
   invitePending: '/api/v1/invites/pending',
+  openAdmission: '/api/v1/open-admission',
+  openAdmissionPreflight: '/api/v1/open-admission/preflight',
+  openAdmissionJoin: '/api/v1/open-admission/join',
+  bans: '/api/v1/bans',
+  ban: '/api/v1/bans/:id',
+  memberBan: '/api/v1/members/:id/ban',
+  channelAutoJoin: '/api/v1/channels/auto-join',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
   pairingDecline: '/api/v1/pairings/decline',
@@ -629,17 +636,29 @@ export const CommunityWireAttentionResponseSchema = z
     message: 'Mentions must be a subset of unread activity.',
     path: ['mentionCount'],
   });
-/** Create a channel; authority is derived from the session, never this body. */
+/**
+ * Create a channel; authority is derived from the session, never this body. `autoJoin` puts
+ * every newly admitted person in the channel; it applies to public channels only.
+ */
 export const CommunityWireChannelCreateRequestSchema = z.strictObject({
   name: z.string().min(1),
   description: z.string().optional(),
   visibility: z.enum(['public', 'private']).optional(),
+  autoJoin: z.boolean().optional(),
 });
-/** Rename, describe or archive a channel. */
+/** Rename, describe, archive a channel, or set whether new members join it on arrival. */
 export const CommunityWireChannelUpdateRequestSchema = z.strictObject({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   archived: z.boolean().optional(),
+  autoJoin: z.boolean().optional(),
+});
+/**
+ * The channels every newly admitted person joins on arrival, for owners and admins. Kept apart
+ * from {@link CommunityWireChannelSchema}, which older installations parse strictly.
+ */
+export const CommunityWireChannelAutoJoinResponseSchema = z.strictObject({
+  channelIds: z.array(id).max(1_000),
 });
 /** List only channels visible to the current caller. */
 export const CommunityWireChannelListResponseSchema = z.strictObject({
@@ -934,6 +953,51 @@ export const CommunityWireInviteRedeemRequestSchema = z.strictObject({});
 /** An invite redemption receipt contains admitted member identity. */
 export const CommunityWireInviteRedeemResponseSchema = z.strictObject({ memberId: id });
 
+/**
+ * Whether this space admits anyone who signs in through the host's single sign-on service, for
+ * its public join page. `open` is false for every other policy, and while the host has open
+ * joins switched off or offers no single sign-on.
+ */
+export const CommunityWireOpenAdmissionSchema = z.strictObject({
+  open: z.boolean(),
+  communityName: z.string().min(1),
+});
+/**
+ * An open-admission preflight sets a short-lived HttpOnly cookie that lets a single sign-on
+ * sign-up create an account for this space. It never admits by itself.
+ */
+export const CommunityWireOpenAdmissionPreflightResponseSchema = z.strictObject({
+  granted: z.literal(true),
+  expiresAt: timestamp,
+});
+/** Joining an open space takes no input: the signed-in account is the one admitted. */
+export const CommunityWireOpenAdmissionJoinRequestSchema = z.strictObject({});
+/** The membership an open join created, kept or reactivated. */
+export const CommunityWireOpenAdmissionJoinResponseSchema = z.strictObject({ memberId: id });
+
+/** Ban a member: they leave the space and cannot come back with that account or email. */
+export const CommunityWireBanRequestSchema = z.strictObject({
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+/** One standing ban, as owners and admins see it. Never carries the email or its key. */
+export const CommunityWireBanSchema = z.strictObject({
+  id,
+  /** The membership the ban ended; null for a ban an import restored without its member. */
+  memberId: id.nullable(),
+  displayName: z.string(),
+  handle: z.string().nullable(),
+  reason: z.string().nullable(),
+  createdAt: timestamp,
+});
+/** One standing ban. */
+export type CommunityWireBan = z.infer<typeof CommunityWireBanSchema>;
+/** The ban a ban request made or found standing. */
+export const CommunityWireBanResponseSchema = z.strictObject({ ban: CommunityWireBanSchema });
+/** Standing bans, newest first. */
+export const CommunityWireBanListResponseSchema = z.strictObject({
+  bans: z.array(CommunityWireBanSchema).max(500),
+});
+
 /** A local install begins pairing with a verifier-derived challenge. */
 export const CommunityWirePairingStartRequestSchema = z.strictObject({
   installName: z.string().min(1).max(120),
@@ -1202,7 +1266,10 @@ const archivePath = z
   .refine((path) => path.split('/').every((part) => part !== '' && part !== '.' && part !== '..'));
 const nullableId = id.nullable();
 
-/** One `channels/NNNNNN.ndjson` line of an export archive (version 2). */
+/**
+ * One `channels/NNNNNN.ndjson` line of an export archive (version 2). `auto_join` is absent from
+ * archives written before channels could have it, and reads as `false`.
+ */
 export const CommunityExportChannelRowSchema = z.strictObject({
   id,
   name: z.string().min(1),
@@ -1210,6 +1277,7 @@ export const CommunityExportChannelRowSchema = z.strictObject({
   visibility: z.enum(['public', 'private']),
   archived: z.boolean(),
   created_at: timestamp,
+  auto_join: z.boolean().optional(),
 });
 /**
  * One `members/NNNNNN.ndjson` line. `email` is present for owner exports (null for an erased
@@ -1246,6 +1314,20 @@ export const CommunityExportAgentChannelMemberRowSchema = z.strictObject({
   channel_id: id,
   agent_id: id,
   joined_at: timestamp,
+});
+/**
+ * One `bans/NNNNNN.ndjson` line (owner and evidence exports only). `email` is the banned
+ * account's address, as the members collection already carries it, so an import can key the ban
+ * again on its new host; null once that account is gone.
+ */
+export const CommunityExportBanRowSchema = z.strictObject({
+  id,
+  member_id: nullableId,
+  actor_member_id: nullableId,
+  email: z.string().nullable(),
+  reason: z.string().max(500).nullable(),
+  created_at: timestamp,
+  lifted_at: timestamp.nullable(),
 });
 /** One `audit-events/NNNNNN.ndjson` line (owner exports only). */
 export const CommunityExportAuditEventRowSchema = z.strictObject({
@@ -1302,6 +1384,8 @@ const exportFileKeys = {
   auditEvents: z.array(archivePath),
   entries: z.array(archivePath),
   attachments: z.array(archivePath),
+  /** Absent from archives written before bans existed. */
+  bans: z.array(archivePath).optional(),
 };
 const count = z.int().nonnegative();
 
@@ -1354,6 +1438,8 @@ export const CommunityExportManifestV2Schema = z
       auditEvents: count,
       entries: count,
       attachments: count,
+      /** Absent from archives written before bans existed. */
+      bans: count.optional(),
     }),
   })
   .refine(
