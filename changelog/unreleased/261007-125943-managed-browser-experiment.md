@@ -5,6 +5,7 @@ covers:
   - 'fix(browser): identify current instances and diagnose pending shutdown'
   - 'fix(browser): finish viewer capture before renewing its lease'
   - 'fix(browser): distinguish observed helper exits from tracking gaps'
+  - 'refactor(browser): isolate lifecycle tracking and acceptance checks'
 ---
 
 ### Added

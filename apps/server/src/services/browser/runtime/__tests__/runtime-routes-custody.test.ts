@@ -1,3 +1,4 @@
+import { logger } from '../../../../lib/logger.js';
 import { BrowserLocalDestinationReceiptSchema } from '@dorkos/shared/browser-schemas';
 import { EventEmitter } from 'node:events';
 import type { Request, Response } from 'express';
@@ -714,3 +715,78 @@ it('captures the original mode refusal predicate before a later replacement trie
   expect(f.fenceRequests).toHaveBeenCalledWith(reason);
   expect(f.closeBrowser).not.toHaveBeenCalled();
 });
+
+it.each([
+  false,
+  undefined,
+  new Error('page.goto: net::ERR_INVALID_AUTH_CREDENTIALS at https://secret.invalid/'),
+])(
+  'publishes only fixed original navigate diagnostic after admission is fenced for %s',
+  async (reason) => {
+    const rows: unknown[] = [];
+    const sink = vi.spyOn(logger, 'info').mockImplementation((label, row) => {
+      if (label === 'Browser original navigation refusal') {
+        expect(f?.fenceRequests).toHaveBeenCalledWith(reason);
+        rows.push(row);
+        throw undefined;
+      }
+    });
+    const f = fixture('/runtime/navigate');
+    const original = f;
+    onTestFinished(async () => {
+      try {
+        const results = await Promise.allSettled([original.routes.close()]);
+        if (results[0]?.status !== 'rejected' || !Object.is(results[0].reason, reason))
+          throw new Error('ORIGINAL_NAVIGATION_CAUSE_NOT_RETAINED');
+      } finally {
+        sink.mockRestore();
+      }
+    });
+    original.originalForBinding.mockImplementation(() => ({
+      router: original.delegate,
+      navigation: () => ({
+        capture: () => ({
+          navigate: async () => {
+            throw reason;
+          },
+        }),
+      }),
+    }));
+    original.req.body = {
+      command: {
+        kind: 'navigate',
+        requestId: 'r'.repeat(22),
+        binding: optionalBinding,
+        url: 'https://example.com/',
+      },
+      controllerId: 'c'.repeat(22),
+    };
+    let published!: () => void;
+    const returned = new Promise<void>((yes) => {
+      published = yes;
+    });
+    const end = original.res.end.bind(original.res);
+    const write = vi.spyOn(original.res, 'end').mockImplementation((bytes, done) => {
+      const result = end(bytes, done);
+      published();
+      return result;
+    });
+    original.dispatch(original.req as unknown as Request, original.res as unknown as Response);
+    await returned;
+    await expect(original.routes.close()).rejects.toBe(reason);
+    expect(original.closeMode).toHaveBeenCalledOnce();
+    expect(original.res.statusCode).toBe(503);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      ordinal: 1,
+      phase: 'unknown',
+      decision: 'unknown',
+      code: 'unknown',
+      nativeError: reason instanceof Error ? 'ERR_INVALID_AUTH_CREDENTIALS' : 'unknown',
+    });
+    expect(JSON.stringify(rows)).not.toContain('secret.invalid');
+    expect(JSON.parse(write.mock.calls[0]![0].toString())).toEqual({
+      error: 'The shared browser needs a verified installation and a signed-in owner.',
+    });
+  }
+);

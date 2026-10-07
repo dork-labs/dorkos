@@ -243,7 +243,7 @@ describe('private browser package boundaries', () => {
             'lifecycle/process-journal.ts',
             'lifecycle/process-reconciliation.ts',
             'runtime/darwin-process-observer.ts',
-            'runtime/darwin-journal-worker.ts',
+            'runtime/journal/worker-protocol.ts',
             // Bounded original kernel diagnostic records; no cleanup authority.
             'runtime/darwin-journal-diagnostic.ts',
             'runtime/darwin-packaged-observer.ts',

@@ -1,3 +1,4 @@
+import { createOriginalBrowserNavigationRefusalDiagnostic } from './diagnostics/navigation-refusal.js';
 import {
   createOriginalBrowserViewerDiagnostic,
   type BrowserViewerDiagnosticStage,
@@ -63,6 +64,7 @@ export function createProductionBrowserRuntimeRoutes(
   const fenceRequests = mode.fenceRequests.bind(mode);
   const router = Router();
   const viewerDiagnostic = createOriginalBrowserViewerDiagnostic();
+  const navigationDiagnostic = createOriginalBrowserNavigationRefusalDiagnostic();
   const work = new Set<Promise<void>>();
   const cancellations = new Set<() => void>();
   let closed = false,
@@ -124,7 +126,10 @@ export function createProductionBrowserRuntimeRoutes(
     return facts.origin;
   };
   const handle =
-    (operation: (req: Request, res: Response, signal: AbortSignal) => Promise<unknown>) =>
+    (
+      operation: (req: Request, res: Response, signal: AbortSignal) => Promise<unknown>,
+      navigationOperation = false
+    ) =>
     (req: Request, res: Response) => {
       if (closed || first || work.size >= 16) {
         try {
@@ -276,6 +281,7 @@ export function createProductionBrowserRuntimeRoutes(
                 !expectedModeRefusal(reason)
               )
                 retain(reason);
+              if (navigationOperation) navigationDiagnostic.failure(reason);
               try {
                 originalAbort(reason);
               } catch (failure) {
@@ -358,7 +364,7 @@ export function createProductionBrowserRuntimeRoutes(
         requestId: command.requestId,
         binding,
       });
-    })
+    }, true)
   );
   router.post(
     '/runtime/open',
@@ -426,7 +432,7 @@ export function createProductionBrowserRuntimeRoutes(
         .capture(req, res)
         .navigate(command, controllerId, undefined, signal);
       return BrowserBindingSchema.parse(binding);
-    })
+    }, true)
   );
   router.post(
     '/control',

@@ -35,3 +35,5 @@ export { isOriginalBrowserDiagnosticRefusal } from './engine.js';
 
 export type { AuthorityCustodyRefusalStage } from './lifecycle/live-custody.js';
 export type { RetirementCloseRefusalStage } from './lifecycle/records.js';
+
+export { readOriginalNavigationRefusal } from './navigation/refusal.js';

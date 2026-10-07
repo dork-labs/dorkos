@@ -1,3 +1,4 @@
+import { readOriginalNavigationRefusal } from '../navigation/refusal.js';
 import type { BrowserBinding } from '../contracts.js';
 import { parseProfileId } from '../ids.js';
 import { navigationPending } from '../navigation/cohort.js';
@@ -621,4 +622,62 @@ it('refreshes original authorization after input reset before adopting same-docu
   expect(f.complete).toHaveBeenCalledTimes(1);
   expect(f.tab.binding.navigationGeneration).toBe(before.navigationGeneration);
   expect(f.record.lifetime.ordinary.phase).not.toBe('ordinary');
+});
+
+it('retains the actual goto failure phase across later original listener cleanup failure', async () => {
+  const f = await fixture();
+  const reason = new Error(
+    'page.goto: net::ERR_INVALID_AUTH_CREDENTIALS at https://fixture.invalid/'
+  );
+  f.goto.mockImplementation(async () => {
+    throw reason;
+  });
+  const off = f.page.off;
+  Object.defineProperty(f.page, 'off', {
+    value: (...args: unknown[]) => {
+      if (args[0] === 'request') throw new Error('secondary cleanup');
+      return Reflect.apply(off, f.page, args);
+    },
+  });
+  await expect(f.navigate()).rejects.toBe(reason);
+  expect(readOriginalNavigationRefusal(reason)).toEqual({
+    phase: 'owned.goto',
+    decision: 'original',
+  });
+  expect(f.record.lifetime.uncertain).toBe(true);
+});
+it('labels the actual first destination refusal before native navigation entry', async () => {
+  const f = await fixture();
+  f.authorizeURL.mockResolvedValue('refused');
+  let reason: unknown;
+  try {
+    await f.navigate();
+  } catch (value) {
+    reason = value;
+  }
+  expect(reason).toMatchObject({ code: 'POLICY_REFUSED' });
+  expect(readOriginalNavigationRefusal(reason)).toEqual({
+    phase: 'owned.authorize-first',
+    decision: 'original',
+  });
+  expect(f.goto).not.toHaveBeenCalled();
+});
+it('distinguishes fresh authority loss at the original action guard without rereading authority', async () => {
+  const f = await fixture();
+  f.config.policy.authorizeAction = async () => {
+    f.revoke();
+    return 'allowed';
+  };
+  let reason: unknown;
+  try {
+    await f.navigate();
+  } catch (value) {
+    reason = value;
+  }
+  expect(reason).toMatchObject({ code: 'STALE_BINDING' });
+  expect(readOriginalNavigationRefusal(reason)).toEqual({
+    phase: 'owned.action-authority',
+    decision: 'authority',
+  });
+  expect(f.goto).not.toHaveBeenCalled();
 });

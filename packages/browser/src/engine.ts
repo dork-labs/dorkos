@@ -1,3 +1,4 @@
+import { retainOriginalNavigationRefusal } from './navigation/refusal.js';
 import type {
   OwnedResponseDownload,
   OwnedDownloadSink,
@@ -1134,8 +1135,16 @@ function constructEngine(
     const dispatcher: PrivateBrowserNavigationDispatcher = Object.freeze({
       navigate(value: unknown, authorization: OwnedNavigationAuthorization, signal?: AbortSignal) {
         const command = parseBrowserCommand(value);
-        if (command.kind !== 'navigate') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
-        if (stopping || signal?.aborted) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        if (command.kind !== 'navigate')
+          throw retainOriginalNavigationRefusal(
+            new BrowserLifecycleError('COMMAND_UNSUPPORTED'),
+            'owned.dispatch'
+          );
+        if (stopping || signal?.aborted)
+          throw retainOriginalNavigationRefusal(
+            new BrowserLifecycleError('ENGINE_STOPPED'),
+            'owned.dispatch'
+          );
         const token = issuer.issue(command, authorization);
         try {
           const record = find(command.binding.browserId, command.binding.browserGeneration);
@@ -1152,6 +1161,7 @@ function constructEngine(
             issuer.invalidate(token)
           );
         } catch (error) {
+          retainOriginalNavigationRefusal(error, 'owned.dispatch');
           issuer.invalidate(token);
           throw error;
         }
